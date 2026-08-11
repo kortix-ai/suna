@@ -128,8 +128,8 @@ function GitHubSetup() {
           setState('empty');
           setMessage(
             result.installations.length > 0
-              ? `Every installation available to ${result.github_login} is already linked to this Kortix account.`
-              : `No existing Kortix App installation is available to ${result.github_login}.`,
+              ? `Every installation available to ${result.github_login} is already linked to this dosco account.`
+              : `No existing dosco App installation is available to ${result.github_login}.`,
           );
         } else {
           setState('select');
@@ -278,7 +278,7 @@ function GitHubSetup() {
         ) : state === 'error' ? (
           <Rise delay={0.06}>
             <Button size="lg" className="w-full" onClick={() => router.replace(appHome)}>
-              Back to Kortix
+              Back to dosco
             </Button>
           </Rise>
         ) : null}

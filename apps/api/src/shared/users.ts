@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { db } from './db';
 
 /**
- * Resolve a Kortix user id from an email via a direct, indexed lookup against
+ * Resolve a dosco user id from an email via a direct, indexed lookup against
  * auth.users. Canonical helper shared by account- and project-member invites.
  * Supabase normalizes emails to lowercase at signup, so an equality match on
  * the already-lowercased target hits the email index (same approach as the

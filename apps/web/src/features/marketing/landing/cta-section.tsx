@@ -14,7 +14,7 @@ import { useCallback } from 'react';
 
 /**
  * The closing CTA, kept in the shape it has always had: copy on the left, the
- * Kortix letter grid on the right. Copy now lives in content.ts rather than the
+ * dosco letter grid on the right. Copy now lives in content.ts rather than the
  * i18n bundle, matching the rest of the rebuilt page.
  */
 export function CtaSection() {

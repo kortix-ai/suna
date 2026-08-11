@@ -82,10 +82,10 @@ export async function respondViaUrl(url: string | undefined, body: unknown): Pro
 
 /** Dashboard base URL (no trailing slash) for building project/session links. */
 export function dashboardBase(kortixUrl?: string): string {
-  return (kortixUrl || 'https://kortix.com').replace(/\/$/, '');
+  return (kortixUrl || 'https://dosco.live').replace(/\/$/, '');
 }
 
-/** Web URL for a Kortix session. */
+/** Web URL for a dosco session. */
 export function sessionWebUrl(kortixUrl: string | undefined, projectId: string, sessionId: string): string {
   return `${dashboardBase(kortixUrl)}/projects/${projectId}/sessions/${sessionId}`;
 }

@@ -33,9 +33,9 @@ export function IdentityIntro({ accountId }: { accountId: string }) {
       <p className="text-foreground text-xs font-medium">Why connect both?</p>
       <p className="text-muted-foreground text-xs leading-relaxed">
         <span className="text-foreground font-medium">SAML SSO</span> is how people sign in — with
-        your identity provider's own credentials and MFA, never a Kortix password.{' '}
+        your identity provider's own credentials and MFA, never a dosco password.{' '}
         <span className="text-foreground font-medium">SCIM directory sync</span> is who exists — it
-        keeps your Kortix roster matched to your IdP and automatically removes access the moment
+        keeps your dosco roster matched to your IdP and automatically removes access the moment
         someone leaves. Most enterprises want both; set up SSO first, then Directory Sync.
       </p>
     </div>

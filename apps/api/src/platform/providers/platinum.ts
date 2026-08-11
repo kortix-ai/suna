@@ -453,7 +453,7 @@ export class PlatinumProvider implements SandboxProvider {
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
     // Expose the agent port through Platinum's edge. PUBLIC (no HMAC ?t= token)
     // because Platinum's edge reads the token from the query string only, which
-    // doesn't compose with the Kortix proxy appending a path — and the sandbox
+    // doesn't compose with the dosco proxy appending a path — and the sandbox
     // is already gated by the KORTIX serviceKey bearer below (same effective
     // auth as Daytona's preview link + serviceKey). Idempotent: re-exposing an
     // already-exposed port returns the same URL.

@@ -47,7 +47,7 @@ import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from '.
 import {
   type ProjectRow,
   type RequestAuditContext,
-  deriveKortixApiRoot,
+  derivedoscoApiRoot,
   isPlainObject,
   normalizeBoolean,
   normalizeString,
@@ -76,7 +76,7 @@ export function verifyWebhookSignature(
 
 // Pull a static shared-secret token from a webhook request's headers, for
 // sources that can't HMAC-sign the body (e.g. Better Stack error webhooks, which
-// only allow custom headers / basic auth). Order: X-Kortix-Token, then
+// only allow custom headers / basic auth). Order: X-dosco-Token, then
 // Authorization (Bearer <token> or Basic <base64(user:token)> → password).
 export function extractWebhookToken(
   kortixToken: string | null | undefined,
@@ -411,7 +411,7 @@ export function triggerExecutionConcurrency(): number {
  * When paused, the platform does NOT auto-run any of the project's triggers —
  * the cron sweep skips it and inbound webhooks are ignored — even though each
  * trigger is still `enabled` in the repo. This is how you stop ONE repo
- * deployed to TWO independent control planes (e.g. dev.kortix.com + kortix.com,
+ * deployed to TWO independent control planes (e.g. dev.dosco.live + kortix.com,
  * separate DBs/schedulers with no cross-platform dedup) from double-firing every
  * cron: pause it on the deployment you don't want firing. A manual
  * `…/triggers/:slug/fire` is an explicit action and still runs. Toggle via
@@ -1336,7 +1336,7 @@ export function stopProjectTriggerScheduler(): void {
 // GET /v1/projects
 
 export function buildPublicWebhookUrl(projectId: string, slug: string): string {
-  const root = deriveKortixApiRoot(config.KORTIX_URL);
+  const root = derivedoscoApiRoot(config.KORTIX_URL);
   return `${root}/v1/webhooks/projects/${projectId}/${slug}`;
 }
 
@@ -1822,8 +1822,8 @@ export async function commitRepoFile(
       content,
       message,
       branch,
-      authorName: 'Kortix',
-      authorEmail: 'noreply@kortix.ai',
+      authorName: 'dosco',
+      authorEmail: 'noreply@dosco.live',
       expectedFileRevision:
         expectedFileRevision === undefined
           ? undefined

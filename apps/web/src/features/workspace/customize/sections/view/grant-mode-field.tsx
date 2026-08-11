@@ -169,7 +169,7 @@ export function GrantSetField({
 }
 
 /** All · Pick · None over the grouped grantable CLI action catalog. */
-export function KortixCliField({
+export function doscoCliField({
   value,
   onChange,
 }: {

@@ -1,5 +1,5 @@
 /**
- * Structured logger for Kortix API.
+ * Structured logger for dosco API.
  *
  * Uses @logtail/node to ship structured logs to Better Stack Telemetry.
  * Automatically enriches every log with request context (userId, accountId,

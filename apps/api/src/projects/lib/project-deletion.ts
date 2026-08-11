@@ -16,7 +16,7 @@ const defaultDeps: ProjectDeletionDeps = {
   getBackend,
 };
 
-/** Delete only Kortix-managed upstreams; user-connected repositories are never touched. */
+/** Delete only dosco-managed upstreams; user-connected repositories are never touched. */
 export async function deleteManagedProjectRepo(
   project: ProjectRow,
   deps: ProjectDeletionDeps = defaultDeps,

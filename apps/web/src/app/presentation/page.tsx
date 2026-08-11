@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /presentation — the Kortix sales deck (follows the official "Kortix pres ENG"
+ * /presentation — the dosco sales deck (follows the official "dosco pres ENG"
  * narrative). Shares the deck engine; links across to the full product deck.
  */
 

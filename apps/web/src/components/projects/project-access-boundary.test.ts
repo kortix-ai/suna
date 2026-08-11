@@ -294,7 +294,7 @@ describe('copy quality', () => {
   });
 
   test('no internal navigation paths or product jargon reach the user', () => {
-    // "Customize → Members" and "Kortix workspace" both shipped in the previous
+    // "Customize → Members" and "dosco workspace" both shipped in the previous
     // copy. Neither means anything to someone who cannot open the project.
     const banned = [
       /customize/i,

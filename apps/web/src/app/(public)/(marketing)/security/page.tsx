@@ -71,7 +71,7 @@ function RowList({
 
 /**
  * `/security` — the page a security reviewer reads before they will let anyone
- * else in the building use Kortix.
+ * else in the building use dosco.
  *
  * Copy lives in `features/marketing/security-page/content.ts` and every claim on
  * it is traced to code in that file's header, including the seven places where

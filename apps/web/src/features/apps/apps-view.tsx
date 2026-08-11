@@ -180,7 +180,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   return (
     <CustomizeSectionWrapper
       title="Apps"
-      description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
+      description="Deploy apps to stable dosco URLs. They wake on request and stop when idle."
       docs="/docs/sdk/apps"
       className="max-w-5xl"
       action={
@@ -243,7 +243,7 @@ export function AppsView({ projectId }: { projectId: string }) {
         <EmptyState
           icon={GlobeIcon}
           title="No Apps deployed"
-          description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image with the Kortix CLI. Deployed Apps appear here."
+          description="Deploy a static site, JavaScript bundle, Dockerfile, or OCI image with the dosco CLI. Deployed Apps appear here."
         />
       )}
 

@@ -5,7 +5,7 @@ import { generateGatewayKeyPair, hashSecretKey } from '../shared/crypto';
 
 /**
  * Name of the short-lived key session-title generation mints for each internal
- * gateway call. It is Kortix's own plumbing rather than a customer key, so it is
+ * gateway call. It is dosco's own plumbing rather than a customer key, so it is
  * DELETED (see deleteGatewayKey) the moment the call finishes instead of being
  * soft-revoked — one row per prompt, kept forever, would both bloat the table
  * and clutter the project's key list. The name is only for forensics on the

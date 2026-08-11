@@ -11,7 +11,7 @@ import { SparkleIcon as Sparkles } from '@phosphor-icons/react';
 type Skill = ConfigEntity;
 
 const PROJECT_GROUP = 'Project';
-const KORTIX_GROUP = 'Kortix';
+const KORTIX_GROUP = 'dosco';
 
 /**
  * The `kortix-*` family is platform runtime, not the project's own work: it is

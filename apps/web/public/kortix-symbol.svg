@@ -1,3 +1,26 @@
 <svg width="30" height="25" viewBox="0 0 30 25" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z" fill="black"/>
+  <defs>
+    <linearGradient id="blade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <!-- blade tip up, centred at x=15 -->
+  <path d="M14 1.5 L16 1.5 L15.4 11.2 L14.6 11.2 Z" fill="url(#blade)"/>
+  <!-- blade body -->
+  <rect x="14.6" y="11.2" width="0.8" height="6.6" fill="url(#blade)"/>
+  <!-- tsuba (guard) -->
+  <rect x="12.2" y="17.8" width="5.6" height="1.2" rx="0.4" fill="currentColor"/>
+  <!-- hilt -->
+  <rect x="14.3" y="19" width="1.4" height="4.6" fill="currentColor"/>
+  <!-- pommel -->
+  <rect x="13.5" y="23.4" width="3" height="1.4" rx="0.3" fill="currentColor"/>
+  <!-- flame tongues around the hilt -->
+  <path d="M11.6 20.4 Q12.4 19.2 11.6 17.6 Q12.6 18.6 12.6 19.6 Q12.6 18 13.4 17.2 Q13 19.2 12.6 20.4 Z" fill="url(#flame)"/>
+  <path d="M18.4 20.4 Q17.6 19.2 18.4 17.6 Q17.4 18.6 17.4 19.6 Q17.4 18 16.6 17.2 Q17 19.2 17.4 20.4 Z" fill="url(#flame)"/>
+  <path d="M15 16.6 Q14.4 15.2 14.2 13.6 Q15 14.4 15.4 15.4 Q15.6 14 16.4 13.2 Q16.2 15 15.6 16.6 Z" fill="url(#flame)"/>
 </svg>

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { AgentAvatar } from './agent-avatar';
 
 describe('AgentAvatar', () => {
-  test('renders the Kortix symbol for the default agent', () => {
+  test('renders the dosco symbol for the default agent', () => {
     const html = renderToStaticMarkup(<AgentAvatar isDefault size={22} />);
     expect(html).toContain('kortix-symbol.svg');
   });

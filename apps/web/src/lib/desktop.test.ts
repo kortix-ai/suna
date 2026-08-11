@@ -43,7 +43,7 @@ afterEach(() => {
 
 describe('desktop external routes', () => {
   test('routes each legal page through a real top-level navigation on desktop', () => {
-    setNavigator('Mozilla/5.0 KortixDesktop/0.1.0', 'MacIntel');
+    setNavigator('Mozilla/5.0 doscoDesktop/0.1.0', 'MacIntel');
     const clicks: Array<{ href: string; target?: string; rel?: string }> = [];
     const anchor = {
       href: '',
@@ -55,7 +55,7 @@ describe('desktop external routes', () => {
       remove() {},
     };
     Object.defineProperty(globalThis, 'window', {
-      value: { location: { origin: 'https://kortix.com' } },
+      value: { location: { origin: 'https://dosco.live' } },
       configurable: true,
       writable: true,
     });
@@ -71,8 +71,8 @@ describe('desktop external routes', () => {
     expect(openExternalRoute('/legal/terms')).toBe(true);
     expect(openExternalRoute('/legal?tab=privacy')).toBe(true);
     expect(clicks).toEqual([
-      { href: 'https://kortix.com/legal/terms', target: undefined, rel: undefined },
-      { href: 'https://kortix.com/legal?tab=privacy', target: undefined, rel: undefined },
+      { href: 'https://dosco.live/legal/terms', target: undefined, rel: undefined },
+      { href: 'https://dosco.live/legal?tab=privacy', target: undefined, rel: undefined },
     ]);
   });
 
@@ -90,27 +90,27 @@ describe('desktop shell detection', () => {
     expect(desktopShellPlatform()).toBeNull();
   });
 
-  test('KortixDesktop UA on a Mac resolves to macos', () => {
-    setNavigator('Mozilla/5.0 Chrome/130 Safari/537.36 KortixDesktop/0.1.0', 'MacIntel');
+  test('doscoDesktop UA on a Mac resolves to macos', () => {
+    setNavigator('Mozilla/5.0 Chrome/130 Safari/537.36 doscoDesktop/0.1.0', 'MacIntel');
     expect(isDesktop()).toBe(true);
     expect(desktopPlatform()).toBe('macos');
     expect(desktopShellPlatform()).toBe('macos');
   });
 
-  test('KortixDesktop UA on Windows buckets as other', () => {
-    setNavigator('Mozilla/5.0 Chrome/130 Safari/537.36 KortixDesktop/0.1.0', 'Win32');
+  test('doscoDesktop UA on Windows buckets as other', () => {
+    setNavigator('Mozilla/5.0 Chrome/130 Safari/537.36 doscoDesktop/0.1.0', 'Win32');
     expect(desktopPlatform()).toBe('windows');
     expect(desktopShellPlatform()).toBe('other');
   });
 
-  test('KortixDesktop UA on Linux buckets as other', () => {
-    setNavigator('Mozilla/5.0 Chrome/130 Safari/537.36 KortixDesktop/0.1.0', 'Linux x86_64');
+  test('doscoDesktop UA on Linux buckets as other', () => {
+    setNavigator('Mozilla/5.0 Chrome/130 Safari/537.36 doscoDesktop/0.1.0', 'Linux x86_64');
     expect(desktopPlatform()).toBe('linux');
     expect(desktopShellPlatform()).toBe('other');
   });
 
   test('unknown platform string under the desktop UA falls back to linux/other', () => {
-    setNavigator('KortixDesktop/0.1.0', '');
+    setNavigator('doscoDesktop/0.1.0', '');
     expect(desktopPlatform()).toBe('linux');
     expect(desktopShellPlatform()).toBe('other');
   });

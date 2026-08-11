@@ -20,7 +20,7 @@ import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 
 const terminalLines = [
   { id: 'install', type: 'command', text: KORTIX_CLI_INSTALL_COMMAND },
-  { id: 'install-done', type: 'muted', text: '✓ Installed the Kortix CLI' },
+  { id: 'install-done', type: 'muted', text: '✓ Installed the dosco CLI' },
   { id: 'space-project', type: 'space', text: '' },
   { id: 'init', type: 'command', text: 'kortix init acme-ops' },
   { id: 'init-done', type: 'muted', text: '✓ Created kortix.yaml and .kortix/' },
@@ -58,11 +58,11 @@ export function CliInstallSection() {
             </Badge>
             <div className="max-w-xl space-y-4">
               <h2 className="text-foreground text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-                Install Kortix from your terminal.
+                Install dosco from your terminal.
               </h2>
               <p className="text-muted-foreground text-base leading-relaxed text-pretty">
                 One curl installs the CLI. From there you can create a project, launch sessions, and
-                attach your local OpenCode TUI to any Kortix sandbox.
+                attach your local OpenCode TUI to any dosco sandbox.
               </p>
             </div>
 

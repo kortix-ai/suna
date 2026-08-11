@@ -500,7 +500,7 @@ export async function commitMultipleFilesToBranch(
     }
   }
 
-  const author = opts.authorName || 'Kortix';
+  const author = opts.authorName || 'dosco';
   const email = opts.authorEmail || 'noreply@kortix.ai';
   const identEnv = {
     GIT_AUTHOR_NAME: author,

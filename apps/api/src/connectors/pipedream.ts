@@ -32,7 +32,7 @@ const PD_BASE = 'https://api.pipedream.com';
  * pipedream_utils, formatting, helper_functions, data stores, …) alongside real
  * third-party apps. Discover uses Pipedream only where it adds unique value:
  * managed OAuth. API-key apps connect directly through their real API instead
- * of adding an intermediary. Utilities and native Kortix apps are excluded too.
+ * of adding an intermediary. Utilities and native dosco apps are excluded too.
  */
 
 export function pipedreamConfigured(): boolean {

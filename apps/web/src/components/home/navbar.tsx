@@ -251,7 +251,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               <ContextMenuTrigger asChild>
                 <Link
                   href="/"
-                  aria-label="Kortix home"
+                  aria-label="dosco home"
                   className="hit-area-4 flex shrink-0 items-center"
                 >
                   <KortixLogo size={18} variant="logomark" />
@@ -638,7 +638,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                       }}
                       suppressHydrationWarning
                     >
-                      {tI18nHardcoded.raw('autoComponentsHomeNavbarJsxTextLaunchKortix5c2db556')}
+                      {tI18nHardcoded.raw('autoComponentsHomeNavbarJsxTextLaunchdosco5c2db556')}
                     </Link>
                   </Button>
                 )}

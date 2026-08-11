@@ -10,10 +10,10 @@ import {
 } from './particle-mark';
 
 /**
- * A Rauch-style hard-pixel particle canvas that resolves into the Kortix
+ * A Rauch-style hard-pixel particle canvas that resolves into the dosco
  * brandmark, then lets pointer/touch movement disturb and settle the mark.
  */
-export function KortixParticleMark() {
+export function doscoParticleMark() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
 
@@ -180,7 +180,7 @@ export function KortixParticleMark() {
   return (
     <canvas
       ref={canvasRef}
-      aria-label="Kortix symbol rendered as hard subpixel particles"
+      aria-label="dosco symbol rendered as hard subpixel particles"
       className="block h-full w-full touch-none [image-rendering:pixelated]"
     />
   );

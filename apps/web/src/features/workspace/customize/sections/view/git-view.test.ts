@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { providerLabel, repositoryWebUrl } from './git-view-helpers';
 
 test('formats the live Code Storage provider identifier', () => {
-  expect(providerLabel('code-storage')).toBe('Kortix Code Storage');
-  expect(providerLabel('code_storage')).toBe('Kortix Code Storage');
+  expect(providerLabel('code-storage')).toBe('dosco Code Storage');
+  expect(providerLabel('code_storage')).toBe('dosco Code Storage');
 });
 
 test('only links repository providers with a human web page', () => {

@@ -209,7 +209,7 @@ const CLI_GROUPS: { label: string; icon: typeof TerminalIcon; cmds: [string, str
     label: 'Operate',
     icon: KeyRound,
     cmds: [
-      ['kortix self-host', 'Run your own Kortix cloud'],
+      ['kortix self-host', 'Run your own dosco cloud'],
       ['kortix hosts use', 'Switch cloud ↔ local'],
       ['kortix providers', 'Bring your own model keys'],
     ],
@@ -221,7 +221,7 @@ const RUNS_ANYWHERE = [
     icon: Server,
     title: 'Self-host anywhere',
     // ACCURACY: not "air-gapped" — `self-host start` pulls images from docker.io.
-    desc: 'A laptop, a VPS, or your own VPC — the exact same stack as Kortix cloud.',
+    desc: 'A laptop, a VPS, or your own VPC — the exact same stack as dosco cloud.',
   },
   {
     icon: Cpu,
@@ -231,7 +231,7 @@ const RUNS_ANYWHERE = [
   {
     icon: KeyRound,
     title: 'Any model',
-    desc: 'Bring your own keys — Anthropic, OpenAI, or local models — or run on Kortix compute.',
+    desc: 'Bring your own keys — Anthropic, OpenAI, or local models — or run on dosco compute.',
   },
 ];
 
@@ -440,7 +440,7 @@ function ConnectorsRequestPath() {
           <Server className="text-foreground size-4 shrink-0" />
           <span className="font-medium">
             {tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxTextKortixConnector80880ab2',
+              'autoAppPublicMarketingDevelopersPageJsxTextdoscoConnector80880ab2',
             )}
           </span>
           <span className="text-muted-foreground ml-auto text-[10px] sm:text-[11px]">
@@ -561,7 +561,7 @@ export default function DevelopersPage() {
           <section className="w-full">
             <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
               {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextOneKortixToml1138e741',
+                'autoAppPublicMarketingDevelopersPageJsxTextOnedoscoToml1138e741',
               )}
               <br />
               <span className="text-muted-foreground">
@@ -689,7 +689,7 @@ export default function DevelopersPage() {
             <Terminal title="init">
               <Cmd>
                 {tI18nHardcoded.raw(
-                  'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
+                  'autoAppPublicMarketingDevelopersPageJsxTextdoscoInit263fedee',
                 )}
               </Cmd>
               <Done>kortix.yaml</Done>
@@ -720,7 +720,7 @@ export default function DevelopersPage() {
               'autoAppPublicMarketingDevelopersPageJsxAttrTitleDeclareThed1672ddf',
             )}
             body={tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixToml8f2ef9df',
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodydoscoToml8f2ef9df',
             )}
           >
             <CodeFile name="kortix.yaml" code={KORTIX_YAML_EXAMPLE} language="yaml" />
@@ -732,18 +732,18 @@ export default function DevelopersPage() {
               'autoAppPublicMarketingDevelopersPageJsxAttrTitleShipItfb312d97',
             )}
             body={tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixShipef9c33ee',
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodydoscoShipef9c33ee',
             )}
             flip
           >
             <Terminal
               title={tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxAttrTitleKortixShip3674108d',
+                'autoAppPublicMarketingDevelopersPageJsxAttrTitledoscoShip3674108d',
               )}
             >
               <Cmd>
                 {tI18nHardcoded.raw(
-                  'autoAppPublicMarketingDevelopersPageJsxTextKortixShip0f78d303',
+                  'autoAppPublicMarketingDevelopersPageJsxTextdoscoShip0f78d303',
                 )}
               </Cmd>
               <Done>
@@ -856,7 +856,7 @@ export default function DevelopersPage() {
                 {PROMPT}
                 <span className="text-foreground">
                   {tI18nHardcoded.raw(
-                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersLogind1e6302d',
+                    'autoAppPublicMarketingDevelopersPageJsxTextdoscoProvidersLogind1e6302d',
                   )}
                 </span>
               </Line>
@@ -878,7 +878,7 @@ export default function DevelopersPage() {
                 {PROMPT}
                 <span className="text-foreground">
                   {tI18nHardcoded.raw(
-                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersSetc86bed30',
+                    'autoAppPublicMarketingDevelopersPageJsxTextdoscoProvidersSetc86bed30',
                   )}
                 </span>
               </Line>
@@ -886,7 +886,7 @@ export default function DevelopersPage() {
                 {PROMPT}
                 <span className="text-foreground">
                   {tI18nHardcoded.raw(
-                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersSet4a7972ff',
+                    'autoAppPublicMarketingDevelopersPageJsxTextdoscoProvidersSet4a7972ff',
                   )}
                 </span>
               </Line>
@@ -974,7 +974,7 @@ export default function DevelopersPage() {
                 'Anything worth keeping comes back as a change request — and merges into main',
                 'Main is always the source of truth: every agent action is auditable Git history',
                 'It’s all Git under the hood — branch, diff, review, merge',
-                'The same Kortix CLI runs inside every sandbox — so running locally and in the cloud is identical',
+                'The same dosco CLI runs inside every sandbox — so running locally and in the cloud is identical',
                 'Isolated compute per session; one runaway agent can’t touch another',
               ].map((b, i) => (
                 <li
@@ -1058,7 +1058,7 @@ export default function DevelopersPage() {
             </h2>
             <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
               {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextKortixConnectorsPut612736c1',
+                'autoAppPublicMarketingDevelopersPageJsxTextdoscoConnectorsPut612736c1',
               )}
             </p>
             <ul className="mt-6 max-w-md space-y-2.5">
@@ -1066,7 +1066,7 @@ export default function DevelopersPage() {
                 '3,000+ one-click apps via Pipedream — OAuth handled for you',
                 'Or bring any MCP, OpenAPI, GraphQL or HTTP endpoint — same interface',
                 'Credentials live server-side and never reach the sandbox',
-                'Agents hold one scoped Kortix token; connect once, shared org-wide, self-healing',
+                'Agents hold one scoped dosco token; connect once, shared org-wide, self-healing',
               ].map((b, i) => (
                 <li
                   key={b}
@@ -1118,12 +1118,12 @@ export default function DevelopersPage() {
             {
               icon: GitPullRequest,
               title: 'Skills, git-backed and invisible',
-              body: 'Non-devs publish skills as markdown; Kortix handles the branch, PR and merge behind the scenes. Versioned, reviewable, auditable.',
+              body: 'Non-devs publish skills as markdown; dosco handles the branch, PR and merge behind the scenes. Versioned, reviewable, auditable.',
             },
             {
               icon: Plug,
               title: 'Self-healing connections',
-              body: 'When a token expires or a service blips, Kortix refreshes it or asks you to reconnect in plain language — never a cryptic error.',
+              body: 'When a token expires or a service blips, dosco refreshes it or asks you to reconnect in plain language — never a cryptic error.',
             },
             {
               icon: Cpu,
@@ -1174,7 +1174,7 @@ export default function DevelopersPage() {
                     )}{' '}
                     <span className="text-foreground font-mono text-sm">
                       {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
+                        'autoAppPublicMarketingDevelopersPageJsxTextdoscoInit263fedee',
                       )}
                     </span>
                     {tI18nHardcoded.raw(

@@ -298,7 +298,7 @@ function CreateAuditWebhookDialog({
           <ModalDescription>
             {created
               ? 'Save the signing secret now. You will not see it again — to rotate, delete this webhook and create a new one.'
-              : 'Each event is POSTed to the URL with an X-Kortix-Signature header (HMAC-SHA256 of the body using the secret).'}
+              : 'Each event is POSTed to the URL with an X-dosco-Signature header (HMAC-SHA256 of the body using the secret).'}
           </ModalDescription>
         </ModalHeader>
 

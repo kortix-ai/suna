@@ -107,7 +107,7 @@ export function StarCount({ caption, className }: { caption: string; className?:
   return (
     <div ref={ref} className={className}>
       <div
-        data-testid="open-source-star-count"
+        data-testid="agent-star-count"
         aria-label={stars === null ? caption : `${FORMATTER.format(stars)} ${caption}`}
         className={cn(
           'text-foreground text-6xl leading-none font-medium tracking-tight tabular-nums sm:text-7xl',

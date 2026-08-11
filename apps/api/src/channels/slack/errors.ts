@@ -235,7 +235,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
       title: 'Out of credits',
       text:
         `:credit_card: *This workspace is out of credits, so the agent can't reply here.*${tail}` +
-        ` Top up credits (or turn on auto top-up) in Kortix and mention me again to continue.`,
+        ` Top up credits (or turn on auto top-up) in dosco and mention me again to continue.`,
       aborted: false,
     };
   }
@@ -292,7 +292,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
       title: 'Model unavailable',
       text:
         `:warning: *The selected model isn't available.*` +
-        ` Pick a different model in Kortix settings, then mention me again.`,
+        ` Pick a different model in dosco settings, then mention me again.`,
       aborted: false,
     };
   }
@@ -303,7 +303,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     return {
       title: 'Provider rejected the request',
       text:
-        `:warning: *${capitalize(who)} rejected this request* — its API key or model config in Kortix` +
+        `:warning: *${capitalize(who)} rejected this request* — its API key or model config in dosco` +
         ` may be invalid or expired. Ask a workspace admin to check the provider settings, then mention me again.`,
       aborted: false,
     };

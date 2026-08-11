@@ -501,21 +501,21 @@ function decodedAttachmentHeader(c: Context, name: string): string {
 }
 
 function attachmentMetadata(c: Context): Omit<StageConnectorAttachmentInput, 'bytes'> {
-  const filename = decodedAttachmentHeader(c, 'X-Kortix-Attachment-Filename');
+  const filename = decodedAttachmentHeader(c, 'X-dosco-Attachment-Filename');
   const contentType = (c.req.header('content-type') ?? '').split(';', 1).at(0)?.trim() ?? '';
-  const disposition = c.req.header('X-Kortix-Attachment-Disposition') ?? 'attachment';
-  const contentId = decodedAttachmentHeader(c, 'X-Kortix-Attachment-Content-Id');
+  const disposition = c.req.header('X-dosco-Attachment-Disposition') ?? 'attachment';
+  const contentId = decodedAttachmentHeader(c, 'X-dosco-Attachment-Content-Id');
   if (!filename || filename.length > 512) {
-    throw new Error('X-Kortix-Attachment-Filename is required and must not exceed 512 characters');
+    throw new Error('X-dosco-Attachment-Filename is required and must not exceed 512 characters');
   }
   if (!contentType || contentType.length > 255) {
     throw new Error('Content-Type is required and must not exceed 255 characters');
   }
   if (disposition !== 'attachment' && disposition !== 'inline') {
-    throw new Error('X-Kortix-Attachment-Disposition must be attachment or inline');
+    throw new Error('X-dosco-Attachment-Disposition must be attachment or inline');
   }
   if (contentId.length > 512) {
-    throw new Error('X-Kortix-Attachment-Content-Id must not exceed 512 characters');
+    throw new Error('X-dosco-Attachment-Content-Id must not exceed 512 characters');
   }
   return {
     filename,

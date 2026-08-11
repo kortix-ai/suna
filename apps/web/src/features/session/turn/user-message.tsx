@@ -29,7 +29,7 @@ import { detectCommandFromText } from '@/features/session/detect-command';
 import { useSandboxImageSrc } from '@/features/session/sandbox-image';
 import { cn } from '@/lib/utils';
 import { fileIconFor, getFilename } from '@/lib/utils/file-utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { stripdoscoSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import {
@@ -802,7 +802,7 @@ export function UserMessage({
     const withoutFiles = parseFileMentionReferences(withoutProjects).cleanText;
     const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
     const withoutSessions = parseSessionReferences(withoutAgents).cleanText;
-    return stripKortixSystemTags(withoutSessions).trim();
+    return stripdoscoSystemTags(withoutSessions).trim();
   }, [copyText, effectiveCommandInfo]);
 
   const actions =

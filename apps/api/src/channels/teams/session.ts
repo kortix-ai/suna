@@ -192,13 +192,13 @@ export async function createOrJoinTeamsConversationSession(input: {
 
 function startErrorMessage(status: number | undefined): string {
   if (status === 402) {
-    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
+    return "This workspace is out of credits, so I can't start a session. Top up in the dosco dashboard and send your message again.";
   }
   if (status === 429) {
     return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
   }
   if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this team and try again.";
+    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect dosco to this team and try again.";
   }
   return "I couldn't start a session just now. Give it a moment and send your message again — I'll reply right here.";
 }
@@ -247,7 +247,7 @@ async function waitForConversationSession(tenantId: string, conversationId: stri
 const TURN_INSTRUCTIONS = [
   'How to work:',
   '- First, load the `kortix-teams` skill via the `skill` tool for the canonical reference on posting in Teams (step/send semantics, Adaptive Cards, tone).',
-  '- The `teams` CLI needs no token in your sandbox — every command runs through the Kortix Connector (the bot credential is resolved server-side).',
+  '- The `teams` CLI needs no token in your sandbox — every command runs through the dosco Connector (the bot credential is resolved server-side).',
   '- As you go, post a short progress checkpoint before each major step:',
   '    teams step "Reading the incident logs"',
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',

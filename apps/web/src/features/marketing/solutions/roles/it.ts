@@ -5,7 +5,7 @@ export const it: RoleContent = {
   slug: 'it',
   name: 'IT',
   navDescription: 'Runbooks that execute, and a platform that survives your review',
-  seoTitle: 'Kortix for IT teams',
+  seoTitle: 'dosco for IT teams',
   seoDescription:
     'Access reviews, joiner-mover-leaver runs and service-desk triage, run as sessions on isolated machines. Plus the honest answers IT needs before approving an agent platform at all.',
 
@@ -95,7 +95,7 @@ export const it: RoleContent = {
       {
         id: 'principals',
         title: 'Agents are principals too',
-        body: 'Kortix has a real account, member, group and role model with per-resource permissions for people and for agents. An access review that covers your humans and not your automation is half a review.',
+        body: 'dosco has a real account, member, group and role model with per-resource permissions for people and for agents. An access review that covers your humans and not your automation is half a review.',
       },
       {
         id: 'reason',
@@ -128,7 +128,7 @@ export const it: RoleContent = {
       },
       {
         k: 'Everything with an API and no catalogue entry',
-        v: 'This is most of an IT estate. Point Kortix at an OpenAPI or Postman description, a GraphQL endpoint, a bare HTTP base URL, or a remote MCP server. It reads the source, works out the authentication, and turns each operation into a tool with its own Allow, Ask or Block.',
+        v: 'This is most of an IT estate. Point dosco at an OpenAPI or Postman description, a GraphQL endpoint, a bare HTTP base URL, or a remote MCP server. It reads the source, works out the authentication, and turns each operation into a tool with its own Allow, Ask or Block.',
       },
       {
         k: 'A machine you already run',
@@ -191,13 +191,13 @@ export const it: RoleContent = {
       {
         id: 'deploy',
         k: 'Identity, audit and where it runs',
-        v: 'Single sign-on is SAML 2.0. Every tool call is written to an audit record with the agent, the person or trigger, the outcome and the approver. Deployment is Kortix Cloud, your own VPC, or your own on-prem network — it is open source, so you can read what you are running. It is not air-gapped: starting a self-hosted stack pulls images over the network. For an isolated topology, talk to us.',
+        v: 'Single sign-on is SAML 2.0. Every tool call is written to an audit record with the agent, the person or trigger, the outcome and the approver. Deployment is dosco Cloud, your own VPC, or your own on-prem network — it is open source, so you can read what you are running. It is not air-gapped: starting a self-hosted stack pulls images over the network. For an isolated topology, talk to us.',
       },
     ],
   },
 
   closing: {
     title: 'Read the security page before the pitch.',
-    sub: 'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or your own on-prem network.',
+    sub: 'Open source and self-hostable. Any model, your keys. dosco Cloud, your own VPC, or your own on-prem network.',
   },
 };

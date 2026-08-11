@@ -105,7 +105,7 @@ function sanitizeHeaders(input: Record<string, string> | undefined): Record<stri
       throw new SecretBrokerError('invalid_request', `invalid request header: ${rawName}`, 400);
     }
     if (BLOCKED_REQUEST_HEADERS.has(name)) {
-      throw new SecretBrokerError('invalid_request', `request header is managed by Kortix: ${name}`, 400);
+      throw new SecretBrokerError('invalid_request', `request header is managed by dosco: ${name}`, 400);
     }
     if (value.includes('\r') || value.includes('\n')) {
       throw new SecretBrokerError('invalid_request', `invalid request header value: ${name}`, 400);

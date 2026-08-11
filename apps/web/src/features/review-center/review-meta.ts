@@ -1,8 +1,8 @@
 /**
  * Presentation metadata for Review Center items — the single place that maps a
- * kind / risk / status / source to its icon, Kortix tone, and label. Mirrors the
- * tinted-icon-tile pattern from changes-view.tsx: a faint Kortix-token fill behind
- * a solid Kortix-token icon.
+ * kind / risk / status / source to its icon, dosco tone, and label. Mirrors the
+ * tinted-icon-tile pattern from changes-view.tsx: a faint dosco-token fill behind
+ * a solid dosco-token icon.
  */
 
 import type { StatusTone } from '@/components/ui/status';

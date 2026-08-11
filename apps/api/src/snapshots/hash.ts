@@ -44,7 +44,7 @@ export interface SnapshotHashInputs {
   spec?: SandboxSpec;
   /**
    * Override of the runtime fingerprint. Defaults to SANDBOX_VERSION
-   * — the platform-wide constant that bumps on every Kortix release.
+   * — the platform-wide constant that bumps on every dosco release.
    * Tests pin this for determinism.
    */
   runtimeFingerprint?: string;

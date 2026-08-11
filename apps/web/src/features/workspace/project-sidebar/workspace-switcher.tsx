@@ -20,7 +20,7 @@
  * this panel — Install App, Theme, Help, Log out — are shared with `UserMenu`
  * through `user-menu-shared.tsx` rather than copied.
  *
- * This replaced three controls: a `<Link>` carrying the Kortix mark fused to a
+ * This replaced three controls: a `<Link>` carrying the dosco mark fused to a
  * separate dropdown trigger carrying the workspace name, plus a user menu in the
  * sidebar footer. Two of the three were dropdowns, and the fused one made you
  * guess which half you were pointing at — the left half navigated, the right

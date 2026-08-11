@@ -23,7 +23,7 @@
 import type { DesktopOs, MobileOs } from './detect-os';
 
 export const hero = {
-  title: 'Download Kortix',
+  title: 'Download dosco',
   sub: 'Get the app for your desktop, your phone, or your terminal.',
 };
 
@@ -34,7 +34,7 @@ export type ComingSoonRowCopy = { label: string; hint: string };
 
 export const DESKTOP_CARD: CardCopy = {
   title: 'Desktop app',
-  description: 'Run Kortix on your own machine, with your files and your terminal.',
+  description: 'Run dosco on your own machine, with your files and your terminal.',
 };
 
 export const MOBILE_CARD: CardCopy = {
@@ -73,6 +73,6 @@ export const MOBILE_ROWS: Record<MobileOs, ComingSoonRowCopy> = {
 
 export const TERMINAL = {
   title: 'Terminal',
-  description: 'Install the CLI and drive Kortix from your shell.',
+  description: 'Install the CLI and drive dosco from your shell.',
   support: 'macOS & Linux · WSL on Windows',
 };

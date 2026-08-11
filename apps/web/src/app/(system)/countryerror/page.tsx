@@ -29,7 +29,7 @@ export default function CountryError() {
           {/* Description */}
           <p className="text-foreground/60 px-2 text-center text-sm leading-relaxed sm:text-base">
             {tHardcodedUi.raw(
-              'appCountryerrorPage.line28JsxTextWeReSorryKortixIsCurrentlyUnavailableIn',
+              'appCountryerrorPage.line28JsxTextWeReSorrydoscoIsCurrentlyUnavailableIn',
             )}
           </p>
 

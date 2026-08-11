@@ -1,5 +1,5 @@
 /**
- * Kortix trigger DSL — lives inside the project manifest (kortix.yaml; a
+ * dosco trigger DSL — lives inside the project manifest (kortix.yaml; a
  * legacy v1 project may instead use kortix.toml) as a `triggers:` list of
  * entries. The manifest at the repo root is THE source of truth for
  * trigger config; runtime state (last_fired_at, executions) stays in the
@@ -216,7 +216,7 @@ export interface LoadedTriggers {
 
 /**
  * Read + parse the project's manifest. Returns null if no manifest file is
- * present (so the caller can treat the repo as "not a Kortix project yet").
+ * present (so the caller can treat the repo as "not a dosco project yet").
  * Throws on parse errors so the caller can surface them up — we don't
  * silently swallow a malformed manifest.
  *

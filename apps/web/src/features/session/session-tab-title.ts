@@ -45,7 +45,7 @@ function elide(value: string): string {
 }
 
 /**
- * `<session name> — Kortix`. An absent name means the session could not be
+ * `<session name> — dosco`. An absent name means the session could not be
  * read, so it gets the explicit unavailable label: never an empty title, never
  * a raw id.
  */

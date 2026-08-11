@@ -179,7 +179,7 @@ export function useModelConnectionGate(
     />
   ) : null;
 
-  // Billing off (self-host default): there's no Kortix plan to upgrade to and
+  // Billing off (self-host default): there's no dosco plan to upgrade to and
   // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()
   // (every host mounts it behind the same flag — `app-providers.tsx`'s
   // `isBillingEnabled() && <GlobalUpgradeModal />`, and the same line on

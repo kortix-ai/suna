@@ -24,7 +24,7 @@
  *    attachment.
  *  - Naming opencode / Codex / Claude Code / Pi under Product / Eng describes
  *    ecosystem fluency wanted in a CANDIDATE. It must never read as a claim
- *    that Kortix supports those harnesses. OpenCode is the Kortix harness, and
+ *    that dosco supports those harnesses. OpenCode is the dosco harness, and
  *    the same opening says so.
  *  - Competitor names, exactly: **Claude Cowork** (one word, lowercase `w`) and
  *    **ChatGPT Work** (two words).
@@ -40,7 +40,7 @@ export const hero = {
   title: 'Open positions.',
   lead: 'Belgrade, Serbia and San Francisco.',
   ctaPrimary: 'Apply',
-  ctaSecondary: 'Why Kortix exists',
+  ctaSecondary: 'Why dosco exists',
   ctaSecondaryHref: '/about',
 } as const;
 
@@ -50,7 +50,7 @@ export const openings = [
     id: 'marketing',
     name: 'Marketing / Content',
     summary:
-      'Make Kortix the instant answer to "what is the open-source Claude Cowork or ChatGPT Work?"',
+      'Make dosco the instant answer to "what is the Claude Cowork or ChatGPT Work?"',
     bullets: [
       'Build the content baseline, and the system that keeps producing it.',
       'Daily platform and feature explainers.',
@@ -102,13 +102,13 @@ export const openings = [
       'Can recruit.',
     ],
     /** Guards the coding-agent bullet: fluency in a candidate, never a claim
-     *  about what Kortix runs. */
-    note: 'Kortix runs on the OpenCode harness. That bullet is about your fluency in the ecosystem, not about what the platform supports.',
+     *  about what dosco runs. */
+    note: 'dosco runs on the OpenCode harness. That bullet is about your fluency in the ecosystem, not about what the platform supports.',
   },
   {
     id: 'rnd',
     name: 'Product / R&D',
-    summary: 'Push what open AGI means: fully autonomous cognitive beings as digital coworkers.',
+    summary: 'Push what dosco agent means: fully autonomous cognitive beings as digital coworkers.',
     bullets: [
       'Where Product / Eng hardens the platform, R&D pushes what it becomes.',
       'Comfortable working a long way ahead of what ships.',
@@ -166,7 +166,7 @@ export const apply = {
   cta: 'Apply',
   directLead: 'Or write to me directly:',
   links: [
-    { id: 'email', label: 'marko@kortix.com', href: 'mailto:marko@kortix.com', external: false },
+    { id: 'email', label: 'marko@dosco.live', href: 'mailto:marko@dosco.live', external: false },
     { id: 'x', label: '@markokraemer', href: 'https://x.com/markokraemer', external: true },
     {
       id: 'linkedin',
@@ -179,7 +179,7 @@ export const apply = {
 
 /** Copy for `ApplyModal`. Short, and one open question carries the weight. */
 export const applyForm = {
-  title: 'Apply to Kortix',
+  title: 'Apply to dosco',
   description: 'Short. One open question does the work.',
   areaLabel: 'Which opening',
   areaPlaceholder: 'Pick the closest one',

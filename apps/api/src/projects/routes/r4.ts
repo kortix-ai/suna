@@ -116,7 +116,7 @@ import {
   loadVisibleSession,
 } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerdoscoSessionId } from '../lib/caller-session';
 import {
   type ConnectionOwnerType,
   type ConnectorAuthorizationStrategy,
@@ -379,7 +379,7 @@ projectsApp.openapi(
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
-    const callerSessionId = callerKortixSessionId(c);
+    const callerSessionId = callerdoscoSessionId(c);
     let sessionBoundConnectionIds: ReadonlySet<string> | null = null;
     if (callerSessionId) {
       const bound = await db
@@ -1955,7 +1955,7 @@ projectsApp.openapi(
       body.display_name ??
       body.displayName ??
       loaded.row.name ??
-      'Kortix Agent'
+      'dosco Agent'
     ).trim();
     const username = normalizeAgentMailUsername(body.username ?? loaded.row.name);
     const existingInboxId =
@@ -2413,7 +2413,7 @@ projectsApp.openapi(
 
     // `opencode_session` carries the canonical opencode ROOT id the sandbox just
     // bootstrapped (or reused after a restart). Persist it as the durable pin so
-    // the Kortix session resolves to the LIVE root with NO dependency on a browser
+    // the dosco session resolves to the LIVE root with NO dependency on a browser
     // ever opening it — closing the null-pin gap that left Slack/trigger/cron
     // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
     // is already scoped to this project (checked above); the daemon only ever

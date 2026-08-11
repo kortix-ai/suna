@@ -171,7 +171,7 @@ export function ApprovalIncompleteNotice({
         className,
       )}
     >
-      Kortix cannot approve this call because the complete parameters are not available. You can
+      dosco cannot approve this call because the complete parameters are not available. You can
       deny it.
     </p>
   );

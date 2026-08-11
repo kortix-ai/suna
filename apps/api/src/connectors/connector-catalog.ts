@@ -169,7 +169,7 @@ function authTemplate(
   }
 
   // OAuth/well-known remote MCPs still present a bearer token to the connector
-  // runtime after authorization. Kortix does not pretend this is automatic.
+  // runtime after authorization. dosco does not pretend this is automatic.
   return {
     type: 'bearer',
     in: 'header',

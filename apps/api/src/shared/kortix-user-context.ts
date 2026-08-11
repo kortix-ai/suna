@@ -3,8 +3,8 @@
  *
  * Format: `<base64url(json payload)>.<base64url(HMAC-SHA256)>`
  *
- * Kortix-master owns the same secret (the sandbox's KORTIX_TOKEN service key)
- * and verifies the signature locally — no callback to the Kortix API per
+ * dosco-master owns the same secret (the sandbox's KORTIX_TOKEN service key)
+ * and verifies the signature locally — no callback to the dosco API per
  * request. An `exp` field bounds staleness after ACL changes.
  *
  * Keep this module pure so the sandbox-side verifier can mirror the same
@@ -13,7 +13,7 @@
 
 import { createHmac, timingSafeEqual } from 'crypto';
 
-export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
+export const KORTIX_USER_CONTEXT_HEADER = 'X-dosco-User-Context';
 
 /**
  * Marks a request the API makes DIRECTLY to a sandbox daemon, server-to-server.
@@ -32,12 +32,12 @@ export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
  * the destructive `base=1` branch reset). Mirrored, with the same reasoning, in
  * apps/kortix-sandbox-agent-server/src/kortix-user-context.ts.
  */
-export const KORTIX_SERVICE_CALL_HEADER = 'X-Kortix-Service-Call';
+export const KORTIX_SERVICE_CALL_HEADER = 'X-dosco-Service-Call';
 
 /** TTL for a signed context — short enough that revocations take effect quickly. */
 const KORTIX_USER_CONTEXT_TTL_SECONDS = 60;
 
-export interface KortixUserContext {
+export interface doscoUserContext {
   userId: string;
   sandboxId: string;
   sandboxRole: 'owner' | 'admin' | 'member' | 'platform_admin';
@@ -61,13 +61,13 @@ function sign(payloadB64: string, secret: string): string {
   return base64urlEncode(mac);
 }
 
-export function encodeKortixUserContext(
-  ctx: Omit<KortixUserContext, 'iat' | 'exp'> & { ttlSeconds?: number },
+export function encodedoscoUserContext(
+  ctx: Omit<doscoUserContext, 'iat' | 'exp'> & { ttlSeconds?: number },
   secret: string,
 ): string {
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + (ctx.ttlSeconds ?? KORTIX_USER_CONTEXT_TTL_SECONDS);
-  const payload: KortixUserContext = {
+  const payload: doscoUserContext = {
     userId: ctx.userId,
     sandboxId: ctx.sandboxId,
     sandboxRole: ctx.sandboxRole,
@@ -80,14 +80,14 @@ export function encodeKortixUserContext(
   return `${payloadB64}.${sig}`;
 }
 
-export type KortixUserContextVerifyResult =
-  | { ok: true; context: KortixUserContext }
+export type doscoUserContextVerifyResult =
+  | { ok: true; context: doscoUserContext }
   | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'invalid_json' };
 
-export function verifyKortixUserContext(
+export function verifydoscoUserContext(
   token: string | undefined | null,
   secret: string,
-): KortixUserContextVerifyResult {
+): doscoUserContextVerifyResult {
   if (!token || typeof token !== 'string') return { ok: false, reason: 'malformed' };
   const parts = token.split('.');
   if (parts.length !== 2) return { ok: false, reason: 'malformed' };
@@ -101,9 +101,9 @@ export function verifyKortixUserContext(
     return { ok: false, reason: 'bad_signature' };
   }
 
-  let payload: KortixUserContext;
+  let payload: doscoUserContext;
   try {
-    payload = JSON.parse(base64urlDecode(payloadB64).toString('utf8')) as KortixUserContext;
+    payload = JSON.parse(base64urlDecode(payloadB64).toString('utf8')) as doscoUserContext;
   } catch {
     return { ok: false, reason: 'invalid_json' };
   }

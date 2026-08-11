@@ -22,7 +22,7 @@ describe('isBillingEnabled', () => {
 });
 
 describe('isManagedProviderEnabled', () => {
-  test('CLOUD-ONLY: off by default (self-host), on only when Kortix Cloud sets it', () => {
+  test('CLOUD-ONLY: off by default (self-host), on only when dosco Cloud sets it', () => {
     mockEnv = {
       BILLING_ENABLED: false,
       MANAGED_PROVIDER_ENABLED: false,

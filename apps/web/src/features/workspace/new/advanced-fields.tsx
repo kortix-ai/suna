@@ -27,13 +27,13 @@ import Link from 'next/link';
  * "project" in the managed line only, the other two already say neither word.
  */
 const SOURCE_DESCRIPTIONS: Record<RepositorySource, string> = {
-  managed: 'Kortix creates and manages a private repository for this workspace.',
-  'github-create': 'Kortix creates a private repository in your GitHub account.',
+  managed: 'dosco creates and manages a private repository for this workspace.',
+  'github-create': 'dosco creates a private repository in your GitHub account.',
   'github-import': 'Select an existing repository from your GitHub account.',
 };
 
 const SOURCE_LABELS: Record<RepositorySource, string> = {
-  managed: 'Kortix managed',
+  managed: 'dosco managed',
   'github-create': 'Create in GitHub',
   'github-import': 'Import from GitHub',
 };
@@ -71,7 +71,7 @@ function GitHubSourceNote({ accountId }: { accountId: string | null }) {
 
   return (
     <p className="text-muted-foreground text-xs">
-      Only Kortix-managed repositories can be created here for now. Choose Kortix managed to
+      Only dosco-managed repositories can be created here for now. Choose dosco managed to
       continue, or{' '}
       <Link href={href} className="text-foreground underline underline-offset-2">
         connect a GitHub account

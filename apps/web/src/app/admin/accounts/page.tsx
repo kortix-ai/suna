@@ -2142,7 +2142,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-4">
         <EntitlementRow
           title="Managed models"
-          description="Force Kortix-credential models on, restrict the account to its own BYOK keys, or leave the decision to the effective tier."
+          description="Force dosco-credential models on, restrict the account to its own BYOK keys, or leave the decision to the effective tier."
         >
           <div className="flex flex-wrap gap-1.5">
             {managedModelsChoices.map((choice) => (

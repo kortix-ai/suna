@@ -1,6 +1,6 @@
 /**
  * Persisted "Add a marketplace" sources — extra registries an operator points
- * Kortix at (a GitHub repo, Git URL, or local folder), Codex-style. Stored as a
+ * dosco at (a GitHub repo, Git URL, or local folder), Codex-style. Stored as a
  * single JSON array under the `marketplace.sources` platform setting (a JSONB
  * KV row), so no migration is needed. Platform-global: every project sees them.
  * (Account-/project-scoping is a future refinement — see MARKETPLACE.md.)

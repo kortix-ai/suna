@@ -313,7 +313,7 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
   return (
     <CustomizeSectionWrapper
       title="Computer Tunnels"
-      description="Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel. Open a machine to control its permissions and review its audit history."
+      description="Pair Macs, Windows PCs, and Linux machines through the secure dosco Agent Tunnel. Open a machine to control its permissions and review its audit history."
     >
       <ComputerTunnelManager canWrite={canWrite} />
     </CustomizeSectionWrapper>

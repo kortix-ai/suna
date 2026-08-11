@@ -2,7 +2,7 @@
  * /v1/skills — the kortix-managed system skills, served over HTTP.
  *
  * The point: an OpenCode agent holding only the `kortix` binary and a token can
- * discover and read everything it needs to drive Kortix. No repo checkout, no
+ * discover and read everything it needs to drive dosco. No repo checkout, no
  * baked sandbox image. `kortix skills` /
  * `kortix skills get <name>` are thin wrappers over these two routes.
  *
@@ -21,7 +21,7 @@
  * decision-grade without downloading a single body.
  *
  * AUTH — `combinedAuth`, the same gate the rest of the CLI surface uses. These are
- * operating instructions for Kortix, not secrets, but they are not public either:
+ * operating instructions for dosco, not secrets, but they are not public either:
  * they enumerate internal endpoints, token families, and connector plumbing, so
  * they stay behind a token rather than becoming an anonymous crawl target. Using
  * combinedAuth (rather than supabaseAuth) is what makes the two callers that
@@ -71,7 +71,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/',
     tags: ['skills'],
-    summary: 'GET /skills — list the Kortix system skills',
+    summary: 'GET /skills — list the dosco system skills',
     description:
       'Name + description for every kortix-managed system skill. Bodies are not ' +
       'included; fetch one with GET /v1/skills/{name}.',
@@ -79,7 +79,7 @@ skillsApp.openapi(
     responses: {
       200: json(
         z.object({ skills: z.array(SkillSummarySchema), count: z.number().int() }),
-        'Kortix system skills',
+        'dosco system skills',
       ),
       ...errors(401),
     },
@@ -116,7 +116,7 @@ skillsApp.openapi(
     const file = getManagedSkillFile(name, path);
     if (!file) {
       return c.json(
-        { error: true, message: `No file "${path}" in Kortix skill "${name}"`, status: 404 },
+        { error: true, message: `No file "${path}" in dosco skill "${name}"`, status: 404 },
         404,
       );
     }
@@ -148,7 +148,7 @@ skillsApp.openapi(
     const skill = getManagedSkill(name);
     if (!skill) {
       return c.json(
-        { error: true, message: `No Kortix system skill named "${name}"`, status: 404 },
+        { error: true, message: `No dosco system skill named "${name}"`, status: 404 },
         404,
       );
     }

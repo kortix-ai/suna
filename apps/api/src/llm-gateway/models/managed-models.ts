@@ -53,7 +53,7 @@ export function parseManagedModels(
  * API/control-plane managed model overlay used by runtime routing and catalog
  * responses. CLOUD-ONLY: empty whenever KORTIX_MANAGED_PROVIDER_ENABLED is off
  * (the self-host default) — a self-host operator brings their own LLM keys and
- * must never see or route to Kortix's shared upstream credentials.
+ * must never see or route to dosco's shared upstream credentials.
  * This is the single choke point: every consumer (the served model catalog,
  * the picker, and request-time routing) reads through here or getRuntimeManagedModel()
  * below, so gating it here alone keeps the managed lineup off everywhere.
@@ -61,7 +61,7 @@ export function parseManagedModels(
  * IMPORTANT — what the "managed provider" IS and IS NOT (a recurring
  * misconception): KORTIX_MANAGED_PROVIDER_ENABLED is a CLOUD-ONLY CONVENIENCE
  * so cloud users can spend their KORTIX CREDITS for a zero-config experience —
- * it routes to Kortix's own shared upstream credentials, billed as credits.
+ * it routes to dosco's own shared upstream credentials, billed as credits.
  * It is not the mechanism by which Bedrock or OpenRouter is available.
  * Bedrock is a standalone provider that a project uses by connecting
  * its OWN credentials (BYOK). To give a self-host Bedrock you connect Bedrock

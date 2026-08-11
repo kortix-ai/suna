@@ -27,11 +27,11 @@ const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as con
 /**
  * Debits that are neither compute nor LLM.
  *
- * `usage` is what the router writes for a Kortix tool call — deliberately not
+ * `usage` is what the router writes for a dosco tool call — deliberately not
  * `llm_debit` (router/services/billing.ts:68). It was in neither list, and the
  * query filters on `inArray(LEDGER_KIND, DEBIT_KINDS)`, so this money was not
  * merely uncategorised: it was excluded from the result set entirely and
- * vanished from the total. On the production Kortix account that is 10,859 rows.
+ * vanished from the total. On the production dosco account that is 10,859 rows.
  *
  * `admin_debit` is a manual adjustment. It is real money leaving the wallet, so
  * it belongs in the total; calling it compute or LLM would be a lie.
@@ -72,7 +72,7 @@ export function classifyLedgerKind(kind: string | null): 'compute' | 'llm' | 'ot
  * subscription started, and it never moves. Passing it straight through as
  * "period start" meant the window never reset — "Spend this period" quietly
  * accumulated LIFETIME spend under a this-period label. On the production
- * Kortix account the anchor is 2026-06-07, two months stale.
+ * dosco account the anchor is 2026-06-07, two months stale.
  *
  * Roll it forward by whole months to the most recent occurrence at or before
  * `now`. Day-of-month is clamped, so a 31st anchor lands on the 28th/30th in

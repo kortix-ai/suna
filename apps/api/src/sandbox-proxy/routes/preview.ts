@@ -4,7 +4,7 @@ import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import type { ProviderName } from '../../platform/providers';
-import { callerKortixSessionId } from '../../projects/lib/caller-session';
+import { callerdoscoSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
   type PromptConnectorVerdict,
@@ -118,7 +118,7 @@ function errorMessage(error: unknown, fallback: string): string {
 const previewUseThrottle = createExtendThrottle(60_000);
 
 /**
- * Bind the provider-facing sandbox identifier to its canonical Kortix scope.
+ * Bind the provider-facing sandbox identifier to its canonical dosco scope.
  * The request audit middleware runs after the proxy handler returns and reads
  * this request-local context. Without this binding, `/v1/p/...` activity is
  * present only in the account log and disappears from project/session history.
@@ -157,7 +157,7 @@ function stripFrameAncestors(csp: string): string | null {
 
 // Build the response headers we send back to the browser: clone the upstream
 // headers, neutralize framing restrictions, and apply CORS. Previews are
-// embedded in the Kortix session UI via an <iframe>, so any app that ships
+// embedded in the dosco session UI via an <iframe>, so any app that ships
 // `X-Frame-Options` or a CSP `frame-ancestors` (Next.js, and most frameworks,
 // default to these) would otherwise refuse to load in the panel. Stripping them
 // at the proxy makes embedding work for ANY project without per-app config —
@@ -635,7 +635,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
 // (conventionally `kortix`). It is therefore non-binding: a "default" session's
 // connector token carries the least-privileged grant (null = full for ungoverned
 // projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
-// can never use it to escalate into another agent's connector / Kortix-CLI grant.
+// can never use it to escalate into another agent's connector / dosco-CLI grant.
 const DEFAULT_AGENT_SENTINEL = 'default';
 
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
@@ -694,7 +694,7 @@ export type PreviewProxyAccess =
       kind: 'principal';
       userId: string;
       /** The caller's own session when the credential is bound to one (a sandbox
-       *  token). Kortix-as-a-Backend shares ONE userId across every end-user, so
+       *  token). dosco-as-a-Backend shares ONE userId across every end-user, so
        *  this is what separates them. Null means a non-session-bound principal.
        *  REQUIRED so a new entry point cannot silently omit it and fail open. */
       callerSessionId: string | null;
@@ -1103,7 +1103,7 @@ export async function forwardToSandbox(
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }
         // A prompt is the one moment this sandbox is guaranteed awake, so off
-        // it we (1) generate the Kortix-owned session title from this first
+        // it we (1) generate the dosco-owned session title from this first
         // prompt, using the model the user picked, and (2) refresh the
         // opencode_sessions snapshot the conversation list reads. Both are
         // fire-and-forget and never block the prompt.
@@ -1667,14 +1667,14 @@ preview.all('/:sandboxId/:port/*', async (c) => {
       kind: 'principal',
       userId,
       callerSessionId: c.get('sessionId') ?? null,
-      // `callerKortixSessionId`, NEVER the raw context var. `combinedAuth`'s
+      // `callerdoscoSessionId`, NEVER the raw context var. `combinedAuth`'s
       // local JWT fast path leaves `sessionId` unset for a browser, but its
       // NETWORK-FALLBACK branch (taken whenever JWKS has not warmed, and
       // permanently if JWKS resolution is broken) sets it to the SUPABASE AUTH
       // SESSION id. Reading it raw made every human in that window look
       // sandbox-authored: no turn-start extend, no preview-use extend, and no
       // auto-resume of a parked box from the UI.
-      sandboxAuthored: isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c)),
+      sandboxAuthored: isSandboxAuthored(c.get('apiKeyType'), callerdoscoSessionId(c)),
     },
     method,
     remainingPath,

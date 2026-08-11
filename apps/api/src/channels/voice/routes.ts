@@ -3,7 +3,7 @@
  * process — see runtime.ts's file header) calls back into.
  *
  * Auth here is completely different from every other route on `projectsApp`:
- * the caller is the LiveKit worker process, not a Kortix session, so it
+ * the caller is the LiveKit worker process, not a dosco session, so it
  * authenticates with the per-call `kortix_api_token` minted in `startCall`
  * and handed to it via the room's metadata (see runtime.ts's
  * `VoiceRoomMetadata`) — never session/PAT auth. `verifyCallApiToken`
@@ -13,9 +13,9 @@
  *
  * `voiceMcpRoutes` is mounted standalone BEFORE `projectsApp` (see
  * index.ts's comment) specifically so this route skips `projectsApp`'s
- * `.use('/*', supabaseAuth)` — a worker token is not a Kortix session and
+ * `.use('/*', supabaseAuth)` — a worker token is not a dosco session and
  * `resolveProjectPrincipal` would 401 it regardless of validity. There used
- * to be a SECOND, Kortix-agent-facing MCP route here too
+ * to be a SECOND, dosco-agent-facing MCP route here too
  * (`/:projectId/mcp/voice`, session/PAT-authed, guarded by its own
  * `voiceMcpRoutes.use('/:projectId/mcp/voice', supabaseAuth)`) for the
  * agent's own voice_spawn/voice_read/send_prompt/run_command/voice_end
@@ -26,7 +26,7 @@
  * ever had. This file and mcp.ts are now exclusively the worker's way in. If
  * a second, differently-authed MCP ever needs to live here again, give it
  * its own path rather than layering another `.use()` onto this one: reusing
- * a path that also carries `supabaseAuth` for a caller that isn't a Kortix
+ * a path that also carries `supabaseAuth` for a caller that isn't a dosco
  * session is exactly the mistake that used to 401 a perfectly valid worker
  * token against `resolveProjectPrincipal`.
  */

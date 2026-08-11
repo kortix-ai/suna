@@ -6,7 +6,7 @@ import { buildModelGroups } from './model-rows';
 function model(modelID: string, over: Partial<FlatModel> = {}): FlatModel {
   return {
     providerID: 'kortix',
-    providerName: 'Kortix',
+    providerName: 'dosco',
     modelID,
     modelName: modelID,
     ...over,

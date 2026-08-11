@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { scanSdkBoundary, violationKey } from '../scripts/sdk-boundary.mjs';
 
 describe('apps/web SDK boundary', () => {
-  test('production code adds no forbidden Kortix or runtime imports', () => {
+  test('production code adds no forbidden dosco or runtime imports', () => {
     const baseline = JSON.parse(
       readFileSync(resolve(import.meta.dir, 'sdk-boundary-baseline.json'), 'utf8'),
     ) as string[];

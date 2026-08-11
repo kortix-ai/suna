@@ -17,7 +17,7 @@ export function bedrockBaseUrl(): string {
 // Default region for a project's BYOK Bedrock connection when it hasn't set
 // its own AWS_REGION secret. Deliberately separate from AWS_BEDROCK_REGION's
 // 'us-west-2' default above — that constant belongs to the CLOUD-ONLY managed
-// path (Kortix's own AWS account/region choice); a BYOK project's default is
+// path (dosco's own AWS account/region choice); a BYOK project's default is
 // its own, unrelated decision. us-east-1 is Bedrock's broadest-availability
 // region (new models/cross-region inference profiles land there first).
 const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
@@ -25,7 +25,7 @@ const DEFAULT_BEDROCK_BYOK_REGION = 'us-east-1';
 /**
  * Bedrock runtime endpoint for a project's OWN region (BYOK), as opposed to
  * `bedrockBaseUrl()` above which is the CLOUD-ONLY managed path's endpoint
- * (Kortix's own AWS_BEDROCK_REGION config). Takes the region as a parameter —
+ * (dosco's own AWS_BEDROCK_REGION config). Takes the region as a parameter —
  * never reads config — because the BYOK region is per-PROJECT (the project's
  * own AWS_REGION secret, resolved by resolve-candidates.ts, which has the
  * project context this module doesn't), not a deployment-wide setting.
@@ -77,7 +77,7 @@ const BEDROCK_ANTHROPIC_GEO_PREFIXES = ['us-gov', 'us', 'eu', 'apac', 'jp', 'au'
 // endpoint accepts. A profile's geography MUST match the endpoint region's
 // geography — invoking `jp.anthropic.*` against a us-east-1 endpoint 400s "The
 // provided model identifier is invalid." (verified against real Bedrock). Only
-// geographies Kortix has validated are mapped; an unrecognized region returns
+// geographies dosco has validated are mapped; an unrecognized region returns
 // undefined so normalization is skipped — never rewrite toward a prefix we
 // can't vouch for.
 function regionInferenceGeoPrefix(region: string): string | undefined {
@@ -190,9 +190,9 @@ function asterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | nul
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
-  // NOTE — this is the MANAGED (Kortix-credits) Bedrock path, reached only when
+  // NOTE — this is the MANAGED (dosco-credits) Bedrock path, reached only when
   // KORTIX_MANAGED_PROVIDER_ENABLED is on: it uses KORTIX'S OWN shared AWS
-  // credentials and bills the user's Kortix credits. It is NOT "how Bedrock
+  // credentials and bills the user's dosco credits. It is NOT "how Bedrock
   // works." Bedrock is ALSO a standalone BYOK provider (like OpenRouter) — a
   // project connecting its OWN Bedrock API key gets a `kind:'bedrock'`
   // descriptor via the normal BYOK path (resolveCatalogUpstream('amazon-bedrock')

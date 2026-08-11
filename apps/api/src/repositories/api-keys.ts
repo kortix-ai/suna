@@ -7,7 +7,7 @@ import {
   generateApiKeyPair,
   generateSandboxKeyPair,
   isApiKeySecretConfigured,
-  isKortixToken,
+  isdoscoToken,
 } from '../shared/crypto';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ export async function deleteApiKey(keyId: string, accountId: string): Promise<bo
 // ─── Validation ──────────────────────────────────────────────────────────────
 
 /**
- * Validate a Kortix API key (kortix_ or kortix_sb_ prefix).
+ * Validate a dosco API key (kortix_ or kortix_sb_ prefix).
  * Single validation path for all key types — returns account_id, sandbox_id, and key type.
  */
 export async function validateSecretKey(secretKey: string): Promise<ApiKeyValidationResult> {
@@ -170,7 +170,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
     return { isValid: false, error: 'API_KEY_SECRET not configured' };
   }
 
-  if (!isKortixToken(secretKey)) {
+  if (!isdoscoToken(secretKey)) {
     return { isValid: false, error: 'Invalid API key format — expected kortix_ prefix' };
   }
 

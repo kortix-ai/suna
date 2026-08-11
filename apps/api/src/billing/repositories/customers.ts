@@ -18,7 +18,7 @@ function pickCanonicalCustomer(rows: BillingCustomerRow[]): BillingCustomerRow |
   return candidates[0] ?? null;
 }
 
-async function listKortixCustomersByAccountId(accountId: string): Promise<BillingCustomerRow[]> {
+async function listdoscoCustomersByAccountId(accountId: string): Promise<BillingCustomerRow[]> {
   return db
     .select()
     .from(billingCustomers)
@@ -34,7 +34,7 @@ async function listKortixCustomersByAccountId(accountId: string): Promise<Billin
  */
 export async function listAccountStripeCustomerIds(accountId: string): Promise<string[]> {
   const ids = new Set<string>();
-  for (const row of await listKortixCustomersByAccountId(accountId)) {
+  for (const row of await listdoscoCustomersByAccountId(accountId)) {
     if ((row.provider ?? 'stripe') === 'stripe' && row.id) ids.add(row.id);
   }
   return Array.from(ids);
@@ -57,7 +57,7 @@ async function deactivateConflictingCustomers(accountId: string, canonicalId: st
 }
 
 export async function getCustomerByAccountId(accountId: string) {
-  const rows = await listKortixCustomersByAccountId(accountId);
+  const rows = await listdoscoCustomersByAccountId(accountId);
 
   return pickCanonicalCustomer(rows);
 }

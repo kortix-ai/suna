@@ -5,9 +5,9 @@ export const engineering: RoleContent = {
   slug: 'engineering',
   name: 'Engineering',
   navDescription: 'Reproduce it, patch it, open the change request',
-  seoTitle: 'Kortix for engineering teams',
+  seoTitle: 'dosco for engineering teams',
   seoDescription:
-    'Every Kortix session gets its own cloud computer and its own branch. The agent reproduces the bug, writes the patch, runs the tests, and opens a change request. Merge is default-deny for agents.',
+    'Every dosco session gets its own cloud computer and its own branch. The agent reproduces the bug, writes the patch, runs the tests, and opens a change request. Merge is default-deny for agents.',
 
   hero: {
     title: 'The work that never reaches the top of the queue.',
@@ -110,7 +110,7 @@ export const engineering: RoleContent = {
       },
       {
         k: 'GitHub',
-        v: 'Read issues, comments and the state of a branch, and write back where you have allowed it. Kortix opens the change request itself; the connector is for everything around it.',
+        v: 'Read issues, comments and the state of a branch, and write back where you have allowed it. dosco opens the change request itself; the connector is for everything around it.',
       },
       {
         k: 'Linear',
@@ -122,7 +122,7 @@ export const engineering: RoleContent = {
       },
       {
         k: 'Your own services',
-        v: 'Point Kortix at an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. It reads the source, works out the authentication, and turns every operation into a tool the agent can call.',
+        v: 'Point dosco at an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. It reads the source, works out the authentication, and turns every operation into a tool the agent can call.',
       },
     ],
     footnote:
@@ -176,7 +176,7 @@ export const engineering: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. The gateway decrypts the real credential server-side and attaches it to the outbound call. A runtime secret you deliberately grant is different — that one is a real environment value the agent can read, and it is meant to be.',
+        v: 'The sandbox carries one project-scoped dosco token and no third-party keys. The gateway decrypts the real credential server-side and attaches it to the outbound call. A runtime secret you deliberately grant is different — that one is a real environment value the agent can read, and it is meant to be.',
       },
       {
         id: 'audit',
@@ -188,6 +188,6 @@ export const engineering: RoleContent = {
 
   closing: {
     title: 'Give it the ticket nobody picked up.',
-    sub: 'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or your own on-prem network.',
+    sub: 'Open source and self-hostable. Any model, your keys. dosco Cloud, your own VPC, or your own on-prem network.',
   },
 };

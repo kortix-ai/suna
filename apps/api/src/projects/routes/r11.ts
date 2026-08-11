@@ -16,7 +16,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerdoscoSessionId } from '../lib/caller-session';
 import { normalizeString, readBody } from '../lib/serializers';
 import { isAdaptedId } from '../review-adapters';
 import {
@@ -142,7 +142,7 @@ projectsApp.openapi(
               session?.createdBy ?? (execution.sessionId ? null : execution.actingUserId),
             callerUserId: loaded.userId,
             callerAuthType: (c.get('authType') as string | undefined) ?? null,
-            callerSessionId: callerKortixSessionId(c),
+            callerSessionId: callerdoscoSessionId(c),
           }).allowed;
         })
         .map((execution) => execution.executionId),

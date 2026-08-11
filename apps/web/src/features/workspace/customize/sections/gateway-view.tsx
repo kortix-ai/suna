@@ -186,7 +186,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
             <p className="text-foreground text-sm font-medium">Call the gateway</p>
             <p className="text-muted-foreground text-pretty text-xs">
               Drop-in OpenAI- and Anthropic-compatible endpoints for calling this project's gateway
-              from outside a Kortix session.{' '}
+              from outside a dosco session.{' '}
               <button
                 type="button"
                 onClick={() => setTab('keys')}

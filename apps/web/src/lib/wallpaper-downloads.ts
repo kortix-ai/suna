@@ -12,7 +12,7 @@ export interface WallpaperDownloadFile {
 }
 
 export interface WallpaperDownload {
-  /** `mark` = the brand wallpaper; `product` = a wallpaper you can set on a Kortix home. */
+  /** `mark` = the brand wallpaper; `product` = a wallpaper you can set on a dosco home. */
   group: 'mark' | 'product';
   id: string;
   name: string;

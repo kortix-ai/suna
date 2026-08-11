@@ -65,7 +65,7 @@ export async function createOrJoinThreadSession(input: {
   envelope: SlackEnvelope;
   event: SlackEvent;
   revived: boolean;
-  // The Kortix user this Slack sender linked via `/login`, already verified by
+  // The dosco user this Slack sender linked via `/login`, already verified by
   // the gate in spawnAgentTurn to be a member of the project's account. The
   // session runs AS this user, so their credentials/secrets/connectors apply —
   // never the account owner's.
@@ -307,7 +307,7 @@ const TURN_INSTRUCTIONS = [
   '  reference for posting in Slack — covers step/send semantics, link syntax,',
   '  Block Kit answers, sources, tone, and gotchas. Do not skip it.',
   '- The `slack` CLI needs **no token** in your sandbox — every command runs through the',
-  '  Kortix Connector (the Slack bot token is resolved server-side). The whole surface',
+  '  dosco Connector (the Slack bot token is resolved server-side). The whole surface',
   '  works, **including `slack send --file` (file upload) and `slack download`**. Do NOT',
   '  conclude "file upload isn\'t supported", do NOT look for `$SLACK_BOT_TOKEN`, and do',
   '  NOT build an upload workaround (connector/MCP, manual files.getUploadURLExternal, an',

@@ -9,13 +9,13 @@ import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: 'Marketplace — Clone a ready-made Kortix project',
+  title: 'Marketplace — Clone a ready-made dosco project',
   description:
-    'Clone a full, working Kortix project in one click, or add skills from every source into your own.',
+    'Clone a full, working dosco project in one click, or add skills from every source into your own.',
   alternates: { canonical: `${CANONICAL_ORIGIN}/marketplace` },
   ...socialMetadata(
-    'Kortix Marketplace — Clone a ready-made Kortix project',
-    'Clone a full, working Kortix project in one click, or add skills from every source into your own.',
+    'dosco Marketplace — Clone a ready-made dosco project',
+    'Clone a full, working dosco project in one click, or add skills from every source into your own.',
     `${CANONICAL_ORIGIN}/marketplace`,
   ),
 };

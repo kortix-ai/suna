@@ -154,7 +154,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
       data-slot="command-item"
       // `hover:` mirrors the cmdk `data-[selected=true]` styling on purpose:
       // cmdk paints its highlight from a JS pointermove -> select loop, and a
-      // page where anything swallows pointermove (observed on dev.kortix.com)
+      // page where anything swallows pointermove (observed on dev.dosco.live)
       // renders NO hover feedback at all while clicks keep working. CSS :hover
       // is driven by browser hit-testing, so the row under the cursor is
       // always highlighted; when cmdk's pointer selection works the two states

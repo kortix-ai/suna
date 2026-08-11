@@ -45,7 +45,7 @@ import { useTabStore } from '@/stores/tab-store';
 import { useEffect } from 'react';
 
 // The session's panel is keyed by the OpenCode chatSessionId (registered by the
-// active SessionLayout), NOT the Kortix session id in the URL — those differ,
+// active SessionLayout), NOT the dosco session id in the URL — those differ,
 // so the URL id would write to a key nothing reads (panel opens but the Browser
 // tab never selects). Null off-session → fall back to opening externally.
 function getCurrentSessionId(): string | null {

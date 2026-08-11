@@ -98,7 +98,7 @@ test('buildMobileBounceHtml keeps a state-validated callback safe without an aut
       'kortix://auth/callback?mobile_callback=1&amp;code=abc123&amp;state=native-state',
     ),
   );
-  assert.ok(html.includes('Open Kortix'));
+  assert.ok(html.includes('Open dosco'));
 });
 
 // ── buildDesktopBounceHtml: end-to-end, with a malicious payload ────────────

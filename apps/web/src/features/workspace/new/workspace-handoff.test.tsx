@@ -11,7 +11,7 @@ const render = (props: Parameters<typeof WorkspaceHandoff>[0]) =>
 
 const source = readFileSync(join(import.meta.dir, 'workspace-handoff.tsx'), 'utf8');
 
-/** The `<svg>` the Kortix mark renders into, cells and all. */
+/** The `<svg>` the dosco mark renders into, cells and all. */
 const markup = (html: string): string => html.match(/<svg[\s\S]*<\/svg>/)?.[0] ?? '';
 
 describe('WorkspaceHandoff', () => {
@@ -82,7 +82,7 @@ describe('WorkspaceHandoff', () => {
     expect(delay).toBeLessThan(0.3);
   });
 
-  test('the mark is the canonical Kortix logo, breathing rather than spinning', () => {
+  test('the mark is the canonical dosco logo, breathing rather than spinning', () => {
     expect(source).toContain("from '@/components/ui/kortix-logo'");
     expect(source).toContain('variant="icon"');
     expect(source).toContain('animate-pulse');

@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import { change } from './content';
 
-/* Kortix is monochrome, so this diff cannot lean on the red/green every diff
+/* dosco is monochrome, so this diff cannot lean on the red/green every diff
    viewer uses. It separates the three line kinds the way print does instead:
    an added line is at full contrast with a solid rule down its left edge, a
    removed line is dimmed onto a filled band, and context sits between them. */

@@ -9,7 +9,7 @@ import type { PresenceEntry } from './types';
 /**
  * Who's in the call. Audio-only, so this is deliberately built as a row of
  * initials/icon tiles (not blank video rects standing in for cameras that
- * don't exist) — the agent gets the Kortix mark, the human gets a plain
+ * don't exist) — the agent gets the dosco mark, the human gets a plain
  * person glyph, and whoever is talking right now gets a highlighted tile.
  */
 export function PresenceRail({ roster }: { roster: PresenceEntry[] }) {
@@ -38,7 +38,7 @@ function PresenceTile({ entry }: { entry: PresenceEntry }) {
       >
         <div className="relative">
           {entry.isAgent ? (
-            <EntityAvatar label="Kortix" size="xl" className="bg-foreground text-background" />
+            <EntityAvatar label="dosco" size="xl" className="bg-foreground text-background" />
           ) : (
             <EntityAvatar label={entry.name} icon={IconUser} size="xl" />
           )}

@@ -43,7 +43,7 @@ describe('agent environment editor', () => {
 });
 
 // The editor is grouped by the QUESTION each field answers, not by the file the
-// value lands in. The two storage-named headings ("Kortix" / "OpenCode") and
+// value lands in. The two storage-named headings ("dosco" / "OpenCode") and
 // the icons that decorated them are gone; these guards fail if either comes
 // back.
 describe('section structure — questions, not storage layers', () => {

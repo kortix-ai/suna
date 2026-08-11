@@ -466,7 +466,7 @@ export async function provisionSessionSandbox(opts: {
       ...(opts.extraEnvVars ?? {}),
       // ── Sandbox token model — TWO credentials, two principals ──────────────
       // 1) The SANDBOX credential (`kortix_sb_…`): the daemon's identity. It is
-      //    the HMAC key the API signs `X-Kortix-User-Context` with (the daemon
+      //    the HMAC key the API signs `X-dosco-User-Context` with (the daemon
       //    verifies it) AND the bearer for the 3 sandbox-identity routes
       //    (/git/clone-credential, /turn-stream, /turn-question). It carries NO
       //    user identity, so project-scoped routes reject it. Injected under the

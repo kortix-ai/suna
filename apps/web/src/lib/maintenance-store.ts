@@ -2,7 +2,7 @@
  * Maintenance configuration store.
  *
  * Production reads and writes use Vercel Edge Config. This keeps maintenance
- * control available when the Kortix API or production database is unavailable.
+ * control available when the dosco API or production database is unavailable.
  * Local development uses an in-memory store.
  */
 
@@ -48,7 +48,7 @@ const AUTOMATIC_MAINTENANCE: MaintenanceConfig = {
   ...DEFAULT_CONFIG,
   level: 'blocking',
   title: 'Service maintenance',
-  message: 'Kortix is temporarily unavailable. Service will resume automatically.',
+  message: 'dosco is temporarily unavailable. Service will resume automatically.',
 };
 
 const EDGE_CONFIG_KEY = 'maintenance_config';

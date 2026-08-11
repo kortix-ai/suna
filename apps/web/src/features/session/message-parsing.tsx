@@ -2,7 +2,7 @@
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { SystemMessage } from '@/components/ui/system-message';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { stripdoscoSystemTags } from '@/lib/utils/kortix-system-tags';
 
 // ============================================================================
 // Parse <file> XML references from uploaded file text parts
@@ -224,7 +224,7 @@ export function stripSystemPtyText(text: string): string {
   // Only strip kortix_system tags (backend-internal metadata).
   // Notification XML is stripped later by parseSystemNotifications()
   // which runs last in the parsing pipeline.
-  return stripKortixSystemTags(text)
+  return stripdoscoSystemTags(text)
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

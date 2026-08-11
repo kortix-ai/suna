@@ -51,7 +51,7 @@ function faviconHost(sourceUrl?: string, id?: string): string | undefined {
 
 /**
  * Identity tile for a marketplace source, in priority order:
- *   1. the Kortix mark for the official source,
+ *   1. the dosco mark for the official source,
  *   2. the GitHub owner's avatar for an `owner/repo` source,
  *   3. a Google favicon for a URL-hosted registry,
  *   4. a deterministic monogram via EntityAvatar + chalkColors.

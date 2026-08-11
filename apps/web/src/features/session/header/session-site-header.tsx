@@ -142,7 +142,7 @@ export function SessionSiteHeader({
    * The name shown in the header, matched to the sidebar row.
    *
    * `sessionTitle` is OPENCODE's `session.title` — the summary it writes for
-   * itself ("Greeting"). The sidebar shows Kortix's session name ("Just A
+   * itself ("Greeting"). The sidebar shows dosco's session name ("Just A
    * Simple Hey"), and a rename only ever touches that one, so the two drifted
    * apart the moment opencode auto-titled: the same session read as two
    * different things depending on where you looked.

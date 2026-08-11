@@ -160,7 +160,7 @@ export async function postBlocks(
 
 // Post a message visible ONLY to `user`, in-channel (and in-thread when
 // `threadTs` is set). Used for the identity/access nudges so they appear right
-// where the user @-mentioned Kortix instead of in a separate DM. Returns whether
+// where the user @-mentioned dosco instead of in a separate DM. Returns whether
 // it landed. Note: an ephemeral cannot be edited by ts later — to update it after
 // a button click, respond via the interaction's response_url.
 export async function postEphemeral(

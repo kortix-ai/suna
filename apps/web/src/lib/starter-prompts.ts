@@ -2,7 +2,7 @@
  * Starter prompts surfaced in the onboarding wizard's "Try your first
  * request" step and on the project home composer suggestions.
  *
- * Each entry maps to a real starter skill that ships with every new Kortix
+ * Each entry maps to a real starter skill that ships with every new dosco
  * project (`packages/starter/templates/general-knowledge-worker/.kortix/
  * opencode/skills/`). Keep these worded as actual user requests, not
  * feature descriptions — they're meant to be clickable and immediately

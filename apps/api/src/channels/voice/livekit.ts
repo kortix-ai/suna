@@ -211,7 +211,7 @@ export function joinPageUrl(frontendUrl: string, joinToken: string): string {
 }
 
 /**
- * Topic apps/voice-agent's `inbound-replies.ts` listens on for Kortix ->
+ * Topic apps/voice-agent's `inbound-replies.ts` listens on for dosco ->
  * call messages. Wire format is fixed by that app (not renegotiable from this
  * side without editing it, which is out of scope here): payload must be
  * `{ type: 'kortix_reply', call_id, text }`. See `promptVoiceAgent` in

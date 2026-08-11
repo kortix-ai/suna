@@ -3,8 +3,8 @@
 import { config } from '../config';
 import { isEmailConfigured, sendEmail, type EmailSendResult } from '../lib/email/transport';
 
-const BRAND_WORDMARK = 'Kortix';
-const BRAND_FOOTER = 'Kortix — The Autonomous Company Operating System';
+const BRAND_WORDMARK = 'dosco';
+const BRAND_FOOTER = 'dosco — the agent network for your company';
 
 export type EmailDeliveryResult = EmailSendResult;
 
@@ -139,12 +139,12 @@ export async function sendAccountInviteEmail(opts: {
 
   const body = `
     <p style="${S.p}">
-      ${inviterLine} to join ${target} on Kortix.
+      ${inviterLine} to join ${target} on dosco.
     </p>
     ${roleChip}
     <a href="${escapeHtml(url)}" style="${S.btn}">Review invite</a>
     <p style="${S.smallNote}">
-      Don't have a Kortix account yet? You'll be prompted to sign up first —
+      Don't have a dosco account yet? You'll be prompted to sign up first —
       ${signupTail}
     </p>
   `;
@@ -156,14 +156,14 @@ export async function sendAccountInviteEmail(opts: {
   const html = renderEmail({
     kicker: "You're invited",
     title: opts.projectName
-      ? `Join ${opts.projectName} on Kortix`
-      : `Join ${opts.accountName} on Kortix`,
+      ? `Join ${opts.projectName} on dosco`
+      : `Join ${opts.accountName} on dosco`,
     body,
   });
 
   return send({
     to: opts.email,
-    subject: `You're invited to ${subjectTarget} on Kortix`,
+    subject: `You're invited to ${subjectTarget} on dosco`,
     html,
     category: 'account-invite',
   });
@@ -176,7 +176,7 @@ export async function sendProjectAccessRequestEmail(opts: {
   reviewUrl: string;
   message?: string | null;
 }): Promise<EmailDeliveryResult> {
-  const projectName = opts.projectName?.trim() || 'a Kortix project';
+  const projectName = opts.projectName?.trim() || 'a dosco project';
   const message = opts.message?.trim();
   const messageBlock = message
     ? `<p style="${S.p}"><span style="${S.strong}">Message:</span><br />${escapeHtml(message)}</p>`

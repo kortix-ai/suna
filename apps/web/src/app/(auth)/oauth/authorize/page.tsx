@@ -166,7 +166,7 @@ function OAuthConsent() {
           description={
             <>
               <span className="text-foreground font-medium">{clientName}</span> wants to access your
-              Kortix account.
+              dosco account.
             </>
           }
         />

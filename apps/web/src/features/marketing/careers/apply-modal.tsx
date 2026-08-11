@@ -99,7 +99,7 @@ export function ApplyModal({
       });
     } catch {
       errorToast('Could not send your application', {
-        description: 'Write to marko@kortix.com instead.',
+        description: 'Write to marko@dosco.live instead.',
       });
       setSubmitting(false);
       return;

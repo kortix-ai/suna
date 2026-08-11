@@ -18,7 +18,7 @@
  * the audio track — because this code runs in a browser with its token
  * visible in the URL. That token is a room-scoped LiveKit access token and
  * nothing else — it authorises joining one room as one participant, not
- * calling the Kortix API.
+ * calling the dosco API.
  *
  * TWO SOURCES FEED THE TRANSCRIPT, and which one is authoritative matters:
  *
@@ -33,7 +33,7 @@
  *
  * This page used to render only the second one, which is why it showed a call
  * with holes in it: that stream carries the two voices in this room and
- * nothing else, so the Kortix agent's own lines and every tool call were
+ * nothing else, so the dosco agent's own lines and every tool call were
  * missing entirely — they are written server-side and never reach the
  * browser's LiveKit connection at all. The tail is still worth having, but
  * only for latency: it shows a sentence the instant it is spoken, and drops
@@ -166,7 +166,7 @@ export default function VoiceBridgePage() {
         },
         ...Array.from(room.remoteParticipants.values()).map((p) => ({
           identity: p.identity,
-          name: p.isAgent ? p.name || 'Kortix' : p.name || p.identity,
+          name: p.isAgent ? p.name || 'dosco' : p.name || p.identity,
           isLocal: false,
           isAgent: p.isAgent,
           micEnabled: p.isMicrophoneEnabled,
@@ -184,7 +184,7 @@ export default function VoiceBridgePage() {
       if (cancelled) return;
       const isLocal = participant ? participant.identity === room.localParticipant.identity : false;
       const isAgent = participant?.isAgent ?? false;
-      const name = isLocal ? 'You' : isAgent ? participant?.name || 'Kortix' : participant?.name || participant?.identity || 'Guest';
+      const name = isLocal ? 'You' : isAgent ? participant?.name || 'dosco' : participant?.name || participant?.identity || 'Guest';
       for (const segment of segments) {
         // Keyed by segment id, which is stable across the interim revisions of
         // one utterance — so a sentence being revised updates in place instead
@@ -247,7 +247,7 @@ export default function VoiceBridgePage() {
             setPhase('left');
           } else {
             setPhase('failed');
-            setError('lost connection to Kortix');
+            setError('lost connection to dosco');
           }
         })
         .on(RoomEvent.ParticipantConnected, syncRoster)

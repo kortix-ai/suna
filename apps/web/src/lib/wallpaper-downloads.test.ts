@@ -24,7 +24,7 @@ describe('wallpaper downloads manifest', () => {
     }
   });
 
-  test('offers every wallpaper a Kortix home can render, in both themes', () => {
+  test('offers every wallpaper a dosco home can render, in both themes', () => {
     const renderable = WALLPAPERS.filter((w) => w.type !== 'none').map((w) => w.id);
 
     for (const id of renderable) {

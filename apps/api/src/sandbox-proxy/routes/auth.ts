@@ -11,7 +11,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { validateSecretKey } from '../../repositories/api-keys';
-import { isKortixToken } from '../../shared/crypto';
+import { isdoscoToken } from '../../shared/crypto';
 import { getSupabase } from '../../shared/supabase';
 import { makeOpenApiApp, json, auth, ErrorSchema } from '../../openapi';
 
@@ -27,7 +27,7 @@ getAuthToken.openapi(
     tags: ['preview'],
     summary: 'Exchange a bearer token for a preview session cookie',
     description:
-      'Validates the Authorization bearer token (Supabase JWT or Kortix token) and ' +
+      'Validates the Authorization bearer token (Supabase JWT or dosco token) and ' +
       'sets the host-only __preview_session cookie scoped to Path=/v1/p/, enabling ' +
       'subdomain-based preview routing without ?token= on every request.',
     ...auth,
@@ -51,10 +51,10 @@ getAuthToken.openapi(
     }
 
     // Validate token
-    if (isKortixToken(token)) {
+    if (isdoscoToken(token)) {
       const result = await validateSecretKey(token);
       if (!result.isValid) {
-        return c.json({ error: result.error || 'Invalid Kortix token' }, 401);
+        return c.json({ error: result.error || 'Invalid dosco token' }, 401);
       }
     } else {
       try {

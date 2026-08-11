@@ -6,7 +6,7 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * This runs BESIDE the role check (`assertAuthorized` / `loadProjectForUser`),
  * not inside the IAM engine (which stays role-only). The account token a
  * session presents carries a resolved `agentGrant` (see projects/agents.ts);
- * a route asserts the Kortix action it performs is in that grant. Combined with
+ * a route asserts the dosco action it performs is in that grant. Combined with
  * the route's existing user-role check, the net effect is `userRole ∩ agentGrant`
  * — an agent can never exceed the human who launched it, nor its own grant.
  *

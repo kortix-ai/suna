@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// THE single source of truth for the Kortix Slack app manifest.
+// THE single source of truth for the dosco Slack app manifest.
 //
 // There is ONE manifest implementation, `buildSlackManifest`. Everything else
 // is a thin call into it with deployment-specific values:
@@ -11,7 +11,7 @@
 //     agent CLI fetches it instead of rebuilding its own copy.
 //
 // Canonical and BYO apps are IDENTICAL except for the request URLs, the slash
-// command name, the app/bot names, and whether the app uses Kortix's OAuth
+// command name, the app/bot names, and whether the app uses dosco's OAuth
 // redirect. Those are config — never a second implementation.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -142,10 +142,10 @@ const BOT_EVENTS = [
 
 const SHORTCUTS = [
   {
-    name: 'Open in Kortix',
+    name: 'Open in dosco',
     type: 'message',
     callback_id: 'open_session',
-    description: "Open this thread's Kortix session on the web",
+    description: "Open this thread's dosco session on the web",
   },
 ] as const;
 
@@ -157,7 +157,7 @@ const APP_HOME = {
 
 const ASSISTANT_VIEW = {
   assistant_description:
-    'Your AI workforce in Slack — give Kortix a task and an agent does the real work across your tools, then replies right here.',
+    'Your AI workforce in Slack — give dosco a task and an agent does the real work across your tools, then replies right here.',
   suggested_prompts: [] as string[],
 } as const;
 
@@ -167,18 +167,18 @@ const SHORT_DESCRIPTION =
   'Your AI workforce, in Slack — @-mention an agent and it does the real work.';
 
 const LONG_DESCRIPTION =
-  'Kortix is the AI command center for your company — your agents, connectors, automations, and memory in one place, with a workforce of AI agents that does real work across your tools, around the clock. This app brings that workforce into Slack.\n\nInvite the bot to a channel, @-mention it with a task, and an agent gets on it: working across your connected tools and replying in the thread as it goes. Follow-ups stay in the same conversation — Kortix keeps the full context.\n\n*What it can do*\n• Research, search your tools, and summarize threads or documents\n• Pull data, analyze it, and drop reports, decks, and CSVs back into the thread\n• Draft replies, docs, and updates — then post them or hand them off\n• Run multi-step work through thousands of connectors\n• Kick off and check on automations that run on a schedule or a trigger\n• Read repos, edit files, and open PRs too — when that\'s the job\n\n*A few things teammates ask it*\n• `@Kortix pull yesterday\'s sign-ups, group them by source, and drop the CSV here`\n• `@Kortix summarize this thread and draft a reply to the customer`\n• `@Kortix build me a one-pager on our Q2 numbers`\n• `@Kortix what changed across our tools this week?`\n\nConnect a Kortix project once, then talk to Kortix like you\'d talk to anyone else on the team. No slash commands. No copy-paste. Just @-mention and reply.\n\n*AI Disclaimer*\nKortix uses AI to generate responses and perform tasks. While we strive for accuracy, AI-generated content may occasionally contain errors. Review important outputs before acting on them.\n\nManaged by Kortix · https://kortix.com';
+  'dosco is the agent network for your company — your agents, connectors, automations, and memory in one place, with a workforce of AI agents that does real work across your tools, around the clock. This app brings that workforce into Slack.\n\nInvite the bot to a channel, @-mention it with a task, and an agent gets on it: working across your connected tools and replying in the thread as it goes. Follow-ups stay in the same conversation — dosco keeps the full context.\n\n*What it can do*\n• Research, search your tools, and summarize threads or documents\n• Pull data, analyze it, and drop reports, decks, and CSVs back into the thread\n• Draft replies, docs, and updates — then post them or hand them off\n• Run multi-step work through thousands of connectors\n• Kick off and check on automations that run on a schedule or a trigger\n• Read repos, edit files, and open PRs too — when that\'s the job\n\n*A few things teammates ask it*\n• `@dosco pull yesterday\'s sign-ups, group them by source, and drop the CSV here`\n• `@dosco summarize this thread and draft a reply to the customer`\n• `@dosco build me a one-pager on our Q2 numbers`\n• `@dosco what changed across our tools this week?`\n\nConnect a dosco project once, then talk to dosco like you\'d talk to anyone else on the team. No slash commands. No copy-paste. Just @-mention and reply.\n\n*AI Disclaimer*\ndosco uses AI to generate responses and perform tasks. While we strive for accuracy, AI-generated content may occasionally contain errors. Review important outputs before acting on them.\n\nManaged by dosco · https://dosco.live';
 
 // ── The ONE builder ───────────────────────────────────────────────────────────
 
 export interface BuildManifestConfig {
-  /** App display name (e.g. 'Kortix', 'KortixDev'). */
+  /** App display name (e.g. 'dosco', 'dosco'). */
   appName: string;
   /** Bot user display name. */
   botName: string;
   /** Slash command (e.g. '/kortix', '/kortix-dev'). */
   command: string;
-  /** Public base URL of the API (e.g. https://api.kortix.com). */
+  /** Public base URL of the API (e.g. https://api.dosco.live). */
   baseUrl: string;
   /**
    * The webhook path this app posts to.
@@ -188,7 +188,7 @@ export interface BuildManifestConfig {
    * '<path>/interactivity'.
    */
   webhookPath: string;
-  /** Canonical app installs via Kortix OAuth → add the redirect url. BYO apps are self-installed. */
+  /** Canonical app installs via dosco OAuth → add the redirect url. BYO apps are self-installed. */
   oauthRedirect?: boolean;
   /** Short tagline shown in the app directory. */
   description?: string;
@@ -215,7 +215,7 @@ export function buildSlackManifest(cfg: BuildManifestConfig): SlackManifest {
         {
           command: cfg.command,
           url: `${webhook}/commands`,
-          description: 'Manage your Kortix project from Slack',
+          description: 'Manage your dosco project from Slack',
           usage_hint: SLASH_USAGE_HINT,
           should_escape: false,
         },
@@ -245,20 +245,20 @@ export function buildSlackManifest(cfg: BuildManifestConfig): SlackManifest {
 // ── The canonical (dev/prod) configs — the committed JSON is generated from these.
 
 export const CANONICAL_DEV: BuildManifestConfig = {
-  appName: 'KortixDev',
-  botName: 'KortixDev',
+  appName: 'dosco',
+  botName: 'dosco',
   command: '/kortix-dev',
-  baseUrl: 'https://dev-api.kortix.com',
+  baseUrl: 'https://dev-api.dosco.live',
   webhookPath: '/v1/webhooks/slack',
   oauthRedirect: true,
   longDescription: LONG_DESCRIPTION,
 };
 
 export const CANONICAL_PROD: BuildManifestConfig = {
-  appName: 'Kortix',
-  botName: 'Kortix',
+  appName: 'dosco',
+  botName: 'dosco',
   command: '/kortix',
-  baseUrl: 'https://api.kortix.com',
+  baseUrl: 'https://api.dosco.live',
   webhookPath: '/v1/webhooks/slack',
   oauthRedirect: true,
   longDescription: LONG_DESCRIPTION,
@@ -277,7 +277,7 @@ export interface GenerateManifestInput {
 
 /** Per-project (BYO) manifest. Same implementation as canonical, scoped to the project. */
 export function generateSlackManifest(input: GenerateManifestInput): SlackManifest {
-  const appName = input.appName ?? 'Kortix';
+  const appName = input.appName ?? 'dosco';
   const botName = input.botName ?? 'kortix';
   return buildSlackManifest({
     appName,

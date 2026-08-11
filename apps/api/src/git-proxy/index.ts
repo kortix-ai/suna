@@ -1,10 +1,10 @@
 /**
- * Kortix git smart-HTTP reverse proxy.
+ * dosco git smart-HTTP reverse proxy.
  *
  * The UNIVERSAL client-facing git origin for every git-backed project. Clients
  * (sandbox daemon, `kortix` CLI, the user's git) clone/push
  *   https://<KORTIX_URL>/v1/git/<projectId>.git
- * authenticating with a Kortix token (sandbox token / account API key / CLI
+ * authenticating with a dosco token (sandbox token / account API key / CLI
  * PAT) — never a real host credential. The API authenticates the token,
  * resolves the project's backend, and streams the git protocol to the real
  * upstream (GitHub managed org / a user's own GitHub repo / …)
@@ -70,7 +70,7 @@ const projectParam = z.object({
 
 /** Ask git to (re)authenticate via the credential helper. */
 function unauthorized(c: any, message: string) {
-  c.header('WWW-Authenticate', 'Basic realm="Kortix Git"');
+  c.header('WWW-Authenticate', 'Basic realm="dosco Git"');
   return c.text(message, 401);
 }
 

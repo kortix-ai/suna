@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 
 import { buildMobileSessionHandoffUrl } from './mobile-handoff.ts';
 
-test('buildMobileSessionHandoffUrl uses the verified HTTPS callback for a Kortix web origin', () => {
+test('buildMobileSessionHandoffUrl uses the verified HTTPS callback for the dosco web origin', () => {
   assert.equal(
     buildMobileSessionHandoffUrl({
-      origin: 'https://kortix.com',
+      origin: 'https://dosco.live',
       state: 'native-state',
       accessToken: 'access token',
       refreshToken: 'refresh token',
     }),
-    'https://kortix.com/auth/callback?mobile_callback=1&state=native-state&access_token=access+token&refresh_token=refresh+token',
+    'https://dosco.live/auth/callback?mobile_callback=1&state=native-state&access_token=access+token&refresh_token=refresh+token',
   );
 });
 
@@ -23,14 +23,14 @@ test('buildMobileSessionHandoffUrl preserves the native scheme for non-productio
       accessToken: 'access',
       refreshToken: 'refresh',
     }),
-    'kortix://auth/callback?mobile_callback=1&state=native-state&access_token=access&refresh_token=refresh',
+    'dosco://auth/callback?mobile_callback=1&state=native-state&access_token=access&refresh_token=refresh',
   );
 });
 
 test('buildMobileSessionHandoffUrl rejects incomplete sessions', () => {
   assert.equal(
     buildMobileSessionHandoffUrl({
-      origin: 'https://kortix.com',
+      origin: 'https://dosco.live',
       state: 'native-state',
       accessToken: 'access',
       refreshToken: null,

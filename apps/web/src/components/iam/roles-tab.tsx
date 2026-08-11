@@ -340,7 +340,7 @@ function RoleRow({
       <TableCell>
         {role.is_system ? (
           <Hint
-            label="Built-in roles are managed by Kortix and can't be edited or deleted. Duplicate one to start a custom role."
+            label="Built-in roles are managed by dosco and can't be edited or deleted. Duplicate one to start a custom role."
             side="top"
           >
             <span className="inline-flex">

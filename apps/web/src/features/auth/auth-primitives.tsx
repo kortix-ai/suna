@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Shared building blocks for the quiet, flat auth dialect: Kortix mark above a
+ * Shared building blocks for the quiet, flat auth dialect: dosco mark above a
  * left-aligned heading, slim notice strips, six-box code input, and the
  * two-part rise entrance. Used by /auth and every auth sub-surface.
  */

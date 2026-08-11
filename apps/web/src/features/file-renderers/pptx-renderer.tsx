@@ -33,7 +33,7 @@ interface PptxRendererProps {
 }
 
 /**
- * Maps the viewer's shadcn-style theme tokens onto Kortix's own CSS variables
+ * Maps the viewer's shadcn-style theme tokens onto dosco's own CSS variables
  * so the embedded PowerPoint viewer follows the app's light/dark theme exactly.
  * The library writes both `--pptx-*` and `--color-*` custom properties from
  * these values, so referencing our variables keeps everything in one system.

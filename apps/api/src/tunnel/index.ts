@@ -3,7 +3,7 @@
  * cloud sandboxes to local machine resources.
  *
  * Uses the agent-tunnel library for transport (relay, heartbeat, WS handlers).
- * This file wires in Kortix-specific business logic: DB persistence,
+ * This file wires in dosco-specific business logic: DB persistence,
  * permission sync, event notifications, and cleanup.
  *
  * Routes:

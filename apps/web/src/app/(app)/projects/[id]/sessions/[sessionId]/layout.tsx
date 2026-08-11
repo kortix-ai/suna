@@ -14,7 +14,7 @@ type SessionRouteProps = {
  *
  * It has to be a layout: `page.tsx` is a client component, and a client
  * component cannot export `generateMetadata`. That is also the reason the tab
- * used to read "Kortix – The AI Command Center for Your Company" for every open
+ * used to read "dosco – The agent network for Your Company" for every open
  * session — the route declared no title of its own, so it inherited the root
  * default from app/layout.tsx.
  *
@@ -32,9 +32,9 @@ type SessionRouteProps = {
 export async function generateMetadata({ params }: SessionRouteProps): Promise<Metadata> {
   const { id: projectId, sessionId } = await params;
   return {
-    // `absolute` bypasses the root layout's `%s | Kortix` template: the tab
-    // reads "<session name> — Kortix", and a session named "Kortix" must not
-    // come out as "Kortix | Kortix".
+    // `absolute` bypasses the root layout's `%s | dosco` template: the tab
+    // reads "<session name> — dosco", and a session named "dosco" must not
+    // come out as "dosco | dosco".
     title: { absolute: await resolveSessionTabTitle(projectId, sessionId) },
   };
 }

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Step 2, survey question 1 — what the team will actually use Kortix for.
+ * Step 2, survey question 1 — what the team will actually use dosco for.
  *
  * This is the only answer that changes what the user sees later: it picks the
  * three starting points on the finish step. Domain and size are captured, not
@@ -52,7 +52,7 @@ export function UseCaseStep({
 }) {
   return (
     <StepShell
-      title="What will you use Kortix for?"
+      title="What will you use dosco for?"
       description="We use this to pick the right starting points for you. You can change it later."
       primaryLabel="Continue"
       primaryDisabled={!value}

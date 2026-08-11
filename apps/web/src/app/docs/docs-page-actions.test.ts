@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 /**
  * `docs-page-actions.tsx` is the only place in the docs surface allowed to
- * use the client-only brand icons (Github, ChatGPT, Claude, Cursor, Kortix,
+ * use the client-only brand icons (Github, ChatGPT, Claude, Cursor, dosco,
  * from `@/features/icon/icons/*`) instead of the RSC-safe set in
  * `@/lib/icons/ssr` — see the RSC-boundary comments in `page.tsx` and
  * `layout.tsx`. This is a source-text contract (same approach as
@@ -36,13 +36,13 @@ describe('docs page actions', () => {
       'Open in ChatGPT',
       'Open in Claude',
       'Open in Cursor',
-      'Open in Kortix',
+      'Open in dosco',
     ]) {
       expect(source).toContain(label);
     }
   });
 
-  test('builds the ChatGPT, Claude, Cursor and Kortix hrefs from the encoded prompt', () => {
+  test('builds the ChatGPT, Claude, Cursor and dosco hrefs from the encoded prompt', () => {
     expect(source).toContain('https://chatgpt.com/?q=');
     expect(source).toContain('https://claude.ai/new?q=');
     expect(source).toContain('cursor://anysphere.cursor-deeplink/prompt?text=');

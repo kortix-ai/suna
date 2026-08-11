@@ -435,7 +435,7 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'session':
       // Starting / running / stopping a session. Granted to every project
       // role (a plain `member` included) so the floor role can actually use
-      // Kortix, while project customization stays behind project.write.
+      // dosco, while project customization stays behind project.write.
       return 'project.session.start';
     case 'write':
       return 'project.write';

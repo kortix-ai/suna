@@ -1,16 +1,16 @@
 /**
- * Kortix System XML — utilities for handling <kortix_system> tags.
+ * dosco System XML — utilities for handling <kortix_system> tags.
  *
  * Backend plugins wrap internal content (session context, memory, orchestrator
  * state, PTY output, etc.) in <kortix_system type="..." source="..."> tags.
  *
- * - stripKortixSystemTags: removes ALL tags before markdown rendering
+ * - stripdoscoSystemTags: removes ALL tags before markdown rendering
  * - extractSessionReport: parses session-report tags into structured data
  */
 
 const KORTIX_SYSTEM_RE = /<kortix_system[^>]*>[\s\S]*?<\/kortix_system>/gi
 
-export function stripKortixSystemTags(text: string): string {
+export function stripdoscoSystemTags(text: string): string {
 	if (!text) return ""
 	return text.replace(KORTIX_SYSTEM_RE, "").trim()
 }
@@ -51,14 +51,14 @@ export function extractSessionReport(text: string): SessionReport | null {
  * Check if a user message text is purely a kortix_system message
  * (no visible user content outside the tags).
  */
-export function isKortixSystemOnly(text: string): boolean {
+export function isdoscoSystemOnly(text: string): boolean {
 	if (!text) return false
-	return stripKortixSystemTags(text).length === 0
+	return stripdoscoSystemTags(text).length === 0
 }
 
 // ── System message parsing for inline rendering ─────────────────────────────
 
-export interface KortixSystemMessage {
+export interface doscoSystemMessage {
 	type: string
 	source: string
 	label: string
@@ -71,9 +71,9 @@ const KORTIX_SYSTEM_EXTRACT_RE = /<kortix_system[^>]*?\btype="([^"]*)"[^>]*?\bso
  * Extract structured info from kortix_system tags for inline UI rendering.
  * Returns an array of parsed system messages found in the text.
  */
-export function extractKortixSystemMessages(text: string): KortixSystemMessage[] {
+export function extractdoscoSystemMessages(text: string): doscoSystemMessage[] {
 	if (!text) return []
-	const results: KortixSystemMessage[] = []
+	const results: doscoSystemMessage[] = []
 	let match: RegExpExecArray | null
 	const re = new RegExp(KORTIX_SYSTEM_EXTRACT_RE.source, "gi")
 	while ((match = re.exec(text)) !== null) {

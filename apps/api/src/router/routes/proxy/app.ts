@@ -19,9 +19,9 @@ interface ToolCreditReservation {
 }
 
 interface AuthResult {
-  isKortixUser: boolean;
+  isdoscoUser: boolean;
   accountId?: string;
-  /** True when the user's own API key is in Authorization (passthrough) but we identified the account via X-Kortix-Token. */
+  /** True when the user's own API key is in Authorization (passthrough) but we identified the account via X-dosco-Token. */
   isPassthrough?: boolean;
 }
 

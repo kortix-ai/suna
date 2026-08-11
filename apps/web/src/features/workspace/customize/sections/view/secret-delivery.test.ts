@@ -43,14 +43,14 @@ describe('secretDeliveryPresentation', () => {
   test('states that denied secrets are stored but unavailable', () => {
     expect(secretDeliveryPresentation('denied')).toEqual({
       label: 'Disabled',
-      description: 'Stored securely, but unavailable to sessions and Kortix services.',
+      description: 'Stored securely, but unavailable to sessions and dosco services.',
       tone: 'outline',
     });
   });
 
   test('describes broker and egress without claiming sandbox access', () => {
     expect(secretDeliveryPresentation('broker').description).toBe(
-      'Used by an approved Kortix service without entering the sandbox.',
+      'Used by an approved dosco service without entering the sandbox.',
     );
     expect(secretDeliveryPresentation('egress').description).toBe(
       'Added to approved outbound requests at the network boundary.',

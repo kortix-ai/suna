@@ -23,7 +23,7 @@ export default function SecretIntakePage() {
               {tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a')}
             </CardTitle>
             <CardDescription>
-              {tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee')}
+              {tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextYourdosco7bc8f4ee')}
             </CardDescription>
           </CardHeader>
           <CardContent>

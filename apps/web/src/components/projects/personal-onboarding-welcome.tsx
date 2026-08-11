@@ -102,7 +102,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
               </CardTitle>
               <CardDescription>
                 {tI18nHardcoded.raw(
-                  'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextFounderCEOKortix4be58c34',
+                  'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextFounderCEOdosco4be58c34',
                 )}
               </CardDescription>
             </div>

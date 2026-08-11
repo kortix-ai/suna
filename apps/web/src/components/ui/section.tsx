@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Kortix <Section> — labelled section used inside PageShell.
+ * dosco <Section> — labelled section used inside PageShell.
  *
  * Uppercase micro-label, optional trailing action, generous top-margin
  * between sections. No border box, no card chrome — the label and

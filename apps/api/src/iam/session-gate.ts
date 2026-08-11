@@ -174,7 +174,7 @@ export function accountSessionGate(): MiddlewareHandler {
       return;
     }
 
-    // PATs and Kortix API keys don't carry a session_id — they're
+    // PATs and dosco API keys don't carry a session_id — they're
     // already governed by token lifecycle policies elsewhere.
     const authType = c.get('authType') as string | undefined;
     if (authType !== 'supabase') {

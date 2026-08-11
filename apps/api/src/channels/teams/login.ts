@@ -66,6 +66,6 @@ export function buildTeamsLoginUrl(input: {
   if (apiBase.startsWith('https://')) {
     return `${apiBase}/v1/channels/teams/identity/login/${token}`;
   }
-  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  const base = (config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '');
   return `${base}/teams/login/${token}`;
 }

@@ -8,7 +8,7 @@ import {
   crTime,
   dayLabel,
   groupTimeline,
-  isKortixAgent,
+  isdoscoAgent,
 } from './changes-timeline';
 
 function localMidday(year: number, month: number, day: number): number {
@@ -65,24 +65,24 @@ function changeRequest(overrides: Partial<ChangeRequest> = {}): ChangeRequest {
   };
 }
 
-describe('isKortixAgent', () => {
+describe('isdoscoAgent', () => {
   test('matches the stable sandbox agent email', () => {
-    expect(isKortixAgent(commit({ author_email: KORTIX_AGENT_EMAIL, author_name: 'Anyone' }))).toBe(
+    expect(isdoscoAgent(commit({ author_email: KORTIX_AGENT_EMAIL, author_name: 'Anyone' }))).toBe(
       true,
     );
   });
 
   test('matches legacy display names case-insensitively', () => {
-    expect(isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Kortix Agent' }))).toBe(
+    expect(isdoscoAgent(commit({ author_email: 'other@example.com', author_name: 'dosco Agent' }))).toBe(
       true,
     );
-    expect(isKortixAgent(commit({ author_email: 'other@example.com', author_name: 'Cortex Agent' }))).toBe(
+    expect(isdoscoAgent(commit({ author_email: 'other@example.com', author_name: 'Cortex Agent' }))).toBe(
       true,
     );
   });
 
   test('does not match human authors', () => {
-    expect(isKortixAgent(commit({ author_email: 'jane@example.com', author_name: 'Jane' }))).toBe(
+    expect(isdoscoAgent(commit({ author_email: 'jane@example.com', author_name: 'Jane' }))).toBe(
       false,
     );
   });

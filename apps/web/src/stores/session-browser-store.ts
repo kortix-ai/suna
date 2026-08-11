@@ -90,7 +90,7 @@ interface SessionBrowserState {
   /**
    * The panel-store key of the session whose layout is currently visible —
    * i.e. the OpenCode `chatSessionId` the {@link SessionLayout} keys its panel
-   * by. NOT the Kortix session id in the URL (those differ). Registered by the
+   * by. NOT the dosco session id in the URL (those differ). Registered by the
    * active SessionLayout; read by chat click handlers so a localhost-link or
    * file-path click routes into the right session's panel. Transient.
    */
@@ -167,10 +167,10 @@ export function sessionPreviewTabId(sessionId: string): string {
 
 /**
  * The panel-store key (OpenCode `chatSessionId`) of the active session layout,
- * or null when no session is visible. Use THIS — not the URL's Kortix session
+ * or null when no session is visible. Use THIS — not the URL's dosco session
  * id — as the key for `setView` / `requestFileOpen` / `sessionPreviewTabId`,
  * since {@link SessionLayout} keys its panel by `chatSessionId`, which differs
- * from the Kortix session id in the URL.
+ * from the dosco session id in the URL.
  */
 export function getActivePanelSessionId(): string | null {
   return useSessionBrowserStore.getState().activeSessionId;

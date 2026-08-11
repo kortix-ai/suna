@@ -57,8 +57,8 @@ describe('AdvancedFields: repository source', () => {
   });
 
   test('explains each source with the exact wording the old create modal uses, so the two never diverge', () => {
-    expect(code).toContain('Kortix creates and manages a private repository for this workspace.');
-    expect(code).toContain('Kortix creates a private repository in your GitHub account.');
+    expect(code).toContain('dosco creates and manages a private repository for this workspace.');
+    expect(code).toContain('dosco creates a private repository in your GitHub account.');
     expect(code).toContain('Select an existing repository from your GitHub account.');
   });
 
@@ -110,7 +110,7 @@ describe('AdvancedFields: honest failure for GitHub sources', () => {
     expect(code).not.toContain('finish this workspace');
     // Paired presence check: the accurate replacement copy is the one that
     // actually renders.
-    expect(code).toContain('Only Kortix-managed repositories can be created here for now');
+    expect(code).toContain('Only dosco-managed repositories can be created here for now');
     expect(code).toContain('connect a GitHub account');
   });
 
@@ -128,7 +128,7 @@ describe('AdvancedFields: honest failure for GitHub sources', () => {
   });
 
   // Final-review FIX 5: picking `github-create` rendered a present-tense
-  // claim ("Kortix creates a private repository in your GitHub account.")
+  // claim ("dosco creates a private repository in your GitHub account.")
   // that the form then silently refused — `canSubmit` requires
   // `source === 'managed'` — with the honest disclaimer appearing only AFTER
   // the user had already committed to the choice. Task 12 removed exactly
@@ -144,7 +144,7 @@ describe('AdvancedFields: honest failure for GitHub sources', () => {
 
   test('the explanatory note stays — disabling the option does not remove the honest failure copy', () => {
     expect(code).toContain('<GitHubSourceNote');
-    expect(code).toContain('Only Kortix-managed repositories can be created here for now');
+    expect(code).toContain('Only dosco-managed repositories can be created here for now');
   });
 });
 

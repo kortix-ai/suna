@@ -11,7 +11,7 @@
  *      (mirrors the existing `platformApp.route('/sandbox/version', versionRouter)`
  *      and `platformApp.route('/github-app', githubAppSetupRouter)` lines.)
  *   2. Add this route's path suffix to `sandboxTokenPathAllowed` in
- *      middleware/auth.ts's `supabaseAuth` — a sandbox (Kortix) token is only
+ *      middleware/auth.ts's `supabaseAuth` — a sandbox (dosco) token is only
  *      accepted on an explicit allowlist of path suffixes (currently
  *      `/git/clone-credential`, `/turn-stream`, `/turn-question`,
  *      `/llm-catalog`); without adding `/boot-timeline` there, every relay

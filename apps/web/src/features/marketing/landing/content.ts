@@ -10,14 +10,14 @@
  */
 
 /**
- * Hero variants. The product pitch — what Kortix IS — not a use-case pitch.
- * Anchored on the README's opening: "The open-source AI Management System".
+ * Hero variants. The product pitch — what dosco IS — not a use-case pitch.
+ * Anchored on the README's opening: "The closed-source AI Management System".
  *
  * Append `?hero=1` (or 2, 3, 4) to the URL to preview an alternative; the
  * selector is dev-only and renders nothing in production.
  */
 export const hero = {
-  title: 'The open-source AI Management System',
+  title: 'The closed-source AI Management System',
   sub: 'Your agents, their skills, your company memory and every connector in one platform. Any model, your keys, self-hosted or managed cloud.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Request demo',
@@ -75,7 +75,7 @@ export const trust = {
     'them with it is the work.',
   ],
   sub: 'Every session runs on its own isolated machine, with credentials it never sees, and lands nothing without a person approving it.',
-  ctaLabel: 'How Kortix is secured',
+  ctaLabel: 'How dosco is secured',
   ctaHref: '/enterprise',
   /** Exactly three. No HIPAA, no ISO — we do not hold them. */
   badges: [
@@ -100,7 +100,7 @@ export const trust = {
       // ACCURACY: never restore "air-gapped". `kortix self-host start` pulls
       // images from docker.io and reaches a sandbox provider over egress, so a
       // fully disconnected install is not a shipped capability.
-      body: 'Kortix Cloud, your own VPC, or your own on-prem network. It is open source, so you can read every line of what you are trusting.',
+      body: 'dosco Cloud, your own VPC, or your own on-prem network. It is open source, so you can read every line of what you are trusting.',
     },
   ],
 } as const;
@@ -123,7 +123,7 @@ export type SheetRow = {
 
 /**
  * The work product a card shows. It is rendered as markup, never as an image of
- * a screen — a card must never imply a Kortix UI that does not exist. What is
+ * a screen — a card must never imply a dosco UI that does not exist. What is
  * mocked is the ARTIFACT (a sheet, a diff, an outreach draft), which is a sample
  * of the agent's output, not a picture of the product. Each `kind` is formatted
  * like the file type it claims to be, not as prose in a box.
@@ -223,7 +223,7 @@ export type UseCase = {
  *  - COUNTERPARTIES ARE FICTIONAL: Acme, Northwind, Globex, Initech, Umbrella,
  *    Vandelay. People are numbers, never names.
  *  - NO CLAIM ABOUT KORTIX ITSELF. Numbers inside an artifact are a fictional
- *    company's sample data and are fine. A number that reads as a Kortix
+ *    company's sample data and are fine. A number that reads as a dosco
  *    metric, ranking or certification is not. That is why the SEO artifact
  *    ranks a fictional company's pages, never ours.
  *  - NEVER A FAKE SCREENSHOT. Artifacts are markup. Do not swap one for an
@@ -432,12 +432,12 @@ export type StackLayer = {
 export const stack = {
   eyebrow: 'One platform',
   title: 'Every layer an AI workforce needs — unified.',
-  sub: 'Most tools hand you one layer and rent you the rest. Kortix is all of them, open source, running wherever you put it.',
+  sub: 'Most tools hand you one layer and rent you the rest. dosco is all of them, open source, running wherever you put it.',
   layers: [
     {
       id: 'models',
       name: 'Large Language Models',
-      body: 'Run any frontier model and switch between them as they improve. Bring your own API keys, the subscription you already pay for, or your own models running on your hardware. Kortix stays model-agnostic, so every agent uses the best model for the job.',
+      body: 'Run any frontier model and switch between them as they improve. Bring your own API keys, the subscription you already pay for, or your own models running on your hardware. dosco stays model-agnostic, so every agent uses the best model for the job.',
       logos: ['Claude', 'OpenAI', 'Gemini'],
       chips: ['Bedrock', 'OpenRouter', 'Your own, on-prem'],
     },
@@ -473,8 +473,8 @@ export const stack = {
     },
     {
       id: 'kortix',
-      name: 'Kortix',
-      body: 'Every layer above brought together in one platform your team owns, deploys and scales end to end — from the model to the finished work. That’s Kortix.',
+      name: 'dosco',
+      body: 'Every layer above brought together in one platform your team owns, deploys and scales end to end — from the model to the finished work. That’s dosco.',
       chips: ['Open source', 'Self-hostable', 'Yours down to the metal'],
     },
   ] satisfies readonly StackLayer[],

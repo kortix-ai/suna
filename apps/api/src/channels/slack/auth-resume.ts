@@ -105,13 +105,13 @@ export async function replaceSlackAuthPromptConnected(
 ): Promise<void> {
   const hasAccess = opts?.hasAccess !== false;
   const text = hasAccess
-    ? '*Slack connected.*\nKortix is picking up your message now.'
-    : '*Slack connected.*\nYour Kortix account still needs access to this project. Head back to Slack and request access to continue.';
+    ? '*Slack connected.*\ndosco is picking up your message now.'
+    : '*Slack connected.*\nYour dosco account still needs access to this project. Head back to Slack and request access to continue.';
   await respondViaUrl(responseUrl ?? undefined, {
     response_type: 'ephemeral',
     replace_original: true,
     text: hasAccess
-      ? 'Slack connected. Kortix is picking up your message now.'
+      ? 'Slack connected. dosco is picking up your message now.'
       : 'Slack connected. Request project access in Slack to continue.',
     blocks: [
       {

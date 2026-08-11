@@ -128,7 +128,7 @@ export function teamsOrgConsentUrl(input: {
 export const teamsOauthApp = makeOpenApiApp();
 
 teamsOauthApp.get('/callback', async (c: any) => {
-  const frontend = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  const frontend = (config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '');
   const state = verifyState(c.req.query('state'));
   if (!state) return c.redirect(`${frontend}/?teams_error=expired`, 302);
 

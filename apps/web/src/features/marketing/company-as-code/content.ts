@@ -28,7 +28,7 @@
 export const hero = {
   eyebrow: 'Company as code',
   title: 'A company is going to be a git repository.',
-  sub: 'Not as a metaphor. A Kortix project is a git repo, and that repo is the company: its agents, the skills it has built up, everything it has learned, and the definition of the machines all of it runs on. Versioned. Diffable. Owned outright.',
+  sub: 'Not as a metaphor. A dosco project is a git repo, and that repo is the company: its agents, the skills it has built up, everything it has learned, and the definition of the machines all of it runs on. Versioned. Diffable. Owned outright.',
   ctaPrimary: 'Start a project',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the manifest spec',
@@ -46,10 +46,10 @@ export const hero = {
 export const definition = {
   eyebrow: 'The definition',
   title: 'Two files define the company.',
-  sub: 'kortix.yaml is the Kortix layer: the machine sessions boot on, the connectors, the triggers, the secret names, and what each agent is allowed to touch. The OpenCode config is the runtime the agents think in. Everything past those two is files in the repo.',
+  sub: 'kortix.yaml is the dosco layer: the machine sessions boot on, the connectors, the triggers, the secret names, and what each agent is allowed to touch. The OpenCode config is the runtime the agents think in. Everything past those two is files in the repo.',
   yaml: {
     title: 'kortix.yaml',
-    caption: 'The Kortix layer — one file, at the repo root.',
+    caption: 'The dosco layer — one file, at the repo root.',
     lines: [
       '# Schema version 2. The runtime is OpenCode.',
       'kortix_version: 2',
@@ -170,7 +170,7 @@ export const repo = {
   /** Real paths from the shipped starter template. Do not invent a directory. */
   tree: [
     { path: 'northwind/', note: 'the repo, and the company', depth: 0 },
-    { path: 'kortix.yaml', note: 'the Kortix layer', depth: 1 },
+    { path: 'kortix.yaml', note: 'the dosco layer', depth: 1 },
     { path: '.kortix/', note: '', depth: 1 },
     { path: 'memory/', note: '', depth: 2 },
     { path: 'MEMORY.md', note: 'what the company has learned', depth: 3 },
@@ -350,7 +350,7 @@ export const portable = {
   shell: {
     title: 'any directory, any machine',
     lines: [
-      '# turn any directory into a Kortix',
+      '# turn any directory into a dosco',
       '$ kortix init',
       '',
       '# check it compiles, ask for the missing secrets,',
@@ -382,7 +382,7 @@ export const portable = {
     {
       id: 'hosting',
       k: 'Open source and self-hostable',
-      v: 'Run it on Kortix Cloud, in your own VPC, or fully on-prem. Read the code, fork it, audit it. Nobody rents your company back to you.',
+      v: 'Run it on dosco Cloud, in your own VPC, or fully on-prem. Read the code, fork it, audit it. Nobody rents your company back to you.',
     },
   ],
 } as const;
@@ -390,7 +390,7 @@ export const portable = {
 export const closing = {
   eyebrow: 'One repo',
   title: 'Turn a directory into a company.',
-  sub: 'kortix init makes any directory a Kortix. kortix ship brings it live. From then on it is one repo you own — versioned, diffable, and improving itself one reviewed change at a time.',
+  sub: 'kortix init makes any directory a dosco. kortix ship brings it live. From then on it is one repo you own — versioned, diffable, and improving itself one reviewed change at a time.',
   ctaPrimary: 'Start a project',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',

@@ -5,6 +5,12 @@
  * now lives in the SDK; this injects web's identity (Supabase token + user) and
  * its UI sinks (toast / OS notifications) into the single config seam. Imported
  * for side-effect by the root provider so it runs before any SDK call.
+ *
+ * Note on naming: this file and the SDK seam it calls into keep the original
+ * `configureKortix` identifier — both are technical, public-API names that
+ * the SDK's package consumers (and @kortix/sdk itself) depend on. They are
+ * not user-facing brand strings, so we do not rename them in the dosco
+ * reskin. Front-facing items only.
  */
 import { configureKortix } from '@kortix/sdk';
 import { parseFlagOverride } from '@kortix/sdk/feature-flags';

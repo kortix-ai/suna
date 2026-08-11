@@ -12,7 +12,7 @@ function gatewayProviders(models: Record<string, unknown>): ProviderListResponse
   return {
     default: { kortix: 'auto' },
     connected: ['kortix'],
-    all: [{ id: 'kortix', name: 'Kortix', source: 'gateway', models }],
+    all: [{ id: 'kortix', name: 'dosco', source: 'gateway', models }],
   } as unknown as ProviderListResponse;
 }
 
@@ -28,7 +28,7 @@ describe('flattenModels — gateway provider pass-through', () => {
     );
     expect(flat.provider).toBe('amazon-bedrock');
     expect(flat.providerID).toBe('kortix');
-    expect(flat.providerName).toBe('Kortix');
+    expect(flat.providerName).toBe('dosco');
   });
 
   test('carries the models.dev passthrough fields', () => {
@@ -76,7 +76,7 @@ describe('flattenModels — gateway provider pass-through', () => {
       flattenModels({
         default: {},
         connected: [],
-        all: [{ id: 'kortix', name: 'Kortix', source: 'gateway', models: { a: { name: 'A' } } }],
+        all: [{ id: 'kortix', name: 'dosco', source: 'gateway', models: { a: { name: 'A' } } }],
       } as unknown as ProviderListResponse),
     ).toEqual([]);
   });

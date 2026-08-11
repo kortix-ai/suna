@@ -1,4 +1,4 @@
-// "Last sync" derivation for Directory Sync surfaces. Kortix is the SCIM
+// "Last sync" derivation for Directory Sync surfaces. dosco is the SCIM
 // SERVER — the IdP calls us — so the honest sync signal we own is "when did
 // the IdP last make an authenticated SCIM request" (the backend stamps
 // last_used_at on every validated call, including no-change reconciliation

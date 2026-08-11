@@ -10,7 +10,7 @@
  * agent's markdown file, via `setOc` — but the grouping now follows the
  * question being answered, not the file being written.
  *
- * `Basics` spans both writers on purpose: "Enabled" is a Kortix-side key
+ * `Basics` spans both writers on purpose: "Enabled" is a dosco-side key
  * (`set`) and everything beside it is runtime-side (`setOc`). Splitting the
  * section to match would strand one switch in a section of its own for a
  * reason no reader could see.
@@ -47,7 +47,7 @@ import { EditorSection, InlineAction, SettingBlock, SettingRow } from './agent-e
 /** Matches the access section's inherit sentinel — Radix forbids `""`. */
 const INHERIT = '__inherit__';
 
-type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
+type Setdosco = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
 type SetRuntime = <K extends keyof RuntimeAgentConfig>(
   key: K,
   value: RuntimeAgentConfig[K],
@@ -60,7 +60,7 @@ export function BasicsSection({
   setOc,
 }: {
   draft: AgentConfigBlock;
-  set: SetKortix;
+  set: Setdosco;
   oc: RuntimeAgentConfig;
   setOc: SetRuntime;
 }) {

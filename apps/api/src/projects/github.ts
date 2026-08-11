@@ -15,7 +15,7 @@ export class GitHubApiError extends Error {
   }
 }
 
-// 'managed' = a Kortix-managed git token minted server-side by the managed backend.
+// 'managed' = a dosco-managed git token minted server-side by the managed backend.
 // 'project_credential' = provider-neutral git credential stored outside
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
@@ -837,11 +837,11 @@ export async function commitFile(opts: {
   // Pin the commit identity explicitly. Without an `author`/`committer` the
   // Contents API attributes the commit to whoever owns the token — which, on a
   // server-side PAT, surfaces a personal GitHub user (e.g. "markokraemer
-  // committed") instead of Kortix. Defaulting here mirrors the identity used by
+  // committed") instead of dosco. Defaulting here mirrors the identity used by
   // every git-CLI commit path (branches.ts / merge.ts / seed.ts).
   const ident = {
-    name: opts.authorName || 'Kortix',
-    email: opts.authorEmail || 'noreply@kortix.ai',
+    name: opts.authorName || 'dosco',
+    email: opts.authorEmail || 'noreply@dosco.live',
   };
   const body: Record<string, unknown> = {
     message: opts.message,

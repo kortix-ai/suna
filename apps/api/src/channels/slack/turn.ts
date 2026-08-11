@@ -324,7 +324,7 @@ export async function finalizeTurn(
           body,
           [
             ...toSectionBlocks(body, truncated),
-            { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }] },
+            { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in dosco ↗>` }] },
           ],
           threadRoot,
         );
@@ -387,7 +387,7 @@ function toSectionBlocks(body: string, truncated = false): Array<Record<string, 
 function plainFallback(handle: LiveTurn, body: string): string {
   if (handle.projectId && handle.sessionId) {
     const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
-    return `${body}\n\n<${url}|Open session in Kortix ↗>`;
+    return `${body}\n\n<${url}|Open session in dosco ↗>`;
   }
   return body;
 }
@@ -447,12 +447,12 @@ function buildFinalPlanBlocks(
     for (const b of toSectionBlocks(body, truncated)) blocks.push(b);
   }
   // Footer: a link to open this session on the web. Lets anyone in the thread
-  // jump straight to the full session (logs, files, diff) in Kortix.
+  // jump straight to the full session (logs, files, diff) in dosco.
   if (handle.projectId && handle.sessionId) {
     const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }],
+      elements: [{ type: 'mrkdwn', text: `<${url}|Open session in dosco ↗>` }],
     });
   }
   return blocks;

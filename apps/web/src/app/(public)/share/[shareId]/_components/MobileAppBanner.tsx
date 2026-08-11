@@ -93,7 +93,7 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
 
           {/* Content */}
           <div className="min-w-0 flex-1">
-            <h3 className="text-foreground text-sm leading-tight font-semibold">Kortix</h3>
+            <h3 className="text-foreground text-sm leading-tight font-semibold">dosco</h3>
             <p className="text-muted-foreground text-xs leading-tight">
               {tHardcodedUi.raw(
                 'appShareShareidComponentsMobileappbanner.line94JsxTextOpenThisContentInApp',

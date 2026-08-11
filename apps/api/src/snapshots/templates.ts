@@ -93,7 +93,7 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
 const CLI_ROOT = resolve(REPO_ROOT, 'apps/cli');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-// Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
+// Bump when the rendered dosco Dockerfile layer changes (the Dockerfile text
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
 // deps into /opt/kortix/opencode-config-deps for offline boot-time install.

@@ -560,7 +560,7 @@ async function applyUserWrite(
 }
 
 // PUT — Okta's "Push Profile Updates" replaces the whole resource via PUT
-// (Kortix previously implemented only PATCH, so these calls 404'd). Treat the
+// (dosco previously implemented only PATCH, so these calls 404'd). Treat the
 // full body as the change set and run the shared write path.
 scimRouter.openapi(
   createRoute({

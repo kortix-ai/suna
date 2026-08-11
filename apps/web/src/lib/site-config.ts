@@ -2,7 +2,7 @@ export type NavSubLink = {
   href: string;
   name: string;
   description?: string;
-  /** Absolute destination off kortix.com — opens in a new tab. */
+  /** Absolute destination off dosco.live — opens in a new tab. */
   external?: boolean;
 };
 
@@ -189,15 +189,15 @@ export const siteConfig = {
     ] as NavLink[],
   },
   hero: {
-    description: 'Kortix – the open AI command center for your company.',
+    description: 'dosco – the open agent network for your company.',
   },
   footerLinks: [
     {
       title: 'Product',
       links: [
         { id: 4, title: 'Support', url: '/support' },
-        { id: 5, title: 'Contact', url: 'mailto:hey@kortix.com' },
-        { id: 13, title: 'Status', url: 'https://status.kortix.com' },
+        { id: 5, title: 'Contact', url: 'mailto:hey@dosco.live' },
+        { id: 13, title: 'Status', url: 'https://status.dosco.live' },
       ],
     },
     {

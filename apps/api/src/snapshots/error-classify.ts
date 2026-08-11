@@ -20,13 +20,13 @@ export type SnapshotErrorCategory =
   | 'dockerfile'
   /** A step in the KORTIX-INJECTED runtime layer failed. Platform's fault, not the repo's. */
   | 'layer'
-  /** Kortix callback URL (KORTIX_URL) unreachable — usually a down dev tunnel. */
+  /** dosco callback URL (KORTIX_URL) unreachable — usually a down dev tunnel. */
   | 'tunnel'
   /** Daytona transport / gateway / socket blip — transient provider infra. */
   | 'provider'
   /** Build exceeded its deadline or was orphaned by an API restart. */
   | 'timeout'
-  /** A Kortix runtime artifact (agent binary, entrypoint, CLI) was missing at build time. */
+  /** A dosco runtime artifact (agent binary, entrypoint, CLI) was missing at build time. */
   | 'runtime'
   /** Commit/clone/auth resolution against the git host failed. */
   | 'git'
@@ -126,8 +126,8 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
     fixableByAgent: true,
   },
   layer: {
-    title: 'Kortix runtime layer failed',
-    hint: 'A step in the Kortix runtime layer that gets appended to every image (the Python package floor or the apt floor) failed against this base image — your Dockerfile is not the cause, and editing it will not help. This is a platform issue: retry the build, and report it if it persists.',
+    title: 'dosco runtime layer failed',
+    hint: 'A step in the dosco runtime layer that gets appended to every image (the Python package floor or the apt floor) failed against this base image — your Dockerfile is not the cause, and editing it will not help. This is a platform issue: retry the build, and report it if it persists.',
     fixableByAgent: false,
   },
   git: {
@@ -137,7 +137,7 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
   },
   tunnel: {
     title: 'Sandbox callback unreachable',
-    hint: 'The sandbox could not reach the Kortix API (KORTIX_URL). In local dev this usually means the tunnel is down — restart it and retry.',
+    hint: 'The sandbox could not reach the dosco API (KORTIX_URL). In local dev this usually means the tunnel is down — restart it and retry.',
     fixableByAgent: false,
   },
   provider: {
@@ -152,7 +152,7 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
   },
   runtime: {
     title: 'Runtime artifact missing',
-    hint: 'A Kortix runtime artifact was missing when the image was built. This is a platform/deploy issue, not your repo. Retry after the API is rebuilt.',
+    hint: 'A dosco runtime artifact was missing when the image was built. This is a platform/deploy issue, not your repo. Retry after the API is rebuilt.',
     fixableByAgent: false,
   },
   unknown: {

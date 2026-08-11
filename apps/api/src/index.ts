@@ -502,7 +502,7 @@ app.get('/v1/health/ready', readinessHandler);
 function hasInternalObservabilityAuth(c: any): boolean {
   const authHeader = c.req.header('Authorization');
   const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
+  const header = c.req.header('X-dosco-Internal-Key') ?? '';
   const expected = config.INTERNAL_SERVICE_KEY;
   const safeEq = (a: string, b: string) => {
     const aa = Buffer.from(a);
@@ -818,13 +818,13 @@ registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG S
 // Voice routes are registered BEFORE projectsApp: Hono matches in registration
 // order, and projectsApp's auth middleware would otherwise claim the worker's
 // MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
-// before its own per-call HMAC check ever runs. The worker is not a Kortix
+// before its own per-call HMAC check ever runs. The worker is not a dosco
 // session and cannot present session auth.
 app.route('/v1/projects', voiceMcpRoutes);
-app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed dosco projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
-// /v1/skills — the kortix-managed system skills (how Kortix itself works), served
+// /v1/skills — the kortix-managed system skills (how dosco itself works), served
 // straight out of @kortix/starter so the text always matches this deploy. This is
 // what lets an agent in ANY harness, holding only the `kortix` binary and a token,
 // read the platform's own instructions with no repo checkout and no sandbox.
@@ -1264,7 +1264,7 @@ void primeDaytonaTransientClassifier();
 
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║                  Kortix API Starting                      ║
+║                  dosco API Starting                      ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Port: ${config.PORT.toString().padEnd(49)}║
 ║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║

@@ -12,7 +12,7 @@ import { Claude } from '@/features/icon/icons/claude';
 import { Copy } from '@/features/icon/icons/copy';
 import { Cursor } from '@/features/icon/icons/cursor';
 import { Github } from '@/features/icon/icons/github';
-import { Kortix } from '@/features/icon/icons/kortix';
+import { dosco } from '@/features/icon/icons/kortix';
 import { CheckIcon } from '@/lib/icons/ssr';
 import { cn } from '@/lib/utils';
 // `docs-page-actions.tsx` is 'use client', so — unlike page.tsx/layout.tsx —
@@ -53,9 +53,9 @@ export function DocsPageActions({
     { key: 'markdown', label: 'View as Markdown', href: markdownPath, icon: MarkdownLogoIcon },
     {
       key: 'kortix',
-      label: 'Open in Kortix',
+      label: 'Open in dosco',
       href: `/projects/start?q=${encodedPrompt}`,
-      icon: Kortix,
+      icon: dosco,
     },
     {
       key: 'chatgpt',

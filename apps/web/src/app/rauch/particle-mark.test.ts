@@ -8,7 +8,7 @@ import {
 } from './particle-mark';
 
 describe('getParticleMarkSize', () => {
-  test('keeps the Kortix brandmark aspect ratio at desktop scale', () => {
+  test('keeps the dosco brandmark aspect ratio at desktop scale', () => {
     expect(
       getParticleMarkSize({
         sourceWidth: 164,

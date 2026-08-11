@@ -3,7 +3,7 @@
  * (`projectGitConnections.provider`), so backends can run simultaneously: a
  * GitHub-managed project resolves through the GitHub backend while a future
  * Forgejo/Artifacts project resolves through its own — all behind the same
- * Kortix git proxy.
+ * dosco git proxy.
  *
  * GitHub is the default managed backend. code.storage (Pierre) is a second,
  * flag-gated drop-in — select it per-deployment with

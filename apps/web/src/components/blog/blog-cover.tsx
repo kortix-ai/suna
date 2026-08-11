@@ -10,9 +10,9 @@ import type { ComponentType, ReactNode } from 'react';
 export type CoverLogo = { domain: string; name: string };
 
 /**
- * A unique, on-brand cover for each post — a crisp logo lockup on the Kortix
+ * A unique, on-brand cover for each post — a crisp logo lockup on the dosco
  * gradient. Real brand marks (the official SVGs already shipped in the app) +
- * the Kortix symbol; an official favicon only as a fallback for brands we don't
+ * the dosco symbol; an official favicon only as a fallback for brands we don't
  * ship an SVG for. Never an AI-drawn logo. No competitor logos → a brand mark.
  */
 // Inline xAI mark (from the repo's own /provider-icons/xai.svg) so it inherits
@@ -73,11 +73,11 @@ function LogoChip({ domain, name }: CoverLogo) {
 
 export function BlogCover({
   logos = [],
-  withKortix = true,
+  withdosco = true,
   className,
 }: {
   logos?: CoverLogo[];
-  withKortix?: boolean;
+  withdosco?: boolean;
   className?: string;
 }) {
   const brandOnly = logos.length === 0;
@@ -99,7 +99,7 @@ export function BlogCover({
           {logos.map((logo) => (
             <LogoChip key={logo.name} {...logo} />
           ))}
-          {withKortix && (
+          {withdosco && (
             <>
               <span className="text-muted-foreground/40 text-2xl font-light">×</span>
               <Chip>

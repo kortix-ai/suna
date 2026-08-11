@@ -304,7 +304,7 @@ function Chart({ artifact }: { artifact: Extract<UseCaseArtifact, { kind: 'chart
 /**
  * The artifact — the work product a team receives, and the largest thing on the
  * card. It is markup, never a picture of a screen: the card shows what the agent
- * produced, and must never imply a Kortix UI that does not exist.
+ * produced, and must never imply a dosco UI that does not exist.
  */
 function Artifact({ artifact }: { artifact: UseCaseArtifact }) {
   return (
@@ -332,7 +332,7 @@ function Artifact({ artifact }: { artifact: UseCaseArtifact }) {
 }
 
 /**
- * One card. Identical chrome for every department — Kortix is monochrome, so a
+ * One card. Identical chrome for every department — dosco is monochrome, so a
  * card is told apart by its mono tag and its artifact, not by a colour.
  */
 function UseCaseCard({ card, index, active }: { card: UseCase; index: number; active: boolean }) {

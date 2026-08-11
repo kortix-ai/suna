@@ -89,7 +89,7 @@ export function OAuth2ApplicationFields({
           variant="popover"
         />
         <FieldDescription>
-          Optional. Kortix also deletes the local token on disconnect.
+          Optional. dosco also deletes the local token on disconnect.
         </FieldDescription>
       </Field>
       <Field>

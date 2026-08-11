@@ -1,5 +1,5 @@
 // Self-serve SAML registration. The dashboard's "import your Entra metadata"
-// flow: instead of a Kortix operator running `supabase sso add` out of band, we
+// flow: instead of a dosco operator running `supabase sso add` out of band, we
 // call Supabase's GoTrue admin SSO API server-side with the service-role key,
 // register the customer's IdP, and hand back the provider UUID the rest of the
 // SSO config keys off. See docs/ENTRA_SSO_SCIM_SETUP.md Part A.
@@ -121,7 +121,7 @@ export async function registerSupabaseSamlProvider(
  * group-claim name — or a provider registered out-of-band via the operator
  * (`supabase sso add`) path — ends up with the mapping the login-time group sync
  * depends on. Best-effort and non-throwing: returns a typed result the caller
- * logs; a failure never blocks saving the (already-persisted) Kortix config.
+ * logs; a failure never blocks saving the (already-persisted) dosco config.
  */
 export async function syncSupabaseSamlAttributeMapping(
   supabaseProviderId: string,
@@ -169,7 +169,7 @@ export async function syncSupabaseSamlAttributeMapping(
  * disconnects SSO so the IdP is unregistered AND — crucially — the email
  * domain it claimed is freed, letting the admin re-import the same domain later
  * without hitting Supabase's "domain already registered" 422. Without this the
- * Kortix row is removed but the Supabase provider is orphaned, stranding the
+ * dosco row is removed but the Supabase provider is orphaned, stranding the
  * domain with no self-serve way to reclaim it.
  *
  * A 404 is treated as SUCCESS: the provider is already gone (deleted out-of-band

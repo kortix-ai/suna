@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Serves the Kortix CLI installer. Hit via:
-//   curl -fsSL https://kortix.com/install | bash
+// Serves the dosco CLI installer. Hit via:
+//   curl -fsSL https://dosco.live/install | bash
 //
 // ALWAYS serves the canonical script from the `main` branch on GitHub raw.
 // We deliberately do NOT prefer a locally-bundled copy: a stale build (e.g. an
@@ -28,7 +28,7 @@ function scriptHeaders(): Headers {
   headers.set('Content-Type', 'text/x-shellscript; charset=utf-8');
   headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
   headers.set('Access-Control-Allow-Origin', '*');
-  headers.set('X-Kortix-Install-Source', RAW_SCRIPT_URL);
+  headers.set('X-dosco-Install-Source', RAW_SCRIPT_URL);
   return headers;
 }
 

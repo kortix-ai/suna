@@ -16,7 +16,7 @@ export interface NewWorkspaceFormState {
 
 /**
  * `managed` is the default because `projects.repo_url` is NOT NULL — every
- * workspace has a repo, and a name-only create has to choose one. Kortix
+ * workspace has a repo, and a name-only create has to choose one. dosco
  * managing it is the only option that needs no GitHub account and no
  * repo-name uniqueness.
  */

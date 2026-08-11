@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
-export const Kortix = ({ className }: { className?: string }) => {
+export const dosco = ({ className }: { className?: string }) => {
   return (
     <svg
       width="30"

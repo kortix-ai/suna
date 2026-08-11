@@ -5,7 +5,7 @@ export const marketing: RoleContent = {
   slug: 'marketing',
   name: 'Marketing',
   navDescription: 'Production work that sounds like you, because the voice is a file',
-  seoTitle: 'Kortix for marketing teams',
+  seoTitle: 'dosco for marketing teams',
   seoDescription:
     'Your voice, your claims and your banned words live in the repo as a skill file every session reads. Marketing work lands as a draft in a change request, so the review is a diff.',
 
@@ -78,7 +78,7 @@ export const marketing: RoleContent = {
       ],
     },
     caption:
-      'Illustration. The paths are the real shape of a Kortix project, the copy is fictional.',
+      'Illustration. The paths are the real shape of a dosco project, the copy is fictional.',
     notes: [
       {
         id: 'voice',
@@ -174,7 +174,7 @@ export const marketing: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. The credential for your campaign tool is decrypted server-side and attached to the outbound request.',
+        v: 'The sandbox carries one project-scoped dosco token and no third-party keys. The credential for your campaign tool is decrypted server-side and attached to the outbound request.',
       },
       {
         id: 'audit',
@@ -186,6 +186,6 @@ export const marketing: RoleContent = {
 
   closing: {
     title: 'Put the voice in the repo. Let the production line run.',
-    sub: 'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or your own on-prem network.',
+    sub: 'Open source and self-hostable. Any model, your keys. dosco Cloud, your own VPC, or your own on-prem network.',
   },
 };

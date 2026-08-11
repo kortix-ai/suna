@@ -7,9 +7,9 @@
  * drift apart.
  *
  * Verified against release v0.11.0 (2026-07-28):
- *   macOS   Kortix-<v>-universal.dmg          (universal: Apple Silicon + Intel)
- *   Windows Kortix-Setup-<v>.exe
- *   Linux   Kortix-<v>-x86_64.AppImage        (x86_64 ONLY — no arm64 build)
+ *   macOS   dosco-<v>-universal.dmg          (universal: Apple Silicon + Intel)
+ *   Windows dosco-Setup-<v>.exe
+ *   Linux   dosco-<v>-x86_64.AppImage        (x86_64 ONLY — no arm64 build)
  *   CLI     kortix-{darwin,linux}-{arm64,x64} (no Windows binary)
  */
 

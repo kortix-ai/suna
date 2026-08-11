@@ -33,11 +33,11 @@
 
 export const hero = {
   eyebrow: 'Self-hosted',
-  title: 'The same Kortix, on your box.',
+  title: 'The same dosco, on your box.',
   sub: 'One Docker Compose stack, built from the same images the managed cloud runs. Your database, your files, your repos and your policies sit on disk you control. It is open source, so what you are running is code you can read.',
   ctaPrimary: 'Self-host free',
   ctaPrimaryHref: '/docs/host',
-  ctaSecondary: 'Use Kortix Cloud',
+  ctaSecondary: 'Use dosco Cloud',
   ctaSecondaryHref: '/auth',
   microline: 'Same images as the cloud · One command · Any model, your keys',
   /** Four mono facts the page then proves. Every value is defensible. */
@@ -57,7 +57,7 @@ export const hero = {
 export const yours = {
   eyebrow: 'What you keep',
   title: 'The company stays on your side of the wall.',
-  sub: 'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — accounts, projects, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
+  sub: 'Self-hosting is not a smaller dosco with the interesting parts removed. It is the whole control plane — accounts, projects, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
   onbox: {
     label: 'on your box',
     items: [
@@ -87,12 +87,12 @@ export const yours = {
 export const commands = {
   eyebrow: 'Two commands',
   title: 'Start the stack. Point the CLI at it.',
-  sub: 'There is no separate provisioning step and no console to click through. One command brings the stack up. One more decides which Kortix your CLI is talking to.',
+  sub: 'There is no separate provisioning step and no console to click through. One command brings the stack up. One more decides which dosco your CLI is talking to.',
   install: {
     title: 'bring the stack up',
     lines: [
       '# install the CLI',
-      '$ curl -fsSL https://kortix.com/install | bash',
+      '$ curl -fsSL https://dosco.live/install | bash',
       '',
       '# create the config if it is missing, then start everything',
       '$ kortix self-host start',
@@ -104,9 +104,9 @@ export const commands = {
     ],
   },
   hosts: {
-    title: 'choose which Kortix you are talking to',
+    title: 'choose which dosco you are talking to',
     lines: [
-      '# a host is one Kortix API endpoint, with its own token',
+      '# a host is one dosco API endpoint, with its own token',
       '$ kortix hosts ls',
       '',
       '# work against your own stack',
@@ -185,7 +185,7 @@ export const firstRun = {
 } as const;
 
 /* ── 4 · the stack ─────────────────────────────────────────────────────────
-   Rendered by self-host/compose-assets.ts. Kortix services + the vendored,
+   Rendered by self-host/compose-assets.ts. dosco services + the vendored,
    digest-pinned Supabase distribution. Caddy renders only with a domain;
    cloudflared only in tunnel mode. There is NO Redis and NO worker service. */
 export const stack = {
@@ -247,7 +247,7 @@ export const parity = {
     {
       id: 'images',
       k: 'The same images',
-      v: 'The frontend, the API and the gateway are the published Kortix images. A self-hosted instance never builds its own — it consumes exactly what the release pipeline already produced.',
+      v: 'The frontend, the API and the gateway are the published dosco images. A self-hosted instance never builds its own — it consumes exactly what the release pipeline already produced.',
     },
     {
       id: 'features',
@@ -262,7 +262,7 @@ export const parity = {
     {
       id: 'billing',
       k: 'No metering in the way',
-      v: 'A self-hosted instance runs its own gateway for its own model routing. It never sees or routes to Kortix credentials, and there is no platform fee on a self-hosted account.',
+      v: 'A self-hosted instance runs its own gateway for its own model routing. It never sees or routes to dosco credentials, and there is no platform fee on a self-hosted account.',
     },
   ],
 } as const;
@@ -293,7 +293,7 @@ export const models = {
     {
       id: 'routing',
       title: 'The gateway is yours',
-      body: 'Sessions call the gateway inside your own stack, over your own domain or tunnel. Kortix has no credential in that path and no visibility into it.',
+      body: 'Sessions call the gateway inside your own stack, over your own domain or tunnel. dosco has no credential in that path and no visibility into it.',
     },
     {
       id: 'anything',
@@ -341,10 +341,10 @@ export const targets = {
 export const closing = {
   eyebrow: 'Two ways to run it',
   title: 'Run it yourself, or let us run it.',
-  sub: 'Self-hosting is free and always will be. Kortix Cloud is the same product with the box, the upgrades and the sandbox tier taken off your hands.',
+  sub: 'Self-hosting is free and always will be. dosco Cloud is the same product with the box, the upgrades and the sandbox tier taken off your hands.',
   ctaPrimary: 'Self-host free',
   ctaPrimaryHref: '/docs/host',
-  ctaSecondary: 'Use Kortix Cloud',
+  ctaSecondary: 'Use dosco Cloud',
   ctaSecondaryHref: '/auth',
   tertiary: 'Need it inside your own network, with SSO and a licence? Talk to us.',
   tertiaryLabel: 'Talk to us',

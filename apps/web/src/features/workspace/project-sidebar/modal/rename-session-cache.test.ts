@@ -163,7 +163,7 @@ describe('applyRenameResponse', () => {
       session_id: 's1',
       custom_name: 'Old name',
       name: 'Old name',
-      owner_email: 'ada@kortix.com',
+      owner_email: 'ada@dosco.live',
       owner_name: 'Ada',
       runtime_status: 'active',
     });
@@ -185,7 +185,7 @@ describe('applyRenameResponse', () => {
     expect(row.name).toBe('New name');
     expect(row.updated_at).toBe('2026-02-02T00:00:00.000Z');
     // `share-session-modal.tsx` reads owner_email for "shared by X".
-    expect(row.owner_email).toBe('ada@kortix.com');
+    expect(row.owner_email).toBe('ada@dosco.live');
     expect(row.owner_name).toBe('Ada');
     expect(row.runtime_status).toBe('active');
   });

@@ -507,7 +507,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ...(url
           ? {
               approvalInstructions: input.sessionId
-                ? 'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.'
+                ? 'Share approval_url with a human, then stop this turn. dosco resumes the session after approve or deny.'
                 : 'Share approval_url with a human. Retry this exact call once they approve it.',
             }
           : {}),

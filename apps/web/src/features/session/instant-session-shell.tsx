@@ -121,7 +121,7 @@ export function InstantSessionShell({
       playSound('send');
 
       // Hand the message to the real chat: it auto-sends from this stash once
-      // the runtime is healthy. `sessionId` here is the route/Kortix-session
+      // the runtime is healthy. `sessionId` here is the route/dosco-session
       // id, not the eventual OpenCode pin (`useCanonicalRuntimeSession`
       // resolves those independently — see `ensureOpencodeSessionPin` in
       // apps/api/src/projects/routes/shared.ts); the session page's

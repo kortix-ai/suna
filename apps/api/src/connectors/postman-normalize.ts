@@ -167,7 +167,7 @@ export function normalizePostmanCollection(doc: any): PostmanNormalizationResult
   const actions: NormalizedAction[] = [];
   const rootVariables = collectionVariables(doc.variable);
   if (hasScripts(doc)) warnings.push('collection pre-request/test scripts were ignored');
-  if (doc.auth) warnings.push('collection authentication was ignored; configure connector auth in Kortix');
+  if (doc.auth) warnings.push('collection authentication was ignored; configure connector auth in dosco');
 
   const walk = (items: unknown[], folders: string[], inherited: Map<string, string>) => {
     for (const candidate of items) {
@@ -186,7 +186,7 @@ export function normalizePostmanCollection(doc: any): PostmanNormalizationResult
 
       const request = item.request as Record<string, any>;
       if (hasScripts(request)) warnings.push(`${[...folders, name].join(' / ')} scripts were ignored`);
-      if (request.auth) warnings.push(`${[...folders, name].join(' / ')} authentication was ignored; configure connector auth in Kortix`);
+      if (request.auth) warnings.push(`${[...folders, name].join(' / ')} authentication was ignored; configure connector auth in dosco`);
       const method = String(request.method ?? 'GET').toUpperCase();
       const unresolvedUrl = requestUrl(request.url);
       if (!unresolvedUrl) {
@@ -200,7 +200,7 @@ export function normalizePostmanCollection(doc: any): PostmanNormalizationResult
       const sanitizedUrl = stripCredentialQuery(renderedUrl);
       const url = sanitizedUrl.url;
       if (sanitizedUrl.removed) {
-        warnings.push(`${[...folders, name].join(' / ')} credential-like query parameter was ignored; configure connector auth in Kortix`);
+        warnings.push(`${[...folders, name].join(' / ')} credential-like query parameter was ignored; configure connector auth in dosco`);
       }
 
       const headers: Record<string, string> = {};

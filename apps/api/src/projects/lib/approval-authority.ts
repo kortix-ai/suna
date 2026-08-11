@@ -2,7 +2,7 @@
  * Who may resolve (approve / deny) a gated tool call.
  *
  * This is the THIRD surface with the same root cause: `created_by` was treated
- * as "the person who launched this session". In Kortix-as-a-Backend every
+ * as "the person who launched this session". In dosco-as-a-Backend every
  * session is created by the wrapper's single credential, so `created_by`
  * identifies nobody — and the in-sandbox token carries that exact `userId`.
  *
@@ -21,7 +21,7 @@
  * point of a human-in-the-loop gate, so it is refused outright rather than
  * narrowed to "its own session".
  *
- * Only a Supabase-authenticated Kortix user can resolve an approval. PATs,
+ * Only a Supabase-authenticated dosco user can resolve an approval. PATs,
  * API keys, service accounts, and session credentials are automated principals.
  */
 export type ApprovalRefusal =
@@ -49,7 +49,7 @@ export function mayResolveApproval(input: {
   }
   // ORDER MATTERS. The session-bound check runs FIRST, before the manager
   // branch, because an agent's token inherits the role of the user who minted
-  // it — and in Kortix-as-a-Backend that is the wrapper's own account, which is
+  // it — and in dosco-as-a-Backend that is the wrapper's own account, which is
   // very often a project owner. Checking `isManager` first would hand the agent
   // exactly the authority this refusal exists to withhold.
   //

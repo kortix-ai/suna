@@ -102,7 +102,7 @@ projectsApp.openapi(
       return c.json({
         error: installationId
           ? 'Selected GitHub installation is not connected to this account'
-          : 'Install the Kortix GitHub App before importing repositories',
+          : 'Install the dosco GitHub App before importing repositories',
         install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
       }, 409);
     }

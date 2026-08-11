@@ -27,7 +27,7 @@ function action(overrides: Partial<SessionAuditAction> = {}): SessionAuditAction
     },
     at: '2026-08-09T10:00:00.000Z',
     resolved_at: null,
-    approval_url: 'https://dev.kortix.com/approve/tok-1',
+    approval_url: 'https://dev.dosco.live/approve/tok-1',
     ...overrides,
   };
 }

@@ -31,7 +31,7 @@
 export const hero = {
   eyebrow: 'Connectors',
   title: 'Every tool your company runs on. None of the keys.',
-  sub: 'Connect a tool once, for the whole company. Agents reach it through one scoped token that Kortix brokers server-side — so the raw credential never lands in the machine the model is driving.',
+  sub: 'Connect a tool once, for the whole company. Agents reach it through one scoped token that dosco brokers server-side — so the raw credential never lands in the machine the model is driving.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Talk to sales',
   ctaSecondaryHref: '/contact',
@@ -52,13 +52,13 @@ export const connect = {
       id: 'easy',
       label: 'Easy connect',
       title: '3,000+ apps, OAuth handled',
-      body: 'Pick the app, click through its OAuth screen, done. Kortix stores the connection, not your password — Gmail, Notion, Linear, Salesforce, HubSpot, Zendesk, Google Drive and thousands more.',
+      body: 'Pick the app, click through its OAuth screen, done. dosco stores the connection, not your password — Gmail, Notion, Linear, Salesforce, HubSpot, Zendesk, Google Drive and thousands more.',
     },
     {
       id: 'custom',
       label: 'Custom',
       title: 'Your own APIs, in the same shape',
-      body: 'Point Kortix at an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. It reads the source, works out the authentication, and turns every operation into a tool.',
+      body: 'Point dosco at an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. It reads the source, works out the authentication, and turns every operation into a tool.',
     },
     {
       id: 'channels',
@@ -70,7 +70,7 @@ export const connect = {
   /** Real product screenshot — the Easy connect catalogue on a live project. */
   shot: {
     src: '/media/connectors/connector-catalogue.webp',
-    alt: 'The Kortix connector catalogue, showing Notion, Google Sheets, Linear, Google Drive, Salesforce, HubSpot, GitHub, Gmail and more, each one click from connected.',
+    alt: 'The dosco connector catalogue, showing Notion, Google Sheets, Linear, Google Drive, Salesforce, HubSpot, GitHub, Gmail and more, each one click from connected.',
     caption: 'Connectors → Add app → Easy connect. Real screen, real project.',
   },
 } as const;
@@ -80,7 +80,7 @@ export const connect = {
 export const broker = {
   eyebrow: 'The credential never travels',
   title: 'The agent gets a token. It never gets the key.',
-  sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the project, and every outbound call is assembled on our side of the wall.',
+  sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one dosco token, scoped to the project, and every outbound call is assembled on our side of the wall.',
 
   /** The old shape, stated plainly so the new one has something to beat. */
   before: {
@@ -95,7 +95,7 @@ export const broker = {
     body: 'Every key sits in the environment the model reads from. Revoking one means rotating it everywhere it was copied, and any of them can end up in a log line.',
   },
   after: {
-    label: 'How Kortix does it',
+    label: 'How dosco does it',
     title: 'One scoped token, and nothing else',
     lines: ['KORTIX_CLI_TOKEN=kortix_pat_…'],
     body: 'Scoped to one project and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.',
@@ -113,7 +113,7 @@ export const broker = {
     {
       id: 'broker',
       step: '02',
-      title: 'Kortix brokers',
+      title: 'dosco brokers',
       mono: 'POST /v1/connectors/call',
       body: 'The gateway checks this agent may use this connector, resolves the policy, decrypts the credential server-side, and attaches it to the outbound request.',
     },
@@ -240,7 +240,7 @@ export const policy = {
   /** Real product screenshot — the Permissions tab on a live connector. */
   shot: {
     src: '/media/connectors/connector-permissions.webp',
-    alt: 'The Permissions tab of the Google Drive connector in Kortix: a default rule, then every Drive tool set to Allow, Ask, Block or Default.',
+    alt: 'The Permissions tab of the Google Drive connector in dosco: a default rule, then every Drive tool set to Allow, Ask, Block or Default.',
     caption: 'Permissions on a real Google Drive connector — 51 tools, one answer each.',
   },
 
@@ -248,7 +248,7 @@ export const policy = {
   pause: {
     eyebrow: 'The pause is real',
     title: 'An approval stops the run. It does not fail it.',
-    body: 'A gate that errors out teaches an agent to retry around it. A Kortix gate holds the call open, so the agent is still mid-task when you answer — and picks up exactly where it stopped.',
+    body: 'A gate that errors out teaches an agent to retry around it. A dosco gate holds the call open, so the agent is still mid-task when you answer — and picks up exactly where it stopped.',
     steps: [
       { id: 'run', mono: 'running', label: 'The agent drafts the reply and reaches send_email.' },
       { id: 'hold', mono: 'waiting', label: 'The call is held. You see the action and its arguments.' },
@@ -315,7 +315,7 @@ export const close = {
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs/connect/connectors',
   points: [
-    'Open source and self-hostable — Kortix Cloud, your VPC, or on-prem.',
+    'Open source and self-hostable — dosco Cloud, your VPC, or on-prem.',
     'Credentials encrypted, brokered server-side, never handed to the model.',
     'Allow, Ask, or Block on every action, with a human in the loop where it matters.',
   ],

@@ -82,11 +82,11 @@ describe('uniqueZipNames (W15)', () => {
 
 describe('openFileInNewTab', () => {
   test('opens the addressable proxy URL, never a blob', async () => {
-    staticFileUrl = 'https://api.kortix.com/v1/p/sbx1/3211/open?path=/workspace/a.md';
+    staticFileUrl = 'https://api.dosco.live/v1/p/sbx1/3211/open?path=/workspace/a.md';
 
     await openFileInNewTab('/workspace/a.md');
 
-    expect(opened).toEqual(['https://api.kortix.com/v1/p/sbx1/3211/open?path=/workspace/a.md']);
+    expect(opened).toEqual(['https://api.dosco.live/v1/p/sbx1/3211/open?path=/workspace/a.md']);
     expect(opened[0].startsWith('blob:')).toBe(false);
   });
 

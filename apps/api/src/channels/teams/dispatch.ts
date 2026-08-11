@@ -56,7 +56,7 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
   if (!projectId) return;
   if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
-  const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
+  const projectUrl = `${(config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '')}/projects/${projectId}`;
   await sendCard(
     {
       serviceUrl: activity.serviceUrl,

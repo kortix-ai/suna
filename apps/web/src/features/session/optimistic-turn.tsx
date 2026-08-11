@@ -234,7 +234,7 @@ export function HighlightMentions({
     return result;
   }, [cleanText, agentNames, sessions]);
 
-  // Uniform monochrome mention style — Kortix brand is strictly neutral, so
+  // Uniform monochrome mention style — dosco brand is strictly neutral, so
   // every mention kind (file / agent / session) renders identically
   // as an underlined foreground chip. Kind is distinguished by click target.
   const mentionClass =

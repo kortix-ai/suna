@@ -104,9 +104,9 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   keywords: siteMetadata.keywords,
-  authors: [{ name: 'Kortix Team', url: siteMetadata.url }],
-  creator: 'Kortix Team',
-  publisher: 'Kortix Team',
+  authors: [{ name: 'dosco', url: siteMetadata.url }],
+  creator: 'dosco',
+  publisher: 'dosco',
   applicationName: siteMetadata.name,
   robots: {
     index: true,
@@ -169,7 +169,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const runtimeEnv = getServerPublicEnv();
 
   // Suppress marketing/visitor-tracking scripts inside the desktop app. The
-  // Tauri webview sends a `KortixDesktop` user-agent (see lib/desktop.ts); the
+  // Tauri webview sends a `doscoDesktop` user-agent (see lib/desktop.ts); the
   // website still loads them as normal. Keeps third-party de-anonymization
   // pixels (Vector/Artisan via GTM, plus the hardcoded loader) out of the
   // authenticated native client.
@@ -260,7 +260,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <meta
             name="apple-itunes-app"
             content={tHardcodedUi.raw(
-              'appLayout.line214JsxAttrContentAppId6754448524AppArgumentKortix',
+              'appLayout.line214JsxAttrContentAppId6754448524AppArgumentdosco',
             )}
           />
         ) : null}
@@ -273,9 +273,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               '@type': 'Organization',
               name: siteMetadata.name,
               alternateName: [
-                'Kortix',
-                'Kortix AI',
-                'Kortix – The AI Command Center for Your Company',
+                'dosco',
+                'dosco AI',
+                'dosco – The agent network for Your Company',
               ],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.png`,
@@ -302,7 +302,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
               name: siteMetadata.title,
-              alternateName: [siteMetadata.name, 'Kortix'],
+              alternateName: [siteMetadata.name, 'dosco'],
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web, macOS, Windows, Linux',
               description: siteMetadata.description,

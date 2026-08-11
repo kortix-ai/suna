@@ -42,7 +42,7 @@ export function MarketplaceProjectsGrid({
       <EmptyState
         icon={Boxes}
         title="No projects yet"
-        description="Ready-to-clone Kortix projects will show up here."
+        description="Ready-to-clone dosco projects will show up here."
       />
     );
   }

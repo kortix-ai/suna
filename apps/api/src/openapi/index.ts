@@ -1,5 +1,5 @@
 /**
- * Shared OpenAPI wiring for the Kortix API.
+ * Shared OpenAPI wiring for the dosco API.
  *
  * Every sub-router is an `OpenAPIHono` created via `makeOpenApiApp()` so it (a)
  * contributes typed route definitions to the spec and (b) shares one validation
@@ -105,7 +105,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
     type: 'http',
     scheme: 'bearer',
     description:
-      'Supabase user JWT, or a Kortix token: PAT (`kortix_pat_…`), API key (`kortix_…`), service account (`kortix_sa_…`), or (LLM Gateway inference routes only) a project gateway key (`kortix_gw_…`).',
+      'Supabase user JWT, or a dosco token: PAT (`kortix_pat_…`), API key (`kortix_…`), service account (`kortix_sa_…`), or (LLM Gateway inference routes only) a project gateway key (`kortix_gw_…`).',
   });
 
   // Serve the same document `doc31` would (getOpenAPI31Document is exactly what
@@ -115,19 +115,19 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
     const document = app.getOpenAPI31Document({
       openapi: '3.1.0',
       info: {
-        title: 'Kortix API',
+        title: 'dosco API',
         version,
         description:
-          'The Kortix platform REST API — typed schemas via @hono/zod-openapi. ' +
+          'The dosco platform REST API — typed schemas via @hono/zod-openapi. ' +
           'For application code, prefer the TypeScript SDK (`@kortix/sdk`), which wraps ' +
           'this API and OpenCode REST sessions behind ' +
           'one session-scoped client — ' +
-          'docs at https://kortix.com/docs/sdk.',
+          'docs at https://dosco.live/docs/sdk.',
       },
       servers: [{ url: new URL(c.req.url).origin }],
     });
     return c.json(filterSpecPaths(document));
   });
 
-  app.get('/v1/docs', Scalar({ url: '/v1/openapi.json', pageTitle: 'Kortix API' }));
+  app.get('/v1/docs', Scalar({ url: '/v1/openapi.json', pageTitle: 'dosco API' }));
 }

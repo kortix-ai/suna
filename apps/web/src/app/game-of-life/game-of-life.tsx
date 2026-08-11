@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * Conway's Game of Life that seeds itself from the current Kortix logo,
+ * Conway's Game of Life that seeds itself from the current dosco logo,
  * then lets the simulation evolve. A port of the original kortix-web
  * landing animation (github.com/kortix-ai/kortix-web) onto the latest
- * Kortix brandmark, rendered on a blank white page.
+ * dosco brandmark, rendered on a blank white page.
  */
 export function GameOfLife() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,7 +37,7 @@ export function GameOfLife() {
     let lastChangeCount = 0;
     let stagnantFrames = 0;
 
-    // Current Kortix logo: full horizontal logomark on desktop, brandmark on mobile.
+    // Current dosco logo: full horizontal logomark on desktop, brandmark on mobile.
     const logoPath = isMobile
       ? '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg'
       : '/brandkit/Logo/Logomark/SVG/Logomark Black.svg';

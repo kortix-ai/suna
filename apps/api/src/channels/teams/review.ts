@@ -24,7 +24,7 @@ export async function postTeamsReviewCard(
     projectId: handle.projectId,
   };
   const viewUrl = handle.projectId
-    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${handle.projectId}/review`
+    ? `${(config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '')}/projects/${handle.projectId}/review`
     : undefined;
 
   const posted = await sendCard(

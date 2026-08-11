@@ -1,7 +1,7 @@
 /**
  * A provider can continue to report `stopped` while start() is still changing
  * the VM state. Reconciliation must not convert that transitional observation
- * into a durable Kortix stop, because doing so closes the compute meter and
+ * into a durable dosco stop, because doing so closes the compute meter and
  * leaves a later provider-running VM recorded as stopped.
  */
 export const RUNTIME_WAKE_GRACE_MS = 90_000;

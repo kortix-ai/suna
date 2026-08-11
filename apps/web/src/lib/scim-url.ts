@@ -5,8 +5,8 @@
  *
  * We take only the ORIGIN of the app's configured backend URL and append the
  * SCIM path: SCIM is mounted at the API root (`/scim/v2`), NOT under the `/v1`
- * API prefix, so a backend like `https://api.kortix.com/v1` still yields
- * `https://api.kortix.com/scim/v2/...`.
+ * API prefix, so a backend like `https://api.dosco.live/v1` still yields
+ * `https://api.dosco.live/scim/v2/...`.
  *
  * `backendUrl` may legitimately be a root-relative proxy path (e.g. `/v1`) in
  * same-origin deployments. There the web origin IS the public origin (the app

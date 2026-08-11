@@ -1,4 +1,4 @@
-export interface KortixTheme {
+export interface doscoTheme {
   id: string;
   name: string;
   /** Hex color for the accent dot in the theme picker */
@@ -13,7 +13,7 @@ export const DEFAULT_THEME_ID = 'graphite';
  * All backgrounds, surfaces, borders, and text are pure neutral (zero chroma).
  * Only primary, ring, sidebar-primary, and charts carry the accent hue.
  */
-export const THEMES: KortixTheme[] = [
+export const THEMES: doscoTheme[] = [
   {
     id: 'graphite',
     name: 'Classic',
@@ -58,7 +58,7 @@ export const THEMES: KortixTheme[] = [
   },
 ];
 
-export function getThemeById(id: string): KortixTheme | undefined {
+export function getThemeById(id: string): doscoTheme | undefined {
   return THEMES.find((t) => t.id === id);
 }
 

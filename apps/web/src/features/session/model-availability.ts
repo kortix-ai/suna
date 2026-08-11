@@ -2,7 +2,7 @@ import type { ModelKey } from '@kortix/sdk/react';
 
 export const NO_MODEL_AVAILABLE_MESSAGE = 'No models available for this session yet.';
 export const NO_MODEL_AVAILABLE_ACTION_MESSAGE =
-  'Connect a model via provider first or upgrade your Kortix subscription.';
+  'Connect a model via provider first or upgrade your dosco subscription.';
 
 export function resolveAvailableSelectedModel(
   selectedModel: ModelKey | null | undefined,

@@ -296,13 +296,13 @@ export function CustomProviderForm({
 
         {/* GAP C2 — a custom provider's traffic goes straight to `baseURL`
             (see buildCustomProviderSnippet's `options.baseURL`), never through
-            the Kortix gateway — so it never appears in gateway logs, never
+            the dosco gateway — so it never appears in gateway logs, never
             counts against gateway budgets, and never participates in routing
             policy/fallback. Disclosed here since nothing else in this flow
             says so. */}
         <InfoBanner tone="warning" icon={Info}>
           Requests to a custom provider go straight to its own endpoint — they don&apos;t pass
-          through the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or
+          through the dosco gateway, so they&apos;re not covered by gateway budgets, logs, or
           routing.
         </InfoBanner>
       </form>
@@ -358,7 +358,7 @@ function CustomProviderSnippetView({
       </InfoBanner>
 
       <InfoBanner tone="warning" icon={Info}>
-        This provider talks directly to its own endpoint, bypassing the Kortix gateway — no budgets,
+        This provider talks directly to its own endpoint, bypassing the dosco gateway — no budgets,
         logs, or routing apply to it.
       </InfoBanner>
 

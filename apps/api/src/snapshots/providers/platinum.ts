@@ -3,7 +3,7 @@
  *
  * Platinum templates ARE the "snapshots" (GET/DELETE /v1/templates). Building
  * does exactly what Daytona does — ship the staged build context (user
- * Dockerfile + Kortix runtime layer) to the provider and let it build
+ * Dockerfile + dosco runtime layer) to the provider and let it build
  * server-side. Daytona uses Image.fromDockerfile(); Platinum uses
  * `POST /v1/templates/from-build` (tar.gz of the same context staged by
  * snapshots/build-context.ts, so the produced image is identical). Platinum's
@@ -91,7 +91,7 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
   //     (PT_ORG_MUT_RATE, 20 req/s). Transient; retrying is right.
   //   - `org_template_quota_exceeded` (api/templates.ts pickBuildHost) — the
   //     per-org COUNT cap on live templates (tiers 10/50/500). This does NOT
-  //     self-clear: nothing frees a template row on its own, and Kortix has no
+  //     self-clear: nothing frees a template row on its own, and dosco has no
   //     org-wide GC for Platinum (snapshots/quota-gc.ts is Daytona-only — it
   //     imports listDaytonaSnapshots/deleteDaytonaSnapshotById exclusively). So
   //     burning BUILD_ATTEMPTS on it is pure delay in front of a wall, and it

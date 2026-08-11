@@ -56,7 +56,7 @@ describe('MIGRATE_TO_V2_PROMPT — the core migration artifact', () => {
 
   test('points at the canonical schema — CLI command and published URL', () => {
     expect(MIGRATE_TO_V2_PROMPT).toContain('kortix schema --version 2');
-    expect(MIGRATE_TO_V2_PROMPT).toContain('https://kortix.com/schema/kortix.v2.schema.json');
+    expect(MIGRATE_TO_V2_PROMPT).toContain('https://dosco.live/schema/kortix.v2.schema.json');
   });
 
   test('lists every v2 clean-break the validator hard-errors on', () => {

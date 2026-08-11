@@ -71,7 +71,7 @@ voiceJoinPublicApp.openapi(
  *
  * Exists because LiveKit's client-side transcription is not the transcript.
  * It carries what the two voices said and nothing else, so the /voice page
- * used to show a call with holes in it: everything the Kortix agent sent into
+ * used to show a call with holes in it: everything the dosco agent sent into
  * the room (`send_prompt`, a finished turn's result, an error) and every MCP
  * tool call the voice made (`ask_kortix`, `run_command`) were missing —
  * they live in `kortix.voice_call_turns`, written server-side, and never
@@ -90,7 +90,7 @@ voiceJoinPublicApp.openapi(
  * project id the link resolves to is not echoed back either; the page has no
  * use for it and it is not this visitor's to learn.
  *
- * Cursor-paged off the same monotonic `cursor` the Kortix agent's own
+ * Cursor-paged off the same monotonic `cursor` the dosco agent's own
  * `read_transcript` uses, so a poll that finds nothing new returns an empty
  * list and the caller's own cursor back.
  */
@@ -155,7 +155,7 @@ voiceJoinPublicApp.openapi(
               cursor: z.number(),
               // user = a human in the room. agent = the agent side, which has
               // TWO sources — `speaker` tells them apart: 'kortix' is what the
-              // Kortix agent put into the call, anything else is the voice's
+              // dosco agent put into the call, anything else is the voice's
               // own speech labelled with the bot's name. tool = an MCP call
               // the voice made; `speaker` is the tool name.
               role: z.string(),

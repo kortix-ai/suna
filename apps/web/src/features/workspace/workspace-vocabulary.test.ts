@@ -120,7 +120,7 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
       readFileSync(join(import.meta.dir, 'new/advanced-fields.tsx'), 'utf8'),
     );
     expect(code).toContain(
-      'Kortix creates and manages a private repository for this workspace.',
+      'dosco creates and manages a private repository for this workspace.',
     );
   });
 

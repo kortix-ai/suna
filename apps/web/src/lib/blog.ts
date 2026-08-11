@@ -17,23 +17,19 @@ export interface Author {
   avatarUrl?: string;
 }
 
-// Author registry. A post references one of these keys (`author: 'marko'`);
-// edit a person once here and every post updates.
+// Author registry. A post references one of these keys; edit a person
+// here and every post updates. Individual team-member details are no
+// longer surfaced — every post is credited to the collective.
 export const AUTHORS: Record<string, Author> = {
-  marko: {
-    name: 'Marko Kraemer',
-    role: 'Co-founder',
-    email: 'marko@kortix.ai',
-  },
   team: {
-    name: 'The Kortix Team',
-    role: 'Kortix',
-    email: 'team@kortix.ai',
+    name: 'The dosco team',
+    role: 'dosco',
+    email: 'support@dosco.live',
   },
 };
 
 export function resolveAuthor(key: string): Author {
-  return AUTHORS[key] ?? { name: key, role: '', email: `${key}@kortix.ai` };
+  return AUTHORS[key] ?? { name: 'The dosco team', role: 'dosco', email: 'support@dosco.live' };
 }
 
 export interface PostFrontmatter {
@@ -44,7 +40,7 @@ export interface PostFrontmatter {
   tags: string[];
   cover?: string;
   coverLogos?: CoverLogo[];
-  coverKortix?: boolean;
+  coverdosco?: boolean;
   draft: boolean;
   /** Catalog id of an installable template this post maps to (use cases only). */
   template?: string;
@@ -70,7 +66,7 @@ function toPost(entry: BlogPostEntry): Post {
       tags: entry.tags,
       cover: entry.cover,
       coverLogos: entry.coverLogos,
-      coverKortix: entry.coverKortix,
+      coverdosco: entry.coverdosco,
       draft: entry.draft ?? false,
     },
     author: resolveAuthor(entry.author),

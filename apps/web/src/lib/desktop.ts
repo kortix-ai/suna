@@ -1,7 +1,7 @@
 /**
  * Desktop runtime detection + native window helpers.
  *
- * The Tauri shell sets a custom user-agent (`KortixDesktop/...`) and exposes
+ * The Tauri shell sets a custom user-agent (`doscoDesktop/...`) and exposes
  * the Tauri JS bridge as `window.__TAURI__` (because `app.withGlobalTauri` is
  * true in tauri.conf.json). We use the user-agent for detection because it's
  * available synchronously before hydration; we use the global bridge for
@@ -9,7 +9,7 @@
  * `@tauri-apps/api`.
  */
 
-export const DESKTOP_UA_TOKEN = 'KortixDesktop';
+export const DESKTOP_UA_TOKEN = 'doscoDesktop';
 
 /**
  * Base path for desktop downloads. `/download` is the public page; the
@@ -126,7 +126,7 @@ function tauri(): TauriGlobal | null {
 
 /**
  * Custom URL scheme registered by the desktop shell. OAuth providers and
- * email magic links should redirect here (instead of `https://kortix.com/...`)
+ * email magic links should redirect here (instead of `https://dosco.live/...`)
  * so the OS hands the callback back to the desktop app rather than opening
  * it in the user's browser.
  */
@@ -142,7 +142,7 @@ export const DESKTOP_URL_SCHEME = 'kortix';
  * - Web: the standard origin-based callback URL.
  *
  * The desktop bounce uses the desktop's loaded origin (typically
- * `http://localhost:3000` in dev, `https://kortix.com` in prod) so the
+ * `http://localhost:3000` in dev, `https://dosco.live` in prod) so the
  * Supabase redirect URL allowlist only needs the standard callbacks.
  */
 export function authRedirectUrl(path: string = '/auth/callback'): string {
@@ -257,7 +257,7 @@ export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
 /* ─── Frontend URL override (self-hosting) ───────────────────────────────
-   The switcher lives in the hidden native menu (Kortix → Frontend URL). Its
+   The switcher lives in the hidden native menu (dosco → Frontend URL). Its
    "Custom URL…" item can't take text input natively, so it fires a
    `kortix-open-frontend-url` DOM event that the desktop-only prompt listens
    for; the prompt then persists the value via these commands. The override is

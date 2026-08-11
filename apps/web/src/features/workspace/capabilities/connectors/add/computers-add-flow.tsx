@@ -100,7 +100,7 @@ function ComputersAddFlowContent({
             <div className="min-w-0 space-y-1">
               <ModalTitle>Add Computer Tunnel</ModalTitle>
               <ModalDescription>
-                Pair Macs, Windows PCs, and Linux machines through the secure Kortix Agent Tunnel.
+                Pair Macs, Windows PCs, and Linux machines through the secure dosco Agent Tunnel.
                 Select the machines that agents using this profile can access.
               </ModalDescription>
             </div>

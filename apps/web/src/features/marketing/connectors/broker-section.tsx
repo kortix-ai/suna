@@ -70,7 +70,7 @@ function EnvPanel({
  * The token-flow diagram — the load-bearing picture on this page.
  *
  * A dashed rule runs between step 01 and step 02. Everything left of it happens
- * inside the sandbox the model drives; everything right of it happens on Kortix.
+ * inside the sandbox the model drives; everything right of it happens on dosco.
  * The credential only ever exists on the right. The strip underneath names what
  * never crosses, because that is the claim the whole page rests on.
  */
@@ -83,7 +83,7 @@ function FlowDiagram() {
           <Eyebrow>Inside the sandbox</Eyebrow>
         </div>
         <div className="border-border/70 border-t px-6 py-3 lg:col-span-2 lg:border-t-0">
-          <Eyebrow>Server-side · Kortix</Eyebrow>
+          <Eyebrow>Server-side · dosco</Eyebrow>
         </div>
       </div>
 
@@ -95,7 +95,7 @@ function FlowDiagram() {
             className={cn(
               'border-border relative p-6 sm:p-8',
               i > 0 && 'border-t lg:border-t-0 lg:border-l',
-              // the wall: dashed only between the sandbox and Kortix
+              // the wall: dashed only between the sandbox and dosco
               i === 1 && 'lg:border-dashed',
             )}
           >

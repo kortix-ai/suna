@@ -64,7 +64,7 @@ export function chooseEffectiveModel(params: {
     source = 'account';
   }
   if (!candidate) return { model: null, source: 'platform' };
-  // Free tier cannot use managed Kortix models; the chosen candidate is dropped
+  // Free tier cannot use managed dosco models; the chosen candidate is dropped
   // to the platform default rather than falling through to a broader layer.
   if (params.freeModelsOnly && isManagedRef(candidate)) return { model: null, source: 'platform' };
   return { model: candidate, source };

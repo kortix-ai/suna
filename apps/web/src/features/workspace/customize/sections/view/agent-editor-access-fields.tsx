@@ -4,7 +4,7 @@
  * The last two open sections of the agent editor: what the agent may reach
  * (Access) and where it runs (Workspace).
  *
- * These were the "Kortix layer" — named for the file they land in
+ * These were the "dosco layer" — named for the file they land in
  * (`kortix.yaml`) rather than the question they answer. Same writes, same
  * platform enforcement; the heading now says what it governs.
  */
@@ -22,12 +22,12 @@ import type { AgentConfigBlock, AgentGrantSetV2 } from '@kortix/sdk';
 import { WORKSPACE_MODES, WORKSPACE_MODE_HELP, WORKSPACE_MODE_LABEL } from './agent-editor-catalog';
 import { EditorSection, SettingBlock, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
-import { GrantSetField, KortixCliField } from './grant-mode-field';
+import { GrantSetField, doscoCliField } from './grant-mode-field';
 
 /** Every inherit-capable Select shares one sentinel — Radix forbids `""`. */
 const INHERIT = '__inherit__';
 
-type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
+type Setdosco = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
 
 /**
  * Marks one granted connector as required before session start.
@@ -71,7 +71,7 @@ export function AccessSection({
   secretOptions,
 }: {
   draft: AgentConfigBlock;
-  set: SetKortix;
+  set: Setdosco;
   skillsOptions: { id: string; label: string }[];
   connectorOptions: { id: string; label: string }[];
   secretOptions: { id: string; label: string }[];
@@ -141,14 +141,14 @@ export function AccessSection({
         />
       </SettingBlock>
 
-      {/* Was "Kortix CLI" — the name of the tool, not of what it grants. What
+      {/* Was "dosco CLI" — the name of the tool, not of what it grants. What
           the user is choosing is which project operations the agent may
           perform; the CLI is only how it performs them. */}
       <SettingBlock
         label="Project actions"
-        help="What this agent may do to the project itself, through the Kortix CLI."
+        help="What this agent may do to the project itself, through the dosco CLI."
       >
-        <KortixCliField
+        <doscoCliField
           value={draft.kortix_cli}
           onChange={(v: AgentGrantSetV2) => set('kortix_cli', v)}
         />
@@ -163,7 +163,7 @@ export function WorkspaceSection({
   sandboxOptions,
 }: {
   draft: AgentConfigBlock;
-  set: SetKortix;
+  set: Setdosco;
   sandboxOptions: { id: string; label: string }[];
 }) {
   return (

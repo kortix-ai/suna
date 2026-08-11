@@ -218,7 +218,7 @@ export function ProjectIconField({
           // targets still do not touch.
           //
           // The transition list replaces Button's base `transition-all`
-          // (button.tsx:8), which both the Kortix polish rules and the animation
+          // (button.tsx:8), which both the dosco polish rules and the animation
           // doctrine call a defect — without this, active:scale-[0.96] animates
           // on `transition: all`. The primitive is shared, so it is overridden
           // here rather than changed. `scale`, not `transform`: Tailwind v4's

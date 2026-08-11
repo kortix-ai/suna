@@ -385,7 +385,7 @@ export function parseSessionSecretsAllowlist(
 }
 
 /**
- * Narrow an agent's secret grant by a per-session allowlist (Kortix-as-a-Backend).
+ * Narrow an agent's secret grant by a per-session allowlist (dosco-as-a-Backend).
  * The result is ALWAYS a subset of what `grant` alone would allow — this is a
  * pure NARROWING, never a widening, so it can be composed with the existing
  * agent-grant/reserved-name/connector-scope filters without weakening any of

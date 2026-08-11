@@ -1,13 +1,13 @@
 /**
- * Whether a call is allowed to hand another request to Kortix right now.
+ * Whether a call is allowed to hand another request to dosco right now.
  *
- * THE BUG. A live call handed Kortix the same question over and over. A stray
+ * THE BUG. A live call handed dosco the same question over and over. A stray
  * transcription artifact ("dog.") led the voice model to assert something false
  * about the project; that claim then sat in its OWN conversation history as
- * fact, so every correct answer Kortix sent back contradicted what it believed,
+ * fact, so every correct answer dosco sent back contradicted what it believed,
  * and it asked again to resolve the contradiction — "clarify whether the project
  * involves dogs", "summarize all references to dog" — indefinitely. Each ask is
- * a real Kortix turn: $0.02-$0.03 and up to 3.2k tokens. It ran until a human
+ * a real dosco turn: $0.02-$0.03 and up to 3.2k tokens. It ran until a human
  * hung up.
  *
  * TWO GUARDS, DELIBERATELY BOTH.
@@ -88,12 +88,12 @@ export type AskVerdict =
  * — that asking again might resolve a contradiction.
  */
 export const IN_FLIGHT_MESSAGE =
-  'You already handed a request to Kortix and the answer has not come back yet. It arrives on ' +
+  'You already handed a request to dosco and the answer has not come back yet. It arrives on ' +
   'its own — asking again does not make it faster, and two requests in flight is what makes ' +
   'answers arrive out of order and contradict each other. Do not send this. Tell the room in ' +
   'one short sentence that you are still waiting, then stop talking. If an answer you already ' +
   'got disagrees with something you said earlier, the ANSWER is right — say so and move on ' +
-  'rather than asking Kortix to settle it.';
+  'rather than asking dosco to settle it.';
 
 const RATE_ADVICE =
   'Stop asking and answer the room from what you already have. If an earlier answer ' +
@@ -101,7 +101,7 @@ const RATE_ADVICE =
   'that plainly and move on.';
 
 function rateMessage(asks: number): string {
-  return `You have asked Kortix ${asks} times in the last minute and are repeating yourself. ${RATE_ADVICE}`;
+  return `You have asked dosco ${asks} times in the last minute and are repeating yourself. ${RATE_ADVICE}`;
 }
 
 /**

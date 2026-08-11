@@ -15,7 +15,7 @@ import {
  *
  * frimousse fetches the emojibase dataset from a URL at first open. Left at its
  * default that URL is `https://cdn.jsdelivr.net/npm/emojibase-data@latest` — a
- * third-party CDN, in the user's browser, at runtime. Kortix ships self-hosted,
+ * third-party CDN, in the user's browser, at runtime. dosco ships self-hosted,
  * so that default is wrong here on its own; what makes it a defect rather than a
  * preference is the failure mode. frimousse exposes `Loading` and `Empty` and no
  * error slot (see the tripwire at the bottom of this file), and on a cold cache

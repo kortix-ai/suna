@@ -12,7 +12,7 @@ export function randomAlphanumeric(length: number): string {
 }
 
 /**
- * Kortix API key prefixes.
+ * dosco API key prefixes.
  *
  *   kortix_      — user-created API key (for external programmatic access)
  *   kortix_sb_   — sandbox-managed key (auto-created per sandbox, used by agents)
@@ -31,10 +31,10 @@ export const KEY_PREFIX_PUBLIC = 'pk_';
 const SECRET_RANDOM_LENGTH = 32;
 
 /**
- * Check if a token is a Kortix-issued key (user or sandbox).
+ * Check if a token is a dosco-issued key (user or sandbox).
  * Single check for the router — no branching on multiple prefixes.
  */
-export function isKortixToken(token: string): boolean {
+export function isdoscoToken(token: string): boolean {
   return token.startsWith(KEY_PREFIX);
 }
 

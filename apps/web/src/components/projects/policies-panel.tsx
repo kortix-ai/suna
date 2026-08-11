@@ -350,7 +350,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
           <InfoBanner
             tone="warning"
             title={tI18nHardcoded.raw(
-              'autoComponentsProjectsPoliciesPanelJsxAttrTitleKortixTomlHad8db85c74',
+              'autoComponentsProjectsPoliciesPanelJsxAttrTitledoscoTomlHad8db85c74',
             )}
           >
             <ul className="space-y-1">

@@ -9,7 +9,7 @@ import {
 } from './picker-catalog';
 
 // The REAL served-model source for compact pickers (Slack, and any curated web
-// surface). Built from the gateway's actual catalog — managed Kortix models +
+// surface). Built from the gateway's actual catalog — managed dosco models +
 // the project's CONNECTED BYOK providers — never a hand-maintained list. The
 // previous Slack picker offered four hardcoded ids that didn't match the served
 // catalog (wrong `anthropic/` prefix, dashed vs dotted versions, models that

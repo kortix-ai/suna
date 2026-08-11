@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Kortix — The AI command center for your company',
+  title: 'dosco — The agent network for your company',
   description:
-    'A complete walkthrough of Kortix: the Autonomous Company Operating System. One repo that is your company, a workforce of AI agents, and everything is code you own.',
+    'A complete walkthrough of dosco: the agent network for your company. One repo that is your company, a workforce of AI agents, and everything is code you own.',
   robots: { index: false, follow: false },
 };
 

@@ -4,7 +4,7 @@ export function automaticMaintenanceConfig(): MaintenanceConfig {
   return {
     level: 'blocking',
     title: 'Service maintenance',
-    message: 'Kortix is temporarily unavailable. Service will resume automatically.',
+    message: 'dosco is temporarily unavailable. Service will resume automatically.',
     updatedAt: new Date().toISOString(),
   };
 }

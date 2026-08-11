@@ -18,7 +18,7 @@ describe('GitHub installation setup', () => {
     expect(source).toContain("searchParams.get('account_id')");
   });
 
-  test('keeps the GitHub OAuth session separate from the Kortix session', () => {
+  test('keeps the GitHub OAuth session separate from the dosco session', () => {
     const popupSource = readFileSync(
       new URL('../../auth/github-connect/page.tsx', import.meta.url),
       'utf8',

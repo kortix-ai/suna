@@ -2,7 +2,7 @@
  * Project CRUD.
  *
  * Project is the new first-class source-of-truth object: one account-owned Git
- * repo plus the Kortix metadata needed to render and launch sessions later.
+ * repo plus the dosco metadata needed to render and launch sessions later.
  * The old sandbox/instance tables remain as legacy compute state.
  *
  * ─── Structural note ─────────────────────────────────────────────────────────

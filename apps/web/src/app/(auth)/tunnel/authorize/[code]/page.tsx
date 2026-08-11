@@ -168,7 +168,7 @@ function DeviceAuthorize() {
           <div className="space-y-3">
             <div className="space-y-1">
               <p className="text-muted-foreground text-sm font-medium">
-                Grant Kortix agents access to
+                Grant dosco agents access to
               </p>
               <p className="text-muted-foreground/70 text-xs text-pretty">
                 Nothing is selected by default. Selected access remains active until you revoke it.

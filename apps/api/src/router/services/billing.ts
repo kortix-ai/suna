@@ -34,7 +34,7 @@ export async function checkCredits(
 }
 
 /**
- * Deduct credits for a Kortix tool call.
+ * Deduct credits for a dosco tool call.
  *
  * Uses direct DB atomic deduction via Drizzle. Requires DATABASE_URL to be configured.
  */
@@ -60,12 +60,12 @@ export async function deductToolCredits(
 
   const baseDescription =
     description ||
-    `Kortix ${toolName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`;
+    `dosco ${toolName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`;
   const deductDescription = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
   console.info(`[BILLING] Deducting $${cost.toFixed(4)} for ${toolName} (direct DB)`);
 
-  // 'usage' — deliberately NOT compute_debit or llm_debit. Kortix tool calls
+  // 'usage' — deliberately NOT compute_debit or llm_debit. dosco tool calls
   // (web/image search, tool proxy) are neither, and usage-breakdown.ts has no
   // third bucket to put them in. This keeps their classification byte-identical
   // to what the pre-20260730012238065 overload produced; inventing a category

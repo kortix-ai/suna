@@ -121,7 +121,7 @@ export const CORE_SKILLS: [string, string][] = [
   ['kortix-connectors', 'One interface to every connected connector'],
   ['kortix-memory', 'Read, write, and curate the project brain'],
   ['kortix-slack', 'Answer in Slack as a teammate'],
-  ['kortix-system', 'Canonical reference for a Kortix project'],
+  ['kortix-system', 'Canonical reference for a dosco project'],
   ['thermo-nuclear-review', 'Strict maintainability & abstraction review'],
 ];
 
@@ -232,7 +232,7 @@ export type Provider = {
 export const PROVIDERS: Provider[] = [
   {
     domain: null,
-    name: 'Kortix Gateway',
+    name: 'dosco Gateway',
     hint: 'Managed routing — injected into every sandbox',
     state: 'managed',
   },
@@ -317,9 +317,9 @@ export type Secret = {
 export type Policy = { domain: string; name: string; allow: number; ask: number; block: number };
 
 export const MEMBERS: Member[] = [
-  { email: 'marko@kortix.com', name: 'marko', role: 'Owner', last: 'active now' },
-  { email: 'dom@kortix.com', name: 'Dom Williams', role: 'Admin', last: '2h ago' },
-  { email: 'sara@kortix.com', name: 'Sara Khan', role: 'Member', last: '1d ago' },
+  { email: 'marko@dosco.live', name: 'marko', role: 'Owner', last: 'active now' },
+  { email: 'dom@dosco.live', name: 'Dom Williams', role: 'Admin', last: '2h ago' },
+  { email: 'sara@dosco.live', name: 'Sara Khan', role: 'Member', last: '1d ago' },
 ];
 
 export const SECRETS: Secret[] = [

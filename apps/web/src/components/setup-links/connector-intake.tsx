@@ -64,7 +64,7 @@ export function ConnectorIntake({
           setError(
             cause instanceof Error
               ? cause.message
-              : 'Could not reach Kortix. Check your connection and try again.',
+              : 'Could not reach dosco. Check your connection and try again.',
           );
           setPhase('error');
         }

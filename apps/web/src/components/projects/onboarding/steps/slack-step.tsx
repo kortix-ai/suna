@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Install Kortix into Slack.
+ * Install dosco into Slack.
  *
  * The managed and custom install paths stay in one fixed decision lane. Custom
  * setup, waiting, and confirmed states render under the chooser in that same
@@ -85,8 +85,8 @@ export function SlackStep({
 
   return (
     <StepShell
-      title="Add Kortix to Slack"
-      description="This is where most teams actually use Kortix — @mention your agent, kick off tasks, get results in the channel."
+      title="Add dosco to Slack"
+      description="This is where most teams actually use dosco — @mention your agent, kick off tasks, get results in the channel."
       primaryLabel="Continue"
       primaryDisabled={!connected}
       onPrimary={onContinue}
@@ -136,7 +136,7 @@ export function SlackStep({
                 </h2>
               </div>
               <p className="text-muted-foreground mt-2 text-xs leading-5 text-pretty">
-                Complete the install in the Slack popup. Kortix checks the connection every 2.5
+                Complete the install in the Slack popup. dosco checks the connection every 2.5
                 seconds.
               </p>
             </div>

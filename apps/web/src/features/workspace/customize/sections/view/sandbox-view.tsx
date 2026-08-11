@@ -86,7 +86,7 @@ const XCircleFilled = ({ className }: { className?: string }) => (
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   quota: 'Snapshot quota reached',
   dockerfile: 'Dockerfile build failed',
-  layer: 'Kortix runtime layer failed',
+  layer: 'dosco runtime layer failed',
   git: 'Repository access failed',
   tunnel: 'Sandbox callback unreachable',
   provider: 'Sandbox provider error',
@@ -830,7 +830,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
                       title="Optional repository acceleration"
                     >
                       A project accelerator preloads this repository for a later session. A missing
-                      or failed accelerator never blocks a session. Kortix uses the shared session
+                      or failed accelerator never blocks a session. dosco uses the shared session
                       runtime and clones the repository into{' '}
                       <code className="font-mono">/workspace</code>.
                     </InfoBanner>

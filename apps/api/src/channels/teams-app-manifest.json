@@ -4,18 +4,18 @@
   "version": "1.0.0",
   "id": "3f3c0cf4-cf37-4e66-a6b6-ec3e56796b26",
   "developer": {
-    "name": "Kortix",
-    "websiteUrl": "https://kortix.com",
-    "privacyUrl": "https://kortix.com/privacy",
-    "termsOfUseUrl": "https://kortix.com/terms"
+    "name": "dosco",
+    "websiteUrl": "https://dosco.live",
+    "privacyUrl": "https://dosco.live/privacy",
+    "termsOfUseUrl": "https://dosco.live/terms"
   },
   "name": {
-    "short": "Kortix",
-    "full": "Kortix"
+    "short": "dosco",
+    "full": "dosco"
   },
   "description": {
     "short": "Your AI workforce, in Teams — @-mention an agent and it does the real work.",
-    "full": "Kortix brings a workforce of AI agents into Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — working across your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same conversation. Managed by Kortix · https://kortix.com"
+    "full": "dosco brings a workforce of AI agents into Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — working across your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same conversation. Managed by dosco · https://dosco.live"
   },
   "icons": {
     "color": "color.png",
@@ -40,9 +40,9 @@
             "groupchat"
           ],
           "commands": [
-            { "title": "/help", "description": "Show what Kortix can do" },
+            { "title": "/help", "description": "Show what dosco can do" },
             { "title": "/status", "description": "Show the effective project, agent and model" },
-            { "title": "/login", "description": "Connect your Kortix account" },
+            { "title": "/login", "description": "Connect your dosco account" },
             { "title": "/models", "description": "Pick the model for this conversation" },
             { "title": "/agents", "description": "Pick the agent for this conversation" },
             { "title": "/projects", "description": "List connected projects" }

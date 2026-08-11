@@ -41,7 +41,7 @@ export function AssistantTurn({
     <Reveal>
       <div className="mb-2 flex items-center gap-2">
         <AgentAvatar isDefault size={22} />
-        <span className="text-foreground text-sm font-medium">Kortix</span>
+        <span className="text-foreground text-sm font-medium">dosco</span>
         <AnimatePresence mode="wait" initial={false}>
           <m.span
             key={isDone ? 'done' : 'working'}

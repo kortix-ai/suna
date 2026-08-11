@@ -119,7 +119,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'agentmail_email',
     name: 'AgentMail Email',
     description:
-      'Assign AgentMail inbox connections to the agent so inbound email threads can start and continue Kortix sessions. Native email channels are still experimental.',
+      'Assign AgentMail inbox connections to the agent so inbound email threads can start and continue dosco sessions. Native email channels are still experimental.',
     stability: 'experimental',
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
@@ -130,7 +130,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'teams',
     name: 'Microsoft Teams',
     description:
-      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
+      'Connect a Microsoft Teams bot so chats and channels can start and continue dosco sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
     stability: 'experimental',
     // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
     // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
@@ -166,7 +166,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
-      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
+      'Route this project through the managed dosco LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
     stability: 'experimental',
     // Master kill switch: when off, the feature disappears and every project
     // falls back to native OpenCode provider behavior.

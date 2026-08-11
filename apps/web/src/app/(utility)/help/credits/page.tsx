@@ -46,7 +46,7 @@ export default function CreditsPage() {
           </h2>
           <p className="mb-8 text-lg">
             {tHardcodedUi.raw(
-              'appHelpCreditsPage.line42JsxTextCreditsAreKortixSStandardUnitOfMeasurement',
+              'appHelpCreditsPage.line42JsxTextCreditsAredoscoSStandardUnitOfMeasurement',
             )}
           </p>
         </section>
@@ -56,7 +56,7 @@ export default function CreditsPage() {
             {tHardcodedUi.raw('appHelpCreditsPage.line47JsxTextTypesOfCredits')}
           </h2>
           <p className="mb-6">
-            {tHardcodedUi.raw('appHelpCreditsPage.line49JsxTextKortixUsesTwoTypesOfCreditsToGive')}
+            {tHardcodedUi.raw('appHelpCreditsPage.line49JsxTextdoscoUsesTwoTypesOfCreditsToGive')}
           </p>
 
           <div className="mb-8 grid gap-4 md:grid-cols-2">
@@ -120,7 +120,7 @@ export default function CreditsPage() {
             <AlertDescription>
               <strong>{tHardcodedUi.raw('appHelpCreditsPage.line103JsxTextCreditPriority')}</strong>
               {tHardcodedUi.raw(
-                'appHelpCreditsPage.line103JsxTextWhenYouUseKortixExpiringCreditsAreConsumed',
+                'appHelpCreditsPage.line103JsxTextWhenYouUsedoscoExpiringCreditsAreConsumed',
               )}
             </AlertDescription>
           </Alert>
@@ -451,7 +451,7 @@ export default function CreditsPage() {
             <Button
               variant="outline"
               className="gap-2"
-              onClick={() => (window.location.href = 'mailto:hey@kortix.com')}
+              onClick={() => (window.location.href = 'mailto:hey@dosco.live')}
             >
               <Mail className="h-4 w-4" />
               {tHardcodedUi.raw('appHelpCreditsPage.line340JsxTextEmailSupport')}

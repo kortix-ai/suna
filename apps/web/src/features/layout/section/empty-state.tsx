@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Kortix <EmptyState> — centered empty view.
+ * dosco <EmptyState> — centered empty view.
  *
  * Minimal. An icon, a one-line headline, an optional body, and up to two
  * actions (primary + secondary). A calm teaching moment rather than a

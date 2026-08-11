@@ -170,7 +170,7 @@ export function GatewayApiReference({
   /** Jump to the Providers/Models tab — omitted when there's nowhere to jump to. */
   onViewModels?: () => void;
 }) {
-  const base = gatewayUrl ?? 'https://gateway.kortix.com';
+  const base = gatewayUrl ?? 'https://gateway.dosco.live';
   const [tab, setTab] = useState<EndpointTab>('openai');
   const [openaiLang, setOpenaiLang] = useState<Lang>('curl');
   const [anthropicLang, setAnthropicLang] = useState<Lang>('curl');

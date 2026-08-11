@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
-// One brand accent for the whole surface (Kortix is monochrome + a single
+// One brand accent for the whole surface (dosco is monochrome + a single
 // accent). Per-model rainbow coloring was the "yellow-brown" noise — gone.
 export const ACCENT = 'var(--kortix-blue)';
 

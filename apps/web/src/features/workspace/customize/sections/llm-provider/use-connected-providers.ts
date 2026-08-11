@@ -44,7 +44,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
-  // The managed Kortix gateway exists only for projects that explicitly opt
+  // The managed dosco gateway exists only for projects that explicitly opt
   // into the LLM Gateway. Native OpenCode projects should show only providers
   // backed by project secrets, even if an old running sandbox still exposes a
   // stale `kortix` provider.
@@ -91,7 +91,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       });
     return {
       id: 'kortix',
-      label: kortix.name || 'Kortix',
+      label: kortix.name || 'dosco',
       envVars: [],
       authRequirement: { methods: [] },
       helpUrl: null,

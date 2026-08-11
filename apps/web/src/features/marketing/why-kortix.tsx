@@ -6,7 +6,7 @@ type OpenRow = {
   body: string;
 };
 
-export function WhyKortix() {
+export function Whydosco() {
   const tHome = useTranslations('hardcodedUi.appHomePage');
 
   const rows: OpenRow[] = [
@@ -59,4 +59,4 @@ export function WhyKortix() {
   );
 }
 
-export default WhyKortix;
+export default Whydosco;

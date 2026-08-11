@@ -11,7 +11,7 @@ import { useSetVoiceBotName } from '@/hooks/channels/use-voice-settings';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
-const DEFAULT_BOT_NAME = 'Kortix';
+const DEFAULT_BOT_NAME = 'dosco';
 
 export function VoiceView({ projectId }: { projectId: string }) {
   const setBotName = useSetVoiceBotName();

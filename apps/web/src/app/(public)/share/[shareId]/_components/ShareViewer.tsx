@@ -262,12 +262,12 @@ function UserBubble({ text }: { text: string }) {
 function AssistantBlock({ text }: { text: string }) {
   return (
     <div className="flex flex-col gap-2">
-      {/* Agent header — Kortix logomark (matches Suna AgentHeader for name="Kortix") */}
+      {/* Agent header — dosco logomark (matches Suna AgentHeader for name="dosco") */}
       <div className="flex items-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/kortix-logomark-white.svg"
-          alt="Kortix"
+          alt="dosco"
           className="shrink-0 invert dark:invert-0"
           style={{ height: '12px', width: 'auto' }}
         />

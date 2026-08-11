@@ -40,7 +40,7 @@ type ScopeFilter = SkillScope | 'all';
 const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'project', label: 'Project' },
-  { value: 'kortix', label: 'Kortix' },
+  { value: 'kortix', label: 'dosco' },
 ];
 
 /**

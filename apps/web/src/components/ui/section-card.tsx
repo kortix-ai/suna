@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 /**
- * Kortix <SectionCard> — the one panel pattern.
+ * dosco <SectionCard> — the one panel pattern.
  *
  * Composes the design-system <Card> (rounded-2xl surface) and adds the
  * divided header every settings/list panel needs: a title, an optional

@@ -90,7 +90,7 @@ export function StepSourceOfTruth(): ReactNode {
             <pre
               // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll this overflowing code region, as required by Axe.
               tabIndex={0}
-              aria-label="Kortix project manifest"
+              aria-label="dosco project manifest"
               className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]"
             >
               <code>

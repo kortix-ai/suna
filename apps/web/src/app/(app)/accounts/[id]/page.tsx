@@ -748,7 +748,7 @@ function GitHubConnectionCard({
         <div className="space-y-0.5">
           <span className="flex items-center gap-1">
             <p className="text-foreground text-sm font-medium">GitHub connections</p>
-            <Hint label="Kortix stores the GitHub App installation on the account, not on individual members — Git credentials are platform credentials.">
+            <Hint label="dosco stores the GitHub App installation on the account, not on individual members — Git credentials are platform credentials.">
               <Button
                 type="button"
                 variant="ghost"

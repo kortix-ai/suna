@@ -29,9 +29,9 @@ describe('promptFromSearchParams', () => {
 
   test('decodes URL-encoded characters', () => {
     const params = new URLSearchParams();
-    params.set('q', 'Read https://kortix.com/docs/sdk so I can ask questions about it.');
+    params.set('q', 'Read https://dosco.live/docs/sdk so I can ask questions about it.');
     expect(promptFromSearchParams(params)).toBe(
-      'Read https://kortix.com/docs/sdk so I can ask questions about it.',
+      'Read https://dosco.live/docs/sdk so I can ask questions about it.',
     );
   });
 });

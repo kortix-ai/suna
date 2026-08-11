@@ -3,7 +3,7 @@
  *
  * This is deliberately UNRESTRICTED (no allowlist, no cwd jail) at the user's
  * explicit request. That makes the voice agent a second writer on the same
- * sandbox the Kortix session's own agent is working in — no audit/policy layer
+ * sandbox the dosco session's own agent is working in — no audit/policy layer
  * wraps it (the only one that exists, connector/gateway.ts, is scoped to
  * connector actions and doesn't apply to raw sandbox shell access). Treat this
  * the same as giving the sandbox's owner a second terminal.

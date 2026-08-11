@@ -461,7 +461,7 @@ export interface PurchaseItem {
   item_name: string;        // Plan label, e.g. "Free", "Team"
   coupon?: string;
   discount?: number;
-  item_brand: string;       // "Kortix AI"
+  item_brand: string;       // "dosco AI"
   item_category: string;    // "Plans"
   item_list_id: string;     // "plans_listing"
   item_list_name: string;   // "Plans Listing"
@@ -617,7 +617,7 @@ export interface PlanItemData {
   item_name: string;       // e.g., "Pro Monthly", "Plus Yearly", "Ultra"
   coupon?: string;
   discount?: number;
-  item_brand: string;      // "Kortix AI"
+  item_brand: string;      // "dosco AI"
   item_category: string;   // "Plans"
   item_list_id: string;    // "plans_listing"
   item_list_name: string;  // "Plans Listing"

@@ -22,7 +22,7 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
-import type { KortixSendError, KortixSendErrorConnector } from '@kortix/sdk/react';
+import type { doscoSendError, doscoSendErrorConnector } from '@kortix/sdk/react';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
 
 export interface ConnectorNoticeCopy {
@@ -35,12 +35,12 @@ export interface ConnectorNoticeCopy {
    * RUNS AS. Nobody else can supply it, so offering a button would be offering a
    * 409 — the card says who can unblock it instead.
    */
-  connectable: KortixSendErrorConnector[];
+  connectable: doscoSendErrorConnector[];
 }
 
 /** Pure so the copy and the button decision are testable without a DOM. */
 export function connectorNoticeCopy(
-  connectors: readonly KortixSendErrorConnector[],
+  connectors: readonly doscoSendErrorConnector[],
 ): ConnectorNoticeCopy {
   const names = connectors.map((connector) => connector.name);
   return {
@@ -60,7 +60,7 @@ export function ConnectorRequiredNotice({
   resend,
   className,
 }: {
-  error: KortixSendError | null | undefined;
+  error: doscoSendError | null | undefined;
   projectId: string | undefined;
   /** Re-send the refused prompt once every connector is connected. */
   resend: (() => void) | undefined;

@@ -28,7 +28,7 @@ const ROW_ICONS = {
 } as const;
 type IconKey = keyof typeof ROW_ICONS;
 
-/** Models Kortix can run, and a sample of the tools it connects to. These are
+/** Models dosco can run, and a sample of the tools it connects to. These are
  *  capabilities we actually ship — not customer logos, which we neither name
  *  nor have permission to show. OpenCode is the agent harness, not a model, so
  *  it does not belong in this row. */
@@ -60,7 +60,7 @@ function Row({ label, keys, extra }: { label: string; keys: IconKey[]; extra?: R
 /** The transition between the hero and the first real section. */
 export function LogoStrip() {
   return (
-    <section aria-label="Models and tools Kortix works with" className="py-14 sm:py-16">
+    <section aria-label="Models and tools dosco works with" className="py-14 sm:py-16">
       <div className="mx-auto flex max-w-7xl flex-col items-center gap-8 px-6 lg:flex-row lg:justify-between">
         <Row
           label="Runs any model"

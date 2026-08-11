@@ -61,7 +61,7 @@
  *    let it imply a harness menu.
  *  - WHAT AN AGENT IS. Markdown is the FLOOR, never the ceiling. Do not write
  *    "an agent is a markdown file" and stop there. Verified:
- *      · Behavior is a stock OpenCode agent `.md` — Kortix adds no dialect.
+ *      · Behavior is a stock OpenCode agent `.md` — dosco adds no dialect.
  *        `compile-agent-config.ts` passes the frontmatter straight through as
  *        `OpencodeAgentConfig`: description, mode, model, variant, temperature,
  *        top_p, prompt, disable, hidden, options, color, steps, permission.
@@ -111,7 +111,7 @@
  *    certification in these passages at all.
  *  - NUMBERS. No invented metrics, no customer names, no benchmarks. The live
  *    GitHub star count is the only sanctioned figure on the site and it belongs
- *    to the open-source section — these four carry no figure at all.
+ *    to the self-host section — these four carry no figure at all.
  *  - Say "cloud computer" / "agent computer" / "sandbox". NEVER "container".
  */
 
@@ -142,7 +142,7 @@ export type Passage = {
  *    "kortix.yaml declares the machine image, the connectors and the triggers",
  *    "Agents and skills are markdown", "grep the whole company, diff any
  *    change, roll any part of it back". The only residue was `kortix init` /
- *    `kortix ship`, which the hero CLI panel and the open-source terminal both
+ *    `kortix ship`, which the hero CLI panel and the self-host terminal both
  *    already show.
  *  - THE AGENT COMPUTER. Layer 05 carries all three beats, and its "Session id,
  *    sandbox id and branch name are one and the same string" is sharper than
@@ -152,7 +152,7 @@ export type Passage = {
  *    was given". The one beat the card could not hold — an approval HOLDS the
  *    call and the run resumes from it rather than failing — moved into
  *    `control` below, which already owns approval gates.
- *  - RUN IT YOURSELF. The open-source section owns it: the live star count, the
+ *  - RUN IT YOURSELF. The self-host section owns it: the live star count, the
  *    two commands, and a four-row ledger of where self-hosting stops.
  *
  * What is left is the operational layer the stack gestures at and never
@@ -163,7 +163,7 @@ export type Passage = {
  * "An OpenCode agent: markdown, plus the tools and plugins beside it" — true,
  * and far too small for what the frontmatter and the grant actually hold. Cut
  * this passage and the grant surface (the machine it boots, its connectors and
- * channels, its secrets, its skills, its Kortix verbs) appears in no card at all.
+ * channels, its secrets, its skills, its dosco verbs) appears in no card at all.
  *
  * `control` is the strongest structural case: `how-it-works-content.ts:11-13`
  * says in as many words that "Security and governance is deliberately not a
@@ -180,7 +180,7 @@ export const agents: Passage = {
   title: 'An agent is a prompt and a set of grants.',
   paragraphs: [
     'An agent is an OpenCode agent. At baseline that is one markdown file — frontmatter setting its mode, its model and a per-capability permission tree, a body that is the system prompt — but markdown is the floor, not the ceiling. The whole OpenCode surface sits in the same repo and is yours to edit: your own TypeScript tools, plugins that hook the runtime, the skills it loads, the model and provider config.',
-    'What it may reach is a block in kortix.yaml, and it covers far more than tools: which sandbox image it boots, which connectors and channels it can call, which secrets it may receive, which skills it may invoke, and what it may do to Kortix itself. A grant left out resolves to none. Whatever is granted is then intersected with the role of whoever started the session, so an agent never exceeds its human.',
+    'What it may reach is a block in kortix.yaml, and it covers far more than tools: which sandbox image it boots, which connectors and channels it can call, which secrets it may receive, which skills it may invoke, and what it may do to dosco itself. A grant left out resolves to none. Whatever is granted is then intersected with the role of whoever started the session, so an agent never exceeds its human.',
   ],
   facts: ['OpenCode agent', 'Tools, plugins, models', 'Omitted grants are none'],
   href: '/agents-and-skills',
@@ -207,7 +207,7 @@ export const channels: Passage = {
 /* ── 03 · Nobody present · mount after the asking interlude ───────────────────
    That interlude's third mode is "Automated — nobody is present", illustrated by
    a 07:00 report. This is the mechanism under exactly that card, and it hands
-   the reader into the open-source and repo material that follows. */
+   the reader into the self-host and repo material that follows. */
 export const automations: Passage = {
   id: 'automations',
   eyebrow: 'Nobody present',

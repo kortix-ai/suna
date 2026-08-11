@@ -130,7 +130,7 @@ slackWebhookApp.openapi(
       await publishHomeForUser(teamId, envelope.event.user);
       return;
     }
-    // Opening the Kortix DM (AI-Assistant pane) → greet with the project picker.
+    // Opening the dosco DM (AI-Assistant pane) → greet with the project picker.
     // The channel/thread live on event.assistant_thread, NOT the top-level event,
     // so resolveOauthProject can't see it — handle it before that branch.
     if (envelope.event?.type === 'assistant_thread_started') {
@@ -246,7 +246,7 @@ slackWebhookApp.openapi(
   const envelope = parseEnvelope(rawBody);
   if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
   // Slack verifies the Events API request URL before a manual/BYO app can be
-  // installed and saved back to Kortix, so there is no project signing secret
+  // installed and saved back to dosco, so there is no project signing secret
   // yet. Only the bootstrap challenge is allowed through this unsigned path;
   // every real callback below remains project-secret verified.
   if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
@@ -307,7 +307,7 @@ slackWebhookApp.openapi(
 );
 
 // Per-project (BYO app) interactivity — parity with the canonical /interactivity
-// (block-action pickers + the "Open in Kortix" message shortcut), verified with
+// (block-action pickers + the "Open in dosco" message shortcut), verified with
 // the project's own signing secret. The BYO manifest points interactivity here.
 slackWebhookApp.openapi(
   createRoute({

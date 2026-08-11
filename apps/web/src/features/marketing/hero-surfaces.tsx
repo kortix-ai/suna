@@ -80,7 +80,7 @@ function ChatBubble({
   );
 }
 
-function KortixAvatar() {
+function doscoAvatar() {
   return (
     <span className="bg-primary flex size-8 shrink-0 items-center justify-center rounded-md">
       <KortixLogo size={15} className="text-background" />
@@ -158,7 +158,7 @@ function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
       <div className="border-border flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2.5">
           <BrandIcon className="size-5" />
-          <span className="text-foreground text-sm font-semibold">Kortix</span>
+          <span className="text-foreground text-sm font-semibold">dosco</span>
           {brand === 'teams' && (
             <Badge variant="kortix" size="sm" className="rounded">
               Coming soon
@@ -171,9 +171,9 @@ function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
       {/* justify-start, not justify-end. The thread is short enough to fit on a
           laptop either way, but at phone width it can still run past the frame,
           and the two choices fail in opposite directions: end-justified, the
-          overflow eats the ask and the "Kortix APP" attribution off the top, so
+          overflow eats the ask and the "dosco APP" attribution off the top, so
           the panel reads as a stray bullet list by nobody. Start-justified, it
-          eats the last bullet instead — you always keep "someone asked, Kortix
+          eats the last bullet instead — you always keep "someone asked, dosco
           answered", which is the entire claim the panel exists to make. */}
       <div
         className={cn(
@@ -182,9 +182,9 @@ function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
         )}
       >
         <ChatBubble name="Marko" avatar={<PersonAvatar initial="M" />}>
-          <span className="text-foreground/70">@Kortix</span> {active.ask}
+          <span className="text-foreground/70">@dosco</span> {active.ask}
         </ChatBubble>
-        <ChatBubble name="Kortix" app avatar={<KortixAvatar />}>
+        <ChatBubble name="dosco" app avatar={<doscoAvatar />}>
           {active.reply}
         </ChatBubble>
       </div>
@@ -252,9 +252,9 @@ function EmailSurface() {
 
         <div className="border-border bg-card rounded-lg border p-3.5 sm:p-4">
           <div className="flex items-center gap-2">
-            <KortixAvatar />
+            <doscoAvatar />
             <div>
-              <span className="text-foreground text-sm font-semibold">Kortix</span>
+              <span className="text-foreground text-sm font-semibold">dosco</span>
               <p className="text-muted-foreground text-xs">replied · 6 min</p>
             </div>
           </div>
@@ -279,7 +279,7 @@ function EmailSurface() {
           Teams is behind an operator switch, email and voice are experimental.
 
           Hidden on phones. It wraps to three lines there and takes ~56px off a
-          frame that could not already fit the Kortix reply — and a rollout
+          frame that could not already fit the dosco reply — and a rollout
           caveat is worth nothing if the thing it qualifies is off screen. The
           same status is stated on /channels, which is where a reader who cares
           about it goes. */}
@@ -331,7 +331,7 @@ function MobileSurface() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
-              alt="Kortix mobile app"
+              alt="dosco mobile app"
               className="block h-full w-full object-cover sm:w-auto sm:object-contain"
             />
           </div>
@@ -432,7 +432,7 @@ function WebSurface() {
         loop
         playsInline
         preload="metadata"
-        aria-label="Kortix in the browser: connect apps, manage agents and skills, and an agent returning a finished pitch deck"
+        aria-label="dosco in the browser: connect apps, manage agents and skills, and an agent returning a finished pitch deck"
       >
         {/* Ordered by the resource selection algorithm: the browser takes the
             first source whose type it supports and whose media matches, so the
@@ -468,7 +468,7 @@ function WebSurface() {
       </video>
       <Image
         src={media.poster}
-        alt="Kortix in the browser, showing a project and its files"
+        alt="dosco in the browser, showing a project and its files"
         fill
         sizes="(max-width: 1024px) 100vw, 1100px"
         className="hidden object-contain motion-reduce:block"
@@ -498,7 +498,7 @@ function CopyInstallCommand() {
  *  project, `kortix connectors ls` / `show` lists the connectors and the exact
  *  actions an agent calls through the connector, `kortix sessions new` boots a
  *  cloud computer, `kortix sessions status` shows it working. Every character
- *  on screen is output the CLI produced against dev-api.kortix.com. The grid is
+ *  on screen is output the CLI produced against dev-api.dosco.live. The grid is
  *  112 columns by 18 rows so real output — the host line is 111 characters —
  *  reaches the right edge instead of hugging the left third. */
 function CliSurface() {
@@ -527,7 +527,7 @@ function CliSurface() {
         loop
         playsInline
         preload="metadata"
-        aria-label="A terminal running the Kortix CLI: curl installs it, kortix projects use picks a project, kortix connectors show lists the actions an agent can call, and kortix sessions new starts a session on a cloud computer"
+        aria-label="A terminal running the dosco CLI: curl installs it, kortix projects use picks a project, kortix connectors show lists the actions an agent can call, and kortix sessions new starts a session on a cloud computer"
       >
         {/* Same per-device selection as the web panel: first supported source
             whose media matches wins, so the narrowest condition leads. Only
@@ -555,7 +555,7 @@ function CliSurface() {
       </video>
       <Image
         src={media.poster}
-        alt="A terminal showing the Kortix CLI with a session running on a cloud computer"
+        alt="A terminal showing the dosco CLI with a session running on a cloud computer"
         fill
         sizes="(max-width: 1024px) 100vw, 1100px"
         className="hidden object-cover object-left-bottom motion-reduce:block"
@@ -611,7 +611,7 @@ export function HeroSurfaces() {
           fit it. Phone gets 360px rather than 300px: the videos are `cover`, so
           a taller box costs them nothing (it just shows more of the recording),
           while the five DOM panels need every pixel — at 300px the Slack ask and
-          the Kortix reply could not both be on screen. */}
+          the dosco reply could not both be on screen. */}
       {/* The cap matters more than the floor. On a tall display the frame was
           running to 620px and the hero read as one enormous slab; 520 keeps the
           product legible while leaving the fold visibly un-crowded. The

@@ -22,7 +22,7 @@ export function ConnectingScreen() {
       />
       <div className="text-muted-foreground flex items-center gap-2 text-sm">
         <Loading className="size-4 shrink-0" />
-        Connecting to your Kortix call…
+        Connecting to your dosco call…
       </div>
     </div>
   );
@@ -53,7 +53,7 @@ export function EndedScreen({
           {failed ? 'Call unavailable' : 'You left the call'}
         </h1>
         <p className="text-muted-foreground max-w-sm text-sm text-balance">
-          {message || (failed ? 'Lost connection to Kortix.' : 'You can close this tab now.')}
+          {message || (failed ? 'Lost connection to dosco.' : 'You can close this tab now.')}
         </p>
       </div>
       <Button variant="outline" size="sm" onClick={() => window.location.reload()}>

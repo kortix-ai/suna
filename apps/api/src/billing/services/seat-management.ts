@@ -27,7 +27,7 @@ import {
 export async function countActiveMembers(accountId: string): Promise<number> {
   // Count account members, EXCLUDING phantom self-memberships — a row where
   // user_id == account_id whose user_id is not a real auth user. These are
-  // minted when a Kortix token (the auth middleware maps it to userId ==
+  // minted when a dosco token (the auth middleware maps it to userId ==
   // accountId) hits resolveAccountId; the account ends up "a member of itself"
   // and must NOT be billed as a seat. A personal account's owner also has
   // user_id == account_id but IS a real auth user, so the NOT EXISTS keeps it.

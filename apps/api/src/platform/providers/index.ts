@@ -11,7 +11,7 @@ import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundar
  * interface, not the concrete class, so they stay untouched.
  *
  *   - daytona — Daytona Cloud
- *   - platinum — Kortix Platinum
+ *   - platinum — dosco Platinum
  *   - e2b — E2B Cloud
  */
 export type ProviderName = 'daytona' | 'platinum' | 'e2b';
@@ -128,7 +128,7 @@ export interface ResolvedEndpoint {
 }
 
 export interface SandboxIngressRequest {
-  /** Port named by the caller-facing Kortix proxy URL. */
+  /** Port named by the caller-facing dosco proxy URL. */
   port: number;
   path?: string;
   transport?: 'http' | 'websocket';
@@ -176,7 +176,7 @@ export interface SandboxProvider {
   readonly provisioning: ProvisioningTraits;
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   /**
-   * Ensure the Kortix App supervisor is running after create or resume.
+   * Ensure the dosco App supervisor is running after create or resume.
    * Providers that honor the image ENTRYPOINT implement this as a no-op.
    * Providers that replace ENTRYPOINT must start `/kortix/bin/kortix-appd`
    * through their native process API. The operation must be idempotent.

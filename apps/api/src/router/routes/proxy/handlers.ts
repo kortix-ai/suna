@@ -51,14 +51,14 @@ function usageRoute(service: ProxyServiceConfig, subPath: string): string {
 //
 // Three authentication/billing modes:
 //
-// 1. Kortix token (kortix_/kortix_sb_ in our DB) in Authorization header
-//    → Inject Kortix's API key, forward, bill at KORTIX_MARKUP (1.2×).
+// 1. dosco token (kortix_/kortix_sb_ in our DB) in Authorization header
+//    → Inject dosco's API key, forward, bill at KORTIX_MARKUP (1.2×).
 //
-// 2. User's own API key in Authorization + Kortix token in X-Kortix-Token header
+// 2. User's own API key in Authorization + dosco token in X-dosco-Token header
 //    → Passthrough (no key injection), bill at PLATFORM_FEE_MARKUP (0.1×).
 //
-// 3. User's own API key, no Kortix token anywhere
-//    → Pure passthrough. No billing, no gating (self-hosted / non-Kortix user).
+// 3. User's own API key, no dosco token anywhere
+//    → Pure passthrough. No billing, no gating (self-hosted / non-dosco user).
 
 export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: string) {
   const fullPath = new URL(c.req.url).pathname;
@@ -71,18 +71,18 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
 
   const auth = await tryAuthenticate(c);
 
-  if (auth.isKortixUser && auth.accountId && !auth.isPassthrough) {
-    // Mode 1: Kortix-owned key — inject our key, bill at 1.2×
-    return handleKortixProxy(c, service, subPath, queryString, method, auth.accountId);
+  if (auth.isdoscoUser && auth.accountId && !auth.isPassthrough) {
+    // Mode 1: dosco-owned key — inject our key, bill at 1.2×
+    return handledoscoProxy(c, service, subPath, queryString, method, auth.accountId);
   } else if (auth.isPassthrough && auth.accountId) {
     // Mode 2: User's own key — passthrough, bill at 0.1×
-    return handleKortixPassthrough(c, service, subPath, queryString, method, auth.accountId);
+    return handledoscoPassthrough(c, service, subPath, queryString, method, auth.accountId);
   } else {
-    // Mode 3: No Kortix token — pure passthrough, no billing.
+    // Mode 3: No dosco token — pure passthrough, no billing.
     // When billing is enabled, reject: only kortix_ tokens with billing are accepted.
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       throw new HTTPException(401, {
-        message: 'Kortix API key required. Get one at https://kortix.com',
+        message: 'dosco API key required. Get one at https://dosco.live',
       });
     }
     // Self-hosted: allow passthrough for BYOC users with their own API keys.
@@ -90,9 +90,9 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
   }
 }
 
-// === Kortix User: match allowed route, inject our key, bill with route-specific pricing ===
+// === dosco User: match allowed route, inject our key, bill with route-specific pricing ===
 
-async function handleKortixProxy(
+async function handledoscoProxy(
   c: any,
   service: ProxyServiceConfig,
   subPath: string,
@@ -126,7 +126,7 @@ async function handleKortixProxy(
     }
   }
 
-  const kortixKey = service.getKortixApiKey();
+  const kortixKey = service.getdoscoApiKey();
   if (!kortixKey) {
     throw new HTTPException(503, {
       message: `${service.name} not configured`,
@@ -135,17 +135,17 @@ async function handleKortixProxy(
 
   const actor = resolveActorFromRequest(c, { logPrefix: '[PROXY]' });
 
-  // Use alternate target/key injection for Kortix-managed if configured (e.g. OpenRouter)
+  // Use alternate target/key injection for dosco-managed if configured (e.g. OpenRouter)
   const baseUrl = service.kortixTargetBaseUrl || service.targetBaseUrl;
   const targetUrl = `${baseUrl}${subPath}${queryString}`;
   const headers = buildForwardHeaders(c);
-  // Strip Kortix-specific and auth headers — upstream gets injected key only
+  // Strip dosco-specific and auth headers — upstream gets injected key only
   headers.delete('x-kortix-token');
   headers.delete('x-api-key');
   headers.delete('authorization');
   let body = await getRequestBody(c, method);
 
-  body = injectApiKey(service, headers, body, /* useKortixInjection */ true);
+  body = injectApiKey(service, headers, body, /* usedoscoInjection */ true);
   body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
   // Route-specific billing overrides service default.
   const billingToolName = matchedRoute.billingToolName || service.billingToolName;
@@ -203,7 +203,7 @@ async function handleKortixProxy(
   // LLM services: bill per-token at KORTIX_MARKUP (1.2×)
   if (service.isLlm === true) {
     if (upstream.ok) {
-      return billLlmKortixProxy(upstream, service, subPath, accountId, actor, reservation);
+      return billLlmdoscoProxy(upstream, service, subPath, accountId, actor, reservation);
     }
     // Upstream error — don't bill for failed requests
     console.warn(
@@ -234,13 +234,13 @@ async function handleKortixProxy(
   });
 }
 
-// === Kortix-managed LLM Billing ===
+// === dosco-managed LLM Billing ===
 //
 // Handles both response formats based on upstream:
 // - OpenAI-compatible: usage.prompt_tokens / completion_tokens
 // - Anthropic-native: usage.input_tokens / output_tokens
 
-async function billLlmKortixProxy(
+async function billLlmdoscoProxy(
   upstream: Response,
   service: ProxyServiceConfig,
   subPath: string,
@@ -264,7 +264,7 @@ async function billLlmKortixProxy(
     const [clientStream, billingStream] = upstreamBody.tee();
 
     // Fire-and-forget: extract usage from billing stream
-    extractUsageFromKortixProxyStream(
+    extractUsageFromdoscoProxyStream(
       billingStream,
       service,
       subPath,
@@ -353,7 +353,7 @@ async function billLlmKortixProxy(
  * Handles both OpenAI-compatible and Anthropic-native SSE formats.
  * Runs in background (fire-and-forget).
  */
-async function extractUsageFromKortixProxyStream(
+async function extractUsageFromdoscoProxyStream(
   stream: ReadableStream<Uint8Array>,
   service: ProxyServiceConfig,
   subPath: string,
@@ -453,9 +453,9 @@ async function extractUsageFromKortixProxyStream(
   }
 }
 
-// === Kortix user with own key: passthrough + bill at platform fee (0.1×) ===
+// === dosco user with own key: passthrough + bill at platform fee (0.1×) ===
 
-async function handleKortixPassthrough(
+async function handledoscoPassthrough(
   c: any,
   service: ProxyServiceConfig,
   subPath: string,
@@ -465,7 +465,7 @@ async function handleKortixPassthrough(
 ) {
   const targetUrl = `${service.targetBaseUrl}${subPath}${queryString}`;
   const headers = buildForwardHeaders(c);
-  // Remove X-Kortix-Token from forwarded headers — upstream doesn't need it
+  // Remove X-dosco-Token from forwarded headers — upstream doesn't need it
   headers.delete('x-kortix-token');
   let body = await getRequestBody(c, method);
 
@@ -559,7 +559,7 @@ async function handleKortixPassthrough(
   });
 }
 
-// === Not Kortix user: pure passthrough ===
+// === Not dosco user: pure passthrough ===
 
 async function handlePassthrough(
   c: any,

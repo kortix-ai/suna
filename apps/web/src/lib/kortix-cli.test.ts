@@ -4,18 +4,18 @@ import {
   KORTIX_CLI_DEV_INSTALL_COMMAND,
   KORTIX_CLI_INSTALL_COMMAND,
   getDeploymentCliInstallCommand,
-  getKortixCliInstallCommand,
+  getdoscoCliInstallCommand,
 } from './kortix-cli';
 
-describe('getKortixCliInstallCommand', () => {
+describe('getdoscoCliInstallCommand', () => {
   test('picks the dev channel for a dev version', () => {
-    expect(getKortixCliInstallCommand('1.2.3-dev.4')).toBe(KORTIX_CLI_DEV_INSTALL_COMMAND);
-    expect(getKortixCliInstallCommand('dev')).toBe(KORTIX_CLI_DEV_INSTALL_COMMAND);
+    expect(getdoscoCliInstallCommand('1.2.3-dev.4')).toBe(KORTIX_CLI_DEV_INSTALL_COMMAND);
+    expect(getdoscoCliInstallCommand('dev')).toBe(KORTIX_CLI_DEV_INSTALL_COMMAND);
   });
 
   test('picks the stable channel otherwise', () => {
-    expect(getKortixCliInstallCommand('1.2.3')).toBe(KORTIX_CLI_INSTALL_COMMAND);
-    expect(getKortixCliInstallCommand(undefined)).toBe(KORTIX_CLI_INSTALL_COMMAND);
+    expect(getdoscoCliInstallCommand('1.2.3')).toBe(KORTIX_CLI_INSTALL_COMMAND);
+    expect(getdoscoCliInstallCommand(undefined)).toBe(KORTIX_CLI_INSTALL_COMMAND);
   });
 });
 
@@ -35,11 +35,11 @@ describe('getDeploymentCliInstallCommand', () => {
     );
   });
 
-  test('on kortix.com the rendered command is unchanged', () => {
-    expect(getDeploymentCliInstallCommand('1.2.3', 'https://kortix.com')).toBe(
+  test('on dosco.live the rendered command is unchanged', () => {
+    expect(getDeploymentCliInstallCommand('1.2.3', 'https://dosco.live')).toBe(
       KORTIX_CLI_INSTALL_COMMAND,
     );
-    expect(getDeploymentCliInstallCommand('1.2.3-dev.4', 'https://kortix.com')).toBe(
+    expect(getDeploymentCliInstallCommand('1.2.3-dev.4', 'https://dosco.live')).toBe(
       KORTIX_CLI_DEV_INSTALL_COMMAND,
     );
   });

@@ -2,20 +2,21 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const source = readFileSync(join(import.meta.dir, 'middleware.ts'), 'utf8');
-// apps/web/src -> apps/desktop-electron/src/main.js. This file's own comment
-// (main.js, right above APP_PATH_PREFIXES) states the two must stay in sync:
-// "MUST stay in sync with DESKTOP_ALLOWED_ROUTES in apps/web/src/middleware.ts."
+const source = readFileSync(join(import.meta.dir, 'proxy.ts'), 'utf8');
+// apps/web/src -> apps/desktop-electron/src/main.js. The desktop main file's
+// own comment (main.js, above APP_PATH_PREFIXES) states the two must stay
+// in sync: "MUST stay in sync with DESKTOP_ALLOWED_ROUTES in
+// apps/web/src/proxy.ts."
 const desktopMainSource = readFileSync(
   join(import.meta.dir, '../../desktop-electron/src/main.js'),
   'utf8',
 );
 
 describe('desktop route allowlist', () => {
-  test('/new is reachable inside the desktop shell (web middleware half)', () => {
+  test('/new is reachable inside the desktop shell (web proxy half)', () => {
     const list = source.slice(
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
-      source.indexOf('export async function middleware'),
+      source.indexOf('export async function proxy'),
     );
     expect(list).toContain("'/new'");
   });

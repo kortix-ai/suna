@@ -74,7 +74,7 @@ test('suppresses runtime messaging noise from browser events', () => {
 test('suppresses extension-backed Sentry events', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://app.kortix.com/auth' },
+      request: { url: 'https://app.dosco.live/auth' },
       exception: {
         values: [
           {
@@ -96,7 +96,7 @@ test('does not suppress real application errors', () => {
   assert.equal(
     shouldIgnoreBrowserRuntimeNoise({
       message: 'TypeError: Cannot read properties of undefined (reading id)',
-      filename: 'https://app.kortix.com/_next/static/chunk.js',
+      filename: 'https://app.dosco.live/_next/static/chunk.js',
     }),
     false,
   )
@@ -111,7 +111,7 @@ test('matches third-party Promise.then tampering noise', () => {
   )
 })
 
-// Reproduces Better Stack error 8bc2dce8...0384f8 (Kortix Frontend prod):
+// Reproduces Better Stack error 8bc2dce8...0384f8 (dosco Frontend prod):
 // a recoverable React #418 hydration mismatch raised via onerror on a pt-PT
 // user's browser. Chrome's auto-translate (offered because the page renders in
 // English) rewrites text nodes before hydration, which React reports as a
@@ -126,7 +126,7 @@ const REACT_418 =
 test('suppresses the React #418 hydration noise on the marketing site (/pt)', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/pt' },
+      request: { url: 'https://dosco.live/pt' },
       exception: {
         values: [
           {
@@ -147,7 +147,7 @@ test('suppresses the React #418 hydration noise on the marketing site (/pt)', ()
 test('suppresses the React #418 hydration noise on the post-login /projects landing', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects?auth_event=login&auth_method=google' },
+      request: { url: 'https://dosco.live/projects?auth_event=login&auth_method=google' },
       exception: {
         values: [
           {
@@ -168,7 +168,7 @@ test('suppresses the React #418 hydration noise on the post-login /projects land
 test('still suppresses the generic "Hydration failed because the server rendered" message', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -189,7 +189,7 @@ test('does NOT suppress a genuine, non-recoverable app hydration error', () => {
   // it must still reach error tracking even on a non-/auth route.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects' },
+      request: { url: 'https://dosco.live/projects' },
       exception: {
         values: [
           {
@@ -204,13 +204,13 @@ test('does NOT suppress a genuine, non-recoverable app hydration error', () => {
 })
 
 test('suppresses the Better Stack Promise.then incident event', () => {
-  // Reproduces error c4085f6b...256290 (Kortix Frontend prod): an
+  // Reproduces error c4085f6b...256290 (dosco Frontend prod): an
   // onunhandledrejection from a scanner bot monkey-patching native Promise.then
   // on the marketing homepage. The de-minified frame points at our own chunk,
   // so this must be matched by message, not by source.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -233,7 +233,7 @@ test('flags the injected embed widget source as third-party noise', () => {
   assert.equal(isInjectedAppSource('app:///_next/static/chunks/main.js'), false)
 })
 
-// Reproduces the Kortix Frontend (prod) RuntimeNotReadyError cluster (patterns
+// Reproduces the dosco Frontend (prod) RuntimeNotReadyError cluster (patterns
 // 1a9acfd0…, 4c20d52d…, 7e2697b4…, a58cd1cb…, …). `getClient()` throws
 // `RuntimeNotReadyError: [opencode-sdk] Server URL not ready — sandbox is
 // still loading` for the ~1s window before a session's runtime URL pins — an
@@ -270,7 +270,7 @@ test('suppresses a runtime-not-ready Sentry event regardless of capture path', (
   for (const value of RUNTIME_NOT_READY_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        request: { url: 'https://app.dosco.live/projects/p/sessions/s' },
         exception: {
           values: [
             {
@@ -314,7 +314,7 @@ test('does NOT suppress a genuine runtime/server error that is not the transient
 })
 
 // Reproduces Better Stack error 1426e718... (38 occurrences) and b04a2106...
-// (6 occurrences), Kortix Frontend (prod), application_id 2346967: a browser-
+// (6 occurrences), dosco Frontend (prod), application_id 2346967: a browser-
 // native image load failure raised through window.onerror. The app already
 // degrades gracefully via onError handlers, so the exact message is noise.
 test('suppresses the "Failed to load image" browser noise via runtime guard', () => {
@@ -330,7 +330,7 @@ test('suppresses the "Failed to load image" browser noise via runtime guard', ()
 test('suppresses the bare "Failed to load image" Sentry exception', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://app.kortix.com/projects' },
+      request: { url: 'https://app.dosco.live/projects' },
       exception: {
         values: [
           {
@@ -349,7 +349,7 @@ test('suppresses the bare "Failed to load image" Sentry exception', () => {
 test('does NOT suppress a real application error that merely mentions images', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://app.kortix.com/projects' },
+      request: { url: 'https://app.dosco.live/projects' },
       exception: {
         values: [
           {
@@ -366,7 +366,7 @@ test('does NOT suppress a real application error that merely mentions images', (
 test('does NOT suppress an actionable pptx image-processing failure', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://app.kortix.com/projects' },
+      request: { url: 'https://app.dosco.live/projects' },
       exception: {
         values: [
           {
@@ -392,7 +392,7 @@ test('does NOT suppress a same-worded server exception without a browser frame',
 })
 
 // Reproduces Better Stack error 140195488...4f7255 (4 occurrences) + sibling
-// 50c1919a...0bf1cd (2 occurrences), Kortix Frontend (prod), application_id
+// 50c1919a...0bf1cd (2 occurrences), dosco Frontend (prod), application_id
 // 2346967: an `ApiError` with message "Out of credits. Top up to continue."
 // (the exact body the API billing gate emits for an `insufficient_credits`
 // HTTP 402 — apps/api/src/billing/services/billing-gate.ts:assertBillingActive).
@@ -453,7 +453,7 @@ test('suppresses a billing-gate 402 Sentry event regardless of capture path', ()
   for (const value of BILLING_GATE_EXPECTED_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        request: { url: 'https://app.dosco.live/projects/p/sessions/s' },
         exception: {
           values: [
             {
@@ -540,7 +540,7 @@ test('does NOT suppress a longer real error containing the billing-gate phrase',
 })
 
 // Reproduces Better Stack error 9f72dd9a2cb49a81aa57be27e9b3cb2f1ef06a8ebf59ede6900267febd3f7ded
-// (Kortix Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
+// (dosco Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
 // threw a plain `Error('No model available for compaction. …')` when every
 // model-resolution fallback tier failed (no config default, no assistant
 // message, no connected provider/model) — an EXPECTED, user-facing
@@ -578,7 +578,7 @@ test('suppresses a no-compaction-model Sentry event regardless of capture path',
   for (const value of COMPACTION_NO_MODEL_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        request: { url: 'https://app.dosco.live/projects/p/sessions/s' },
         exception: {
           values: [
             {
@@ -662,10 +662,10 @@ test('does NOT suppress a real compaction mutation failure (network / 5xx)', () 
 
 // Reproduces Better Stack error
 // 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
-// (Kortix Frontend prod): `ApiError`, message
+// (dosco Frontend prod): `ApiError`, message
 // `Model "openai/gpt-5.4-mini" is not available for this account`, 7
 // occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL post-v0.12.4),
-// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…` (co-
+// request URL `https://dosco.live/projects/377b3ef0-…/sessions/d3d542…` (co-
 // worker session page), browser Android Chrome mobile, mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
 // `handled:false`). PR #6082 added an SDK classification gate in
@@ -729,7 +729,7 @@ test('suppresses a model-not-servable Sentry event regardless of capture path', 
   for (const value of MODEL_NOT_SERVABLE_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        request: { url: 'https://dosco.live/projects/p/sessions/s' },
         exception: {
           values: [
             {
@@ -862,7 +862,7 @@ assert.equal(
 // ---------------------------------------------------------------------------
 // Supabase gotrue `TOKEN_EXPIRED` auth-session rejection noise (Better Stack
 // pattern 63b0cde714048bca4c42129afacd5f8ec56813e0e663fbdb41265fdba6ed28a4,
-// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// dosco Frontend prod, application_id 2346967, `UnhandledRejection`). A
 // Supabase auth session JWT expired mid-flight (during a page load after a
 // Google OAuth redirect, or during a stale session transition), and a
 // fire-and-forget `.then()` on a Supabase auth call rejected with the plain
@@ -877,8 +877,8 @@ assert.equal(
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
 // unhandledrejection — never reached a React error boundary), release
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
-// `https://kortix.com/auth` (first occurrence) and
-// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// `https://dosco.live/auth` (first occurrence) and
+// `https://dosco.live/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
 // occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
 // 151.0.0.0 on Windows. Stack trace: NONE — `call_site_file`/`call_site_function`
 // are null, `call_stack_hash` is null, no frames at all.
@@ -930,10 +930,10 @@ test('suppresses the Supabase TOKEN_EXPIRED Sentry event via the beforeSend gate
   // Exact shape of the first production event: type `UnhandledRejection`,
   // mechanism `auto.browser.global_handlers.onunhandledrejection` (uncaught
   // global unhandledrejection — never reached a React error boundary), NO
-  // stacktrace frames, request URL `https://kortix.com/auth`.
+  // stacktrace frames, request URL `https://dosco.live/auth`.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/auth' },
+      request: { url: 'https://dosco.live/auth' },
       exception: {
         values: [
           {
@@ -951,11 +951,11 @@ test('suppresses the Supabase TOKEN_EXPIRED Sentry event via the beforeSend gate
   // Exact shape of the second production event: type `UnhandledRejection`,
   // mechanism `auto.browser.global_handlers.onunhandledrejection` (uncaught
   // global unhandledrejection — never reached a React error boundary), NO
-  // stacktrace frames, request URL `https://kortix.com/projects/c5a6e2f5-...`
+  // stacktrace frames, request URL `https://dosco.live/projects/c5a6e2f5-...`
   // (post-Google-OAuth redirect), referer `https://accounts.google.com/`.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf' },
+      request: { url: 'https://dosco.live/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf' },
       exception: {
         values: [
           {
@@ -975,7 +975,7 @@ test('suppresses the Supabase TOKEN_EXPIRED rejection when frames are absent ent
   // it (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/auth' },
+      request: { url: 'https://dosco.live/auth' },
       exception: {
         values: [{ value: SUPABASE_TOKEN_EXPIRED_REJECTION }],
       },
@@ -1134,7 +1134,7 @@ test('does NOT suppress a real null-access error on a non-storage method', () =>
 // Reproduces Better Stack error patterns
 // 09b9cf65ca7c954bf031fc6fb570a96c4e47ce4ed5f0b9ed8b10c688fc2f27de and
 // ac75f0d8a9b73ae88b68f02693d72ecc5137b5e1d2c14a430de5190a42cdfd64
-// (Kortix Frontend prod, application_id 2346967), both
+// (dosco Frontend prod, application_id 2346967), both
 // `SecurityError: Failed to read the 'localStorage' property from 'window':
 // Access is denied for this document.`, 1 occurrence each, 0 identified users,
 // last 2026-07-12 17:54:04 UTC. Storage-blocked browser contexts (Safari
@@ -1245,7 +1245,7 @@ test('suppresses the post-#4674 capitalized Window recurrence (webpack runtime c
     // Sentry beforeSend gate: the exact prod Sentry event shape.
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -1271,7 +1271,7 @@ test('suppresses the storage SecurityError Sentry event via the beforeSend gate'
   for (const value of STORAGE_SECURITY_ERROR_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -1386,11 +1386,11 @@ test('does NOT suppress a storage SecurityError when only ONE of several frames 
 //   1918c62ac5434aa56d7ce150e96b99be1b520471360fa3ef091802327297cf73
 //   70e1c309921716ee01cd5cd083cef876b41a81311b51db3d5bd55def644fdc47
 //   1cec609ee07b7f15aea6fea1eed550e4ce45a838abdf40171050336ff4abc2aa
-// (Kortix Frontend prod, application_id 2346967): all `SecurityError: The
+// (dosco Frontend prod, application_id 2346967): all `SecurityError: The
 // operation is insecure.`, 1 occurrence each / 0 identified users, last
 // 2026-07-29 08:36:02 UTC, release `c330eda4d96e7aee557618254a86df7d16ba5d9b`
 // (v0.11.0 — POST-Promote), transaction `/` (marketing homepage), URL
-// `https://kortix.com/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
+// `https://dosco.live/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). Frames: all
 // in `webpack-befb5b1662175048.js` function `a` (webpack runtime) +
 // `59675-a333ed5b0ae6dae4.js` functions `17725`/`20532`/`63613` (in_app) —
@@ -1442,7 +1442,7 @@ test('suppresses the Safari generic SecurityError Sentry event via the beforeSen
   for (const value of SAFARI_SECURITY_ERROR_CAPTURE_FORMS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -1612,7 +1612,7 @@ test('classifies injectedScript.bundle.js sendMessage noise from another injecte
 test('does NOT classify sendMessage as noise when NO injected source is present', () => {
   for (const message of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
     assert.equal(
-      isInjectedScriptSendMessageNoise({ message, filename: 'https://kortix.com/app.js' }),
+      isInjectedScriptSendMessageNoise({ message, filename: 'https://dosco.live/app.js' }),
       false,
       `expected "${message}" from a non-injected source to keep reporting`,
     )
@@ -1661,7 +1661,7 @@ test('suppresses the injectedScript.bundle.js sendMessage Sentry event via the b
   for (const value of INJECTED_SCRIPT_SENDMESSAGE_MESSAGES) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
+        request: { url: 'https://dosco.live/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
         exception: {
           values: [
             {
@@ -1682,7 +1682,7 @@ test('does NOT suppress a real first-party sendMessage that throws from an apps/
   // regression; the negative guard MUST preserve it so the call site can be fixed.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      request: { url: 'https://dosco.live/projects/d9ba943c/some-page' },
       exception: {
         values: [
           {
@@ -1710,7 +1710,7 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
   //       function `u`
   //     app:///injectedScript.bundle.js function `n` colno 84147
   //   mechanism: auto.browser.global_handlers.onunhandledrejection
-  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688
+  //   request URL: https://dosco.live/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688
   //   better-stack pattern: 95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c
   assert.equal(
     isInjectedScriptSendMessageNoise({
@@ -1724,7 +1724,7 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
+      request: { url: 'https://dosco.live/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688' },
       exception: {
         values: [
           {
@@ -1814,7 +1814,7 @@ test('classifies CAPTCHA interceptor widgetId noise from another injected-app so
 test('does NOT classify widgetId as noise when NO injected source is present', () => {
   for (const message of CAPTCHA_INTERCEPTOR_MESSAGES) {
     assert.equal(
-      isCaptchaInterceptorNoise({ message, filename: 'https://kortix.com/app.js' }),
+      isCaptchaInterceptorNoise({ message, filename: 'https://dosco.live/app.js' }),
       false,
       `expected "${message}" from a non-injected source to keep reporting`,
     )
@@ -1863,7 +1863,7 @@ test('suppresses the CAPTCHA interceptor widgetId Sentry event via the beforeSen
   for (const value of CAPTCHA_INTERCEPTOR_MESSAGES) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -1897,7 +1897,7 @@ test('does NOT suppress a real first-party widgetId that throws from an apps/web
   // regression; the negative guard MUST preserve it so the call site can be fixed.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      request: { url: 'https://dosco.live/projects/d9ba943c/some-page' },
       exception: {
         values: [
           {
@@ -1946,7 +1946,7 @@ test('pins the production Better Stack pattern cfd5f828…', () => {
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -1987,7 +1987,7 @@ test('pins the production Better Stack pattern 4a01a169… (sibling fingerprint)
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -2104,7 +2104,7 @@ assert.equal(
   }
 })
 
-// Reproduces Better Stack error 83e0c2af...189c3b17 (Kortix Frontend prod,
+// Reproduces Better Stack error 83e0c2af...189c3b17 (dosco Frontend prod,
 // application_id 2346967) + siblings 5d02255f…, e77f06d4…, 1cb3009d… — all
 // `TypeError: Cannot read properties of undefined (reading 'call')`, count 1,
 // 0 identified users, last_seen 2026-07-12 08:44 UTC. The raw stack's throwing
@@ -2134,7 +2134,7 @@ test('suppresses the stale-deploy webpack-runtime call TypeError (assigned patte
   // through app chunks, and the throwing frame (last) is the runtime `c`.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects' },
+      request: { url: 'https://dosco.live/projects' },
       exception: {
         values: [
           {
@@ -2240,7 +2240,7 @@ test('does NOT suppress a same-shaped message reading a different property', () 
 })
 
 // Reproduces Better Stack error b1db01e5c9dec8c62bf37ca994cbe304550a7699b8fcd04c8f5c01cc76fc9dc7
-// (Kortix Frontend prod, application_id 2346967): a single
+// (dosco Frontend prod, application_id 2346967): a single
 // `ApiError — Request timed out after 30s: /projects/<id>/sessions/<sid>/audit`
 // at 2026-07-12 13:53 UTC. The SDK's `makeRequest` aborts a non-streaming fetch
 // once its 30s budget elapses (`packages/sdk/src/core/http/api-client.ts`,
@@ -2283,7 +2283,7 @@ test('suppresses a client-side request-timeout Sentry event regardless of captur
   for (const value of CLIENT_REQUEST_TIMEOUT_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        request: { url: 'https://app.dosco.live/projects/p/sessions/s' },
         exception: {
           values: [
             {
@@ -2331,7 +2331,7 @@ test('the client-timeout matcher does NOT match the API server-deadline 503 word
 })
 
 // Reproduces Better Stack error a330bea136a7b5795a57ef5a33ab40381433132e90c34bbabdca66cc3f6d938c
-// (Kortix Frontend prod, application_id 2346967): a single
+// (dosco Frontend prod, application_id 2346967): a single
 // `ApiError: Request exceeded the 25s server processing deadline` at
 // 2026-07-23 18:41:09 UTC, release 470fe6f3c8 (v0.10.13), transaction
 // `/projects/:id/sessions/:sessionId` (co-worker session page actively polling
@@ -2397,7 +2397,7 @@ test('suppresses an API server-deadline 503 Sentry event regardless of capture p
   for (const value of SERVER_DEADLINE_NOISE_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        request: { url: 'https://dosco.live/projects/p/sessions/s' },
         exception: {
           values: [
             {
@@ -2514,8 +2514,8 @@ test('does NOT suppress a real 5xx server ApiError', () => {
 })
 
 // Reproduces Better Stack error 6d987ab4...34e7ed (1 occurrence, 0 users),
-// Kortix Frontend (prod), application_id 2346967: a Safari 15.6.1 visitor on
-// the marketing homepage (`https://kortix.com/`) hit a chunk parse-time
+// dosco Frontend (prod), application_id 2346967: a Safari 15.6.1 visitor on
+// the marketing homepage (`https://dosco.live/`) hit a chunk parse-time
 // `SyntaxError: Invalid regular expression: invalid group specifier name`.
 // Old WebKit (< 16.4) cannot parse lookbehind assertions — JSC reads `(?<` as
 // a named-capture-group opener, sees the following `=` / `!`, and throws this
@@ -2549,7 +2549,7 @@ test('suppresses an old-WebKit lookbehind Sentry event from the marketing site',
   for (const value of OLD_WEBKIT_REGEX_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -2592,7 +2592,7 @@ test('does NOT suppress a real V8/Node regex error with different wording', () =
 })
 
 // Reproduces the old-browser minified-chunk `SyntaxError` parse-failure cluster
-// (Kortix Frontend prod, application_id 2346967), all 1–2 occurrences each, 0
+// (dosco Frontend prod, application_id 2346967), all 1–2 occurrences each, 0
 // users, from `app:///_next/static/chunks/…` minified bundles on old browsers
 // / stripped-down WebViews. The browser cannot parse modern minified JS —
 // incompatible, not an app defect. Covered Better Stack fingerprints:
@@ -2647,7 +2647,7 @@ test('suppresses every old-browser SyntaxError Sentry event whose frame is a min
   for (const value of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -2674,7 +2674,7 @@ test('suppresses an old-browser SyntaxError from a Vercel ?dpl= deploy-hash chun
             value: "SyntaxError: Unexpected token '='",
             stacktrace: {
               frames: [
-                { filename: 'https://kortix.com/_next/static/chunks/1234-abcd.js?dpl=dpl_abc123' },
+                { filename: 'https://dosco.live/_next/static/chunks/1234-abcd.js?dpl=dpl_abc123' },
               ],
             },
           },
@@ -2696,7 +2696,7 @@ test('suppresses an old-browser SyntaxError via the runtime (window.onerror) gat
   assert.equal(
     shouldIgnoreBrowserRuntimeNoise({
       message: 'Cannot use import statement outside a module',
-      filename: 'https://kortix.com/_next/static/chunks/main-app.js',
+      filename: 'https://dosco.live/_next/static/chunks/main-app.js',
     }),
     true,
   )
@@ -2731,7 +2731,7 @@ test('does NOT suppress a real app SyntaxError from a de-minified first-party fr
   const realAppFrames: Array<{ filename: unknown }> = [
     { filename: 'app:///apps/web/src/lib/dynamic-eval.ts' },
     { filename: 'apps/web/src/lib/dynamic-eval.ts' },
-    { filename: 'https://kortix.com/src/lib/dynamic-eval.ts' },
+    { filename: 'https://dosco.live/src/lib/dynamic-eval.ts' },
   ]
   for (const frames of [realAppFrames, [{ filename: 'app:///apps/web/src/features/foo.tsx' }]]) {
     for (const message of [
@@ -2758,11 +2758,11 @@ test('does NOT suppress a real app SyntaxError from a de-minified first-party fr
 
 // ---------------------------------------------------------------------------
 // Old-browser third-party-library DOM null-deref noise on the marketing
-// homepage — two SIBLING Better Stack prod patterns (Kortix Frontend prod,
+// homepage — two SIBLING Better Stack prod patterns (dosco Frontend prod,
 // application_id 2346967), both `TypeError: Cannot read properties of null
 // (reading '<X>')` (V8 wording) from minified third-party library internals
 // running on VERY OLD browsers (Windows 7 Chrome, Chrome 95 Linux) hitting
-// `https://kortix.com/` (marketing homepage). UNCAUGHT global `onerror`
+// `https://dosco.live/` (marketing homepage). UNCAUGHT global `onerror`
 // (`auto.browser.global_handlers.onerror`, `handled:false` — never reached a
 // React error boundary). 2 occurrences each, 0 identified users, marketing
 // page only — browser-compatibility noise, not a product defect.
@@ -2811,7 +2811,7 @@ test('classifies the production scrollLeft measureScroll noise (Pattern 1, exact
   // The Sentry `beforeSend` gate suppresses it.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -2849,7 +2849,7 @@ test('classifies the production appendChild ft noise (Pattern 2, exact prod fram
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3008,7 +3008,7 @@ test('does NOT suppress the old-browser DOM null-deref when a first-party frame 
   // And via the Sentry `beforeSend` gate.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3095,7 +3095,7 @@ test('suppresses the scrollLeft noise when the only frame is the <anonymous> thr
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3120,7 +3120,7 @@ test('suppresses the appendChild noise when the stack is fully minified chunk fr
   ]
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3147,7 +3147,7 @@ test('suppresses the old-JSC wording variants through both gates (runtime + befo
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3220,7 +3220,7 @@ test('does NOT suppress a non-first-party but resolvable chunk URL for a differe
   // path, so it does not trip the negative guard. But the matcher only
   // suppresses the EXACT `scrollLeft`/`appendChild` null-deref wording — a
   // different message from the same chunk URL keeps reporting.
-  const vercelChunk = 'https://kortix.com/_next/static/chunks/0d5wqj98qv1e9.js?dpl=dpl_abc123'
+  const vercelChunk = 'https://dosco.live/_next/static/chunks/0d5wqj98qv1e9.js?dpl=dpl_abc123'
   for (const message of [
     "Cannot read properties of null (reading 'foo')",
     'Something completely different',
@@ -3282,7 +3282,7 @@ test('suppresses both prod patterns through the Sentry beforeSend gate with the 
   // prod stack frames — are suppressed by the Sentry `beforeSend` gate.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3302,7 +3302,7 @@ test('suppresses both prod patterns through the Sentry beforeSend gate with the 
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -3532,7 +3532,7 @@ test('suppresses the post-0.10.13 Sentry 10.x "No error message" placeholder eve
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2F038ce7cd-c239-47eb-9ad3-83f2e5345aa6%2Fthread%2F75e8053d-85f9-4f18-a6e5-2ac4f0600e44' },
+      request: { url: 'https://dosco.live/auth?redirect=%2Fprojects%2F038ce7cd-c239-47eb-9ad3-83f2e5345aa6%2Fthread%2F75e8053d-85f9-4f18-a6e5-2ac4f0600e44' },
       exception: {
         values: [
           {
@@ -3565,7 +3565,7 @@ test('suppresses the sibling post-0.10.13 pattern 19ee7c2f… (different dpl, sa
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/auth?redirect=%2Fprojects%2F59aa5850-de1d-4e56-81fb-34d532146f01%2Fthread%2F2149cad0-e79e-4d38-84ac-273364cfb434' },
+      request: { url: 'https://dosco.live/auth?redirect=%2Fprojects%2F59aa5850-de1d-4e56-81fb-34d532146f01%2Fthread%2F2149cad0-e79e-4d38-84ac-273364cfb434' },
       exception: {
         values: [
           {
@@ -3729,13 +3729,13 @@ const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
   // the method call itself with the canonical Gecko DOM-API shape
   // `<Interface>.<method>: Argument 1 is not an object.`. Better Stack pattern
   // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
-  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // (dosco Frontend prod, application_id 2346967): `TypeError`, message
   // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
   // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
   // (post-v0.12.5, release e2540c341c6f43536a7cf0e0b51599e9928f055c),
   // call site `setupPositionAttribute` in chunk
   // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
-  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // `https://dosco.live/` (marketing homepage), browser Firefox 152.0 on
   // Android 17 (Gecko engine), mechanism
   // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
   // `handled:false`). The `getSupportedExtensions` sibling is pinned
@@ -3939,7 +3939,7 @@ test('does NOT suppress a real app TypeError with a different null-property name
 // Gecko/Firefox DOM-binding wording of the Paper Shaders null-WebGL-context
 // crash class. The event reached Sentry as an UNCAUGHT `onunhandledrejection`
 // (`handled:false`) from Firefox 152 on Android 17 on the marketing homepage
-// (`https://kortix.com/`), post-v0.12.5, with call site `setupPositionAttribute`
+// (`https://dosco.live/`), post-v0.12.5, with call site `setupPositionAttribute`
 // in chunk `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`. Before this
 // fix, the `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an
 // object.` wording was NOT in `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS`
@@ -4078,7 +4078,7 @@ test('regression: Paper Shaders library-guard null-context crash is suppressed (
 //
 // Better Stack pattern
 // f1abf79ece48a86faf8eb32cec8bbb6bf270627f9fd5d423fb1ee43b9abcfb23
-// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// (dosco Frontend prod, application_id 2346967): `Error`, message
 // `Paper Shaders: WebGL is not supported in this browser`, 1 occurrence /
 // 0 identified users (anonymous), last 2026-07-23 17:26:32 UTC, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route `/`
@@ -4142,11 +4142,11 @@ test('suppresses the Paper Shaders WebGL-unsupported prod Sentry event via the b
   // Exact shape of the production event: mechanism
   // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
   // unhandledrejection — never reached a React error boundary), request URL
-  // `https://kortix.com/` (the marketing homepage), the two minified
+  // `https://dosco.live/` (the marketing homepage), the two minified
   // `@paper-design/shaders` chunk frames.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -4305,7 +4305,7 @@ test('does NOT suppress a near-worded message without the Paper Shaders: prefix'
 // ---------------------------------------------------------------------------
 // TronLink browser-extension injected-Proxy `set`-trap noise
 // (Better Stack pattern 951c1a316cae8595da3f73877cb1fa8a77d04315ae1a2987b6348a97ec9a049a,
-// Kortix Frontend prod, application_id 2346967). The TronLink wallet extension
+// dosco Frontend prod, application_id 2346967). The TronLink wallet extension
 // injects `app:///injected/injected.js` (function `BI`) which wraps a page
 // object in a Proxy exposing `tronlinkParams`; a `set` the trap declines throws
 // `TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'`.
@@ -4358,7 +4358,7 @@ test('suppresses the TronLink proxy-trap Sentry event from the injected script',
   for (const value of TRONLINK_PROXY_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects' },
+        request: { url: 'https://app.dosco.live/projects' },
         exception: {
           values: [
             {
@@ -4412,7 +4412,7 @@ test('does NOT suppress a TronLink-worded event from a first-party app frame', (
   const realAppFrames: Array<{ filename: unknown }> = [
     { filename: 'app:///apps/web/src/lib/store.ts' },
     { filename: 'apps/web/src/lib/store.ts' },
-    { filename: 'https://app.kortix.com/_next/static/chunks/store.js' },
+    { filename: 'https://app.dosco.live/_next/static/chunks/store.js' },
   ]
   for (const frames of [realAppFrames, [{ filename: 'app:///_next/static/chunks/app.js' }]]) {
     assert.equal(
@@ -4468,10 +4468,10 @@ test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT pr
 
 // Reproduces Better Stack error
 // 2249441898cd4d7bb679841d57b829b8863c9a4dc1675a88075d794cfd3cd600
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// (dosco Frontend prod, application_id 2346967): 1 occurrence, 0 identified
 // users, 2026-07-21 05:08 UTC. A Tampermonkey/Violentmonkey userscript
 // (`YoutubeDL.user.js`) `@match`ing `*://*/*` ran on the marketing homepage
-// (`https://kortix.com/`, Chrome 150 / Windows 10). The user script's own
+// (`https://dosco.live/`, Chrome 150 / Windows 10). The user script's own
 // logic called `JSON.parse()` on an `undefined` value, throwing
 // `SyntaxError: "undefined" is not valid JSON` as an unhandled promise
 // rejection, captured by Sentry's `GlobalHandlers` `onunhandledrejection`.
@@ -4532,7 +4532,7 @@ test('classifies userscript-manager frames with different script names/ids as no
 test('suppresses the userscript-manager JSON.parse Sentry event', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -4566,7 +4566,7 @@ test('does NOT suppress a real first-party JSON.parse SyntaxError from app code'
   const realAppFrames: Array<{ filename: unknown; function: unknown }> = [
     { filename: 'app:///_next/static/chunks/parse-helpers.js', function: 'parseBody' },
     { filename: 'app:///apps/web/src/lib/api-client.ts', function: 'safeParse' },
-    { filename: 'https://app.kortix.com/_next/static/chunks/json.js', function: 'revive' },
+    { filename: 'https://app.dosco.live/_next/static/chunks/json.js', function: 'revive' },
   ]
   for (const frames of [realAppFrames, [{ filename: 'apps/web/src/lib/store.ts' }]]) {
     assert.equal(
@@ -4579,7 +4579,7 @@ test('does NOT suppress a real first-party JSON.parse SyntaxError from app code'
     )
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects' },
+        request: { url: 'https://app.dosco.live/projects' },
         exception: {
           values: [
             {
@@ -4598,7 +4598,7 @@ test('does NOT suppress a real first-party JSON.parse SyntaxError from app code'
   for (const filename of [
     'app:///_next/static/chunks/json.js',
     'app:///apps/web/src/lib/api-client.ts',
-    'https://app.kortix.com/_next/static/chunks/json.js',
+    'https://app.dosco.live/_next/static/chunks/json.js',
   ]) {
     assert.equal(
       shouldIgnoreBrowserRuntimeNoise({
@@ -4648,10 +4648,10 @@ test('does NOT match the userscript-manager prefix against a first-party _next b
 })
 
 // Reproduces Better Stack error e6a45fe4999b5a60f5cd64fd4153b18c2beebfc4409a3d54da456a4bbc24e5d2
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// (dosco Frontend prod, application_id 2346967): 1 occurrence, 0 identified
 // users, 2026-07-12 19:31:47 UTC. A Threads (Barcelona) in-app Android WebView
 // (Android 14 / Chrome 149, referer https://l.threads.com/) visited the
-// marketing homepage (`https://kortix.com/`). The Android System WebView
+// marketing homepage (`https://dosco.live/`). The Android System WebView
 // injects a synthetic `app://navigation_performance_logger_android` script
 // that records navigation timing (FBNavResponseStart / FBNavDomContentLoaded /
 // …) and ships it to its native Java bridge via `sendDataToNative` →
@@ -4697,7 +4697,7 @@ test('suppresses the Android WebView bridge Sentry event via the beforeSend gate
   for (const value of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -4830,7 +4830,7 @@ const DOCUMENT_STATE_SELECTION_FRAMES = [
 // co-worker session page.
 const DOCUMENT_STATE_INTERACTION_EVENT = {
   request: {
-    url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+    url: 'https://dosco.live/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
   },
   exception: {
     values: [
@@ -5078,7 +5078,7 @@ test('suppresses the assigned editor re-render-loop React #185 Sentry events via
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+          url: 'https://dosco.live/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
         },
         exception: {
           values: [
@@ -5377,7 +5377,7 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
 // sibling of the `postMessage` class above.
 // (Better Stack pattern
 //  a6795db236a92a4f9738698e93a8d7ae4e60dae607cacedccb7ed8bbd225b2d4,
-//  Kortix Frontend prod, application_id 2346967): the Android Chromium
+//  dosco Frontend prod, application_id 2346967): the Android Chromium
 // WebView's injected `JavaBridge` calls `postEvent` on a Java bridge whose
 // backing `JavaObject` has been GC'd (page navigation / WebView teardown /
 // in-app browser dismiss) → `Error invoking postEvent: Java object is gone`.
@@ -5466,7 +5466,7 @@ test('suppresses the frameless Android WebView postEvent noise via the Sentry be
   for (const value of ANDROID_WEBVIEW_BRIDGE_POSTEVENT_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [{ value, stacktrace: { frames: [] } }],
         },
@@ -5604,7 +5604,7 @@ test('does NOT suppress a same-worded message from a different bridge / non-Andr
 // The EXACT production event frames from BS `f50ed590…` (release
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b`, v0.12.0, Chrome 150 Android 16,
 // mechanism `auto.browser.browserapierrors.setTimeout`, UNCAUGHT `handled:false`,
-// URL `https://kortix.com/`). Frame #1 is the webpack runtime chunk
+// URL `https://dosco.live/`). Frame #1 is the webpack runtime chunk
 // (`__webpack_require__`'s module-init `setTimeout` registration, minified
 // function `u`); frame #2 is the `<anonymous>` throw site (function `?`).
 const SETTIMEOUT_PROD_SCHEDULING_FRAME =
@@ -5651,7 +5651,7 @@ test('classifies the <anonymous> throw-site frame as noise even with an incident
   for (const schedulingFrame of [
     'app:///_next/static/chunks/66499-704f783b0e8ea993.js',
     'app:///_next/static/chunks/webpack-abc123.js',
-    'https://kortix.com/_next/static/chunks/main-123.js',
+    'https://dosco.live/_next/static/chunks/main-123.js',
   ]) {
     assert.equal(
       isAndroidWebViewNativeBridgePostEventNoise({
@@ -5683,7 +5683,7 @@ test('suppresses the BrowserApiErrors.setTimeout-captured postEvent noise via th
   for (const value of ANDROID_WEBVIEW_BRIDGE_POSTEVENT_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -5746,10 +5746,10 @@ test('still does NOT suppress a real first-party postEvent failure (regression g
 // — the iOS sibling of the Android WebView bridge classes above.
 // (Better Stack pattern
 //  5b94212bc682a1ee1d33d67f6517ec95830c63e1ff8a3779d1700dd6091679eb,
-//  Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+//  dosco Frontend prod, application_id 2346967): 1 occurrence / 0 identified
 //  users, last_seen 2026-07-27 10:36:24 UTC, release
 //  `5d47baf11708881f1099cdaa875266944e976a78` (POST-`0.10.16`), transaction
-//  `/` (marketing homepage), URL `https://kortix.com/?fbclid=…` (a Facebook
+//  `/` (marketing homepage), URL `https://dosco.live/?fbclid=…` (a Facebook
 //  referral), browser `Facebook 571.0.0.55.72` on `iOS (iPhone) 26.5.2` (the
 //  Facebook in-app browser — an iOS WebView). The iOS WebView injects a
 //  synthetic `app:///` (THREE slashes — distinct from the Android bridge's
@@ -5815,7 +5815,7 @@ test('suppresses the iOS WebView WebKit bridge Sentry event via the beforeSend g
   for (const value of IOS_WEBVIEW_WEBKIT_BRIDGE_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/?fbclid=abc123' },
+        request: { url: 'https://dosco.live/?fbclid=abc123' },
         exception: {
           values: [
             {
@@ -6021,7 +6021,7 @@ test('does NOT suppress the Android bridge messages under the iOS matcher (and v
 // ---------------------------------------------------------------------------
 // iOS-WebKit stack-overflow noise
 // (Better Stack pattern 87ccbef98ea62fbf90df2446141a26b78ba7f928a28642b099d53b40e8613031,
-// Kortix Frontend prod, application_id 2346967). iOS WebKit (Safari,
+// dosco Frontend prod, application_id 2346967). iOS WebKit (Safari,
 // Chrome-on-iOS, Google Search App — all WKWebView/JSC) surfaces
 // `RangeError: Maximum call stack size exceeded.` through `window.onerror`
 // (Sentry mechanism `auto.browser.global_handlers.onerror`) with NO usable
@@ -6153,14 +6153,14 @@ test('does NOT suppress a real first-party RangeError recursion with a resolved 
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
 // and 3a6b00dc85a3e75f08efab371960c60f74beb2c18059a7f9bcffe409c2591ce6
 // (`Cannot read properties of undefined (reading 'emit')`, 4 occ.),
-// Kortix Frontend prod, application_id 2346967). EVM wallet extensions
+// dosco Frontend prod, application_id 2346967). EVM wallet extensions
 // (MetaMask + derivatives) inject `app:///inpage.js` whose provider stream is
 // `@metamask/post-message-stream`'s `ExtendedBroadcastMessage` (an
 // EventEmitter subclass). During extension init / port-teardown races the
 // underlying stream/port is `undefined`, so an `.addListener` / `.emit` call
 // throws inside `app:///inpage.js` (frames `?` / `fulfilled` /
 // `ExtendedBroadcastMessage.<anonymous>`). 0 identified users, first/last
-// 2026-07-14, request URL `https://kortix.com/`, Chrome 150. The throw is in
+// 2026-07-14, request URL `https://dosco.live/`, Chrome 150. The throw is in
 // the EXTENSION's injected script, never first-party code. The matcher
 // requires BOTH one of the exact message markers AND an `app:///inpage.js` /
 // extension source so a real first-party `.addListener`/`.emit` TypeError
@@ -6228,7 +6228,7 @@ test('suppresses the inpage.js wallet-stream Sentry event via the beforeSend gat
   for (const value of INPAGE_WALLET_STREAM_EVENTS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {
@@ -6283,7 +6283,7 @@ test('does NOT suppress an inpage.js wallet-stream event from a first-party app 
   const realAppFrames: Array<{ filename: unknown }> = [
     { filename: 'app:///apps/web/src/lib/event-bus.ts' },
     { filename: 'apps/web/src/lib/event-bus.ts' },
-    { filename: 'https://app.kortix.com/_next/static/chunks/event-bus.js' },
+    { filename: 'https://app.dosco.live/_next/static/chunks/event-bus.js' },
   ]
   for (const frames of [realAppFrames, [{ filename: 'app:///_next/static/chunks/app.js' }]]) {
     assert.equal(
@@ -6341,7 +6341,7 @@ test('does NOT suppress a real first-party TypeError on a DIFFERENT method name 
 // Wallet-extension injected `inpage.js` "No error message" noise
 // (Better Stack pattern
 //  61949432528f8a88c74799f2dc1a8dd128479ae49e6e75865f501e5eb40fc94e,
-//  Kortix Frontend prod, application_id 2346967). A wallet extension's
+//  dosco Frontend prod, application_id 2346967). A wallet extension's
 //  `onGlobalMessage` → `runIfPresent` → `run` handlers in `app:///inpage.js`
 //  throw a value with no `.message` property, so Sentry SDK 10.x writes the
 //  `"No error message"` placeholder. The error propagates through the React
@@ -6395,13 +6395,13 @@ test('classifies the inpage.js "No error message" prod event as noise (exact mes
 test('suppresses the inpage.js "No error message" Sentry event via the beforeSend gate', () => {
   // Exact shape of the production event: mechanism
   // `auto.browser.global_handlers.onerror` (UNCAUGHT global error), request URL
-  // `https://kortix.com/auth?expired=true&returnUrl=…`, Chrome 150 / Windows 10.
+  // `https://dosco.live/auth?expired=true&returnUrl=…`, Chrome 150 / Windows 10.
   // The wallet-extension inpage.js frames + React reconciler + global-error
   // boundary — NO first-party `apps/web/src/…` frame.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F9c64dfec-6272-45c0-b61b-5bd0c4826ef8%2Fthread%2F9a4057da-1f55-41a2-9fe9-cd7d52c99674',
+        url: 'https://dosco.live/auth?expired=true&returnUrl=%2Fprojects%2F9c64dfec-6272-45c0-b61b-5bd0c4826ef8%2Fthread%2F9a4057da-1f55-41a2-9fe9-cd7d52c99674',
       },
       exception: {
         values: [
@@ -6573,7 +6573,7 @@ test('does NOT suppress a real recursion that carries a resolvable chunk/URL fra
   // capture is dropped.
   const realFrames: Array<{ filename: unknown }> = [
     { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js' },
-    { filename: 'https://kortix.com/_next/static/chunks/main-abc.js' },
+    { filename: 'https://dosco.live/_next/static/chunks/main-abc.js' },
     { filename: 'app:///apps/web/src/lib/something.ts' },
   ]
   for (const frame of realFrames) {
@@ -6620,7 +6620,7 @@ test('does NOT suppress a different RangeError message', () => {
 // @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
 // exceeded" render-loop noise
 // (Better Stack pattern 366115d4c931a6352fe8f334ff1b366f6d4b2ce9c192769ac681831354521e30,
-// Kortix Frontend prod, application_id 2346967). The `@embedpdf/plugin-tiling`
+// dosco Frontend prod, application_id 2346967). The `@embedpdf/plugin-tiling`
 // `TilingLayer` React component (used by `pdf-viewer.tsx`'s `<TilingLayer>`)
 // subscribes to the tiling plugin's `onTileRendering` event and calls
 // `setTiles(...)` on every emission; under a rapid zoom/scroll burst the
@@ -6667,7 +6667,7 @@ test('suppresses the assigned @embedpdf tiling React #185 Sentry event via the b
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/c4d70885-ce86-4283-b373-bc2fbcd92b85/sessions/917c2468-11bf-4cf0-92e6-20d17fa58e77',
+        url: 'https://dosco.live/projects/c4d70885-ce86-4283-b373-bc2fbcd92b85/sessions/917c2468-11bf-4cf0-92e6-20d17fa58e77',
       },
       exception: {
         values: [
@@ -6864,7 +6864,7 @@ test('suppresses both @embedpdf tiling tile-destructure Sentry events via the be
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/projects/7254bee8-0000-0000-0000-000000000000/sessions/bd1306e9-0000-0000-0000-000000000000',
+          url: 'https://dosco.live/projects/7254bee8-0000-0000-0000-000000000000/sessions/bd1306e9-0000-0000-0000-000000000000',
         },
         exception: {
           values: [
@@ -7003,7 +7003,7 @@ test('does NOT suppress the exact tile-destructure message with non-tiling frame
 
 // "Should not already be working.", Better Stack pattern
 // 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7,
-// Kortix Frontend prod, application_id 2346967). The React production
+// dosco Frontend prod, application_id 2346967). The React production
 // reconciler's `performSyncWorkOnRoot` throws `Error(i(327))` when
 // `executionContext & (RenderContext | CommitContext)` is set — i.e. the
 // scheduler re-entered while React was already rendering/committing. A
@@ -7055,7 +7055,7 @@ test('suppresses the assigned Firefox React #327 Sentry event via the beforeSend
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/3cdc1df5-01e6-492d-b2ab-d81bb8c42fa2/sessions/c102f5de-1b6b-4baf-8cd6-cdd11855330f',
+        url: 'https://dosco.live/projects/3cdc1df5-01e6-492d-b2ab-d81bb8c42fa2/sessions/c102f5de-1b6b-4baf-8cd6-cdd11855330f',
       },
       exception: {
         values: [
@@ -7205,7 +7205,7 @@ test('does NOT suppress a bare `Should not already be working.` thrown from firs
 // Browser-extension EIP-1193 wallet-provider plain-object rejection noise
 // (Better Stack pattern
 // 0f78b2f8e9efa79fe9b2ea534e275c704f113eafea86bae5470f33174ebacebc,
-// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// dosco Frontend prod, application_id 2346967, `UnhandledRejection`). A
 // wallet extension (extension id `lgmpcpglpngdoalbgeoldeajfclnhafa`) injects
 // an EIP-1193 provider whose content script
 // (`chrome-extension://<id>/content-script.js`) rejects pending JSON-RPC
@@ -7223,7 +7223,7 @@ test('does NOT suppress a bare `Should not already be working.` thrown from firs
 // all miss it (no frames to anchor on). 2 occurrences, 0 identified users,
 // first 2026-07-06 / last 2026-07-15, mechanism
 // `auto.browser.global_handlers.onunhandledrejection`, request URL
-// `https://kortix.com/auth`, Chrome 150. The matcher requires BOTH the
+// `https://dosco.live/auth`, Chrome 150. The matcher requires BOTH the
 // synthetic signature AND an extension-origin frame inside the serialized
 // stack so a real first-party `Promise.reject({...})` keeps reporting.
 // ---------------------------------------------------------------------------
@@ -7259,7 +7259,7 @@ test('suppresses the assigned Sentry event via the beforeSend gate (frameless sy
   // stacktrace frames, extension origin only in extra.__serialized__.stack.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/auth' },
+      request: { url: 'https://dosco.live/auth' },
       extra: { __serialized__: EIP1193_PROVIDER_DISCONNECTED_SERIALIZED },
       exception: {
         values: [{ value: SYNTHETIC_OBJECT_REJECTION_VALUE }],
@@ -7428,7 +7428,7 @@ test('does NOT suppress a runtime rejection whose reason is a real Error with an
 // Sentry 10.x bare-`undefined` non-Error promise rejection noise
 // (Better Stack pattern
 // 5cfc90e5077a4f3d956f46b51beb633256b9a74532717d4b5797ca5cbc62f2f1,
-// Kortix Frontend prod, application_id 2346967, `UnhandledRejection`). A
+// dosco Frontend prod, application_id 2346967, `UnhandledRejection`). A
 // promise rejected with the primitive `undefined` (NOT an Error instance),
 // captured by Sentry's GlobalHandlers `onunhandledrejection` integration as
 // the synthetic "Non-Error promise rejection captured with value: undefined"
@@ -7443,7 +7443,7 @@ test('does NOT suppress a runtime rejection whose reason is a real Error with an
 // unhandledrejection — never reached a React error boundary), release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6`, first 2026-04-23 / last
 // 2026-07-22, Safari 26.5.2 on iOS 18.7 (iPhone, Mobile), request URL
-// `https://kortix.com/` (the marketing/landing page). Stack trace: NONE —
+// `https://dosco.live/` (the marketing/landing page). Stack trace: NONE —
 // `call_site_file`/`call_site_function` are null, `call_stack_hash` is null,
 // no frames at all.
 //
@@ -7488,10 +7488,10 @@ test('suppresses the assigned bare-undefined rejection Sentry event via the befo
   // Exact shape of the production event: type `UnhandledRejection`, mechanism
   // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
   // unhandledrejection — never reached a React error boundary), NO
-  // stacktrace frames, request URL `https://kortix.com/` (marketing site).
+  // stacktrace frames, request URL `https://dosco.live/` (marketing site).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [
           {
@@ -7511,7 +7511,7 @@ test('suppresses the bare-undefined rejection when frames are absent entirely (n
   // it (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/' },
+      request: { url: 'https://dosco.live/' },
       exception: {
         values: [{ value: NON_ERROR_UNDEFINED_REJECTION }],
       },
@@ -7649,10 +7649,10 @@ test('does NOT suppress a message that only mentions the non-Error rejection wor
 // (`handled:false` — UNCAUGHT, never reached a React error boundary),
 // `synthetic:true`, release `160f0b286f0ad5c53debc343d5e055241694e24d`
 // (v0.12.4 prod), request URL
-// `https://kortix.com/#error=access_denied&error_code=otp_expired&error_
+// `https://dosco.live/#error=access_denied&error_code=otp_expired&error_
 // description=Email+link+is+invalid+or+has+expired` (the auth error page — the
 // OTP-expired redirect). Browser Chrome 142 on Windows 10. Breadcrumbs:
-// `[runtime-env]` with `supabaseUrl: https://supa.kortix.com` (the Supabase
+// `[runtime-env]` with `supabaseUrl: https://supa.dosco.live` (the Supabase
 // auth client initializing), then a navigation to the same `#error=otp_expired`
 // URL, then marketing-site fetches (`/api/github-stars`,
 // `/_vercel/insights/view`, `/api/maintenance`). Stack trace: NONE — the raw
@@ -7708,7 +7708,7 @@ test('suppresses the OTP-expired Object-Not-Found rejection Sentry event via the
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
+        url: 'https://dosco.live/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
       },
       exception: {
         values: [
@@ -7730,7 +7730,7 @@ test('suppresses the OTP-expired Object-Not-Found noise when frames are absent e
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/#error=access_denied&error_code=otp_expired',
+        url: 'https://dosco.live/#error=access_denied&error_code=otp_expired',
       },
       exception: {
         values: [{ value: NON_ERROR_OBJECT_NOT_FOUND_REJECTION }],
@@ -7810,7 +7810,7 @@ test('does NOT suppress the OTP-expired rejection when any resolvable (non-first
   // is dropped.
   for (const frames of [
     [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
-    [{ filename: 'https://supa.kortix.com/auth/v1/user', function: 'init' }],
+    [{ filename: 'https://supa.dosco.live/auth/v1/user', function: 'init' }],
     [{ filename: 'app:///inpage.js', function: 'emit' }],
   ]) {
     assert.equal(
@@ -7915,15 +7915,15 @@ test('does NOT suppress a frameless rejection with a different message', () => {
 // Browser-internal DOM/binding `OperationError: Instance dropped in
 // popErrorScope` noise (Better Stack pattern
 // 5e1aca208331fa2d7540c9810b815b6c94f1373c470ff54e15f39d389dac7e0c,
-// Kortix Frontend prod, application_id 2346967, `OperationError`). A
+// dosco Frontend prod, application_id 2346967, `OperationError`). A
 // browser-internal DOM/binding `OperationError` (`popErrorScope` is part of the
 // WebIDL/internal error-scope machinery — DOMQueuingStrategy, ResizeObserver,
 // IntersectionObserver, media streams, GPU, … — NOT a first-party Kortix API)
 // surfaces as a frameless unhandled promise rejection via the global
 // `onunhandledrejection` handler. 2 occurrences EVER across a 90-day window
-// (first 2026-04-28 18:41:18 UTC on `https://www.kortix.com/instances`
+// (first 2026-04-28 18:41:18 UTC on `https://www.dosco.live/instances`
 // Chrome/Win, last 2026-07-22 18:26:35 UTC on
-// `https://kortix.com/projects/<id>` reached from Google account sign-in
+// `https://dosco.live/projects/<id>` reached from Google account sign-in
 // Chrome/Edge/Win), 0 identified users (anonymous), mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
 // UNCAUGHT, never reached a React error boundary). The exception payload is
@@ -7967,11 +7967,11 @@ test('suppresses the assigned OperationError popErrorScope Sentry event via the 
   // Exact shape of the production event: type `OperationError`, mechanism
   // `auto.browser.global_handlers.onunhandledrejection` (uncaught global
   // unhandledrejection — never reached a React error boundary), NO
-  // stacktrace frames, request URL `https://www.kortix.com/instances` (the
+  // stacktrace frames, request URL `https://www.dosco.live/instances` (the
   // marketing/landing page — first occurrence).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://www.kortix.com/instances' },
+      request: { url: 'https://www.dosco.live/instances' },
       exception: {
         values: [
           {
@@ -7991,7 +7991,7 @@ test('suppresses the post-OAuth OperationError popErrorScope Sentry event (secon
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/198b319d-b710-4443-a797-d813ba16f07a',
+        url: 'https://dosco.live/projects/198b319d-b710-4443-a797-d813ba16f07a',
       },
       exception: {
         values: [
@@ -8012,7 +8012,7 @@ test('suppresses the OperationError popErrorScope noise when frames are absent e
   // it (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/instances' },
+      request: { url: 'https://dosco.live/instances' },
       exception: {
         values: [{ value: OPERATION_ERROR_POP_ERROR_SCOPE }],
       },
@@ -8184,7 +8184,7 @@ test('suppresses the frameless network error Sentry event via the beforeSend gat
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/66f6788a-0000-0000-0000-000000000000/sessions/d16b4555-0000-0000-0000-000000000000',
+        url: 'https://dosco.live/projects/66f6788a-0000-0000-0000-000000000000/sessions/d16b4555-0000-0000-0000-000000000000',
       },
       exception: {
         values: [
@@ -8204,7 +8204,7 @@ test('suppresses the frameless network error noise when frames are absent entire
   // serialize. The gate must still drop it (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/x/sessions/y' },
+      request: { url: 'https://dosco.live/projects/x/sessions/y' },
       exception: {
         values: [{ value: FRAMELESS_NETWORK_ERROR }],
       },
@@ -8331,7 +8331,7 @@ test('does NOT suppress a near-worded message (over-match guard)', () => {
 // timeout recycle / session end / load-balancer upstream recycle). 1 occurrence
 // / 0 identified users, last 2026-07-23 16:44:09 UTC, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
-// `/dashboard`, URL `https://kortix.com/dashboard`, mechanism
+// `/dashboard`, URL `https://dosco.live/dashboard`, mechanism
 // `auto.browser.global_handlers.onerror` (`handled:false` — UNCAUGHT, never
 // reached a React error boundary), Chrome 150 / Windows 10. The single stack
 // frame is the minified main co-worker runtime chunk
@@ -8387,7 +8387,7 @@ test('classifies the production Connection closed. transport noise (exact prod f
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/dashboard' },
+      request: { url: 'https://dosco.live/dashboard' },
       exception: {
         values: [
           {
@@ -8446,7 +8446,7 @@ test('classifies the frameless Connection closed. variant as noise (message alon
   )
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/dashboard' },
+      request: { url: 'https://dosco.live/dashboard' },
       exception: {
         values: [{ value: CONNECTION_CLOSED, stacktrace: { frames: [] } }],
       },
@@ -8456,7 +8456,7 @@ test('classifies the frameless Connection closed. variant as noise (message alon
   // Also when the stacktrace key is omitted entirely (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/dashboard' },
+      request: { url: 'https://dosco.live/dashboard' },
       exception: {
         values: [{ value: CONNECTION_CLOSED }],
       },
@@ -8605,14 +8605,14 @@ test('classifies every Canvas getImageData OOM capture form as noise (no first-p
 
 test('suppresses the production Canvas getImageData OOM Sentry event via the beforeSend gate', () => {
   // Reproduces the exact production event: BS pattern b4b43847…, release
-  // v0.12.4, request URL https://kortix.com/ (marketing homepage), mechanism
+  // v0.12.4, request URL https://dosco.live/ (marketing homepage), mechanism
   // auto.browser.browserapierrors.addEventListener (UNCAUGHT, handled:false),
   // call site function Image.<anonymous>, call site file
   // app:///_next/static/chunks/0fl4m2af7bsiq.js, 2 minified chunk frames.
   for (const value of CANVAS_OOM_CAPTURE_FORMS) {
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://kortix.com/' },
+        request: { url: 'https://dosco.live/' },
         exception: {
           values: [
             {

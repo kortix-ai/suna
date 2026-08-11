@@ -5,7 +5,7 @@
  * Both proxy data paths (HTTP forward in routes/preview.ts and the WebSocket
  * upstream resolver) used to duplicate this: each loaded the session-sandbox
  * row, resolved the service key, fetched the Daytona preview link, and built
- * the signed X-Kortix-User-Context header with slightly different code. The
+ * the signed X-dosco-User-Context header with slightly different code. The
  * HTTP path even queried the *same* row twice per request (ownership gate +
  * forward). This module collapses all of that into one place:
  *
@@ -33,7 +33,7 @@ import {
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
-  encodeKortixUserContext,
+  encodedoscoUserContext,
   KORTIX_USER_CONTEXT_HEADER,
 } from '../shared/kortix-user-context';
 
@@ -245,7 +245,7 @@ export function invalidatePreviewLink(sandboxId: string, port: number): void {
  *   - Daytona preview-warning bypass + CORS-disable flags
  *   - the per-link Daytona preview token (when present)
  *   - Authorization: Bearer <service key> (replaces the user's JWT)
- *   - a signed X-Kortix-User-Context so the daemon can enforce per-user ACLs
+ *   - a signed X-dosco-User-Context so the daemon can enforce per-user ACLs
  *     without calling back to the API (only when we have both a real user and
  *     a service key; anonymous/service-only requests proxy through unchanged).
  */
@@ -262,7 +262,7 @@ export async function buildSandboxUpstreamHeaders(opts: {
   if (userId && serviceKey) {
     const payload = await resolvePreviewUserContext(sandboxId, userId);
     if (payload) {
-      headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
+      headers[KORTIX_USER_CONTEXT_HEADER] = encodedoscoUserContext(payload, serviceKey);
     }
   }
   return headers;

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /presentation/platform — the full Kortix product deck (the in-depth platform
+ * /presentation/platform — the full dosco product deck (the in-depth platform
  * walkthrough). Shares the deck engine; links across to the sales deck.
  */
 

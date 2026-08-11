@@ -643,7 +643,7 @@ type Provider = {
 const PROVIDERS: Provider[] = [
   {
     domain: null,
-    name: 'Kortix Gateway',
+    name: 'dosco Gateway',
     hint: 'Managed routing — injected into every sandbox',
     state: 'managed',
   },
@@ -894,7 +894,7 @@ function ChannelsPage({
               <p className="text-foreground text-sm font-medium">
                 {connected
                   ? `Connected to ${workspace ?? 'your workspace'}`
-                  : 'Add Kortix to your Slack workspace'}
+                  : 'Add dosco to your Slack workspace'}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
                 {connected
@@ -986,9 +986,9 @@ type Secret = { name: string; masked: string; domain: string; rotated: string; a
 type Policy = { domain: string; name: string; allow: number; ask: number; block: number };
 
 const MEMBERS: Member[] = [
-  { email: 'marko@kortix.com', name: 'marko', role: 'Owner', last: 'active now' },
-  { email: 'dom@kortix.com', name: 'Dom Williams', role: 'Admin', last: '2h ago' },
-  { email: 'sara@kortix.com', name: 'Sara Khan', role: 'Member', last: '1d ago' },
+  { email: 'marko@dosco.live', name: 'marko', role: 'Owner', last: 'active now' },
+  { email: 'dom@dosco.live', name: 'Dom Williams', role: 'Admin', last: '2h ago' },
+  { email: 'sara@dosco.live', name: 'Sara Khan', role: 'Member', last: '1d ago' },
 ];
 
 const SECRETS: Secret[] = [

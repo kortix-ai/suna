@@ -1,6 +1,6 @@
 export function providerLabel(provider: string | null | undefined): string {
   if (provider === 'github') return 'GitHub';
-  if (provider === 'code-storage' || provider === 'code_storage') return 'Kortix Code Storage';
+  if (provider === 'code-storage' || provider === 'code_storage') return 'dosco Code Storage';
   if (provider === 'gitlab') return 'GitLab';
   return provider ? provider.replaceAll('_', ' ') : 'Git';
 }

@@ -7,7 +7,7 @@ export function commitTime(c: ProjectCommit): number {
   return Number(new Date(c.committed_at || c.authored_at).getTime()) || Date.now();
 }
 
-export function isKortixAgent(c: ProjectCommit): boolean {
+export function isdoscoAgent(c: ProjectCommit): boolean {
   if (c.author_email?.trim().toLowerCase() === KORTIX_AGENT_EMAIL) return true;
   const name = c.author_name?.trim().toLowerCase();
   return name === 'kortix agent' || name === 'cortex agent';

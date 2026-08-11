@@ -12,7 +12,7 @@ import { Passage } from './passage';
  * true thing you can say about an agent, and the reader leaves the stack holding
  * it. This is the correction, in the one position where the question is still
  * fresh — and it is the only place on the home page the grant surface (the
- * machine it boots, its connectors, its secrets, its skills, its Kortix verbs)
+ * machine it boots, its connectors, its secrets, its skills, its dosco verbs)
  * appears at all.
  *
  * It also has to stand alone: mounted anywhere else, or read on its own, it

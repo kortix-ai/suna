@@ -491,15 +491,15 @@ export function CardSection() {
         note="href renders a stretched link across the whole card, onClick a stretched button; either way the footer actions stay independently clickable above it. external opens a new tab."
       >
         <CardGroup columns={2} separated border="outlined">
-          <Card label="Read the docs" href="https://docs.kortix.com" external>
+          <Card label="Read the docs" href="https://docs.dosco.live" external>
             <CardHeader>
               <CardMedia icon={BookOpenIcon} />
               <CardTitle>Documentation</CardTitle>
               <CardDescription>Whole card is a link — opens in a new tab.</CardDescription>
             </CardHeader>
             <CardFooter>
-              <CardButton href="https://docs.kortix.com" external>
-                docs.kortix.com
+              <CardButton href="https://docs.dosco.live" external>
+                docs.dosco.live
               </CardButton>
             </CardFooter>
           </Card>
@@ -542,7 +542,7 @@ export function CardSection() {
             <CardButton icon={ArrowsClockwiseIcon} iconPosition="end">
               Trailing icon
             </CardButton>
-            <CardButton href="https://kortix.com" external>
+            <CardButton href="https://dosco.live" external>
               External
             </CardButton>
             <CardButton disabled>Disabled</CardButton>

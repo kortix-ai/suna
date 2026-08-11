@@ -28,7 +28,7 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
   },
   {
     title: 'Keep model billing with your provider',
-    body: 'Bring your own API key or connect ChatGPT. You pay your model provider directly and keep Kortix credits for Agent Computer runtime.',
+    body: 'Bring your own API key or connect ChatGPT. You pay your model provider directly and keep dosco credits for Agent Computer runtime.',
   },
   {
     title: 'Compute by the second',
@@ -40,7 +40,7 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
   { label: 'Free start', body: '200 credits covers sandbox runtime for early projects and demos.' },
   {
     label: 'Managed models are optional',
-    body: 'Kortix-managed models remain available when you need them. Their token-based usage draws from pooled Team credits.',
+    body: 'dosco-managed models remain available when you need them. Their token-based usage draws from pooled Team credits.',
   },
   {
     label: 'Team scale',
@@ -51,7 +51,7 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on dosco keys are paid.',
   ],
   [
     'What does a Team seat include?',
@@ -59,7 +59,7 @@ const FAQ: [string, string][] = [
   ],
   [
     'How are models and compute priced?',
-    'Agent Computer compute is billed per second, per resource — $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage — about $0.20/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped. Bring your own key or connect ChatGPT to pay your model provider directly. If you choose Kortix-managed models, their input, output, and cached tokens use Team credits at that model’s rate. Free credits remain sandbox-only.',
+    'Agent Computer compute is billed per second, per resource — $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage — about $0.20/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped. Bring your own key or connect ChatGPT to pay your model provider directly. If you choose dosco-managed models, their input, output, and cached tokens use Team credits at that model’s rate. Free credits remain sandbox-only.',
   ],
   [
     'Do I pay per seat or per usage?',

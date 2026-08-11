@@ -175,7 +175,7 @@ describe('resolveAuthRedirectBaseUrl', () => {
     expect(resolveAuthRedirectBaseUrl('http://localhost:3000', 'https://staging.example.com')).toBe(
       'http://localhost:3000',
     );
-    expect(resolveAuthRedirectBaseUrl('https://kortix.com', 'https://kortix.com')).toBe('https://kortix.com');
+    expect(resolveAuthRedirectBaseUrl('https://dosco.live', 'https://dosco.live')).toBe('https://dosco.live');
   });
 
   test('leaves loopback origins as-is so local dev stays on localhost', () => {
@@ -202,15 +202,15 @@ describe('resolveAuthRedirectBaseUrl', () => {
     expect(
       resolveAuthRedirectBaseUrl(
         'https://ip-10-10-153-159.us-west-2.compute.internal:3000',
-        'https://dev.kortix.com',
+        'https://dev.dosco.live',
       ),
-    ).toBe('https://dev.kortix.com');
+    ).toBe('https://dev.dosco.live');
     expect(
       resolveAuthRedirectBaseUrl(
         'http://ip-10-10-155-24.us-west-2.compute.internal:3000',
-        'https://pr-6337.preview.kortix.com/',
+        'https://pr-6337.preview.dosco.live/',
       ),
-    ).toBe('https://pr-6337.preview.kortix.com');
+    ).toBe('https://pr-6337.preview.dosco.live');
   });
 
   test('keeps the wildcard origin only if no APP_URL is configured (nothing better to use)', () => {

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /**
  * A slim strip that lives at the top of the session Terminal panel and tells the
  * user how to attach their *local* OpenCode TUI to this session's sandbox with
- * the Kortix CLI. Deliberately NOT its own tab — it rides along with the live
+ * the dosco CLI. Deliberately NOT its own tab — it rides along with the live
  * terminal so "how do I get a shell into this from my machine?" is answered
  * right where a shell already lives.
  *
@@ -46,7 +46,7 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
         <div className="space-y-2.5 px-3 pt-0.5 pb-3">
           <p className="text-xs leading-relaxed text-white/45">
             Attach your local OpenCode TUI straight to this session&apos;s sandbox. The CLI opens a
-            local proxy, injects your Kortix token, then runs{' '}
+            local proxy, injects your dosco token, then runs{' '}
             <span className="font-mono text-white/60">opencode attach</span>.
           </p>
           <CommandRow label="1. Install the CLI (once)" command={installCmd} />

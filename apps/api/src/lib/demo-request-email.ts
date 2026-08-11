@@ -76,7 +76,7 @@ function renderHtml(lead: DemoRequestLead): string {
             </table>
           </div>
           <div style="padding:16px 28px;text-align:center;border-top:1px solid #e5e7eb;background:#ffffff;">
-            <p style="font-size:12px;color:#9ca3af;margin:0;">Kortix — automated lead notification</p>
+            <p style="font-size:12px;color:#9ca3af;margin:0;">dosco — automated lead notification</p>
           </div>
         </div>
       </td></tr>

@@ -4,7 +4,7 @@ import { config } from '../../config';
 // Short-lived, integrity-protected token that round-trips a Slack user's
 // identity through the `/login` web page. The payload (team + Slack user id) is
 // not secret — it only needs to be unforgeable so a member can't bind someone
-// else's Slack id to their Kortix account. Same HMAC construction as the Slack
+// else's Slack id to their dosco account. Same HMAC construction as the Slack
 // OAuth `state` token (slack-oauth.ts); keyed off the canonical signing secret.
 
 const LOGIN_TTL_MS = 10 * 60 * 1000;
@@ -59,7 +59,7 @@ export function buildSlackLoginUrl(input: { teamId: string; slackUserId: string;
     return `${apiBase}/v1/channels/slack/identity/login/${token}`;
   }
 
-  const configured = config.FRONTEND_URL || 'https://kortix.com';
+  const configured = config.FRONTEND_URL || 'https://dosco.live';
   const apiPort = Number(process.env.PORT);
   const localWorktreeFrontend =
     configured === 'http://localhost:3000' &&

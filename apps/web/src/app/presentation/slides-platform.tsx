@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 /**
- * The Kortix deck — the complete story end to end, styled 1:1 with the marketing
+ * The dosco deck — the complete story end to end, styled 1:1 with the marketing
  * site (home + /developers + /enterprise). Same components and vocabulary:
  * marketing Button/Badge, mono-uppercase eyebrows, `font-medium tracking-tight`
  * titles, `rounded-sm` thin-border cards on bg-card, lucide icon features, code
@@ -200,7 +200,7 @@ export function useSlides(): SlideDef[] {
                 </Button>
               </div>
             </div>
-            <Shot src={`${SHOT}/01-command-center.png`} alt="The Kortix command center" />
+            <Shot src={`${SHOT}/01-command-center.png`} alt="The dosco command center" />
           </div>
         </Slide>
       ),
@@ -301,7 +301,7 @@ export function useSlides(): SlideDef[] {
                 'autoAppPresentationSlidesPlatformJsxAttrLabelTheRefusal713e5d74',
               )}
               title={tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxAttrTitleKortixIsThedce2722e',
+                'autoAppPresentationSlidesPlatformJsxAttrTitledoscoIsThedce2722e',
               )}
               body={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxAttrBodyAToyOr30c5182d',
@@ -329,7 +329,7 @@ export function useSlides(): SlideDef[] {
                 )}
                 <br />
                 {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextKortixGivesYouA2de643b9',
+                  'autoAppPresentationSlidesPlatformJsxTextdoscoGivesYouA2de643b9',
                 )}
                 <Dim>
                   {tI18nHardcoded.raw(
@@ -406,7 +406,7 @@ export function useSlides(): SlideDef[] {
                   <>
                     <Mono>kortix.yaml</Mono>{' '}
                     {tI18nHardcoded.raw(
-                      'autoAppPresentationSlidesPlatformJsxTextTheKortixLayerSandboxca190b4e',
+                      'autoAppPresentationSlidesPlatformJsxTextThedoscoLayerSandboxca190b4e',
                     )}
                   </>,
                   <>
@@ -646,7 +646,7 @@ export function useSlides(): SlideDef[] {
                 ))}
               </div>
             </div>
-            <Shot src={`${SHOT}/01-command-center.png`} alt="The Kortix command center" />
+            <Shot src={`${SHOT}/01-command-center.png`} alt="The dosco command center" />
           </div>
         </Slide>
       ),
@@ -750,7 +750,7 @@ export function useSlides(): SlideDef[] {
               <Bullets
                 items={[
                   'Connector credentials never enter a sandbox',
-                  'Agents act through a single scoped Kortix token',
+                  'Agents act through a single scoped dosco token',
                   'Allow, ask-first, or block — connector action rules you control',
                 ]}
               />
@@ -1273,7 +1273,7 @@ export function useSlides(): SlideDef[] {
               <IconFeature
                 icon={GitBranch}
                 title={tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxAttrTitleKortixInitShip24f086f1',
+                  'autoAppPresentationSlidesPlatformJsxAttrTitledoscoInitShip24f086f1',
                 )}
                 body={tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxAttrBodyScaffoldAProject47c3905e',
@@ -1308,7 +1308,7 @@ export function useSlides(): SlideDef[] {
               'autoAppPresentationSlidesPlatformJsxAttrTitleSameProductEverywhere41c9494d',
             )}
             lead={tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxAttrLeadRunKortixOn275c3486',
+              'autoAppPresentationSlidesPlatformJsxAttrLeadRundoscoOn275c3486',
             )}
           />
           <div className="mt-10 grid items-center gap-6 lg:grid-cols-2">
@@ -1564,7 +1564,7 @@ export function useSlides(): SlideDef[] {
                   )}
                 </Link>
               </Button>
-              <span className="text-muted-foreground ml-1 font-mono text-sm">kortix.com</span>
+              <span className="text-muted-foreground ml-1 font-mono text-sm">dosco.live</span>
             </div>
             <p className="text-muted-foreground font-mono text-xs tracking-wider">
               {tI18nHardcoded.raw(

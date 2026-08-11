@@ -17,7 +17,7 @@ export function PostCard({ post, featured = false }: { post: Post; featured?: bo
     >
       <BlogCover
         logos={post.data.coverLogos ?? []}
-        withKortix={post.data.coverKortix ?? true}
+        withdosco={post.data.coverdosco ?? true}
         className={cn(
           'shrink-0',
           featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[16/9]',

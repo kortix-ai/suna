@@ -82,7 +82,7 @@ export function AdminSidebar() {
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold tracking-tight">Admin</span>
             <span className="text-muted-foreground text-xs">
-              {'Kortix console'}
+              {'dosco console'}
             </span>
           </div>
         </Link>

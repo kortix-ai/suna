@@ -1,9 +1,9 @@
-export const KORTIX_CLI_INSTALL_COMMAND = 'curl -fsSL https://kortix.com/install | bash';
+export const KORTIX_CLI_INSTALL_COMMAND = 'curl -fsSL https://dosco.live/install | bash';
 
 export const KORTIX_CLI_DEV_INSTALL_COMMAND =
-  'curl -fsSL https://kortix.com/install | KORTIX_CHANNEL=dev bash';
+  'curl -fsSL https://dosco.live/install | KORTIX_CHANNEL=dev bash';
 
-export function getKortixCliInstallCommand(version: string | undefined): string {
+export function getdoscoCliInstallCommand(version: string | undefined): string {
   return version?.includes('-dev.') || version === 'dev'
     ? KORTIX_CLI_DEV_INSTALL_COMMAND
     : KORTIX_CLI_INSTALL_COMMAND;
@@ -14,7 +14,7 @@ export function getKortixCliInstallCommand(version: string | undefined): string 
  *
  * Every deployment exposes `/install`. That route currently proxies the
  * canonical script from GitHub. The deployment URL removes a direct dependency
- * on kortix.com, but it does not make the installer available offline.
+ * on dosco.live, but it does not make the installer available offline.
  */
 export function getDeploymentCliInstallCommand(
   version: string | undefined,
@@ -24,11 +24,11 @@ export function getDeploymentCliInstallCommand(
   try {
     const url = new URL(origin || '');
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return getKortixCliInstallCommand(version);
+      return getdoscoCliInstallCommand(version);
     }
     deploymentOrigin = url.origin;
   } catch {
-    return getKortixCliInstallCommand(version);
+    return getdoscoCliInstallCommand(version);
   }
 
   const isDev = version?.includes('-dev.') || version === 'dev';

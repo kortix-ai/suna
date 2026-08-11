@@ -1,7 +1,7 @@
 /**
- * Speaking a Kortix answer back into the call.
+ * Speaking a dosco answer back into the call.
  *
- * The delivery half of Kortix→voice already works: `promptVoiceAgent` puts a
+ * The delivery half of dosco→voice already works: `promptVoiceAgent` puts a
  * message on the call's LiveKit data channel and the worker turns it into
  * speech, no human utterance required. What was missing was anything to TRIGGER
  * it — so `ask_kortix` handed work to the session and the room waited forever.

@@ -65,7 +65,7 @@ export function SecretIntakeForm({
           setError(
             cause instanceof Error
               ? cause.message
-              : 'Could not reach Kortix. Check your connection and try again.',
+              : 'Could not reach dosco. Check your connection and try again.',
           );
           setPhase('error');
         }
@@ -146,7 +146,7 @@ export function SecretIntakeForm({
   if (phase === 'error') {
     return (
       <div className="text-muted-foreground py-6 text-center text-sm">
-        {error || 'Could not reach Kortix. Check your connection and try again.'}
+        {error || 'Could not reach dosco. Check your connection and try again.'}
       </div>
     );
   }

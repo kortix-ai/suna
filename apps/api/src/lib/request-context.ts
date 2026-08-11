@@ -35,13 +35,13 @@ export interface RequestContext {
   path: string;
   /** Supabase user ID (set after auth middleware) */
   userId?: string;
-  /** Kortix account ID (set after auth middleware) */
+  /** dosco account ID (set after auth middleware) */
   accountId?: string;
   /** User email (set after auth middleware) */
   userEmail?: string;
-  /** Kortix project ID (set by route middleware/handlers when known) */
+  /** dosco project ID (set by route middleware/handlers when known) */
   projectId?: string;
-  /** Kortix project session ID (set by route middleware/handlers when known) */
+  /** dosco project session ID (set by route middleware/handlers when known) */
   sessionId?: string;
   /** Sandbox ID (set by route handlers that operate on a sandbox) */
   sandboxId?: string;

@@ -275,7 +275,7 @@ export function CliTokensTab() {
   const active = tokens.filter((t) => t.status === 'active');
   const revoked = tokens.filter((t) => t.status !== 'active');
 
-  // Env-correct public API base (already includes /v1), e.g. https://api.kortix.com/v1.
+  // Env-correct public API base (already includes /v1), e.g. https://api.dosco.live/v1.
   // BACKEND_URL can be root-relative in the sandbox-preview deploy mode ('/v1');
   // absolutize it against the current origin so the curl example is copy-pasteable.
   const rawApiBase = getEnv().BACKEND_URL || 'http://localhost:8008/v1';
@@ -446,7 +446,7 @@ function InlineCreate({
               )}{' '}
               <code className="bg-background rounded px-1 py-0.5 font-mono text-xs">
                 {tHardcodedUi.raw(
-                  'componentsSettingsCliTokensTab.line279JsxTextKortixLoginTokenLtPasteGt',
+                  'componentsSettingsCliTokensTab.line279JsxTextdoscoLoginTokenLtPasteGt',
                 )}
               </code>{' '}
               {tHardcodedUi.raw('componentsSettingsCliTokensTab.line281JsxTextInYourTerminal')}

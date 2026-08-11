@@ -189,7 +189,7 @@ export function readManagedRepoSeedState(metadata: unknown): ManagedRepoSeedStat
 }
 
 /**
- * May Kortix seed this project's repo on demand?
+ * May dosco seed this project's repo on demand?
  *
  * Yes for a MANAGED repo whose seed was expected but never verified, and for a
  * managed repo with no recorded state at all — every project created before
@@ -197,7 +197,7 @@ export function readManagedRepoSeedState(metadata: unknown): ManagedRepoSeedStat
  * repos are dead today; seeding them is the only path back.
  *
  * No for `expected: false` — the `kortix ship` contract owns that repo's first
- * commit (see the module docstring). No for a repo Kortix does not manage.
+ * commit (see the module docstring). No for a repo dosco does not manage.
  */
 export function shouldSelfHealManagedRepoSeed(input: {
   managed: boolean;
@@ -250,7 +250,7 @@ export async function pushSeedFiles(input: {
   if (input.backend.seedFiles) {
     await input.backend.seedFiles(input.connRef, input.token, input.files, {
       branch: input.branch,
-      message: 'chore: scaffold Kortix project',
+      message: 'chore: scaffold dosco project',
       baseFiles: input.baseFiles,
     });
     return;
@@ -261,7 +261,7 @@ export async function pushSeedFiles(input: {
     token: input.token,
     files: input.files,
     branch: input.branch,
-    commitMessage: 'chore: scaffold Kortix project',
+    commitMessage: 'chore: scaffold dosco project',
     baseFiles: input.baseFiles,
   });
 }

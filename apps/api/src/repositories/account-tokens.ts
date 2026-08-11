@@ -24,7 +24,7 @@ export interface AccountTokenValidationResult {
    *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
-   *  authorization (which Kortix CLI/API actions + connectors it may use,
+   *  authorization (which dosco CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
   agentGrant?: AgentGrant | null;
   error?: string;
@@ -269,7 +269,7 @@ export async function revokeAllAccountTokensForUser(
  * the PAT idle-revoke sweep ("lifetime tied to the sandbox" — see
  * `validateAccountToken`). Nothing else expired them, so until this existed the
  * only thing that ever revoked one was offboarding the whole USER: every session
- * a Kortix-as-a-Backend wrapper ever ran left behind a permanently-valid,
+ * a dosco-as-a-Backend wrapper ever ran left behind a permanently-valid,
  * project-scoped bearer carrying that agent's grant.
  *
  * Call this only where the sandbox can never legitimately come back — session

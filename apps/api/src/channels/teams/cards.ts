@@ -87,7 +87,7 @@ export function buildFinalCard(opts: {
   if (opts.sessionUrl) {
     elements.push({
       type: 'TextBlock',
-      text: `[Open session in Kortix ↗](${opts.sessionUrl})`,
+      text: `[Open session in dosco ↗](${opts.sessionUrl})`,
       wrap: true,
       isSubtle: true,
       size: 'small',
@@ -102,7 +102,7 @@ export function buildAnswerCard(body: string, sessionUrl?: string): Record<strin
   if (sessionUrl) {
     elements.push({
       type: 'TextBlock',
-      text: `[Open session in Kortix ↗](${sessionUrl})`,
+      text: `[Open session in dosco ↗](${sessionUrl})`,
       wrap: true,
       isSubtle: true,
       size: 'small',
@@ -126,7 +126,7 @@ export function buildConnectAccountCard(loginUrl: string): Record<string, unknow
   return card(
     headerBlock(
       '🔗',
-      'Connect your Kortix account',
+      'Connect your dosco account',
       'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
     ),
     [openUrlAction('Connect or create account', loginUrl)],
@@ -211,7 +211,7 @@ export function buildPanelCard(opts: {
     ...headerBlock(opts.emoji ?? 'ℹ️', opts.title),
     emphasisContainer([{ type: 'FactSet', facts: opts.rows.map((r) => ({ title: r.label, value: r.value })) }]),
   ];
-  const actions = opts.url ? [openUrlAction('Open in Kortix', opts.url)] : undefined;
+  const actions = opts.url ? [openUrlAction('Open in dosco', opts.url)] : undefined;
   return card(body, actions);
 }
 
@@ -253,17 +253,17 @@ export function buildReviewCard(opts: {
     executeAction('Request changes', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'changes' }),
     { type: 'Action.Execute', title: 'Deny', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'reject' }, style: 'destructive' },
   ];
-  if (opts.viewUrl) actions.push(openUrlAction('View in Kortix', opts.viewUrl));
+  if (opts.viewUrl) actions.push(openUrlAction('View in dosco', opts.viewUrl));
   return card(body, actions);
 }
 
 export function buildWelcomeCard(opts: { projectUrl?: string }): Record<string, unknown> {
   const body = headerBlock(
     '👋',
-    'Kortix is connected here',
+    'dosco is connected here',
     '@-mention me with a task and an agent gets on it — replying right here with live progress. Type `/help` to see what I can do.',
   );
-  const actions = opts.projectUrl ? [openUrlAction('Open in Kortix', opts.projectUrl)] : undefined;
+  const actions = opts.projectUrl ? [openUrlAction('Open in dosco', opts.projectUrl)] : undefined;
   return card(body, actions);
 }
 
@@ -278,7 +278,7 @@ export function buildHelpCard(commands: Array<{ cmd: string; desc: string }>): R
     ],
   }));
   return card([
-    ...headerBlock('⚡', 'Kortix commands', 'Run a command, or just @-mention me with a task.'),
+    ...headerBlock('⚡', 'dosco commands', 'Run a command, or just @-mention me with a task.'),
     emphasisContainer(rows),
   ]);
 }

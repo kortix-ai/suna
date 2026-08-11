@@ -15,7 +15,7 @@ import { trust } from './content';
 const INK = '#0a0a0a';
 
 /**
- * The animated metallic Kortix mark, reused from the enterprise/security
+ * The animated metallic dosco mark, reused from the enterprise/security
  * section (`features/marketing/security/security.tsx`): the Paper Shaders
  * `Heatmap` running over `/shaders/heatmap-mark.svg`. Here it is large,
  * off-centre and low-opacity — texture behind the card, never a focal point.
@@ -56,7 +56,7 @@ function MetallicMark() {
 /**
  * One compliance badge, drawn as a shield.
  *
- * ACCURACY GATE: Kortix holds none of these. The shield is stroked and dimmed
+ * ACCURACY GATE: dosco holds none of these. The shield is stroked and dimmed
  * well below the surrounding text, and carries the "In progress" state inline,
  * so the badge cannot be read as a claim on its own — in a screenshot, a crop,
  * or a screen reader.

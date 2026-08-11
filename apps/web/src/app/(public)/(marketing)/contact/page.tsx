@@ -68,7 +68,7 @@ export default function ContactPage() {
         </div>
 
         <h1 className="text-foreground mt-6 text-4xl leading-[1.04] font-medium tracking-tight sm:text-5xl md:text-6xl">
-          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextSeeKortixRun82bdbdad')}
+          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextSeedoscoRun82bdbdad')}
           <br />
           <span className="text-muted-foreground">
             {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextYourCompanyS9f04147b')}

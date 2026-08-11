@@ -107,7 +107,7 @@ export interface LlmProviderEntry {
    */
   envVars: string[];
   /**
-   * The full Kortix-owned auth requirement (possibly multiple independent
+   * The full dosco-owned auth requirement (possibly multiple independent
    * methods — see `@kortix/llm-catalog`'s `providerAuthRequirement`).
    * "Connected" detection must check this (any method fully satisfied), not
    * just `envVars` — a provider can have alias methods (e.g. Google) or,
@@ -124,7 +124,7 @@ export interface LlmProviderEntry {
   /** True for the curated popular set — pinned to the top of the catalog. */
   featured: boolean;
   /**
-   * Platform-managed provider (the Kortix gateway). Injected into every sandbox
+   * Platform-managed provider (the dosco gateway). Injected into every sandbox
    * automatically — no API key, no connect/disconnect flow. Rendered as an
    * always-connected "Managed" row rather than a BYO credential entry.
    */
@@ -184,7 +184,7 @@ const FEATURED_IDS = new Set([
  * hand-maintained per-provider description. A hand-written map here rots
  * silently (it drifts from what a provider actually serves — the old
  * `amazon-bedrock: 'AWS Bedrock — Claude, Llama, Titan'` entry was already
- * wrong: Kortix's Bedrock transport only ever serves the Claude lineup) and
+ * wrong: dosco's Bedrock transport only ever serves the Claude lineup) and
  * has to be hand-edited for every new provider models.dev adds. This reads
  * straight off `raw.models`, so it's automatically correct and automatically
  * covers new providers with zero code changes.
@@ -203,7 +203,7 @@ function toEntry(raw: RawProvider): LlmProviderEntry {
     id: raw.id,
     label: raw.name,
     // NOT raw.env directly — models.dev's env list can include auth methods
-    // Kortix's own transport doesn't implement (see providerAuthRequirement's
+    // dosco's own transport doesn't implement (see providerAuthRequirement's
     // doc comment, e.g. Bedrock's SigV4 pair) or aliases for the same
     // credential (e.g. Google's 3 interchangeable key env vars). This is the
     // PRIMARY method's fields — what the connect form actually asks for.

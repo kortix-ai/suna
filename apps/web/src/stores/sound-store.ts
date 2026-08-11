@@ -23,7 +23,7 @@ export type SoundEvent = 'completion' | 'error' | 'notification' | 'send';
  *
  * - `off`      – all sounds disabled
  * - `opencode` – default sound pack (OpenCode style)
- * - `kortix`   – Kortix branded sound pack
+ * - `kortix`   – dosco branded sound pack
  */
 export type SoundPack = 'off' | 'opencode' | 'kortix';
 

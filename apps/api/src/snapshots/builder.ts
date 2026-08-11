@@ -442,7 +442,7 @@ async function maybeSwapAgent(
     );
     // Reap any half-created new-name row so the fallback buildSnapshot (same name)
     // isn't blocked by a name-collision 409 — pickBuildHost has no state filter for
-    // non-admin/org callers, which is exactly how Kortix builds authenticate.
+    // non-admin/org callers, which is exactly how dosco builds authenticate.
     await provider.deleteSnapshot(identity.snapshotName).catch(() => {});
     return false;
   }
@@ -1672,7 +1672,7 @@ export async function resolveWarmBaseImageRef(
  * per-project warm bake. Reads the full project row (the GitBackedProject subset
  * lacks the fields `resolveProjectUpstream` needs). The build-time auth header is
  * a short-lived git-host credential embedded ONLY in a one-shot RUN; origin is
- * reset to the Kortix proxy so the daemon re-auths per session at runtime.
+ * reset to the dosco proxy so the daemon re-auths per session at runtime.
  */
 async function resolveWarmRepoContext(project: GitBackedProject, tip: string): Promise<WarmRepoContext> {
   const { projects } = await import('@kortix/db');

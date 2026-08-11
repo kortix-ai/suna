@@ -114,7 +114,7 @@ export function svgEscape(s: string): string {
 // SERP snippets). This is the airtight fix for the garbled brand-snippet
 // regression: the old `<span>` grid (and even an inline `<svg><text>` grid)
 // leaked the scrambled `t p e x 1 o c i0…` tokens into the page's text content,
-// which Google surfaced for the `Kortix` brand query instead of the meta
+// which Google surfaced for the `dosco` brand query instead of the meta
 // description. A CSS background image has zero text content.
 export function buildFieldSvg(
   tokens: Token[],
@@ -144,7 +144,7 @@ export function buildFieldSvg(
     })
     .join('\n');
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vbWidth}" height="${vbHeight}" viewBox="0 0 ${vbWidth} ${vbHeight}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Kortix"><title>Kortix</title>\n${textNodes}\n</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${vbWidth}" height="${vbHeight}" viewBox="0 0 ${vbWidth} ${vbHeight}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="dosco"><title>dosco</title>\n${textNodes}\n</svg>`;
 }
 
 // URL-encode an SVG string for a `data:image/svg+xml,...` background URL.

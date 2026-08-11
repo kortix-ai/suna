@@ -126,7 +126,7 @@ import {
 } from '../../shared/audit-query';
 import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerdoscoSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import {
   isConfigStale,
@@ -356,7 +356,7 @@ projectsApp.openapi(
           authType: c.get('authType') as string | undefined,
           apiKeyType: c.get('apiKeyType') as string | undefined,
           inSession: isProjectSessionPrincipal(c),
-          callerSessionId: callerKortixSessionId(c),
+          callerSessionId: callerdoscoSessionId(c),
           request: requestAuditContext(c),
         });
         if (result.error) throw new WarmSessionCreateFailure(result.error);
@@ -814,7 +814,7 @@ projectsApp.openapi(
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
     inSession: isProjectSessionPrincipal(c),
-    callerSessionId: callerKortixSessionId(c),
+    callerSessionId: callerdoscoSessionId(c),
     request: requestAuditContext(c),
     idempotencyKey,
     mayManageSystemConnections,
@@ -935,7 +935,7 @@ projectsApp.openapi(
     subject,
     grantsBySession,
     runtimeStatusBySession,
-    callerSessionId: callerKortixSessionId(c),
+    callerSessionId: callerdoscoSessionId(c),
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -1350,7 +1350,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerdoscoSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
@@ -1503,19 +1503,19 @@ projectsApp.openapi(
 //
 // `role` alone does not identify a turn — read `speaker` with it:
 //   user  + <null>          a human in the room
-//   agent + 'kortix'        what the Kortix agent put into the call
+//   agent + 'kortix'        what the dosco agent put into the call
 //                           (channels/voice/utterance.ts's KORTIX_SPEAKER,
 //                           written server-side the moment it is delivered)
 //   agent + <bot name>      what the voice actually said, as the worker heard
 //                           itself say it (apps/voice-agent/src/transcripts.ts)
 //   tool  + <tool name>     an ask_kortix/run_command the worker issued; the
 //                           text carries the argument and the outcome
-// The two `agent` rows are not duplicates: one is the instruction Kortix sent,
+// The two `agent` rows are not duplicates: one is the instruction dosco sent,
 // the other the model's spoken phrasing of it, and either can appear alone.
 //
 // This is a THIN read wrapper around `readTurns`/`isCallLive` (already used
 // internally by the voice runtime) for the one thing they didn't have yet: a
-// route a Kortix-authenticated browser session can call. Same visibility gate
+// route a dosco-authenticated browser session can call. Same visibility gate
 // as /transcript and /audit above — project read + the session must be
 // visible to the caller — deliberately NOT the worker's per-call HMAC auth
 // (routes.ts), which authorizes exactly one call and would be the wrong tool
@@ -1723,13 +1723,13 @@ projectsApp.openapi(
         ),
       );
 
-    // Count per (Kortix) session id.
-    const byKortix: Record<string, number> = {};
+    // Count per (dosco) session id.
+    const bydosco: Record<string, number> = {};
     for (const r of pendingRows) {
       const sid = r.sessionId ? String(r.sessionId) : null;
-      if (sid) byKortix[sid] = (byKortix[sid] ?? 0) + 1;
+      if (sid) bydosco[sid] = (bydosco[sid] ?? 0) + 1;
     }
-    const kortixIds = Object.keys(byKortix);
+    const kortixIds = Object.keys(bydosco);
     if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
 
     // Look these sessions up to (a) gate non-managers to their own and (b) map to
@@ -1763,12 +1763,12 @@ projectsApp.openapi(
           targetSessionOrigin: s.origin ?? null,
           targetSessionCreatedBy: s.createdBy,
           callerUserId: loaded.userId,
-          callerSessionId: callerKortixSessionId(c),
+          callerSessionId: callerdoscoSessionId(c),
         })
       ) {
         continue;
       }
-      const n = byKortix[s.sessionId] ?? 0;
+      const n = bydosco[s.sessionId] ?? 0;
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
       if (s.opencodeSessionId) sessions[s.opencodeSessionId] = n;
@@ -1891,7 +1891,7 @@ projectsApp.openapi(
       targetSessionCreatedBy: targetCreatedBy,
       callerUserId: loaded.userId,
       callerAuthType: (c.get('authType') as string | undefined) ?? null,
-      callerSessionId: callerKortixSessionId(c),
+      callerSessionId: callerdoscoSessionId(c),
     });
     if (!verdict.allowed) {
       return c.json(
@@ -1902,7 +1902,7 @@ projectsApp.openapi(
             }
           : verdict.reason === 'non_human_caller'
             ? {
-                error: 'Sign in with a Kortix account to resolve this approval',
+                error: 'Sign in with a dosco account to resolve this approval',
                 code: 'APPROVAL_REQUIRES_HUMAN',
               }
             : { error: 'Only a project manager or the session launcher can resolve this' },
@@ -2126,7 +2126,7 @@ projectsApp.openapi(
   }
 
   // opencode_session_id is SERVER-MANAGED: the backend is the sole authority
-  // for the OpenCode↔Kortix mapping (see ensure-opencode + opencode-mapping.ts).
+  // for the OpenCode↔dosco mapping (see ensure-opencode + opencode-mapping.ts).
   // Clients must never set it, so a stale/forged client value can't drift it.
     const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) =>
       hasOwn(body, f),
@@ -2608,7 +2608,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerdoscoSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     let grant: Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
     try {
@@ -2687,7 +2687,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerdoscoSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
@@ -2744,7 +2744,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_STOP,
     );
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerdoscoSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // Same gate as re-scoping and changing the model: seeing a session is not
     // permission to restart the runtime underneath someone else's work.
@@ -2830,7 +2830,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_STOP,
     );
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerdoscoSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!mayChangeSessionModel(visible)) {
       return c.json(
@@ -2948,7 +2948,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_STOP,
     );
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerdoscoSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // Seeing a session is not permission to re-scope it — same gate as the model
     // change, for the same reason.

@@ -159,7 +159,7 @@ export function registerMemberRoutes(): void {
       return c.json(
         visibleRows
           // Hide phantom self-memberships: a row where user_id == account_id whose
-          // user_id has no auth user (no email). These are minted when a Kortix
+          // user_id has no auth user (no email). These are minted when a dosco
           // token — which the auth middleware maps to userId == accountId — hits
           // resolveAccountId; they're the account added as a member of itself and
           // show as a bare UUID. A personal account's owner also has
@@ -238,7 +238,7 @@ export function registerMemberRoutes(): void {
       if (seatBlock) {
         return c.json(
           {
-            error: `Your trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Contact the Kortix team to extend the trial.`,
+            error: `Your trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Contact the dosco team to extend the trial.`,
             code: 'trial_seat_limit_reached',
             limit: seatBlock.limit,
             members: seatBlock.members,

@@ -181,7 +181,7 @@ describe('plan step', () => {
 
   test('offers three ways forward, including deferring', () => {
     expect(plan).toContain('<SelectionRow');
-    expect(plan).toContain('Use Kortix models');
+    expect(plan).toContain('Use dosco models');
     expect(plan).toContain('Bring your own API key');
     expect(plan).toContain('Decide later');
   });

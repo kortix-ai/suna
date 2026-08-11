@@ -136,7 +136,7 @@ export type SessionVisibility = 'private' | 'project' | 'restricted';
  * Context needed to decide whether `created_by` may confer ownership.
  *
  * For an INTERACTIVE session created_by is one human, so ownership is real. For
- * a Kortix-as-a-Backend session it is the WRAPPER's credential — identical for
+ * a dosco-as-a-Backend session it is the WRAPPER's credential — identical for
  * every one of that wrapper's end-users — so it identifies nobody, and letting
  * it short-circuit would make every end-user's session visible to every other.
  */

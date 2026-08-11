@@ -30,7 +30,7 @@ function runningSession(overrides: Partial<ProjectSession> = {}): ProjectSession
     base_ref: 'main',
     sandbox_provider: 'daytona',
     sandbox_id: 'sbx-db-1',
-    sandbox_url: 'https://api.kortix.com/v1/p/ext-1/8000',
+    sandbox_url: 'https://api.dosco.live/v1/p/ext-1/8000',
     opencode_session_id: 'oc-1',
     name: null,
     custom_name: null,

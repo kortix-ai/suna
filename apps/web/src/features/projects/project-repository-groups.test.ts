@@ -22,7 +22,7 @@ function project(projectId: string, repoUrl: string, branch: string): KortixProj
 describe('groupProjectsByRepository', () => {
   test('groups equivalent GitHub URLs while preserving isolated projects and branches', () => {
     const groups = groupProjectsByRepository([
-      project('API dev', 'https://github.com/Kortix/suna.git', 'dev'),
+      project('API dev', 'https://github.com/dosco/suna.git', 'dev'),
       project('Web dev', 'git@github.com:kortix/suna.git', 'dev'),
       project('Production', 'https://github.com/kortix/suna/', 'main'),
       project('Company', 'https://github.com/kortix/company.git', 'main'),
@@ -31,7 +31,7 @@ describe('groupProjectsByRepository', () => {
     expect(groups).toHaveLength(2);
     expect(groups[0]).toMatchObject({
       key: 'github.com/kortix/suna',
-      label: 'Kortix/suna',
+      label: 'dosco/suna',
     });
     expect(groups[0]?.projects.map((item) => [item.name, item.default_branch])).toEqual([
       ['API dev', 'dev'],

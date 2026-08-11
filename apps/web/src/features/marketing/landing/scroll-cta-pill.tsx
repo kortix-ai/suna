@@ -9,7 +9,7 @@ import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 /** The one command in the docs, the README and the CLI page. Keep them equal. */
-const INSTALL_COMMAND = 'curl -fsSL https://kortix.com/install | bash';
+const INSTALL_COMMAND = 'curl -fsSL https://dosco.live/install | bash';
 
 /** Long enough to register, short enough not to strand the button in a fake state. */
 const COPIED_MS = 1600;

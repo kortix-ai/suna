@@ -50,22 +50,22 @@ describe('toCallRecordEntries — who actually said it', () => {
     const [e] = toCallRecordEntries([
       turn({ cursor: 1, role: 'agent', speaker: 'kortix', text: 'The deploy finished.' }),
     ]);
-    expect(e).toMatchObject({ kind: 'kortix', name: 'Kortix agent', text: 'The deploy finished.' });
+    expect(e).toMatchObject({ kind: 'kortix', name: 'dosco agent', text: 'The deploy finished.' });
   });
 
   test('role=agent with any other speaker is the voice itself', () => {
     const [named, anonymous] = toCallRecordEntries([
-      turn({ cursor: 1, role: 'agent', speaker: 'Kortix Voice', text: 'Sure thing.' }),
+      turn({ cursor: 1, role: 'agent', speaker: 'dosco Voice', text: 'Sure thing.' }),
       turn({ cursor: 2, role: 'agent', speaker: null, text: 'Sure thing.' }),
     ]);
-    expect(named).toMatchObject({ kind: 'voice', name: 'Kortix Voice' });
-    expect(anonymous).toMatchObject({ kind: 'voice', name: 'Kortix' });
+    expect(named).toMatchObject({ kind: 'voice', name: 'dosco Voice' });
+    expect(anonymous).toMatchObject({ kind: 'voice', name: 'dosco' });
   });
 
   test('the two agent-side sources stay distinguishable — the whole point of reading speaker', () => {
     const entries = toCallRecordEntries([
       turn({ cursor: 1, role: 'agent', speaker: 'kortix', text: 'Tests are green.' }),
-      turn({ cursor: 2, role: 'agent', speaker: 'Kortix Voice', text: 'Good news, tests are green!' }),
+      turn({ cursor: 2, role: 'agent', speaker: 'dosco Voice', text: 'Good news, tests are green!' }),
     ]);
     expect(entries.map((e) => e.kind)).toEqual(['kortix', 'voice']);
   });
@@ -215,11 +215,11 @@ describe('unrecordedLive — the tail must not repeat the record', () => {
     expect(unrecordedLive(live, record)).toHaveLength(1);
   });
 
-  test("the Kortix agent's own recorded line retires the voice echo of it", () => {
+  test("the dosco agent's own recorded line retires the voice echo of it", () => {
     // Both are role 'agent' server-side; either one landing means the words
     // are in the record, so the live copy is redundant.
-    const live = [utterance({ id: 's1', text: 'The deploy finished.', isLocal: false, name: 'Kortix' })];
-    const record = [entry({ cursor: 1, kind: 'kortix', name: 'Kortix agent', text: 'The deploy finished.' })];
+    const live = [utterance({ id: 's1', text: 'The deploy finished.', isLocal: false, name: 'dosco' })];
+    const record = [entry({ cursor: 1, kind: 'kortix', name: 'dosco agent', text: 'The deploy finished.' })];
     expect(unrecordedLive(live, record)).toEqual([]);
   });
 });

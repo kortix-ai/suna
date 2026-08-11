@@ -107,8 +107,8 @@ projectsApp.openapi(
     try {
       result = await mergeBranches(projectForGit, cr.baseRef, cr.headRef, {
         message: customMessage ?? `Merge CR #${cr.number}: ${cr.title}`,
-        authorName: 'Kortix',
-        authorEmail: 'noreply@kortix.ai',
+        authorName: 'dosco',
+        authorEmail: 'noreply@dosco.live',
       });
     } catch (error) {
       if (error instanceof MergeConflictError) {

@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
  * Shared quiet surface for the auth sub-flows (forgot / reset password).
  *
  * Mirrors the main `/auth` page: flat content on the plain background — no
- * card — with the Kortix mark above a left-aligned heading, and the legal
+ * card — with the dosco mark above a left-aligned heading, and the legal
  * footer pinned to the bottom.
  */
 

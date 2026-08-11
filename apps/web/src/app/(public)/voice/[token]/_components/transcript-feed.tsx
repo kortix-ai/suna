@@ -25,7 +25,7 @@ const ASK_TOOL = 'ask_kortix';
  *
  * It used to render LiveKit's client-side transcription and nothing else,
  * which is why the page showed a conversation with holes in it. Everything the
- * Kortix agent put into the call, and every tool call the voice made, is
+ * dosco agent put into the call, and every tool call the voice made, is
  * written server-side to `voice_call_turns` and never appears in the browser's
  * LiveKit stream at all — so it was simply absent. `entries` is that durable
  * record; `live` is the LiveKit tail, kept only for the seconds between
@@ -33,11 +33,11 @@ const ASK_TOOL = 'ask_kortix';
  *
  * FOUR THINGS HAPPEN ON A CALL AND ALL FOUR MUST BE TELLABLE APART (see
  * `CallEntryKind`) — because a voice call, alone among the channels, has TWO
- * models on it: the voice on the line, and the Kortix agent it hands work to.
+ * models on it: the voice on the line, and the dosco agent it hands work to.
  *
  *   the human         right-hand bubble, tinted with the primary
  *   the voice         left-hand bubble, plain popover surface
- *   the Kortix agent  left-hand bubble, kortix-tinted, agent glyph, and a hint
+ *   the dosco agent  left-hand bubble, kortix-tinted, agent glyph, and a hint
  *                     saying it was sent INTO the call — the voice line right
  *                     after it is a paraphrase of it, not a repeat of it
  *   a tool call       not a bubble at all: full width, dashed, a status tile
@@ -93,7 +93,7 @@ export function TranscriptFeed({
               size="sm"
               icon={IconMessage}
               title="Waiting for the conversation to start"
-              description="Everything on this call shows up here — what's said on either side, what your Kortix agent sends in, and the tools it runs."
+              description="Everything on this call shows up here — what's said on either side, what your dosco agent sends in, and the tools it runs."
             />
           </div>
         ) : (
@@ -230,7 +230,7 @@ function SpeechRow({
           {tone === 'kortix' ? (
             <Hint
               side="top"
-              label="Sent into the call by your Kortix agent — the voice relays it in its own words"
+              label="Sent into the call by your dosco agent — the voice relays it in its own words"
             >
               {label}
             </Hint>
@@ -280,7 +280,7 @@ function SpeechRow({
  * (not a friendlier invention — this is the record of what ran), its argument
  * in monospace, and how it turned out as a badge.
  *
- * A hand-off shows as ONE row for its whole life: `waiting` while Kortix works,
+ * A hand-off shows as ONE row for its whole life: `waiting` while dosco works,
  * then the outcome when the settle row lands — see `foldAskSettlements`, which
  * is where the two stored rows become one.
  */

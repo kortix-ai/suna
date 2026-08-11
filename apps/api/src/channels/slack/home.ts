@@ -39,10 +39,10 @@ export async function publishHomeForUser(teamId: string, userId: string): Promis
 }
 
 const HOME_EXAMPLES: Array<{ emoji: string; prompt: string }> = [
-  { emoji: '🔍', prompt: '@Kortix scan this codebase and write me a one-pager' },
-  { emoji: '🔧', prompt: '@Kortix open a PR that switches our logger to pino' },
-  { emoji: '📊', prompt: '@Kortix what changed on main this week?' },
-  { emoji: '📦', prompt: '@Kortix pull yesterday\'s sign-ups, group them by source, drop the CSV here' },
+  { emoji: '🔍', prompt: '@dosco scan this codebase and write me a one-pager' },
+  { emoji: '🔧', prompt: '@dosco open a PR that switches our logger to pino' },
+  { emoji: '📊', prompt: '@dosco what changed on main this week?' },
+  { emoji: '📦', prompt: '@dosco pull yesterday\'s sign-ups, group them by source, drop the CSV here' },
 ];
 
 const PROJECT_COVERS = [
@@ -66,25 +66,25 @@ const DEFAULT_HOME_HERO_URL =
   'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=480&fit=crop&q=80&auto=format';
 
 function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
-  const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
+  const dashboardBase = (config.FRONTEND_URL || 'https://dosco.live').replace(/\/$/, '');
   const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
   const blocks: Array<Record<string, unknown>> = [];
 
   blocks.push({
     type: 'image',
     image_url: heroUrl,
-    alt_text: 'Kortix — AI command center for your company',
+    alt_text: 'dosco — agent network for your company',
   });
   blocks.push({
     type: 'header',
-    text: { type: 'plain_text', text: '👋  Welcome to Kortix', emoji: true },
+    text: { type: 'plain_text', text: '👋  Welcome to dosco', emoji: true },
   });
   blocks.push({
     type: 'section',
     text: {
       type: 'mrkdwn',
       text: [
-        '*Your AI command center, right here in Slack.*',
+        '*Your agent network, right here in Slack.*',
         '',
         "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Follow-ups stay in context.",
       ].join('\n'),
@@ -105,7 +105,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   if (input.projects.length === 0) {
     blocks.push({
       type: 'section',
-      text: { type: 'mrkdwn', text: '*No projects connected yet.*\nHead to your Kortix dashboard to link a project to this workspace.' },
+      text: { type: 'mrkdwn', text: '*No projects connected yet.*\nHead to your dosco dashboard to link a project to this workspace.' },
       accessory: {
         type: 'button',
         text: { type: 'plain_text', text: 'Open dashboard' },
@@ -204,7 +204,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   blocks.push({
     type: 'context',
     elements: [
-      { type: 'mrkdwn', text: `🪐  Managed by Kortix  ·  <${dashboardBase}|kortix.com>  ·  <${dashboardBase}/docs|Docs>  ·  <${dashboardBase}/settings|Settings>` },
+      { type: 'mrkdwn', text: `🪐  Managed by dosco  ·  <${dashboardBase}|kortix.com>  ·  <${dashboardBase}/docs|Docs>  ·  <${dashboardBase}/settings|Settings>` },
     ],
   });
 

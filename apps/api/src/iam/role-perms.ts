@@ -130,7 +130,7 @@ const EDITOR_EXTRAS: readonly string[] = [
  *  the agent and the chat — but NOT view secret values or browse the file tree
  *  (those moved to editor-tier). A role that can't open a session is useless,
  *  and this is the role new members get by default, so it has to be able to
- *  drive Kortix. What it CANNOT do is customize the project (edit settings,
+ *  drive dosco. What it CANNOT do is customize the project (edit settings,
  *  deploy, manage members, create/delete triggers) OR read files/secrets —
  *  those live in EDITOR_EXTRAS / MANAGER_ONLY above. Named PROJECT_MEMBER_* to
  *  avoid colliding with the account-role MEMBER_BASELINE above. */

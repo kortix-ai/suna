@@ -210,8 +210,8 @@ export function ModelSelector({
         groups.set(groupID, {
           providerID: groupID,
           // NEVER `m.providerName` here — under the gateway it's always
-          // "Kortix" (opencode's raw provider name), which is exactly the
-          // "every provider shows as Kortix" bug. Label by the resolved real
+          // "dosco" (opencode's raw provider name), which is exactly the
+          // "every provider shows as dosco" bug. Label by the resolved real
           // provider id instead. See pickerGroupLabel's doc comment.
           providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, m) : m.providerName,
           models: [m],

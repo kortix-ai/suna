@@ -30,7 +30,7 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
   const tools: ModelContextTool[] = [
     {
       name: 'search_kortix_public_content',
-      description: 'Search Kortix public documentation and product content.',
+      description: 'Search dosco public documentation and product content.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -49,7 +49,7 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
           search.set('kind', kind);
         }
         const response = await fetch(`/api/ai?${search}`);
-        if (!response.ok) throw new Error(`Kortix content index returned ${response.status}`);
+        if (!response.ok) throw new Error(`dosco content index returned ${response.status}`);
         const body = (await response.json()) as {
           data?: Array<{
             title?: string;
@@ -70,14 +70,14 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
     },
     {
       name: 'read_kortix_public_page',
-      description: 'Read a Kortix public page as Markdown.',
+      description: 'Read a dosco public page as Markdown.',
       inputSchema: {
         type: 'object',
         properties: {
           path: {
             type: 'string',
             pattern: '^/(?!/)',
-            description: 'Kortix path from a search result.',
+            description: 'dosco path from a search result.',
           },
         },
         required: ['path'],
@@ -85,13 +85,13 @@ export function registerWebMcpTools(modelContext: ModelContext, signal: AbortSig
       },
       execute: async ({ path }) => {
         if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) {
-          throw new Error('path must be an absolute Kortix path');
+          throw new Error('path must be an absolute dosco path');
         }
         const response = await fetch(path, { headers: { Accept: 'text/markdown' } });
-        if (!response.ok) throw new Error(`Kortix page returned ${response.status}`);
+        if (!response.ok) throw new Error(`dosco page returned ${response.status}`);
         const contentType = response.headers.get('content-type') ?? '';
         if (!contentType.startsWith('text/markdown')) {
-          throw new Error(`Kortix page returned ${contentType || 'no content type'}`);
+          throw new Error(`dosco page returned ${contentType || 'no content type'}`);
         }
         return { path, markdown: await response.text() };
       },

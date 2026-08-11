@@ -1,20 +1,17 @@
 /**
- * Site metadata configuration - SIMPLE AND WORKING
+ * dosco site metadata — single public origin for canonical URLs, sitemaps,
+ * structured data, and machine-readable representations. Runtime app URLs
+ * are deliberately not used here: a preview/dev hostname must never become
+ * the canonical origin.
  */
-
-/**
- * One public origin for canonical URLs, sitemaps, structured data, and
- * machine-readable representations. Runtime app URLs are deliberately not
- * used here: a preview/dev hostname must never become the canonical origin.
- */
-export const CANONICAL_ORIGIN = 'https://kortix.com';
+export const CANONICAL_ORIGIN = 'https://dosco.live';
 
 export const siteMetadata = {
-  name: 'Kortix',
-  title: 'Kortix – The AI Command Center for Your Company',
+  name: 'dosco',
+  title: 'dosco – The agent network for your company',
   description:
-    'The open-source AI command center for your company. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.',
+    'dosco is a closed, agent-native operating system for company work. Spin up persistent AI agents that connect to 3,000+ tools, run in real sandboxes, and share state across your team — one network, one command, every workflow.',
   url: CANONICAL_ORIGIN,
   keywords:
-    'Kortix, AI command center, autonomous company operating system, workforce of AI agents, company as a git repo, agents skills and memory as files, shared AI agents, scoped access, open source AI platform, self-hosted AI agents, connect 3000 tools, agent orchestration, AI-native company, AI operations',
+    'dosco, agent network, AI workforce, agent orchestration, agent runtime, AI sandboxes, persistent agents, shared agents, scoped access, agent-native platform, connect 3000 tools, AI operations, company-of-agents',
 };

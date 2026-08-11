@@ -118,7 +118,7 @@ export function ProjectsPage({ projects }: { projects: ProjectCard[] }) {
               Run{' '}
               <span className="text-foreground font-mono">
                 {tI18nHardcoded.raw(
-                  'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextKortixa20df451',
+                  'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextdoscoa20df451',
                 )}
               </span>{' '}
               {tI18nHardcoded.raw(

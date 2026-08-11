@@ -38,7 +38,7 @@ describe('agentInMode', () => {
 
 describe('filterAgents', () => {
   const all = [
-    agent('kortix', 'primary', 'Generic Kortix general knowledge worker'),
+    agent('kortix', 'primary', 'Generic dosco general knowledge worker'),
     agent('memory-reflector', 'primary', 'Reflects on recent project activity'),
     agent('reviewer', 'subagent'),
     agent('utility', 'all'),

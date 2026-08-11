@@ -2,7 +2,7 @@
 
 /**
  * Shared connect-account surface for chat identity binding (Slack, Teams).
- * The bot DMs the user a short-lived signed link; after a normal Kortix
+ * The bot DMs the user a short-lived signed link; after a normal dosco
  * login this page POSTs the token so the bot runs as the signed-in user
  * instead of the workspace installer.
  */
@@ -92,10 +92,10 @@ export function ChatIdentityConnect({
         title={`${service} connected`}
         description={
           !result?.hasAccess
-            ? `Your Kortix account is connected${workspace}. Head back to ${service} and request project access to continue.`
+            ? `Your dosco account is connected${workspace}. Head back to ${service} and request project access to continue.`
             : result?.resumed
-              ? `Your Kortix account is connected${workspace}. Kortix is picking up your ${service} message now.`
-              : `Your Kortix account is connected${workspace}. Head back to ${service} and mention Kortix with a task.`
+              ? `Your dosco account is connected${workspace}. dosco is picking up your ${service} message now.`
+              : `Your dosco account is connected${workspace}. Head back to ${service} and mention dosco with a task.`
         }
       />
     );
@@ -107,8 +107,8 @@ export function ChatIdentityConnect({
     <AuthFrame>
       <Rise>
         <StepHeader
-          title={`Connect ${service} to Kortix`}
-          description={`The Kortix bot in ${service} will run as you, with your own credentials, secrets, and connected apps instead of the installer's.`}
+          title={`Connect ${service} to dosco`}
+          description={`The dosco bot in ${service} will run as you, with your own credentials, secrets, and connected apps instead of the installer's.`}
         />
       </Rise>
 

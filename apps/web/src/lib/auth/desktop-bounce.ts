@@ -73,16 +73,16 @@ function buildNativeBounceHtml(deepLink: string, autoOpen: boolean): string {
   const hrefSafe = escapeHtmlAttribute(deepLink);
   const scriptSafe = serializeForInlineScript(deepLink);
   const message = autoOpen
-    ? `Opening Kortix… you can close this tab.<br/>
+    ? `Opening dosco… you can close this tab.<br/>
     If nothing happens, <a href="${hrefSafe}">click here</a> to open the app.`
     : `Your sign-in is ready.<br/>
-    <a href="${hrefSafe}">Open Kortix</a> to continue.`;
+    <a href="${hrefSafe}">Open dosco</a> to continue.`;
   const automaticRedirect = autoOpen
     ? `<script>window.location.replace(${scriptSafe});</script>`
     : '';
 
   return `<!doctype html><html><head><meta charset="utf-8"/>
-<title>Opening Kortix…</title>
+<title>Opening dosco…</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <style>
   html,body{margin:0;height:100%;background:#0a0a0a;color:#f4f4f5;

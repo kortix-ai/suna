@@ -30,7 +30,7 @@ const EDGE_MAX_SKEW_MS = 5 * 60_000;
 const WAKE_LEASE_MS = 2 * 60_000;
 const ACTIVITY_LEASE_MS = 60_000;
 const APP_FRAME_ANCESTORS =
-  "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*";
+  "frame-ancestors 'self' https://dosco.live https://*.dosco.live http://localhost:* http://127.0.0.1:*";
 
 function appWakeSupersededResponse(): Response {
   return Response.json({
@@ -66,56 +66,56 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   },
   queued: {
     title: 'Deployment queued',
-    message: 'Kortix will start this deployment shortly.',
+    message: 'dosco will start this deployment shortly.',
     code: 'app_deployment_queued',
     progress: true,
   },
   validating: {
     title: 'Validating your App',
-    message: 'Kortix is checking the source and deployment configuration.',
+    message: 'dosco is checking the source and deployment configuration.',
     code: 'app_deployment_validating',
     progress: true,
   },
   building: {
     title: 'Building your App',
-    message: 'Kortix is producing an immutable runtime image.',
+    message: 'dosco is producing an immutable runtime image.',
     code: 'app_deployment_building',
     progress: true,
   },
   provisioning: {
     title: 'Provisioning your App',
-    message: 'Kortix is creating the serverless runtime.',
+    message: 'dosco is creating the serverless runtime.',
     code: 'app_deployment_provisioning',
     progress: true,
   },
   checking: {
     title: 'Checking readiness',
-    message: 'Kortix is waiting for the App to accept traffic.',
+    message: 'dosco is waiting for the App to accept traffic.',
     code: 'app_deployment_checking',
     progress: true,
   },
   ready: {
     title: 'Activating your App',
-    message: 'The deployment is ready. Kortix is assigning stable traffic.',
+    message: 'The deployment is ready. dosco is assigning stable traffic.',
     code: 'app_deployment_activating',
     progress: true,
   },
   starting: {
     title: 'Starting your App',
-    message: 'Kortix is resuming the serverless runtime. This page will continue automatically.',
+    message: 'dosco is resuming the serverless runtime. This page will continue automatically.',
     code: 'app_starting',
     progress: true,
   },
   budget: {
     title: 'App paused',
-    message: 'This App reached its monthly compute limit. The owner can increase the limit in Kortix Apps.',
+    message: 'This App reached its monthly compute limit. The owner can increase the limit in dosco Apps.',
     code: 'app_budget_exceeded',
     progress: false,
     httpStatus: 402,
   },
   failed: {
     title: 'Deployment failed',
-    message: 'Open Kortix Apps or run kortix apps logs to inspect the deployment.',
+    message: 'Open dosco Apps or run kortix apps logs to inspect the deployment.',
     code: 'app_deployment_failed',
     progress: false,
   },
@@ -169,7 +169,7 @@ export function appPublicStatusResponse(
   const headers = new Headers({
     'cache-control': 'no-store',
     'content-security-policy':
-      "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+      "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self' https://dosco.live https://*.dosco.live http://localhost:* http://127.0.0.1:*",
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
   });
@@ -199,14 +199,14 @@ export function appPublicStatusResponse(
   return new Response(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${refresh}<title>${documentTitle}</title>
 <style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:light-dark(#f6f6f3,#10100f);color:light-dark(#171716,#f4f4f1);font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(100%,420px);padding:24px;border:1px solid light-dark(#deded9,#30302e);border-radius:12px;background:light-dark(#fff,#191918)}.mark{display:flex;align-items:center;gap:9px;margin-bottom:28px;font-weight:650}.glyph{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:currentColor}.glyph:after{content:"K";color:light-dark(#fff,#191918);font-size:12px}.state{display:flex;align-items:center;gap:9px;color:light-dark(#666662,#aaa9a3);font-size:12px}.dot{width:8px;height:8px;border-radius:999px;background:${copy.progress ? '#e6a522' : '#d74a4a'}${copy.progress ? ';animation:pulse 1.4s ease-in-out infinite' : ''}}h1{margin:12px 0 6px;font-size:20px;line-height:1.25;letter-spacing:-.02em}p{margin:0;color:light-dark(#666662,#aaa9a3)}code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@media(prefers-reduced-motion:reduce){.dot{animation:none}}</style></head>
-<body><main class="card"><div class="mark"><span class="glyph"></span>Kortix Apps</div><div class="state"><span class="dot"></span>${escapeHtml(status)}</div><h1>${heading}</h1><p>${escapeHtml(copy.message)}</p></main></body></html>`, {
+<body><main class="card"><div class="mark"><span class="glyph"></span>dosco Apps</div><div class="state"><span class="dot"></span>${escapeHtml(status)}</div><h1>${heading}</h1><p>${escapeHtml(copy.message)}</p></main></body></html>`, {
     status: httpStatus,
     headers,
   });
 }
 
 export function appPublicUnavailableResponse(
-  request = new Request('https://apps.kortix.com/'),
+  request = new Request('https://apps.dosco.live/'),
   app: { name: string } = { name: 'App' },
 ): Response {
   return appPublicStatusResponse(request, app, { status: 'starting' });
@@ -298,11 +298,11 @@ function appAccessResponse(
   const isPassword = mode === 'password';
   const action = isPassword
     ? `<form method="post" action="/_kortix/access/password"><label for="password">Password</label><input id="password" name="password" type="password" minlength="8" required autocomplete="current-password"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><button type="submit">Open App</button>${invalidPassword ? '<p class="error" role="alert">The password is incorrect.</p>' : ''}</form>`
-    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.projectId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
+    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.projectId}/apps?open_app=${app.appId}`)}">Continue with dosco</a>`;
   const message = isPassword
     ? 'Enter the password configured by the App owner.'
-    : 'Sign in with a Kortix account that can access this App.';
-  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Access ${name}</title><style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:light-dark(#f6f6f3,#10100f);color:light-dark(#171716,#f4f4f1);font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(100%,420px);padding:24px;border:1px solid light-dark(#deded9,#30302e);border-radius:12px;background:light-dark(#fff,#191918)}.mark{margin-bottom:28px;font-weight:650}h1{margin:0 0 6px;font-size:20px;letter-spacing:-.02em}p{margin:0 0 20px;color:light-dark(#666662,#aaa9a3)}form{display:grid;gap:10px}label{font-size:12px;font-weight:600}input{width:100%;height:42px;padding:0 12px;border:1px solid light-dark(#c9c9c3,#3a3a37);border-radius:8px;background:transparent;color:inherit}button,.button{display:flex;align-items:center;justify-content:center;height:42px;padding:0 16px;border:0;border-radius:999px;background:light-dark(#171716,#f4f4f1);color:light-dark(#fff,#171716);font:inherit;font-weight:600;text-decoration:none;cursor:pointer}.error{margin:0;color:#d74a4a;font-size:12px}</style></head><body><main class="card"><div class="mark">Kortix Apps</div><h1>${name}</h1><p>${escapeHtml(message)}</p>${action}</main></body></html>`, {
+    : 'Sign in with a dosco account that can access this App.';
+  return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Access ${name}</title><style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:light-dark(#f6f6f3,#10100f);color:light-dark(#171716,#f4f4f1);font:14px/1.5 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:min(100%,420px);padding:24px;border:1px solid light-dark(#deded9,#30302e);border-radius:12px;background:light-dark(#fff,#191918)}.mark{margin-bottom:28px;font-weight:650}h1{margin:0 0 6px;font-size:20px;letter-spacing:-.02em}p{margin:0 0 20px;color:light-dark(#666662,#aaa9a3)}form{display:grid;gap:10px}label{font-size:12px;font-weight:600}input{width:100%;height:42px;padding:0 12px;border:1px solid light-dark(#c9c9c3,#3a3a37);border-radius:8px;background:transparent;color:inherit}button,.button{display:flex;align-items:center;justify-content:center;height:42px;padding:0 16px;border:0;border-radius:999px;background:light-dark(#171716,#f4f4f1);color:light-dark(#fff,#171716);font:inherit;font-weight:600;text-decoration:none;cursor:pointer}.error{margin:0;color:#d74a4a;font-size:12px}</style></head><body><main class="card"><div class="mark">dosco Apps</div><h1>${name}</h1><p>${escapeHtml(message)}</p>${action}</main></body></html>`, {
     status: 401,
     headers: {
       'content-type': 'text/html; charset=utf-8',
@@ -397,7 +397,7 @@ export function resolveAppHost(hostname: string): ResolvedAppHost | null {
   const host = hostname.toLowerCase().replace(/\.$/, '');
   const local = /^([a-f0-9]{16})\.apps\.localhost$/.exec(host);
   if (local) return { routeKey: local[1]!, local: true };
-  const domain = (process.env.KORTIX_APPS_BASE_DOMAIN || 'apps.kortix.com')
+  const domain = (process.env.KORTIX_APPS_BASE_DOMAIN || 'apps.dosco.live')
     .toLowerCase()
     .replace(/^\.+|\.+$/g, '');
   if (!host.endsWith(`.${domain}`)) return null;
@@ -682,7 +682,7 @@ function withoutFrameAncestors(value: string): string[] {
     .filter((directive) => directive && !/^frame-ancestors(?:\s|$)/i.test(directive));
 }
 
-/** Preserve App security policy while allowing the Kortix preview browser to frame it. */
+/** Preserve App security policy while allowing the dosco preview browser to frame it. */
 export function appPublicResponseHeaders(upstreamHeaders: Headers): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');

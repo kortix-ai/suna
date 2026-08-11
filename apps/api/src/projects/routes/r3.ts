@@ -488,7 +488,7 @@ projectsApp.openapi(
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   if (await hasServerManagedGitAuth(loaded.row)) {
-    return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);
+    return c.json({ error: 'Git auth is already managed by dosco for this project' }, 409);
   }
 
   const token =
@@ -968,7 +968,7 @@ projectsApp.openapi(
       return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
     }
     if (isSystemProjectSecretName(identifier)) {
-      return c.json({ error: `${identifier} is managed by Kortix` }, 403);
+      return c.json({ error: `${identifier} is managed by dosco` }, 403);
     }
     let nextPolicy = null;
     const policyBackend = parsed.data.egress_policy?.backend;
@@ -1222,7 +1222,7 @@ projectsApp.openapi(
 // memory), so start and poll need not hit the same pod. The detached task
 // isn't tied to a client connection, so nothing the edge does can kill it.
 
-// Kortix provider id → the secret we persist the resulting auth.json under.
+// dosco provider id → the secret we persist the resulting auth.json under.
 // Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
 const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
   openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
@@ -1645,7 +1645,7 @@ projectsApp.openapi(
   // manifest never lets a human create one), so this alone protects it — no
   // DB read needed before the delete.
   if (isSystemProjectSecretName(identifier)) {
-    return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
+    return c.json({ error: `${identifier} is managed by dosco and cannot be removed` }, 403);
   }
   if (identifier.toUpperCase() === CODEX_AUTH_JSON_SECRET_NAME) {
     return c.json(

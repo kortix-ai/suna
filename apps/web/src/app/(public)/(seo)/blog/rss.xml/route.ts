@@ -3,7 +3,7 @@ import { siteMetadata } from '@/lib/site-metadata';
 
 // RSS 2.0 feed for the blog, served at /blog/rss.xml. Standard discovery
 // surface for readers and aggregators — linked from the blog pages' metadata.
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 function escape(text: string): string {
   return text
@@ -41,7 +41,7 @@ export function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Kortix Blog</title>
+    <title>dosco Blog</title>
     <link>${base}/blog</link>
     <description>Field notes on building, running, and governing AI agents that do real work.</description>
     <language>en</language>

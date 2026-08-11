@@ -1,15 +1,15 @@
 /**
  * The voice MCP — how apps/voice-agent (the LiveKit worker, a SEPARATE
- * process — see runtime.ts's file header) calls back INTO Kortix.
+ * process — see runtime.ts's file header) calls back INTO dosco.
  *
  * JSON-RPC 2.0 over streamable HTTP, mounted at
  * /v1/projects/:projectId/sessions/:sessionId/mcp/voice (routes.ts). The
- * caller is not a Kortix agent — it is a third-party-hosted worker process
+ * caller is not a dosco agent — it is a third-party-hosted worker process
  * holding the per-call `kortix_api_token` HMAC minted in `startCall`
  * (worker-token.ts) and handed to it via private LiveKit dispatch metadata. That token
  * authorizes exactly one call; nothing here accepts session/PAT auth.
  *
- * This used to be the OTHER direction: the Kortix agent's own tool surface
+ * This used to be the OTHER direction: the dosco agent's own tool surface
  * for driving a call (voice_spawn/voice_read/send_prompt/run_command/
  * voice_end). That surface has moved to the `kortix_voice` channel connector
  * (connector/channels.ts's VOICE_ACTIONS, executed by executeVoiceCall in
@@ -20,15 +20,15 @@
  *
  * THE INVARIANT: every tool returns quickly. `ask_kortix` in particular MUST
  * stay non-blocking — it hands the request to `askKortix` (runtime.ts) and
- * returns the instant that's queued, never waiting for the Kortix turn (which
+ * returns the instant that's queued, never waiting for the dosco turn (which
  * runs 30s-10min). A voice call has no error boundary except "the agent goes
  * quiet", which blocking here would trigger immediately. `run_command` is the
  * one deliberate, SHORT-bounded exception — it waits, but only up to a hard
  * cap well under the worker's own client-side timeout (see run-command.ts).
  *
- * Naming note: the OLD Kortix-facing MCP had a `send_prompt` meaning "make
+ * Naming note: the OLD dosco-facing MCP had a `send_prompt` meaning "make
  * the voice agent speak into the call." The worker's OWN `send_prompt` tool
- * (apps/voice-agent/src/tools.ts) means the opposite — "ask Kortix to work."
+ * (apps/voice-agent/src/tools.ts) means the opposite — "ask dosco to work."
  * That collision is why this file's hand-off tool is `ask_kortix`, not
  * `send_prompt`: same direction as the worker's tool, and unambiguous now
  * that the speak-into-the-call meaning lives only in the connector.
@@ -53,7 +53,7 @@ export interface VoiceMcpContext {
   projectId: string;
   sessionId: string;
   callId: string;
-  /** Fire-and-forget hand-off to the Kortix session. Never awaits the turn. */
+  /** Fire-and-forget hand-off to the dosco session. Never awaits the turn. */
   askKortix(request: string): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Waits (short, bounded) for a shell command's result in the call's sandbox. */
   runCommand(command: string, cwd?: string): Promise<RunCommandToolResult>;
@@ -91,9 +91,9 @@ function toolDefinitions() {
     {
       name: 'ask_kortix',
       description:
-        'Hand a request to the Kortix agent for this call. Use for anything needing real project ' +
+        'Hand a request to the dosco agent for this call. Use for anything needing real project ' +
         'knowledge, files, connectors, memory, or actions. Returns the instant the request is ' +
-        'queued — NEVER waits for Kortix to finish thinking, which can take minutes. The answer, ' +
+        'queued — NEVER waits for dosco to finish thinking, which can take minutes. The answer, ' +
         'if any, arrives later as a separate message to speak into the call. ONE request at a ' +
         'time: while an earlier one is still unanswered this is refused, with an explanation to ' +
         'relay. Do not re-send a request to chase or double-check an answer you already got.',
@@ -190,7 +190,7 @@ async function callTool(
       // before the next ask can read it — a fire-and-forget write from this
       // layer let two rapid asks both see an empty ledger, and could land
       // AFTER the settle row of a hand-off that failed instantly.
-      return toolText('Queued — Kortix is working on it. The answer will arrive later as something to say.', {
+      return toolText('Queued — dosco is working on it. The answer will arrive later as something to say.', {
         queued: true,
       });
     }

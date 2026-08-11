@@ -121,7 +121,7 @@ projectsApp.openapi(
       projectId,
       error: error instanceof Error ? error.message : String(error),
     });
-    c.header('X-Kortix-Repo-Status', 'unavailable');
+    c.header('X-dosco-Repo-Status', 'unavailable');
   }
   const rawConfig = await loadProjectConfig(gitProject, files);
   // Per-resource scoping: hide agents/skills this member isn't granted (owner/
@@ -210,7 +210,7 @@ projectsApp.openapi(
       projectId,
       error: error instanceof Error ? error.message : String(error),
     });
-    c.header('X-Kortix-Repo-Status', 'unavailable');
+    c.header('X-dosco-Repo-Status', 'unavailable');
   }
   // Visibility isolation: drop files of agents/skills this member is scoped out
   // of. No-op (one memo check) when the project scopes nothing.
@@ -510,7 +510,7 @@ projectsApp.openapi(
       projectId,
       error: error instanceof Error ? error.message : String(error),
     });
-    c.header('X-Kortix-Repo-Status', 'unavailable');
+    c.header('X-dosco-Repo-Status', 'unavailable');
     return c.json({ default_branch: loaded.row.defaultBranch, branches: [] });
   }
 },

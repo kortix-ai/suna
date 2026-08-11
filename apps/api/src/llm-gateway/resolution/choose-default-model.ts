@@ -6,7 +6,7 @@ import { chooseEffectiveModel } from './effective';
  *
  * Thin adapter over `chooseEffectiveModel` (the single precedence definition) that
  * returns the gateway's `string | undefined` shape. Free tier cannot use managed
- * Kortix models, so a managed chosen default is dropped to the platform default —
+ * dosco models, so a managed chosen default is dropped to the platform default —
  * never silently downgraded to a broader layer. A BYOK default (`provider/model`)
  * is kept for free tier (resolved via their key).
  */

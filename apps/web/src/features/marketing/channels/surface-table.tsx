@@ -1,7 +1,7 @@
 'use client';
 
 import { Gmail } from '@/features/icon/icons/gmail';
-import { Kortix } from '@/features/icon/icons/kortix';
+import { dosco } from '@/features/icon/icons/kortix';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
@@ -11,7 +11,7 @@ import { surfaces } from './content';
 /** `surfaces.rows[].icon` selects a logo by name at runtime, so it can't be
  *  statically resolved to a single import — this explicit map is the smallest
  *  set that covers it, kept in sync by hand with `./content.ts`. */
-const ROW_ICONS = { Slack, MicrosoftTeams, Gmail, Kortix } as const;
+const ROW_ICONS = { Slack, MicrosoftTeams, Gmail, dosco } as const;
 
 /**
  * The four channel platforms and the honest state of each one.

@@ -332,7 +332,7 @@ oauthApp.openapi(
     codeChallengeMethod,
   });
 
-  const frontendUrl = config.FRONTEND_URL || 'https://kortix.com';
+  const frontendUrl = config.FRONTEND_URL || 'https://dosco.live';
   const consentUrl = new URL(`${frontendUrl}/oauth/authorize`);
   consentUrl.searchParams.set('request_id', requestId);
 

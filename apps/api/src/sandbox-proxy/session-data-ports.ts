@@ -20,7 +20,7 @@ import { OPENCODE_PORTS } from '../shared/opencode-ports';
  *
  * That is why gating on `upstreamPort === 8000` alone was a cross-end-user leak.
  * Sandbox ownership is still enforced unconditionally upstream of this, but in
- * Kortix-as-a-Backend every session shares ONE `created_by` (the wrapper's
+ * dosco-as-a-Backend every session shares ONE `created_by` (the wrapper's
  * credential), so an ownership check cannot separate end-users — the per-SESSION
  * gate is what does that, via `callerSessionId`. Skipping it for :4096 handed
  * end-user A's sandbox token a path to end-user B's conversation on Daytona.

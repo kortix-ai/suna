@@ -65,8 +65,8 @@ function SupportPageContent() {
         <Reveal delay={0.08}>
           <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
             {tHardcodedUi.raw('appHomeSupportPage.line62JsxTextEmailUsAt')}{' '}
-            <a href="mailto:support@kortix.com" className={linkClass}>
-              {tHardcodedUi.raw('appHomeSupportPage.line63JsxTextSupportKortixCom')}
+            <a href="mailto:support@dosco.live" className={linkClass}>
+              {tHardcodedUi.raw('appHomeSupportPage.line63JsxTextSupportdoscoCom')}
             </a>
             .{' '}
             {tHardcodedUi.raw(
@@ -83,14 +83,14 @@ function SupportPageContent() {
             </h2>
             <div>
               <FAQItem
-                question={tHardcodedUi.raw('appHomeSupportPage.line76JsxAttrQuestionWhatIsKortix')}
+                question={tHardcodedUi.raw('appHomeSupportPage.line76JsxAttrQuestionWhatIsdosco')}
                 answer={tHardcodedUi.raw(
                   'appHomeSupportPage.line77JsxAttrAnswerA247CloudComputerWhereAiAgents',
                 )}
               />
               <FAQItem
                 question={tHardcodedUi.raw(
-                  'appHomeSupportPage.line80JsxAttrQuestionHowIsKortixDifferentFromOtherAiPlatforms',
+                  'appHomeSupportPage.line80JsxAttrQuestionHowIsdoscoDifferentFromOtherAiPlatforms',
                 )}
                 answer={tHardcodedUi.raw(
                   'appHomeSupportPage.line81JsxAttrAnswerMostAiPlatformsAreChatInterfacesThatGive',
@@ -98,7 +98,7 @@ function SupportPageContent() {
               />
               <FAQItem
                 question={tHardcodedUi.raw(
-                  'appHomeSupportPage.line84JsxAttrQuestionCanKortixConnectToMyApps',
+                  'appHomeSupportPage.line84JsxAttrQuestionCandoscoConnectToMyApps',
                 )}
                 answer={tHardcodedUi.raw(
                   'appHomeSupportPage.line85JsxAttrAnswerYes3000ConnectorsViaOauthMcpServers',
@@ -111,8 +111,8 @@ function SupportPageContent() {
                 answer={
                   <>
                     Email{' '}
-                    <a href="mailto:support@kortix.com" className={linkClass}>
-                      {tHardcodedUi.raw('appHomeSupportPage.line90JsxTextSupportKortixCom')}
+                    <a href="mailto:support@dosco.live" className={linkClass}>
+                      {tHardcodedUi.raw('appHomeSupportPage.line90JsxTextSupportdoscoCom')}
                     </a>
                     {tHardcodedUi.raw(
                       'appHomeSupportPage.line90JsxTextWithDetailsForBugsIncludeStepsToReproduce',
@@ -127,8 +127,8 @@ function SupportPageContent() {
                 answer={
                   <>
                     Contact{' '}
-                    <a href="mailto:support@kortix.com" className={linkClass}>
-                      {tHardcodedUi.raw('appHomeSupportPage.line96JsxTextSupportKortixCom')}
+                    <a href="mailto:support@dosco.live" className={linkClass}>
+                      {tHardcodedUi.raw('appHomeSupportPage.line96JsxTextSupportdoscoCom')}
                     </a>
                     {tHardcodedUi.raw(
                       'appHomeSupportPage.line96JsxTextImmediatelyWePrioritizeBillingIssuesAndTypicallyResolve',
@@ -148,8 +148,8 @@ function SupportPageContent() {
             </h2>
             <p className="text-muted-foreground mb-4 text-base leading-relaxed">
               {tHardcodedUi.raw('appHomeSupportPage.line110JsxTextToDeleteYourAccountEitherEmail')}{' '}
-              <a href="mailto:support@kortix.com" className={linkClass}>
-                {tHardcodedUi.raw('appHomeSupportPage.line111JsxTextSupportKortixCom')}
+              <a href="mailto:support@dosco.live" className={linkClass}>
+                {tHardcodedUi.raw('appHomeSupportPage.line111JsxTextSupportdoscoCom')}
               </a>{' '}
               {tHardcodedUi.raw('appHomeSupportPage.line112JsxTextOrDoItYourselfFromSettings')}
             </p>
@@ -200,11 +200,11 @@ function SupportPageContent() {
               {tHardcodedUi.raw('appHomeSupportPage.line150JsxTextStillNeedHelpReachOut')}
             </p>
             <div className="mt-3 flex flex-col gap-1.5">
-              <a href="mailto:support@kortix.com" className={`text-base ${linkClass} w-fit`}>
-                {tHardcodedUi.raw('appHomeSupportPage.line154JsxTextSupportKortixCom')}
+              <a href="mailto:support@dosco.live" className={`text-base ${linkClass} w-fit`}>
+                {tHardcodedUi.raw('appHomeSupportPage.line154JsxTextSupportdoscoCom')}
               </a>
-              <a href="mailto:security@kortix.com" className={`text-base ${linkClass} w-fit`}>
-                {tHardcodedUi.raw('appHomeSupportPage.line157JsxTextSecurityKortixCom')}
+              <a href="mailto:security@dosco.live" className={`text-base ${linkClass} w-fit`}>
+                {tHardcodedUi.raw('appHomeSupportPage.line157JsxTextSecuritydoscoCom')}
               </a>
             </div>
           </div>

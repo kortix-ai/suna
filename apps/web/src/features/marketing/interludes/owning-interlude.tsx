@@ -6,7 +6,7 @@ import { owning, type TreeNode } from './content';
 import { Interlude, Panel } from './interlude';
 
 /**
- * Interlude 2 — sits between the open-source slab and the trust card, with the
+ * Interlude 2 — sits between the self-host slab and the trust card, with the
  * graphic on the LEFT so it reads as the answering half of interlude 1.
  *
  * WHAT IT FIXES. Open source, trust and the closing CTA are three heavy

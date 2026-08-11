@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Kortix <ErrorState> — centered error view.
+ * dosco <ErrorState> — centered error view.
  *
  * Minimal. An icon, a one-line headline, an optional body, and up to two
  * actions (primary + secondary). A calm failure moment — not an alarm bell.

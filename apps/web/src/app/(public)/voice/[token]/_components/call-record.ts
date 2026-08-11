@@ -19,7 +19,7 @@
  *   role=tool                    → an MCP call the voice made; `speaker` is the
  *                                  tool name and nobody spoke.
  *
- * Reading `role` without `speaker` is exactly how the Kortix agent's own lines
+ * Reading `role` without `speaker` is exactly how the dosco agent's own lines
  * end up indistinguishable from the voice's — do not collapse these.
  */
 import type { CallEntryKind, CallRecordEntry, LiveUtterance } from './types';
@@ -111,10 +111,10 @@ export function toCallRecordEntries(turns: readonly RawCallTurn[]): CallRecordEn
     } else if (turn.role === 'agent') {
       if (speaker === KORTIX_SPEAKER) {
         kind = 'kortix';
-        name = 'Kortix agent';
+        name = 'dosco agent';
       } else {
         kind = 'voice';
-        name = speaker || 'Kortix';
+        name = speaker || 'dosco';
       }
     } else {
       kind = 'human';

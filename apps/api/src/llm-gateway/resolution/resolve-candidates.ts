@@ -59,7 +59,7 @@ export const resolveCachedManagedModels = accountMayUseManagedModels;
 // ONLY) + a configured, resolvable fallback model. getRuntimeManagedModel()/
 // managedCandidates() are themselves empty when KORTIX_MANAGED_PROVIDER_ENABLED
 // is off, so a self-host naturally has no managed fallback — the explicit check
-// here is redundant belt-and-suspenders (never a silent fallback to Kortix's
+// here is redundant belt-and-suspenders (never a silent fallback to dosco's
 // shared credentials), not load-bearing on its own.
 function byokFallbackCandidates(): UpstreamDescriptor[] {
   if (!config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
@@ -256,7 +256,7 @@ export async function resolveCandidates(
       }));
       // Queue a managed model behind the BYOK key: if the user's key hits a
       // rate-limit / quota / billing error, the failover loop falls over to it
-      // (billed as Kortix credits) so the turn doesn't die.
+      // (billed as dosco credits) so the turn doesn't die.
       //
       // Only for accounts entitled to managed models. Otherwise a plan that
       // includes no inference could reach it by having its own key rate-limit —
@@ -282,7 +282,7 @@ export async function resolveCandidates(
   // is on (RUNTIME_MANAGED_MODELS is empty otherwise — see managed-models.ts), so
   // a self-host never reaches this branch for an explicitly-named managed model;
   // it falls through to the checks below → a clear "model not available on this
-  // deployment" error, never a silent fallback to Kortix credits. A BYOK catalog
+  // deployment" error, never a silent fallback to dosco credits. A BYOK catalog
   // model (bare `provider/model`) is handled above and requires the user's own
   // key; it never falls through here.
   const managed = getRuntimeManagedModel(effectiveModel);
@@ -322,7 +322,7 @@ export async function resolveCandidates(
   if (isKnownManagedModelId(effectiveModel)) {
     throw new GatewayResolutionError(
       'model_disabled_on_deployment',
-      `The "${effectiveModel}" model requires Kortix's managed provider, which is disabled on this deployment.`,
+      `The "${effectiveModel}" model requires dosco's managed provider, which is disabled on this deployment.`,
       'Connect your own API key for a BYOK-compatible model, or ask your deployment operator to enable the managed provider.',
     );
   }

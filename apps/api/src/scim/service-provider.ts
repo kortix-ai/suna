@@ -23,7 +23,7 @@ scimRouter.openapi(
   async (c: any) => {
   return c.json({
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
-    documentationUri: 'https://docs.kortix.com/scim',
+    documentationUri: 'https://docs.dosco.live/scim',
     patch: { supported: true },
     bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
     filter: { supported: true, maxResults: 200 },

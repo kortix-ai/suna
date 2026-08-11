@@ -79,7 +79,7 @@ slackOauthApp.openapi(
       }),
     },
     responses: {
-      302: { description: 'Redirect to the Kortix dashboard' },
+      302: { description: 'Redirect to the dosco dashboard' },
       ...errors(400, 503),
     },
   }),
@@ -196,7 +196,7 @@ function redirectToDashboard(
   // Mirror dashboardBaseUrl()'s fallback chain so an OAuth callback never
   // redirects to localhost in a deployed environment where FRONTEND_URL
   // happens to be unset.
-  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  const base = (config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '');
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);

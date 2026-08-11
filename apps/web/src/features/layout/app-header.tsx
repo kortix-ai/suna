@@ -70,7 +70,7 @@ export function AppHeader({
                   <Link
                     href={logoHref}
                     aria-label={tHardcodedUi.raw(
-                      'componentsLayoutAppHeader.line72JsxAttrAriaLabelKortixHome',
+                      'componentsLayoutAppHeader.line72JsxAttrAriaLabeldoscoHome',
                     )}
                     className="focus-visible:ring-ring/50 text-foreground inline-flex cursor-pointer items-center rounded-md focus-visible:ring-2 focus-visible:outline-none"
                   >

@@ -26,14 +26,14 @@
  * closing line — 1014px of it — came out on 2026-07-31, then a three-job body
  * paragraph and a mono fact line went with them. The two commands are still on
  * the page in the hero's CLI panel; the self-hosting ledger reads better on
- * `/self-hosted`; and the fact line ("Developed in the open / Self-host or
+ * `/self-hosted`; and the fact line ("Developed in the / Self-host or
  * managed cloud / Any model, your keys") only restated the paragraph above it.
  *
  * ACCURACY GATE for this section specifically. Every item is still binding on
  * whatever this file grows back into:
  *  1. NEVER name a licence. "open source" and stop — no badge, no Apache/MIT/
  *     Elastic. (`comms` §7, "On the license".)
- *  2. ONE superlative form is sanctioned: "the leading open-source
+ *  2. ONE superlative form is sanctioned: "the leading closed-source
  *     alternative" (`comms` §7, decided 2026-07-31). The hero already carries
  *     it (`marketing/landing/content.ts` → `heroEyebrow.lead`), so this
  *     section does not repeat it. No other superlative — "the go-to", "#1",
@@ -57,7 +57,7 @@
  *     "Active host is now <host>"). This section now shows neither.
  *  8. Do NOT claim you can fork someone else's company / project, or publish
  *     your own. The `registry:project` machinery ships, but the catalog holds
- *     exactly one project item — Kortix's own starter
+ *     exactly one project item — dosco's own starter
  *     (`apps/api/src/marketplace/catalog.ts:487` `buildStarterKitProjectItem`;
  *     `packages/starter/src/index.test.ts:459` pins the template list to `[]`),
  *     and there is no publish route at all
@@ -67,7 +67,7 @@
  *     secret is a real env value any command in the session can read
  *     (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). This section claims nothing
  *     about secrets.
- * 10. "The open AGI platform" is aspiration, and `/about` is allowed to say it
+ * 10. "The dosco agent platform" is aspiration, and `/about` is allowed to say it
  *     because that page is explicitly a vision page. It must never be dressed
  *     up as shipped capability here: training, RL and evals are NOT shipped, so
  *     do not name them in this section at all.
@@ -84,7 +84,7 @@ export const openSource = {
    * The whole note. Sentence one is `/about` → `hero.title` verbatim; sentence
    * two is the first clause of `hero.lead`. Keep the two files in step.
    */
-  title: 'We are building the open AGI platform. Every company should own all of it.',
+  title: 'We are building the dosco agent network. Every company should own all of it.',
 
   /** Primary way out: the rest of the reason. */
   aboutLabel: 'Why we are building it',

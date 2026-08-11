@@ -1,5 +1,5 @@
 /**
- * SAML service-provider values for the deployment. Kortix delegates the SAML
+ * SAML service-provider values for the deployment. dosco delegates the SAML
  * SP role to the auth layer, so the two values every IdP (Entra, Okta, Google)
  * asks for when registering us are pure functions of the auth origin — the
  * same for every account, derivable before any provider is configured.

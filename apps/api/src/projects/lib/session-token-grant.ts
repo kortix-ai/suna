@@ -2,7 +2,7 @@
  * Reconcile a live session token's agent grant with the current manifest.
  *
  * `account_tokens.agent_grant` starts from the session's create-time agent.
- * The connector and Kortix-CLI gates (`agentMayUseConnector`,
+ * The connector and dosco-CLI gates (`agentMayUseConnector`,
  * `agentMayPerform`) read that row at call time. The row must therefore follow
  * both in-session agent switches and same-agent manifest edits:
  *
@@ -234,7 +234,7 @@ export async function remintGrantForAgentSwitch(input: {
  * Resolve the grant represented by an existing session token from the current
  * project manifest.
  *
- * Connector and Kortix CLI requests can occur after the session changes
+ * Connector and dosco CLI requests can occur after the session changes
  * `kortix.yaml` in the same turn. The prompt hook cannot observe that later
  * mutation. Gateway authorization therefore calls this function before it
  * evaluates the stored grant.

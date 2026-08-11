@@ -6,7 +6,7 @@ import { db } from '../../shared/db';
 import { lookupEmailsByUserIds } from './access';
 
 function projectMembersUrl(projectId: string): string {
-  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  const base = (config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '');
   return `${base}/projects/${projectId}/customize/members`;
 }
 export async function notifyProjectAccessRequestManagers(input: {

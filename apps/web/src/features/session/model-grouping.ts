@@ -6,19 +6,19 @@ const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we recover the
-// REAL provider: platform-managed defaults stay under the "Kortix" group, while
+// REAL provider: platform-managed defaults stay under the "dosco" group, while
 // every BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) —
-// so a connected provider reads as its own section, not buried in Kortix.
+// so a connected provider reads as its own section, not buried in dosco.
 //
-// *** BUG THIS FIXES (every model showing under "Kortix", even BYOK Anthropic) ***
+// *** BUG THIS FIXES (every model showing under "dosco", even BYOK Anthropic) ***
 // `pickerGroupId` always correctly computed the grouping KEY (it split
 // `modelID` on "/" and returned e.g. "anthropic"). The bug was never in the
 // key — it was that the group's DISPLAY NAME, built in `grouped` below, was
 // taken verbatim from `model.providerName` (opencode's raw provider name,
-// which is ALWAYS "Kortix" — every gateway model is registered under the one
+// which is ALWAYS "dosco" — every gateway model is registered under the one
 // synthetic `kortix` opencode provider). So the group's icon rendered
 // correctly (`ProviderLogo` is keyed off the correct `providerID`), but the
-// text label next to it always read "Kortix" regardless of which provider
+// text label next to it always read "dosco" regardless of which provider
 // actually served the model.
 //
 // The robust fix (per the live /v1/models trace): the gateway now serves an
@@ -37,7 +37,7 @@ export function pickerGroupId(model: FlatModel): string {
 }
 
 // The group's display name/label — NEVER the raw `FlatModel.providerName`
-// (always "Kortix" under the gateway, see the bug note above). Prefer the
+// (always "dosco" under the gateway, see the bug note above). Prefer the
 // canonical label for the resolved real-provider id; only fall back to the
 // model's own providerName for a truly unknown id (e.g. `pickerGroupId`
 // degrading to the raw `providerID` because neither `provider` nor a `/` was

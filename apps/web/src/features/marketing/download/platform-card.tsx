@@ -118,7 +118,7 @@ export function PlatformCard({
                   // Five buttons all reading "Download" is useless to a screen
                   // reader. The visible label stays short; the accessible one says
                   // which platform it is.
-                  aria-label={`Download Kortix for ${row.label}`}
+                  aria-label={`Download dosco for ${row.label}`}
                   {...(row.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                 >
                   Download

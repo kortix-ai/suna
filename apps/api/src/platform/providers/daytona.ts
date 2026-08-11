@@ -76,7 +76,7 @@ function reportIfDiskQuotaError(err: unknown, reason: string): never {
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
 
-// Labels stamped on every Kortix-managed Daytona box at create time. The
+// Labels stamped on every dosco-managed Daytona box at create time. The
 // Daytona org is SHARED across environments (prod / dev / laptops), so the
 // orphan-box reaper MUST scope its sweep to this deployment's own boxes —
 // otherwise one env would stop another env's sandboxes. `kortix.managed` marks

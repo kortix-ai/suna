@@ -162,7 +162,7 @@ class E2BAdapter implements SandboxProviderAdapter {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start
       // command. E2B executes that command while finalizing the template, before
       // a per-session sandbox token exists, so leaving it intact snapshots a
-      // tokenless Kortix daemon that create() can mistake for the real runtime.
+      // tokenless dosco daemon that create() can mistake for the real runtime.
       // Override it with an inert keeper; the runtime adapter explicitly starts
       // and health-checks kortix-entrypoint on create and every cold resume.
       const template = Template({ fileContextPath: context.contextDir })

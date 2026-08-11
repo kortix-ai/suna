@@ -63,7 +63,7 @@ describe('tool output formatting', () => {
       '{"batch_mode":true,"results":[' +
       '{"query":"q1","answer":"a1","results":[' +
       '{"title":"From Teen Entrepreneur","url":"https://linkedin.com/posts/abc","snippet":"At just 12 he founded BluePage"},' +
-      '{"title":"CEO & Founder of Kortix","url":"https://markokraemer.com","snippet":"Started selling websites"}]},' +
+      '{"title":"CEO & Founder of dosco","url":"https://markokraemer.com","snippet":"Started selling websites"}]},' +
       '{"query":"q2","results":[' +
       '{"title":"Plutus Groupware","url":"https://hightechbox.de/x","snippet":"Die beiden Plutus-Gru';
     expect(() => JSON.parse(truncated)).toThrow();

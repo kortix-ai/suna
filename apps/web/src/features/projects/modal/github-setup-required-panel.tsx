@@ -4,8 +4,8 @@
 // create/import UI whenever there's no usable managed git on this server
 // (self-host with no GitHub App or PAT configured yet). Routes the user to
 // the account's Git settings tab instead of the cloud-only "Connect the
-// Kortix GitHub App" install card, which only makes sense on the hosted
-// deployment (there's no hosted Kortix App to install on self-host).
+// dosco GitHub App" install card, which only makes sense on the hosted
+// deployment (there's no hosted dosco App to install on self-host).
 
 import { GithubLogoIcon as Github } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
@@ -58,8 +58,8 @@ export function GitHubSetupRequiredPanel({
       title="GitHub isn't connected on this server yet"
       description={
         isAdmin
-          ? "Every Kortix project is a git repository. Connect GitHub once in this account's Git settings."
-          : "Every Kortix project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
+          ? "Every dosco project is a git repository. Connect GitHub once in this account's Git settings."
+          : "Every dosco project is a git repository. Ask your admin to connect GitHub in this account's Git settings."
       }
       action={
         <Button

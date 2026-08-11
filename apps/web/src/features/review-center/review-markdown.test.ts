@@ -11,7 +11,7 @@ describe('looksLikeMarkdown', () => {
     expect(looksLikeMarkdown('This has **bold emphasis** in it.')).toBe(true);
     expect(looksLikeMarkdown('Run `kortix validate` before landing.')).toBe(true);
     expect(looksLikeMarkdown('```yaml\nagents: {}\n```')).toBe(true);
-    expect(looksLikeMarkdown('See [the docs](https://kortix.com/docs).')).toBe(true);
+    expect(looksLikeMarkdown('See [the docs](https://dosco.live/docs).')).toBe(true);
     expect(looksLikeMarkdown('1. fetch\n2. rebase\n3. push')).toBe(true);
   });
 

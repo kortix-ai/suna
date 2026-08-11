@@ -13,7 +13,7 @@ import {
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 /** Canonical task statuses (inlined; formerly from the /kortix/tasks board API). */
-export type KortixTaskStatus =
+export type doscoTaskStatus =
   'todo' | 'in_progress' | 'input_needed' | 'awaiting_review' | 'completed' | 'cancelled';
 
 export interface StatusMeta {
@@ -30,7 +30,7 @@ export interface StatusMeta {
   terminal?: boolean;
 }
 
-export const STATUS_META: Record<KortixTaskStatus, StatusMeta> = {
+export const STATUS_META: Record<doscoTaskStatus, StatusMeta> = {
   todo: {
     icon: Circle,
     color: 'text-muted-foreground/70',
@@ -87,7 +87,7 @@ export const STATUS_META: Record<KortixTaskStatus, StatusMeta> = {
 };
 
 /** All statuses in pipeline order. */
-export const ALL_STATUSES: KortixTaskStatus[] = [
+export const ALL_STATUSES: doscoTaskStatus[] = [
   'todo',
   'in_progress',
   'input_needed',

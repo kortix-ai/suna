@@ -77,8 +77,8 @@ const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> 
     tone: 'warning',
   },
   broker: {
-    label: 'Kortix service',
-    description: 'Used by an approved Kortix service without entering the sandbox.',
+    label: 'dosco service',
+    description: 'Used by an approved dosco service without entering the sandbox.',
     tone: 'secondary',
   },
   egress: {
@@ -88,7 +88,7 @@ const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> 
   },
   denied: {
     label: 'Disabled',
-    description: 'Stored securely, but unavailable to sessions and Kortix services.',
+    description: 'Stored securely, but unavailable to sessions and dosco services.',
     tone: 'outline',
   },
 };

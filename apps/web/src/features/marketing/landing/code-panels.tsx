@@ -161,8 +161,8 @@ function CodeSurface({
 /* ── CLI ─────────────────────────────────────────────────────────────────── */
 
 const CLI_LINES = [
-  '$ curl -fsSL https://kortix.com/install | bash',
-  '  ✓ Kortix CLI installed',
+  '$ curl -fsSL https://dosco.live/install | bash',
+  '  ✓ dosco CLI installed',
   '',
   '$ kortix init',
   '  ✓ wrote kortix.yaml, agents, skills',
@@ -177,7 +177,7 @@ const CLI_LINES = [
   '  → 1 change request awaiting your review',
 ];
 
-const CLI_COPY = `curl -fsSL https://kortix.com/install | bash
+const CLI_COPY = `curl -fsSL https://dosco.live/install | bash
 kortix init
 kortix ship`;
 
@@ -191,7 +191,7 @@ const SDK_LINES = [
   "import { createKortix } from '@kortix/sdk';",
   '',
   'const kortix = createKortix({',
-  "  backendUrl: 'https://api.kortix.com/v1',",
+  "  backendUrl: 'https://api.dosco.live/v1',",
   '  getToken,',
   '});',
   '',

@@ -24,7 +24,7 @@ describe('GitHub account connection surfaces', () => {
   // `project-create-modal.tsx`'s source. That modal — and the
   // `github-create`/`github-import` repository-source picker it alone drove —
   // was deleted along with it; `/new` only drives `POST /projects/provision`
-  // (Kortix-managed repos). There is no surviving surface for either
+  // (dosco-managed repos). There is no surviving surface for either
   // assertion to move to, so they are gone, not adapted. The remaining test
   // below is independent of the deleted file.
   const accountPageSource = readFileSync(

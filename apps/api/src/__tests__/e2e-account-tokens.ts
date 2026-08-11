@@ -68,7 +68,7 @@ async function callApi<T>(token: string, path: string): Promise<{ status: number
 }
 
 async function main() {
-  process.stdout.write('\n  \x1b[1mKortix CLI E2E\x1b[0m  (account tokens → /accounts/me → /projects)\n');
+  process.stdout.write('\n  \x1b[1mdosco CLI E2E\x1b[0m  (account tokens → /accounts/me → /projects)\n');
   dim('api', API_BASE);
 
   const { user_id, account_id } = await pickUserAndAccount();

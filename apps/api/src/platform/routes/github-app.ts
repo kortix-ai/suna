@@ -90,7 +90,7 @@ export function buildGithubAppManifest(opts: {
   // ("url wasn't supplied"), so it is kept separate and always a valid FQDN.
   const base = opts.apiBaseUrl.replace(/\/+$/, '');
   return {
-    name: opts.appName ?? `Kortix Self-Host ${randomBytes(4).toString('hex')}`,
+    name: opts.appName ?? `dosco Self-Host ${randomBytes(4).toString('hex')}`,
     url: opts.homepageUrl,
     redirect_url: `${base}/v1/platform/github-app/manifest-callback`,
     setup_url: `${base}/v1/platform/github-app/install-callback`,
@@ -246,7 +246,7 @@ function apiBaseUrl(c: any): string {
 function homepageUrl(): string {
   const pub = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
   if (/^https:\/\/[^/.]+\.[^/]+/.test(pub)) return pub;
-  return 'https://kortix.ai';
+  return 'https://dosco.live';
 }
 
 function frontendUrl(): string {
@@ -337,7 +337,7 @@ githubAppSetupRouter.openapi(
 
 // ─── GET /manifest-callback ───────────────────────────────────────────────────
 // PUBLIC by necessity — GitHub redirects the browser here with `?code=&state=`
-// after the operator submits the manifest form. No Kortix auth header is
+// after the operator submits the manifest form. No dosco auth header is
 // possible on a cross-site browser redirect; the signed `state` (HMAC,
 // SUPABASE_JWT_SECRET, ~10min TTL, single-use-in-spirit nonce) is the only
 // thing standing between this route and an attacker who guesses the URL — a
@@ -514,7 +514,7 @@ githubAppSetupRouter.openapi(
 //   'db'   — a GitHub App created via the in-app manifest flow OR pasted in
 //            via POST /app (both write the same DB config).
 //   'env'  — a GitHub App configured via KORTIX_GITHUB_APP_*/GITHUB_APP_* env
-//            vars (the hosted Kortix deployment's setup).
+//            vars (the hosted dosco deployment's setup).
 //   'pat'  — a personal/fine-grained access token, via POST /pat (DB) or
 //            MANAGED_GIT_GITHUB_TOKEN (env).
 //   'none' — managed-git isn't usable via any method yet.

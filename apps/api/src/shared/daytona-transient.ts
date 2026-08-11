@@ -15,7 +15,7 @@
  *
  * A transient provider gateway blip (502/503/504, connection reset, timeout,
  * DNS) is EXPECTED — it is the upstream provider momentarily unavailable, not
- * a Kortix code bug — and every call site that hits Daytona (preview-link
+ * a dosco code bug — and every call site that hits Daytona (preview-link
  * resolution, transcript / public-share reads, lease discover, reaper health,
  * env-sync fan-out, snapshot reconciliation, …) must NOT page Sentry for it.
  * The 429 throttler case is owned by `shared/daytona-rate-limit.ts`

@@ -16,7 +16,7 @@
  *
  * The extraction deliberately matches the build-time one exactly — same
  * `getManagedSkillFiles()` + `getStarterFiles({ template:
- * 'general-knowledge-worker' })` sources, same `isKortixManagedSkillName` filter
+ * 'general-knowledge-worker' })` sources, same `isdoscoManagedSkillName` filter
  * — so a sandbox converges on the SAME bytes the image would have baked, not a
  * superset. `getMarketplaceFiles()` is intentionally absent (see
  * skills/catalog.ts, which does include it: that surface answers "read any
@@ -27,10 +27,10 @@ import { createHash } from 'node:crypto';
 import {
   getManagedSkillFiles,
   getStarterFiles,
-  isKortixManagedSkillName,
+  isdoscoManagedSkillName,
 } from '@kortix/starter';
 
-/** Where skills live inside a Kortix project (and inside the starter templates). */
+/** Where skills live inside a dosco project (and inside the starter templates). */
 const SKILLS_PREFIX = '.kortix/opencode/skills/';
 
 export interface ManagedSkillOverlayFile {
@@ -46,14 +46,14 @@ export interface ManagedSkillOverlayFile {
 export function managedSkillOverlayFiles(): ManagedSkillOverlayFile[] {
   const files = [
     ...getManagedSkillFiles(),
-    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
+    ...getStarterFiles({ projectName: 'dosco', template: 'general-knowledge-worker' }),
   ];
   const byPath = new Map<string, string>();
   for (const file of files) {
     if (!file.path.startsWith(SKILLS_PREFIX)) continue;
     const rest = file.path.slice(SKILLS_PREFIX.length);
     const name = rest.split('/')[0];
-    if (!name || !isKortixManagedSkillName(name)) continue;
+    if (!name || !isdoscoManagedSkillName(name)) continue;
     // First writer wins, matching `stageManagedSkills`'s write order: the two
     // sources overlap on the managed names and the managed set is authoritative.
     if (!byPath.has(rest)) byPath.set(rest, file.content);

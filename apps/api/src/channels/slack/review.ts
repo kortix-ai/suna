@@ -42,8 +42,8 @@ export async function postReviewCard(
   if (!messageTs) {
     // The Block Kit render was rejected — don't silently lose the request. Post a
     // plain message with the title/summary + a deep link so the user can still act
-    // in Kortix (the buttons are gone, but the request isn't a dead-end).
-    const plain = `*${item.title}*\n${item.summary}\n\n<${webUrl}|Review in Kortix ↗>`;
+    // in dosco (the buttons are gone, but the request isn't a dead-end).
+    const plain = `*${item.title}*\n${item.summary}\n\n<${webUrl}|Review in dosco ↗>`;
     const plainTs = await postMessage(handle.token, handle.channel, plain, handle.triggerTs);
     if (!plainTs) return { ok: false, error: 'Failed to post the review card to Slack.' };
   }

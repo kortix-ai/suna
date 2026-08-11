@@ -42,7 +42,7 @@ mock.module('@/lib/supabase/server', () => ({
 
 mock.module('@/lib/public-env-server', () => ({
   getServerPublicEnv: () => ({
-    APP_URL: 'https://dev.kortix.com',
+    APP_URL: 'https://dev.dosco.live',
     BACKEND_URL: '',
     BILLING_ENABLED: false,
   }),
@@ -53,7 +53,7 @@ const { PROJECT_LANDING_PATH } = await import('@/lib/onboarding/landing-destinat
 
 /** The three things the handler actually reads off a NextRequest. */
 function callbackRequest(returnUrl: string) {
-  const url = new URL('https://dev.kortix.com/auth/callback');
+  const url = new URL('https://dev.dosco.live/auth/callback');
   url.searchParams.set('code', 'auth-code');
   url.searchParams.set('returnUrl', returnUrl);
   return {

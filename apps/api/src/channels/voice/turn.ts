@@ -1,5 +1,5 @@
 /**
- * Turn relay for the voice platform — how a Kortix turn narrates itself into a
+ * Turn relay for the voice platform — how a dosco turn narrates itself into a
  * live call.
  *
  * Slack and Teams render a turn as a message that gets edited in place. Voice

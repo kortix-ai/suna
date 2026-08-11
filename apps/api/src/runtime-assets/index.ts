@@ -115,8 +115,8 @@ async function serveCli(c: {
   if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
   c.header('Content-Type', 'application/octet-stream');
   c.header('Content-Length', String(manifest.cli_size));
-  c.header('X-Kortix-Cli-Sha256', manifest.cli_sha256);
-  if (manifest.cli_version) c.header('X-Kortix-Cli-Version', manifest.cli_version);
+  c.header('X-dosco-Cli-Sha256', manifest.cli_sha256);
+  if (manifest.cli_version) c.header('X-dosco-Cli-Version', manifest.cli_version);
   if (c.req.method === 'HEAD') return c.body(null, 200);
   // Streamed, not read into memory: this is ~100 MB and several sandboxes can
   // converge at once after a deploy.

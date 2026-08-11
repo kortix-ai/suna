@@ -24,7 +24,7 @@ export interface KeyboardShortcutPreferences {
 
 export interface UserPreferences {
   keyboard: KeyboardShortcutPreferences;
-  /** Selected Kortix theme ID (e.g. 'default', 'ember', 'aurora') */
+  /** Selected dosco theme ID (e.g. 'default', 'ember', 'aurora') */
   themeId: string;
   /** Selected desktop wallpaper ID */
   wallpaperId: string;
@@ -57,7 +57,7 @@ interface UserPreferencesState {
   /** Update keyboard shortcut preferences (partial merge) */
   setKeyboardPreferences: (prefs: Partial<KeyboardShortcutPreferences>) => void;
 
-  /** Set the active Kortix theme by ID */
+  /** Set the active dosco theme by ID */
   setThemeId: (themeId: string) => void;
 
   /** Set the active desktop wallpaper by ID */

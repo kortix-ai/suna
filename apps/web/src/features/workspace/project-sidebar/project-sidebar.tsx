@@ -103,7 +103,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             panel is docked open.
 
             ONE control answers "who am I / where am I / where can I go". It was
-            three: a `<Link>` carrying the Kortix mark fused to a separate
+            three: a `<Link>` carrying the dosco mark fused to a separate
             dropdown trigger carrying the workspace name up here, plus the user
             menu as a third control down in the footer — two of the three being
             dropdowns. The link is gone, because a control that is half

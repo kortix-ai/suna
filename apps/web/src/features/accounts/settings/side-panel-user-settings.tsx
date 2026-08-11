@@ -46,7 +46,7 @@ const TAB_DESCRIPTIONS: Partial<Record<TabId, string>> = {
   sounds: 'Choose sound packs and preview notification sounds.',
   notifications: 'Control browser notifications and delivery preferences.',
   shortcuts: 'View keyboard shortcuts available across the app.',
-  tokens: 'Create and manage API keys for the Kortix SDK, CLI, and API.',
+  tokens: 'Create and manage API keys for the dosco SDK, CLI, and API.',
   'instance-members': 'Manage who has access to this instance.',
 };
 

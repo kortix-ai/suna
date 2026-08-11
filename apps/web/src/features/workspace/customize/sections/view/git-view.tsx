@@ -223,7 +223,7 @@ export function GitView({ projectId }: { projectId: string }) {
             <div>
               <h3 className="text-foreground text-sm font-medium">Develop locally</h3>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                Install the CLI, then clone through the authenticated Kortix proxy. Tokens are never
+                Install the CLI, then clone through the authenticated dosco proxy. Tokens are never
                 saved in the URL or Git config.
               </p>
             </div>
@@ -238,9 +238,9 @@ export function GitView({ projectId }: { projectId: string }) {
 
           <section className="space-y-3">
             <div>
-              <h3 className="text-foreground text-sm font-medium">Kortix proxy origin</h3>
+              <h3 className="text-foreground text-sm font-medium">dosco proxy origin</h3>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                Sessions and the Kortix CLI use this stable URL; Kortix resolves the current
+                Sessions and the dosco CLI use this stable URL; dosco resolves the current
                 provider credential just in time.
               </p>
             </div>

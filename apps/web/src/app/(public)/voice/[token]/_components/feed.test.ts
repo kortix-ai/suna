@@ -5,7 +5,7 @@ import type { CallRecordEntry } from './types';
 function entry(partial: Partial<CallRecordEntry> & { cursor: number }): CallRecordEntry {
   return {
     kind: 'voice',
-    name: 'Kortix',
+    name: 'dosco',
     text: 'hi',
     outcome: null,
     at: '2026-07-26T10:00:00.000Z',
@@ -56,7 +56,7 @@ describe('foldAskSettlements — one hand-off is one row, not two', () => {
   });
 
   test('every ending the watch can produce carries through as the outcome', () => {
-    // The vocabulary is answer-watch.ts's WatchOutcome plus askKortix's two
+    // The vocabulary is answer-watch.ts's WatchOutcome plus askdosco's two
     // delivery failures — all of them settle a hand-off, so all of them have to
     // be able to close a row.
     for (const outcome of [
@@ -118,28 +118,28 @@ describe('foldAskSettlements — one hand-off is one row, not two', () => {
 describe('buildFeed — the name goes on the run, not on every bubble', () => {
   test('consecutive lines by the same speaker are labelled once', () => {
     const rows = buildFeed([
-      entry({ cursor: 1, kind: 'voice', name: 'Kortix' }),
-      entry({ cursor: 2, kind: 'voice', name: 'Kortix' }),
-      entry({ cursor: 3, kind: 'voice', name: 'Kortix' }),
+      entry({ cursor: 1, kind: 'voice', name: 'dosco' }),
+      entry({ cursor: 2, kind: 'voice', name: 'dosco' }),
+      entry({ cursor: 3, kind: 'voice', name: 'dosco' }),
     ]);
     expect(rows.map((r) => r.showLabel)).toEqual([true, false, false]);
   });
 
   test('the speaker changing starts a new run', () => {
     const rows = buildFeed([
-      entry({ cursor: 1, kind: 'voice', name: 'Kortix' }),
+      entry({ cursor: 1, kind: 'voice', name: 'dosco' }),
       entry({ cursor: 2, kind: 'human', name: 'Guest' }),
-      entry({ cursor: 3, kind: 'voice', name: 'Kortix' }),
+      entry({ cursor: 3, kind: 'voice', name: 'dosco' }),
     ]);
     expect(rows.map((r) => r.showLabel)).toEqual([true, true, true]);
   });
 
   test('the two agent-side sources never share a run — that is the whole point of telling them apart', () => {
     // Same role server-side, different actors: the voice speaking versus the
-    // Kortix agent putting a line into the call.
+    // dosco agent putting a line into the call.
     const rows = buildFeed([
-      entry({ cursor: 1, kind: 'voice', name: 'Kortix' }),
-      entry({ cursor: 2, kind: 'kortix', name: 'Kortix agent' }),
+      entry({ cursor: 1, kind: 'voice', name: 'dosco' }),
+      entry({ cursor: 2, kind: 'kortix', name: 'dosco agent' }),
     ]);
     expect(rows.map((r) => r.showLabel)).toEqual([true, true]);
   });
@@ -157,26 +157,26 @@ describe('buildFeed — the name goes on the run, not on every bubble', () => {
     // a call; letting it break the run would put the name back on nearly every
     // bubble, which is exactly the noise being removed.
     const rows = buildFeed([
-      entry({ cursor: 1, kind: 'voice', name: 'Kortix' }),
+      entry({ cursor: 1, kind: 'voice', name: 'dosco' }),
       ask(2),
-      entry({ cursor: 3, kind: 'voice', name: 'Kortix' }),
+      entry({ cursor: 3, kind: 'voice', name: 'dosco' }),
     ]);
     expect(rows.map((r) => r.showLabel)).toEqual([true, false, false]);
   });
 
   test('a long silence re-labels the same speaker — after a lull, who this is stops being obvious', () => {
     const rows = buildFeed([
-      entry({ cursor: 1, kind: 'voice', name: 'Kortix', at: '2026-07-26T10:00:00.000Z' }),
-      entry({ cursor: 2, kind: 'voice', name: 'Kortix', at: '2026-07-26T10:01:00.000Z' }),
-      entry({ cursor: 3, kind: 'voice', name: 'Kortix', at: '2026-07-26T10:05:00.000Z' }),
+      entry({ cursor: 1, kind: 'voice', name: 'dosco', at: '2026-07-26T10:00:00.000Z' }),
+      entry({ cursor: 2, kind: 'voice', name: 'dosco', at: '2026-07-26T10:01:00.000Z' }),
+      entry({ cursor: 3, kind: 'voice', name: 'dosco', at: '2026-07-26T10:05:00.000Z' }),
     ]);
     expect(rows.map((r) => r.showLabel)).toEqual([true, false, true]);
   });
 
   test('an unreadable timestamp shows the label rather than dropping the attribution', () => {
     const rows = buildFeed([
-      entry({ cursor: 1, kind: 'voice', name: 'Kortix' }),
-      entry({ cursor: 2, kind: 'voice', name: 'Kortix', at: 'not a date' }),
+      entry({ cursor: 1, kind: 'voice', name: 'dosco' }),
+      entry({ cursor: 2, kind: 'voice', name: 'dosco', at: 'not a date' }),
     ]);
     expect(rows.map((r) => r.showLabel)).toEqual([true, true]);
   });

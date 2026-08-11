@@ -19,7 +19,7 @@ export type SlackActor =
   | { userId: string }
   | { reason: 'unlinked' | 'not_member' };
 
-// Resolve the Slack sender to the Kortix user they linked via `/login`, and
+// Resolve the Slack sender to the dosco user they linked via `/login`, and
 // confirm that user may start work in this project. This is the authoritative
 // security gate: no live, project-write-capable mapping → no run.
 export async function resolveSlackActor(
@@ -84,7 +84,7 @@ export async function lookupSlackIdentity(
 }
 
 // Idempotent bind — used by the `/login` web flow and the installer auto-seed.
-// A re-link (same Slack user, new Kortix user) overwrites the mapping and clears
+// A re-link (same Slack user, new dosco user) overwrites the mapping and clears
 // any prior revocation.
 export async function linkSlackIdentity(input: {
   teamId: string;
@@ -126,10 +126,10 @@ export async function revokeSlackIdentity(teamId: string, slackUserId: string): 
 }
 
 // ── In-thread identity / access nudges ───────────────────────────────────────
-// When an unlinked or no-access sender @-mentions Kortix we answer right where
+// When an unlinked or no-access sender @-mentions dosco we answer right where
 // they asked — an ephemeral (“only visible to you”) message in the same thread —
 // instead of a separate DM. Two states, two affordances:
-//   • unlinked   → "Connect your Kortix account" (opens the /login web flow)
+//   • unlinked   → "Connect your dosco account" (opens the /login web flow)
 //   • not_member → "Request access" (files a project access request for an admin)
 // Connecting is decoupled from access, so a brand-new user connects once and then
 // requests access in-thread without bouncing off a hard "ask an admin" wall.
@@ -140,7 +140,7 @@ export function connectAccountBlocks(url: string, pendingId?: string | null): un
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: 'Kortix needs a linked Kortix account before it can run from Slack. Connect or create one to continue. _Only you can see this._',
+        text: 'dosco needs a linked dosco account before it can run from Slack. Connect or create one to continue. _Only you can see this._',
       },
     },
     {
@@ -164,7 +164,7 @@ export function requestAccessBlocks(projectId: string): unknown[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "You're connected, but your Kortix account doesn't have access to this project yet. Request access and an admin will approve it. _Only you can see this._",
+        text: "You're connected, but your dosco account doesn't have access to this project yet. Request access and an admin will approve it. _Only you can see this._",
       },
     },
     {
@@ -212,7 +212,7 @@ export async function postIdentityPrompt(input: {
       slackUserId: input.slackUserId,
       ...(pendingId ? { pendingId } : {}),
     }), pendingId);
-    fallback = 'Kortix needs a linked Kortix account to continue.';
+    fallback = 'dosco needs a linked dosco account to continue.';
   } else {
     blocks = requestAccessBlocks(input.projectId);
     fallback = "You're connected, but don't have access to this project yet.";
@@ -285,14 +285,14 @@ export async function createSlackAccessRequest(input: {
     projectId: input.projectId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
-    message: 'Requested from Slack. Approve as Editor so they can run Kortix from Slack.',
+    message: 'Requested from Slack. Approve as Editor so they can run dosco from Slack.',
   });
   return { status: 'created', ...base };
 }
 
 // DM every account admin (owner/admin) who has a linked Slack identity in this
 // workspace that a new access request is waiting, with a link to review it in
-// Kortix. Best-effort — an admin without a Slack link still sees it on the web
+// dosco. Best-effort — an admin without a Slack link still sees it on the web
 // Members screen (the same request row powers both).
 export async function notifyAdminsOfAccessRequest(input: {
   teamId: string;
@@ -326,18 +326,18 @@ export async function notifyAdminsOfAccessRequest(input: {
   );
   const who = email ? `*${email}*` : `<@${input.requesterSlackUserId}>`;
   const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/projects/${input.projectId}/customize/members`;
-  const text = `${who} requested access to a Kortix project in this workspace.`;
+  const text = `${who} requested access to a dosco project in this workspace.`;
   const blocks = [
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: `${text}\nOpen *Members* in Kortix to approve.` },
+      text: { type: 'mrkdwn', text: `${text}\nOpen *Members* in dosco to approve.` },
     },
     {
       type: 'actions',
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'Review in Kortix', emoji: true },
+          text: { type: 'plain_text', text: 'Review in dosco', emoji: true },
           style: 'primary',
           url: projectUrl,
           action_id: 'slack_open_access_review',
@@ -348,7 +348,7 @@ export async function notifyAdminsOfAccessRequest(input: {
 
   for (const admin of admins) {
     if (admin.userId === input.requesterUserId) continue;
-    const slackId = await lookupSlackUserIdForKortixUser(input.teamId, admin.userId);
+    const slackId = await lookupSlackUserIdFordoscoUser(input.teamId, admin.userId);
     if (!slackId) continue;
     const dm = await openDmChannel(token, slackId);
     if (!dm) continue;
@@ -356,9 +356,9 @@ export async function notifyAdminsOfAccessRequest(input: {
   }
 }
 
-// Reverse of lookupSlackIdentity: the Slack user a Kortix user is linked to in a
+// Reverse of lookupSlackIdentity: the Slack user a dosco user is linked to in a
 // given workspace, so we can DM admins about access requests.
-export async function lookupSlackUserIdForKortixUser(teamId: string, userId: string): Promise<string | null> {
+export async function lookupSlackUserIdFordoscoUser(teamId: string, userId: string): Promise<string | null> {
   const [row] = await db
     .select({ slackUserId: chatUserIdentities.platformUserId })
     .from(chatUserIdentities)

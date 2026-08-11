@@ -25,7 +25,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * The ONE loader shown while a session's Kortix Computer comes up — full-screen
+ * The ONE loader shown while a session's dosco Computer comes up — full-screen
  * for resumes, and dead-center in the side panel while a fresh session boots.
  * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
  * server-side behind POST /sessions/:id/start; this just reports the real stage.

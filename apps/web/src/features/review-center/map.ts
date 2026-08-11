@@ -215,7 +215,7 @@ function batchDetail(d: AnyRec, row: ApiReviewItem): BatchDetail {
   };
 }
 
-// A Change Request's API summary embeds the head branch — a Kortix session
+// A Change Request's API summary embeds the head branch — a dosco session
 // branch is an opaque UUID, so it just adds noise to the row. Keep the inbox line
 // clean ("#2 → main"); the full ref stays available in the modal's Advanced view.
 function changeSummary(d: AnyRec, fallback: string): string {

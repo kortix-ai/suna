@@ -40,7 +40,7 @@ function fireAndForget(promise: Promise<void>): void {
 }
 
 /** Successful credential verification. Called from auth middleware
- *  right after a token (JWT, PAT, SA, Kortix key) passes validation. */
+ *  right after a token (JWT, PAT, SA, dosco key) passes validation. */
 export function auditLoginSuccess(args: {
   c: Context;
   userId: string;

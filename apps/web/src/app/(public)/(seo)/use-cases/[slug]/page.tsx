@@ -87,7 +87,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
       title: data.title,
       description: data.description,
       url,
-      siteName: 'Kortix',
+      siteName: 'dosco',
       publishedTime: data.date,
       modifiedTime: data.date,
       authors: [author.name],
@@ -143,7 +143,7 @@ export default async function UseCasePage(props: PageProps) {
         author: { '@type': 'Person', name: author.name },
         publisher: {
           '@type': 'Organization',
-          name: 'Kortix',
+          name: 'dosco',
           logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.png` },
         },
         image: data.cover ? `${siteMetadata.url}${data.cover}` : `${siteMetadata.url}/banner.png`,
@@ -310,3 +310,6 @@ export default async function UseCasePage(props: PageProps) {
     </main>
   );
 }
+
+// Skip static prerender for use-case pages; SSR'd on demand.
+export const dynamic = 'force-dynamic';

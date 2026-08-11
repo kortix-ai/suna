@@ -152,7 +152,7 @@ export function EmojiPicker({
       // Self-hosted, not frimousse's default CDN. Left unset, frimousse fetches
       // the emojibase dataset from `https://cdn.jsdelivr.net/npm/emojibase-data`
       // in the user's browser the first time the picker opens — the only
-      // external runtime CDN this app would have. Kortix ships self-hosted, so
+      // external runtime CDN this app would have. dosco ships self-hosted, so
       // that is wrong here regardless; what makes it a defect is that it fails
       // INVISIBLY. frimousse exposes `Loading` and `Empty` and no error slot,
       // and its cold-cache path is a bare `await` (only the etag-revalidation

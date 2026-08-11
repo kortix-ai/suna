@@ -27,7 +27,7 @@ const pendingAction: SessionAuditAction = {
   },
   at: new Date().toISOString(),
   resolved_at: null,
-  approval_url: 'https://dev.kortix.com/approve/tok-1',
+  approval_url: 'https://dev.dosco.live/approve/tok-1',
 };
 
 function render(node: React.ReactNode): string {
@@ -52,7 +52,7 @@ describe('SessionApprovalNotice', () => {
     expect(html).toContain('to: marko@kortix.ai · subject: Weekly report');
     expect(html).toContain('Review');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
+    expect(html).toContain('href="https://dev.dosco.live/approve/tok-1"');
     expect(html).not.toContain('Approve this call');
     expect(html).not.toContain('Parameters');
   });
@@ -75,7 +75,7 @@ describe('SessionApprovalNotice', () => {
     expect(html).toContain('Hidden credential');
     expect(html).toContain('Approve this call');
     expect(html).toContain('Deny');
-    expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
+    expect(html).toContain('href="https://dev.dosco.live/approve/tok-1"');
   });
 
   test('expanded: cannot approve a call whose preview is incomplete', () => {

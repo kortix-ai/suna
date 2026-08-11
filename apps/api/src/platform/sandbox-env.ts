@@ -34,7 +34,7 @@ const SANDBOX_ALLOWED_CREDENTIALS: ReadonlySet<string> = new Set([
 /**
  * Raw upstream provider secrets that must NEVER be injected into a sandbox.
  * These are reached through the router with `KORTIX_TOKEN`. Mirrors the
- * `getKortixApiKey` keys in router/config/proxy-services.ts.
+ * `getdoscoApiKey` keys in router/config/proxy-services.ts.
  */
 const SANDBOX_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   'OPENROUTER_API_KEY',

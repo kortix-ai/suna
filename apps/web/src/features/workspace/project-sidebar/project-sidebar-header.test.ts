@@ -6,7 +6,7 @@ import { join } from 'node:path';
  * The sidebar header row: the workspace switcher, search, and the panel's own
  * collapse toggle.
  *
- * That first control used to be three. A `<Link>` carrying the Kortix mark was
+ * That first control used to be three. A `<Link>` carrying the dosco mark was
  * fused to a separate dropdown trigger carrying the workspace name, and the user
  * menu was a third control down in the footer — two of the three being
  * dropdowns, all answering some slice of "where am I / where can I go / who am
@@ -24,7 +24,7 @@ const header = source.slice(source.indexOf('<SidebarHeader'), source.indexOf('</
 /**
  * Comments stripped before the absence checks, same convention as
  * `workspace-vocabulary.test.ts`. This header's own comment explains the old
- * design in prose — "a `<Link>` carrying the Kortix mark" — so an unstripped
+ * design in prose — "a `<Link>` carrying the dosco mark" — so an unstripped
  * `.not.toContain('<Link')` fails on the explanation of the thing it is
  * checking was removed.
  */
@@ -37,8 +37,8 @@ describe('project sidebar header', () => {
 
   // The whole point of the merge: one control. The old split brand/name control
   // and the standalone mark button may not come back.
-  test('no standalone Kortix mark button beside it', () => {
-    expect(headerCode).not.toContain('<Icon.Kortix');
+  test('no standalone dosco mark button beside it', () => {
+    expect(headerCode).not.toContain('<Icon.dosco');
     expect(headerCode).not.toContain('<Link');
   });
 

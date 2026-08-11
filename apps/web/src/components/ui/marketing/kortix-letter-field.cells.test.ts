@@ -104,7 +104,7 @@ describe('buildFieldSvg', () => {
     const svg = buildFieldSvg(tokens, grid, 'rgb(20,20,20)', false);
     expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
     expect(svg.endsWith('</svg>')).toBe(true);
-    expect(svg).toContain('<title>Kortix</title>');
+    expect(svg).toContain('<title>dosco</title>');
     expect(svg.match(/<svg/g)?.length).toBe(1);
   });
 

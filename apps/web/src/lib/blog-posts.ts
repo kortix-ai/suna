@@ -19,8 +19,8 @@ export type BlogPostEntry = {
   cover?: string;
   /** Competitor logos for the on-page cover lockup. Empty → a brand-mark cover. */
   coverLogos?: CoverLogo[];
-  /** Show the Kortix mark in the cover lockup (default true). */
-  coverKortix?: boolean;
+  /** Show the dosco mark in the cover lockup (default true). */
+  coverdosco?: boolean;
   /**
    * Lead media, rendered in place of the generated cover lockup — the product
    * itself, running, as the first thing on the page.
@@ -51,9 +51,9 @@ export type BlogPostEntry = {
 
 const agiReadyArchitecture: BlogPostEntry = {
   slug: 'agi-ready-architecture',
-  title: 'AGI-ready architecture: what it really means, and how Kortix is built for it',
+  title: 'AGI-ready architecture: what it really means, and how dosco is built for it',
   description:
-    "AGI-ready doesn't mean an architecture that produces AGI. It means one that absorbs a 100× capability jump without losing state or granting uncontrolled access. How Kortix is built for it.",
+    "AGI-ready doesn't mean an architecture that produces AGI. It means one that absorbs a 100× capability jump without losing state or granting uncontrolled access. How dosco is built for it.",
   date: '2026-07-17',
   author: 'marko',
   cover: '/banner.png',
@@ -80,7 +80,7 @@ const agiReadyArchitecture: BlogPostEntry = {
     { type: 'h2', text: 'Models are replaceable — the reasoning engine is not the application' },
     {
       type: 'p',
-      text: 'An AGI-ready system depends on capabilities — reason, code, vision, verify — not on a model name. Kortix treats models as hot-swappable reasoning engines behind a gateway. Bring any provider on your own keys, or run self-hosted inference on your own GPUs. Route a cheap open-weight model for the bulk of the work and a frontier model only where it earns its keep.',
+      text: 'An AGI-ready system depends on capabilities — reason, code, vision, verify — not on a model name. dosco treats models as hot-swappable reasoning engines behind a gateway. Bring any provider on your own keys, or run self-hosted inference on your own GPUs. Route a cheap open-weight model for the bulk of the work and a frontier model only where it earns its keep.',
     },
     {
       type: 'ul',
@@ -97,7 +97,7 @@ const agiReadyArchitecture: BlogPostEntry = {
     { type: 'h2', text: 'State lives outside the model' },
     {
       type: 'p',
-      text: 'This is the single most important invariant, and it is the one most “agent platforms” violate. If the model’s context window is where your state lives, you have no state — you have a lucky streak that ends when the session ends. In Kortix, everything is files in a git repo. The manifest, the agents, the skills, the connectors, the policies, and the memory are all versioned, diffable, owned files. The model proposes; a trusted subsystem persists.',
+      text: 'This is the single most important invariant, and it is the one most “agent platforms” violate. If the model’s context window is where your state lives, you have no state — you have a lucky streak that ends when the session ends. In dosco, everything is files in a git repo. The manifest, the agents, the skills, the connectors, the policies, and the memory are all versioned, diffable, owned files. The model proposes; a trusted subsystem persists.',
     },
     {
       type: 'code',
@@ -132,7 +132,7 @@ triggers:
     },
     {
       type: 'p',
-      text: 'Authentication answers who the agent is. Authorization answers what it may do — and the model must never be the final authority on the second question. In Kortix, every session runs under a scoped identity with a single token carrying claims for principal, project, session, and agent grant. Connector credentials are bound server-side and injected at runtime; they never enter the sandbox environment, the transcripts, or the model’s view.',
+      text: 'Authentication answers who the agent is. Authorization answers what it may do — and the model must never be the final authority on the second question. In dosco, every session runs under a scoped identity with a single token carrying claims for principal, project, session, and agent grant. Connector credentials are bound server-side and injected at runtime; they never enter the sandbox environment, the transcripts, or the model’s view.',
     },
     {
       type: 'ul',
@@ -149,7 +149,7 @@ triggers:
     { type: 'h2', text: 'Execution is isolated from the control plane' },
     {
       type: 'p',
-      text: 'An intelligent agent should never execute directly inside the control plane. In Kortix, every session is its own isolated Linux sandbox on its own git branch — a disposable machine the agent owns, with filesystem, network, and process isolation. Thousands run in parallel on the same config without colliding, because none of them share state. Egress and credentials are controlled at the network boundary, and the sandbox assumes the agent-generated code is untrusted even when the model looks reliable.',
+      text: 'An intelligent agent should never execute directly inside the control plane. In dosco, every session is its own isolated Linux sandbox on its own git branch — a disposable machine the agent owns, with filesystem, network, and process isolation. Thousands run in parallel on the same config without colliding, because none of them share state. Egress and credentials are controlled at the network boundary, and the sandbox assumes the agent-generated code is untrusted even when the model looks reliable.',
     },
     {
       type: 'p',
@@ -158,7 +158,7 @@ triggers:
     { type: 'h2', text: 'Long-running work is durable and resumable' },
     {
       type: 'p',
-      text: 'AGI-level work will not fit into a single HTTP request. An agent should be able to sleep for three months, wake because an event fired, reload its identity and state, and continue correctly. Kortix sessions are durable: stop a running session and it pauses in place with its compute metering closed; resume it and it picks up where it left off. Retryable failures auto-resume a turn with bounded backoff; the user keeps control through a kill switch.',
+      text: 'AGI-level work will not fit into a single HTTP request. An agent should be able to sleep for three months, wake because an event fired, reload its identity and state, and continue correctly. dosco sessions are durable: stop a running session and it pauses in place with its compute metering closed; resume it and it picks up where it left off. Retryable failures auto-resume a turn with bounded backoff; the user keeps control through a kill switch.',
     },
     {
       type: 'p',
@@ -172,7 +172,7 @@ triggers:
     { type: 'h2', text: 'Learning is gated, versioned, and reversible' },
     {
       type: 'p',
-      text: 'An AGI-ready platform turns production experience into improvement — but never lets a model auto-edit its own behavior. In Kortix, a skill is a file: purpose, preconditions, steps, policies, examples, tests, version, and provenance. An agent can propose a new skill, but it ships through a controlled lifecycle with review, not by mutating itself in production. Memory is layered — working, episodic, semantic, procedural — and a trusted subsystem decides what is persisted, with deduplication, provenance, and expiration. Learning a fact, remembering a preference, and changing an agent’s behavior are different operations with different gates.',
+      text: 'An AGI-ready platform turns production experience into improvement — but never lets a model auto-edit its own behavior. In dosco, a skill is a file: purpose, preconditions, steps, policies, examples, tests, version, and provenance. An agent can propose a new skill, but it ships through a controlled lifecycle with review, not by mutating itself in production. Memory is layered — working, episodic, semantic, procedural — and a trusted subsystem decides what is persisted, with deduplication, provenance, and expiration. Learning a fact, remembering a preference, and changing an agent’s behavior are different operations with different gates.',
     },
     { type: 'h2', text: 'Humans can inspect, interrupt, and terminate' },
     {
@@ -182,12 +182,12 @@ triggers:
     { type: 'h2', text: 'Costs and resources are bounded' },
     {
       type: 'p',
-      text: 'A capable system without budget control can create effectively unlimited spend. Kortix tracks token, compute, sandbox, and tool cost against per-run and per-objective budgets, with holds and reconciliation so a streamed completion is billed at the rate it actually used. Idle sandboxes are reaped — quiet machines are stopped, not billed forever. Fan-out into hundreds of subtasks stays a controlled, cost-bounded operation rather than an open tab.',
+      text: 'A capable system without budget control can create effectively unlimited spend. dosco tracks token, compute, sandbox, and tool cost against per-run and per-objective budgets, with holds and reconciliation so a streamed completion is billed at the rate it actually used. Idle sandboxes are reaped — quiet machines are stopped, not billed forever. Fan-out into hundreds of subtasks stays a controlled, cost-bounded operation rather than an open tab.',
     },
     { type: 'h2', text: 'More capability, not more authority' },
     {
       type: 'p',
-      text: 'That is the whole thesis in one line. A 100× model should make Kortix do 100× more work — it should not get 100× more access. Authority is capped by identity, policy, sandbox, and review, and none of those are controlled by the model. The capability jumps; the guardrails hold. That is what AGI-ready means in practice, and it is the difference between a platform that survives the next model and one that has to be rebuilt around it.',
+      text: 'That is the whole thesis in one line. A 100× model should make dosco do 100× more work — it should not get 100× more access. Authority is capped by identity, policy, sandbox, and review, and none of those are controlled by the model. The capability jumps; the guardrails hold. That is what AGI-ready means in practice, and it is the difference between a platform that survives the next model and one that has to be rebuilt around it.',
     },
     { type: 'h2', text: 'Side by side' },
     {
@@ -246,26 +246,26 @@ triggers:
     {
       type: 'cta',
       title: 'Build for the jump, not the model.',
-      body: 'Kortix is the Autonomous Company Operating System — open-source, self-hostable, any model. Start one project free.',
+      body: 'dosco is the agent network for your company — closed-source, self-hostable, any model. Start one project free.',
     },
   ],
 };
 
 const kortixVsQm: BlogPostEntry = {
   slug: 'kortix-vs-qm',
-  title: 'Kortix vs QM: two open agent platforms, two different units of work',
+  title: 'dosco vs QM: two open agent platforms, two different units of work',
   description:
-    'QM and Kortix both give teams persistent agents, isolated computers, Slack and web access, and self-hosting. The decisive difference is deeper: QM organizes work around people and rooms; Kortix organizes it around git-backed projects and reviewable sessions.',
+    'QM and dosco both give teams persistent agents, isolated computers, Slack and web access, and self-hosting. The decisive difference is deeper: QM organizes work around people and rooms; dosco organizes it around git-backed projects and reviewable sessions.',
   date: '2026-08-02',
   author: 'marko',
   cover: '/banner.png',
-  tags: ['Comparisons', 'Architecture', 'Open Source'],
+  tags: ['Comparisons', 'Architecture', 'Agent-native'],
   coverLogos: [{ domain: 'github.com', name: 'QM' }],
   readingTime: 11,
   blocks: [
     {
       type: 'lead',
-      text: 'QM and Kortix look similar from thirty thousand feet. Both are open agent platforms for teams. Both put agents in isolated computers, persist work beyond one chat, support Slack and the web, and let an operator run the system in their own cloud. But they are not two implementations of the same product. They choose a different **unit of work**, and that decision changes almost everything below it.',
+      text: 'QM and dosco look similar from thirty thousand feet. Both are open agent platforms for teams. Both put agents in isolated computers, persist work beyond one chat, support Slack and the web, and let an operator run the system in their own cloud. But they are not two implementations of the same product. They choose a different **unit of work**, and that decision changes almost everything below it.',
     },
     {
       type: 'logos',
@@ -274,7 +274,7 @@ const kortixVsQm: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'This comparison is based on [QM main at `7f2c916`](https://github.com/yc-software/qm/tree/7f2c916360f1797a8ff2a77ce2ce40c5fabab087), its published `@yc-software/qm` `0.1.4` package, and Kortix main at `3006838` on August 2, 2026. We read the runtime, deployment code, security model, storage paths, tests, and operator runbooks. This is a source comparison, not a feature-page comparison.',
+      text: 'This comparison is based on [QM main at `7f2c916`](https://github.com/yc-software/qm/tree/7f2c916360f1797a8ff2a77ce2ce40c5fabab087), its published `@yc-software/qm` `0.1.4` package, and dosco main at `3006838` on August 2, 2026. We read the runtime, deployment code, security model, storage paths, tests, and operator runbooks. This is a source comparison, not a feature-page comparison.',
     },
     { type: 'h2', text: 'The shortest accurate explanation' },
     {
@@ -283,17 +283,17 @@ const kortixVsQm: BlogPostEntry = {
 person or room -> scope -> persistent memory + files + computer
                -> conversations, schedules, credentials, published apps
 
-Kortix
+dosco
 git project -> session -> isolated computer + session branch
             -> agent work -> change request -> reviewed merge to main`,
     },
     {
       type: 'p',
-      text: 'QM starts with the social graph. A person, Slack channel, group message, or project room gets a durable scope. That scope owns memory, files, credentials, schedules, skills, and a computer. Kortix starts with the work graph. A project is a git repository and `kortix.yaml`; each session receives a sandbox and a branch, and durable changes return through a change request.',
+      text: 'QM starts with the social graph. A person, Slack channel, group message, or project room gets a durable scope. That scope owns memory, files, credentials, schedules, skills, and a computer. dosco starts with the work graph. A project is a git repository and `kortix.yaml`; each session receives a sandbox and a branch, and durable changes return through a change request.',
     },
     {
       type: 'callout',
-      text: 'QM is closest to a persistent AI colleague for every person and room. Kortix is closest to a versioned operating system where many agents work on isolated branches of the company.',
+      text: 'QM is closest to a persistent AI colleague for every person and room. dosco is closest to a versioned operating system where many agents work on isolated branches of the company.',
     },
     { type: 'h2', text: 'What they genuinely share' },
     {
@@ -303,7 +303,7 @@ git project -> session -> isolated computer + session branch
         '**Durable work** — both keep state outside the model context and survive process restarts.',
         '**Real computers** — agents execute commands in isolated Linux environments instead of a narrow function-call sandbox.',
         '**Slack and web surfaces** — people can work from a browser or the collaboration surface they already use.',
-        '**Background work** — QM has crons and watches; Kortix has cron and signed-webhook triggers.',
+        '**Background work** — QM has crons and watches; dosco has cron and signed-webhook triggers.',
         '**Model choice** — both can use multiple model providers instead of binding the whole platform to one lab.',
         '**Operator ownership** — both can run in infrastructure controlled by the customer.',
       ],
@@ -390,18 +390,18 @@ git project -> session -> isolated computer + session branch
         },
       ],
     },
-    { type: 'h2', text: 'Runtime: QM chooses portability; Kortix chooses one deep contract' },
+    { type: 'h2', text: 'Runtime: QM chooses portability; dosco chooses one deep contract' },
     {
       type: 'p',
       text: 'QM treats the agent harness as an interface. Pi, OpenCode, Codex, and Claude Code can drive the same core. That is real architectural portability: an operator can change how the model loop runs without changing the surrounding identity, memory, delivery, or sandbox system.',
     },
     {
       type: 'p',
-      text: 'Kortix makes the opposite trade. Every session exposes one OpenCode REST runtime through the sandbox daemon. `@kortix/sdk` owns session startup, runtime resolution, SSE, files, errors, and the mapping between a Kortix session and its native OpenCode conversation. Web, mobile, CLI, and white-label clients use the same contract.',
+      text: 'dosco makes the opposite trade. Every session exposes one OpenCode REST runtime through the sandbox daemon. `@kortix/sdk` owns session startup, runtime resolution, SSE, files, errors, and the mapping between a dosco session and its native OpenCode conversation. Web, mobile, CLI, and white-label clients use the same contract.',
     },
     {
       type: 'p',
-      text: 'QM wins if harness interchangeability is the requirement. Kortix wins if every client needs one stable, typed, deeply integrated runtime surface. Kortix still routes many model providers through its gateway; it standardizes the **agent runtime**, not the model vendor.',
+      text: 'QM wins if harness interchangeability is the requirement. dosco wins if every client needs one stable, typed, deeply integrated runtime surface. dosco still routes many model providers through its gateway; it standardizes the **agent runtime**, not the model vendor.',
     },
     { type: 'h2', text: 'State: a durable scope versus a versioned company' },
     {
@@ -410,11 +410,11 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix separates operational state from authoritative company configuration. Supabase Postgres stores accounts, projects, sessions, sandboxes, triggers, grants, audit events, usage, and gateway logs. The project repo stores the agents, skills, memory, policies, and runtime configuration people are expected to edit and review. OpenCode state lives outside `/workspace`, so runtime internals do not pollute the company repo.',
+      text: 'dosco separates operational state from authoritative company configuration. Supabase Postgres stores accounts, projects, sessions, sandboxes, triggers, grants, audit events, usage, and gateway logs. The project repo stores the agents, skills, memory, policies, and runtime configuration people are expected to edit and review. OpenCode state lives outside `/workspace`, so runtime internals do not pollute the company repo.',
     },
     {
       type: 'p',
-      text: 'The practical consequence is important. QM makes continuity of the colleague and room the default. Kortix makes reproducibility, diff, rollback, and promotion to `main` the default. A QM room can keep accumulating local context. A Kortix project can show exactly which agent changed the company and which person accepted it.',
+      text: 'The practical consequence is important. QM makes continuity of the colleague and room the default. dosco makes reproducibility, diff, rollback, and promotion to `main` the default. A QM room can keep accumulating local context. A dosco project can show exactly which agent changed the company and which person accepted it.',
     },
     { type: 'h2', text: 'Isolation and lifecycle' },
     {
@@ -423,7 +423,7 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix assigns a computer to a session. Daytona, Platinum, and E2B implement one provider interface. The session branch and sandbox share the session identity. The control plane extends a bounded sandbox deadline when it observes a turn start, gateway LLM activity, or authenticated preview traffic. A terminal turn shortens that deadline to the idle grace period. Passive traffic from an open conversation tab cannot keep the sandbox alive, and one continuous running stretch is capped at 24 hours. A stopped session can resume on the same provider identity or recover through the provider-specific path.',
+      text: 'dosco assigns a computer to a session. Daytona, Platinum, and E2B implement one provider interface. The session branch and sandbox share the session identity. The control plane extends a bounded sandbox deadline when it observes a turn start, gateway LLM activity, or authenticated preview traffic. A terminal turn shortens that deadline to the idle grace period. Passive traffic from an open conversation tab cannot keep the sandbox alive, and one continuous running stretch is capped at 24 hours. A stopped session can resume on the same provider identity or recover through the provider-specific path.',
     },
     {
       type: 'p',
@@ -436,11 +436,11 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix centers authorization on the principal, project, session, agent grant, and action. Connector credentials are brokered server-side and do not enter the sandbox. Project secrets are different: an explicitly granted secret is injected as a real environment value and can be read by commands in that session. Connector policies decide allow, ask, or block, and durable repo changes still face a deny-by-default merge boundary.',
+      text: 'dosco centers authorization on the principal, project, session, agent grant, and action. Connector credentials are brokered server-side and do not enter the sandbox. Project secrets are different: an explicitly granted secret is injected as a real environment value and can be read by commands in that session. Connector policies decide allow, ask, or block, and durable repo changes still face a deny-by-default merge boundary.',
     },
     {
       type: 'callout',
-      text: 'QM puts more policy around what reaches the model and what each tool call may do. Kortix puts more policy around which identity acts, which connector action is allowed, and whether durable work reaches the shared branch.',
+      text: 'QM puts more policy around what reaches the model and what each tool call may do. dosco puts more policy around which identity acts, which connector action is allowed, and whether durable work reaches the shared branch.',
     },
     { type: 'h2', text: 'APIs and product surfaces' },
     {
@@ -449,11 +449,11 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix treats `@kortix/sdk` as a public product boundary. `createKortix({ getToken })` returns one client for project and session lifecycle, files, streaming, runtime health, previews, and errors. React hooks, a TypeScript server entry, the real `kortix` CLI, mobile, desktop, and the web app build on that package. The API and OpenCode transport are implementation details for host applications.',
+      text: 'dosco treats `@kortix/sdk` as a public product boundary. `createKortix({ getToken })` returns one client for project and session lifecycle, files, streaming, runtime health, previews, and errors. React hooks, a TypeScript server entry, the real `kortix` CLI, mobile, desktop, and the web app build on that package. The API and OpenCode transport are implementation details for host applications.',
     },
     {
       type: 'p',
-      text: 'This is one of the clearest selection criteria. Choose QM when you primarily deploy and operate the included collaboration product. Choose Kortix when you also need to embed the platform, build another host, automate it from a CLI, or expose project/session primitives to customers.',
+      text: 'This is one of the clearest selection criteria. Choose QM when you primarily deploy and operate the included collaboration product. Choose dosco when you also need to embed the platform, build another host, automate it from a CLI, or expose project/session primitives to customers.',
     },
     { type: 'h2', text: 'Deployment and operations' },
     {
@@ -462,11 +462,11 @@ git project -> session -> isolated computer + session branch
     },
     {
       type: 'p',
-      text: 'Kortix offers a managed multi-tenant cloud and a self-hosted Docker Compose distribution. The self-hosted stack includes the frontend, API, LLM gateway, Caddy, and the pinned Supabase distribution. Daytona remains outside the box by default, so a persistent public callback domain or tunnel is required. Managed production uses GitOps on EKS, while the web ships separately.',
+      text: 'dosco offers a managed multi-tenant cloud and a self-hosted Docker Compose distribution. The self-hosted stack includes the frontend, API, LLM gateway, Caddy, and the pinned Supabase distribution. Daytona remains outside the box by default, so a persistent public callback domain or tunnel is required. Managed production uses GitOps on EKS, while the web ships separately.',
     },
     {
       type: 'p',
-      text: 'QM gives the operator a cleaner per-organization cloud boundary, at the cost of provisioning more infrastructure. Kortix gives smaller teams a shorter Compose path and a hosted product, at the cost of a broader platform stack. Both still depend on external model billing, and both use external sandbox compute on their recommended paths.',
+      text: 'QM gives the operator a cleaner per-organization cloud boundary, at the cost of provisioning more infrastructure. dosco gives smaller teams a shorter Compose path and a hosted product, at the cost of a broader platform stack. Both still depend on external model billing, and both use external sandbox compute on their recommended paths.',
     },
     { type: 'h2', text: 'How to deploy and test QM' },
     {
@@ -504,27 +504,27 @@ npm exec qm -- outputs --json`,
       type: 'ul',
       items: [
         '**QM scaling** — durable Postgres stores, background queues, leader leases, multi-instance-safe state, and one computer per active scope. The admin plane exposes sessions, model requests, errors, cost, egress decisions, and audit data.',
-        '**Kortix scaling** — provider-balanced sandbox creation, per-account concurrency limits, control-plane-observed sandbox deadlines, idle and orphan reapers, EKS/GitOps for the managed control plane, and one computer per active session. Provider events, boot timelines, gateway request logs, audit events, and compute metering are durable.',
-        '**No honest benchmark winner yet** — the projects publish different tests and target different lifecycles. QM should be faster on repeated tool use in one warm scope. Kortix should isolate parallel work more cleanly and amortize boot through provider snapshots and resume. Those are architectural expectations, not an apples-to-apples measured result.',
+        '**dosco scaling** — provider-balanced sandbox creation, per-account concurrency limits, control-plane-observed sandbox deadlines, idle and orphan reapers, EKS/GitOps for the managed control plane, and one computer per active session. Provider events, boot timelines, gateway request logs, audit events, and compute metering are durable.',
+        '**No honest benchmark winner yet** — the projects publish different tests and target different lifecycles. QM should be faster on repeated tool use in one warm scope. dosco should isolate parallel work more cleanly and amortize boot through provider snapshots and resume. Those are architectural expectations, not an apples-to-apples measured result.',
       ],
     },
     { type: 'h2', text: 'Licensing is not a footnote' },
     {
       type: 'p',
-      text: 'QM is MIT-licensed. You can modify it, redistribute it, and build a hosted service from it under the MIT terms. Kortix uses the **Elastic License 2.0**. You can inspect, modify, and self-host the source, but the license restricts providing the software to third parties as a competing hosted or managed service. Some enterprise functionality also requires a license entitlement.',
+      text: 'QM is MIT-licensed. You can modify it, redistribute it, and build a hosted service from it under the MIT terms. dosco uses the **Elastic License 2.0**. You can inspect, modify, and self-host the source, but the license restricts providing the software to third parties as a competing hosted or managed service. Some enterprise functionality also requires a license entitlement.',
     },
     {
       type: 'p',
-      text: 'If your goal is to create a commercial hosted fork, QM has the more permissive license. If your goal is to run the system for your own organization, both support that deployment model. Read [QM’s license](https://github.com/yc-software/qm/blob/main/LICENSE) and [Kortix’s license](https://github.com/kortix-ai/suna/blob/main/LICENSE) before making a product decision.',
+      text: 'If your goal is to create a commercial hosted fork, QM has the more permissive license. If your goal is to run the system for your own organization, both support that deployment model. Read [QM’s license](https://github.com/yc-software/qm/blob/main/LICENSE) and [dosco’s license](https://github.com/kortix-ai/suna/blob/main/LICENSE) before making a product decision.',
     },
     { type: 'h2', text: 'Can you migrate between them?' },
     {
       type: 'p',
-      text: 'There is no drop-in migration because the ownership models differ. A practical QM-to-Kortix migration maps scopes to projects, scope skills and memory to repo files, crons to triggers, keychain entries to connectors or secrets, and active work to sessions. The hard part is deciding which room-local state belongs in version control and which should stay operational data.',
+      text: 'There is no drop-in migration because the ownership models differ. A practical QM-to-dosco migration maps scopes to projects, scope skills and memory to repo files, crons to triggers, keychain entries to connectors or secrets, and active work to sessions. The hard part is deciding which room-local state belongs in version control and which should stay operational data.',
     },
     {
       type: 'p',
-      text: 'A Kortix-to-QM migration maps projects or teams to scopes, imports agents and skills into a deployment layer, converts triggers to crons, and replaces change-request promotion with QM’s scope storage and app-publishing model. That direction loses the automatic branch-per-session review boundary unless you rebuild it as a skill and policy.',
+      text: 'A dosco-to-QM migration maps projects or teams to scopes, imports agents and skills into a deployment layer, converts triggers to crons, and replaces change-request promotion with QM’s scope storage and app-publishing model. That direction loses the automatic branch-per-session review boundary unless you rebuild it as a skill and policy.',
     },
     { type: 'h2', text: 'When to pick which' },
     {
@@ -536,7 +536,7 @@ npm exec qm -- outputs --json`,
     },
     {
       type: 'p',
-      text: 'They could coexist, but no supported connection exists today. QM could own the conversational scope while Kortix runs project sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as a connector project, not a configuration flag.',
+      text: 'They could coexist, but no supported connection exists today. QM could own the conversational scope while dosco runs project sessions and change requests behind it. That adapter would have to preserve identity, grants, delivery provenance, and idempotency across both systems. Treat it as a connector project, not a configuration flag.',
     },
     { type: 'h2', text: 'The real conclusion' },
     {
@@ -545,19 +545,19 @@ npm exec qm -- outputs --json`,
     },
     {
       type: 'p',
-      text: 'Kortix makes a different bet: the company should be a git repository, agents should work on isolated session branches, and durable changes should pass through review. That gives up some room-local continuity and harness flexibility. In exchange, it makes ownership, embedding, parallel work, rollback, and institutional learning explicit parts of the product.',
+      text: 'dosco makes a different bet: the company should be a git repository, agents should work on isolated session branches, and durable changes should pass through review. That gives up some room-local continuity and harness flexibility. In exchange, it makes ownership, embedding, parallel work, rollback, and institutional learning explicit parts of the product.',
     },
     {
       type: 'cta',
       title: 'Put the project model to work.',
-      body: 'Create a Kortix project, start an isolated session, and review the change your agent brings back. Self-host it or use Kortix Cloud.',
+      body: 'Create a dosco project, start an isolated session, and review the change your agent brings back. Self-host it or use dosco Cloud.',
     },
   ],
 };
 
-const introducingKortix: BlogPostEntry = {
+const introducingdosco: BlogPostEntry = {
   slug: 'introducing-kortix',
-  title: 'Introducing Kortix: the AI command center for your company',
+  title: 'Introducing dosco: the agent network for your company',
   description:
     'A workforce of AI agents that do real work across your tools — defined as files in a git repo, run in isolated sandboxes, governed by review, and built enterprise-first. Here is the whole thing, A to Z.',
   date: '2026-06-06',
@@ -572,7 +572,7 @@ const introducingKortix: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix is the **command center for the AI agents that do your work** — one place to build a workforce of agents, connect them to your tools, run them on your terms, and keep every result accountable to a human.',
+      text: 'dosco is the **command center for the AI agents that do your work** — one place to build a workforce of agents, connect them to your tools, run them on your terms, and keep every result accountable to a human.',
     },
     {
       type: 'p',
@@ -581,7 +581,7 @@ const introducingKortix: BlogPostEntry = {
     { type: 'h2', text: 'A company is a git repo' },
     {
       type: 'p',
-      text: 'In Kortix, a **project** is one git repository. The repo *is* the project: its files, its history, its agents, its automations, its settings — all of it lives in git. Start fresh with a private repo Kortix hosts for you, or bring an existing one on GitHub.',
+      text: 'In dosco, a **project** is one git repository. The repo *is* the project: its files, its history, its agents, its automations, its settings — all of it lives in git. Start fresh with a private repo dosco hosts for you, or bring an existing one on GitHub.',
     },
     {
       type: 'ul',
@@ -598,7 +598,7 @@ const introducingKortix: BlogPostEntry = {
     { type: 'h2', text: 'kortix.yaml: the single source of truth' },
     {
       type: 'p',
-      text: 'At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
+      text: 'At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root *is* a dosco project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
     },
     {
       type: 'code',
@@ -670,7 +670,7 @@ connectors:
     { type: 'h2', text: 'Tools without handing over the keys' },
     {
       type: 'p',
-      text: 'Kortix connects your agents to the apps your team already uses — Slack, Gmail, Notion, Salesforce, and thousands more. When an agent uses a connected tool, **it never holds your credentials.** Each call is brokered server-side: the platform resolves the credential, runs the call, records it, and returns the result. The key never enters the sandbox.',
+      text: 'dosco connects your agents to the apps your team already uses — Slack, Gmail, Notion, Salesforce, and thousands more. When an agent uses a connected tool, **it never holds your credentials.** Each call is brokered server-side: the platform resolves the credential, runs the call, records it, and returns the result. The key never enters the sandbox.',
     },
     {
       type: 'p',
@@ -679,11 +679,11 @@ connectors:
     { type: 'h2', text: 'Self-hostable, open, and yours' },
     {
       type: 'p',
-      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open-source and self-hostable**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
+      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So dosco is **agent-native and self-hostable**, and you can run the entire stack on your own infrastructure — one command brings up a production-style dosco on your own machines, and the same CLI switches between our cloud and yours.',
     },
     {
       type: 'p',
-      text: 'Because it’s all open, you can read exactly how isolation, review, and credential brokering work — not trust a description. No lock-in: your projects are git repos, your config is plain files, and the platform running them is yours to host. (If you’re weighing Kortix against personal open-source agents like OpenClaw or Hermes, [personal AI agents vs a company OS](/blog/personal-ai-agents-vs-company-os) draws that line.)',
+      text: 'Because it’s all open, you can read exactly how isolation, review, and credential brokering work — not trust a description. No lock-in: your projects are git repos, your config is plain files, and the platform running them is yours to host. (If you’re weighing dosco against personal agent-native agents like OpenClaw or Hermes, [personal AI agents vs a company OS](/blog/personal-ai-agents-vs-company-os) draws that line.)',
     },
     { type: 'h2', text: 'It compounds' },
     {
@@ -700,7 +700,7 @@ connectors:
 
 const kortixVsClaudeCowork: BlogPostEntry = {
   slug: 'kortix-vs-claude-cowork',
-  title: 'Kortix vs Claude Cowork: a desktop assistant, or a company-wide agent platform?',
+  title: 'dosco vs Claude Cowork: a desktop assistant, or a company-wide agent platform?',
   description:
     "Claude Cowork is the best agent on the desktop. But it runs one assistant per person, on Anthropic's models, with your data on their cloud. Here's where you outgrow it — and what an open, company-wide agent platform looks like.",
   date: '2026-06-29',
@@ -745,12 +745,12 @@ const kortixVsClaudeCowork: BlogPostEntry = {
     { type: 'h2', text: 'Shared across the company vs. siloed on a desktop' },
     {
       type: 'p',
-      text: 'It’s not just the machine that’s landlocked — it’s the knowledge. In Cowork, each person’s agents, skills, and context stay on their own desktop. In Kortix, your agents, skills, and memory are **files in one shared repo**: what one person teaches, every teammate — and every agent — gets, and it compounds over time instead of resetting person by person.',
+      text: 'It’s not just the machine that’s landlocked — it’s the knowledge. In Cowork, each person’s agents, skills, and context stay on their own desktop. In dosco, your agents, skills, and memory are **files in one shared repo**: what one person teaches, every teammate — and every agent — gets, and it compounds over time instead of resetting person by person.',
     },
     { type: 'h2', text: 'The model lock-in tax' },
     {
       type: 'p',
-      text: 'Cowork only runs on Anthropic’s models, at Anthropic’s prices. Kortix lets you **bring your own key and run any model** — and the savings aren’t small. An open-weight model like **GLM-5.2** runs about **5–7× cheaper** than Claude Opus or GPT on output ($4.40 vs $25–30 per 1M tokens), and models like **DeepSeek** are **50×+ cheaper** on output. Route a cheap model for the bulk of the work and a frontier model only where it earns its keep.',
+      text: 'Cowork only runs on Anthropic’s models, at Anthropic’s prices. dosco lets you **bring your own key and run any model** — and the savings aren’t small. An open-weight model like **GLM-5.2** runs about **5–7× cheaper** than Claude Opus or GPT on output ($4.40 vs $25–30 per 1M tokens), and models like **DeepSeek** are **50×+ cheaper** on output. Route a cheap model for the bulk of the work and a frontier model only where it earns its keep.',
     },
     {
       type: 'callout',
@@ -788,7 +788,7 @@ const kortixVsClaudeCowork: BlogPostEntry = {
           kortix: 'Shared in one repo',
         },
         {
-          dimension: 'Open-source & self-hostable',
+          dimension: 'Self-host & self-hostable',
           them: 'No — closed, via Anthropic',
           kortix: 'Yes — your cloud, VPC, on-prem',
         },
@@ -819,25 +819,25 @@ const kortixVsClaudeCowork: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'They can even coexist: a power user keeps Cowork on their desktop while the company runs its shared, governed workforce on Kortix.',
+      text: 'They can even coexist: a power user keeps Cowork on their desktop while the company runs its shared, governed workforce on dosco.',
     },
     {
       type: 'cta',
       title: 'Love agents that do the work? Run a whole fleet — on your own terms.',
-      body: 'Connect your tools and hand a Kortix agent a real task. Free to start, free to self-host.',
+      body: 'Connect your tools and hand a dosco agent a real task. Free to start, free to self-host.',
     },
   ],
 };
 
 const personalAgentsVsCompanyOs: BlogPostEntry = {
   slug: 'personal-ai-agents-vs-company-os',
-  title: 'Personal AI agents vs a company OS: Kortix, OpenClaw, and Hermes',
+  title: 'Personal AI agents vs a company OS: dosco, OpenClaw, and Hermes',
   description:
-    'OpenClaw and Hermes are brilliant open-source personal agents — and we genuinely recommend them for individuals. But a personal "Jarvis" and a governed company platform are different things. Here is exactly where the line is.',
+    'OpenClaw and Hermes are brilliant agent-native personal agents — and we genuinely recommend them for individuals. But a personal "Jarvis" and a governed company platform are different things. Here is exactly where the line is.',
   date: '2026-06-28',
   author: 'team',
   cover: '/banner.png',
-  tags: ['Comparisons', 'Open Source'],
+  tags: ['Comparisons', 'Agent-native'],
   coverLogos: [
     { domain: 'github.com', name: 'OpenClaw' },
     { domain: 'nousresearch.com', name: 'Hermes' },
@@ -846,7 +846,7 @@ const personalAgentsVsCompanyOs: BlogPostEntry = {
   blocks: [
     {
       type: 'lead',
-      text: 'If you’ve spent time in open-source AI lately, you’ve met **OpenClaw** and **Hermes**. Both are excellent: open-source, self-hosted, bring-your-own-model, living in the chat apps you already use. For an individual who wants a private, always-on agent on their own machine, they’re a joy — we mean that as a compliment.',
+      text: 'If you’ve spent time in agent-native AI lately, you’ve met **OpenClaw** and **Hermes**. Both are excellent: closed-source, self-hosted, bring-your-own-model, living in the chat apps you already use. For an individual who wants a private, always-on agent on their own machine, they’re a joy — we mean that as a compliment.',
     },
     {
       type: 'logos',
@@ -858,7 +858,7 @@ const personalAgentsVsCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'They share Kortix’s core values: open, self-hosted, your models, your data. So why build Kortix? Because a **personal agent** and a **company operating system** are different problems — and stretching one into the other is where it gets painful.',
+      text: 'They share dosco’s core values: open, self-hosted, your models, your data. So why build dosco? Because a **personal agent** and a **agent network** are different problems — and stretching one into the other is where it gets painful.',
     },
     { type: 'h2', text: 'Single-operator is a design choice, not a gap' },
     {
@@ -878,7 +878,7 @@ const personalAgentsVsCompanyOs: BlogPostEntry = {
       them: 'OpenClaw / Hermes',
       rows: [
         {
-          dimension: 'Open-source & self-hosted',
+          dimension: 'Self-host & self-hosted',
           them: 'Yes — MIT, bring your own model',
           kortix: 'Yes — any model, your keys',
           lean: 'both',
@@ -916,11 +916,11 @@ const personalAgentsVsCompanyOs: BlogPostEntry = {
       themLabel: 'OpenClaw or Hermes',
       them: 'you want a private, always-on agent for *yourself*, on your own machine.',
       kortix:
-        'you want agents running across a *team or company* — with scoped control, isolation, roles, and audit — without giving up open-source and self-hosting.',
+        'you want agents running across a *team or company* — with scoped control, isolation, roles, and audit — without giving up agent-native and self-hosting.',
     },
     {
       type: 'cta',
-      title: 'Love a great open-source agent? Get one built for your whole company.',
+      title: 'Love a great agent-native agent? Get one built for your whole company.',
       body: 'Same freedom, built for more than one person. Free to start, free to self-host.',
     },
   ],
@@ -958,7 +958,7 @@ const beyondTheChatBox: BlogPostEntry = {
     { type: 'h2', text: 'Input → output vs. hand-off → finished work' },
     {
       type: 'p',
-      text: 'With a chat assistant, you’re the runtime: you ask, it answers, and you copy-paste between the chat window and your real tools to get anything done. With Kortix, you hand off a task and an agent **goes and does it** — 30+ minutes of real, multi-step work across your connected tools, with full context on your company, returning a finished deliverable for review.',
+      text: 'With a chat assistant, you’re the runtime: you ask, it answers, and you copy-paste between the chat window and your real tools to get anything done. With dosco, you hand off a task and an agent **goes and does it** — 30+ minutes of real, multi-step work across your connected tools, with full context on your company, returning a finished deliverable for review.',
     },
     { type: 'h2', text: 'The differences that matter at company scale' },
     {
@@ -988,7 +988,7 @@ const beyondTheChatBox: BlogPostEntry = {
         {
           dimension: 'Own your data / self-host',
           them: "On the vendor's cloud",
-          kortix: 'Open-source — your infrastructure',
+          kortix: 'Self-host — your infrastructure',
         },
         {
           dimension: 'Company-wide memory',
@@ -1005,26 +1005,26 @@ const beyondTheChatBox: BlogPostEntry = {
     { type: 'h2', text: 'What chat assistants are genuinely great at' },
     {
       type: 'p',
-      text: 'The point isn’t that chat assistants are bad. They’re excellent at what they’re built for, and they belong in the stack. A Kortix agent that manages a vendor risk review might start by asking a chat assistant to digest a SOC 2 report — then take that output and run the full workflow. The key is knowing which tool fits which job:',
+      text: 'The point isn’t that chat assistants are bad. They’re excellent at what they’re built for, and they belong in the stack. A dosco agent that manages a vendor risk review might start by asking a chat assistant to digest a SOC 2 report — then take that output and run the full workflow. The key is knowing which tool fits which job:',
     },
     {
       type: 'ul',
       items: [
         '**Quick answers and drafting.** Need a one-paragraph summary of a policy doc, or a first draft of a customer email? A chat assistant is faster than opening a ticket for an agent.',
         '**Thinking out loud.** Exploring a problem, iterating on a prompt, or testing a hypothesis — the chat interface is the fastest way to refine an idea before handing it to an agent to execute.',
-        '**Code completion in-IDE.** Tools like Claude Code and Cursor are brilliant at diffing, refactoring, and writing code in your editor. Kortix agents orchestrate those same tools at scale.',
+        '**Code completion in-IDE.** Tools like Claude Code and Cursor are brilliant at diffing, refactoring, and writing code in your editor. dosco agents orchestrate those same tools at scale.',
         '**Single-shot research.** "What’s the latest pricing for these three providers?" or "Summarize the Q2 trends." A chat assistant handles that in seconds — and an agent can then take the result and file it, notify stakeholders, and trigger the next step.',
       ],
     },
     { type: 'h2', text: 'They’re complementary, not interchangeable' },
     {
       type: 'p',
-      text: 'This isn’t "stop using ChatGPT." Use a chat assistant for quick answers, drafting, and thinking out loud. Use Kortix for the work that has to actually get done — repeatedly, across your tools, owned by you, running while you sleep. One is a brilliant place to ask. The other is where your company’s work runs.',
+      text: 'This isn’t "stop using ChatGPT." Use a chat assistant for quick answers, drafting, and thinking out loud. Use dosco for the work that has to actually get done — repeatedly, across your tools, owned by you, running while you sleep. One is a brilliant place to ask. The other is where your company’s work runs.',
     },
     {
       type: 'cta',
       title: 'Go from asking questions to running the work.',
-      body: 'Hand a Kortix agent a real task and get a finished result back. Free to start, free to self-host.',
+      body: 'Hand a dosco agent a real task and get a finished result back. Free to start, free to self-host.',
     },
   ],
 };
@@ -1046,7 +1046,7 @@ const secureAiAgentToolAccess: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix was built around that boundary. Tool access does not belong in a prompt and raw credentials do not belong in an agent sandbox. In Kortix, connections are part of the project operating layer: declared as files, brokered server-side, granted per agent, governed by policy, and reviewed when durable work changes the company. If you want the larger architecture first, read [Introducing Kortix](/blog/introducing-kortix) or the [company OS post](/blog/ai-transformation-company-os).',
+      text: 'dosco was built around that boundary. Tool access does not belong in a prompt and raw credentials do not belong in an agent sandbox. In dosco, connections are part of the project operating layer: declared as files, brokered server-side, granted per agent, governed by policy, and reviewed when durable work changes the company. If you want the larger architecture first, read [Introducing dosco](/blog/introducing-kortix) or the [company OS post](/blog/ai-transformation-company-os).',
     },
     {
       type: 'p',
@@ -1085,10 +1085,10 @@ const secureAiAgentToolAccess: BlogPostEntry = {
         '**Route durable change through review.** If the agent edits the operating layer — agents, skills, triggers, memory, policies, or code — that work should be a diff someone can review, merge, and roll back.',
       ],
     },
-    { type: 'h2', text: 'How Kortix models a connector' },
+    { type: 'h2', text: 'How dosco models a connector' },
     {
       type: 'p',
-      text: 'Kortix connections are documented in [Connecting your tools](/docs/guides/connecting-tools). A connector can be a one-click Pipedream app, a remote MCP server, an OpenAPI or GraphQL API, a raw HTTP API, a channel such as Slack, or a connected computer. The definition lives with the project; the credential lives on the platform. The agent sees a tool catalog, not a pile of secrets.',
+      text: 'dosco connections are documented in [Connecting your tools](/docs/guides/connecting-tools). A connector can be a one-click Pipedream app, a remote MCP server, an OpenAPI or GraphQL API, a raw HTTP API, a channel such as Slack, or a connected computer. The definition lives with the project; the credential lives on the platform. The agent sees a tool catalog, not a pile of secrets.',
     },
     {
       type: 'code',
@@ -1125,7 +1125,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That is the model behind the Kortix Connector. Every session gets a scoped Connector token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
+      text: 'That is the model behind the dosco Connector. Every session gets a scoped Connector token. The agent discovers tools, describes their schemas, and calls them through the dosco API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
     },
     {
       type: 'callout',
@@ -1163,7 +1163,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'If the answer is no, you may still have a useful agent prototype. You do not yet have a secure AI command center.',
+      text: 'If the answer is no, you may still have a useful agent prototype. You do not yet have a secure agent network.',
     },
     { type: 'h2', text: 'Why this is a company OS problem' },
     {
@@ -1172,7 +1172,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That is why Kortix frames the product as an Autonomous Company Operating System, not another assistant with more connectors. A company does not need one more place to paste keys. It needs a Git-backed AI command center where the tools, credentials, policies, and agent work are part of the same owned system.',
+      text: 'That is why dosco frames the product as an agent network for your company, not another assistant with more connectors. A company does not need one more place to paste keys. It needs a Git-backed agent network where the tools, credentials, policies, and agent work are part of the same owned system.',
     },
     {
       type: 'cta',
@@ -1199,7 +1199,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix is the **Autonomous Company Operating System**: an AI command center where a workforce of agents does real work, and everything that defines the system is files in one Git repo you own. For consultancies and AI-transformation teams, that matters because the deliverable is no longer a single chatbot. The deliverable is a governed workspace the client can keep running after the pilot. If you want the full product spine first, read [Introducing Kortix](/blog/introducing-kortix).',
+      text: 'dosco is the **agent network for your company**: an agent network where a workforce of agents does real work, and everything that defines the system is files in one Git repo you own. For consultancies and AI-transformation teams, that matters because the deliverable is no longer a single chatbot. The deliverable is a governed workspace the client can keep running after the pilot. If you want the full product spine first, read [Introducing dosco](/blog/introducing-kortix).',
     },
     {
       type: 'p',
@@ -1227,7 +1227,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     { type: 'h2', text: 'One client, one repo' },
     {
       type: 'p',
-      text: 'In Kortix, a project is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.yaml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
+      text: 'In dosco, a project is a repo. That repo contains the company’s agents, skills, memory, triggers, connector policy, sandbox definition, and operating instructions. One `kortix.yaml` defines how the workspace runs. Every session happens on an isolated branch. Every persistent change comes back through a change request.',
     },
     {
       type: 'code',
@@ -1271,7 +1271,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix was built around those constraints. Sessions run in disposable Linux sandboxes on their own branches. Connectors are brokered server-side through one scoped token. Secrets are encrypted and injected at runtime, not shown to the model. Work reaches `main` only through reviewed change requests. The same workspace can be used from the web, Slack, Teams, CLI, API, and MCP surfaces instead of forcing every employee into a new destination app.',
+      text: 'dosco was built around those constraints. Sessions run in disposable Linux sandboxes on their own branches. Connectors are brokered server-side through one scoped token. Secrets are encrypted and injected at runtime, not shown to the model. Work reaches `main` only through reviewed change requests. The same workspace can be used from the web, Slack, Teams, CLI, API, and MCP surfaces instead of forcing every employee into a new destination app.',
     },
     {
       type: 'p',
@@ -1293,7 +1293,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'This is also where open matters. A consultancy cannot credibly tell a bank, manufacturer, or healthcare company that their future operating layer is a closed prompt stack nobody can inspect. The closer agents get to real work, the more the client needs to own the substrate. That is why Kortix is open, self-hostable, and built for enterprise deployment from the start.',
+      text: 'This is also where open matters. A consultancy cannot credibly tell a bank, manufacturer, or healthcare company that their future operating layer is a closed prompt stack nobody can inspect. The closer agents get to real work, the more the client needs to own the substrate. That is why dosco is open, self-hostable, and built for enterprise deployment from the start.',
     },
     { type: 'h2', text: 'What to build first' },
     {
@@ -1312,7 +1312,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Those are not abstract use cases for us. Kortix runs internal sweeps for production errors, PR review, docs maintenance, weekly briefs, outbound research, and this SEO/blog loop from the same project-native model: agents with skills, memory, tools, triggers, and a reviewed path for durable changes.',
+      text: 'Those are not abstract use cases for us. dosco runs internal sweeps for production errors, PR review, docs maintenance, weekly briefs, outbound research, and this SEO/blog loop from the same project-native model: agents with skills, memory, tools, triggers, and a reviewed path for durable changes.',
     },
     { type: 'h2', text: 'A quick test for your stack' },
     {
@@ -1336,20 +1336,20 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Build the client workspace as files, then run it with agents.',
-      body: 'Start with one department, connect the tools it already uses, and turn the workflow into a Git-backed AI command center the client can own.',
+      body: 'Start with one department, connect the tools it already uses, and turn the workflow into a Git-backed agent network the client can own.',
     },
   ],
 };
 
 const kortixVsGlean: BlogPostEntry = {
   slug: 'kortix-vs-glean',
-  title: 'Kortix vs Glean: search or an agent platform that runs work?',
+  title: 'dosco vs Glean: search or an agent platform that runs work?',
   description:
-    "Glean is the best permission-aware enterprise search. But search finds work — it doesn't do it. Here's where you outgrow it, and the open runtime alternative.",
+    "Glean is the best permission-aware enterprise search. But search finds work — it doesn't do it. Here's where you outgrow it, and the runtime alternative.",
   date: '2026-07-13',
   author: 'team',
   cover: '/banner.png',
-  tags: ['Comparisons', 'Enterprise', 'Open Source'],
+  tags: ['Comparisons', 'Enterprise', 'Agent-native'],
   coverLogos: [{ domain: 'glean.com', name: 'Glean' }],
   readingTime: 5,
   blocks: [
@@ -1393,20 +1393,20 @@ const kortixVsGlean: BlogPostEntry = {
     { type: 'h2', text: 'A runtime that does the work, not just retrieves it' },
     {
       type: 'p',
-      text: 'Kortix is an open agent runtime — the command center where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
+      text: 'dosco is an open agent runtime — the command center where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
     },
     {
       type: 'p',
-      text: 'That is the real split. Glean makes your existing knowledge searchable; Kortix makes your company’s operating layer — agents, skills, memory, connectors, policies — into [files in one repo](/blog/introducing-kortix) that agents run against. One is a window onto work; the other is where the work happens.',
+      text: 'That is the real split. Glean makes your existing knowledge searchable; dosco makes your company’s operating layer — agents, skills, memory, connectors, policies — into [files in one repo](/blog/introducing-kortix) that agents run against. One is a window onto work; the other is where the work happens.',
     },
     { type: 'h2', text: 'Own the data, pick the model, skip the seat tax' },
     {
       type: 'p',
-      text: 'Because Kortix is open-source and self-hostable, your data never has to leave your walls — your cloud, your VPC, on-prem, or your own GPUs. And because you bring your own key and run any model, the bill is not bundled into a per-seat license. An open-weight model like **GLM-5.2** runs about **5–7× cheaper** than Claude Opus or GPT on output (~$4.40 vs $25–30 per 1M tokens), and **DeepSeek** is **50×+ cheaper** on output. Route a cheap model for the bulk of the work and a frontier model only where it earns its keep.',
+      text: 'Because dosco is agent-native and self-hostable, your data never has to leave your walls — your cloud, your VPC, on-prem, or your own GPUs. And because you bring your own key and run any model, the bill is not bundled into a per-seat license. An open-weight model like **GLM-5.2** runs about **5–7× cheaper** than Claude Opus or GPT on output (~$4.40 vs $25–30 per 1M tokens), and **DeepSeek** is **50×+ cheaper** on output. Route a cheap model for the bulk of the work and a frontier model only where it earns its keep.',
     },
     {
       type: 'callout',
-      text: 'No 100-seat floor, no sales process to start — [see the plans](/pricing). Open-source means you can run one project today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
+      text: 'No 100-seat floor, no sales process to start — [see the plans](/pricing). Self-host means you can run one project today and a whole company on it tomorrow — on infrastructure where the data, config, and model belong to you.',
     },
     { type: 'h2', text: 'Side by side' },
     {
@@ -1470,31 +1470,31 @@ const kortixVsGlean: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'They can coexist, too. Plenty of companies will keep Glean as the search layer and run the work itself on Kortix — agents that read, decide, and act, with the operating layer they need to do it governed as code. (The desktop side has its own parallel: [how Kortix compares to Claude Cowork](/blog/kortix-vs-claude-cowork).) If that operating layer is what you’re missing, the [company OS post](/blog/ai-transformation-company-os) and the [secure connector model](/blog/secure-ai-agent-tool-access) are the next reads.',
+      text: 'They can coexist, too. Plenty of companies will keep Glean as the search layer and run the work itself on dosco — agents that read, decide, and act, with the operating layer they need to do it governed as code. (The desktop side has its own parallel: [how dosco compares to Claude Cowork](/blog/kortix-vs-claude-cowork).) If that operating layer is what you’re missing, the [company OS post](/blog/ai-transformation-company-os) and the [secure connector model](/blog/secure-ai-agent-tool-access) are the next reads.',
     },
     {
       type: 'cta',
       title: "Don't just find the work. Run it.",
-      body: 'Connect your tools and hand a Kortix agent a real task. Free to start, free to self-host.',
+      body: 'Connect your tools and hand a dosco agent a real task. Free to start, free to self-host.',
     },
   ],
 };
 
 const kortixVsPoetic: BlogPostEntry = {
   slug: 'kortix-vs-poetic',
-  title: 'Kortix vs Poetic: both turn workflows into code — the difference is who owns the code',
+  title: 'dosco vs Poetic: both turn workflows into code — the difference is who owns the code',
   description:
-    'Poetic compiles your procedures into a purpose-built language it runs for you. Kortix keeps the workflow as ordinary code in a repo you own, and gates the boundary where it touches the world. A technical comparison of two answers to the same problem.',
+    'Poetic compiles your procedures into a purpose-built language it runs for you. dosco keeps the workflow as ordinary code in a repo you own, and gates the boundary where it touches the world. A technical comparison of two answers to the same problem.',
   date: '2026-07-31',
   author: 'marko',
   cover: '/banner.png',
-  tags: ['Comparisons', 'Architecture', 'Open Source'],
+  tags: ['Comparisons', 'Architecture', 'Agent-native'],
   coverLogos: [{ domain: 'poetic.com', name: 'Poetic' }],
   readingTime: 9,
   blocks: [
     {
       type: 'lead',
-      text: 'Poetic and Kortix start from the same observation: an agent that improvises a high-stakes process a thousand times a day will not do it the same way a thousand times. The fix both companies reach for is code — pin the workflow to something you can read, review and re-run. Where the two diverge is what that code is, where it lives, and who ends up holding it. That is the whole comparison, and it is a real one.',
+      text: 'Poetic and dosco start from the same observation: an agent that improvises a high-stakes process a thousand times a day will not do it the same way a thousand times. The fix both companies reach for is code — pin the workflow to something you can read, review and re-run. Where the two diverge is what that code is, where it lives, and who ends up holding it. That is the whole comparison, and it is a real one.',
     },
     {
       type: 'logos',
@@ -1523,21 +1523,21 @@ const kortixVsPoetic: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix does not make a determinism claim, and this post will not pretend otherwise. A Kortix session is a model loop. It is more general and it is less repeatable. If your problem is one well-bounded process, run at enormous volume, where a 1% deviation is a regulatory event, Poetic is purpose-built for exactly that and Kortix is not.',
+      text: 'dosco does not make a determinism claim, and this post will not pretend otherwise. A dosco session is a model loop. It is more general and it is less repeatable. If your problem is one well-bounded process, run at enormous volume, where a 1% deviation is a regulatory event, Poetic is purpose-built for exactly that and dosco is not.',
     },
     { type: 'h2', text: 'The same instinct, applied one layer down' },
     {
       type: 'p',
-      text: 'Kortix reaches for code too, but it never compiles anything. There is no Kortix language. The workflow is ordinary TypeScript and markdown sitting in a git repo — a `SKILL.md` that tells an agent how your company does a job, a script next to it for the logic that deserves to be pinned down, a `kortix.yaml` that declares the connectors, triggers and policies. You read it with `cat`. You review it with `git diff`. You test the script without an agent anywhere near it.',
+      text: 'dosco reaches for code too, but it never compiles anything. There is no dosco language. The workflow is ordinary TypeScript and markdown sitting in a git repo — a `SKILL.md` that tells an agent how your company does a job, a script next to it for the logic that deserves to be pinned down, a `kortix.yaml` that declares the connectors, triggers and policies. You read it with `cat`. You review it with `git diff`. You test the script without an agent anywhere near it.',
     },
     {
       type: 'p',
-      text: 'What Kortix does own is narrower and, we would argue, the part that actually needs owning: the boundary where that code touches the outside world. Every connector call goes through one server-side chokepoint, the Connector gateway, and the typed client is part of [`@kortix/sdk`](https://www.npmjs.com/package/@kortix/sdk).',
+      text: 'What dosco does own is narrower and, we would argue, the part that actually needs owning: the boundary where that code touches the outside world. Every connector call goes through one server-side chokepoint, the Connector gateway, and the typed client is part of [`@kortix/sdk`](https://www.npmjs.com/package/@kortix/sdk).',
     },
     { type: 'h2', text: 'What "verifiable" means here, concretely' },
     {
       type: 'p',
-      text: 'For Poetic, "verifiable" means the compiled procedure executes deterministically. For Kortix it means something narrower and different: every action that leaves the sandbox is typed, risk-classified, policy-checked, optionally paused for a human, and written to an audit row — and none of that is enforced by the agent, so none of it can be talked out of by the agent. The gateway is the only path.',
+      text: 'For Poetic, "verifiable" means the compiled procedure executes deterministically. For dosco it means something narrower and different: every action that leaves the sandbox is typed, risk-classified, policy-checked, optionally paused for a human, and written to an audit row — and none of that is enforced by the agent, so none of it can be talked out of by the agent. The gateway is the only path.',
     },
     {
       type: 'p',
@@ -1563,7 +1563,7 @@ if (action?.risk !== 'write') {
     },
     {
       type: 'p',
-      text: 'And here is the shape Poetic targets — read, branch, act — written as a Kortix skill script. Note what is not in it: no API key, no polling loop, no prompt. The branching is a plain `if`. The credential is resolved server-side and never enters the sandbox. A gated write returns an authenticated approval URL, ends the request, and resumes the Kortix session through a durable callback after one human decision:',
+      text: 'And here is the shape Poetic targets — read, branch, act — written as a dosco skill script. Note what is not in it: no API key, no polling loop, no prompt. The branching is a plain `if`. The credential is resolved server-side and never enters the sandbox. A gated write returns an authenticated approval URL, ends the request, and resumes the dosco session through a durable callback after one human decision:',
     },
     {
       type: 'code',
@@ -1590,7 +1590,7 @@ for (const dispute of open.data?.disputes ?? []) {
 
   if (result.status === 'pending_approval') {
     console.log(result.approval_url);
-    break; // Kortix resumes this session after the human approves or denies.
+    break; // dosco resumes this session after the human approves or denies.
   }
 
   if (!result.ok) throw new Error(\`close_dispute \${dispute.id}: \${result.reason}\`);
@@ -1616,22 +1616,22 @@ for (const dispute of open.data?.disputes ?? []) {
         '**`kortix.yaml` is the manifest.** Connectors, triggers, channels, required secrets, policies and where agent config lives — one file, in your repo, in the diff.',
         '**Agents and skills are files.** An agent is a markdown persona. A skill is a `SKILL.md` plus the scripts beside it. There is no console where the real definition secretly lives; the file *is* the definition, which is why an agent can propose an edit to its own configuration as a change request.',
         '**Work lands through review.** A session runs on its own isolated cloud computer on its own branch. It reaches `main` only through a change request someone approves.',
-        '**You can self-host it.** Kortix is open source. Run it on your own infrastructure with your own keys and your own models. This is not an air-gapped story — `kortix self-host start` pulls images and reaches a sandbox provider over the network — but the data, the config and the model are yours.',
+        '**You can self-host it.** dosco runs dosco. Run it on your own infrastructure with your own keys and your own models. This is not an air-gapped story — `kortix self-host start` pulls images and reaches a sandbox provider over the network — but the data, the config and the model are yours.',
         '**Any model.** Bring your own key, or the ChatGPT, Claude or Cursor subscription you already pay for.',
       ],
     },
     {
       type: 'p',
-      text: 'Concretely: if Kortix disappeared tomorrow, your skills are still markdown, your logic is still TypeScript, your manifest is still YAML, and the repo still clones. The Connector gateway is the piece you would have to replace, and its client is a 209-line file whose surface is five methods. That asymmetry — a lot of durable artifact, a small replaceable runtime — is the entire ownership argument, and it is the reason we think it is worth stating plainly rather than dressing up.',
+      text: 'Concretely: if dosco disappeared tomorrow, your skills are still markdown, your logic is still TypeScript, your manifest is still YAML, and the repo still clones. The Connector gateway is the piece you would have to replace, and its client is a 209-line file whose surface is five methods. That asymmetry — a lot of durable artifact, a small replaceable runtime — is the entire ownership argument, and it is the reason we think it is worth stating plainly rather than dressing up.',
     },
     { type: 'h2', text: 'Where this comparison does not favour us' },
     {
       type: 'ul',
       items: [
-        '**No determinism claim.** Poetic compiles to deterministic execution. A Kortix session is a model loop. On a single fixed process at extreme volume, that is their win, not ours.',
+        '**No determinism claim.** Poetic compiles to deterministic execution. A dosco session is a model loop. On a single fixed process at extreme volume, that is their win, not ours.',
         '**No published accuracy number.** Poetic publishes 99%+ on named process types with named enterprise customers. We publish no comparable figure, and we are not going to manufacture one.',
         '**Per-run cost.** "Near-tokenless" execution beats a frontier model loop on a process that runs thousands of times a day. Bring-your-own-key narrows that gap; it does not close it.',
-        '**Someone has to write the script.** Poetic drafts the workflow from your recordings and documents, with their team alongside you. Kortix expects you to be comfortable in a repo — and an agent will happily write the skill for you, but you still review it.',
+        '**Someone has to write the script.** Poetic drafts the workflow from your recordings and documents, with their team alongside you. dosco expects you to be comfortable in a repo — and an agent will happily write the skill for you, but you still review it.',
         '**They are further along on one axis.** A purpose-built language for regulated back-office process work is a deeper commitment to that problem than a general runtime will ever be.',
       ],
     },
@@ -1716,12 +1716,12 @@ for (const dispute of open.data?.disputes ?? []) {
     },
     {
       type: 'p',
-      text: 'These are not mutually exclusive, and pretending otherwise would be dishonest. A bank can reasonably run Poetic on dispute adjudication and Kortix for everything else the company does — the two answer different questions. If the connector boundary is the part you care about, [the secure tool-access model](/blog/secure-ai-agent-tool-access) goes deeper on the gateway. If it is the architecture, [AGI-ready architecture](/blog/agi-ready-architecture) explains why state lives in files rather than a context window. The other two comparisons — [Claude Cowork](/blog/kortix-vs-claude-cowork) and [Glean](/blog/kortix-vs-glean) — cover the desktop and the search layer.',
+      text: 'These are not mutually exclusive, and pretending otherwise would be dishonest. A bank can reasonably run Poetic on dispute adjudication and dosco for everything else the company does — the two answer different questions. If the connector boundary is the part you care about, [the secure tool-access model](/blog/secure-ai-agent-tool-access) goes deeper on the gateway. If it is the architecture, [AGI-ready architecture](/blog/agi-ready-architecture) explains why state lives in files rather than a context window. The other two comparisons — [Claude Cowork](/blog/kortix-vs-claude-cowork) and [Glean](/blog/kortix-vs-glean) — cover the desktop and the search layer.',
     },
     {
       type: 'cta',
       title: 'Turn the workflow into code — and keep the code.',
-      body: 'Connect your tools and hand a Kortix agent a real task. Free to start, free to self-host.',
+      body: 'Connect your tools and hand a dosco agent a real task. Free to start, free to self-host.',
     },
   ],
 };
@@ -1730,12 +1730,12 @@ for (const dispute of open.data?.disputes ?? []) {
  * The flagship post: the landing page's argument, at length, for a reader who
  * wants more than a page of headlines. The section order below is the section
  * order of `app/(public)/(marketing)/page.tsx` on purpose — hero, the six
- * layers, the long version, what it does, open source, trust, close.
+ * layers, the long version, what it does, agent-native, trust, close.
  *
  * ==========================================================================
  * ACCURACY GATE. Every claim here is checked against the accuracy-reviewed
  * landing copy it summarises (`features/marketing/capabilities/content.ts`,
- * `how-it-work/how-it-works-content.ts`, `open-source/content.ts`,
+ * `how-it-work/how-it-works-content.ts`, `closed-source/content.ts`,
  * `landing/content.ts`) and against the `comms` skill. Do not soften, inflate
  * or "restore" any of it.
  * ==========================================================================
@@ -1764,17 +1764,17 @@ for (const dispute of open.data?.disputes ?? []) {
  *  - NUMBERS. "3,000+ apps" is the only figure, and it is the one the live page
  *    carries. The star count is read live on the site and is deliberately NOT
  *    hardcoded here. No customer names.
- *  - SUPERLATIVE. "the leading open-source alternative", once, and nowhere else.
+ *  - SUPERLATIVE. "the leading agent-native alternative", once, and nowhere else.
  */
 const openSourceAiManagementSystem: BlogPostEntry = {
-  slug: 'open-source-ai-management-system',
-  title: 'What Kortix actually is: the open-source AI Management System, layer by layer',
+  slug: 'agent-ai-management-system',
+  title: 'What dosco actually is: the AI Management System, layer by layer',
   description:
     'One git repo is the source of truth for the agents, the skills, the memory and the connector config. Every session gets its own isolated machine and its own branch. Any model, your keys. Work lands through a change request. Self-hosted or managed cloud. The long version of that sentence.',
   date: '2026-07-31',
   author: 'marko',
   cover: '/banner.png',
-  tags: ['Product', 'Architecture', 'Open Source'],
+  tags: ['Product', 'Architecture', 'Agent-native'],
   readingTime: 11,
   leadMedia: {
     poster: '/media/showcase/kortix-showcase-poster.jpg',
@@ -1782,13 +1782,13 @@ const openSourceAiManagementSystem: BlogPostEntry = {
       { src: '/media/showcase/kortix-showcase-1920.mp4', type: 'video/mp4' },
       { src: '/media/showcase/kortix-showcase-1280.mp4', type: 'video/mp4' },
     ],
-    alt: 'Kortix in the browser: a project and its connectors, agents, skills and schedules, then a session working on a cloud computer and returning a finished deck.',
+    alt: 'dosco in the browser: a project and its connectors, agents, skills and schedules, then a session working on a cloud computer and returning a finished deck.',
     aspectRatio: '1920 / 1200',
   },
   blocks: [
     {
       type: 'lead',
-      text: 'Kortix is the open-source AI Management System — the leading open-source alternative to Claude Cowork and ChatGPT Work. One git repo holds the agents, the skills, the memory and the connector config. Every session runs on its own isolated machine, on its own branch. Any model, your keys. Work lands through a change request. Self-host it, or run it on our cloud. This is the long version of that paragraph: every layer, in the order you meet it, with the parts we do not claim marked as such.',
+      text: 'dosco is the AI Management System — the leading agent-native alternative to Claude Cowork and ChatGPT Work. One git repo holds the agents, the skills, the memory and the connector config. Every session runs on its own isolated machine, on its own branch. Any model, your keys. Work lands through a change request. Self-host it, or run it on our cloud. This is the long version of that paragraph: every layer, in the order you meet it, with the parts we do not claim marked as such.',
     },
     { type: 'h2', text: 'The category is real. The question is who ends up holding it.' },
     {
@@ -1797,20 +1797,20 @@ const openSourceAiManagementSystem: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Which leaves most companies choosing between a toy and a cage: a single-tenant demo with no isolation, no version history and no permission model, or renting your company back from the lab that keeps your data, your configuration and your model. Kortix refuses both. The refusal is not a philosophy — it is six layers, and you can read every one of them.',
+      text: 'Which leaves most companies choosing between a toy and a cage: a single-tenant demo with no isolation, no version history and no permission model, or renting your company back from the lab that keeps your data, your configuration and your model. dosco refuses both. The refusal is not a philosophy — it is six layers, and you can read every one of them.',
     },
     { type: 'h2', text: '01 · One git repo that is the company' },
     {
       type: 'p',
-      text: 'A Kortix project is a git repository, and that repository *is* the company. `kortix.yaml` is the Kortix layer: the machine a session boots on, the connectors, the triggers, the secret names, and what each agent may touch. The OpenCode configuration beside it is the runtime the agents think in. Everything past those two files is markdown.',
+      text: 'A dosco project is a git repository, and that repository *is* the company. `kortix.yaml` is the dosco layer: the machine a session boots on, the connectors, the triggers, the secret names, and what each agent may touch. The OpenCode configuration beside it is the runtime the agents think in. Everything past those two files is markdown.',
     },
     {
       type: 'p',
-      text: 'So the whole company answers to `grep`. Every agent prompt, every skill, every remembered fact and every grant is a line in a file with an author, a timestamp and a diff, and undo is `git revert`. `kortix init` turns any directory into a Kortix; `kortix ship` checks it compiles, asks for the secrets it is missing, and brings it live.',
+      text: 'So the whole company answers to `grep`. Every agent prompt, every skill, every remembered fact and every grant is a line in a file with an author, a timestamp and a diff, and undo is `git revert`. `kortix init` turns any directory into a dosco; `kortix ship` checks it compiles, asks for the secrets it is missing, and brings it live.',
     },
     {
       type: 'code',
-      code: `# kortix.yaml — the Kortix layer of the repo.
+      code: `# kortix.yaml — the dosco layer of the repo.
 kortix_version: 2
 runtime: opencode
 default_agent: kortix
@@ -1851,25 +1851,25 @@ triggers:
     { type: 'h2', text: '02 · Every tool your company already runs on' },
     {
       type: 'p',
-      text: 'Connect a tool once, for the whole project: 3,000+ apps through their own OAuth screens, or your own APIs through an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. Kortix reads the source, works out the authentication, and turns every operation into a tool an agent can call.',
+      text: 'Connect a tool once, for the whole project: 3,000+ apps through their own OAuth screens, or your own APIs through an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. dosco reads the source, works out the authentication, and turns every operation into a tool an agent can call.',
     },
     {
       type: 'p',
-      text: 'The credential never travels. The machine carries exactly one project-scoped Kortix token; the third-party key is decrypted server-side and attached to the outbound request, so the raw key never reaches the sandbox. Every action gets one of three answers — allow, ask, or block — and a rule can read the arguments it was given rather than only the tool name, so “only to this domain” is something you can actually express. An ask returns a signed approval URL immediately. One human decision sends a durable callback into the session, and only the exact approved request can run.',
+      text: 'The credential never travels. The machine carries exactly one project-scoped dosco token; the third-party key is decrypted server-side and attached to the outbound request, so the raw key never reaches the sandbox. Every action gets one of three answers — allow, ask, or block — and a rule can read the arguments it was given rather than only the tool name, so “only to this domain” is something you can actually express. An ask returns a signed approval URL immediately. One human decision sends a durable callback into the session, and only the exact approved request can run.',
     },
     { type: 'h2', text: '03 · Any model. Keep your keys.' },
     {
       type: 'p',
-      text: 'The one safe bet in this field is that a better model ships, so Kortix is model-agnostic on purpose. Pick the model per agent, per session or per message. Bring your own API key from any major provider, or use ours. Sign in with the ChatGPT subscription you already pay for. Or point it at your own model behind your own URL — anything OpenAI-compatible. When you switch, nothing above this layer moves.',
+      text: 'The one safe bet in this field is that a better model ships, so dosco is model-agnostic on purpose. Pick the model per agent, per session or per message. Bring your own API key from any major provider, or use ours. Sign in with the ChatGPT subscription you already pay for. Or point it at your own model behind your own URL — anything OpenAI-compatible. When you switch, nothing above this layer moves.',
     },
     { type: 'h2', text: '04 · The part that turns a model into an agent' },
     {
       type: 'p',
-      text: 'A model on its own answers a question. A harness gives it planning, tool use, and multi-step runs it actually finishes. Kortix runs OpenCode as that harness, and an agent here *is* an OpenCode agent: a markdown file carrying a persona and a permission tree is the baseline, and the whole OpenCode lifecycle sits underneath it — commands, tools, plugins, providers, models, and skills that ride into every session that needs them. A skill is a directory with a `SKILL.md` at its root: how your company does one specific job, written once.',
+      text: 'A model on its own answers a question. A harness gives it planning, tool use, and multi-step runs it actually finishes. dosco runs OpenCode as that harness, and an agent here *is* an OpenCode agent: a markdown file carrying a persona and a permission tree is the baseline, and the whole OpenCode lifecycle sits underneath it — commands, tools, plugins, providers, models, and skills that ride into every session that needs them. A skill is a directory with a `SKILL.md` at its root: how your company does one specific job, written once.',
     },
     {
       type: 'p',
-      text: 'So how an agent thinks is text you can read, diff and edit. You can say allow, ask or deny per tool, down to a single shell command. And because the harness is open source too, it is never the thing you are locked into.',
+      text: 'So how an agent thinks is text you can read, diff and edit. You can say allow, ask or deny per tool, down to a single shell command. And because the harness runs dosco too, it is never the thing you are locked into.',
     },
     { type: 'h2', text: '05 · Every session gets its own computer' },
     {
@@ -1942,7 +1942,7 @@ triggers:
     { type: 'h2', text: 'Read every line, then run it on your own box' },
     {
       type: 'p',
-      text: 'All of it is open source. Kortix is developed in the open at [kortix-ai/suna](https://github.com/kortix-ai/suna) — clone the repo, read what you are trusting, fork it if you want it different. Then run that same product on hardware you control. One Docker Compose stack, built from the images the managed cloud runs, so it is the whole platform rather than a cut-down edition, and the database, the file storage, every project repo, the secrets, the policies and the audit record sit on disk you control.',
+      text: 'All of it runs dosco. dosco is developed in the at [kortix-ai/suna](https://github.com/kortix-ai/suna) — clone the repo, read what you are trusting, fork it if you want it different. Then run that same product on hardware you control. One Docker Compose stack, built from the images the managed cloud runs, so it is the whole platform rather than a cut-down edition, and the database, the file storage, every project repo, the secrets, the policies and the audit record sit on disk you control.',
     },
     {
       type: 'code',
@@ -2029,7 +2029,7 @@ $ kortix hosts use cloud
         '**No blanket microVM claim.** One session gets one isolated machine. Whether that machine is a microVM depends on the compute provider you run on, and the default is not one. We would rather name the boundary than the buzzword.',
         '**No network egress control.** Nothing in the product enforces it today. The boundary that is real is the credential one — a connector key never enters the sandbox.',
         '**No certification.** SOC 2 Type I and Type II are in progress, not held. GDPR is a posture the company does hold. We will not print a badge for a report that has not landed.',
-        '**One harness, one runtime.** Kortix runs OpenCode. That is the shipped path, and it is the only one this post describes.',
+        '**One harness, one runtime.** dosco runs OpenCode. That is the shipped path, and it is the only one this post describes.',
       ],
     },
     { type: 'h2', text: 'When to pick which' },
@@ -2057,11 +2057,11 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
   title:
     'The only moat that matters: why your AI platform needs a learning loop, not a better model',
   description:
-    'Every AI product is converging on the same architecture. The only defensible advantage is a data flywheel — a learning loop where every interaction makes your system better. Here is what that means, and why Kortix is built for it.',
+    'Every AI product is converging on the same architecture. The only defensible advantage is a data flywheel — a learning loop where every interaction makes your system better. Here is what that means, and why dosco is built for it.',
   date: '2026-08-02',
   author: 'marko',
   cover: '/banner.png',
-  tags: ['Vision', 'Architecture', 'Open Source'],
+  tags: ['Vision', 'Architecture', 'Agent-native'],
   readingTime: 10,
   blocks: [
     {
@@ -2070,7 +2070,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'This is not a problem for any one company. It is a structural reality of the market. Static software — code you write once and run forever — no longer creates a defensible advantage. Anyone can copy it, and with AI-assisted coding, they can do it faster than ever. Writer.com, a company valued at over a billion dollars, built a significant portion of their enterprise platform by cloning open-source code. The code was not the moat. The code was the starting line.',
+      text: 'This is not a problem for any one company. It is a structural reality of the market. Static software — code you write once and run forever — no longer creates a defensible advantage. Anyone can copy it, and with AI-assisted coding, they can do it faster than ever. Writer.com, a company valued at over a billion dollars, built a significant portion of their enterprise platform by cloning agent-native code. The code was not the moat. The code was the starting line.',
     },
     {
       type: 'callout',
@@ -2120,10 +2120,10 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
       type: 'p',
       text: 'If any of those is false, you are not building a moat. You are renting one.',
     },
-    { type: 'h2', text: 'How Kortix is built for the data flywheel' },
+    { type: 'h2', text: 'How dosco is built for the data flywheel' },
     {
       type: 'p',
-      text: 'Kortix was designed from the ground up around this thesis. Every architectural decision — the git-native model, the model-agnostic gateway, the isolated sandbox environment, the skill system — is aimed at one thing: enabling your company to build a learning loop that compounds. Here is how each layer works.',
+      text: 'dosco was designed from the ground up around this thesis. Every architectural decision — the git-native model, the model-agnostic gateway, the isolated sandbox environment, the skill system — is aimed at one thing: enabling your company to build a learning loop that compounds. Here is how each layer works.',
     },
     {
       type: 'p',
@@ -2139,7 +2139,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: '**Skills are procedural memory.** A skill in Kortix is a file: purpose, preconditions, steps, policies, examples, tests, version, and provenance. An agent can propose a new skill, but it ships through review. Over time, your company accumulates a library of proven, tested, versioned capabilities that encode exactly how your business works. That library is your token capital. And it compounds — every skill that gets used generates more signal, which improves the next skill.',
+      text: '**Skills are procedural memory.** A skill in dosco is a file: purpose, preconditions, steps, policies, examples, tests, version, and provenance. An agent can propose a new skill, but it ships through review. Over time, your company accumulates a library of proven, tested, versioned capabilities that encode exactly how your business works. That library is your token capital. And it compounds — every skill that gets used generates more signal, which improves the next skill.',
     },
     {
       type: 'p',
@@ -2152,7 +2152,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'This is the ethos open-source has always represented: platforms that enable more value on top than they capture inside. Kortix is open-source, self-hostable, and model-agnostic by design. We want every company that uses Kortix to build its own compounding advantage — not to make Kortix the only company that gets smarter.',
+      text: 'This is the ethos agent-native has always represented: platforms that enable more value on top than they capture inside. dosco is closed-source, self-hostable, and model-agnostic by design. We want every company that uses dosco to build its own compounding advantage — not to make dosco the only company that gets smarter.',
     },
     {
       type: 'p',
@@ -2170,7 +2170,7 @@ const theOnlyMoatThatMatters: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Start building your learning loop today.',
-      body: "Kortix is the open-source AI operating system where your company's knowledge compounds. Connect your tools, deploy an agent, and start accumulating your own token capital. Free to start, free to self-host.",
+      body: "dosco is the AI operating system where your company's knowledge compounds. Connect your tools, deploy an agent, and start accumulating your own token capital. Free to start, free to self-host.",
     },
   ],
 };
@@ -2204,7 +2204,7 @@ const twoKindsOfCapital: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'I saw this firsthand when Writer.com cloned Kortix\u2019s open-source code and raised $200M. They took the token capital we publicly shared. What they could not clone was the human capital: the years of judgment about what makes an AI agent actually useful in production, the relationships with our early users, the accumulated pattern recognition of what breaks and why.',
+      text: 'I saw this firsthand when Writer.com cloned dosco\u2019s agent-native code and raised $200M. They took the token capital we publicly shared. What they could not clone was the human capital: the years of judgment about what makes an AI agent actually useful in production, the relationships with our early users, the accumulated pattern recognition of what breaks and why.',
     },
     {
       type: 'callout',
@@ -2268,11 +2268,11 @@ const twoKindsOfCapital: BlogPostEntry = {
     },
     {
       type: 'h2',
-      text: 'Where Kortix fits',
+      text: 'Where dosco fits',
     },
     {
       type: 'p',
-      text: 'We built Kortix around this idea. Skills are procedural memory \u2014 repeatable expertise encoded in code, not context windows. Everything is files in a git repo, so your token capital is versioned, forkable, and portable. The sandbox is the feedback loop where humans evaluate, correct, and improve. Every interaction builds the system, not just the answer.',
+      text: 'We built dosco around this idea. Skills are procedural memory \u2014 repeatable expertise encoded in code, not context windows. Everything is files in a git repo, so your token capital is versioned, forkable, and portable. The sandbox is the feedback loop where humans evaluate, correct, and improve. Every interaction builds the system, not just the answer.',
     },
     {
       type: 'p',
@@ -2281,7 +2281,7 @@ const twoKindsOfCapital: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Start building your token capital',
-      body: 'Kortix is the open-source AI OS where your company\u2019s knowledge compounds. Free to start, free to self-host, free to own your learning loop.',
+      body: 'dosco is the AI OS where your company\u2019s knowledge compounds. Free to start, free to self-host, free to own your learning loop.',
     },
   ],
 };
@@ -2294,7 +2294,7 @@ const testOfSovereignty: BlogPostEntry = {
   date: '2026-08-02',
   author: 'marko',
   cover: '/banner.png',
-  tags: ['Architecture', 'Enterprise', 'Open Source'],
+  tags: ['Architecture', 'Enterprise', 'Agent-native'],
   readingTime: 7,
   blocks: [
     {
@@ -2333,7 +2333,7 @@ const testOfSovereignty: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'When Writer.com cloned Kortix\u2019s open-source code, they copied our token capital \u2014 the skills, the agent architecture, the prompts we had published. What they could not copy was the fact that our code is open. Anyone can audit it. Anyone can fork it. Anyone can self-host it. The barrier to entry is not the code. It is the learning loop. And the learning loop is ours because the platform is ours.',
+      text: 'When Writer.com cloned dosco\u2019s agent-native code, they copied our token capital \u2014 the skills, the agent architecture, the prompts we had published. What they could not copy was the fact that our code is open. Anyone can audit it. Anyone can fork it. Anyone can self-host it. The barrier to entry is not the code. It is the learning loop. And the learning loop is ours because the platform is ours.',
     },
     {
       type: 'callout',
@@ -2369,7 +2369,7 @@ const testOfSovereignty: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'I have come to believe that open source is not optional for enterprise AI. Not because of ideology. Because of verifiability.',
+      text: 'I have come to believe that agent-native is not optional for enterprise AI. Not because of ideology. Because of verifiability.',
     },
     {
       type: 'p',
@@ -2377,7 +2377,7 @@ const testOfSovereignty: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'With open source, you can verify everything. You can audit the code. You can inspect the data flows. You can run the system on an air-gapped network. You can fork it and extend it in directions the original authors never imagined.',
+      text: 'With agent-native, you can verify everything. You can audit the code. You can inspect the data flows. You can run the system on an air-gapped network. You can fork it and extend it in directions the original authors never imagined.',
     },
     {
       type: 'callout',
@@ -2385,11 +2385,11 @@ const testOfSovereignty: BlogPostEntry = {
     },
     {
       type: 'h2',
-      text: 'Where Kortix stands',
+      text: 'Where dosco stands',
     },
     {
       type: 'p',
-      text: 'Kortix passes every item on the sovereignty checklist. Model-agnostic gateway \u2014 swap any LLM without rewriting your skills. Everything is files in a git repo \u2014 your token capital is versioned, portable, forkable. Fully self-hostable. Open source under a permissive license.',
+      text: 'dosco passes every item on the sovereignty checklist. Model-agnostic gateway \u2014 swap any LLM without rewriting your skills. Everything is files in a git repo \u2014 your token capital is versioned, portable, forkable. Fully self-hostable. Open source under a permissive license.',
     },
     {
       type: 'p',
@@ -2398,7 +2398,7 @@ const testOfSovereignty: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Run the test on your AI platform',
-      body: 'Kortix passes the test of sovereignty. Free to start, free to self-host, free to own your AI future.',
+      body: 'dosco passes the test of sovereignty. Free to start, free to self-host, free to own your AI future.',
     },
   ],
 };
@@ -2472,16 +2472,16 @@ const staticSoftwareIsDead: BlogPostEntry = {
     },
     {
       type: 'h2',
-      text: 'The Kortix approach',
+      text: 'The dosco approach',
     },
     {
       type: 'p',
-      text: 'The sandbox is the feedback loop. Every Kortix session is an isolated environment with a deterministic signal. The agent tries, observes, and iterates. Skills are the accumulated output of that loop \u2014 compressed experience, not static code. This is why we invest in the sandbox architecture. It is the foundation.',
+      text: 'The sandbox is the feedback loop. Every dosco session is an isolated environment with a deterministic signal. The agent tries, observes, and iterates. Skills are the accumulated output of that loop \u2014 compressed experience, not static code. This is why we invest in the sandbox architecture. It is the foundation.',
     },
     {
       type: 'cta',
       title: 'Stop building static software. Start building feedback loops.',
-      body: 'Kortix is the platform for dynamic software. Deploy on-prem, own your data, and build systems that learn.',
+      body: 'dosco is the platform for dynamic software. Deploy on-prem, own your data, and build systems that learn.',
     },
   ],
 };
@@ -2511,7 +2511,7 @@ const theConvergenceOfAiProducts: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Writer.com raised a $200 million series C. They cloned Kortix\u2019s open-source code to build their agent layer. This is not unusual. It is the norm. If you build something useful, someone will copy the architecture. The question is: what happens after they copy it?',
+      text: 'Writer.com raised a $200 million series C. They cloned dosco\u2019s agent-native code to build their agent layer. This is not unusual. It is the norm. If you build something useful, someone will copy the architecture. The question is: what happens after they copy it?',
     },
     {
       type: 'callout',
@@ -2564,7 +2564,7 @@ const theConvergenceOfAiProducts: BlogPostEntry = {
     {
       type: 'cta',
       title: 'The architecture is a commodity. The learning loop is the differentiator.',
-      body: 'Kortix is built on the feedback loop. Deploy it, use it, and watch it compound. Start building yours.',
+      body: 'dosco is built on the feedback loop. Deploy it, use it, and watch it compound. Start building yours.',
     },
   ],
 };
@@ -2577,7 +2577,7 @@ const frontierEcosystem: BlogPostEntry = {
   date: '2026-08-02',
   author: 'marko',
   cover: '/banner.png',
-  tags: ['Vision', 'Open Source', 'Industry'],
+  tags: ['Vision', 'Agent-native', 'Industry'],
   readingTime: 7,
   blocks: [
     {
@@ -2638,7 +2638,7 @@ const frontierEcosystem: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'I am not arguing for open source because it is virtuous. I am arguing for it because it is the only stable equilibrium. A world where three companies control all frontier intelligence is a world that will face the same political backlash that globalization created, only faster and with more at stake.',
+      text: 'I am not arguing for agent-native because it is virtuous. I am arguing for it because it is the only stable equilibrium. A world where three companies control all frontier intelligence is a world that will face the same political backlash that globalization created, only faster and with more at stake.',
     },
     {
       type: 'p',
@@ -2646,11 +2646,11 @@ const frontierEcosystem: BlogPostEntry = {
     },
     {
       type: 'h2',
-      text: 'Where Kortix fits',
+      text: 'Where dosco fits',
     },
     {
       type: 'p',
-      text: 'Kortix is open-source, self-hostable, and model-agnostic for exactly this reason. We want every company to build its own compounding advantage on top of AI, not rent it from someone else. The data flywheel that makes your company better over time should belong to you, not to a model provider in San Francisco.',
+      text: 'dosco is closed-source, self-hostable, and model-agnostic for exactly this reason. We want every company to build its own compounding advantage on top of AI, not rent it from someone else. The data flywheel that makes your company better over time should belong to you, not to a model provider in San Francisco.',
     },
     {
       type: 'p',
@@ -2659,7 +2659,7 @@ const frontierEcosystem: BlogPostEntry = {
     {
       type: 'cta',
       title: 'The frontier ecosystem needs builders',
-      body: 'Kortix is open-source and built for companies that want to own their AI future. Self-host it, connect your own models, and build something that compounds.',
+      body: 'dosco is agent-native and built for companies that want to own their AI future. Self-host it, connect your own models, and build something that compounds.',
     },
   ],
 };
@@ -2693,7 +2693,7 @@ const goodBusinessesDontNeedMoats: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Is there a moat? Not really. Anyone can spin up a WordPress site. Anyone can build a competing hosting service. The code is open-source. The plugins are open-source. The barriers to entry are essentially zero.',
+      text: 'Is there a moat? Not really. Anyone can spin up a WordPress site. Anyone can build a competing hosting service. The code is agent-native. The plugins are agent-native. The barriers to entry are essentially zero.',
     },
     {
       type: 'p',
@@ -2751,15 +2751,15 @@ const goodBusinessesDontNeedMoats: BlogPostEntry = {
     },
     {
       type: 'h2',
-      text: 'Where this lands for Kortix',
+      text: 'Where this lands for dosco',
     },
     {
       type: 'p',
-      text: 'Kortix is open-source. Anyone can clone the repo. Anyone can self-host. Anyone can build a competing product. There is no moat in the VC sense.',
+      text: 'dosco is agent-native. Anyone can clone the repo. Anyone can self-host. Anyone can build a competing product. There is no moat in the VC sense.',
     },
     {
       type: 'p',
-      text: 'But the cloud business is real. The brand is real. The open-source community is real. The customer relationships are real. And most importantly, the **data flywheel** is real \u2014 every company that uses Kortix builds a compounding advantage that belongs to them, not to us. That is not a moat around Kortix. It is a moat around our customers.',
+      text: 'But the cloud business is real. The brand is real. The agent-native community is real. The customer relationships are real. And most importantly, the **data flywheel** is real \u2014 every company that uses dosco builds a compounding advantage that belongs to them, not to us. That is not a moat around dosco. It is a moat around our customers.',
     },
     {
       type: 'p',
@@ -2768,7 +2768,7 @@ const goodBusinessesDontNeedMoats: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Build a business that compounds',
-      body: 'Kortix is the platform for companies that want to own their AI learning loop. Self-host it, connect your models, and build something that compounds over time.',
+      body: 'dosco is the platform for companies that want to own their AI learning loop. Self-host it, connect your models, and build something that compounds over time.',
     },
   ],
 };
@@ -2784,7 +2784,7 @@ export const BLOG_POSTS: BlogPostEntry[] = [
   kortixVsClaudeCowork,
   personalAgentsVsCompanyOs,
   beyondTheChatBox,
-  introducingKortix,
+  introducingdosco,
   theOnlyMoatThatMatters,
   twoKindsOfCapital,
   testOfSovereignty,

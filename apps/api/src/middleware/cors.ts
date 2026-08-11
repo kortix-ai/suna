@@ -1,12 +1,12 @@
 import { cors } from 'hono/cors';
 
 const CLOUD_ORIGINS = [
-  'https://www.kortix.com',
-  'https://kortix.com',
-  'https://dev.kortix.com',
-  'https://new-dev.kortix.com',
+  'https://dosco.live',
+  'https://dosco.live',
+  'https://dev.dosco.live',
+  'https://new-dev.dosco.live',
   'https://dev-new.kortix.com',
-  'https://staging.kortix.com',
+  'https://staging.dosco.live',
   'https://kortix.cloud',
   'https://www.kortix.cloud',
   'https://new.kortix.com',
@@ -45,26 +45,16 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
     allowHeaders: [
       'Content-Type',
       'Authorization',
-      'X-Kortix-Token',
+      'X-dosco-Token',
       'X-Api-Key',
       'Accept',
-      'X-Kortix-Signature',
+      'X-dosco-Signature',
       'X-Hub-Signature-256',
       'traceparent',
       'tracestate',
       'X-Request-Id',
       'Last-Event-ID',
-      'X-Kortix-Client',
-      // Act-as impersonation. A header absent from this list is stripped by the
-      // browser's preflight, so the request arrives WITHOUT the grant and runs
-      // as the operator's own account — the exact silent mis-scoping the
-      // server-side design refuses to allow. It has to be declared here for the
-      // banner to ever be true in a browser.
-      'X-Kortix-Impersonate',
-      // Same reason for the platform-admin read-only bypass the SDK already
-      // attaches (setAdminBypass → `x-kortix-admin-bypass: 1`): without it, the
-      // header never survives a cross-origin preflight.
-      'X-Kortix-Admin-Bypass',
+      'X-dosco-Client',
     ],
     exposeHeaders: [
       'X-Next-Cursor',

@@ -1,7 +1,7 @@
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 
 /**
- * Shared fallback for Next.js route-segment `loading.tsx` files — the Kortix
+ * Shared fallback for Next.js route-segment `loading.tsx` files — the dosco
  * ASCII logo loader, shown during navigation/streaming instead of a blank frame.
  */
 export function RouteLoadingFallback() {

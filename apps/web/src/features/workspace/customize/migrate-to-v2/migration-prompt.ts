@@ -9,14 +9,14 @@
  * Simplified by the 2026-07-05 redirect (spec docs/specs/2026-07-05-agent-
  * first-config-unification.md, "one home per concern"): v1's `.md` frontmatter
  * IS already valid v2 OpenCode behavior — a stock OpenCode agent file, no
- * Kortix-specific split. Migration therefore touches ONLY governance
+ * dosco-specific split. Migration therefore touches ONLY governance
  * (kortix.toml's `[[agents]]` → kortix.yaml's `agents:` map); every agent's
  * `.md` is left byte-for-byte untouched.
  *
  * The prompt carries the ENTIRE v1→v2 contract inline — every clean-break the
  * v2 validator enforces, a worked before/after example, and pointers to the
  * canonical JSON Schema (`kortix schema --version 2` in the sandbox, or the
- * published kortix.com/schema documents) — so the agent never has to guess at
+ * published dosco.live/schema documents) — so the agent never has to guess at
  * the target shape and `kortix validate` passes on the first try.
  *
  * Kept as a plain exported constant (not inlined at the call site) so it's
@@ -47,7 +47,7 @@ A project still on a v1 manifest is usually also running stale platform skills. 
 Whenever you are unsure about a field name, an allowed value, or whether a key survived into v2, consult the canonical JSON Schema instead of guessing:
 
 - \`kortix schema --version 2\` — prints the exact v2 schema the validator and the CR-merge gate enforce. Works offline inside your sandbox. \`kortix schema --version 1\` prints the v1 shape you are migrating FROM.
-- The same documents are published at \`https://kortix.com/schema/kortix.v2.schema.json\` (and \`kortix.v1.schema.json\`, plus the combined \`kortix.schema.json\` that dispatches on \`kortix_version\`).
+- The same documents are published at \`https://dosco.live/schema/kortix.v2.schema.json\` (and \`kortix.v1.schema.json\`, plus the combined \`kortix.schema.json\` that dispatches on \`kortix_version\`).
 
 The schema, this prompt, and \`kortix validate\` all enforce the same rules — if they ever appear to disagree, trust \`kortix validate\`'s output and say so in the change request description.
 

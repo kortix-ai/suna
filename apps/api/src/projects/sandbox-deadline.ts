@@ -101,11 +101,11 @@ function extendStatement(target: DeadlineTarget, grantMs: number) {
  * holds a credential that produces a perfectly valid principal for requests it
  * writes itself, and letting those through would rebuild the exact self-renewal
  * this design deletes. One line at each call site, and the session id MUST come
- * from `callerKortixSessionId` — the raw `c.get('sessionId')` is the SUPABASE
+ * from `callerdoscoSessionId` — the raw `c.get('sessionId')` is the SUPABASE
  * AUTH SESSION id under `supabaseAuth`, which reads every browser user as the
  * sandbox and silently disables the whole observation (see
  * sandbox-deadline-call-sites.test.ts):
- *   if (!isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c))) …
+ *   if (!isSandboxAuthored(c.get('apiKeyType'), callerdoscoSessionId(c))) …
  */
 export async function extendSandboxDeadline(
   target: DeadlineTarget,

@@ -14,7 +14,7 @@ import { db } from '../shared/db';
 
 const METADATA_SUBTREE = 'meet';
 
-export const DEFAULT_VOICE_BOT_NAME = 'Kortix';
+export const DEFAULT_VOICE_BOT_NAME = 'dosco';
 
 export async function resolveProjectBotName(projectId: string): Promise<string> {
   const [row] = await db

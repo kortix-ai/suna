@@ -1,7 +1,7 @@
 import { getEnv } from '@/lib/env-config';
 import { HostBoundaryError } from '@kortix/sdk';
 
-/** API base (already includes the /v1 suffix), e.g. https://api.kortix.com/v1. */
+/** API base (already includes the /v1 suffix), e.g. https://api.dosco.live/v1. */
 export function setupLinkApiBase(): string {
   return (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
 }

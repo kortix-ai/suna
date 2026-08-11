@@ -112,7 +112,7 @@ export interface SandboxProviderAdapter {
 
   /**
    * Build the snapshot. The caller has already composed the layered Dockerfile
-   * (user Dockerfile + Kortix runtime). Returns when the snapshot is `active`,
+   * (user Dockerfile + dosco runtime). Returns when the snapshot is `active`,
    * throws on terminal failure. May return the exact external template id the
    * build produced (Platinum); providers with no external-id concept return void.
    */

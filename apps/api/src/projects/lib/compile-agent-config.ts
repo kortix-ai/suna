@@ -290,7 +290,7 @@ export function compileSelectedAgentConfig(
 
 /**
  * Compile one agent: parse its `.md` (if supplied), copy every recognized
- * behavioral frontmatter field through unchanged, then overlay Kortix
+ * behavioral frontmatter field through unchanged, then overlay dosco
  * governance — `enabled: false` forces `disable: true` (the one field where
  * governance always wins over whatever the `.md` itself says; there is no
  * other precedence to document since behavior lives ONLY in the `.md`), and
@@ -327,7 +327,7 @@ function compileAgentBlock(
     if (body.trim()) out.prompt = body;
   }
 
-  // Kortix `enabled: false` always forces the runtime's `disable` on — the
+  // dosco `enabled: false` always forces the runtime's `disable` on — the
   // one platform-level "can this agent even start a session" gate. When
   // `enabled` is omitted (the default, true), whatever the `.md` itself set
   // for `disable` (if anything) passes through untouched above.

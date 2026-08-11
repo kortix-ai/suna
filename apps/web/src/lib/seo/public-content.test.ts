@@ -51,8 +51,8 @@ describe('public SEO/AEO content coverage', () => {
   test('publishes the QM comparison as canonical agent-readable Markdown', () => {
     const resolved = resolvePublicMarkdown(['blog', 'kortix-vs-qm.md']);
     expect(resolved?.record.htmlPath).toBe('/blog/kortix-vs-qm');
-    expect(resolved?.markdown).toContain('# Kortix vs QM: two open agent platforms');
-    expect(resolved?.markdown).toContain('| Dimension | QM | Kortix |');
+    expect(resolved?.markdown).toContain('# dosco vs QM: two open agent platforms');
+    expect(resolved?.markdown).toContain('| Dimension | QM | dosco |');
     expect(resolved?.markdown).toContain('https://github.com/yc-software/qm');
     expect(resolved?.markdown).toContain('npm exec qm -- check --live');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/blog/kortix-vs-qm.md');
@@ -68,7 +68,7 @@ describe('public SEO/AEO content coverage', () => {
     const source = files
       .map((file) => fs.readFileSync(path.join(appRoot, file), 'utf8'))
       .join('\n');
-    expect(source).not.toContain('https://www.kortix.com');
+    expect(source).not.toContain('https://dosco.live');
     expect(source).not.toMatch(/<link\s+rel=["']canonical["']/);
   });
 
@@ -207,7 +207,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 describe('bounded public agent index', () => {
   test('paginates a metadata-only index and clamps page size', async () => {
     const first = getAgentIndex(
-      new Request('https://kortix.com/api/ai?limit=999', { headers: { 'x-real-ip': '192.0.2.1' } }),
+      new Request('https://dosco.live/api/ai?limit=999', { headers: { 'x-real-ip': '192.0.2.1' } }),
     );
     expect(first.status).toBe(200);
     expect(first.headers.get('Cache-Control')).toContain('s-maxage=300');
@@ -220,7 +220,7 @@ describe('bounded public agent index', () => {
 
     if (body.pagination.next_cursor) {
       const second = getAgentIndex(
-        new Request(`https://kortix.com/api/ai?limit=999&cursor=${body.pagination.next_cursor}`, {
+        new Request(`https://dosco.live/api/ai?limit=999&cursor=${body.pagination.next_cursor}`, {
           headers: { 'x-real-ip': '192.0.2.1' },
         }),
       );
@@ -232,7 +232,7 @@ describe('bounded public agent index', () => {
 
   test('orders the index recency-first so freshest content leads each kind', async () => {
     const response = getAgentIndex(
-      new Request('https://kortix.com/api/ai?kind=blog&limit=999', {
+      new Request('https://dosco.live/api/ai?kind=blog&limit=999', {
         headers: { 'x-real-ip': '192.0.2.4' },
       }),
     );
@@ -248,7 +248,7 @@ describe('bounded public agent index', () => {
     }
     // In the unfiltered index, no dated record ever follows an undated one.
     const unfiltered = getAgentIndex(
-      new Request('https://kortix.com/api/ai?limit=999', { headers: { 'x-real-ip': '192.0.2.5' } }),
+      new Request('https://dosco.live/api/ai?limit=999', { headers: { 'x-real-ip': '192.0.2.5' } }),
     );
     const unfilteredBody = (await unfiltered.json()) as any;
     let sawUndated = false;
@@ -299,7 +299,7 @@ describe('bounded public agent index', () => {
     // (50): a docs-wide refresh can legitimately stamp every docs page with
     // the same day, filling a 25-item page with docs alone.
     const unfiltered = getAgentIndex(
-      new Request('https://kortix.com/api/ai?limit=50', { headers: { 'x-real-ip': '192.0.2.6' } }),
+      new Request('https://dosco.live/api/ai?limit=50', { headers: { 'x-real-ip': '192.0.2.6' } }),
     );
     const unfilteredBody = (await unfiltered.json()) as any;
     const types = new Set((unfilteredBody.data as any[]).map((item) => item.type));
@@ -309,7 +309,7 @@ describe('bounded public agent index', () => {
 
   test('rejects malformed pagination and enforces the documented rate limit', async () => {
     const invalid = getAgentIndex(
-      new Request('https://kortix.com/api/ai?cursor=not-valid!', {
+      new Request('https://dosco.live/api/ai?cursor=not-valid!', {
         headers: { 'x-real-ip': '192.0.2.2' },
       }),
     );
@@ -318,7 +318,7 @@ describe('bounded public agent index', () => {
     let response = invalid;
     for (let index = 0; index <= 120; index += 1) {
       response = getAgentIndex(
-        new Request('https://kortix.com/api/ai', { headers: { 'x-real-ip': '192.0.2.3' } }),
+        new Request('https://dosco.live/api/ai', { headers: { 'x-real-ip': '192.0.2.3' } }),
       );
     }
     expect(response.status).toBe(429);
@@ -326,7 +326,7 @@ describe('bounded public agent index', () => {
   });
 
   test('robots explicitly allows the machine-readable routes on the canonical host', () => {
-    const robots = renderRobotsTxt('kortix.com');
+    const robots = renderRobotsTxt('dosco.live');
     for (const route of SEO_COVERAGE_MANIFEST.machineRoutes) {
       expect(robots).toContain(`Allow: ${route}`);
     }
@@ -335,7 +335,7 @@ describe('bounded public agent index', () => {
   });
 
   test('robots blocks crawling on every non-canonical host', () => {
-    for (const host of ['dev.kortix.com', 'staging.kortix.com', 'seo-fix.vercel.app', null]) {
+    for (const host of ['dev.dosco.live', 'staging.dosco.live', 'seo-fix.vercel.app', null]) {
       const robots = renderRobotsTxt(host);
       expect(robots, String(host)).toContain('Disallow: /');
       expect(robots, String(host)).not.toContain('Sitemap:');

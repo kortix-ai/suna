@@ -230,7 +230,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
 /**
  * An agent's manifest allowlist (`agents:` in kortix.yaml, or the legacy
  * `[[agents]]` in kortix.toml) — which secrets it receives in $ENV, which
- * connectors it may call, which Kortix-CLI powers it has. Editors EDIT
+ * connectors it may call, which dosco-CLI powers it has. Editors EDIT
  * secrets + connectors here (persisted straight to the manifest); everyone
  * else sees the read-only mirror. `kortix_cli` stays read-only (a sharper
  * escalation, manifest-only). Absent for OpenCode-discovered agents, which

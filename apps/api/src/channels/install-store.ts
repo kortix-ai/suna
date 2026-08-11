@@ -513,11 +513,11 @@ export interface SlackOauthInstallInput {
   teamName: string | null;
 }
 
-// Universal Kortix Slack App install. Records this project's membership of the
+// Universal dosco Slack App install. Records this project's membership of the
 // workspace, then fans the bot token + workspace metadata out to every project
 // on the workspace — Slack issues one token per (app, workspace) and a re-auth
 // rotates it, so all sharing projects must be kept current. The signing secret
-// is the master Kortix one and stays server-side; it is never persisted here.
+// is the master dosco one and stays server-side; it is never persisted here.
 export async function saveSlackOauthInstall(
   input: SlackOauthInstallInput,
 ): Promise<SlackInstallSummary> {

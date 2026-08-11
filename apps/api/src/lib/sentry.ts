@@ -1,5 +1,5 @@
 /**
- * Sentry error tracking for Kortix API.
+ * Sentry error tracking for dosco API.
  *
  * Uses @sentry/bun SDK pointed at Better Stack's Sentry-compatible ingestion endpoint.
  * Better Stack provides the same Sentry SDK interface at 1/6th the price.

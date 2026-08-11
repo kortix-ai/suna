@@ -32,7 +32,7 @@ export function buildTemplateSetupPrompt(title: string): string {
 export function buildProjectOnboardingPrompt(projectName: string): string {
   const name = projectName.replaceAll('-', ' ').trim() || 'this project';
   return [
-    `This is a brand-new Kortix project ("${name}") — it ships with the full starter skill kit (research, documents, slides, spreadsheets, the web, browser automation, and more) already installed.`,
+    `This is a brand-new dosco project ("${name}") — it ships with the full starter skill kit (research, documents, slides, spreadsheets, the web, browser automation, and more) already installed.`,
     '',
     'Onboard me and make this project mine:',
     '1. Read the `kortix-onboarding` skill and follow it.',

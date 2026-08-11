@@ -36,7 +36,7 @@ export interface SecretCapabilityCatalog {
   total?: number;
 }
 
-function isKortixServiceConsumer(
+function isdoscoServiceConsumer(
   value: SecretConsumer | null | undefined,
 ): value is Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'> {
   return (
@@ -101,7 +101,7 @@ export function buildSecretCapabilities(
       continue;
     }
 
-    if (delivery.strategy === 'broker' && isKortixServiceConsumer(consumer)) {
+    if (delivery.strategy === 'broker' && isdoscoServiceConsumer(consumer)) {
       capabilities.push({
         identifier: row.identifier,
         delivery: 'kortix_service',

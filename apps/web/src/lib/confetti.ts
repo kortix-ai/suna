@@ -1,6 +1,6 @@
 import confetti from 'canvas-confetti';
 
-/** Kortix accent family (hex approximations of the `--kortix-*` oklch tokens —
+/** dosco accent family (hex approximations of the `--kortix-*` oklch tokens —
  *  canvas-confetti parses hex, not oklch). Celebration reads as the brand's
  *  accent set rather than a generic rainbow. */
 const KORTIX_CONFETTI_COLORS = ['#4C8DFF', '#21A366', '#E5B93C', '#E8850C', '#A66DEE'];

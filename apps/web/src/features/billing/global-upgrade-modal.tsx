@@ -192,7 +192,7 @@ export function UpgradePlansModal({
         <ModalHeader className="space-y-2 px-6 pt-6 pb-4">
           <ModalTitle className="text-2xl font-medium tracking-tight">
             {tI18nHardcoded.raw(
-              'autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d',
+              'autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeTodosco28a9093d',
             )}
           </ModalTitle>
           <ModalDescription className="text-base">

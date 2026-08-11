@@ -46,7 +46,7 @@ describe('createModelPricingLookup', () => {
       all: [
         {
           id: 'kortix',
-          name: 'Kortix',
+          name: 'dosco',
           models: {
             'claude-opus-4.8': {
               name: 'Claude Opus 4.8',
@@ -83,7 +83,7 @@ describe('createModelPricingLookup', () => {
       all: [
         {
           id: 'kortix',
-          name: 'Kortix',
+          name: 'dosco',
           models: {
             'glm-5.2': {
               name: 'GLM 5.2',

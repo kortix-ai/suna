@@ -897,7 +897,7 @@ export function resolveTokenBoundSessionId(
 }
 
 /**
- * Only project-scoped tokens carry a Kortix project session identity.
+ * Only project-scoped tokens carry a dosco project session identity.
  * Supabase JWTs also set `sessionId`, but that value identifies the Supabase
  * authentication session. It must not enter connection resolution.
  */
@@ -916,7 +916,7 @@ async function resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null> 
   if (!result.isValid || !result.userId || !result.accountId || !result.projectId) return null;
   const sessionIdentity = resolveTokenBoundSessionId(
     result.sessionId ?? null,
-    c.req.header('X-Kortix-Session-Id') ?? null,
+    c.req.header('X-dosco-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
   const agentGrant = sessionIdentity.sessionId
@@ -982,7 +982,7 @@ async function resolveProjectPrincipal(
   if (!accountId) return null;
   const sessionIdentity = resolveTokenBoundSessionId(
     projectSessionIdForProjectPrincipal(tokenProjectId, c.get('sessionId') as string | undefined),
-    c.req.header('X-Kortix-Session-Id') ?? null,
+    c.req.header('X-dosco-Session-Id') ?? null,
   );
   if (!sessionIdentity.ok) return null;
 

@@ -24,7 +24,7 @@ const WaveDistortion = dynamic(() => import('@/lib/shaders-react').then((m) => m
   ssr: false,
 });
 
-// Ambient wallpapers share the Kortix monochrome palette (pure white page
+// Ambient wallpapers share the dosco monochrome palette (pure white page
 // in light mode, near-black in dark mode) and stay at one generator plus
 // at most one filter per composition. Only the selected wallpaper renders
 // live on the page — the settings picker uses pre-rendered thumbnails —

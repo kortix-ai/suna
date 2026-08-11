@@ -6,7 +6,7 @@ import { Passage } from './passage';
 
 /**
  * Passage 03 — mount directly after the asking interlude, before the
- * open-source section.
+ * self-host section.
  *
  * WHY HERE. The asking interlude's third mode is "Automated — nobody is
  * present", illustrated by a 07:00 report. That is a cron trigger and the

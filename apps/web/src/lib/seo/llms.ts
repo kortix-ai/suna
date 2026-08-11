@@ -30,7 +30,7 @@ export function renderLlmsTxt(): string {
   }
 
   return [
-    '# Kortix',
+    '# dosco',
     '',
     `> ${siteMetadata.description}`,
     '',
@@ -53,7 +53,7 @@ export function renderLlmsFullTxt(): string {
   });
 
   return [
-    '# Kortix full public content corpus',
+    '# dosco full public content corpus',
     '',
     `> ${siteMetadata.description}`,
     '',

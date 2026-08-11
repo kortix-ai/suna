@@ -15,7 +15,7 @@ import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib
 import type { ProjectSessionRow } from './lib/serializers';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 
-// Kortix-owned session titles — the single source of `metadata.name`.
+// dosco-owned session titles — the single source of `metadata.name`.
 //
 // The title is generated the moment the first user prompt's text is known
 // server-side, which is one of two moments:
@@ -432,7 +432,7 @@ async function generateWithDeadline(
 /**
  * Generate a session's title from its FIRST user prompt via the internal LLM
  * gateway (using the session's own model) and persist it to `metadata.name`.
- * Authoritative and Kortix-owned. Fire-and-forget: idempotent, best-effort,
+ * Authoritative and dosco-owned. Fire-and-forget: idempotent, best-effort,
  * never blocks or fails the prompt.
  */
 export async function generateSessionTitleFromFirstPrompt(

@@ -6,14 +6,14 @@ import type { Context } from 'hono';
  * `c.get('sessionId')` is overloaded, and the two meanings are not
  * interchangeable:
  *
- *   - `authType: 'pat'`      → a Kortix PROJECT SESSION id (a sandbox connector
+ *   - `authType: 'pat'`      → a dosco PROJECT SESSION id (a sandbox connector
  *                              token; `middleware/auth.ts` sets it from the
  *                              validated token row).
  *   - `authType: 'supabase'` → the SUPABASE AUTH SESSION id, i.e. "which browser
  *                              login is this", set purely so the per-account
  *                              session gate can do idle/lifetime/force-logout.
  *
- * Reading the raw context var and calling it a Kortix session is a live bug, not
+ * Reading the raw context var and calling it a dosco session is a live bug, not
  * a theoretical one. Every KaaB isolation guard treats a NON-NULL caller session
  * as "a sandbox acting for one end-user, narrow it" — so handing it a browser's
  * Supabase auth session made the platform treat every logged-in human as an
@@ -34,8 +34,8 @@ import type { Context } from 'hono';
  * guard, generalised, so the next caller cannot get it wrong by reaching for the
  * obvious context var.
  */
-export function callerKortixSessionId(c: Context): string | null {
-  // Anything that is not a Supabase browser JWT carries a real Kortix session id
+export function callerdoscoSessionId(c: Context): string | null {
+  // Anything that is not a Supabase browser JWT carries a real dosco session id
   // when it carries one at all. Allow-listing 'supabase' as the ONLY excluded
   // kind (rather than allow-listing 'pat') keeps a future token kind that mints
   // session-bound credentials working by default — the isolation guards are the

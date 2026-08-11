@@ -243,7 +243,7 @@ describe('SessionSiteHeader "more actions" menu — Delete last, technical items
  * bug lives at the mount, so the mount is what gets pinned.
  */
 describe('SessionConfigIndicator wiring', () => {
-  test('the chip gets the Kortix session id, never the OpenCode one', () => {
+  test('the chip gets the dosco session id, never the OpenCode one', () => {
     // The header holds both. `sessionId` is the OpenCode id used by the
     // changes/approvals chips; the config routes are keyed on the project
     // session row's UUID, and passing the wrong one 400s on the id regex.

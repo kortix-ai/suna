@@ -11,7 +11,7 @@ import { canonicalizeGrantConnectors } from '../iam/agent-scope';
  *
  *   1. `connectors` — which connectors (by `connectors[].slug`) the
  *      agent may call. Default: none.
- *   2. `kortix_cli` — what the agent may do to Kortix itself via the `kortix`
+ *   2. `kortix_cli` — what the agent may do to dosco itself via the `kortix`
  *      CLI/API (project-scoped iam actions: deploy, open CRs, triggers, …).
  *      Default: none. Account-scoped admin actions are NEVER grantable.
  *
@@ -25,7 +25,7 @@ import { canonicalizeGrantConnectors } from '../iam/agent-scope';
  *     kortix: {}                          # default GP agent — connectors/kortix_cli = "all" (∩ user)
  *     release-bot:
  *       connectors: ["github"]            # which connectors
- *       kortix_cli: ["project.trigger.create", "project.cr.open"]   # Kortix CLI/API powers
+ *       kortix_cli: ["project.trigger.create", "project.cr.open"]   # dosco CLI/API powers
  *
  * Parser mirrors `projects/connectors.ts`: never throws on a bad entry, collects
  * them in `errors` so the UI can render them next to the good ones.
@@ -72,7 +72,7 @@ export const DEFAULT_AGENT_SENTINEL = 'default';
  * (`iam/engine-v2.ts` `computeTokenScope`) refuses ANY account-scope action
  * for a project-bound token BEFORE this grant is even loaded. This set is a
  * curation/UX surface (the CLI/editor's offered catalog, and what
- * `validateKortixAction` below flags as a bad `kortix_cli` entry), not the
+ * `validatedoscoAction` below flags as a bad `kortix_cli` entry), not the
  * enforcement boundary itself.
  */
 export const GRANTABLE_KORTIX_CLI: ReadonlySet<string> = new Set(Object.values(PROJECT_ACTIONS));
@@ -94,7 +94,7 @@ export interface AgentSpec {
   connectors: GrantSet;
   /** Connectors that must resolve before the session starts. */
   connectorsRequired?: string[];
-  /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
+  /** dosco CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
   /** Project-secret IDENTIFIERS (project_secrets.identifier, not raw env-var
    *  keys) this agent receives as sandbox env + may read via the secrets API.
@@ -314,7 +314,7 @@ export async function loadProjectAgents(
  *   - Agent IS listed → its declared overlay (connectors + kortix_cli).
  *   - Project adopted `[[agents]]` but the agent is NOT listed → default-DENY
  *     (the agent still runs its `.md` behavior, but with no connectors and no
- *     Kortix-CLI powers).
+ *     dosco-CLI powers).
  *
  * The `∩ launching-user role` is NOT applied here — it's enforced for free at
  * the route layer (the account token resolves to the user, whose role is
@@ -641,7 +641,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
   const connectorsParsed = parseGrantSet(name, 'connectors', row.connectors, null, filename);
   if (!connectorsParsed.ok) return connectorsParsed;
 
-  const kortixParsed = parseGrantSet(name, 'kortix_cli', row.kortix_cli, validateKortixAction, filename);
+  const kortixParsed = parseGrantSet(name, 'kortix_cli', row.kortix_cli, validatedoscoAction, filename);
   if (!kortixParsed.ok) return kortixParsed;
 
   // `env` is a NEW dimension — default to 'all' when omitted so existing
@@ -695,7 +695,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   if (!normalizedRequired.ok) return err(name, `agents.${name}.${normalizedRequired.error}`);
   const normalizedRow = normalizedRequired.block;
 
-  // v2's `enabled` is a top-level Kortix-governance boolean (validated
+  // v2's `enabled` is a top-level dosco-governance boolean (validated
   // upstream by manifest-schema); only a literal `false` disables. Behavior
   // (`file`/`model`) is NOT read from the manifest anymore (2026-07-05
   // redirect, spec §2.2: "one home per concern") — it lives entirely in the
@@ -742,7 +742,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
   const kortixResolved = resolveGrantSet(normalizedRow.kortix_cli, 'none');
   if (Array.isArray(kortixResolved)) {
     for (const action of kortixResolved) {
-      const problem = validateKortixAction(action);
+      const problem = validatedoscoAction(action);
       if (problem) return err(name, problem);
     }
   }
@@ -825,7 +825,7 @@ function parseGrantSet(
 }
 
 /** Returns an error message if the action is not grantable to an agent, else null. */
-function validateKortixAction(action: string): string | null {
+function validatedoscoAction(action: string): string | null {
   if (GRANTABLE_KORTIX_CLI.has(action)) return null;
   if (VALID_ACTIONS.has(action)) {
     return `\`kortix_cli\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;

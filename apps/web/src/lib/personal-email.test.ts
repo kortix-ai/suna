@@ -75,7 +75,7 @@ describe('isWorkEmail', () => {
   });
 
   test('normalizes case and whitespace before deciding', () => {
-    expect(isWorkEmail('  Manager@KortixSSOTest.com ')).toBe(true);
+    expect(isWorkEmail('  Manager@doscoSSOTest.com ')).toBe(true);
     expect(isWorkEmail('  X@GMAIL.COM ')).toBe(false);
   });
 

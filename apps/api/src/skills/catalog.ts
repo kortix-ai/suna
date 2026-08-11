@@ -1,18 +1,18 @@
 /**
  * The kortix-managed system skills, as data.
  *
- * These are the `kortix-*` markdown skills that tell an agent how Kortix itself
+ * These are the `kortix-*` markdown skills that tell an agent how dosco itself
  * works (sessions, sandboxes, the connector/approval loop, memory, channels, the
  * CLI). Until now they were only reachable two ways: scaffolded into a project's
  * git tree by `kortix init`, or baked into the sandbox image at
  * `/opt/kortix/managed-skills` and overlaid per session. Both require being
- * *inside* Kortix. An OpenCode agent holding only the `kortix` binary and a
+ * *inside* dosco. An OpenCode agent holding only the `kortix` binary and a
  * token had no way to read them.
  *
  * SOURCE OF TRUTH: `@kortix/starter`. This module runs the exact same extraction
  * as `packages/starter/scripts/write-managed-skills.ts` (the script that bakes the
- * sandbox image) — same `getStarterFiles()` call, same `projectName: 'Kortix'`
- * interpolation, same `isKortixManagedSkillName()` filter — so what the API serves
+ * sandbox image) — same `getStarterFiles()` call, same `projectName: 'dosco'`
+ * interpolation, same `isdoscoManagedSkillName()` filter — so what the API serves
  * is byte-identical to what a session gets overlaid. `@kortix/starter` is already
  * an apps/api dependency and its `templates/` tree is COPYed into the API image
  * (see apps/api/Dockerfile), so the served text ships with the deploy and cannot
@@ -30,10 +30,10 @@ import {
   getManagedSkillFiles,
   getMarketplaceFiles,
   getStarterFiles,
-  isKortixManagedSkillName,
+  isdoscoManagedSkillName,
 } from '@kortix/starter';
 
-/** Where skills live inside a Kortix project (and inside the starter templates). */
+/** Where skills live inside a dosco project (and inside the starter templates). */
 const SKILLS_PREFIX = '.kortix/opencode/skills/';
 /** The skill body every skill has; everything else under the dir is a reference. */
 const SKILL_ENTRYPOINT = 'SKILL.md';
@@ -71,7 +71,7 @@ export interface ManagedSkillSummary {
 export function buildManagedSkills(): Map<string, ManagedSkill> {
   const files = [
     ...getManagedSkillFiles(),
-    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
+    ...getStarterFiles({ projectName: 'dosco', template: 'general-knowledge-worker' }),
     ...getMarketplaceFiles(),
   ];
 
@@ -82,7 +82,7 @@ export function buildManagedSkills(): Map<string, ManagedSkill> {
     const slash = rest.indexOf('/');
     if (slash <= 0) continue;
     const name = rest.slice(0, slash);
-    if (!isKortixManagedSkillName(name)) continue;
+    if (!isdoscoManagedSkillName(name)) continue;
     const entry = { path: rest.slice(slash + 1), content: file.content };
     const bucket = grouped.get(name);
     if (bucket) bucket.push(entry);

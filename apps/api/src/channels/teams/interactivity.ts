@@ -156,7 +156,7 @@ async function handleReview(
 
   const identity = uid ? await lookupTeamsIdentity(convo.tenantId, uid) : null;
   if (!identity) {
-    return cardResponse(buildNoticeCard('Connect your Kortix account (`/login`) to act on reviews.'));
+    return cardResponse(buildNoticeCard('Connect your dosco account (`/login`) to act on reviews.'));
   }
 
   const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
@@ -211,11 +211,11 @@ async function handleRequestAccess(
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,
       });
-      return cardResponse(buildNoticeCard('Access requested. An admin will approve it in Kortix.', '✅'));
+      return cardResponse(buildNoticeCard('Access requested. An admin will approve it in dosco.', '✅'));
     case 'already-member':
       return cardResponse(buildNoticeCard("You already have access — send your message again and I'll pick it up."));
     case 'no-identity':
-      return cardResponse(buildNoticeCard('Connect your Kortix account first, then request access.'));
+      return cardResponse(buildNoticeCard('Connect your dosco account first, then request access.'));
     case 'no-project':
       return cardResponse(buildNoticeCard("I couldn't find that project."));
   }

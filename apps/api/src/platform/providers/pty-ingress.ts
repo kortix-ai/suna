@@ -2,7 +2,7 @@
  * Classify the two PTY WebSocket contracts that can traverse sandbox ingress.
  *
  * - OpenCode PTY lives on its internal runtime port (`/pty/:id/connect`).
- * - Kortix-native PTY lives on the sandbox agent (`/kortix/pty/:id/connect`).
+ * - dosco-native PTY lives on the sandbox agent (`/kortix/pty/:id/connect`).
  *
  * Keeping this path knowledge in one pure helper prevents provider routing and
  * the API WebSocket proxy from drifting when a terminal backend changes.

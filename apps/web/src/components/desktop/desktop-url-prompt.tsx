@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
  * Custom frontend-URL prompt for the desktop app (self-hosting).
  *
  * This has NO visible entry point of its own. It only opens when the hidden
- * native menu item (Kortix → Frontend URL → "Custom URL…") fires the
+ * native menu item (dosco → Frontend URL → "Custom URL…") fires the
  * `kortix-open-frontend-url` DOM event — native menus can't take text input, so
  * this tiny dialog is the text-entry surface. The value is persisted locally by
  * the Tauri shell and the window reloads onto it. Renders nothing on the web.

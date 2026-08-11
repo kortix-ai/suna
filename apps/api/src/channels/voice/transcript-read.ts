@@ -1,6 +1,6 @@
 import { voiceCallReadCursors } from '@kortix/db';
 /**
- * `read_transcript` — the Kortix agent reading a live call, cheaply.
+ * `read_transcript` — the dosco agent reading a live call, cheaply.
  *
  * THE PROBLEM THIS SOLVES. The transcript was always cursor-paged, so the read
  * was already incremental — but only for an agent that threaded the returned

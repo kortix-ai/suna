@@ -71,7 +71,7 @@ function CompanyChip({
 }
 
 const KNOWN_COMPANY_LABELS: Record<string, string> = {
-  kortix: 'Kortix',
+  kortix: 'dosco',
   'anthropics/skills': 'Anthropic Skills',
   'anthropics/knowledge-work-plugins': 'Anthropic Knowledge Work',
 };

@@ -211,11 +211,11 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 //
 // Better Stack pattern
 // 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
-// (Kortix Frontend prod, application_id 2346967): `ApiError`, message
+// (dosco Frontend prod, application_id 2346967): `ApiError`, message
 // `Model "openai/gpt-5.4-mini" is not available for this account`, 7
 // occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL
 // post-v0.12.4, release `160f0b286f0ad5c53debc343d5e055241694e24d`),
-// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…`
+// request URL `https://dosco.live/projects/377b3ef0-…/sessions/d3d542…`
 // (co-worker session page), browser Android Chrome mobile, mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
 // `handled:false`).
@@ -414,13 +414,13 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // above, just with Firefox's DOM-API error wording instead of an engine
   // TypeError. Better Stack pattern
   // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
-  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // (dosco Frontend prod, application_id 2346967): `TypeError`, message
   // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
   // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
   // (post-v0.12.5, release `e2540c341c6f43536a7cf0e0b51599e9928f055c`),
   // call site `setupPositionAttribute` in chunk
   // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
-  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // `https://dosco.live/` (marketing homepage), browser Firefox 152.0 on
   // Android 17 (Gecko engine), mechanism
   // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
   // `handled:false`). The `getSupportedExtensions` sibling is added
@@ -488,7 +488,7 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
 //
 // Better Stack pattern
 // f1abf79ece48a86faf8eb32cec8bbb6bf270627f9fd5d423fb1ee43b9abcfb23
-// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// (dosco Frontend prod, application_id 2346967): `Error`, message
 // `Paper Shaders: WebGL is not supported in this browser`, 1 occurrence /
 // 0 identified users (anonymous), last 2026-07-23 17:26:32 UTC, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route `/`
@@ -563,14 +563,14 @@ const PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE =
 //
 // Better Stack pattern
 // b4b4384734b09b411e476591e3f9ac3ad88f110e0be91aae390913038f6844f0
-// (Kortix Frontend prod, application_id 2346967): `RangeError`, message
+// (dosco Frontend prod, application_id 2346967): `RangeError`, message
 // `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
 // memory at ImageData creation`, 1 occurrence / 0 identified users, last
 // 2026-08-07 10:09:13 UTC, release
 // `160f0b286f0ad5c53debc343d5e055241694e24d` (v0.12.4 prod), call site
 // function `Image.<anonymous>`, call site file
 // `app:///_next/static/chunks/0fl4m2af7bsiq.js` (minified), request URL
-// `https://kortix.com/` (marketing homepage), browser Chrome 130 on Linux,
+// `https://dosco.live/` (marketing homepage), browser Chrome 130 on Linux,
 // mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
 // `handled:false`). Stack: 2 frames, both minified third-party canvas library
 // chunk frames — NO first-party `apps/web/src/…` frame.
@@ -641,7 +641,7 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
 // homepage. Two SIBLING patterns, both `TypeError: Cannot read properties of
 // null (reading '<X>')` (V8 wording; old JSC says `Cannot read property '<X>'
 // of null`) from minified third-party library internals running on VERY OLD
-// browsers hitting the marketing homepage (`https://kortix.com/`):
+// browsers hitting the marketing homepage (`https://dosco.live/`):
 //
 //   Pattern 1 (2 occurrences, last 2026-08-06 11:11:14 UTC):
 //     Better Stack pattern
@@ -662,7 +662,7 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
 // Classification: browser-compatibility noise. `measureScroll` and `ft` are
 // THIRD-PARTY library internals (a smooth-scroll / scroll-measurement library
 // and an animation/DOM-manipulation helper respectively), not first-party
-// Kortix code — the minified call-site function names (`measureScroll`, `ft`)
+// dosco code — the minified call-site function names (`measureScroll`, `ft`)
 // do not appear in `apps/web/src/…` source. The throws happen because very old
 // browsers (Win7 Chrome, Chrome 95) have quirkier DOM behavior: a scroll-
 // measurement helper reaches for a DOM element that resolved to `null` (the
@@ -726,7 +726,7 @@ const OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
 // `EventTarget`, captures the throw, and leaks it to Better Stack as a global
 // error. Seen once (pattern `e6a45fe4…`, 1 occurrence, 0 identified users,
 // 2026-07-12 19:31:47 UTC) from a Threads (Barcelona) in-app WebView on Android
-// 14 / Chrome 149 visiting the marketing homepage (`https://kortix.com/`,
+// 14 / Chrome 149 visiting the marketing homepage (`https://dosco.live/`,
 // referer `https://l.threads.com/`).
 //
 // The message wording is generic enough that a genuine first-party
@@ -767,7 +767,7 @@ function isAndroidNavPerfLoggerFrame(filename: unknown): boolean {
 //
 // Better Stack pattern
 // a6795db236a92a4f9738698e93a8d7ae4e60dae607cacedccb7ed8bbd225b2d4
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+// (dosco Frontend prod, application_id 2346967): 1 occurrence / 0 identified
 // users, last_seen 2026-07-20 19:05:34 UTC, call_site_file `<anonymous>`,
 // call_site_function `?` — the frameless capture shape. The `postMessage`
 // sibling `e6a45fe4…` (PR #4610) carried the synthetic
@@ -797,11 +797,11 @@ function isAndroidNavPerfLoggerFrame(filename: unknown): boolean {
 // variant) — TWO ADDITIONAL frame shapes must classify as noise ---
 // Better Stack pattern
 // f50ed59002e8507f8226d63104e7351416eadbc8eb2532977f70fc55a2807e6b
-// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// (dosco Frontend prod, application_id 2346967): `Error`, message
 // `Error invoking postEvent: Java object is gone`, 1 occurrence / 0 identified
 // users, last 2026-08-01 08:35:32 UTC, release
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0 prod), transaction `/`
-// (marketing homepage), URL `https://kortix.com/`, browser Chrome 150.0.7871
+// (marketing homepage), URL `https://dosco.live/`, browser Chrome 150.0.7871
 // on Android 16 (mobile, UA
 // `Mozilla/5.0 (Linux; Android 16; K) AppleWebKit/537.36 (KHTML, like Gecko)
 // Chrome/150.0.7871.181 Mobile Safari/537.36`), mechanism
@@ -880,10 +880,10 @@ const ANDROID_WEBVIEW_BRIDGE_THROW_SITE_FRAME = '<anonymous>';
 // `auto.browser.global_handlers.onerror`, `handled:false` — it never reaches a
 // React error boundary) and leaks it to Better Stack. Better Stack pattern
 // 5b94212bc682a1ee1d33d67f6517ec95830c63e1ff8a3779d1700dd6091679eb
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence / 0 identified
+// (dosco Frontend prod, application_id 2346967): 1 occurrence / 0 identified
 // users, last_seen 2026-07-27 10:36:24 UTC, release
 // `5d47baf11708881f1099cdaa875266944e976a78` (POST-`0.10.16`),
-// transaction `/` (marketing homepage), URL `https://kortix.com/?fbclid=…`
+// transaction `/` (marketing homepage), URL `https://dosco.live/?fbclid=…`
 // (a Facebook referral), browser `Facebook 571.0.0.55.72` on `iOS (iPhone)
 // 26.5.2` (the Facebook in-app browser — an iOS WebView). Stack frames (3, all
 // synthetic `app:///` WebView instrumentation — NO first-party
@@ -1035,7 +1035,7 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   // configuration race (see `isCaptchaInterceptorNoise`) leaks to Better Stack
   // as a `TypeError: Cannot read properties of undefined (reading 'widgetId')`
   // from a minified extension function (`d`); the throw is in the extension's
-  // own injected code, never in first-party Kortix code.
+  // own injected code, never in first-party dosco code.
   /^app:\/\/\/content\/captcha\/mt_captcha\/interceptor\.js$/,
 ] as const;
 
@@ -1045,7 +1045,7 @@ const INJECTED_APP_SOURCE_PATTERNS = [
 // page so it can run in an isolated sandbox with privileged APIs
 // (`GM_*` / `GM_` / `unsafeWindow`). The user script executes on every page
 // whose URL matches its `@match` / `@include` rules (a `YoutubeDL.user.js`
-// download-helper script `@match`s `*://*/*` and runs on `https://kortix.com/`).
+// download-helper script `@match`s `*://*/*` and runs on `https://dosco.live/`).
 // When the script's own logic is buggy — e.g. it calls `JSON.parse()` on a
 // value that resolved to `undefined` (an attribute / text node it expected to
 // find was absent on our page) — it throws `SyntaxError: "undefined" is not
@@ -1055,12 +1055,12 @@ const INJECTED_APP_SOURCE_PATTERNS = [
 // source (NOT an `app:///_next/…` bundle frame and NOT a de-minified
 // `apps/web/src/…` frame), it leaks to Better Stack. Better Stack pattern
 // 2249441898cd4d7bb679841d57b829b8863c9a4dc1675a88075d794cfd3cd600
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// (dosco Frontend prod, application_id 2346967): 1 occurrence, 0 identified
 // users, 2026-07-21 05:08 UTC, `SyntaxError: "undefined" is not valid JSON`,
 // call site `JSON.parse` at `<anonymous>`, frames
 // `app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-…` (fn `?`, line 1614)
 // + `<anonymous>` (`JSON.parse`), mechanism `auto.browser.global_handlers.
-// onunhandledrejection`, request URL `https://kortix.com/`, Chrome 150 / Win 10.
+// onunhandledrejection`, request URL `https://dosco.live/`, Chrome 150 / Win 10.
 // The throw is in the THIRD-PARTY user script's own logic, never in first-party
 // app code: `app:///userscript.html` is the userscript-manager's synthetic
 // wrapper page (it has the same `app:///` empty-host origin shape as the other
@@ -1096,7 +1096,7 @@ function isUserscriptManagerInjectedSource(filename: unknown): boolean {
 // (V8) / `proxy set handler returned false for property 'tronlinkParams'`
 // (SpiderMonkey). The throw originates INSIDE the extension's injected script,
 // never in first-party app code: `tronlinkParams` is a TronLink-private
-// property our app never touches. Better Stack pattern `951c1a31…`, Kortix
+// property our app never touches. Better Stack pattern `951c1a31…`, dosco
 // Frontend (prod, application_id 2346967), 2 occurrences, 0 identified users,
 // first/last 2026-07-12, call site `app:///injected/injected.js` function `BI`.
 //
@@ -1132,11 +1132,11 @@ function isTronLinkInjectedSource(filename: unknown): boolean {
 // are `?` / `fulfilled` / `ExtendedBroadcastMessage.<anonymous>`, all in
 // `app:///inpage.js`. `app:///inpage.js` is the extension's synthetic
 // content-script source (NOT an `app:///_next/…` bundle frame and NOT a
-// de-minified `apps/web/src/…` frame), so it is never a first-party Kortix
+// de-minified `apps/web/src/…` frame), so it is never a first-party dosco
 // call site. Better Stack patterns `17a0ce67…` (addListener, 21 occ.) and
-// `3a6b00dc…` (emit, 4 occ.), Kortix Frontend (prod, application_id 2346967),
+// `3a6b00dc…` (emit, 4 occ.), dosco Frontend (prod, application_id 2346967),
 // 0 identified users, first/last 2026-07-14, call site `app:///inpage.js`,
-// request URL `https://kortix.com/` (marketing homepage), Chrome 150.
+// request URL `https://dosco.live/` (marketing homepage), Chrome 150.
 //
 // The `addListener` / `emit` wording is GENERIC — a first-party
 // EventEmitter-like bug (Node `EventEmitter`, `mitt`, `nanoevents`, a
@@ -1185,11 +1185,11 @@ function isInpageWalletInjectedSource(filename: unknown): boolean {
 // the frame-aware extension-source guards (`isExtensionSource(frame.filename)`,
 // `isInpageWalletStreamNoise`, `isTronLinkProxyNoise`) all miss it (there are
 // no frames to anchor on). Better Stack pattern
-// 0f78b2f8e9efa79fe9b2ea534e275c704f113eafea86bae5470f33174ebacebc, Kortix
+// 0f78b2f8e9efa79fe9b2ea534e275c704f113eafea86bae5470f33174ebacebc, dosco
 // Frontend (prod, application_id 2346967), `UnhandledRejection`, 2
 // occurrences, 0 identified users, first 2026-07-06 / last 2026-07-15,
 // mechanism `auto.browser.global_handlers.onunhandledrejection`, request URL
-// `https://kortix.com/auth`, Chrome 150.
+// `https://dosco.live/auth`, Chrome 150.
 //
 // The synthetic "Object captured as promise rejection with keys: …" message is
 // Sentry's generic signature for ANY non-Error plain-object rejection — a
@@ -1498,7 +1498,7 @@ export function isInjectedAppSource(filename: unknown): boolean {
  * synthetic `app:///userscript.html?name=<Script>.user.js&id=<uuid>` wrapper
  * page. The user script runs on every `@match`ed page (e.g. a download-helper
  * script `@match`ing a wildcard `https-or-http any-host any-path` rule and
- * running on `https://kortix.com/`); its OWN
+ * running on `https://dosco.live/`); its OWN
  * logic bugs (e.g. `JSON.parse(undefined)` → `SyntaxError: "undefined" is not
  * valid JSON`) surface as unhandled rejections captured by Sentry and leak to
  * Better Stack because the frame is the synthetic wrapper, never first-party
@@ -1646,21 +1646,21 @@ export function isInpageJsNoErrorMessageNoise(input: {
  * / `browser.runtime.sendMessage` on a `runtime` object that is `undefined` in
  * a non-extension context or after the tab's extension context is torn down.
  * The throw is in the extension's own injected script, NEVER in first-party
- * Kortix code. The `app:///injectedScript.bundle.js` source is a synthetic
+ * dosco code. The `app:///injectedScript.bundle.js` source is a synthetic
  * extension-injection frame (NOT an `app:///_next/…` bundle frame and NOT a
  * de-minified `apps/web/src/…` source path), so it is never a first-party call
  * site.
  *
  * Better Stack pattern
  * `95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c`
- * (Kortix Frontend prod, application_id 2346967): `Error`, message
+ * (dosco Frontend prod, application_id 2346967): `Error`, message
  * `Cannot read properties of undefined (reading 'sendMessage')`, 1 occurrence /
  * 0 identified users, last 2026-07-30 14:07:17 UTC, stack frames:
  *   - `app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_…`
  *     function `u` (webpack runtime)
  *   - `app:///injectedScript.bundle.js` function `n` colno 84147
  *     (THROW SITE — the extension's injected script)
- * request URL `https://kortix.com/auth?redirect=%2Fprojects%2F…`,
+ * request URL `https://dosco.live/auth?redirect=%2Fprojects%2F…`,
  * mechanism `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT),
  * Chrome 150 / Windows.
  *
@@ -1708,14 +1708,14 @@ export function isInjectedScriptSendMessageNoise(input: {
 // initialized yet (it is still `undefined`) and reads its `widgetId` property
 // → `TypeError: Cannot read properties of undefined (reading 'widgetId')`.
 // The throw is in the extension's OWN injected interceptor, NEVER in
-// first-party Kortix code: `app:///content/captcha/mt_captcha/interceptor.js`
+// first-party dosco code: `app:///content/captcha/mt_captcha/interceptor.js`
 // is a synthetic extension-injection source (NOT an `app:///_next/…` bundle
 // frame and NOT a de-minified `apps/web/src/…` source path), `widgetId` is the
-// extension's internal widget-configuration property (NOT a Kortix API), and
+// extension's internal widget-configuration property (NOT a dosco API), and
 // the call-site function `d` is a minified extension function (NOT a
 // de-minified `apps/web/src/…` frame).
 //
-// Better Stack patterns (Kortix Frontend prod, application_id 2346967) — TWO
+// Better Stack patterns (dosco Frontend prod, application_id 2346967) — TWO
 // sibling fingerprints from the SAME extension interceptor, SAME type
 // (`TypeError`), SAME message
 // (`Cannot read properties of undefined (reading 'widgetId')`), SAME call-site
@@ -1729,7 +1729,7 @@ export function isInjectedScriptSendMessageNoise(input: {
 // defects.
 //
 // `widgetId` is the extension's INTERNAL widget-configuration property name
-// — it is specific enough to anchor on (it is never a Kortix API surface; our
+// — it is specific enough to anchor on (it is never a dosco API surface; our
 // code never reads a `widgetId` property), but it is a property NAME (not a
 // canonical library string like `Paper Shaders: …`), so — mirroring
 // `isInjectedScriptSendMessageNoise` (the `sendMessage` wallet-extension
@@ -2426,7 +2426,7 @@ export function isIOSWebViewWebKitBridgeNoise(input: {
 // source location to triage and no reproduction (the engine truncated the very
 // stack that overflowed). Better Stack pattern
 // 87ccbef98ea62fbf90df2446141a26b78ba7f928a28642b099d53b40e8613031
-// (Kortix Frontend prod, application_id 2346967): 7 occurrences in the
+// (dosco Frontend prod, application_id 2346967): 7 occurrences in the
 // now-3d inventory, ~30 lifetime, 0 identified users (all anonymous), first
 // 2026-04-21 / last 2026-07-14, 100% iOS (Chrome-on-iOS 149/150 + Google
 // Search App 415/425), across 7 different releases spanning 2.5 months — i.e.
@@ -2462,7 +2462,7 @@ export function isIOSWebViewWebKitBridgeNoise(input: {
 // `Object.r [as onTileRendering]` in a `_next/static/chunks/…` bundle), never
 // in first-party `apps/web/src/…` source. Better Stack pattern
 // 366115d4c931a6352fe8f334ff1b366f6d4b2ce9c192769ac681831354521e30
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// (dosco Frontend prod, application_id 2346967): 1 occurrence, 0 identified
 // users, 2026-07-15 09:36:41 UTC, route `/projects/:id/sessions/:sessionId`,
 // Chrome 142 / Windows 10. A transient third-party render loop, not a
 // deterministic app regression (single occurrence, no identified users, no
@@ -2705,7 +2705,7 @@ export function isEmbedPdfTilingTileDestructureNoise(input: {
 // React render loop after the editor's document-state map race, tripping
 // React's 50-nested-update guard (#185) WITHOUT an `onTileRendering` frame.
 //
-// Better Stack patterns (Kortix Frontend prod, application_id 2346967) — all
+// Better Stack patterns (dosco Frontend prod, application_id 2346967) — all
 // three from the SAME Safari 26.5 session
 // `be897489-001b-4ca4-b9ca-a1aa770c4082`, SAME release
 // `f2db5007f14e77e3b9456d2f83208e97bc2b2734`, SAME chunk
@@ -2863,7 +2863,7 @@ export function isThirdPartyReactUpdateDepthNoise(input: {
 //
 // Better Stack pattern
 // 0f03b24eb662c20779ea6397c6501f40392a3c9e24ab0f4594ad367eda71b9b7
-// (Kortix Frontend prod, application_id 2346967): 1 occurrence ever (90-day
+// (dosco Frontend prod, application_id 2346967): 1 occurrence ever (90-day
 // window), 0 identified users (anonymous), single release
 // `22e12080d2b37642aa92a839da6b37f30fc21b9d`, 2026-07-20 11:53:33 UTC, route
 // `/projects/:id/sessions/:sessionId` (co-worker session page actively polling
@@ -2964,13 +2964,13 @@ export function isFirefoxReactSchedulerReentryNoise(input: {
 //
 // Better Stack pattern
 // 5cfc90e5077a4f3d956f46b51beb633256b9a74532717d4b5797ca5cbc62f2f1
-// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`, 1
+// (dosco Frontend prod, application_id 2346967): `UnhandledRejection`, 1
 // occurrence, 0 identified users (anonymous), mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT global
 // unhandledrejection — never reached any React error boundary), release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6`, first 2026-04-23 / last
 // 2026-07-22, Safari 26.5.2 on iOS 18.7 (iPhone, Mobile), request URL
-// `https://kortix.com/` (the marketing/landing page). Stack trace: NONE —
+// `https://dosco.live/` (the marketing/landing page). Stack trace: NONE —
 // `call_site_file`/`call_site_function` are null, `call_stack_hash` is null,
 // no frames at all. A bare `onunhandledrejection` capture of `undefined`.
 //
@@ -3045,16 +3045,16 @@ export function isNonErrorUndefinedRejectionNoise(input: {
 // Browser-internal DOM/binding `OperationError` noise — `Instance dropped in
 // popErrorScope`. `popErrorScope` is part of the WebIDL/internal error-scope
 // machinery (DOMQueuingStrategy, ResizeObserver, IntersectionObserver, media
-// streams, GPU, …), NOT a first-party Kortix API. Some browser code paths
+// streams, GPU, …), NOT a first-party dosco API. Some browser code paths
 // (Firefox-originated; also emitted by some Chromium/Edge paths) surface a
 // frameless `OperationError: Instance dropped in popErrorScope` as an
 // unhandled promise rejection via the global `onunhandledrejection` handler.
 // Better Stack pattern
 // 5e1aca208331fa2d7540c9810b815b6c94f1373c470ff54e15f39d389dac7e0c
-// (Kortix Frontend prod, application_id 2346967): `OperationError`, 2
+// (dosco Frontend prod, application_id 2346967): `OperationError`, 2
 // occurrences EVER across a 90-day window (first 2026-04-28 18:41:18 UTC on
-// `https://www.kortix.com/instances` Chrome/Win, last 2026-07-22 18:26:35 UTC
-// on `https://kortix.com/projects/<id>` reached from Google account sign-in
+// `https://dosco.live/instances` Chrome/Win, last 2026-07-22 18:26:35 UTC
+// on `https://dosco.live/projects/<id>` reached from Google account sign-in
 // Chrome/Edge/Win), 0 identified users (anonymous), mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
 // UNCAUGHT, never reached a React error boundary). The exception payload is
@@ -3070,7 +3070,7 @@ export function isNonErrorUndefinedRejectionNoise(input: {
 // `5cfc90e5…`) and `isFirefoxReactSchedulerReentryNoise` (PR #5185, pattern
 // `0f03b24e…`).
 //
-// `OperationError` is the WebIDL type for async DOM operations, NOT a Kortix
+// `OperationError` is the WebIDL type for async DOM operations, NOT a dosco
 // error class, and it is a GENERIC type a real first-party
 // `new OperationError(...)` could also surface with — so the matcher anchors on
 // the EXACT message `/^Instance dropped in popErrorScope$/` (case-sensitive),
@@ -3095,7 +3095,7 @@ const OPERATION_ERROR_POP_ERROR_SCOPE_PATTERN =
  * `OperationError: Instance dropped in popErrorScope` noise class:
  * `popErrorScope` is part of the WebIDL/internal error-scope machinery
  * (DOMQueuingStrategy, ResizeObserver, IntersectionObserver, media streams,
- * GPU, …), NOT a first-party Kortix API. Some browser code paths surface a
+ * GPU, …), NOT a first-party dosco API. Some browser code paths surface a
  * frameless `OperationError` with this exact message as an uncaught global
  * `onunhandledrejection` — never first-party app code. Requires the EXACT
  * message (case-sensitive; `OperationError` alone is a generic WebIDL type a
@@ -3144,16 +3144,16 @@ export function isOperationErrorPopErrorScopeNoise(input: {
 // "Object captured as promise rejection with keys: code, message, status" with
 // NO stacktrace frames. Better Stack pattern
 // 63b0cde714048bca4c42129afacd5f8ec56813e0e663fbdb41265fdba6ed28a4
-// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`, 2
+// (dosco Frontend prod, application_id 2346967): `UnhandledRejection`, 2
 // occurrences, 0 identified users (anonymous), first 2026-08-01 13:22:03 UTC,
 // last 2026-08-01 13:22:27 UTC, mechanisms
 // `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
 // UNCAUGHT, never reached a React error boundary), `synthetic:true`, releases
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
-// `https://kortix.com/auth` (first occurrence) and
-// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// `https://dosco.live/auth` (first occurrence) and
+// `https://dosco.live/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
 // occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
-// 151.0.0.0 on Windows. Breadcrumbs: `https://supa.kortix.com/auth/v1/user`
+// 151.0.0.0 on Windows. Breadcrumbs: `https://supa.dosco.live/auth/v1/user`
 // (Supabase gotrue), `/_vercel/insights/view`, google-analytics,
 // `/api/maintenance`, cookieyes — marketing/analytics + the Supabase user fetch.
 // The `__serialized__` extra is `{"code":400,"message":"TOKEN_EXPIRED","status":"INVALID_ARGUMENT"}`.
@@ -3256,16 +3256,16 @@ export function isSupabaseTokenExpiredNoise(input: {
 // (the rejection value inlined after `value: `) with NO stacktrace frames at
 // all — there is no Error object to de-minify. Better Stack pattern
 // e9a720020c921fbf82323125c20714fd7455e803295cf13aa624440de6d35e8e
-// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`,
+// (dosco Frontend prod, application_id 2346967): `UnhandledRejection`,
 // 116 occurrences, 0 identified users (anonymous), first 2026-06-02 /
 // recurring, mechanism `auto.browser.global_handlers.onunhandledrejection`
 // (`handled:false` — UNCAUGHT, never reached a React error boundary),
 // `synthetic:true`, release
 // `160f0b286f0ad5c53debc343d5e055241694e24d` (v0.12.4 prod), request URL
-// `https://kortix.com/#error=access_denied&error_code=otp_expired&error_
+// `https://dosco.live/#error=access_denied&error_code=otp_expired&error_
 // description=Email+link+is+invalid+or+has+expired` (the auth error page —
 // the OTP-expired redirect). Browser Chrome 142 on Windows 10. Breadcrumbs:
-// `[runtime-env]` with `supabaseUrl: https://supa.kortix.com` (the Supabase
+// `[runtime-env]` with `supabaseUrl: https://supa.dosco.live` (the Supabase
 // auth client initializing), then a navigation to the same
 // `#error=otp_expired` URL, then marketing-site fetches
 // (`/api/github-stars`, `/_vercel/insights/view`, `/api/maintenance`) — the
@@ -3379,10 +3379,10 @@ export function isNonErrorObjectNotFoundRejectionNoise(input: {
 // a deploy/idle-recycle, the library throws `Connection closed.` (the trailing
 // `.` is part of the library's canonical close string). Better Stack pattern
 // ecac86df82aca61f579836c1b813a0ed02cabd4a480b581db2f1ba5f4e20ab86
-// (Kortix Frontend prod, application_id 2346967): `Error`, 1 occurrence / 0
+// (dosco Frontend prod, application_id 2346967): `Error`, 1 occurrence / 0
 // identified users, last 2026-07-23 16:44:09 UTC, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
-// `/dashboard`, URL `https://kortix.com/dashboard`, mechanism
+// `/dashboard`, URL `https://dosco.live/dashboard`, mechanism
 // `auto.browser.global_handlers.onerror` (`handled:false` — UNCAUGHT, never
 // reached a React error boundary), browser Chrome 150 / Windows 10. The single
 // stack frame is the minified main co-worker runtime chunk
@@ -3459,11 +3459,11 @@ const CONNECTION_CLOSED_NOISE_PATTERN = /^Connection closed\.$/;
 //   1918c62ac5434aa56d7ce150e96b99be1b520471360fa3ef091802327297cf73
 //   70e1c309921716ee01cd5cd083cef876b41a81311b51db3d5bd55def644fdc47
 //   1cec609ee07b7f15aea6fea1eed550e4ce45a838abdf40171050336ff4abc2aa
-// (Kortix Frontend prod, application_id 2346967): all `SecurityError: The
+// (dosco Frontend prod, application_id 2346967): all `SecurityError: The
 // operation is insecure.`, 1 occurrence each / 0 identified users, last
 // 2026-07-29 08:36:02 UTC, release `c330eda4d96e7aee557618254a86df7d16ba5d9b`
 // (v0.11.0 — POST-Promote), transaction `/` (marketing homepage), URL
-// `https://kortix.com/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
+// `https://dosco.live/`, browser Safari 26.6 on iOS (iPhone) 18.7, mechanism
 // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). Frames: all
 // in `webpack-befb5b1662175048.js` function `a` (webpack runtime) +
 // `59675-a333ed5b0ae6dae4.js` functions `17725`/`20532`/`63613` (in_app) —
@@ -3581,7 +3581,7 @@ export function isConnectionClosedNoise(input: {
 // (`handled:false`, never reaches a React error boundary) and leaks to Better
 // Stack.
 //
-// Better Stack patterns (Kortix Frontend prod, application_id 2346967):
+// Better Stack patterns (dosco Frontend prod, application_id 2346967):
 //   - `6d6fa794a67a293ce9fa5d093648a9d76a2dd243e04f4f9dd9fbbd67bfb0c9ef`:
 //     `Error`, message
 //     `Interaction state not found for document: doc-1785904808253-gbsixyvii`,
@@ -3590,7 +3590,7 @@ export function isConnectionClosedNoise(input: {
 //     identified users, last 2026-08-05 04:40:45 UTC (POST-v0.12.3),
 //     mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
 //     `handled:false`), request URL
-//     `https://kortix.com/projects/e1d956a3-…/sessions/be897489-…` (session
+//     `https://dosco.live/projects/e1d956a3-…/sessions/be897489-…` (session
 //     page), Safari 26.5 on macOS (WebKit). Frames: `r @ 13jg6.ewllp.z.js` →
 //     `v @ 17631.2j-4o95.js` → `getActiveMode @ 17631.2j-4o95.js` →
 //     `getDocumentStateOrThrow @ 17631.2j-4o95.js` — NO first-party
@@ -3689,7 +3689,7 @@ export function isDocumentStateNotFoundNoise(input: {
 //
 // Better Stack pattern
 // 2403c9ba5deee2af387834e95461cfb32b9b5080b21d6f307b2f09bb09e71f21
-// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// (dosco Frontend prod, application_id 2346967): `TypeError`, message
 // `network error` (lowercase, bare), 1 occurrence / 0 identified users, last
 // 2026-07-23 16:53:55 UTC, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), transaction
@@ -4494,7 +4494,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   //
   // Better Stack pattern
   // 61949432528f8a88c74799f2dc1a8dd128479ae49e6e75865f501e5eb40fc94e
-  // (Kortix Frontend prod, application_id 2346967): `Error`, message
+  // (dosco Frontend prod, application_id 2346967): `Error`, message
   // `No error message`, 1 occurrence / 0 identified users, last 2026-07-30
   // 09:14:21 UTC, route `/auth?expired=true&returnUrl=…`, mechanism
   // `auto.browser.global_handlers.onerror` (UNCAUGHT global error — never

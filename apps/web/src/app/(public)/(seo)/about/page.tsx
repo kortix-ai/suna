@@ -3,15 +3,15 @@ import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import type { Metadata } from 'next';
 
 const DESCRIPTION =
-  'Kortix is building the open AGI platform. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.';
+  'dosco is building the dosco agent network. A company owns all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration, on their own infrastructure.';
 
 export const metadata: Metadata = {
   title: 'About',
   description: DESCRIPTION,
   keywords:
-    'Kortix, about Kortix, open AGI platform, open source AI management system, autonomous companies, AI agents, self-hosted agent platform',
+    'dosco, about dosco, dosco agent platform, agent-native AI management system, autonomous companies, AI agents, self-hosted agent platform',
   openGraph: {
-    title: 'About Kortix – The open AGI platform',
+    title: 'About dosco – The dosco agent platform',
     description: DESCRIPTION,
     url: `${CANONICAL_ORIGIN}/about`,
     images: [
@@ -19,13 +19,13 @@ export const metadata: Metadata = {
         url: '/images/team.webp',
         width: 1200,
         height: 675,
-        alt: 'The Kortix team',
+        alt: 'The dosco team',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'About Kortix – The open AGI platform',
+    title: 'About dosco – The dosco agent platform',
     description: DESCRIPTION,
     images: ['/images/team.webp'],
   },

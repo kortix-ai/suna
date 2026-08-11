@@ -123,7 +123,7 @@ export function GatewayKeys({
               icon={KeyRound}
               size="sm"
               title="No keys yet"
-              description="Create a project-scoped key to call the gateway from outside a Kortix session."
+              description="Create a project-scoped key to call the gateway from outside a dosco session."
               action={
                 canWrite ? (
                   <Button variant="outline" size="sm" onClick={() => setCreating(true)}>

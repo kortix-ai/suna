@@ -1,5 +1,5 @@
 /**
- * Which Pipedream apps belong in the Kortix catalogue.
+ * Which Pipedream apps belong in the dosco catalogue.
  *
  * Pipedream publishes 3,238 apps under one endpoint, and two kinds of record in
  * there are not connectors:

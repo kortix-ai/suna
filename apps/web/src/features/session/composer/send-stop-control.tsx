@@ -62,7 +62,7 @@ export function SendStopControl({
   if (!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion) {
     return (
       <div className="relative flex items-center">
-        {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
+        {/* ESC hint — matches dosco tooltip styling (bg-primary rounded-2xl) */}
         {escCount > 0 && (
           <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
             <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">

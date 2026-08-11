@@ -105,7 +105,7 @@ export const surfaces = {
     },
     {
       id: 'voice',
-      icon: 'Kortix',
+      icon: 'dosco',
       name: 'Voice',
       state: 'Experimental',
       body: 'A realtime call the agent speaks in. Same per-project opt-in. It spawns a room and shares the link — it does not dial into a meeting you already started.',
@@ -132,7 +132,7 @@ export const thread = {
     {
       n: '01',
       title: 'A session starts',
-      body: 'Kortix cuts a branch and boots its own isolated cloud computer, exactly as it would for a session started from the dashboard or the CLI. You get a reaction on your own message, not a bot post saying “on it”.',
+      body: 'dosco cuts a branch and boots its own isolated cloud computer, exactly as it would for a session started from the dashboard or the CLI. You get a reaction on your own message, not a bot post saying “on it”.',
     },
     {
       n: '02',
@@ -239,7 +239,7 @@ export const back = {
     },
   ],
   footnote:
-    'One honest limit: the card carries the decision and a link back into Kortix. Reading the actual diff of a change request happens in the web app, where a diff belongs — Slack is not a code review tool and we are not going to pretend it is.',
+    'One honest limit: the card carries the decision and a link back into dosco. Reading the actual diff of a change request happens in the web app, where a diff belongs — Slack is not a code review tool and we are not going to pretend it is.',
 } as const;
 
 export const commands = {
@@ -248,7 +248,7 @@ export const commands = {
   sub: 'Type these as /kortix <command> in Slack, or as plain text in a direct message. Most of what you would otherwise open the dashboard for is one line in the channel.',
   columns: ['Command', 'What it does'] as const,
   rows: [
-    { cmd: 'login, logout', v: 'Link or unlink your chat identity to your Kortix account' },
+    { cmd: 'login, logout', v: 'Link or unlink your chat identity to your dosco account' },
     { cmd: 'switch, unbind', v: 'Rebind this channel to a different project, or unbind it' },
     { cmd: 'projects', v: 'List the projects you can bind this channel to' },
     { cmd: 'sessions', v: 'List the recent sessions started from this workspace' },
@@ -274,12 +274,12 @@ export const rules = {
     {
       id: 'identity',
       k: 'Every sender is a known person',
-      v: 'Kortix links a chat sender to a Kortix account before the agent runs for them. Run /kortix login and sign in. An unlinked sender gets a prompt to link, not a session — so a stranger in a shared channel cannot spend your compute.',
+      v: 'dosco links a chat sender to a dosco account before the agent runs for them. Run /kortix login and sign in. An unlinked sender gets a prompt to link, not a session — so a stranger in a shared channel cannot spend your compute.',
     },
     {
       id: 'credentials',
       k: 'The bot token never enters a sandbox',
-      v: 'A connected channel’s token is a connector-scoped secret. It does not appear on the project’s Secrets page, and Kortix never injects it into a cloud computer. It is resolved server-side at the moment the agent sends a message.',
+      v: 'A connected channel’s token is a connector-scoped secret. It does not appear on the project’s Secrets page, and dosco never injects it into a cloud computer. It is resolved server-side at the moment the agent sends a message.',
     },
     {
       id: 'agent',
@@ -328,7 +328,7 @@ export const custom = {
     {
       id: 'filter',
       title: 'And a loop breaker',
-      body: 'A source that reports both sides of a conversation would otherwise fire the agent on its own reply. filter drops those deliveries with a 200 and no session. Signed with HMAC-SHA256, like every Kortix webhook.',
+      body: 'A source that reports both sides of a conversation would otherwise fire the agent on its own reply. filter drops those deliveries with a 200 and no session. Signed with HMAC-SHA256, like every dosco webhook.',
     },
     {
       id: 'gap',
@@ -343,7 +343,7 @@ export const custom = {
 export const closing = {
   eyebrow: 'Connect it',
   title: 'Put it in the thread people already use.',
-  sub: 'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.',
+  sub: 'Open source and self-hostable. Any model, your keys. dosco Cloud, your own VPC, or fully on-prem.',
   ctaPrimary: 'Connect Slack',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the channel docs',

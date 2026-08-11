@@ -167,7 +167,7 @@ export function serializeSession(
  */
 
 function dashboardBaseUrl(): string {
-  return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  return (config.FRONTEND_URL || 'https://dosco.live').replace(/\/+$/, '');
 }
 
 /** True when a GitHub repo-create error is a name collision (HTTP 422). On
@@ -188,7 +188,7 @@ export function serializeProject(
     name: row.name,
     repo_url: row.repoUrl,
     // Universal client-facing git origin. When the proxy is enabled, runtime
-    // clients (CLI `ship`, web) clone/push this with a Kortix token instead of
+    // clients (CLI `ship`, web) clone/push this with a dosco token instead of
     // the real host URL. Falls back to repo_url so callers can always use it.
     git_origin_url: config.KORTIX_GIT_PROXY ? proxyGitUrl(row.projectId) : row.repoUrl,
     default_branch: row.defaultBranch,
@@ -651,8 +651,8 @@ export function hasOwn(body: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
 
-export function deriveKortixApiRoot(kortixUrl: string): string {
-  return (kortixUrl || 'https://api.kortix.com')
+export function derivedoscoApiRoot(kortixUrl: string): string {
+  return (kortixUrl || 'https://api.dosco.live')
     .replace(/\/+$/, '')
     .replace(/\/v1\/router$/, '')
     .replace(/\/v1$/, '');

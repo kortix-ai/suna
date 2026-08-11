@@ -49,10 +49,10 @@ function turn(id: string, parts: Part[]): Turn {
 const TURNS: Turn[] = [
   turn('u1', [
     text(
-      '@Gpt Taste @Make Interfaces Feel Better\nReady for review.\nLinear project: Kortix Marketing Update\n<agent_ref name="Gpt Taste" />\n<agent_ref name="Make Interfaces Feel Better" />\n<file_ref path="data/content-timestamps.json" name="content-timestamps.json" />',
+      '@Gpt Taste @Make Interfaces Feel Better\nReady for review.\nLinear project: dosco Marketing Update\n<agent_ref name="Gpt Taste" />\n<agent_ref name="Make Interfaces Feel Better" />\n<file_ref path="data/content-timestamps.json" name="content-timestamps.json" />',
     ),
   ]),
-  turn('u2', [text('no bro u need to make the Kortix marketing update land this week, not next')]),
+  turn('u2', [text('no bro u need to make the dosco marketing update land this week, not next')]),
   turn('u3', [
     text('GO ahead and build it plz plan approved @Marketing Agent\n<agent_ref name="Marketing Agent" />'),
   ]),

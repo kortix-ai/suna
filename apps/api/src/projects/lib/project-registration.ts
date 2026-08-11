@@ -25,7 +25,7 @@ type RegistrationInput = {
   name?: string | null;
   defaultBranch: string;
   manifestPath: string;
-  /** True only when Kortix created the upstream repository for this project. */
+  /** True only when dosco created the upstream repository for this project. */
   managed?: boolean;
   /** Trusted server-owned metadata added at project creation. */
   projectMetadata?: Record<string, unknown>;

@@ -1,7 +1,7 @@
 {
-  "name": "Kortix – The AI Command Center for Your Company",
-  "short_name": "Kortix",
-  "description": "Kortix is the open-source AI command center for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.",
+  "name": "dosco – The agent network for your company",
+  "short_name": "dosco",
+  "description": "dosco is a closed, agent-native operating system for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

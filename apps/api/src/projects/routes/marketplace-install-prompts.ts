@@ -102,7 +102,7 @@ export function buildRegistryProjectInstallPrompt(
     'After the change request is open, keep driving the install instead of leaving the user with manual handoff work:',
     '',
     '- Show the CR number/status and ask whether to apply/merge it now. Do not merge without explicit approval.',
-    '- If the user approves and your Kortix grant allows it, merge it yourself with `kortix cr merge <number-or-id>`.',
+    '- If the user approves and your dosco grant allows it, merge it yourself with `kortix cr merge <number-or-id>`.',
     '- After a successful merge, start the first setup session with the template\'s intended agent (infer it from the template `kortix.yaml`, usually `default_agent` or the newly added agent). Prefer a structured session-start/background-session tool when available so the UI can render an Open session control; otherwise use `kortix sessions new --agent <agent> --prompt "<setup prompt>" --json`.',
     '- Give the user a direct session link or tell them to use the Open session button for the session that just started.',
     '- If you do not have permission to merge or start sessions, say exactly which button/action is needed in the UI: Apply the CR, then open the setup session with the newly installed agent. Do not merely say "start a new session" without a link or button.',

@@ -295,7 +295,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     if (!shouldSuppressDuplicate(v2Status, title)) {
       warningToast(title, {
         description:
-          'Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.',
+          'Upgrade your plan for a higher limit, or contact the dosco team to raise it for your account.',
         duration: 6000,
         button: (
           <Button

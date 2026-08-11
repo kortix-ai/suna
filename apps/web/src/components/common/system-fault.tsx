@@ -54,7 +54,7 @@ export function SystemFaultView({
 
     let eventId = EMPTY;
     if (report && !shouldIgnoreBrowserRuntimeNoise({ message: error.message, error })) {
-      console.error('[Kortix System Fault]', error);
+      console.error('[dosco System Fault]', error);
       eventId =
         Sentry.captureException(error, {
           tags: { area: 'global-error-boundary' },
@@ -189,7 +189,7 @@ export function SystemFaultView({
             'autoComponentsCommonSystemFaultJsxTextIfThisPersistsContact38b14ac8',
           )}
           <a href="mailto:support@kortix.ai">
-            {tI18nHardcoded.raw('autoComponentsCommonSystemFaultJsxTextSupportKortixAi314bf854')}
+            {tI18nHardcoded.raw('autoComponentsCommonSystemFaultJsxTextSupportdoscoAi314bf854')}
           </a>
         </p>
       </main>

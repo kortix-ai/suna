@@ -18,17 +18,17 @@ import { middleware } from '@/middleware';
 import { NextRequest } from 'next/server';
 
 describe('agent discovery documents', () => {
-  test('publishes an RFC 9727 linkset with working Kortix relations', async () => {
+  test('publishes an RFC 9727 linkset with working dosco relations', async () => {
     const response = getApiCatalog();
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toContain('application/linkset+json');
     expect(response.headers.get('Content-Type')).toContain('rfc9727');
     const body = (await response.json()) as any;
     expect(body.linkset).toHaveLength(1);
-    expect(body.linkset[0].anchor).toBe('https://api.kortix.com/v1');
-    expect(body.linkset[0]['service-desc'][0].href).toBe('https://api.kortix.com/v1/openapi.json');
-    expect(body.linkset[0]['service-doc'][0].href).toBe('https://kortix.com/docs');
-    expect(body.linkset[0].status[0].href).toBe('https://api.kortix.com/v1/health');
+    expect(body.linkset[0].anchor).toBe('https://api.dosco.live/v1');
+    expect(body.linkset[0]['service-desc'][0].href).toBe('https://api.dosco.live/v1/openapi.json');
+    expect(body.linkset[0]['service-doc'][0].href).toBe('https://dosco.live/docs');
+    expect(body.linkset[0].status[0].href).toBe('https://api.dosco.live/v1/health');
   });
 
   test('publishes truthful OAuth discovery and protected resource metadata', async () => {
@@ -42,18 +42,18 @@ describe('agent discovery documents', () => {
     ]);
 
     const resource = (await getProtectedResource(
-      new Request('https://kortix.com/.well-known/oauth-protected-resource'),
+      new Request('https://dosco.live/.well-known/oauth-protected-resource'),
     ).json()) as any;
-    expect(resource.resource).toBe('https://kortix.com');
+    expect(resource.resource).toBe('https://dosco.live');
     expect(resource.authorization_servers).toEqual([oauth.issuer]);
     expect(resource.bearer_methods_supported).toContain('header');
 
     const authMd = await getAuthMd().text();
-    expect(authMd).toStartWith('# Kortix auth.md');
-    expect(authMd).toContain('Kortix does not publish dynamic OAuth client registration');
+    expect(authMd).toStartWith('# dosco auth.md');
+    expect(authMd).toContain('dosco does not publish dynamic OAuth client registration');
     expect(authMd).toContain('Registration URI: /cli/authorize');
-    expect(authMd).toContain('POST https://api.kortix.com/v1/accounts/tokens');
-    expect(authMd).toContain('DELETE https://api.kortix.com/v1/accounts/tokens/{token_id}');
+    expect(authMd).toContain('POST https://api.dosco.live/v1/accounts/tokens');
+    expect(authMd).toContain('DELETE https://api.dosco.live/v1/accounts/tokens/{token_id}');
     expect(authMd).toContain('Authorization: Bearer <token>');
   });
 
@@ -74,7 +74,7 @@ describe('agent discovery documents', () => {
     expect(card.serverInfo.name).toBe('kortix-public-content');
     expect(card.transport).toEqual({
       type: 'streamable-http',
-      endpoint: 'https://kortix.com/mcp',
+      endpoint: 'https://dosco.live/mcp',
     });
     expect(card.capabilities.tools).toBe(true);
     expect(card.capabilities.resources).toBe(true);
@@ -108,7 +108,7 @@ describe('agent discovery documents', () => {
       params: { name: 'get_public_markdown', arguments: { path: '/' } },
     }) as any;
     expect(call.result.isError).not.toBe(true);
-    expect(call.result.content[0].text).toContain('# Kortix');
+    expect(call.result.content[0].text).toContain('# dosco');
   });
 
   test('registers two read-only WebMCP tools with abort-controlled lifetimes', async () => {
@@ -130,25 +130,25 @@ describe('agent discovery documents', () => {
   });
 
   test('negotiates the homepage to a Markdown route before auth middleware', async () => {
-    const request = new NextRequest('https://kortix.com/', {
+    const request = new NextRequest('https://dosco.live/', {
       headers: { Accept: 'text/markdown' },
     });
     const rewritten = await middleware(request);
     expect(rewritten.headers.get('x-middleware-rewrite')).toBe(
-      'https://kortix.com/markdown-negotiation?path=%2F',
+      'https://dosco.live/markdown-negotiation?path=%2F',
     );
 
     const response = getNegotiatedMarkdown(
-      new Request('https://kortix.com/markdown-negotiation?path=%2F'),
+      new Request('https://dosco.live/markdown-negotiation?path=%2F'),
     );
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
     expect(response.headers.get('Vary')).toBe('Accept');
-    expect(await response.text()).toContain('# Kortix');
+    expect(await response.text()).toContain('# dosco');
   });
 
   test('adds agent discovery links to the homepage middleware response', async () => {
-    const response = await middleware(new NextRequest('https://kortix.com/'));
+    const response = await middleware(new NextRequest('https://dosco.live/'));
     const link = response.headers.get('Link');
 
     expect(link).toContain('</.well-known/api-catalog>; rel="api-catalog"');
@@ -158,7 +158,7 @@ describe('agent discovery documents', () => {
   });
 
   test('declares content signals and agent discovery routes in robots.txt', () => {
-    const robots = renderRobotsTxt('kortix.com');
+    const robots = renderRobotsTxt('dosco.live');
     expect(robots).toContain('Content-Signal: ai-train=no, search=yes, ai-input=yes');
     expect(robots).toContain('Allow: /.well-known/');
     expect(robots).toContain('Allow: /auth.md');

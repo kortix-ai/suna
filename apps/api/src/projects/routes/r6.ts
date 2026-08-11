@@ -184,7 +184,7 @@ projectsApp.openapi(
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
   // Archiving is recoverable by default. Only an explicit purge permanently
-  // deletes a Kortix-managed upstream; user-connected/BYO repositories are
+  // deletes a dosco-managed upstream; user-connected/BYO repositories are
   // always left untouched. Delete before hiding the project so provider
   // failures remain visible and retryable.
   const purge = c.req.query('purge') === 'true';
@@ -643,7 +643,7 @@ projectsApp.openapi(
 
 // PUT /v1/projects/:projectId/access/:userId
 // POST /v1/projects/:projectId/access/invite
-// Invite a person to a project by email: looks up their Kortix account, ensures
+// Invite a person to a project by email: looks up their dosco account, ensures
 // they're an org member (creating a 'member' org row if needed), then grants the
 // project role. Account managers get implicit project access (no explicit grant).
 
@@ -680,7 +680,7 @@ projectsApp.openapi(
 
   const targetUserId = await lookupUserIdByEmail(email);
   if (!targetUserId) {
-    // No Kortix user yet. Upsert an account invitation carrying a
+    // No dosco user yet. Upsert an account invitation carrying a
     // bootstrap_grant so when they accept, they're added to the org
     // AND granted the project role in one step — no separate "invite
     // to org, then invite to project" dance. The unique index on
@@ -756,7 +756,7 @@ projectsApp.openapi(
     if (emailConfigured) {
       void sendAccountInviteEmail({
         email,
-        accountName: accountRow?.name ?? 'Kortix',
+        accountName: accountRow?.name ?? 'dosco',
         inviterEmail: callerEmail,
         inviteId,
         role,
@@ -778,8 +778,8 @@ projectsApp.openapi(
         email_sent: emailConfigured,
         email_skip_reason: emailConfigured ? null : 'email_not_configured',
         message: emailConfigured
-          ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
-          : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
+          ? `No dosco account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
+          : `No dosco account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
       },
       201,
     );
@@ -820,7 +820,7 @@ projectsApp.openapi(
 // GET /v1/projects/:projectId/access/pending-invites
 // Lists pending account_invitations whose bootstrap_grants target this
 // project. Surfaces the "I invited someone whose email doesn't have a
-// Kortix account yet" intermediate state — without this the UI looks
+// dosco account yet" intermediate state — without this the UI looks
 // the same before and after a successful invite, leaving the inviter
 // to wonder if anything happened.
 //
@@ -1048,7 +1048,7 @@ projectsApp.openapi(
     .limit(1);
   const delivery = await sendAccountInviteEmail({
     email: invite.email,
-    accountName: accountRow?.name ?? 'Kortix',
+    accountName: accountRow?.name ?? 'dosco',
     inviterEmail: callerEmail,
     inviteId: invite.inviteId,
     role: grant.role,

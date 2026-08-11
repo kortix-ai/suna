@@ -16,7 +16,7 @@ import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { stripdoscoSystemTags } from '@/lib/utils/kortix-system-tags';
 import { autoLinkUrls } from '@kortix/shared';
 import Link from 'next/link';
 import React, { useCallback, useMemo } from 'react';
@@ -322,7 +322,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
       );
     }
 
-    const finalContent = autoLinkUrls(stripKortixSystemTags(prepareMarkdownForKatex(safeContent)));
+    const finalContent = autoLinkUrls(stripdoscoSystemTags(prepareMarkdownForKatex(safeContent)));
 
     return (
       <div

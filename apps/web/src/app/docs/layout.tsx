@@ -24,9 +24,10 @@ import {
 function DocsLogo() {
   return (
     <span className="ml-1 flex items-center gap-2.5 no-underline">
-      {/* The canonical full Kortix logo (symbol + wordmark), via the shared
-          KortixLogo component so the docs stay in lockstep with the rest of
-          the app's brand treatment. */}
+      {/* The canonical dosco logo (fire-katana symbol + wordmark), via the
+          shared KortixLogo component — the mark inside the component is
+          dosco; the filename and symbol/logomark alias are kept as a
+          back-compat shim. */}
       <KortixLogo variant="logomark" size={18} />
     </span>
   );
@@ -68,7 +69,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             text: 'GitHub',
             label: 'GitHub',
             icon: <GithubLogoIcon />,
-            url: 'https://github.com/kortix-ai/suna',
+            url: 'https://dosco.live',
             external: true,
           },
         ]}

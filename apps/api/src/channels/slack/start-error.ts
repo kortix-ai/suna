@@ -24,9 +24,9 @@ export function startErrorMessage(status: number | undefined, body: unknown): st
   // Most specific: known error CODES from the create path.
   switch (code) {
     case 'UNKNOWN_SANDBOX_TEMPLATE':
-      return "I couldn't start a session — the sandbox template configured for this project no longer exists. Update it in the project's Kortix settings, then send your message again.";
+      return "I couldn't start a session — the sandbox template configured for this project no longer exists. Update it in the project's dosco settings, then send your message again.";
     case 'KORTIX_URL_UNREACHABLE':
-      return "I couldn't start a session — Kortix couldn't reach the sandbox runtime just now. This is usually a brief infrastructure hiccup; give it a moment and send your message again.";
+      return "I couldn't start a session — dosco couldn't reach the sandbox runtime just now. This is usually a brief infrastructure hiccup; give it a moment and send your message again.";
     case 'WORKSPACE_MODE_UNAVAILABLE':
       return "I couldn't start a session because the agent uses the `read` workspace mode. Restricted workspace artifacts are not enabled yet. Set the agent's workspace to `runtime` or `branch`, then send your message again.";
   }
@@ -34,22 +34,22 @@ export function startErrorMessage(status: number | undefined, body: unknown): st
   // Then HTTP status.
   switch (status) {
     case 400:
-      return `I couldn't start a session — the request was rejected${shortDetail ? ` (${shortDetail})` : ''}. Check this channel's Kortix settings with \`/kortix\`, then send your message again.`;
+      return `I couldn't start a session — the request was rejected${shortDetail ? ` (${shortDetail})` : ''}. Check this channel's dosco settings with \`/kortix\`, then send your message again.`;
     case 402:
-      return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
+      return "This workspace is out of credits, so I can't start a session. Top up in the dosco dashboard and send your message again.";
     case 403:
-      return "I couldn't start a session — this workspace doesn't have permission to run one here. Ask a Kortix workspace admin to grant access, then send your message again.";
+      return "I couldn't start a session — this workspace doesn't have permission to run one here. Ask a dosco workspace admin to grant access, then send your message again.";
     case 404:
-      return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this channel with `/kortix switch`, then try again.";
+      return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect dosco to this channel with `/kortix switch`, then try again.";
     case 409:
-      return "I couldn't find a Kortix account to run this session as. Connect your account with `/kortix login`, then send your message again.";
+      return "I couldn't find a dosco account to run this session as. Connect your account with `/kortix login`, then send your message again.";
     case 429:
       return "This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.";
     case 500:
     case 502:
     case 503:
     case 504:
-      return "I couldn't start a session — Kortix hit a temporary error. Give it a moment and send your message again — I'll reply right here.";
+      return "I couldn't start a session — dosco hit a temporary error. Give it a moment and send your message again — I'll reply right here.";
   }
 
   // Unknown status/code — never leave the user without a next step.

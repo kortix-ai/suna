@@ -55,7 +55,7 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
 /**
  * Resolve the account a billing request should target.
  *
- * Multi-account users (one user, multiple Kortix accounts) need every billing
+ * Multi-account users (one user, multiple dosco accounts) need every billing
  * route to be account-scoped — otherwise mutating "Subscribe" or "Manage
  * billing" or even reading "account-state" silently target the user's FIRST
  * membership, which makes /accounts/<other>?tab=billing nonsensical.
@@ -174,7 +174,7 @@ export async function resolveAccountId(userId: string): Promise<string> {
   // /v1/accounts call (see accounts/index.ts:autoClaimPendingInvites).
   //
   // GUARD: only self-provision the membership when we ACTUALLY created the
-  // account. Kortix tokens (PAT/session/sandbox) map accountId→userId in the auth
+  // account. dosco tokens (PAT/session/sandbox) map accountId→userId in the auth
   // middleware (middleware/auth.ts: `c.set('userId', result.accountId)`), so a
   // token-authed caller reaches here with `userId` == an EXISTING account_id.
   // Without this guard we'd insert a phantom account_members row

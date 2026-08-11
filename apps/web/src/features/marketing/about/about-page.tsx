@@ -203,7 +203,7 @@ function Closing(): ReactNode {
 }
 
 /**
- * `/about` — why Kortix exists, in the founder's framing.
+ * `/about` — why dosco exists, in the founder's framing.
  *
  * The team opens the page, then the thesis at the largest type on the site.
  * Everything after it is support: three claims, the six-verb platform table,

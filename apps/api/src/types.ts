@@ -92,7 +92,7 @@ export interface AuthVariables {
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
   /** Per-agent authorization grant — non-null only for agent-session tokens.
-   *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
+   *  Read by assertAgentScope() to gate dosco CLI/API actions on top of the
    *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
   agentGrant?: AgentGrant | null;
   /** Live impersonation grant id — set only while a platform admin acts as an

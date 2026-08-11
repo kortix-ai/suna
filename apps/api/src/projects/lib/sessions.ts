@@ -67,7 +67,7 @@ import {
   type ProjectSessionRow,
   type RequestAuditContext,
   UUID_V4_REGEX,
-  deriveKortixApiRoot,
+  derivedoscoApiRoot,
   normalizeJsonObject,
   normalizeString,
 } from './serializers';
@@ -192,7 +192,7 @@ export async function enforceConcurrentSessionCap(
     console.error('[projects] Failed to record session cap audit event:', error);
   });
 
-  const message = `You've reached your plan's concurrent-session limit (${limit}). Upgrade your plan for a higher limit, or contact the Kortix team to raise it for your account.`;
+  const message = `You've reached your plan's concurrent-session limit (${limit}). Upgrade your plan for a higher limit, or contact the dosco team to raise it for your account.`;
   return {
     status: 429,
     headers: {
@@ -457,7 +457,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // OpenCode must not receive them because it would bypass the gateway.
     KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
-    // on-demand fetches, which stall through the Kortix git proxy when its
+    // on-demand fetches, which stall through the dosco git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
     // never finishes and the session never reaches runtimeReady. It is also
     // simply slower: measured on kortix-ai/company, blobless 6161ms vs a full
@@ -474,14 +474,14 @@ export async function buildSessionSandboxEnvVars(input: {
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
       sessionId: input.sessionId,
-      // Universal proxy origin: when enabled, the sandbox clones via the Kortix
+      // Universal proxy origin: when enabled, the sandbox clones via the dosco
       // git proxy with its own KORTIX_TOKEN — a real host credential never lands
       // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
       // the proxy host. OFF → direct clone of the real repo (legacy token flow).
       repoUrl: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
       baseRef: input.baseRef,
       agentName: input.agentName,
-      apiUrl: deriveKortixApiBase(),
+      apiUrl: derivedoscoApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
       // Concrete session model after explicit → agent → project → account →
@@ -502,18 +502,18 @@ export async function buildSessionSandboxEnvVars(input: {
 
 /** Derive the API v1 base URL sandboxes call as `$KORTIX_API_URL`. */
 
-export function deriveKortixApiBase(): string {
-  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
+export function derivedoscoApiBase(): string {
+  return `${derivedoscoApiRoot(config.KORTIX_URL)}/v1`;
 }
 
 /**
- * The Kortix git-proxy origin for a project — the UNIVERSAL client-facing git
- * URL. Clients clone/push this with a Kortix token; the API resolves the real
+ * The dosco git-proxy origin for a project — the UNIVERSAL client-facing git
+ * URL. Clients clone/push this with a dosco token; the API resolves the real
  * upstream + mints the host credential server-side.
  */
 
 export function proxyGitUrl(projectId: string): string {
-  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
+  return `${derivedoscoApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
 }
 
 /**
@@ -531,7 +531,7 @@ export function proxyGitUrl(projectId: string): string {
 export function sandboxCallbackUnreachableReason(): string | null {
   let host: string;
   try {
-    host = new URL(deriveKortixApiBase()).hostname.toLowerCase();
+    host = new URL(derivedoscoApiBase()).hostname.toLowerCase();
   } catch {
     return `KORTIX_URL is not a valid URL: ${config.KORTIX_URL || '(unset)'}`;
   }

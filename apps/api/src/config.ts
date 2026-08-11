@@ -21,7 +21,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
-type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
+type InternaldoscoEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
 
@@ -141,7 +141,7 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
-  // Kortix-owned session titles: the moment a session's first prompt text is
+  // dosco-owned session titles: the moment a session's first prompt text is
   // known server-side (at create when it carries one, else on the first HTTP
   // prompt), generate the title ourselves via the internal LLM gateway instead
   // of relying on the harness summarizer. On by default; the kill-switch
@@ -159,7 +159,7 @@ const envSchema = z.object({
   // deployment turn the whole docs/spec surface OFF so no route shapes publish.
   OPENAPI_PUBLIC_DOCS: optBoolTrue,
   // Self-host enterprise license: when the operator has purchased/holds a
-  // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
+  // dosco Enterprise license, this bypasses the sales-assigned `enterprise`
   // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
   // audit access) regardless of the account's billing tier — see
   // getAccountEntitlements()/accountHasEntitlement() in
@@ -203,7 +203,7 @@ const envSchema = z.object({
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
   // ('github' default). The GitHub backend creates repos under
-  // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
+  // MANAGED_GIT_GITHUB_OWNER (a dosco-owned org) via the dosco App
   // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
   // for the App JWT. Each backend's isConfigured() checks its own vars, so
   // leaving these blank keeps the managed-git path inert.
@@ -233,7 +233,7 @@ const envSchema = z.object({
   // Git remote host for clone/push URLs. Defaults to `<CODE_STORAGE_ORG>.code.storage`
   // when blank.
   CODE_STORAGE_GIT_HOST: optStr,
-  // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
+  // When true, runtime clients (sandbox + `kortix` CLI) use the dosco git
   // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
   // so a real GitHub credential never reaches a sandbox. Requires a
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
@@ -257,7 +257,7 @@ const envSchema = z.object({
   // Optional strict lock for operators that require one immutable secret grant
   // per sandbox. OFF by default: an in-session agent switch re-resolves the
   // running agent's grant, replaces the OpenCode env, and re-mints the session
-  // token's connector/Kortix-CLI grant before the prompt is forwarded. Enabling
+  // token's connector/dosco-CLI grant before the prompt is forwarded. Enabling
   // this flag refuses only switches whose secret grants differ. See
   // projects/lib/secret-grant.ts.
   KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: optBoolFalse,
@@ -294,7 +294,7 @@ const envSchema = z.object({
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL: optStr,
-  // Per-Slack-user identity. Default-on: each sender must link their own Kortix
+  // Per-Slack-user identity. Default-on: each sender must link their own dosco
   // account via `/kortix login` and the agent runs AS them; unlinked senders
   // are blocked. Set explicitly to "false" only for legacy fallback where
   // Slack messages should run as the bound project owner.
@@ -306,7 +306,7 @@ const envSchema = z.object({
   AGENTMAIL_WEBHOOK_SECRET: optStr,
 
   // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
-  // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
+  // One dosco-owned multi-tenant Azure AD bot app. The same app id/password
   // serve every tenant; the per-conversation tenant id arrives on each inbound
   // activity. Outbound auth is a short-lived AAD token minted per scope at call
   // time (channels/teams-auth.ts) — there is no static bot token to store.
@@ -323,7 +323,7 @@ const envSchema = z.object({
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
   // Whether the Teams channel is offered is NOT an operator env var — it is the
   // per-project `teams` feature flag (feature-flags/registry.ts).
-  TEAMS_APP_NAME: optStrDefault('Kortix'),
+  TEAMS_APP_NAME: optStrDefault('dosco'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL: optUrl('https://openrouter.ai/api/v1'),
@@ -340,12 +340,12 @@ const envSchema = z.object({
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
-  // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
-  // and OpenRouter credentials. Kortix bills each route as platform credits.
+  // deployment. The lineup routes through dosco's shared Bedrock, AsterLab,
+  // and OpenRouter credentials. dosco bills each route as platform credits.
   // This flag is independent of
   // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
   // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
-  // must never see or route to Kortix's shared credentials. When unset it
+  // must never see or route to dosco's shared credentials. When unset it
   // follows KORTIX_BILLING_INTERNAL_ENABLED (derived below): billing on =
   // managed cloud where the managed lineup is the product; billing off =
   // self-host where it must stay dark. An explicit true/false always wins.
@@ -384,7 +384,7 @@ const envSchema = z.object({
   LLM_GATEWAY_CATALOG_URL: optUrl('https://models.dev/api.json'),
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
-  // Kortix credits) so the turn survives instead of erroring. Empty disables.
+  // dosco credits) so the turn survives instead of erroring. Empty disables.
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
@@ -394,7 +394,7 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET: optStr,
-  // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
+  // AWS Bedrock — the managed ("dosco") models route here via a Bedrock API key
   // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
   // service-specific credential for bedrock.amazonaws.com.
   AWS_BEDROCK_REGION: optStr,
@@ -447,7 +447,7 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Optional per-project accelerator. When enabled, Kortix bakes the project's
+  // Optional per-project accelerator. When enabled, dosco bakes the project's
   // default-branch repository into a derivative of the shared platform image.
   // A disabled or failed accelerator never blocks a session. Sessions boot from
   // the shared image and clone the repository into /workspace instead.
@@ -604,7 +604,7 @@ const envSchema = z.object({
   MAILPIT_API_URL: optStr,
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
-  MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
+  MAILTRAP_FROM_NAME: optStrDefault('dosco'),
   // Where public demo-request / "book a demo" lead notifications are sent.
   // Comma-separated list; every address gets every submission.
   DEMO_LEAD_NOTIFY_EMAIL: optStrDefault('marko@kortix.ai,hey@kortix.ai'),
@@ -900,7 +900,7 @@ export const config = {
   PORT: env.PORT,
 
   // ─── Internal Deployment Controls ─────────────────────────────────────────
-  INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
+  INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternaldoscoEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
@@ -1221,10 +1221,10 @@ export const config = {
 // ─── Billing Markup Constants ────────────────────────────────────────────────
 //
 // Two pricing modes based on whose API key is used:
-//   * Kortix keys (user uses our keys):  1.2x provider cost (20% markup)
+//   * dosco keys (user uses our keys):  1.2x provider cost (20% markup)
 //   * User's own keys (passthrough):     0.1x provider cost (10% platform fee)
 
-/** Markup when Kortix provides the API key. */
+/** Markup when dosco provides the API key. */
 export const KORTIX_MARKUP = 1.2;
 
 /** Platform fee when user provides their own API key. */

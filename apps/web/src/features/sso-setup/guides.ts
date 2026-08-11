@@ -9,7 +9,7 @@
  *  - 'instructions'   — things the admin does in the IdP console
  *  - 'metadata-input' — capture the IdP metadata (URL or XML) inline; the
  *                       value is stashed and prefills the import step
- *  - 'import'         — the inline "connect to Kortix" form (metadata import)
+ *  - 'import'         — the inline "connect to dosco" form (metadata import)
  *  - 'scim-token'     — mint a SCIM bearer token inline (Directory Sync flow)
  *  - 'test'           — the final verify step
  */
@@ -93,12 +93,12 @@ export interface GuideStep {
   doneLabel?: string;
   kind?: StepKind;
   /** Which console this step happens in — rendered as a "you are here" badge
-   *  so an admin never has to guess whether a step means the Kortix
+   *  so an admin never has to guess whether a step means the dosco
    *  dashboard or the IdP's own admin center. Omit for steps not tied to a
    *  single console (e.g. pure prep/reading). */
   where?: 'kortix' | 'idp';
   /** Exact click path inside that console, e.g. "Enterprise applications →
-   *  Kortix → Provisioning → Users and groups" — rendered as a breadcrumb
+   *  dosco → Provisioning → Users and groups" — rendered as a breadcrumb
    *  so the admin can navigate without reading prose. */
   menuPath?: string;
   /** Short reassuring line: what success looks like once this step is done. */
@@ -120,7 +120,7 @@ export interface GuideStep {
  * emits the names of ONLY the groups explicitly selected in the mapping.
  */
 export interface ProviderConfig {
-  /** Attribute name the IdP emits for groups — Kortix's group_claim_name MUST equal it. */
+  /** Attribute name the IdP emits for groups — dosco's group_claim_name MUST equal it. */
   groupClaimName: string;
   /** What the group VALUES look like — i.e. what an admin pastes into a group mapping. */
   groupValueHint: string;
@@ -131,7 +131,7 @@ export interface ProviderConfig {
   metadataSource?: string;
   /** Placeholder for the metadata URL input (only when preferredMetadata is 'url'). */
   metadataUrlPlaceholder?: string;
-  /** SCIM guides: when the IdP pushes changes to Kortix — shown next to the
+  /** SCIM guides: when the IdP pushes changes to dosco — shown next to the
    *  "Last sync activity" indicator. We're the SCIM SERVER, so we can't know
    *  when the next call comes; this states the provider's real cadence
    *  (Entra: ~40-min scheduled cycle; most others: event-driven pushes). */
@@ -164,11 +164,11 @@ export interface ProviderGuide {
 /** Shared final steps — the connect + test flow is identical per provider. */
 const importStep = (claimHint: string): GuideStep => ({
   id: 'connect',
-  title: 'Connect to Kortix',
+  title: 'Connect to dosco',
   kind: 'import',
   where: 'kortix',
   intro:
-    'The federation metadata you captured earlier is prefilled below. Kortix registers your IdP and routes sign-ins for your email domain through it.',
+    'The federation metadata you captured earlier is prefilled below. dosco registers your IdP and routes sign-ins for your email domain through it.',
   note: `Group claim is prefilled with ${claimHint} — it must match the claim name your IdP emits, or group sync silently finds nothing.`,
 });
 
@@ -184,8 +184,8 @@ const testStep = (
   bullets: [
     opts.accessBullet ??
       'The test user must be allowed to reach the app — otherwise the IdP rejects the sign-in with a “not assigned” error.',
-    'On success the user lands in Kortix and appears under Members on the account’s Identity page.',
-    'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a project role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → Kortix group).',
+    'On success the user lands in dosco and appears under Members on the account’s Identity page.',
+    'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a project role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → dosco group).',
     'Either way a group confers NO access until you grant it a project role; changes in the IdP (add/remove from a group) apply on the user’s next sign-in.',
     ...(opts.extra ? [opts.extra] : []),
   ],
@@ -239,7 +239,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Enter an appropriate app name, such as "Kortix". Select the "Integrate any other application you don\'t find in the gallery (Non-gallery)" option. Click "Create".',
+            text: 'Enter an appropriate app name, such as "dosco". Select the "Integrate any other application you don\'t find in the gallery (Non-gallery)" option. Click "Create".',
           },
           {
             kind: 'image',
@@ -248,7 +248,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             schematic: {
               title: 'Browse Microsoft Entra Gallery → Create your own application',
               rows: [
-                { label: "What's the name of your app?", value: 'Kortix', as: 'field' },
+                { label: "What's the name of your app?", value: 'dosco', as: 'field' },
                 {
                   label:
                     "Integrate any other application you don't find in the gallery (Non-gallery)",
@@ -293,7 +293,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Copy the "Identifier (Entity ID)" and the "Reply URL (Assertion Consumer Service URL)" below and paste them into the "Basic SAML Configuration" panel — mark the Identifier as Default, and set "Sign on URL" to your Kortix sign-in page. Leave Relay State and Logout URL empty. Click "Save" and close the edit panel.',
+            text: 'Copy the "Identifier (Entity ID)" and the "Reply URL (Assertion Consumer Service URL)" below and paste them into the "Basic SAML Configuration" panel — mark the Identifier as Default, and set "Sign on URL" to your dosco sign-in page. Leave Relay State and Logout URL empty. Click "Save" and close the edit panel.',
           },
           { kind: 'sp-values', includeSignOnUrl: true },
           {
@@ -315,7 +315,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: 'After Save, Entra pops its own "Test single sign-on with Kortix?" dialog — choose "No, I\'ll test later". Kortix isn\'t connected yet; the guided test comes at the last step.',
+        note: 'After Save, Entra pops its own "Test single sign-on with dosco?" dialog — choose "No, I\'ll test later". dosco isn\'t connected yet; the guided test comes at the last step.',
         doneLabel: 'I’ve completed basic SAML configuration',
       },
       {
@@ -424,7 +424,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           'Advanced options → check "Customize the name of the group claim" → Name: memberOf.',
         ],
         warning:
-          'Display names and assigning groups to the app require Entra ID P1/P2 (check yours: Entra admin center → Overview → the License row). On the Free tier pick "Security groups" + "Group ID" instead — groups arrive as Object IDs (GUIDs; copy a group\'s Object ID from Entra ID → Groups) and you map those GUIDs in Kortix. EITHER WAY, you must still rename the claim to memberOf under "Advanced options" → "Customize the name of the group claim" — skipping the rename is the #1 cause of groups silently not syncing.',
+          'Display names and assigning groups to the app require Entra ID P1/P2 (check yours: Entra admin center → Overview → the License row). On the Free tier pick "Security groups" + "Group ID" instead — groups arrive as Object IDs (GUIDs; copy a group\'s Object ID from Entra ID → Groups) and you map those GUIDs in dosco. EITHER WAY, you must still rename the claim to memberOf under "Advanced options" → "Customize the name of the group claim" — skipping the rename is the #1 cause of groups silently not syncing.',
         doneLabel: 'I’ve added the memberOf group claim',
       },
       {
@@ -446,7 +446,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Click "Add user/group", click "None Selected" under Users and groups, select the users or groups that should sign in to Kortix, click "Select", then click "Assign".',
+            text: 'Click "Add user/group", click "None Selected" under Users and groups, select the users or groups that should sign in to dosco, click "Select", then click "Assign".',
           },
           {
             kind: 'image',
@@ -493,7 +493,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       importStep('memberOf'),
       testStep({
-        extra: 'Removed from the Entra group → the mapped Kortix access is gone on next sign-in.',
+        extra: 'Removed from the Entra group → the mapped dosco access is gone on next sign-in.',
       }),
     ],
   },
@@ -556,7 +556,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'The "Create SAML Integration" wizard opens. On the "General Settings" step, enter an appropriate app name, such as "Kortix" — optionally upload an app logo. Click "Next".',
+            text: 'The "Create SAML Integration" wizard opens. On the "General Settings" step, enter an appropriate app name, such as "dosco" — optionally upload an app logo. Click "Next".',
           },
           {
             kind: 'image',
@@ -565,14 +565,14 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             schematic: {
               title: 'Create SAML Integration → General Settings',
               rows: [
-                { label: 'App name', value: 'Kortix', as: 'field' },
+                { label: 'App name', value: 'dosco', as: 'field' },
                 { label: 'App logo (optional)', as: 'field' },
                 { label: 'Next', as: 'button' },
               ],
             },
           },
         ],
-        note: 'On the wizard\'s last step ("Help Okta Support understand how you configured this application"), select "This is an internal app that we have created" and click "Finish" — it\'s just Okta\'s own telemetry question, not a Kortix setting.',
+        note: 'On the wizard\'s last step ("Help Okta Support understand how you configured this application"), select "This is an internal app that we have created" and click "Finish" — it\'s just Okta\'s own telemetry question, not a dosco setting.',
         doneLabel: 'I’ve created a SAML app integration',
       },
       {
@@ -601,7 +601,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Check "Use this for Recipient URL and Destination URL". Set "Name ID format" to EmailAddress and "Application username" to Email — Kortix matches accounts by email.',
+            text: 'Check "Use this for Recipient URL and Destination URL". Set "Name ID format" to EmailAddress and "Application username" to Email — dosco matches accounts by email.',
           },
           {
             kind: 'image',
@@ -698,7 +698,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: 'Okta sends the matching groups by NAME — those names are what you map in Kortix. The attribute name (groups) is what Kortix reads as the group claim.',
+        note: 'Okta sends the matching groups by NAME — those names are what you map in dosco. The attribute name (groups) is what dosco reads as the group claim.',
         doneLabel: 'I’ve added the groups attribute',
       },
       {
@@ -800,7 +800,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Enter an app name, such as "Kortix" — optionally upload an app icon. Click "Continue".',
+            text: 'Enter an app name, such as "dosco" — optionally upload an app icon. Click "Continue".',
           },
           {
             kind: 'image',
@@ -809,7 +809,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             schematic: {
               title: 'Add custom SAML app → App details',
               rows: [
-                { label: 'App name', value: 'Kortix', as: 'field' },
+                { label: 'App name', value: 'dosco', as: 'field' },
                 { label: 'App icon', value: '(optional)', as: 'field' },
                 { label: 'Continue', as: 'button' },
               ],
@@ -840,7 +840,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: "Google only offers the XML download — there is no hosted metadata URL. Come back to re-download it if you change the app's configuration later; Kortix reads whatever is in the file at import time.",
+        note: "Google only offers the XML download — there is no hosted metadata URL. Come back to re-download it if you change the app's configuration later; dosco reads whatever is in the file at import time.",
         doneLabel: 'I’ve added the identity provider metadata',
       },
       {
@@ -933,7 +933,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
         ],
         warning:
-          'Google only sends groups you EXPLICITLY select here (max 75). Add every group you plan to map in Kortix — an unselected group is silently omitted from the claim.',
+          'Google only sends groups you EXPLICITLY select here (max 75). Add every group you plan to map in dosco — an unselected group is silently omitted from the claim.',
       },
       {
         id: 'assign-users',
@@ -948,7 +948,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             src: '/sso-setup/google/assign-users-1.png',
             alt: 'App page User access section with the service toggle',
             schematic: {
-              title: 'Kortix → User access',
+              title: 'dosco → User access',
               rows: [
                 {
                   label: 'Service status',
@@ -974,7 +974,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint:
-        'Cloudflare forwards the upstream IdP’s group NAMES on a "groups" SAML attribute (sent automatically for Okta, Entra ID, Google Workspace, and GitHub) — map those names in Kortix.',
+        'Cloudflare forwards the upstream IdP’s group NAMES on a "groups" SAML attribute (sent automatically for Okta, Entra ID, Google Workspace, and GitHub) — map those names in dosco.',
       preferredMetadata: 'url',
       metadataSource:
         'Take the "SSO endpoint" Cloudflare shows for the app and append /saml-metadata to it — that URL serves the SAML metadata XML.',
@@ -988,10 +988,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Cloudflare Zero Trust → Settings → Authentication → Login methods',
         intro:
-          'Cloudflare Access sits BETWEEN Kortix and your real identity provider: it authenticates users against your IdP, then presents itself to Kortix as a SAML IdP. So set up the upstream connection first — in Zero Trust → Settings → Authentication, add a login method (Okta, Entra, Google, …) per Cloudflare’s docs.',
+          'Cloudflare Access sits BETWEEN dosco and your real identity provider: it authenticates users against your IdP, then presents itself to dosco as a SAML IdP. So set up the upstream connection first — in Zero Trust → Settings → Authentication, add a login method (Okta, Entra, Google, …) per Cloudflare’s docs.',
         bullets: [
-          'This guide covers the DOWNSTREAM half (Cloudflare → Kortix). The upstream half (your IdP → Cloudflare) follows Cloudflare’s own documentation for your provider.',
-          'Whatever attributes Kortix needs (email, first/last name, and groups) must survive the upstream hop — Cloudflare forwards them on.',
+          'This guide covers the DOWNSTREAM half (Cloudflare → dosco). The upstream half (your IdP → Cloudflare) follows Cloudflare’s own documentation for your provider.',
+          'Whatever attributes dosco needs (email, first/last name, and groups) must survive the upstream hop — Cloudflare forwards them on.',
         ],
         doneLabel: 'Cloudflare Access is connected to my IdP',
       },
@@ -1013,7 +1013,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Choose the "SaaS" application type, then select SAML (not OIDC) as the protocol. Give it a name such as "Kortix".',
+            text: 'Choose the "SaaS" application type, then select SAML (not OIDC) as the protocol. Give it a name such as "dosco".',
           },
           {
             kind: 'image',
@@ -1036,7 +1036,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Add an application → SaaS · SAML → app configuration',
         intro:
-          'You configure everything in Cloudflare’s single “Add an application” wizard (the Configuration / Authentication / Policies / Overview tabs only appear when you EDIT the app later). First, paste Kortix’s service-provider values into Cloudflare’s fields.',
+          'You configure everything in Cloudflare’s single “Add an application” wizard (the Configuration / Authentication / Policies / Overview tabs only appear when you EDIT the app later). First, paste dosco’s service-provider values into Cloudflare’s fields.',
         content: [
           {
             kind: 'sp-values',
@@ -1063,7 +1063,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Set "Name ID format" to Email — Kortix correlates accounts by email address.',
+            text: 'Set "Name ID format" to Email — dosco correlates accounts by email address.',
           },
         ],
         doneLabel: 'I’ve entered the service-provider details',
@@ -1074,7 +1074,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Add an application → SaaS · SAML → SAML attribute statements',
         intro:
-          'Cloudflare Access passes email by default. Add the other attributes Kortix reads — id, firstName, lastName — as "SAML attribute statements": each is a Name plus the upstream IdP claim it maps to (a dropdown of your login method’s claims).',
+          'Cloudflare Access passes email by default. Add the other attributes dosco reads — id, firstName, lastName — as "SAML attribute statements": each is a Name plus the upstream IdP claim it maps to (a dropdown of your login method’s claims).',
         content: [
           {
             kind: 'claims-table',
@@ -1125,7 +1125,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         ],
         warning:
           'Do NOT enable the Advanced settings "SAML attribute transform (JSONata)" to build groups — a JSONata transform OVERRIDES all your SAML attribute statements, wiping out the email/id/firstName/lastName mappings from the previous step. Use plain attribute statements only.',
-        note: 'The attribute name (groups) must match Kortix’s group claim, which is prefilled at the connect step. Cloudflare passes through whatever group NAMES the upstream IdP sends.',
+        note: 'The attribute name (groups) must match dosco’s group claim, which is prefilled at the connect step. Cloudflare passes through whatever group NAMES the upstream IdP sends.',
         doneLabel: 'I’ve confirmed the groups attribute',
       },
       {
@@ -1215,7 +1215,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint:
-        'OneLogin sends the user’s Role names on the "groups" parameter — map those names in Kortix. The parameter MUST be flagged multi-value, or OneLogin collapses every role into one string.',
+        'OneLogin sends the user’s Role names on the "groups" parameter — map those names in dosco. The parameter MUST be flagged multi-value, or OneLogin collapses every role into one string.',
       preferredMetadata: 'url',
       metadataSource:
         'The app’s SSO tab → Issuer URL (a hosted metadata link) — or download the same XML via More Actions → SAML Metadata.',
@@ -1228,7 +1228,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'OneLogin admin → Applications → Applications',
         intro:
-          'In the OneLogin admin console: Applications → Applications → "Add App" (top-right) → search the catalog for "SAML Custom Connector (Advanced)" → select it → set the Display Name to "Kortix" → Save.',
+          'In the OneLogin admin console: Applications → Applications → "Add App" (top-right) → search the catalog for "SAML Custom Connector (Advanced)" → select it → set the Display Name to "dosco" → Save.',
         content: [
           {
             kind: 'image',
@@ -1238,7 +1238,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
               title: 'Applications → Add App',
               rows: [
                 { label: 'Search', value: 'SAML Custom Connector (Advanced)', as: 'field' },
-                { label: 'Display Name', value: 'Kortix', as: 'field' },
+                { label: 'Display Name', value: 'dosco', as: 'field' },
                 { label: 'Save', as: 'button' },
               ],
             },
@@ -1256,7 +1256,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Your app → Configuration',
         intro:
-          'On the Configuration tab, paste Kortix’s values. Note OneLogin uses several fields for the ACS URL.',
+          'On the Configuration tab, paste dosco’s values. Note OneLogin uses several fields for the ACS URL.',
         content: [
           {
             kind: 'sp-values',
@@ -1284,7 +1284,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Put the ACS URL in both "Recipient" and "ACS (Consumer) URL". The "ACS (Consumer) URL Validator" is a REGEX field, not a plain URL: take the ACS URL above, escape every dot (. becomes \\.), and anchor it with ^ … $. For example, if the ACS URL is https://api.kortix.com/auth/v1/sso/saml/acs, paste ^https:\\/\\/api\\.kortix\\.com\\/auth\\/v1\\/sso\\/saml\\/acs$ — a pattern that doesn’t match the exact ACS URL makes the sign-in fail with no clear error.',
+            text: 'Put the ACS URL in both "Recipient" and "ACS (Consumer) URL". The "ACS (Consumer) URL Validator" is a REGEX field, not a plain URL: take the ACS URL above, escape every dot (. becomes \\.), and anchor it with ^ … $. For example, if the ACS URL is https://api.dosco.live/auth/v1/sso/saml/acs, paste ^https:\\/\\/api\\.kortix\\.com\\/auth\\/v1\\/sso\\/saml\\/acs$ — a pattern that doesn’t match the exact ACS URL makes the sign-in fail with no clear error.',
           },
         ],
         warning:
@@ -1348,7 +1348,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         ],
         warning:
           'Without the multi-value flag OneLogin collapses all roles into one delimited string — group sync then sees a single junk "group". Always enable it.',
-        note: 'The parameter name (groups) must match Kortix’s group claim, prefilled at connect.',
+        note: 'The parameter name (groups) must match dosco’s group claim, prefilled at connect.',
         doneLabel: 'I’ve added the groups parameter',
       },
       {
@@ -1361,7 +1361,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'text',
-            text: 'For a single tester: Users → open the test user → Applications tab → "+" → add "Kortix". For a team: Users → Roles → create or edit a Role that includes the Kortix app, then add members to that Role.',
+            text: 'For a single tester: Users → open the test user → Applications tab → "+" → add "dosco". For a team: Users → Roles → create or edit a Role that includes the dosco app, then add members to that Role.',
           },
         ],
         note: 'When group sync maps OneLogin Roles, those same Roles are what gate app access — so assigning via a Role does double duty (access + the "groups" value).',
@@ -1416,7 +1416,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'JumpCloud admin → Access → SSO Applications',
         intro:
-          'In the JumpCloud admin console: Access → SSO Applications → "+ Add New Application" → "Custom Application" (search "Custom SAML App") → "Configure SSO with SAML" → name it "Kortix". This opens the app’s SSO tab.',
+          'In the JumpCloud admin console: Access → SSO Applications → "+ Add New Application" → "Custom Application" (search "Custom SAML App") → "Configure SSO with SAML" → name it "dosco". This opens the app’s SSO tab.',
         content: [
           {
             kind: 'image',
@@ -1438,7 +1438,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         title: 'SSO configuration',
         where: 'idp',
         menuPath: 'Your app → SSO',
-        intro: 'On the SSO tab, paste Kortix’s ACS URL and Entity ID into the two SP fields.',
+        intro: 'On the SSO tab, paste dosco’s ACS URL and Entity ID into the two SP fields.',
         content: [
           {
             kind: 'sp-values',
@@ -1461,7 +1461,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Paste the Kortix Entity ID into "SP Entity ID" ONLY. Leave "IdP Entity ID" as the value JumpCloud pre-populates — that is JumpCloud’s own identifier and it flows into the exported metadata for you. Then check "Sign Assertion".',
+            text: 'Paste the dosco Entity ID into "SP Entity ID" ONLY. Leave "IdP Entity ID" as the value JumpCloud pre-populates — that is JumpCloud’s own identifier and it flows into the exported metadata for you. Then check "Sign Assertion".',
           },
         ],
         doneLabel: 'I’ve entered the SSO configuration',
@@ -1472,7 +1472,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Your app → SSO → User Attributes',
         intro:
-          'Under "User Attributes", add each Service-Provider-Attribute-Name → JumpCloud-Attribute-Name pair. The left column is the SAML claim Kortix receives; the right is the JumpCloud user field.',
+          'Under "User Attributes", add each Service-Provider-Attribute-Name → JumpCloud-Attribute-Name pair. The left column is the SAML claim dosco receives; the right is the JumpCloud user field.',
         content: [
           {
             kind: 'claims-table',
@@ -1521,7 +1521,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: 'JumpCloud only sends groups the application is BOUND to (User Groups tab). Bind each group you plan to map in Kortix; the name must match the connect-step claim.',
+        note: 'JumpCloud only sends groups the application is BOUND to (User Groups tab). Bind each group you plan to map in dosco; the name must match the connect-step claim.',
         doneLabel: 'I’ve enabled the group attribute',
       },
       {
@@ -1564,7 +1564,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
         ],
         warning:
-          'Order matters: tick "Declare Redirect Endpoint" and Save BEFORE copying metadata — copying before Save yields metadata with the wrong binding or a missing certificate, and Kortix silently gets the wrong SSO endpoint.',
+          'Order matters: tick "Declare Redirect Endpoint" and Save BEFORE copying metadata — copying before Save yields metadata with the wrong binding or a missing certificate, and dosco silently gets the wrong SSO endpoint.',
         note: 'No hosted URL? Switch to "Manual configuration" and paste the XML from "Export Metadata" instead — but the URL auto-refreshes when JumpCloud rotates the cert, so prefer it.',
         doneLabel: 'I’ve added the identity provider metadata',
       },
@@ -1591,7 +1591,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'PingOne → Connections → Applications',
         intro:
-          'In the PingOne admin console: Connections → Applications → open the app for Kortix, or click "+" to add one: enter the name "Kortix", choose the "SAML Application" type (not OIDC/SPA/Worker/Native), then Configure.',
+          'In the PingOne admin console: Connections → Applications → open the app for dosco, or click "+" to add one: enter the name "dosco", choose the "SAML Application" type (not OIDC/SPA/Worker/Native), then Configure.',
         content: [
           {
             kind: 'image',
@@ -1600,7 +1600,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             schematic: {
               title: 'Connections → Applications → +',
               rows: [
-                { label: 'Application name', value: 'Kortix', as: 'field' },
+                { label: 'Application name', value: 'dosco', as: 'field' },
                 { label: 'Application type', value: 'SAML Application', as: 'field' },
               ],
             },
@@ -1614,7 +1614,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Your app → Configuration → SAML',
         intro:
-          'PingOne derives the ACS URL and Entity ID from Kortix’s SP metadata — you don’t type them separately. On the app’s SAML Configuration page, choose "Import from URL" (NOT the default "Manually Enter"), paste Kortix’s Identifier (Entity ID) into the metadata URL field, and click Import — PingOne auto-fills the ACS URLs and Entity ID.',
+          'PingOne derives the ACS URL and Entity ID from dosco’s SP metadata — you don’t type them separately. On the app’s SAML Configuration page, choose "Import from URL" (NOT the default "Manually Enter"), paste dosco’s Identifier (Entity ID) into the metadata URL field, and click Import — PingOne auto-fills the ACS URLs and Entity ID.',
         content: [
           {
             kind: 'sp-values',
@@ -1635,7 +1635,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: 'Kortix’s Entity ID IS the SP metadata endpoint, so importing it fills ACS + Audience for you. Pick "Manually Enter" instead and there is no "SP Metadata URL" field — you’d have to type the ACS URL and Entity ID by hand.',
+        note: 'dosco’s Entity ID IS the SP metadata endpoint, so importing it fills ACS + Audience for you. Pick "Manually Enter" instead and there is no "SP Metadata URL" field — you’d have to type the ACS URL and Entity ID by hand.',
         doneLabel: 'I’ve imported the SP metadata',
       },
       {
@@ -1644,7 +1644,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Your app → Attribute Mapping',
         intro:
-          'In "Attribute Mapping", first set the SAML Subject (the "saml_subject" row / Name ID) to "Email Address" — it defaults to "User ID" (a GUID), but Kortix correlates accounts by email. Then add these outgoing SAML attributes (Kortix name → PingOne source):',
+          'In "Attribute Mapping", first set the SAML Subject (the "saml_subject" row / Name ID) to "Email Address" — it defaults to "User ID" (a GUID), but dosco correlates accounts by email. Then add these outgoing SAML attributes (dosco name → PingOne source):',
         content: [
           {
             kind: 'claims-table',
@@ -1671,7 +1671,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: 'The saml_subject / Name ID defaults to a GUID — set it to Email Address (format urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress) so the subject matches the email Kortix keys on, belt-and-braces with the email attribute.',
+        note: 'The saml_subject / Name ID defaults to a GUID — set it to Email Address (format urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress) so the subject matches the email dosco keys on, belt-and-braces with the email attribute.',
         doneLabel: 'I’ve mapped the attributes',
       },
       {
@@ -1744,7 +1744,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'Auth0 Dashboard → Applications → Applications',
         intro:
-          'In the Auth0 dashboard: Applications → Applications → open (or create) the application for Kortix. Creating a new one? Choose "Regular Web Application" — the SAML2 addon works regardless of type, but this avoids second-guessing the picker.',
+          'In the Auth0 dashboard: Applications → Applications → open (or create) the application for dosco. Creating a new one? Choose "Regular Web Application" — the SAML2 addon works regardless of type, but this avoids second-guessing the picker.',
         content: [
           {
             kind: 'image',
@@ -1784,7 +1784,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         where: 'idp',
         menuPath: 'SAML2 Web App → Settings',
         intro:
-          'In the addon’s Settings modal, paste Kortix’s ACS URL into "Application Callback URL". The Entity ID is NOT a form field — it goes inside the JSON.',
+          'In the addon’s Settings modal, paste dosco’s ACS URL into "Application Callback URL". The Entity ID is NOT a form field — it goes inside the JSON.',
         content: [
           {
             kind: 'sp-values',
@@ -1803,7 +1803,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'In the "Settings" JSON object below the callback field, set TWO things: (1) "audience" = Kortix’s Entity ID, and (2) force the NameID to the user’s email — it defaults to the opaque Auth0 user_id (auth0|…), which Kortix can’t correlate. Add: "audience": "…/saml/metadata", "nameIdentifierFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress", "nameIdentifierProbes": ["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]. Then scroll down and click "Enable".',
+            text: 'In the "Settings" JSON object below the callback field, set TWO things: (1) "audience" = dosco’s Entity ID, and (2) force the NameID to the user’s email — it defaults to the opaque Auth0 user_id (auth0|…), which dosco can’t correlate. Add: "audience": "…/saml/metadata", "nameIdentifierFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress", "nameIdentifierProbes": ["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"]. Then scroll down and click "Enable".',
           },
           {
             kind: 'image',
@@ -1823,7 +1823,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
         ],
         warning:
-          '#1 Auth0 gotcha: two easy-to-miss values live inside the Settings JSON, not labeled fields — the audience (Entity ID) AND the NameID format. The addon defaults NameID to the Auth0 user_id (auth0|…), so without the emailAddress nameIdentifierFormat above, Kortix correlates on the wrong subject and every sign-in mis-identifies or fails.',
+          '#1 Auth0 gotcha: two easy-to-miss values live inside the Settings JSON, not labeled fields — the audience (Entity ID) AND the NameID format. The addon defaults NameID to the Auth0 user_id (auth0|…), so without the emailAddress nameIdentifierFormat above, dosco correlates on the wrong subject and every sign-in mis-identifies or fails.',
         doneLabel: 'I’ve set the callback URL, audience, and NameID',
       },
       {
@@ -1845,7 +1845,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             },
           },
         ],
-        note: 'Groups: the default SAML2 Web App addon sends only email + name. To sync groups, add an Auth0 Action/Rule that emits a claim NAMED exactly "groups" (matching the connect-step claim). Auth0’s built-in group attribute URI "http://schemas.xmlsoap.org/claims/Group" will NOT match — map it to "groups". Then map those names in Kortix.',
+        note: 'Groups: the default SAML2 Web App addon sends only email + name. To sync groups, add an Auth0 Action/Rule that emits a claim NAMED exactly "groups" (matching the connect-step claim). Auth0’s built-in group attribute URI "http://schemas.xmlsoap.org/claims/Group" will NOT match — map it to "groups". Then map those names in dosco.',
         doneLabel: 'I’ve added the identity provider metadata',
       },
       importStep('groups'),
@@ -1859,7 +1859,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint:
-        'Group values arrive exactly as your IdP emits them (names or IDs) — create Kortix mappings from what actually arrives.',
+        'Group values arrive exactly as your IdP emits them (names or IDs) — create dosco mappings from what actually arrives.',
       preferredMetadata: 'url',
       metadataSource: 'Your IdP’s SAML metadata export (URL or XML)',
       metadataUrlPlaceholder: 'https://…/saml/metadata.xml',
@@ -1867,7 +1867,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     steps: [
       {
         id: 'basic-saml',
-        title: 'Register Kortix in your IdP',
+        title: 'Register dosco in your IdP',
         intro:
           'Create a SAML 2.0 application in your identity provider and give it these service-provider values.',
         showSpValues: true,
@@ -1940,7 +1940,7 @@ const scimTestStep = (
   kind: 'test',
   where: 'idp',
   intro:
-    'Back in Kortix, watch the live status below while you push or wait for the sync — no need to tab back and forth to check.',
+    'Back in dosco, watch the live status below while you push or wait for the sync — no need to tab back and forth to check.',
   ...(opts.content ? { content: opts.content } : {}),
   bullets: [
     'A pushed user appears under Members (as a pending invite until their first sign-in).',
@@ -1962,7 +1962,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'memberOf',
       groupValueHint:
-        'Groups pushed via SCIM are created in Kortix under their Entra display names.',
+        'Groups pushed via SCIM are created in dosco under their Entra display names.',
       syncCadenceHint:
         'Entra runs its scheduled provisioning cycle roughly every 40 minutes — changes apply on the next cycle, or instantly with "Provision on demand".',
       startSyncHint:
@@ -2026,7 +2026,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Expand "Mappings" → "Provision Microsoft Entra ID Users". The one row that matters: "userName" must map to source attribute "user.userprincipalname" — that is how Kortix matches the SCIM user to a Kortix account. Leave the default "objectId → externalId" mapping as-is (that\'s how Entra recognizes a record it already pushed on later syncs) and leave the rest at their defaults.',
+            text: 'Expand "Mappings" → "Provision Microsoft Entra ID Users". The one row that matters: "userName" must map to source attribute "user.userprincipalname" — that is how dosco matches the SCIM user to a dosco account. Leave the default "objectId → externalId" mapping as-is (that\'s how Entra recognizes a record it already pushed on later syncs) and leave the rest at their defaults.',
           },
           {
             kind: 'image',
@@ -2063,7 +2063,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: '"Sync only assigned users and groups" makes this app\'s Users and groups list your allowlist: roll out team-by-team, and unassigning someone removes their Kortix access. "Sync all users and groups" gives every person in your Entra tenant a Kortix account — fine for a small or dedicated tenant, rarely what a company tenant wants on day one.',
+            text: '"Sync only assigned users and groups" makes this app\'s Users and groups list your allowlist: roll out team-by-team, and unassigning someone removes their dosco access. "Sync all users and groups" gives every person in your Entra tenant a dosco account — fine for a small or dedicated tenant, rarely what a company tenant wants on day one.',
           },
           {
             kind: 'image',
@@ -2083,7 +2083,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         success:
           'Test Connection passes, the Mappings list shows userName → user.userprincipalname, at least one user/group is assigned, and the Provisioning overview shows "On".',
         warning:
-          '#1 failure mode: Test Connection fails. Almost always a hand-typed or truncated Tenant URL — re-copy it exactly from above (it is not the regular Kortix API URL and has no /v1 suffix). Assigning a whole GROUP (rather than individual users) needs Entra ID P1/P2; on Free, assign users one at a time.',
+          '#1 failure mode: Test Connection fails. Almost always a hand-typed or truncated Tenant URL — re-copy it exactly from above (it is not the regular dosco API URL and has no /v1 suffix). Assigning a whole GROUP (rather than individual users) needs Entra ID P1/P2; on Free, assign users one at a time.',
         doneLabel: 'I’ve configured, mapped, assigned, and started provisioning',
       }),
       scimTestStep({
@@ -2116,7 +2116,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     blurb: 'Automatic provisioning from Okta',
     config: {
       groupClaimName: 'groups',
-      groupValueHint: 'Groups pushed via Push Groups are created in Kortix under their Okta names.',
+      groupValueHint: 'Groups pushed via Push Groups are created in dosco under their Okta names.',
       syncCadenceHint:
         'Okta pushes changes as they happen (assignments, profile updates, group pushes) — a quiet period just means nothing changed.',
       startSyncHint:
@@ -2222,7 +2222,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: '"Assign to People/Groups" makes the Assignments tab your allowlist: roll out team-by-team, and unassigning someone removes their Kortix access. There is no "sync everyone" toggle in Okta the way Entra has one — Assignments IS the scope, always.',
+            text: '"Assign to People/Groups" makes the Assignments tab your allowlist: roll out team-by-team, and unassigning someone removes their dosco access. There is no "sync everyone" toggle in Okta the way Entra has one — Assignments IS the scope, always.',
           },
         ],
         doneLabel: 'I’ve assigned people and pushed groups',
@@ -2237,7 +2237,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint:
-        'Groups pushed from OneLogin Rules are created in Kortix under their OneLogin names.',
+        'Groups pushed from OneLogin Rules are created in dosco under their OneLogin names.',
       syncCadenceHint:
         'OneLogin pushes changes as they happen once provisioning is enabled — a quiet period just means nothing changed (or actions are held in the approval queue).',
       startSyncHint:
@@ -2249,7 +2249,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         title: 'Before you start',
         where: 'idp',
         intro:
-          'OneLogin pushes users and groups to Kortix with its "SCIM Provisioner with SAML" connector — a SEPARATE app from the SAML-only connector. Outbound provisioning is a paid OneLogin tier; the Provisioning tab only appears when your plan includes it.',
+          'OneLogin pushes users and groups to dosco with its "SCIM Provisioner with SAML" connector — a SEPARATE app from the SAML-only connector. Outbound provisioning is a paid OneLogin tier; the Provisioning tab only appears when your plan includes it.',
         bullets: [
           'Connect SAML SSO first — provisioning creates accounts, but users still need SSO to sign in.',
           'You will add a new SCIM connector app below; the SAML Custom Connector used for SSO does not push users.',
@@ -2263,7 +2263,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'text',
-            text: 'Applications → Applications → "Add App" → search "SCIM" → pick "SCIM Provisioner with SAML (SCIM v2 Core)" → name it "Kortix" → Save. Then open the app’s "Configuration" tab.',
+            text: 'Applications → Applications → "Add App" → search "SCIM" → pick "SCIM Provisioner with SAML (SCIM v2 Core)" → name it "dosco" → Save. Then open the app’s "Configuration" tab.',
           },
           {
             kind: 'schematic',
@@ -2283,11 +2283,11 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'On the "Parameters" tab, set the "SCIM Username" parameter’s value to the user’s Email — that makes SCIM userName the email Kortix correlates on. Leave the default externalId mapping as-is.',
+            text: 'On the "Parameters" tab, set the "SCIM Username" parameter’s value to the user’s Email — that makes SCIM userName the email dosco correlates on. Leave the default externalId mapping as-is.',
           },
           {
             kind: 'text',
-            text: 'On the "Provisioning" tab, tick "Enable provisioning". Then UNCHECK "Require admin approval before this action is performed" for Create, Update, and Delete — otherwise every change waits in a pending queue and nothing reaches Kortix until you approve it by hand.',
+            text: 'On the "Provisioning" tab, tick "Enable provisioning". Then UNCHECK "Require admin approval before this action is performed" for Create, Update, and Delete — otherwise every change waits in a pending queue and nothing reaches dosco until you approve it by hand.',
           },
           {
             kind: 'schematic',
@@ -2308,7 +2308,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         success:
           'API Status shows a green "Enabled", the "SCIM Username" parameter maps to Email, and provisioning is enabled without the admin-approval hold.',
         warning:
-          '#1 OneLogin gotcha: users seem to sync but nothing lands in Kortix — the actions are stuck in the Provisioning "pending" queue because "Require admin approval" is still checked. Uncheck it for Create/Update/Delete (or approve the queue).',
+          '#1 OneLogin gotcha: users seem to sync but nothing lands in dosco — the actions are stuck in the Provisioning "pending" queue because "Require admin approval" is still checked. Uncheck it for Create/Update/Delete (or approve the queue).',
         doneLabel: 'I’ve connected and enabled provisioning',
       }),
       {
@@ -2321,18 +2321,18 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'text',
-            text: 'Assign the app: Users → open a user → "Applications" → "+" → add "Kortix" (or assign the app to a Role so everyone in that Role is provisioned).',
+            text: 'Assign the app: Users → open a user → "Applications" → "+" → add "dosco" (or assign the app to a Role so everyone in that Role is provisioned).',
           },
           {
             kind: 'text',
-            text: 'Push groups: on the app’s "Provisioning" tab, under "Entitlements", click "Refresh" so Kortix’s groups load. Then on the "Rules" tab add a Rule — a condition (e.g. member of a OneLogin Role) with the action "Set Groups in Kortix" → the group.',
+            text: 'Push groups: on the app’s "Provisioning" tab, under "Entitlements", click "Refresh" so dosco’s groups load. Then on the "Rules" tab add a Rule — a condition (e.g. member of a OneLogin Role) with the action "Set Groups in dosco" → the group.',
           },
           {
             kind: 'text',
             text: 'After saving the rule, click "Reapply entitlement mappings" (app → Users → More Actions) to push groups to users who are ALREADY assigned — otherwise existing members’ groups only sync on their next change.',
           },
         ],
-        note: 'Only assigned users are provisioned; users created directly in Kortix are not linked back to OneLogin.',
+        note: 'Only assigned users are provisioned; users created directly in dosco are not linked back to OneLogin.',
         doneLabel: 'I’ve assigned users and pushed groups',
       },
       scimTestStep({
@@ -2348,7 +2348,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint:
-        'The JumpCloud user groups you bind to the app are created in Kortix under their JumpCloud names.',
+        'The JumpCloud user groups you bind to the app are created in dosco under their JumpCloud names.',
       syncCadenceHint:
         'JumpCloud pushes changes as they happen (group binds, membership changes) — a quiet period just means nothing changed.',
       startSyncHint:
@@ -2360,7 +2360,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         title: 'Before you start',
         where: 'idp',
         intro:
-          'JumpCloud pushes users and groups to Kortix from a "Custom Application" using its Identity Management (SCIM) tab. Provisioning needs the JumpCloud SSO entitlement.',
+          'JumpCloud pushes users and groups to dosco from a "Custom Application" using its Identity Management (SCIM) tab. Provisioning needs the JumpCloud SSO entitlement.',
         bullets: [
           'Connect SAML SSO first so provisioned users can sign in.',
           'You can reuse the same Custom Application you made for SAML SSO — SCIM lives on its "Identity Management" tab.',
@@ -2393,17 +2393,17 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Paste the Tenant URL into "Base URL" and the secret into "Token Key" (auth is HTTP Header → Authorization: Bearer). Enter a FRESH test-user email that does NOT already exist in Kortix, click "Test Connection", then click "Activate" — do NOT click Save during the test-user step or you lose the configuration.',
+            text: 'Paste the Tenant URL into "Base URL" and the secret into "Token Key" (auth is HTTP Header → Authorization: Bearer). Enter a FRESH test-user email that does NOT already exist in dosco, click "Test Connection", then click "Activate" — do NOT click Save during the test-user step or you lose the configuration.',
           },
           {
             kind: 'text',
-            text: 'Under "Export Attribute Mapping", confirm the user’s email flows into SCIM "userName" — JumpCloud sets this by default, so there’s usually nothing to change. Kortix correlates on that email.',
+            text: 'Under "Export Attribute Mapping", confirm the user’s email flows into SCIM "userName" — JumpCloud sets this by default, so there’s usually nothing to change. dosco correlates on that email.',
           },
         ],
         success:
           'Test Connection passes with a fresh test email, and the app’s Identity Management shows Activated.',
         warning:
-          '#1 JumpCloud gotcha: Test Connection fails because the test-user email already exists in Kortix — it must be a brand-new address. (And click "Activate", not "Save", during that step.)',
+          '#1 JumpCloud gotcha: Test Connection fails because the test-user email already exists in dosco — it must be a brand-new address. (And click "Activate", not "Save", during that step.)',
         doneLabel: 'I’ve connected and activated Identity Management',
       }),
       {
@@ -2416,7 +2416,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'text',
-            text: 'On the "Identity Management" tab itself (once Test Connection has succeeded), check "Enable management of User Groups and Group Membership in this application" so bound groups (and their members) are pushed to Kortix.',
+            text: 'On the "Identity Management" tab itself (once Test Connection has succeeded), check "Enable management of User Groups and Group Membership in this application" so bound groups (and their members) are pushed to dosco.',
           },
           {
             kind: 'text',
@@ -2439,7 +2439,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     config: {
       groupClaimName: 'groups',
       groupValueHint:
-        'The internal PingOne groups you select on the provisioning rule are created in Kortix under their PingOne names.',
+        'The internal PingOne groups you select on the provisioning rule are created in dosco under their PingOne names.',
       syncCadenceHint:
         'PingOne runs an initial full sync when the rule goes Active, then pushes incremental changes as your directory changes.',
       startSyncHint:
@@ -2451,7 +2451,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         title: 'Before you start',
         where: 'idp',
         intro:
-          'PingOne pushes users and groups to Kortix through a generic "SCIM Outbound" connection under Integrations → Provisioning. Use the modern PingOne cloud console (Workforce) — the legacy "PingOne for Enterprise" product does not have this.',
+          'PingOne pushes users and groups to dosco through a generic "SCIM Outbound" connection under Integrations → Provisioning. Use the modern PingOne cloud console (Workforce) — the legacy "PingOne for Enterprise" product does not have this.',
         bullets: [
           'Connect SAML SSO first so provisioned users can sign in.',
           'Your PingOne environment needs the Provisioning service enabled (standard on PingOne cloud, no separate SCIM SKU).',
@@ -2466,7 +2466,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         content: [
           {
             kind: 'text',
-            text: 'Integrations → Provisioning → "+ New Connection" → on the "Identity Store" line click "Select" → choose the "SCIM Outbound" tile → "Select". Name it "Kortix", then "Configure Authentication".',
+            text: 'Integrations → Provisioning → "+ New Connection" → on the "Identity Store" line click "Select" → choose the "SCIM Outbound" tile → "Select". Name it "dosco", then "Configure Authentication".',
           },
           {
             kind: 'schematic',
@@ -2494,7 +2494,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Set userName to the email Kortix correlates on: open the "Attribute Mapping" section (separate from the auth screen), in the "PingOne Directory" column expand "Username" and select "Email Address". Then in the connection’s preferences/actions set "User Identifier" = userName and "User Filter Expression" = `userName eq "%s"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.',
+            text: 'Set userName to the email dosco correlates on: open the "Attribute Mapping" section (separate from the auth screen), in the "PingOne Directory" column expand "Username" and select "Email Address". Then in the connection’s preferences/actions set "User Identifier" = userName and "User Filter Expression" = `userName eq "%s"`. Getting this wrong is the #1 PingOne failure — it defaults to the internal username, not the email.',
           },
         ],
         success:
@@ -2538,7 +2538,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     blurb: 'Any SCIM 2.0-capable identity provider',
     config: {
       groupClaimName: 'groups',
-      groupValueHint: 'Pushed groups are created in Kortix under their displayName.',
+      groupValueHint: 'Pushed groups are created in dosco under their displayName.',
       syncCadenceHint:
         'Cadence depends on your IdP — most push changes as they happen; some run scheduled cycles. Check its provisioning log if nothing arrives.',
       startSyncHint:
@@ -2546,7 +2546,7 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     },
     steps: [
       scimConnectStep({
-        title: 'Mint a token & point your IdP at Kortix',
+        title: 'Mint a token & point your IdP at dosco',
         content: [
           {
             kind: 'text',
@@ -2554,10 +2554,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Set the matching attribute so "userName" is the user’s email — that is how Kortix correlates a SCIM user to an account.',
+            text: 'Set the matching attribute so "userName" is the user’s email — that is how dosco correlates a SCIM user to an account.',
           },
         ],
-        note: 'Kortix supports SCIM 2.0 Users + Groups, PATCH, and `attribute eq "value"` filters. Bulk operations are not supported.',
+        note: 'dosco supports SCIM 2.0 Users + Groups, PATCH, and `attribute eq "value"` filters. Bulk operations are not supported.',
       }),
       scimTestStep(),
     ],

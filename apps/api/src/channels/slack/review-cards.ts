@@ -42,7 +42,7 @@ export function parseReviewActionId(actionId: string): { verb: ReviewVerb; id: s
 
 /**
  * Map a card verb to the review `verdict` the act path applies. `view` is a link
- * button (it opens Kortix), so it carries no verdict and returns null.
+ * button (it opens dosco), so it carries no verdict and returns null.
  */
 export function reviewVerbToVerdict(verb: ReviewVerb): 'approve' | 'reject' | 'changes' | null {
   if (verb === 'approve') return 'approve';
@@ -119,7 +119,7 @@ export function buildReviewCardBlocks(
   if (opts.webUrl) {
     elements.push({
       type: 'button',
-      text: { type: 'plain_text', text: 'View in Kortix' },
+      text: { type: 'plain_text', text: 'View in dosco' },
       action_id: reviewActionId(item.review_item_id, 'view'),
       url: opts.webUrl,
     });

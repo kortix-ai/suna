@@ -15,7 +15,7 @@ import { SERVED_MANAGED_MODELS } from './served-managed-models';
 // under `codex/<id>` — kept as one named constant so this file, the sandbox
 // agent server, and the web picker can never drift on the string.
 const CODEX_PROVIDER_ID = 'codex';
-// The real upstream "provider" for every Kortix-managed model.
+// The real upstream "provider" for every dosco-managed model.
 const KORTIX_PROVIDER_ID = 'kortix';
 
 interface GatewayModel {
@@ -26,7 +26,7 @@ interface GatewayModel {
   // The REAL upstream provider this model resolves against ('anthropic',
   // 'openai', 'codex', 'kortix', ...). Every model here is registered under
   // the single synthetic `kortix` opencode provider (see the sandbox agent
-  // server's `buildKortixProvider`) — this is the one field a client can
+  // server's `builddoscoProvider`) — this is the one field a client can
   // group/brand by without parsing `<provider>/<model>` out of the wire id.
   // See apps/web/src/features/session/model-selector.tsx's `pickerGroupId`.
   provider?: string;
@@ -323,7 +323,7 @@ function refreshedCatalogs(): {
 
 // `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
 // `freeManagedOnly` (a free-tier account with internal billing on) hides every
-// managed Kortix model. A free user's own connected provider keys still work,
+// managed dosco model. A free user's own connected provider keys still work,
 // but there is no unreliable platform-managed free default.
 export function gatewayModelCatalog(
   projectId: string | undefined,

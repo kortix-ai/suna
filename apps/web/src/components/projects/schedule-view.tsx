@@ -221,7 +221,7 @@ function buildCurlExample(url: string): string {
   return [
     `curl -X POST ${url} \\`,
     `  -H "Content-Type: application/json" \\`,
-    `  -H "X-Kortix-Signature: sha256=$(echo -n '$BODY' | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')" \\`,
+    `  -H "X-dosco-Signature: sha256=$(echo -n '$BODY' | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')" \\`,
     `  -d '$BODY'`,
     ``,
     `# Where:`,
@@ -2389,7 +2389,7 @@ function WebhookSourceConfig({
           {tHardcodedUi.raw(
             'componentsProjectsTriggersView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost',
           )}{' '}
-          <code className="font-mono text-xs">X-Kortix-Signature</code>
+          <code className="font-mono text-xs">X-dosco-Signature</code>
           {tHardcodedUi.raw('componentsProjectsTriggersView.line1357JsxTextHeaderSetTo')}{' '}
           <code className="font-mono text-xs">
             {tHardcodedUi.raw('componentsProjectsTriggersView.line1359JsxTextSha256LtHmacGt')}

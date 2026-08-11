@@ -5,11 +5,11 @@ describe('buildTunnelConnectCommand', () => {
   test('keeps absolute API URLs and appends the tunnel root', () => {
     expect(
       buildTunnelConnectCommand({
-        backendUrl: 'https://dev-api.kortix.com/v1/',
-        origin: 'https://dev.kortix.com',
+        backendUrl: 'https://dev-api.dosco.live/v1/',
+        origin: 'https://dev.dosco.live',
       }),
     ).toBe(
-      'npx --yes @kortix/agent-tunnel@latest connect --api-url https://dev-api.kortix.com/v1/tunnel',
+      'npx --yes @kortix/agent-tunnel@latest connect --api-url https://dev-api.dosco.live/v1/tunnel',
     );
   });
 
@@ -17,10 +17,10 @@ describe('buildTunnelConnectCommand', () => {
     expect(
       buildTunnelConnectCommand({
         backendUrl: '/v1',
-        origin: 'https://dev.kortix.com',
+        origin: 'https://dev.dosco.live',
       }),
     ).toBe(
-      'npx --yes @kortix/agent-tunnel@latest connect --api-url https://dev.kortix.com/v1/tunnel',
+      'npx --yes @kortix/agent-tunnel@latest connect --api-url https://dev.dosco.live/v1/tunnel',
     );
   });
 });

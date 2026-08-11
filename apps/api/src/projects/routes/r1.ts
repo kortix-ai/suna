@@ -93,7 +93,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
   // Fallback, ONLY when no signature header is present: a static shared token in
-  // X-Kortix-Token or Authorization, for sources that can't HMAC-sign their body
+  // X-dosco-Token or Authorization, for sources that can't HMAC-sign their body
   // (e.g. Better Stack error webhooks — custom headers / basic auth only). Both
   // paths require knowing the trigger's secret, so security is equivalent to a
   // shared bearer token; signed senders are unaffected.
@@ -576,15 +576,15 @@ projectsApp.openapi(
   if (gitAuth.authSource === 'pat') {
     // This host's managed git runs on an org-wide token. Exporting it to a
     // client would hand out write access to EVERY managed repo, so we refuse —
-    // clients push through the Kortix git proxy (`git_origin_url`) with their
-    // own Kortix token instead, which needs no provider credential client-side.
+    // clients push through the dosco git proxy (`git_origin_url`) with their
+    // own dosco token instead, which needs no provider credential client-side.
     // Say so explicitly: the old message read as a server misconfiguration and
     // sent people hunting for GitHub App settings that aren't the problem.
     return c.json(
       {
         error:
           "This host's managed git uses an org-wide token, which is never exported. " +
-          "Push through the project's Kortix git origin instead (git_origin_url) — " +
+          "Push through the project's dosco git origin instead (git_origin_url) — " +
           'run `kortix update` if your CLI still asks for a push token.',
         git_origin_url: serializeProject(loaded.row).git_origin_url,
       },
@@ -608,7 +608,7 @@ projectsApp.openapi(
 
 // POST /v1/projects/:projectId/git/collaborators
 // Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
-// creator pull "their" Kortix-managed repo into their own GitHub account and
+// creator pull "their" dosco-managed repo into their own GitHub account and
 // work on it on github.com directly. Managed repos only (the user already owns
 // BYO repos). GitHub sends a pending invite the user accepts.
 
@@ -699,7 +699,7 @@ projectsApp.openapi(
 );
 
 // GET /v1/projects/github/installations?account_id=...
-// Vercel-style account Git connections surface. A Kortix account can connect
+// Vercel-style account Git connections surface. A dosco account can connect
 // multiple GitHub users/orgs and pick the exact installation during import.
 
 projectsApp.openapi(
@@ -782,7 +782,7 @@ async function upsertAccountGitHubInstallation(
 
 // POST /v1/projects/github/installations/linkable
 // The GitHub OAuth token cannot call GET /user/installations. GitHub restricts
-// that route to GitHub App user tokens. Kortix lists this App's installations
+// that route to GitHub App user tokens. dosco lists this App's installations
 // with the App JWT, then filters them with the authorized user's identity and
 // active organization-admin memberships.
 

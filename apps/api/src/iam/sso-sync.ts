@@ -116,7 +116,7 @@ export function extractGroupClaims(
 }
 
 /**
- * Resolve which Kortix group ids a set of IdP claim values map to. Pure —
+ * Resolve which dosco group ids a set of IdP claim values map to. Pure —
  * exported for unit tests.
  *
  * Matching is CASE- and whitespace-INSENSITIVE: Azure AD / Entra emits group

@@ -1,4 +1,4 @@
-/** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
+/** E2B Cloud implementation of dosco's unified sandbox runtime contract. */
 
 import { Sandbox, SandboxNotFoundError, type Sandbox as E2BSandbox } from 'e2b';
 import { config, SANDBOX_VERSION } from '../../config';
@@ -20,7 +20,7 @@ import type {
 import { assertWorkloadCredential, sandboxWorkloadType } from './index';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
-// Kortix's own idle reaper normally pauses much sooner; this is the provider
+// dosco's own idle reaper normally pauses much sooner; this is the provider
 // backstop and must not make sandbox creation plan-dependent.
 const E2B_RUNTIME_BACKSTOP_MS = 60 * 60 * 1000;
 const KORTIX_ENTRYPOINT = '/usr/local/bin/kortix-entrypoint';
@@ -124,7 +124,7 @@ function requirePrivateTrafficToken(sandbox: E2BSandbox): string {
   return sandbox.trafficAccessToken;
 }
 
-async function ensureKortixEntrypoint(
+async function ensuredoscoEntrypoint(
   sandbox: E2BSandbox,
   envs?: Record<string, string>,
 ): Promise<void> {
@@ -142,7 +142,7 @@ async function ensureKortixEntrypoint(
       ...(envs ? { envs } : {}),
       // E2B applies timeoutMs to the total lifetime of a background command;
       // its default is 60s and our former 20s value deterministically killed
-      // the Kortix daemon after boot. Zero is the SDK's documented no-timeout
+      // the dosco daemon after boot. Zero is the SDK's documented no-timeout
       // value. The sandbox lifecycle/reaper remains the authority that stops it.
       timeoutMs: 0,
     });
@@ -248,14 +248,14 @@ export class E2BProvider implements SandboxProvider {
       // keepMemory:false pause. Persist the complete per-session environment on
       // the private rootfs so a cold resume (including after an API restart)
       // can relaunch the authenticated daemon. Never put these secrets in E2B
-      // metadata or Kortix DB metadata.
+      // metadata or dosco DB metadata.
       await persistRuntimeEnv(sandbox, envVars);
       if (workloadType === 'app') await ensureAppEntrypoint(sandbox, envVars);
-      else await ensureKortixEntrypoint(sandbox, envVars);
+      else await ensuredoscoEntrypoint(sandbox, envVars);
     } catch (error) {
       connectedSandboxes.delete(sandbox.sandboxId);
       await sandbox.kill({ requestTimeoutMs: 20_000 }).catch(() => false);
-      throw new Error(`[e2b] failed to launch Kortix entrypoint: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`[e2b] failed to launch dosco entrypoint: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     const externalId = sandbox.sandboxId;
@@ -283,10 +283,10 @@ export class E2BProvider implements SandboxProvider {
       connectedSandboxes.set(externalId, sandbox);
       // A filesystem-only pause cold-boots on connect. E2B normally runs the
       // template start command during that boot; this explicit check makes the
-      // Kortix runtime invariant independent of provider startup behavior.
+      // dosco runtime invariant independent of provider startup behavior.
       const envVars = await loadRuntimeEnv(sandbox);
       if (envVars.KORTIX_WORKLOAD_TYPE === 'app') await ensureAppEntrypoint(sandbox, envVars);
-      else await ensureKortixEntrypoint(sandbox, envVars);
+      else await ensuredoscoEntrypoint(sandbox, envVars);
     } catch (error) {
       connectedSandboxes.delete(externalId);
       throw error;

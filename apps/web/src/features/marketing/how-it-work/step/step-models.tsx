@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ChatGPT } from '@/features/icon/icons/chat-gpt';
 import { Claude } from '@/features/icon/icons/claude';
 import { Gemini } from '@/features/icon/icons/gemini';
-import { Kortix } from '@/features/icon/icons/kortix';
+import { dosco } from '@/features/icon/icons/kortix';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { GlobeIcon, KeyIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
@@ -39,7 +39,7 @@ const BILLING: { glyph: Glyph; title: string; sub: string }[] = [
     title: 'Your ChatGPT subscription',
     sub: 'the one you already pay for',
   },
-  { glyph: Kortix as Glyph, title: 'Kortix Gateway', sub: 'managed — no key to bring' },
+  { glyph: dosco as Glyph, title: 'dosco Gateway', sub: 'managed — no key to bring' },
 ];
 
 /** Layer 02 — the model slot is yours to fill, and so is the bill. */

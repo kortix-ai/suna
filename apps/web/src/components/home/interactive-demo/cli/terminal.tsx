@@ -44,7 +44,7 @@ export const t = (text: string, c?: Color | 'kortix' | 'cursor'): Span => ({ t: 
 /** A green `✓` status line, e.g. `ok(t('kortix.yaml verified'))`. */
 export const ok = (...spans: Span[]): Line => [t('  '), t('✓', 'green'), t('  '), ...spans];
 
-/** A two-column meta row: `  repo  git.kortix.com/…`. */
+/** A two-column meta row: `  repo  git.dosco.live/…`. */
 export const meta = (label: string, value: string, c: Color = 'faded'): Line => [
   t(`  ${label.padEnd(8)}`, 'dim'),
   t(value, c),

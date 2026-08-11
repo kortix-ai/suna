@@ -265,7 +265,7 @@ async function commitPack(
   token: string,
   opts: { branch: string; message: string; files: SeedFile[] },
 ): Promise<void> {
-  const author = { name: 'Kortix', email: 'noreply@kortix.ai' };
+  const author = { name: 'dosco', email: 'noreply@dosco.live' };
   const commitFiles: CommitPackFile[] = opts.files.map((f) => ({
     path: f.path,
     content: f.content,
@@ -434,7 +434,7 @@ export const codeStorageBackend: GitHostBackend = {
     if (opts.baseFiles?.length) {
       await commitPack(repoPath, token, {
         branch: opts.branch,
-        message: 'chore: scaffold Kortix project',
+        message: 'chore: scaffold dosco project',
         files: opts.baseFiles,
       });
     }

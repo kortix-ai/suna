@@ -151,7 +151,7 @@ const EMAIL_ATTACHMENT_SCHEMA = {
  * through: POST → JSON body, GET → query string, with `Authorization: Bearer`.
  *
  * NOT included here (handled outside the gateway, by design):
- *   • step / send(answer) — the turn-stream relay (Kortix-internal, kept as-is).
+ *   • step / send(answer) — the turn-stream relay (dosco-internal, kept as-is).
  *   • typing               — a Slack Web-API no-op.
  *   • download / manifest  — sandbox-FS write / server-meta fetch (CLI-side).
  *   • send --file          — multi-step external upload (CLI-side helper).
@@ -517,10 +517,10 @@ interface VoiceActionDef {
  * The Voice catalog — THE KORTIX AGENT'S side of a live call.
  *
  * Two surfaces exist and they point in opposite directions; keep them straight:
- *   - THIS connector is how the Kortix agent drives a call from the inside:
+ *   - THIS connector is how the dosco agent drives a call from the inside:
  *     start one, read what is being said, say something, hang up.
  *   - The voice MCP (channels/voice/mcp.ts) is the other direction — how the
- *     LiveKit voice agent calls BACK into Kortix from the outside.
+ *     LiveKit voice agent calls BACK into dosco from the outside.
  *
  * These actions live on the connector rather than in a project's opencode
  * config on purpose: connectors are materialized server-side for every project,

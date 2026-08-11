@@ -589,7 +589,7 @@ export function parseGroupPut(body: Record<string, unknown>): {
 }
 
 // PUT — Okta's group push replaces the whole resource via PUT (renames arrive
-// this way). Kortix previously implemented only PATCH, so those calls 404'd —
+// this way). dosco previously implemented only PATCH, so those calls 404'd —
 // the same gap users.ts closed for Okta's profile pushes. Member values may be
 // user ids OR cached invitation ids; the shared add/remove helpers resolve both.
 scimRouter.openapi(

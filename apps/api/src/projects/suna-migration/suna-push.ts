@@ -109,8 +109,8 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
 
   rmSync(join(bundleDir, '.git'), { recursive: true, force: true });
   git(['init', '-b', repo.defaultBranch], bundleDir);
-  git(['config', 'user.email', 'migration@kortix.com'], bundleDir);
-  git(['config', 'user.name', 'Kortix Migration'], bundleDir);
+  git(['config', 'user.email', 'migration@dosco.live'], bundleDir);
+  git(['config', 'user.name', 'dosco Migration'], bundleDir);
   git(['add', '-A'], bundleDir);
   git(['commit', '-m', 'Import Suna legacy projects (chats restored as sessions; files under legacy/)'], bundleDir);
   git(['push', pushUrl, `HEAD:${repo.defaultBranch}`], bundleDir, true);

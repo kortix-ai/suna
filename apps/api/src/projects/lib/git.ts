@@ -2,7 +2,7 @@ import { auth } from '../../openapi';
 import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
-import { isAccountToken, isKortixToken } from '../../shared/crypto';
+import { isAccountToken, isdoscoToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
@@ -239,7 +239,7 @@ export interface ProjectGitRemote {
   externalRepoId: string | null;
   /** Real upstream host git URL, distinct from the client-facing proxy URL. */
   upstreamUrl: string | null;
-  /** True when Kortix provisioned the repo. */
+  /** True when dosco provisioned the repo. */
   managed: boolean;
 }
 
@@ -261,7 +261,7 @@ export async function upsertProjectGitConnection(input: {
   repoUrl: string;
   /** Real upstream host git URL (distinct from the client-facing repoUrl). */
   upstreamUrl?: string | null;
-  /** True when Kortix provisioned the repo. */
+  /** True when dosco provisioned the repo. */
   managed?: boolean;
   repoOwner?: string | null;
   repoName?: string | null;
@@ -610,7 +610,7 @@ export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRo
 
 /**
  * Resolve a project to a real upstream git endpoint + short-lived host auth
- * headers — the single seam consumed by the Kortix git proxy (and, post-M2,
+ * headers — the single seam consumed by the dosco git proxy (and, post-M2,
  * server-side git). Token resolution reuses `resolveProjectGitAuth` (managed +
  * BYO GitHub / project credential); the backend formats
  * the URL + headers for the provider. Returns null when no upstream is
@@ -639,7 +639,7 @@ export type GitProxyAuth =
   | { ok: false; status: number; message: string };
 
 /**
- * Authorize a Kortix git-proxy request: a bare credential (extracted from the
+ * Authorize a dosco git-proxy request: a bare credential (extracted from the
  * git Basic/Bearer header) + the target project + the operation scope.
  *
  * The owning account is the trust boundary:
@@ -697,7 +697,7 @@ export async function authorizeGitProxy(
     return verdict.allowed;
   };
 
-  // CLI PAT first — `isKortixToken` also matches the `kortix_pat_` prefix, so
+  // CLI PAT first — `isdoscoToken` also matches the `kortix_pat_` prefix, so
   // the account-token check MUST run before the API-key check (mirrors the auth
   // middleware ordering).
   if (isAccountToken(token)) {
@@ -732,7 +732,7 @@ export async function authorizeGitProxy(
     return { ok: true, project };
   }
 
-  if (isKortixToken(token)) {
+  if (isdoscoToken(token)) {
     const result = await validateSecretKey(token);
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid token' };
@@ -779,7 +779,7 @@ export async function authorizeGitProxy(
     return { ok: true, project };
   }
 
-  return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };
+  return { ok: false, status: 401, message: 'git proxy requires a dosco token' };
 }
 
 
@@ -819,7 +819,7 @@ export async function resolveGitHubImport(input: {
   }
   if (parsed.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
     throw new Error(
-      `GitHub App installation is for ${installation.ownerLogin}; install Kortix on ${parsed.owner} to link this repo`,
+      `GitHub App installation is for ${installation.ownerLogin}; install dosco on ${parsed.owner} to link this repo`,
     );
   }
 

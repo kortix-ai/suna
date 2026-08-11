@@ -33,7 +33,7 @@ function stubBrowser({ referrer, cookie = '' }: { referrer: string; cookie?: str
       state.cookie = state.cookie ? `${state.cookie}; ${pair}` : pair;
     },
   };
-  g.window = { location: { origin: 'https://dev.kortix.com', protocol: 'https:' } };
+  g.window = { location: { origin: 'https://dev.dosco.live', protocol: 'https:' } };
   return state;
 }
 
@@ -62,7 +62,7 @@ describe('navigationMayCreateProject', () => {
   });
 
   test('same-origin referrer is genuine intent', () => {
-    stubBrowser({ referrer: 'https://dev.kortix.com/auth' });
+    stubBrowser({ referrer: 'https://dev.dosco.live/auth' });
     expect(navigationMayCreateProject()).toBe(true);
   });
 

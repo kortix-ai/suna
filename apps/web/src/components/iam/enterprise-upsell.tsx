@@ -17,7 +17,7 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 // The marketing enterprise page. CTAs no longer navigate here — they open the
 // in-app demo-request modal — but keep the constant exported for any surface
 // that still wants to link out.
-export const ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise';
+export const ENTERPRISE_PAGE_URL = 'https://dosco.live/enterprise';
 
 type UpsellFeature = 'groups' | 'roles' | 'audit' | 'identity';
 

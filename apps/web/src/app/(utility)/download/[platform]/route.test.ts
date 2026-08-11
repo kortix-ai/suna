@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 import { GET } from './route';
 
 const call = (platform: string) =>
-  GET(new NextRequest(`https://kortix.com/download/${platform}`), {
+  GET(new NextRequest(`https://dosco.live/download/${platform}`), {
     params: Promise.resolve({ platform }),
   });
 

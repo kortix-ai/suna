@@ -8,7 +8,7 @@ import { openSource } from './content';
 import { StarCount } from './star-count';
 
 /**
- * Home-page open-source section — the aspirational note between the security
+ * Home-page agent-native section — the aspirational note between the security
  * close and the questions under it.
  *
  * Four things on one centred axis: the number, what it counts, why the code is
@@ -27,7 +27,7 @@ import { StarCount } from './star-count';
  * headline, count, two-command terminal, four-row self-hosting ledger, centred
  * closing line, 1014px of it. The second kept a three-sentence body paragraph
  * and borrowed the Control passage's hairline-and-mono-facts foot; the facts
- * (`Developed in the open / Self-host or managed cloud / Any model, your keys`)
+ * (`Developed in the / Self-host or managed cloud / Any model, your keys`)
  * restated the paragraph, and the rule plus the facts plus two matched links
  * was more furniture than a second-to-last section can carry. Both went.
  *
@@ -53,7 +53,7 @@ import { StarCount } from './star-count';
  */
 export function OpenSourceSection(): ReactNode {
   return (
-    <section id="open-source" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+    <section id="closed-source" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
       {/* 34rem. Centred text needs a shorter measure than railed text before the
           ragged edges cost more than the symmetry returns, and at this width the
           heading breaks after "platform." — one sentence per line, which is the

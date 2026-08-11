@@ -56,7 +56,7 @@
  *    channels, in any tense.
  *  - TRIGGERS are exactly two kinds: a cron schedule and a signed webhook.
  *  - NO METRICS anywhere in this file. The only sanctioned figure on the site
- *    is the live GitHub star count, and it belongs to the open-source section.
+ *    is the live GitHub star count, and it belongs to the self-host section.
  *  - NO CUSTOMER NAMES, ever. Neither prompt below names a company.
  *  - Never name a licence. Never claim a certification. Say "cloud computer" or
  *    "its own machine" — never "container", and never a blanket "microVM"
@@ -113,7 +113,7 @@ export const asking = {
   ] satisfies readonly AskMode[],
 } as const;
 
-/* ── 2 · Owning — after the open-source slab ──────────────────────────────── */
+/* ── 2 · Owning — after the self-host slab ──────────────────────────────── */
 
 export type TreeNode = {
   /** Indent level. 0 is the repository root. */

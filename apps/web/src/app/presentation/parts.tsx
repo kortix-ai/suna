@@ -177,7 +177,7 @@ export function Bullets({
 export function Shot({
   src,
   alt,
-  url = 'kortix.com',
+  url = 'dosco.live',
   chrome = true,
   className,
 }: {

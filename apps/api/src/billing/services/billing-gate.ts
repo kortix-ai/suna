@@ -153,7 +153,7 @@ export async function checkBillingActive(
   // owing more than it had" — an expensive individual turn can still exceed
   // a thin balance before the top-up deduction at settle (that deduction
   // itself is still atomic and will never take the balance negative; the
-  // residual exposure is Kortix failing to collect the marginal amount, not
+  // residual exposure is dosco failing to collect the marginal amount, not
   // an overdrawn account). See RELIABILITY-BACKLOG item 2 / PR description
   // for the full reservation system this is a pragmatic slice of.
   try {

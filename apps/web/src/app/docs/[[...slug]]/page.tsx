@@ -157,16 +157,16 @@ export async function generateMetadata(props: {
   const page = source.getPage(slug);
   if (!page) return {};
 
-  // `absolute` opts out of the root `%s | Kortix` template so the title never
-  // doubles up. The docs index frontmatter title is "Kortix", so collapse that
-  // case to just "Kortix Docs" instead of "Kortix | Kortix Docs | Kortix".
+  // `absolute` opts out of the root `%s | dosco` template so the title never
+  // doubles up. The docs index frontmatter title is "dosco", so collapse that
+  // case to just "dosco Docs" instead of "dosco | dosco Docs | dosco".
   const pageTitle = page.data.title?.trim();
   const title =
     pageTitle && pageTitle.toLowerCase() !== 'kortix'
-      ? `${pageTitle} – Kortix Docs`
-      : 'Kortix Docs';
+      ? `${pageTitle} – dosco Docs`
+      : 'dosco Docs';
 
-  const description = page.data.description ?? 'Kortix developer documentation.';
+  const description = page.data.description ?? 'dosco developer documentation.';
   const url = `${CANONICAL_ORIGIN}${page.url}`;
   return {
     title: { absolute: title },

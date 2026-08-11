@@ -142,7 +142,7 @@ export function NotificationsTab() {
                     icon={QuestionCircleSolid}
                     label="Questions"
                     description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1127JsxAttrDescriptionWhenKortixNeedsYourInputToContinue',
+                      'componentsSettingsUserSettingsModal.line1127JsxAttrDescriptionWhendoscoNeedsYourInputToContinue',
                     )}
                     enabled={preferences.onQuestion}
                     onToggle={(v) => setPreference('onQuestion', v)}
@@ -153,7 +153,7 @@ export function NotificationsTab() {
                       'componentsSettingsUserSettingsModal.line1133JsxAttrLabelPermissionRequests',
                     )}
                     description={tHardcodedUi.raw(
-                      'componentsSettingsUserSettingsModal.line1134JsxAttrDescriptionWhenKortixNeedsPermissionToUseATool',
+                      'componentsSettingsUserSettingsModal.line1134JsxAttrDescriptionWhendoscoNeedsPermissionToUseATool',
                     )}
                     enabled={preferences.onPermission}
                     onToggle={(v) => setPreference('onPermission', v)}

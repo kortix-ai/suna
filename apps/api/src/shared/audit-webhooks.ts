@@ -306,12 +306,12 @@ async function deliverOne(
         'Content-Type': 'application/json',
         // Stripe-style signature header. Customers verify by recomputing
         // HMAC-SHA256(secret, raw_body) and comparing.
-        'X-Kortix-Signature': `sha256=${signature}`,
-        'X-Kortix-Webhook-Id': hook.webhookId,
+        'X-dosco-Signature': `sha256=${signature}`,
+        'X-dosco-Webhook-Id': hook.webhookId,
         // Stable per-event key so receivers can dedupe on any re-delivery.
-        'X-Kortix-Idempotency-Key': idempotencyKey,
-        'X-Kortix-Event': 'audit',
-        'User-Agent': 'Kortix-Audit-Webhook/1',
+        'X-dosco-Idempotency-Key': idempotencyKey,
+        'X-dosco-Event': 'audit',
+        'User-Agent': 'dosco-Audit-Webhook/1',
       },
       body,
       signal: controller.signal,
@@ -371,7 +371,7 @@ export async function deliverTestEvent(
       before: null,
       after: {
         message:
-          'Test delivery from Kortix. If your endpoint received this, audit events will stream here.',
+          'Test delivery from dosco. If your endpoint received this, audit events will stream here.',
       },
       ip: null,
       user_agent: null,

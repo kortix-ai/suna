@@ -97,11 +97,11 @@ import { playSound } from '@/lib/sounds';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import {
-  type KortixSystemMessage,
+  type doscoSystemMessage,
   type SessionReport,
-  extractKortixSystemMessages,
+  extractdoscoSystemMessages,
   extractSessionReport,
-  stripKortixSystemTags,
+  stripdoscoSystemTags,
 } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -153,7 +153,7 @@ import {
 import { updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
-  type KortixSendError,
+  type doscoSendError,
   type ModelKey,
   type UseSessionResult,
   abandonOptimisticSend,
@@ -313,14 +313,14 @@ function formatCommandError(errorLike: unknown): string {
 }
 
 /**
- * Classify a send/command failure onto the SDK's typed `KortixSendError`
+ * Classify a send/command failure onto the SDK's typed `doscoSendError`
  * layer (billing vs runtime-not-ready vs runtime-error) so the banner can key
  * off `.kind` instead of regexing the message — while keeping this file's
  * richer message formatting (`formatCommandError` special-cases things like
  * `ProviderModelNotFoundError` that the SDK's generic formatter doesn't know
  * about).
  */
-function classifySessionError(err: unknown): KortixSendError {
+function classifySessionError(err: unknown): doscoSendError {
   return { ...classifySendError(err), message: formatCommandError(err) };
 }
 
@@ -328,7 +328,7 @@ function classifySessionError(err: unknown): KortixSendError {
 // System message indicator — subtle inline pill for kortix_system messages
 // ============================================================================
 
-function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] }) {
+function SystemMessageIndicator({ messages }: { messages: doscoSystemMessage[] }) {
   if (messages.length === 0) return null;
 
   // Combine all messages into a single line: "Goal · iteration 3/50"
@@ -468,7 +468,7 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
   ) as TextPart[];
   if (textParts.length === 0) return false;
   const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
+  const { cleanText, notifications } = parseSystemNotifications(stripdoscoSystemTags(raw));
   return notifications.length > 0 && !cleanText.trim();
 }
 
@@ -487,7 +487,7 @@ function NotificationTurn({ turn }: { turn: Turn }) {
   }, [turn.userMessage.parts]);
 
   const { notifications } = useMemo(
-    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
+    () => parseSystemNotifications(stripdoscoSystemTags(rawText)),
     [rawText],
   );
 
@@ -981,11 +981,11 @@ function SessionTurnImpl({
   const [sessionReportModalOpen, setSessionReportModalOpen] = useState(false);
 
   // Extract kortix_system messages for inline rendering (goal continuations, etc.)
-  const systemMessages = useMemo<KortixSystemMessage[]>(() => {
-    const msgs: KortixSystemMessage[] = [];
+  const systemMessages = useMemo<doscoSystemMessage[]>(() => {
+    const msgs: doscoSystemMessage[] = [];
     for (const p of turn.userMessage.parts) {
       if (isTextPart(p) && (p as TextPart).text) {
-        msgs.push(...extractKortixSystemMessages((p as TextPart).text!));
+        msgs.push(...extractdoscoSystemMessages((p as TextPart).text!));
       }
     }
     return msgs;
@@ -1004,7 +1004,7 @@ function SessionTurnImpl({
         isTextPart(p) &&
         !(p as TextPart).synthetic &&
         !(p as any).ignored &&
-        !!stripKortixSystemTags((p as TextPart).text || '').trim(),
+        !!stripdoscoSystemTags((p as TextPart).text || '').trim(),
     );
     if (hasVisibleText) return true;
     // Has any attachment (image/PDF)?
@@ -1230,7 +1230,7 @@ function SessionTurnImpl({
   //
   // Structure:
   //   1. User message + actions
-  //   2. Kortix logo
+  //   2. dosco logo
   //   3. Steps trigger (spinner/chevron + status + duration) — if working || hasSteps
   //   4. Collapsible steps (if expanded): all parts EXCEPT response part
   //   5. Answered question parts (if collapsed + has answered questions)
@@ -1550,7 +1550,7 @@ SessionTurn.displayName = 'SessionTurn';
 
 interface SessionChatProps {
   sessionId: string;
-  /** Durable Kortix project session id used by project-session APIs. */
+  /** Durable dosco project session id used by project-session APIs. */
   projectSessionId?: string;
   /** Complete SDK state for the root session. Omit for a read-only child session. */
   sessionState?: UseSessionResult;
@@ -1801,7 +1801,7 @@ export function SessionChat({
     name: string;
     description?: string;
   } | null>(null);
-  const [commandError, setCommandError] = useState<KortixSendError | null>(null);
+  const [commandError, setCommandError] = useState<doscoSendError | null>(null);
   // The last prompt handed to the runtime, verbatim. Only read by the
   // connector-refusal card, to re-send exactly what was refused.
   const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
@@ -3888,7 +3888,7 @@ export function SessionChat({
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src="/kortix-logomark-white.svg"
-                            alt="Kortix"
+                            alt="dosco"
                             className="h-[14px] w-auto shrink-0 invert dark:invert-0"
                           />
                           <div className="text-muted-foreground text-sm">

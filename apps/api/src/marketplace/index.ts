@@ -77,12 +77,12 @@ marketplaceApp.openapi(
         limit,
         offset,
       });
-      // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
+      // `loading`/`pending`/`sources` let the UI stream sources in (dosco first),
       // poll, and show a spinner per still-resolving source.
       return c.json({ items, total, hasMore: offset + items.length < total, ...catalogStatus() });
     }
     const items = await listCatalogItemsLive({ query: q.query, type: q.type, source: q.source });
-    // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
+    // `loading`/`pending`/`sources` let the UI stream sources in (dosco first),
     // poll, and show a spinner per still-resolving source.
     return c.json({ items, total: items.length, hasMore: false, ...catalogStatus() });
   },

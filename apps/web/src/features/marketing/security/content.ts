@@ -9,7 +9,7 @@
  * Stage states (see `visual` per item):
  *   isolation → sandboxes pop onto branches off main, CRs dash back
  *   token     → red API keys bounce off the boundary; one purple
- *               Kortix token slides through into the sandbox
+ *               dosco token slides through into the sandbox
  *   audit     → gateway log rows tick in (call · tool · commit · budget)
  *   soc2      → control checklist ticks; amber "in progress" badge pulses
  *   selfhost  → inner "kortix" box constant; outer dashed frame label

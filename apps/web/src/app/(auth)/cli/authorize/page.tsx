@@ -100,7 +100,7 @@ function CliAuthorizeInner() {
       const minted = await withTimeout(
         createAccountToken({ name }),
         MINT_TIMEOUT_MS,
-        'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
+        'Timed out asking the dosco API to mint an API key. Is the API reachable?',
       );
 
       const controller = new AbortController();
@@ -164,7 +164,7 @@ function CliAuthorizeInner() {
     <AuthFrame>
       <Rise>
         <StepHeader
-          title="Sign in to the Kortix CLI"
+          title="Sign in to the dosco CLI"
           description={
             <>
               <span className="text-foreground font-mono">kortix login</span> in your terminal is

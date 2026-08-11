@@ -1,7 +1,7 @@
 /**
  * The header must show the SAME name as the sidebar row.
  *
- * They were two different names. The sidebar shows Kortix's session name, which
+ * They were two different names. The sidebar shows dosco's session name, which
  * is what a rename edits; the header was handed opencode's own `session.title`
  * — the summary the agent writes for itself. So one session read as "Just A
  * Simple Hey" on the left and "Greeting" on top, and renaming changed only the

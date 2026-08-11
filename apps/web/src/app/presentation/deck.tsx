@@ -235,7 +235,7 @@ export function Deck({
           >
             <div className="flex items-center justify-between px-8 py-6">
               <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-                {tI18nHardcoded.raw('autoAppPresentationDeckJsxTextKortix28fe100d')}
+                {tI18nHardcoded.raw('autoAppPresentationDeckJsxTextdosco28fe100d')}
                 {total} slides
               </span>
               <button

@@ -58,7 +58,7 @@ export default function Error({
       console.debug('[runtime] not ready yet (sandbox still loading) — retrying', error?.message);
       return;
     }
-    console.error('[Kortix Home Error]', error);
+    console.error('[dosco Home Error]', error);
     Sentry.captureException(error);
   }, [error, runtimeNotReady]);
 

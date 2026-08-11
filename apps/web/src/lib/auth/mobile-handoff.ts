@@ -1,8 +1,8 @@
 const MOBILE_CALLBACK_FLAG = 'mobile_callback';
 const KORTIX_CALLBACK_HOSTS = new Set([
-  'kortix.com',
-  'www.kortix.com',
-  'staging.kortix.com',
+  'dosco.live',
+  'www.dosco.live',
+  'staging.dosco.live',
 ]);
 
 type MobileSessionHandoffInput = {
@@ -32,9 +32,9 @@ export function buildMobileSessionHandoffUrl({
     const candidate = new URL(origin);
     url = candidate.protocol === 'https:' && KORTIX_CALLBACK_HOSTS.has(candidate.hostname)
       ? new URL('/auth/callback', candidate)
-      : new URL('kortix://auth/callback');
+      : new URL('dosco://auth/callback');
   } catch {
-    url = new URL('kortix://auth/callback');
+    url = new URL('dosco://auth/callback');
   }
 
   url.searchParams.set(MOBILE_CALLBACK_FLAG, '1');

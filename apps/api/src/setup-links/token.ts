@@ -60,7 +60,7 @@ export type SetupLinkPayload =
    * A human-in-the-loop APPROVAL for one gated connector call.
    *
    * Unlike the other two kinds, this token is NOT a bearer capability: the
-   * endpoints behind it require a signed-in Kortix account that is authorised to
+   * endpoints behind it require a signed-in dosco account that is authorised to
    * approve in the project (manager, or the session's launcher). The token only
    * says WHICH decision is being asked for; it never confers the right to make
    * it. That distinction matters because a leaked approval link would otherwise

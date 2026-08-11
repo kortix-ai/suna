@@ -56,14 +56,14 @@ describe('WebSearchTool', () => {
       <WebSearchTool
         part={completedSearchPart([
           { title: 'LinkedIn — Marko', url: 'https://linkedin.com/in/marko' },
-          { title: 'Kortix founder', url: 'https://markokraemer.com' },
+          { title: 'dosco founder', url: 'https://markokraemer.com' },
           { title: 'GitHub', url: 'https://github.com/markokraemer' },
         ])}
         defaultOpen
       />,
     );
     expect(html).toContain('LinkedIn — Marko');
-    expect(html).toContain('Kortix founder');
+    expect(html).toContain('dosco founder');
     expect(html).toContain('GitHub');
     // The trigger legitimately shows "3 results" as the row's own count.
     expect(html).toContain('3 results');
@@ -76,13 +76,13 @@ describe('WebSearchTool', () => {
     const html = render(
       <WebSearchTool
         part={completedSearchPart([
-          { title: 'Kortix SDK repo', url: 'https://github.com/kortix-ai/sdk' },
+          { title: 'dosco SDK repo', url: 'https://github.com/kortix-ai/sdk' },
           { title: 'Suna repo', url: 'https://github.com/kortix-ai/suna' },
         ])}
         defaultOpen
       />,
     );
-    expect(html).toContain('Kortix SDK repo');
+    expect(html).toContain('dosco SDK repo');
     expect(html).toContain('Suna repo');
     // The trigger's own count is legitimate; only a PER-DOMAIN group label
     // inside the list body would be the regression this test guards against.

@@ -82,7 +82,7 @@ const PUBLIC_ROUTES = [
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
   '/presentation', // Standalone product deck (/presentation) should be public
-  '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
+  '/rauch', // Rauch-style particle rendering of the dosco symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
@@ -94,7 +94,7 @@ const PUBLIC_ROUTES = [
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
-  '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
+  '/game-of-life', // Conway's Game of Life seeded from the dosco logo — public, unauthenticated
   '/a1o', // "All in one" — WebGL stack-layer cube landing page, public, unauthenticated
   '/voice', // Direct join page for a live voice call — token-gated, MUST load with no login
   ...locales.flatMap((locale) =>
@@ -116,7 +116,7 @@ const MARKDOWN_NEGOTIATION_ROUTES = new Set([
 
 const AGENT_DISCOVERY_LINK_HEADER =
   '</.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json", ' +
-  '<https://api.kortix.com/v1/openapi.json>; rel="service-desc"; type="application/json", ' +
+  '<https://api.dosco.live/v1/openapi.json>; rel="service-desc"; type="application/json", ' +
   '</docs>; rel="service-doc"; type="text/html", ' +
   '</llms.txt>; rel="describedby"; type="text/plain"';
 
@@ -130,7 +130,7 @@ function supportsMarkdownNegotiation(pathname: string): boolean {
   );
 }
 
-// Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
+// Desktop app (doscoDesktop UA) is a pure logged-in product surface. ONLY
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
 // inside the desktop window. Every other route (the marketing homepage, blog,
 // pricing, careers, contact, legal, help, docs, share, design-system, … which
@@ -193,7 +193,7 @@ export async function proxy(request: NextRequest) {
           ? { 'Cache-Control': 'no-store' }
           : {
               'Cache-Control': 'no-store',
-              'WWW-Authenticate': 'Basic realm="Kortix test environment", charset="UTF-8"',
+              'WWW-Authenticate': 'Basic realm="dosco test environment", charset="UTF-8"',
             },
       },
     );
@@ -207,7 +207,7 @@ export async function proxy(request: NextRequest) {
       accessCookie !== expectedAccessCookie
     ) {
       response.cookies.set(ENVIRONMENT_ACCESS_COOKIE, expectedAccessCookie, {
-        domain: '.kortix.com',
+        domain: '.dosco.live',
         httpOnly: true,
         maxAge: 60 * 60 * 24 * 7,
         path: '/',
@@ -272,7 +272,7 @@ export async function proxy(request: NextRequest) {
   // When maintenance level is "blocking" (Full Lockdown), redirect DASHBOARD /
   // app traffic to /maintenance — but NOT the public marketing/landing site.
   // A release lockdown should take the product surface offline while new
-  // visitors can still reach kortix.com, the blog, pricing, docs, etc.
+  // visitors can still reach dosco.live, the blog, pricing, docs, etc.
   // So we bypass the redirect for every public route (which already includes
   // /, /auth, /maintenance, marketing pages, docs, …) plus the admin panel
   // (so admins can disable the lockdown). Everything else — /projects,
@@ -333,14 +333,14 @@ export async function proxy(request: NextRequest) {
   }
 
   // ── Desktop app: logged-in product surface only ─────────────────────────
-  // The desktop shell (KortixDesktop UA) must never render marketing/docs/
+  // The desktop shell (doscoDesktop UA) must never render marketing/docs/
   // public pages. Allow only product + auth routes; bounce everything else to
   // /projects. Runs AFTER the Supabase-at-root handling (so OAuth callbacks
   // still work) and BEFORE the locale/marketing logic (irrelevant for desktop).
   // This is the authoritative gate — it catches initial loads, SSR, and
   // Next.js client/RSC navigations alike. The Tauri shell separately opens
   // docs/external links in the user's real browser.
-  if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
+  if (request.headers.get('user-agent')?.includes('doscoDesktop')) {
     const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
     const isAllowed =
       isAuthPath ||
@@ -517,7 +517,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Desktop shell never shows the marketing homepage — bounce into the product.
-  if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
+  if (pathname === '/' && request.headers.get('user-agent')?.includes('doscoDesktop')) {
     return finalizeEnvironmentAccess(
       redirectPreservingSession(new URL(defaultLandingPath, request.url)),
     );

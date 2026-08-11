@@ -92,7 +92,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { stripdoscoSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   buildWebProxyUrl,
   normalizeExternalInput,
@@ -275,7 +275,7 @@ function MessagesPage({
       .map((turn) => {
         const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
         const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
+        const stripped = stripHtmlTags(stripdoscoSystemTags(raw)).trim();
         return {
           id: turn.userMessage.info.id,
           text: stripped,
@@ -1793,7 +1793,7 @@ export function CommandPalette() {
                   <CommandGroup heading="Sub-agents" forceMount>
                     {subAgents.map((agent) => {
                       const isActive = currentAgent?.name === agent.name;
-                      const isKortixAgent = agent.name.toLowerCase().includes('kortix');
+                      const isdoscoAgent = agent.name.toLowerCase().includes('kortix');
                       const chalk = chalkColors(agent.name);
                       return (
                         <CommandItem
@@ -1811,7 +1811,7 @@ export function CommandPalette() {
                               borderColor: chalk.border,
                             }}
                           >
-                            {isKortixAgent ? (
+                            {isdoscoAgent ? (
                               <Bot className="size-5 shrink-0" />
                             ) : (
                               <span>{agent.name.charAt(0).toUpperCase()}</span>

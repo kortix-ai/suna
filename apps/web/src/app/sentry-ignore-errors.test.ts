@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
 // Locks the SDK-level gate for the transient `RuntimeNotReadyError` cluster
-// (Kortix Frontend prod): `[opencode-sdk] Server URL not ready — sandbox is
+// (dosco Frontend prod): `[opencode-sdk] Server URL not ready — sandbox is
 // still loading`. `app/error.tsx` handles the global route-segment render
 // case, but the throw also reaches Sentry via `<ClientErrorBoundary>`,
 // `route-error`/`system-fault`, the network branch of `error-handler`, and
@@ -36,7 +36,7 @@ test('sentry.client.config anchors expected billing-gate 402 markers', async () 
 
 test('sentry.client.config anchors the expected no-compaction-model marker', async () => {
   // Reproduces Better Stack error 9f72dd9a2cb49a81aa57be27e9b3cb2f1ef06a8ebf59ede6900267febd3f7ded
-  // (Kortix Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
+  // (dosco Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
   // throws a sentinel `NoCompactionModelError` when no model is configured
   // anywhere — an expected, user-facing config state the host already toasts.
   // It leaks to Sentry as an unhandled promise rejection
@@ -68,7 +68,7 @@ test('sentry.client.config ignores storage-disabled WebView null-access TypeErro
 });
 
 test('sentry.client.config drops the old-WebKit lookbehind parse failure', async () => {
-  // Reproduces Better Stack error 6d987ab4...34e7ed (Kortix Frontend prod):
+  // Reproduces Better Stack error 6d987ab4...34e7ed (dosco Frontend prod):
   // Safari/iOS < 16.4 cannot parse lookbehind assertions and throws
   // `SyntaxError: Invalid regular expression: invalid group specifier name`
   // at chunk parse time. The lookbehind lives in bundled third-party deps

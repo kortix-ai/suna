@@ -615,7 +615,7 @@ function InviteDialog({
           <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-2 border-t px-6 py-3.5">
             <p className="text-muted-foreground/70 text-xs">
               {tHardcodedUi.raw(
-                'componentsInstancesInstanceMembersPanel.line601JsxTextIfTheyDonTHaveKortixYetWe',
+                'componentsInstancesInstanceMembersPanel.line601JsxTextIfTheyDonTHavedoscoYetWe',
               )}
             </p>
             <div className="flex items-center gap-2">

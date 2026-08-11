@@ -23,7 +23,7 @@ export default function ConnectIntakePage() {
               {tI18nHardcoded.raw('autoAppPublicConnectTokenPageJsxTextConnectAnApp4c6083f8')}
             </CardTitle>
             <CardDescription>
-              {tI18nHardcoded.raw('autoAppPublicConnectTokenPageJsxTextYourKortixAgent6efa22e3')}
+              {tI18nHardcoded.raw('autoAppPublicConnectTokenPageJsxTextYourdoscoAgent6efa22e3')}
             </CardDescription>
           </CardHeader>
           <CardContent>

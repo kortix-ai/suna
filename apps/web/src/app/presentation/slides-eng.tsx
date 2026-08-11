@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 /**
- * The Kortix deck — content & structure follow the official "Kortix pres ENG"
+ * The dosco deck — content & structure follow the official "dosco pres ENG"
  * sales narrative (origin → what it is → interface → shared machine →
  * connect/configure/deploy → no model lock-in → Slack/Teams → use cases →
  * thanks), rendered in the marketing-site visual style (home / developers /
@@ -189,13 +189,13 @@ export function useSlides(): SlideDef[] {
     /* 3 — WHAT IS KORTIX TODAY ───────────────────────────────────────────── */
     {
       id: 'what',
-      label: 'What is Kortix',
+      label: 'What is dosco',
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div className="space-y-5">
               <Eyebrow>
-                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextSoWhatIsKortixf6e68e29')}
+                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextSoWhatIsdoscof6e68e29')}
               </Eyebrow>
               <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
                 {tI18nHardcoded.raw(
@@ -213,7 +213,7 @@ export function useSlides(): SlideDef[] {
                 ]}
               />
             </div>
-            <Shot src={`${SHOT}/01-command-center.png`} alt="The Kortix command center" />
+            <Shot src={`${SHOT}/01-command-center.png`} alt="The dosco command center" />
           </div>
         </Slide>
       ),
@@ -414,13 +414,13 @@ export function useSlides(): SlideDef[] {
     /* 8 — WHERE KORTIX LIVES ────────────────────────────────────────────── */
     {
       id: 'lives',
-      label: 'Where Kortix lives',
+      label: 'Where dosco lives',
       node: (
         <Slide>
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div className="space-y-5">
               <Eyebrow>
-                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextWhereKortixLives366879fa')}
+                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextWheredoscoLives366879fa')}
               </Eyebrow>
               <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
                 {tI18nHardcoded.raw(
@@ -428,7 +428,7 @@ export function useSlides(): SlideDef[] {
                 )}
               </h2>
               <Lead>
-                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextInstallKortixAsA355cd3e1')}
+                {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextInstalldoscoAsA355cd3e1')}
               </Lead>
               <div className="flex flex-wrap gap-2">
                 <Pill>Slack</Pill>
@@ -440,7 +440,7 @@ export function useSlides(): SlideDef[] {
                 </Pill>
               </div>
             </div>
-            <Shot src={`${SHOT}/06-channels.png`} alt="Kortix inside Slack and Teams" />
+            <Shot src={`${SHOT}/06-channels.png`} alt="dosco inside Slack and Teams" />
           </div>
         </Slide>
       ),
@@ -516,11 +516,11 @@ export function useSlides(): SlideDef[] {
               <p className="text-foreground text-xl font-medium tracking-tight">
                 {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextTextMeAt7199731f')}
                 <Mono className="text-kortix-blue">
-                  {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextDomKortixAi2c244da6')}
+                  {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextDomdoscoAi2c244da6')}
                 </Mono>{' '}
                 {tI18nHardcoded.raw('autoAppPresentationSlidesEngJsxTextOrOnLinkedIn13b1c035')}
               </p>
-              <p className="text-muted-foreground font-mono text-sm">kortix.com</p>
+              <p className="text-muted-foreground font-mono text-sm">dosco.live</p>
             </div>
           </div>
         </Slide>

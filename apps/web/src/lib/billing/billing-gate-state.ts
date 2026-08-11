@@ -139,7 +139,7 @@ export function billingGateCopy(state: Exclude<BillingState, 'active'>): Billing
       return {
         title: 'Subscribe to start sessions',
         message:
-          'Your team isn’t on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate.',
+          'Your team isn’t on a plan yet. Subscribe to dosco to run sessions, with LLM compute and AI Computers for every teammate.',
         ctaLabel: 'Subscribe to Team plan',
         dialogReason: 'subscription_required',
       };

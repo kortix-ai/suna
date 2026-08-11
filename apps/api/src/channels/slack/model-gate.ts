@@ -14,7 +14,7 @@ export interface ChannelModelContext {
   accountId: string;
   /** A representative project-owner user (for codex credential lookups). */
   ownerUserId: string;
-  /** The account may not use platform-managed Kortix models. */
+  /** The account may not use platform-managed dosco models. */
   freeManagedOnly: boolean;
 }
 

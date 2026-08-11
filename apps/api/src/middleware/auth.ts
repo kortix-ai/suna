@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
-import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
+import { isdoscoToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
@@ -42,9 +42,9 @@ async function jitSyncSso(
 // ═══════════════════════════════════════════════════════════════════════════════
 // Auth Middleware (3 middlewares — one per auth strategy)
 //
-//   1. apiKeyAuth      — Kortix API keys only (header)
+//   1. apiKeyAuth      — dosco API keys only (header)
 //   2. supabaseAuth    — Supabase JWT only (header)
-//   3. combinedAuth    — Kortix OR Supabase (header + cookie fallback)
+//   3. combinedAuth    — dosco OR Supabase (header + cookie fallback)
 //
 // Token is read from query parameters ONLY as a last resort for preview proxy
 // routes (/v1/p/*) — browser WebSocket API can't set custom headers, so PTY
@@ -63,7 +63,7 @@ async function jitSyncSso(
 
 /**
  * API key auth for search, LLM, and router routes.
- * Always validates Kortix tokens (kortix_, kortix_sb_) via validateSecretKey()
+ * Always validates dosco tokens (kortix_, kortix_sb_) via validateSecretKey()
  * against the api_keys table.
  */
 export async function apiKeyAuth(c: Context, next: Next) {
@@ -85,7 +85,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
     });
   }
 
-  if (!isKortixToken(token)) {
+  if (!isdoscoToken(token)) {
     auditLoginFail({ c, reason: 'bad_token_format', authType: 'apiKey' });
     throw new HTTPException(401, {
       message: 'Invalid token format — expected kortix_ prefix',
@@ -207,7 +207,7 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     if (result.sessionId) c.set('sessionId', result.sessionId);
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     // Per-agent authorization grant (non-null only for agent-session tokens).
-    // Read by requireScope() to gate Kortix CLI/API actions on top of the
+    // Read by requireScope() to gate dosco CLI/API actions on top of the
     // user's own role — net effect = userRole ∩ agentGrant.
     c.set('agentGrant', result.agentGrant ?? null);
     setSentryUser({ id: result.userId, accountId: result.accountId });
@@ -242,10 +242,10 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // The runtime relay sends redacted OpenCode lifecycle events for its own
     // session. The handler re-checks sandbox, account, project, and session.
     path.endsWith('/audit/events');
-  if (isKortixToken(token) && sandboxTokenPathAllowed) {
+  if (isdoscoToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
-      throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
+      throw new HTTPException(401, { message: result.error || 'Invalid dosco token' });
     }
     if (result.type !== 'sandbox' || !result.sandboxId) {
       throw new HTTPException(403, { message: 'This route requires a sandbox token' });
@@ -365,7 +365,7 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
 }
 
 /**
- * Combined auth — accepts Kortix tokens OR Supabase JWTs.
+ * Combined auth — accepts dosco tokens OR Supabase JWTs.
  *
  * Token resolution order:
  *   1. Authorization: Bearer <token> header
@@ -392,16 +392,16 @@ async function resolveCombinedAuth(c: Context, next: Next) {
 
   const previewSandboxId = extractPreviewSandboxId(c.req.path);
 
-  // Extract token: header → X-Kortix-Token (preview only) → cookie → query param
+  // Extract token: header → X-dosco-Token (preview only) → cookie → query param
   const authHeader = c.req.header('Authorization');
-  const kortixTokenHeader = previewSandboxId ? c.req.header('X-Kortix-Token') : undefined;
+  const kortixTokenHeader = previewSandboxId ? c.req.header('X-dosco-Token') : undefined;
   let token: string | undefined;
 
   if (authHeader?.startsWith('Bearer ')) {
     token = authHeader.slice(7);
   }
 
-  if (!token && kortixTokenHeader && isKortixToken(kortixTokenHeader)) {
+  if (!token && kortixTokenHeader && isdoscoToken(kortixTokenHeader)) {
     token = kortixTokenHeader;
   }
 
@@ -436,7 +436,7 @@ async function resolveCombinedAuth(c: Context, next: Next) {
   const isPreviewRoute = c.req.path.startsWith('/v1/p/') || c.req.path === '/v1/p';
 
   // 0. Service-account bearer (non-human IAM principal) — mirrors the
-  // supabaseAuth branch. MUST run before the generic Kortix-token branch:
+  // supabaseAuth branch. MUST run before the generic dosco-token branch:
   // `kortix_sa_` also matches the `kortix_` prefix, so without this check the
   // token falls into validateSecretKey and every combinedAuth-mounted route
   // (preview proxy, cron, secrets, providers, SSE) rejects service accounts
@@ -518,8 +518,8 @@ async function resolveCombinedAuth(c: Context, next: Next) {
     return;
   }
 
-  // 2. Try Kortix token (kortix_ or kortix_sb_) — used by agents inside the sandbox
-  if (isKortixToken(token)) {
+  // 2. Try dosco token (kortix_ or kortix_sb_) — used by agents inside the sandbox
+  if (isdoscoToken(token)) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
       auditLoginFail({
@@ -527,7 +527,7 @@ async function resolveCombinedAuth(c: Context, next: Next) {
         reason: result.error ?? 'invalid_kortix_token',
         authType: 'apiKey',
       });
-      throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
+      throw new HTTPException(401, { message: result.error || 'Invalid dosco token' });
     }
     if (
       previewSandboxId &&
@@ -727,7 +727,7 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // "what project/session/agent am I bound to?".
   if (path === '/v1/accounts/me') return;
 
-  // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
+  // `/v1/skills` — the kortix-managed system skills (how dosco itself works).
   // This function is default-deny, and the in-sandbox `KORTIX_CLI_TOKEN` is
   // exactly a project+session-scoped PAT, so without this branch the ONE caller
   // these routes exist for gets a 403: every baked sandbox seeds a kortix-system

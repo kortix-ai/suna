@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import { DiceStage } from './dice-stage';
 
 export const metadata: Metadata = {
-  title: { absolute: 'All in one — Kortix' },
+  title: { absolute: 'All in one — dosco' },
   description:
     'Six layers of the agent stack on the six faces of one die. Roll it to read a face.',
-  alternates: { canonical: 'https://kortix.com/a1o' },
+  alternates: { canonical: 'https://dosco.live/a1o' },
 };
 
 export default function A1oPage() {

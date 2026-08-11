@@ -17,9 +17,9 @@ export interface WebNotificationPreferences {
   onCompletion: boolean;
   /** Notify when a session error occurs */
   onError: boolean;
-  /** Notify when Kortix asks a question that needs user input */
+  /** Notify when dosco asks a question that needs user input */
   onQuestion: boolean;
-  /** Notify when Kortix requests a permission */
+  /** Notify when dosco requests a permission */
   onPermission: boolean;
   /** Only send browser notifications when the tab is not visible */
   onlyWhenHidden: boolean;

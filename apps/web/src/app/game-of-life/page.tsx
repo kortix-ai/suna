@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { GameOfLife } from './game-of-life';
 
 export const metadata: Metadata = {
-  title: 'Game of Life — Kortix',
-  description: "Conway's Game of Life, seeded from the Kortix logo.",
+  title: 'Game of Life — dosco',
+  description: "Conway's Game of Life, seeded from the dosco logo.",
   robots: { index: false, follow: false },
 };
 

@@ -24,8 +24,8 @@ export const isBillingEnabled = (): boolean => {
 };
 
 /**
- * Whether Kortix's own managed model lineup ("Managed · Included with your
- * plan" — Claude, GLM, and DeepSeek routed through Kortix's shared Bedrock,
+ * Whether dosco's own managed model lineup ("Managed · Included with your
+ * plan" — Claude, GLM, and DeepSeek routed through dosco's shared Bedrock,
  * AsterLab, and OpenRouter credentials) can appear anywhere in the UI.
  * CLOUD-ONLY: mirrors
  * the backend's KORTIX_MANAGED_PROVIDER_ENABLED, which already keeps managed

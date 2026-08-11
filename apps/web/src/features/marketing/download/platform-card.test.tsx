@@ -74,7 +74,7 @@ describe('a row that does have a build', () => {
   test('still renders the Download link', () => {
     expect(linked).toContain('href="/download/macos"');
     expect(linked).toContain('Download');
-    expect(linked).toContain('aria-label="Download Kortix for macOS"');
+    expect(linked).toContain('aria-label="Download dosco for macOS"');
   });
 
   test('does not pick up a status chip', () => {

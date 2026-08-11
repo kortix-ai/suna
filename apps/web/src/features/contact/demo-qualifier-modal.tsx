@@ -367,7 +367,7 @@ export function DemoQualifierModal({
               )}
             >
               {tI18nHardcoded.raw(
-                'autoFeaturesContactDemoQualifierModalJsxTextKortixIsBuilt9d7721e7',
+                'autoFeaturesContactDemoQualifierModalJsxTextdoscoIsBuilt9d7721e7',
               )}
             </InfoBanner>
             <p className="text-muted-foreground text-sm leading-relaxed">

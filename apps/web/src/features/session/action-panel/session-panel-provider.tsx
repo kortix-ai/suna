@@ -370,7 +370,7 @@ export function SessionPanelProvider({
   // proxied base URL the viewer can build its PDF/PPTX export and Google
   // Slides upload requests against (`${sandboxUrl}/presentation/convert-to-*`
   // — the /presentation router the sandbox agent server mounts at its root,
-  // i.e. Kortix Master, port 8000). It is never a raw sandbox host: every
+  // i.e. dosco Master, port 8000). It is never a raw sandbox host: every
   // sandbox surface here (AppPreview, browser/desktop tabs) reaches its port
   // through this same proxy.
   const { getServiceUrl } = useSandboxProxy();

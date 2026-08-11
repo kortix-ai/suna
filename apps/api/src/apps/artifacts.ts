@@ -7,7 +7,7 @@ import { getSupabase } from '../shared/supabase';
 
 export const APP_ARTIFACT_BUCKET = 'app-artifacts';
 // Managed Supabase Storage rejects bucket limits above the project's global
-// fileSizeLimit. Kortix cloud currently exposes the standard 50 MiB tier.
+// fileSizeLimit. dosco cloud currently exposes the standard 50 MiB tier.
 // OCI deployments bypass this source-archive limit.
 export const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 export const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024;

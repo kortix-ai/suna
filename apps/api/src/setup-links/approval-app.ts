@@ -15,7 +15,7 @@ import { connectors, connectorCalls, projectSessions, projects } from '@kortix/d
  * to stop — strictly worse than no gate, because it also looks governed.
  *
  * So the token here is only a POINTER to "which decision is being asked". Every
- * route requires a signed-in Kortix account and re-checks that the account may
+ * route requires a signed-in dosco account and re-checks that the account may
  * act on this project (`mayResolveApproval`: a manager, or the session's
  * launcher — never a session-bound/agent credential).
  *
@@ -31,7 +31,7 @@ import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { mayResolveApproval } from '../projects/lib/approval-authority';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { callerdoscoSessionId } from '../projects/lib/caller-session';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
 
@@ -112,7 +112,7 @@ approvalLinksApp.get('/:token', async (c) => {
     callerAuthType:
       ((c as unknown as { get(key: string): unknown }).get('authType') as string | undefined) ??
       null,
-    callerSessionId: callerKortixSessionId(c),
+    callerSessionId: callerdoscoSessionId(c),
   });
   if (!verdict.allowed) {
     return c.json(
@@ -123,7 +123,7 @@ approvalLinksApp.get('/:token', async (c) => {
           }
         : verdict.reason === 'non_human_caller'
           ? {
-              error: 'Sign in with a Kortix account to review this approval',
+              error: 'Sign in with a dosco account to review this approval',
               code: 'APPROVAL_REQUIRES_HUMAN',
             }
           : { error: 'Only a project manager or the session launcher can resolve this' },

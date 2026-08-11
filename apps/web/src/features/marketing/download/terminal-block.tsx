@@ -8,7 +8,7 @@ import { TerminalIcon } from '@phosphor-icons/react';
 import { TERMINAL } from './content';
 
 /**
- * The CLI install command for THIS deployment (kortix.com, dev, or a preview).
+ * The CLI install command for THIS deployment (dosco.live, dev, or a preview).
  *
  * Client-only because the origin is a browser fact: the hook reads
  * `window.location.origin` through `useSyncExternalStore`. It renders the

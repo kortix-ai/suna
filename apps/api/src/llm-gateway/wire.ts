@@ -31,7 +31,7 @@ const GATEWAY_INFERENCE_TAG = 'gateway-inference';
 
 const AUTH_DESCRIPTION =
   'Bearer token: a project gateway key (`kortix_gw_…`, created via ' +
-  'POST /v1/projects/{projectId}/gateway/keys) or a Kortix account token ' +
+  'POST /v1/projects/{projectId}/gateway/keys) or a dosco account token ' +
   '(PAT `kortix_pat_…`, API key, or sandbox key). Unlike most of the API, the ' +
   'raw Supabase user JWT is NOT accepted here — mint a gateway key or PAT first.';
 
@@ -129,7 +129,7 @@ function chatCompletionsRoute(path: string) {
     path,
     tags: [GATEWAY_INFERENCE_TAG],
     summary: `POST ${fullPath}`,
-    description: `OpenAI-compatible chat completions, proxied through the Kortix LLM gateway (model routing/failover, budgets, usage billing, and request tracing all apply). The body is forwarded close to verbatim to the resolved upstream provider.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} \\\n  -H "Authorization: Bearer $KORTIX_GATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"Say hello in one word."}]}\'\n\`\`\``,
+    description: `OpenAI-compatible chat completions, proxied through the dosco LLM gateway (model routing/failover, budgets, usage billing, and request tracing all apply). The body is forwarded close to verbatim to the resolved upstream provider.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} \\\n  -H "Authorization: Bearer $KORTIX_GATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"Say hello in one word."}]}\'\n\`\`\``,
     ...auth,
     request: {
       body: {

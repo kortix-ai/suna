@@ -5,7 +5,7 @@ export const product: RoleContent = {
   slug: 'product',
   name: 'Product',
   navDescription: 'Feedback synthesised into specs, with the evidence attached',
-  seoTitle: 'Kortix for product teams',
+  seoTitle: 'dosco for product teams',
   seoDescription:
     'Turn scattered feedback into a spec with the evidence attached, keep the tracker honest, and write the release notes from the actual diff. Everything lands as a document a person reviews.',
 
@@ -173,7 +173,7 @@ export const product: RoleContent = {
       {
         id: 'creds',
         k: 'Connector credentials never enter the machine',
-        v: 'The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.',
+        v: 'The sandbox carries one project-scoped dosco token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.',
       },
       {
         id: 'memory',
@@ -185,6 +185,6 @@ export const product: RoleContent = {
 
   closing: {
     title: 'Do the reading. Keep the deciding.',
-    sub: 'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or your own on-prem network.',
+    sub: 'Open source and self-hostable. Any model, your keys. dosco Cloud, your own VPC, or your own on-prem network.',
   },
 };

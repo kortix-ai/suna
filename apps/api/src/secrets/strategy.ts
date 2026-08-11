@@ -24,10 +24,10 @@ import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
  *
  * - `runtime` — plaintext into the sandbox env. Today's behaviour, and the
  *   default, so nothing changes for an existing project until someone opts in.
- * - `egress`  — a format-shaped handle goes in the box; a Kortix proxy OUTSIDE
+ * - `egress`  — a format-shaped handle goes in the box; a dosco proxy OUTSIDE
  *   the guest swaps it for the real value on a matching outbound request.
  * - `broker`  — the value never leaves the server; the agent reaches the
- *   upstream through a named Kortix chokepoint.
+ *   upstream through a named dosco chokepoint.
  * - `denied`  — nothing is emitted; the name does not even appear.
  */
 export type SecretStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
@@ -372,7 +372,7 @@ export function parseHandle(value: string, rootSecret: string): HandleParse {
   return { ok: true, lookupId, prefix: value.slice(0, marker) };
 }
 
-/** Cheap pre-filter: does this look like a Kortix handle at all? Used to decide
+/** Cheap pre-filter: does this look like a dosco handle at all? Used to decide
  *  whether a value is worth parsing, never as an authorization check. */
 export function looksLikeHandle(value: string): boolean {
   return value.includes(HANDLE_MARKER);

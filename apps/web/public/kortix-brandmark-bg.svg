@@ -1,11 +1,31 @@
-<svg width="1730" height="1446" viewBox="0 0 1730 1446" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g opacity="0.8">
-<path d="M247.746 0.585449C247.988 290.805 458.453 532.839 738.077 588.603L738.675 588.722V0.585449H983.618V588.724L984.219 588.602C1262.53 531.85 1474.3 289.897 1474.55 0.585449H1719.52C1719.34 305.897 1552.89 573.135 1304.01 720.184L1303.29 720.615L1304.01 721.045C1552.89 868.095 1719.34 1135.33 1719.53 1440.64H1474.55C1474.31 1150.42 1263.84 908.388 984.217 852.625L983.618 852.506V1440.91H738.675V852.507L738.077 852.626C458.453 908.391 247.982 1150.43 247.74 1440.64H2.7666C2.94802 1135.33 169.404 868.095 418.283 721.045L419.012 720.615L418.283 720.184C169.407 573.135 2.95404 305.897 2.77246 0.585449H247.746Z" stroke="url(#paint0_linear_1643_657)"/>
-</g>
-<defs>
-<linearGradient id="paint0_linear_1643_657" x1="861.146" y1="0.0854492" x2="861.146" y2="1039.15" gradientUnits="userSpaceOnUse">
-<stop stop-color="white"/>
-<stop offset="1" stop-color="white" stop-opacity="0"/>
-</linearGradient>
-</defs>
+<svg width="708" height="256" viewBox="0 0 708 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bb-blade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="bb-flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <!-- centred katana on the left -->
+  <g transform="translate(8 32)">
+    <path d="M86 14 L104 14 L100 118 L90 118 Z" fill="url(#bb-blade)"/>
+    <rect x="89" y="118" width="12" height="56" fill="url(#bb-blade)"/>
+    <rect x="56" y="174" width="78" height="14" rx="3" fill="currentColor"/>
+    <rect x="84" y="188" width="22" height="34" fill="currentColor"/>
+    <rect x="78" y="222" width="34" height="14" rx="3" fill="currentColor"/>
+    <path d="M48 195 Q60 178 48 156 Q62 170 62 184 Q62 168 72 156 Q66 188 60 195 Z" fill="url(#bb-flame)"/>
+    <path d="M142 195 Q130 178 142 156 Q128 170 128 184 Q128 168 118 156 Q124 188 130 195 Z" fill="url(#bb-flame)"/>
+    <path d="M95 156 Q88 138 84 110 Q98 122 104 138 Q108 118 120 102 Q112 142 104 156 Z" fill="url(#bb-flame)"/>
+  </g>
+  <!-- wordmark "dosco" -->
+  <g transform="translate(208 110)">
+    <path d="M14 0 H44 L80 96 V0 H116 V148 H86 L50 52 V148 H14 Z" fill="currentColor"/>
+    <path d="M148 0 H186 V112 Q186 122 196 122 Q204 122 204 112 V0 H242 V112 Q242 156 196 156 Q148 156 148 112 Z" fill="currentColor"/>
+    <path d="M276 0 H320 Q372 0 372 38 Q372 60 348 70 Q380 80 380 110 Q380 148 326 148 H276 Z M310 32 V60 H320 Q332 60 332 46 Q332 32 320 32 Z M310 92 V120 H326 Q342 120 342 106 Q342 92 326 92 Z" fill="currentColor"/>
+    <path d="M404 0 H442 V60 L474 0 H516 L478 70 L520 148 H478 L454 102 L442 116 V148 H404 Z" fill="currentColor"/>
+    <path d="M544 0 H634 V34 H578 V56 H628 V88 H578 V114 H634 V148 H544 Z" fill="currentColor"/>
+  </g>
 </svg>

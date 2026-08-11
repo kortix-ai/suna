@@ -4,7 +4,7 @@
  * Carried over from main, trimmed to what this branch actually needs:
  *   - Parse the `Host` header at the Bun.serve level (before Hono routing
  *     kicks in) to recognize preview subdomains.
- *   - First-request auth: validate a Bearer JWT / Kortix token / `?token=`
+ *   - First-request auth: validate a Bearer JWT / dosco token / `?token=`
  *     query param, then mark the subdomain "authenticated" in-memory for
  *     a TTL. All subsequent requests on the subdomain are trusted — this
  *     side-steps third-party cookie restrictions inside iframes and lets
@@ -42,7 +42,7 @@ export function parsePreviewSubdomain(host: string): { port: number; sandboxId: 
 //
 // Once a subdomain is authenticated, all subsequent requests on it pass
 // through without further auth. We remember the validated userId so that
-// downstream `forwardToSandbox` can sign X-Kortix-User-Context with the right
+// downstream `forwardToSandbox` can sign X-dosco-User-Context with the right
 // identity (the agent-server's auth gate verifies that header).
 
 type AuthState =
@@ -268,7 +268,7 @@ export async function handleSubdomainRequest(
   const publicOrigin = `${proto}://${host}`;
 
   // Hand off to the shared forwarder. It handles ownership, service-key auth,
-  // X-Kortix-User-Context signing, auto-wake retries, etc.
+  // X-dosco-User-Context signing, auto-wake retries, etc.
   //
   // remainingPath is the FULL pathname here — the subdomain itself encodes
   // the (sandboxId, port) target, so the rest of the URL is what the

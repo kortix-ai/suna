@@ -348,7 +348,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                       </>
                     ) : (
                       <>
-                        Prepend your API origin (e.g. <code>https://api.kortix.com</code>). The IdP
+                        Prepend your API origin (e.g. <code>https://api.dosco.live</code>). The IdP
                         appends <code>/Users</code> and <code>/Groups</code>.
                       </>
                     )}

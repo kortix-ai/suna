@@ -157,7 +157,7 @@ export function formatBytes(bytes: number): string {
 }
 \`\`\`
 
-Read more on the [Kortix design system](https://kortix.com) or ping me on
+Read more on the [dosco design system](https://dosco.live) or ping me on
 Slack.
 `;
 
@@ -643,7 +643,7 @@ const GROUPS: Group[] = [
               title: 'server.ts',
               language: 'typescript',
               content:
-                "import { serve } from 'bun';\n\nserve({\n  port: 3000,\n  fetch(req) {\n    const url = new URL(req.url);\n    if (url.pathname === '/health') return new Response('ok');\n    return new Response('Hello, Kortix', {\n      headers: { 'content-type': 'text/plain' },\n    });\n  },\n});\n",
+                "import { serve } from 'bun';\n\nserve({\n  port: 3000,\n  fetch(req) {\n    const url = new URL(req.url);\n    if (url.pathname === '/health') return new Response('ok');\n    return new Response('Hello, dosco', {\n      headers: { 'content-type': 'text/plain' },\n    });\n  },\n});\n",
             },
             '',
           ),
@@ -656,9 +656,9 @@ const GROUPS: Group[] = [
           done(
             {
               type: 'url',
-              title: 'Kortix',
+              title: 'dosco',
               description: 'Your AI workforce, in one place.',
-              url: 'https://kortix.com',
+              url: 'https://dosco.live',
             },
             '',
           ),

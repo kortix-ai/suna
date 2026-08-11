@@ -176,10 +176,10 @@ describe('MarkdownCode — inline code', () => {
   });
 
   test('a URL becomes a link that opens in a new tab', () => {
-    const markup = render({ children: 'https://kortix.com/docs' });
+    const markup = render({ children: 'https://dosco.live/docs' });
 
     expect(markup.startsWith('<a')).toBe(true);
-    expect(markup).toContain('href="https://kortix.com/docs"');
+    expect(markup).toContain('href="https://dosco.live/docs"');
     expect(markup).toContain('target="_blank"');
     expect(markup).toContain('rel="noopener noreferrer"');
     expect(markup).not.toContain('role="button"');

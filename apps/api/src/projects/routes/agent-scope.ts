@@ -13,7 +13,7 @@
 // Manager-gated: an agent's scope decides what flows to everyone who inherits
 // it, so it's a governance control, not an editor convenience.
 //
-// `kortix_cli` is intentionally NOT editable here — granting Kortix-CLI powers
+// `kortix_cli` is intentionally NOT editable here — granting dosco-CLI powers
 // is a sharper escalation; it stays a manifest change.
 //
 // Second route in this file: POST /:projectId/secrets/:identifier/grant, the

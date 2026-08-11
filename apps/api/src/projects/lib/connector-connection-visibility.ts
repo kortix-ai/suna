@@ -2,7 +2,7 @@
  * Which connections a SESSION-BOUND caller may enumerate.
  *
  * The connector PAT injected into every sandbox carries the LAUNCHING USER's id —
- * in Kortix-as-a-Backend that is the wrapper's own credential owner, who is a
+ * in dosco-as-a-Backend that is the wrapper's own credential owner, who is a
  * project manager. The connection list's former manager rule
  * handed a prompt-injected agent in end-user A's sandbox the connection_id, owner_id
  * and label of every OTHER end-user's `external` connection. From there a single

@@ -1,6 +1,6 @@
 /**
  * Home-page FAQ copy — mounts directly above the closing CTA, after the
- * open-source section.
+ * agent-native section.
  *
  * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
@@ -81,7 +81,7 @@
  *    are not shipped. Never name them.
  *  - LICENCE. Say "open source" and stop. Never name one.
  *  - NO CUSTOMER NAMES. NO INVENTED METRICS. The live GitHub star count is the
- *    only sanctioned figure on the site and it belongs to the open-source
+ *    only sanctioned figure on the site and it belongs to the
  *    section — this one carries no count.
  */
 
@@ -98,7 +98,7 @@ export const faq = {
   eyebrow: 'Straight answers',
   title: 'The questions people ask before the first session.',
   /** One link out, to the page that carries the longest of these answers. */
-  /* No trailing link. One 'How Kortix is secured →' under a list of six
+  /* No trailing link. One 'How dosco is secured →' under a list of six
      questions pointed at the answer to only one of them, and reads as an
      apology for the section. Each answer carries its own link where it needs
      one. */

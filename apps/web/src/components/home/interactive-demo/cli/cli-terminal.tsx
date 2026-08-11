@@ -45,7 +45,7 @@ export function CliTerminal({
         <span className="text-muted-foreground ml-1.5 inline-flex items-center gap-1 text-[11px] font-medium">
           <KortixLogo size={12} />
           {tI18nHardcoded.raw(
-            'autoComponentsHomeInteractiveDemoCliCliTerminalJsxTextKortix1390795b',
+            'autoComponentsHomeInteractiveDemoCliCliTerminalJsxTextdosco1390795b',
           )}
         </span>
         <span className="ml-auto inline-flex items-center gap-2">

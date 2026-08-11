@@ -13,7 +13,7 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import type { GatewayErrorDetails } from '@kortix/sdk';
-import type { KortixSendError } from '@kortix/sdk/react';
+import type { doscoSendError } from '@kortix/sdk/react';
 import {
   WarningCircleIcon as AlertCircle,
   CreditCardIcon as CreditCard,
@@ -189,7 +189,7 @@ interface TurnErrorDisplayProps {
    * (and `.billing.detail.code` for the credits-vs-usage-limit card) instead
    * of regexing the message.
    */
-  error?: KortixSendError | null;
+  error?: doscoSendError | null;
   /**
    * Was this turn ACTUALLY aborted — i.e. is the error's identity `AbortError`?
    *
