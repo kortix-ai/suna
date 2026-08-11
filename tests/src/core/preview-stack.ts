@@ -70,9 +70,7 @@ export function validatePreviewRuntimeSecrets(
 
 export function buildPreviewCaddyfile(): string {
   return `:8080 {
-  encode zstd gzip
-
-  @api path /v1*
+  @api path /v1* /health* /metrics /internal/* /scim/v2/*
   handle @api {
     reverse_proxy kortix-api:8008
   }

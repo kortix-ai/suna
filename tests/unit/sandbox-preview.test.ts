@@ -46,6 +46,7 @@ describe('provider-neutral preview lifecycle', () => {
             {
               id: 140097279,
               account: { login: 'managed-kortix', type: 'Organization' },
+              repository_selection: 'all',
               permissions: { administration: 'write', contents: 'write', metadata: 'read' },
             },
           ]),
@@ -79,6 +80,7 @@ describe('provider-neutral preview lifecycle', () => {
             {
               id: 140097279,
               account: { login: 'managed-kortix', type: 'Organization' },
+              repository_selection: 'all',
               permissions: { contents: 'write', metadata: 'read' },
             },
             {
@@ -96,6 +98,31 @@ describe('provider-neutral preview lifecycle', () => {
     ).rejects.toThrow('exactly one installation; received 2');
   });
 
+  it('rejects a dedicated installation limited to selected repositories', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 3812697, slug: 'kortix-preview-test' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: 140097279,
+              account: { login: 'managed-kortix', type: 'Organization' },
+              repository_selection: 'selected',
+              permissions: { administration: 'write', contents: 'write', metadata: 'read' },
+            },
+          ]),
+          { status: 200 },
+        ),
+      );
+
+    await expect(
+      assertPreviewManagedGitInstallation({ secrets: previewSecrets, fetchImpl }),
+    ).rejects.toThrow('repository access must include all repositories; received selected');
+  });
+
   it('rejects the dedicated installation without repository administration permission', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
@@ -108,6 +135,7 @@ describe('provider-neutral preview lifecycle', () => {
             {
               id: 140097279,
               account: { login: 'managed-kortix', type: 'Organization' },
+              repository_selection: 'all',
               permissions: { contents: 'write', metadata: 'read' },
             },
           ]),

@@ -100,7 +100,9 @@ preview database and no runtime secret.
 The runtime secret allowlist contains `DAYTONA_API_KEY`,
 `KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
-email. The GitHub App runs the real managed repository and CLI push flows.
+email. The GitHub App runs the real managed repository and CLI push flows. Its
+single `managed-kortix` organization installation must grant access to all
+repositories with `Administration: write` and `Contents: write`.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
 exclusions and all other browser journey exclusions fail the preview test.
 

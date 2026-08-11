@@ -13,7 +13,7 @@ describe('ephemeral self-host preview stack', () => {
   it('routes every public surface through one origin', () => {
     const caddy = buildPreviewCaddyfile();
     expect(caddy).toContain(':8080');
-    expect(caddy).toContain('@api path /v1*');
+    expect(caddy).toContain('@api path /v1* /health* /metrics /internal/* /scim/v2/*');
     expect(caddy).toContain('reverse_proxy kortix-api:8008');
     expect(caddy).toContain('@supabase path /auth/v1* /rest/v1* /storage/v1*');
     expect(caddy).toContain('reverse_proxy supabase-kong:8000');
@@ -25,6 +25,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
     expect(caddy).toContain('header_up X-Forwarded-Host {http.request.header.X-Forwarded-Host}');
+    expect(caddy).not.toContain('encode zstd gzip');
   });
 
   it('adds preview ingress, Mailpit, direct database access, and preview-only Auth capacity', () => {

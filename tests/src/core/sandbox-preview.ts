@@ -26,6 +26,7 @@ interface GitHubAppIdentity {
 interface GitHubAppInstallation {
   id?: number;
   account?: { login?: string; type?: string };
+  repository_selection?: string;
   permissions?: Record<string, string>;
 }
 
@@ -107,7 +108,13 @@ export async function assertPreviewManagedGitInstallation(input: {
   ) {
     throw new Error(
       `preview GitHub App installation mismatch: expected ${expectedInstallationId}/${expectedOwner}/Organization; ` +
-        `received ${installation.id ?? 'missing'}/${actualOwner || 'missing'}/${installation.account?.type ?? 'missing'}`,
+      `received ${installation.id ?? 'missing'}/${actualOwner || 'missing'}/${installation.account?.type ?? 'missing'}`,
+    );
+  }
+  if (installation.repository_selection !== 'all') {
+    throw new Error(
+      `preview GitHub App repository access must include all repositories; ` +
+        `received ${installation.repository_selection ?? 'missing'}`,
     );
   }
   const administration = installation.permissions?.administration;

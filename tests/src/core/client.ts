@@ -223,7 +223,7 @@ function retryAfterMs(value: string | undefined): number | undefined {
 const TRANSIENT_GATEWAY_RETRY_DELAY_MS = 2_000;
 
 export class Client {
-  private readonly origin: string;
+  private readonly baseUrl: string;
 
   constructor(
     apiUrl: string,
@@ -231,12 +231,16 @@ export class Client {
     private readonly defaultTimeoutMs = 60_000,
     private readonly transientGatewayRetries = 0,
   ) {
-    this.origin = new URL(apiUrl).origin;
+    const url = new URL(apiUrl);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    // API route templates include both /v1 and root surfaces such as /scim.
+    // Other clients can use a path-scoped reverse proxy, such as /_gateway.
+    this.baseUrl = `${url.origin}${pathname && pathname !== '/v1' ? pathname : ''}`;
   }
 
   /** Clone bound to a principal/identity. */
   as(identity: Identity): Client {
-    return new Client(this.origin, identity, this.defaultTimeoutMs, this.transientGatewayRetries);
+    return new Client(this.baseUrl, identity, this.defaultTimeoutMs, this.transientGatewayRetries);
   }
 
   withBearer(token: string, label = 'raw'): Client {
@@ -249,7 +253,7 @@ export class Client {
    * Callers must opt in only for requests that are safe to repeat.
    */
   withTransientGatewayRetries(retries = 3): Client {
-    return new Client(this.origin, this.identity, this.defaultTimeoutMs, retries);
+    return new Client(this.baseUrl, this.identity, this.defaultTimeoutMs, retries);
   }
 
   get(t: string, o?: ReqOpts) {
@@ -295,7 +299,7 @@ export class Client {
         path = path.replace(new RegExp(`:${k}(?=/|$|\\.)`, 'g'), encodeURIComponent(String(v)));
       }
     }
-    const url = new URL(this.origin + path);
+    const url = new URL(this.baseUrl + path);
     if (opts?.query) {
       for (const [k, v] of Object.entries(opts.query)) {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
