@@ -547,17 +547,24 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(githubLink).toBeVisible();
     await expect(githubLink).toHaveAttribute("href", projectRepoWebUrl);
 
+    const initialAccessResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/v1/projects/${project.project_id}/access`) &&
+        response.request().method() === "GET",
+    );
     const membersDialog = await openCustomizeSection(
       page,
       project.project_id,
       "members",
       /Project members/i,
     );
-    // Wait for the initial access inventory before submitting a mutation.
-    // Otherwise a slow pre-mutation response can overwrite the invalidated query.
-    await expect(
-      membersDialog.locator("li").filter({ hasText: ownerEmail }).first(),
-    ).toBeVisible();
+    // Synchronize on the request that can race the mutation. A DOM row is not
+    // a request-completion signal and can render late during cold compilation.
+    const accessInventory = await initialAccessResponse;
+    expect(accessInventory.status()).toBe(200);
+    const uiAccessBeforeInvite =
+      (await accessInventory.json()) as ProjectAccessResponse;
+    expect(byEmail(uiAccessBeforeInvite.members, ownerEmail)).toBeTruthy();
     await membersDialog.getByRole("tab", { name: /^Invite/i }).click();
     await membersDialog.getByLabel("Emails").fill(memberEmail);
     await membersDialog.locator("#invite-role").click();
