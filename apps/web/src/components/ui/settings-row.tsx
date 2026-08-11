@@ -93,10 +93,10 @@ export function SettingsRow({
       className={cn('gap-4 px-4 py-3', description ? 'items-start' : '!items-center', className)}
       {...props}
     >
-      <FieldContent className="min-w-0 flex-1 gap-0.5">
-        <FieldTitle className="text-foreground text-sm font-normal">{label}</FieldTitle>
+      <FieldContent className="min-w-0 flex-1 gap-0">
+        <FieldTitle className="text-foreground text-sm font-medium">{label}</FieldTitle>
         {description ? (
-          <FieldDescription className="text-muted-foreground text-xs leading-relaxed text-pretty">
+          <FieldDescription className="text-muted-foreground text-xs leading-normal text-balance">
             {description}
           </FieldDescription>
         ) : null}

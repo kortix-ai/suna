@@ -103,7 +103,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -203,13 +202,8 @@ export function GeneralTabView({
 }: GeneralTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
-      {/* The pane heading, then a hairline spanning the content width — the
-          rule is what separates "which tab am I on" from the settings
-          themselves, and it is why the groups below need no headers. */}
-      <div className="space-y-4">
-        <SettingsTabHeader tab="general" />
-        <Separator />
-      </div>
+      <SettingsTabHeader tab="general" />
+
       {isLoading ? (
         <div className="space-y-5">
           <Skeleton className="h-40 rounded-md" />

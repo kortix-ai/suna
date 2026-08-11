@@ -43,8 +43,15 @@ describe('settings rail keyboard activation', () => {
   test('the assertion above reads code, not the comment documenting it', () => {
     // Guards the stripping itself: if `PANEL` ever stops removing comments, the
     // check above silently becomes unfalsifiable again.
-    expect(RAW).toContain('WAI-ARIA');
-    expect(PANEL).not.toContain('WAI-ARIA');
+    //
+    // Asserted on comment SYNTAX, not on any particular sentence. The first
+    // version pinned the word "WAI-ARIA" from the comment above the Tabs root
+    // — then a later edit to this file dropped that comment, and this test
+    // failed for a reason that had nothing to do with what it guards. A test
+    // that breaks when prose is reworded is a test that will be deleted.
+    expect(RAW).toMatch(/\/\*[\s\S]*?\*\//);
+    expect(PANEL).not.toMatch(/\/\*[\s\S]*?\*\//);
+    expect(PANEL.length).toBeLessThan(RAW.length);
   });
 
   test('it is set on the vertical rail root, not some nested Tabs', () => {

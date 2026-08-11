@@ -70,12 +70,9 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/separator';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
 import {
   useAccountDeletionStatus,
   useCancelAccountDeletion,
@@ -311,18 +308,16 @@ export function ProfileTabView({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
-      {/* The pane heading, then a hairline spanning the content width — the
-          rule is what separates "which tab am I on" from the settings
-          themselves, and it is why the groups below need no headers. */}
-      <div className="space-y-4">
-        <SettingsTabHeader tab="profile" />
-        <Separator />
-      </div>
+      <SettingsTabHeader tab="profile" />
 
       {/* Profile picture, email, name — one group, one border, hairlines
           between. */}
       <SettingsRowGroup>
-        <SettingsRow label="Profile picture" description="JPG, PNG, or GIF. Max 5MB.">
+        <SettingsRow
+          className="group/settings-row"
+          label="Profile picture"
+          description="JPG, PNG, or GIF. Max 5MB."
+        >
           {avatarUrl ? (
             <Button
               type="button"
@@ -330,20 +325,13 @@ export function ProfileTabView({
               size="sm"
               onClick={onRemoveAvatar}
               disabled={isUploadingAvatar || isRemovingAvatar}
+              className="opacity-0 transition-opacity duration-150 ease-out group-hover/settings-row:opacity-100"
             >
               {isRemovingAvatar ? <Loading className="size-3.5 shrink-0" /> : null}
               Remove
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onOpenFilePicker}
-            disabled={isUploadingAvatar}
-          >
-            Upload
-          </Button>
+
           <button
             type="button"
             onClick={onOpenFilePicker}
@@ -380,9 +368,8 @@ export function ProfileTabView({
           />
         </SettingsRow>
 
-        {/* Not editable, so not a field: plain right-aligned muted text. */}
         <SettingsRow label="Email" description="Used to sign in — cannot be changed here.">
-          <span className="text-muted-foreground truncate text-sm">{userEmail}</span>
+          <span className="text-muted-foreground my-auto truncate text-sm">{userEmail}</span>
         </SettingsRow>
 
         <SettingsRow label="Name" description="Your display name across Kortix.">
@@ -417,7 +404,7 @@ export function ProfileTabView({
           >
             {verified.length > 0 && (
               <Badge
-                variant="outline"
+                variant="secondary"
                 size="xs"
                 className={cn(
                   'shrink-0 gap-1',
@@ -433,12 +420,11 @@ export function ProfileTabView({
             {enrolling ? null : (
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 onClick={onStartEnroll}
                 disabled={isStartingEnroll}
-                className="gap-1.5"
               >
-                {isStartingEnroll ? <Loading className="size-4" /> : <Plus className="size-4" />}
+                {isStartingEnroll ? <Loading className="size-3.5" /> : <Plus className="size-4" />}
                 Add authenticator app
               </Button>
             )}
@@ -451,24 +437,6 @@ export function ProfileTabView({
               ))
             : null}
         </SettingsRowGroup>
-
-        {factorsLoading ? (
-          <Skeleton className="h-10 w-full rounded-md" />
-        ) : factorsError ? (
-          <ErrorState
-            size="sm"
-            title="Couldn't load your authenticator apps"
-            action={
-              <Button variant="outline" size="sm" onClick={onRetryFactors}>
-                Retry
-              </Button>
-            }
-          />
-        ) : factors.length === 0 && !enrolling ? (
-          <InfoBanner tone="info" title="No second factor enrolled">
-            Add an authenticator app so you can step up when a workspace requires MFA.
-          </InfoBanner>
-        ) : null}
 
         {enrolling ? (
           <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
@@ -550,7 +518,7 @@ export function ProfileTabView({
               <span className="text-muted-foreground text-sm">Unavailable</span>
             ) : hasPendingDeletion ? (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="sm"
                 onClick={onOpenCancelDeletionDialog}
                 disabled={isCancelingDeletion}
@@ -558,14 +526,7 @@ export function ProfileTabView({
                 Keep my account
               </Button>
             ) : (
-              // Red text, not a filled button: the weight belongs to the
-              // confirmation, not to the affordance that opens it.
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onOpenDeleteDialog}
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
+              <Button variant="destructive" size="sm" onClick={onOpenDeleteDialog}>
                 Delete account
               </Button>
             )}

@@ -26,7 +26,7 @@ export function SettingsSectionHeader({
       )}
     >
       <div className="flex min-w-0 flex-col gap-1 text-base">
-        <h2 className="font-regular text-foreground-strong text-base text-balance">{title}</h2>
+        <h2 className="font-regular text-foreground-strong text-base lg:text-xl text-balance">{title}</h2>
         {description ? (
           <p className="font-regular text-foreground-weak max-w-[410px] text-sm text-pretty">
             {description}

@@ -4,35 +4,50 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PreferencesTabView } from './preferences-tab';
 
-/** Section titles in document order, read from the h2s SettingsSectionHeader emits. */
+/**
+ * Every heading in document order, as `h<level>:<text>`.
+ *
+ * This used to read `h2` only, from when `SettingsSectionHeader` emitted every
+ * heading on this pane at one level. Sections now use
+ * `SettingsSubsectionHeader`, which emits `h3` — so an h2-only reader would
+ * have seen a single heading and happily agreed with a pane that had lost five
+ * of them. Capturing the LEVEL is the point: it pins the hierarchy this pane
+ * exists to demonstrate, not just the words.
+ */
 const headings = (html: string): string[] =>
-  [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
+  [...html.matchAll(/<(h[23])[^>]*>([^<]*)<\/\1>/g)].map((m) => `${m[1]}:${m[2]}`);
 
 const html = () => renderToStaticMarkup(<PreferencesTabView />);
 
+/**
+ * The pane title is the only `h2`; every section nests under it as an `h3`.
+ * Written out in full rather than counted, because the failure this guards
+ * against is a section quietly disappearing — which a count would catch only
+ * if someone also remembered to update the number.
+ */
+const EXPECTED_HEADINGS = [
+  'h2:Preferences',
+  'h3:Theme',
+  'h3:Wallpaper',
+  'h3:Sounds',
+  'h3:Notifications',
+  'h3:Keyboard shortcuts',
+  'h3:Language',
+];
+
 describe('PreferencesTabView', () => {
   test('appearance leads — Theme is the first SECTION heading, right after the pane heading', () => {
-    expect(headings(html())).toEqual([
-      'Preferences',
-      'Theme',
-      'Wallpaper',
-      'Sounds',
-      'Notifications',
-      'Keyboard shortcuts',
-      'Language',
-    ]);
+    expect(headings(html())).toEqual(EXPECTED_HEADINGS);
+  });
+
+  test('the pane title outranks its sections — one h2, the rest h3', () => {
+    const found = headings(html());
+    expect(found.filter((h) => h.startsWith('h2:'))).toEqual(['h2:Preferences']);
+    expect(found.filter((h) => h.startsWith('h3:'))).toHaveLength(6);
   });
 
   test('renders every preference section in order', () => {
-    expect(headings(html())).toEqual([
-      'Preferences',
-      'Theme',
-      'Wallpaper',
-      'Sounds',
-      'Notifications',
-      'Keyboard shortcuts',
-      'Language',
-    ]);
+    expect(headings(html())).toEqual(EXPECTED_HEADINGS);
   });
 
   test('the pane title outranks its sections — exactly one h2, the rest h3', () => {
