@@ -39,7 +39,16 @@ export function SettingsSubsectionHeader({
   action,
   className,
 }: {
-  title: string;
+  /**
+   * `ReactNode`, not `string`, so a heading can carry a quiet count beside its
+   * name — "Groups 3" — the way Linear's settings do.
+   *
+   * It was `string`, and that cost something real: converting the Access cards
+   * to this component meant dropping their `(3)` counts, because there was no
+   * way to pass the muted span without widening this. Purely additive — every
+   * existing `string` caller still typechecks.
+   */
+  title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
   className?: string;

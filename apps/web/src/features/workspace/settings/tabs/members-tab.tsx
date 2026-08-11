@@ -380,7 +380,15 @@
 
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Children,
+  Fragment,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
@@ -402,7 +410,6 @@ import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -423,6 +430,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -498,11 +506,8 @@ import {
   PlugIcon as Plug,
   PlusIcon as Plus,
   ArrowClockwiseIcon as RefreshCw,
-  ShieldIcon as Shield,
-  SparkleIcon as Sparkles,
   UserIcon as User,
   UsersIcon as Users,
-  UsersIcon as UsersSolid,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -821,7 +826,7 @@ export function MembersTabView({
   const showLeaveAccount = !!accountId;
   // The Access tab is exactly the three rehomed slots. The container decides
   // whether each one exists at all (its gate, unchanged); this only decides
-  // whether the tab shows them or an EmptyState instead of a blank panel.
+  // whether the tab shows them or one muted row instead of a blank panel.
   const showAccessCards = !!(groupGrantsSlot || resourceAccessSlot || roleAssignmentsSlot);
   // Everyone waiting to get in, counted once for the Invites tab's own count.
   const waitingCount =
@@ -1372,11 +1377,16 @@ export function MembersTabView({
               {roleAssignmentsSlot}
             </>
           ) : (
-            <EmptyState
-              icon={Shield}
-              title="No extra access rules"
-              description="Access given to a whole group, access to single agents or skills, and custom roles for this workspace appear here."
-            />
+            /* The same muted row the three cards use when their own list is
+               empty — not a second, illustrated way of saying "nothing here".
+               A viewer who can see no access card at all reads one row, in the
+               same bordered group, at the same height. */
+            <SettingsRowGroup>
+              <SettingsEmptyRow
+                label="No extra access rules"
+                description="Group access, agent assignments, and custom roles for this workspace appear here."
+              />
+            </SettingsRowGroup>
           )}
         </TabsContent>
       </Tabs>
@@ -2343,7 +2353,78 @@ function InviteToAccountDialog({
 // `MembersTabViewProps.groupGrantsSlot`/`resourceAccessSlot`/
 // `roleAssignmentsSlot`'s doc comments and `MembersTabInner`'s own comment
 // next to `canManage`.
+//
+// Their PRESENTATION is now the panel's own: each card is a
+// `SettingsSubsectionHeader` over one `SettingsRowGroup`, one `SettingsRow`
+// per item. Before this pass the three of them had three different bespoke
+// list shapes and — with the tab's own fallback — four different ways to say
+// "there is nothing here" (an illustrated `EmptyState` with a `Users` icon,
+// two bare `<p>`s, and a second illustrated `EmptyState`), while
+// `SettingsRowGroup` appeared in this file zero times. Behaviour, gates,
+// queries and mutations are untouched; only the markup around them changed.
 // ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * `InlineMeta`'s "·"-separated line, rebuilt out of phrasing content.
+ *
+ * A row's second line renders inside `SettingsRow`'s `description`, which is a
+ * `FieldDescription` — a `<p>`. `InlineMeta`'s root is a `<div>`, which a `<p>`
+ * may not contain: React would flag the nesting and the browser would close the
+ * paragraph early, splitting the row's own text. Same separator, same rhythm,
+ * `<span>` all the way down.
+ */
+function RowMeta({ children }: { children: ReactNode }) {
+  const items = Children.toArray(children).filter((c) => c !== null && c !== undefined && c !== '');
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+      {items.map((child, i) => (
+        <Fragment key={isValidElement(child) ? (child.key ?? i) : i}>
+          {i > 0 ? <span className="text-muted-foreground/30">·</span> : null}
+          <span className="min-w-0">{child}</span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The loading placeholder for one row, inside the real `SettingsRowGroup`.
+ *
+ * Two bars in the label slot rather than a description bar: `FieldDescription`
+ * is a `<p>` and `Skeleton` is a `<div>`. Both bars stack to about the height
+ * of a label-plus-description row, so the group does not resize when the data
+ * lands — a skeleton of a different height is the same flicker in another
+ * costume.
+ */
+function SettingsRowSkeleton() {
+  return (
+    <SettingsRow
+      label={
+        <span className="flex flex-col gap-1.5">
+          <Skeleton className="h-4 w-40 py-0" />
+          <Skeleton className="h-3 w-56 py-0" />
+        </span>
+      }
+    />
+  );
+}
+
+/**
+ * "There is nothing here", as a row.
+ *
+ * One muted `SettingsRow` inside the same `SettingsRowGroup` the items would
+ * have filled — no icon, no illustration, no dashed box. The border and the
+ * rhythm are then identical at zero items and at five, so a list that fills in
+ * does not shove the section below it down the page.
+ */
+function SettingsEmptyRow({ label, description }: { label: string; description?: ReactNode }) {
+  return (
+    <SettingsRow
+      label={<span className="text-muted-foreground font-normal">{label}</span>}
+      description={description}
+    />
+  );
+}
 
 function ProjectGroupGrantsCard({
   projectId,
@@ -2475,169 +2556,157 @@ function ProjectGroupGrantsCard({
 
   return (
     <>
-      <section className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            {/* Was "Group access" / "Attach an account group to this project…"
-                routed through auto-generated i18n keys. Plain words, written
-                here: nobody thinks of it as "attaching" anything. */}
-            <h3 className="text-sm font-medium">
+      <section className="space-y-3">
+        {/* Was "Group access" / "Attach an account group to this project…"
+            routed through auto-generated i18n keys. Plain words, written
+            here: nobody thinks of it as "attaching" anything. */}
+        <SettingsSubsectionHeader
+          title={
+            <>
               Groups
               {grants.length > 0 ? (
-                <span className="text-muted-foreground ml-1.5 font-normal">({grants.length})</span>
+                <span className="text-muted-foreground ml-1.5 font-normal tabular-nums">
+                  {grants.length}
+                </span>
               ) : null}
-            </h3>
-            <p className="text-muted-foreground mt-1 text-xs text-pretty">
-              Give a whole group access here at once. Everyone in the group gets the role you pick.
-            </p>
-          </div>
-
-          {canManage && available.length > 0 ? (
-            <form
-              className="flex shrink-0 items-center gap-1.5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!pickerGroupId || attachMutation.isPending) return;
-                attachMutation.mutate();
-              }}
-            >
-              <Select
-                value={pickerGroupId}
-                onValueChange={setPickerGroupId}
-                disabled={attachMutation.isPending}
+            </>
+          }
+          description="Give a whole group access here at once. Everyone in the group gets the role you pick."
+          action={
+            canManage && available.length > 0 ? (
+              <form
+                className="flex shrink-0 items-center gap-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!pickerGroupId || attachMutation.isPending) return;
+                  attachMutation.mutate();
+                }}
               >
-                <SelectTrigger className="h-8 w-44 text-xs">
-                  <SelectValue
-                    placeholder={tHardcodedUi.raw(
-                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrPlaceholderPickf0432525',
-                    )}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {available.map((g) => (
-                    <SelectItem key={g.group_id} value={g.group_id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={pickerRole}
-                onValueChange={(v) => setPickerRole(v as ProjectRole)}
-                disabled={attachMutation.isPending}
-              >
-                <SelectTrigger className="h-8 w-28 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <ProjectRoleSelectItem role="member" />
-                  <ProjectRoleSelectItem role="editor" />
-                  <ProjectRoleSelectItem role="manager" />
-                </SelectContent>
-              </Select>
-              <Button
-                type="submit"
-                size="sm"
-                variant="outline"
-                disabled={!pickerGroupId || attachMutation.isPending}
-              >
-                Attach
-              </Button>
-            </form>
-          ) : null}
-        </div>
+                <Select
+                  value={pickerGroupId}
+                  onValueChange={setPickerGroupId}
+                  disabled={attachMutation.isPending}
+                >
+                  <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectValue
+                      placeholder={tHardcodedUi.raw(
+                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrPlaceholderPickf0432525',
+                      )}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {available.map((g) => (
+                      <SelectItem key={g.group_id} value={g.group_id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={pickerRole}
+                  onValueChange={(v) => setPickerRole(v as ProjectRole)}
+                  disabled={attachMutation.isPending}
+                >
+                  <SelectTrigger className="h-8 w-28 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <ProjectRoleSelectItem role="member" />
+                    <ProjectRoleSelectItem role="editor" />
+                    <ProjectRoleSelectItem role="manager" />
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="outline"
+                  disabled={!pickerGroupId || attachMutation.isPending}
+                >
+                  Attach
+                </Button>
+              </form>
+            ) : null
+          }
+        />
 
-        {grantsQuery.isLoading && (
-          <div className="space-y-2">
-            {Array.from({ length: 2 }).map((_, index) => (
-              <Skeleton key={index} className="h-14 w-full rounded-md" />
-            ))}
-          </div>
-        )}
-
-        {!grantsQuery.isLoading && grants.length === 0 && (
-          <EmptyState
-            icon={Users}
-            title="No groups attached"
-            description={
-              canManage && groups.length === 0 ? (
-                <>
-                  {/* Was an <a> to `/accounts/{id}` — the page the settings
-                      panel replaced. Groups now live in this same panel, so
-                      this switches tabs instead of navigating away: no reload,
-                      and the panel stays open where the user already is.
-                      `/settings/groups` remains a real URL for anyone linking
-                      in from outside. */}
-                  Create one in{' '}
-                  <button
-                    type="button"
-                    onClick={() => navigate('groups')}
-                    className="hover:text-foreground cursor-pointer underline underline-offset-2"
-                  >
-                    Groups
-                  </button>
-                  .
-                </>
-              ) : canManage && available.length === 0 && groups.length > 0 ? (
-                tHardcodedUi.raw(
-                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAllYour31c4dcb5',
+        <SettingsRowGroup>
+          {grantsQuery.isLoading ? (
+            <>
+              <SettingsRowSkeleton />
+              <SettingsRowSkeleton />
+            </>
+          ) : grants.length === 0 ? (
+            <SettingsEmptyRow
+              label="No groups yet"
+              description={
+                canManage && groups.length === 0 ? (
+                  <>
+                    {/* Was an <a> to `/accounts/{id}` — the page the settings
+                        panel replaced. Groups now live in this same panel, so
+                        this switches tabs instead of navigating away: no
+                        reload, and the panel stays open where the user already
+                        is. `/settings/groups` remains a real URL for anyone
+                        linking in from outside. */}
+                    Create one in{' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate('groups')}
+                      className="hover:text-foreground cursor-pointer underline underline-offset-2"
+                    >
+                      Groups
+                    </button>
+                    .
+                  </>
+                ) : canManage && available.length === 0 && groups.length > 0 ? (
+                  'Every group already has access to this project.'
+                ) : (
+                  'Nobody reaches this project through a group.'
                 )
-              ) : (
-                tHardcodedUi.raw(
-                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextNoGroups09e82ebd',
-                )
-              )
-            }
-          />
-        )}
-
-        {!grantsQuery.isLoading && grants.length > 0 && (
-          <ul className="space-y-2">
-            {grants.map((g: ProjectGroupGrant) => {
+              }
+            />
+          ) : (
+            grants.map((g: ProjectGroupGrant) => {
               const busy = pendingGroupIds.has(g.group_id);
               return (
-                <li key={g.group_id} className={MEMBER_ROW}>
-                  <EntityAvatar icon={UsersSolid} size="md" />
-                  <div className="min-w-0 flex-1">
-                    <span className="text-foreground truncate text-sm font-medium">
-                      {g.group_name}
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      <InlineMeta>
-                        <span>Attached {formatDate(g.created_at)}</span>
-                        {typeof g.member_count === 'number' && (
-                          <span>
-                            {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
-                          </span>
-                        )}
-                        {typeof g.override_count === 'number' && g.override_count > 0 && (
-                          <span
-                            className="text-kortix-orange"
-                            title={tHardcodedUi.raw(
-                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
-                            )}
-                          >
-                            {g.override_count} of {g.member_count}{' '}
-                            {tHardcodedUi.raw(
-                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
-                            )}
-                          </span>
-                        )}
-                        {groupsWithCustomRole.has(g.group_id) && (
-                          <span
-                            className="text-kortix-orange font-medium"
-                            title="This group also has a custom role assigned on this project. Built-in role grants WIN over custom roles (allow-only / highest-wins), so this grant overrides the custom role's limits. Detach it to let the custom role apply."
-                          >
-                            ⚠ overrides an assigned custom role
-                          </span>
-                        )}
-                      </InlineMeta>
-                    </span>
-                  </div>
+                <SettingsRow
+                  key={g.group_id}
+                  label={g.group_name}
+                  description={
+                    <RowMeta>
+                      <span>Attached {formatDate(g.created_at)}</span>
+                      {typeof g.member_count === 'number' && (
+                        <span>
+                          {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
+                        </span>
+                      )}
+                      {typeof g.override_count === 'number' && g.override_count > 0 && (
+                        <span
+                          className="text-kortix-orange"
+                          title={tHardcodedUi.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
+                          )}
+                        >
+                          {g.override_count} of {g.member_count}{' '}
+                          {tHardcodedUi.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
+                          )}
+                        </span>
+                      )}
+                      {groupsWithCustomRole.has(g.group_id) && (
+                        <span
+                          className="text-kortix-orange font-medium"
+                          title="This group also has a custom role assigned on this project. Built-in role grants WIN over custom roles (allow-only / highest-wins), so this grant overrides the custom role's limits. Detach it to let the custom role apply."
+                        >
+                          ⚠ overrides an assigned custom role
+                        </span>
+                      )}
+                    </RowMeta>
+                  }
+                >
                   {busy ? (
                     <Loading className="text-muted-foreground shrink-0" />
                   ) : canManage ? (
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <>
                       <Select
                         value={g.role}
                         onValueChange={(v) =>
@@ -2661,17 +2730,17 @@ function ProjectGroupGrantsCard({
                       >
                         Detach
                       </Button>
-                    </div>
+                    </>
                   ) : (
                     <Badge variant="outline" size="sm" className="capitalize">
                       {g.role}
                     </Badge>
                   )}
-                </li>
+                </SettingsRow>
               );
-            })}
-          </ul>
-        )}
+            })
+          )}
+        </SettingsRowGroup>
       </section>
 
       <ConfirmDialog
@@ -2988,130 +3057,119 @@ function ResourceAccessCard({
 
   return (
     <>
-      <section className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            {/* Was "Resource access" over a five-line paragraph explaining
-                USE-vs-edit, inheritance, and declared skills/connectors/
-                secrets. The rule underneath is two sentences; the rest was
-                restating it. "Agents" says what the list contains — nobody
-                arrives looking for a "resource". */}
-            <h3 className="text-sm font-medium">
+      <section className="space-y-3">
+        {/* Was "Resource access" over a five-line paragraph explaining
+            USE-vs-edit, inheritance, and declared skills/connectors/
+            secrets. The rule underneath is two sentences; the rest was
+            restating it. "Agents" says what the list contains — nobody
+            arrives looking for a "resource". */}
+        <SettingsSubsectionHeader
+          title={
+            <>
               Agents
               {grants.length > 0 ? (
-                <span className="text-muted-foreground ml-1.5 font-normal">({grants.length})</span>
+                <span className="text-muted-foreground ml-1.5 font-normal tabular-nums">
+                  {grants.length}
+                </span>
               ) : null}
-            </h3>
-            <p className="text-muted-foreground mt-1 text-xs text-pretty">
-              Choose who can use each agent. An agent with nobody assigned is open to everyone in
-              this workspace. Being assigned never allows editing — that still needs the editor
-              role.
-            </p>
-          </div>
+            </>
+          }
+          description="Choose who can use each agent. An agent with nobody assigned is open to everyone in this workspace. Being assigned never allows editing — that still needs the editor role."
+          action={
+            canManage && hasResources ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => onDialogOpenChange(true)}
+              >
+                <Plus className="size-3.5 shrink-0" />
+                Grant access
+              </Button>
+            ) : null
+          }
+        />
 
-          {canManage && hasResources ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0 gap-1.5"
-              onClick={() => onDialogOpenChange(true)}
-            >
-              <Plus className="size-3.5 shrink-0" />
-              Grant access
-            </Button>
-          ) : null}
-        </div>
-
-        {grantsQuery.isLoading && (
-          <div className="space-y-2">
-            <Skeleton className="h-14 w-full rounded-md" />
-          </div>
+        {!grantsQuery.isLoading && grants.length > 0 && grantFilterOptions.length > 2 && (
+          <FilterChips
+            value={resourceFilter}
+            onChange={setResourceFilter}
+            options={grantFilterOptions}
+          />
         )}
 
-        {!grantsQuery.isLoading && grants.length === 0 && (
-          <p className="text-muted-foreground text-xs">
-            {hasResources
-              ? 'Nothing is scoped yet — every agent is open to everyone with project access to use. Grant one above to restrict who can use it. Skills, connectors, and secrets aren’t assigned directly here — they’re governed by the editor role (to edit) and inherited through the agents you assign (to use).'
-              : 'This project has no agents to scope yet. Add one first, then come back here to limit who can use it.'}
-          </p>
-        )}
-
-        {!grantsQuery.isLoading && grants.length > 0 && (
-          <div className="space-y-3">
-            {grantFilterOptions.length > 2 && (
-              <FilterChips
-                value={resourceFilter}
-                onChange={setResourceFilter}
-                options={grantFilterOptions}
-              />
-            )}
-            <ul className="space-y-2">
-              {visibleGrants.map((g: ProjectResourceGrant) => {
-                const busy = pendingIds.has(g.grant_id);
-                const displayName =
-                  resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
-                const ResourceIcon =
-                  g.resource_type === 'agent'
-                    ? Bot
-                    : g.resource_type === 'secret'
-                      ? KeyRound
-                      : Sparkles;
-                return (
-                  <li key={g.grant_id} className={MEMBER_ROW}>
-                    <span className="bg-muted/60 flex size-8 shrink-0 items-center justify-center rounded-full">
-                      <ResourceIcon className="text-muted-foreground size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-foreground truncate text-sm font-medium">
-                          {displayName}
-                        </span>
-                        <Badge variant="outline" size="sm" className="capitalize">
-                          {g.resource_type}
-                        </Badge>
-                        {g.orphaned && (
-                          <Badge
-                            variant="outline"
-                            size="sm"
-                            className="border-kortix-orange/30 text-kortix-orange"
-                            title={`This ${g.resource_type} no longer exists (renamed or deleted). The grant is inert — the restriction has lapsed. Remove it or re-grant the current ${g.resource_type}.`}
-                          >
-                            renamed / removed
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-muted-foreground text-xs">
-                        <InlineMeta>
-                          <span>
-                            {g.principal_type === 'group' ? 'Group' : 'Member'}: {g.principal_label}
-                          </span>
-                          <span>Granted {formatDate(g.created_at)}</span>
-                        </InlineMeta>
-                      </span>
-                    </div>
-                    {busy ? (
-                      <Loading className="text-muted-foreground shrink-0" />
-                    ) : canManage ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeMutation.mutate(g.grant_id)}
-                      >
-                        Remove
-                      </Button>
-                    ) : (
+        <SettingsRowGroup>
+          {grantsQuery.isLoading ? (
+            <SettingsRowSkeleton />
+          ) : grants.length === 0 ? (
+            <SettingsEmptyRow
+              label="No agents assigned"
+              description={
+                hasResources
+                  ? 'Every agent is open to everyone with project access. Grant one to narrow that.'
+                  : 'This project has no agents yet. Add one first, then come back to choose who can use it.'
+              }
+            />
+          ) : (
+            visibleGrants.map((g: ProjectResourceGrant) => {
+              const busy = pendingIds.has(g.grant_id);
+              const displayName =
+                resourceName.get(`${g.resource_type}:${g.resource_id}`) ?? g.resource_id;
+              return (
+                <SettingsRow
+                  key={g.grant_id}
+                  label={
+                    <>
+                      {/* No `truncate`: `SettingsRow`'s contract is that a long
+                          label WRAPS rather than squeezing the control, which is
+                          `shrink-0` (see settings-row.tsx). */}
+                      <span className="min-w-0">{displayName}</span>
                       <Badge variant="outline" size="sm" className="capitalize">
-                        {g.principal_type}
+                        {g.resource_type}
                       </Badge>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                      {g.orphaned && (
+                        <Badge
+                          variant="outline"
+                          size="sm"
+                          className="border-kortix-orange/30 text-kortix-orange"
+                          title={`This ${g.resource_type} no longer exists (renamed or deleted). The grant is inert — the restriction has lapsed. Remove it or re-grant the current ${g.resource_type}.`}
+                        >
+                          renamed / removed
+                        </Badge>
+                      )}
+                    </>
+                  }
+                  description={
+                    <RowMeta>
+                      <span>
+                        {g.principal_type === 'group' ? 'Group' : 'Member'}: {g.principal_label}
+                      </span>
+                      <span>Granted {formatDate(g.created_at)}</span>
+                    </RowMeta>
+                  }
+                >
+                  {busy ? (
+                    <Loading className="text-muted-foreground shrink-0" />
+                  ) : canManage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeMutation.mutate(g.grant_id)}
+                    >
+                      Remove
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.principal_type}
+                    </Badge>
+                  )}
+                </SettingsRow>
+              );
+            })
+          )}
+        </SettingsRowGroup>
       </section>
 
       <Modal open={dialogOpen} onOpenChange={onDialogOpenChange}>
@@ -3442,134 +3500,125 @@ function ProjectRoleAssignmentsCard({
 
   return (
     <>
-      <section className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-medium">
+      <section className="space-y-3">
+        <SettingsSubsectionHeader
+          title={
+            <>
               Custom roles
               {policies.length > 0 ? (
-                <span className="text-muted-foreground ml-1.5 font-normal">
-                  ({policies.length})
+                <span className="text-muted-foreground ml-1.5 font-normal tabular-nums">
+                  {policies.length}
                 </span>
               ) : null}
-            </h3>
-            <p className="text-muted-foreground mt-1 text-xs">
-              Grant a custom role to a member, group, or agent on this project. Custom roles are
-              defined on the account Roles page; here you bind them for this project only.
-            </p>
-          </div>
+            </>
+          }
+          description="Grant a custom role to a member, group, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
+          action={
+            canManage && customRoles.length > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => onDialogOpenChange(true)}
+              >
+                <Plus className="size-3.5 shrink-0" />
+                Assign role
+              </Button>
+            ) : null
+          }
+        />
 
-          {canManage && customRoles.length > 0 ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0 gap-1.5"
-              onClick={() => onDialogOpenChange(true)}
-            >
-              <Plus className="size-3.5 shrink-0" />
-              Assign role
-            </Button>
-          ) : null}
-        </div>
-
-        {policiesQuery.isLoading && (
-          <div className="space-y-2">
-            <Skeleton className="h-14 w-full rounded-md" />
-          </div>
+        {!policiesQuery.isLoading && policies.length > 0 && policyFilterOptions.length > 2 && (
+          <FilterChips
+            value={policyFilter}
+            onChange={setPolicyFilter}
+            options={policyFilterOptions}
+          />
         )}
 
-        {!policiesQuery.isLoading && policies.length === 0 && (
-          <p className="text-muted-foreground text-xs">
-            {customRoles.length === 0 ? (
-              <>
-                {/* Same replacement as the Groups link above: `/accounts/{id}
-                    ?tab=roles` is the page this panel replaced, and Roles is a
-                    tab in this very panel. */}
-                No custom roles yet. Create one in{' '}
-                <button
-                  type="button"
-                  onClick={() => navigate('roles')}
-                  className="hover:text-foreground cursor-pointer underline underline-offset-2"
-                >
-                  Roles
-                </button>
-                , then apply it here.
-              </>
-            ) : (
-              'No custom-role assignments on this project yet. Bind one above to grant a member, group, or agent a custom role here.'
-            )}
-          </p>
-        )}
-
-        {!policiesQuery.isLoading && policies.length > 0 && (
-          <div className="space-y-3">
-            {policyFilterOptions.length > 2 && (
-              <FilterChips
-                value={policyFilter}
-                onChange={setPolicyFilter}
-                options={policyFilterOptions}
-              />
-            )}
-            <ul className="space-y-2">
-              {visiblePolicies.map((p) => {
-                const busy = pendingIds.has(p.policy_id);
-                const { kind, label, missing } = principalLabel(p);
-                return (
-                  <li key={p.policy_id} className={MEMBER_ROW}>
-                    <span className="bg-muted/60 flex size-8 shrink-0 items-center justify-center rounded-full">
-                      <Shield className="text-muted-foreground size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-foreground truncate text-sm font-medium">
-                          {roleNameById.get(p.role_id) ?? p.role_id}
-                        </span>
-                        <Badge variant="outline" size="sm">
-                          Custom
-                        </Badge>
-                      </div>
-                      <span className="text-muted-foreground text-xs">
-                        <InlineMeta>
-                          <span className="flex items-center gap-1.5">
-                            {kind}: {label}
-                            {missing && (
-                              <Badge
-                                variant="outline"
-                                size="sm"
-                                className="border-kortix-orange/30 text-kortix-orange"
-                                title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
-                              >
-                                removed
-                              </Badge>
-                            )}
-                          </span>
-                          {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
-                        </InlineMeta>
-                      </span>
-                    </div>
-                    {busy ? (
-                      <Loading className="text-muted-foreground shrink-0" />
-                    ) : canManage ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeMutation.mutate(p.policy_id)}
-                      >
-                        Remove
-                      </Button>
-                    ) : (
-                      <Badge variant="outline" size="sm" className="capitalize">
-                        {kind}
+        <SettingsRowGroup>
+          {policiesQuery.isLoading ? (
+            <SettingsRowSkeleton />
+          ) : policies.length === 0 ? (
+            <SettingsEmptyRow
+              label="No custom roles here"
+              description={
+                customRoles.length === 0 ? (
+                  <>
+                    {/* Same replacement as the Groups link above: `/accounts/{id}
+                        ?tab=roles` is the page this panel replaced, and Roles is
+                        a tab in this very panel. */}
+                    Create one in{' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate('roles')}
+                      className="hover:text-foreground cursor-pointer underline underline-offset-2"
+                    >
+                      Roles
+                    </button>
+                    , then apply it here.
+                  </>
+                ) : (
+                  'Assign one to give a member, group, or agent a custom role on this project.'
+                )
+              }
+            />
+          ) : (
+            visiblePolicies.map((p) => {
+              const busy = pendingIds.has(p.policy_id);
+              const { kind, label, missing } = principalLabel(p);
+              return (
+                <SettingsRow
+                  key={p.policy_id}
+                  label={
+                    <>
+                      <span className="min-w-0">{roleNameById.get(p.role_id) ?? p.role_id}</span>
+                      <Badge variant="outline" size="sm">
+                        Custom
                       </Badge>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                    </>
+                  }
+                  description={
+                    <RowMeta>
+                      <span className="flex items-center gap-1.5">
+                        {kind}: {label}
+                        {missing && (
+                          <Badge
+                            variant="outline"
+                            size="sm"
+                            className="border-kortix-orange/30 text-kortix-orange"
+                            title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
+                          >
+                            removed
+                          </Badge>
+                        )}
+                      </span>
+                      {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
+                    </RowMeta>
+                  }
+                >
+                  {busy ? (
+                    <Loading className="text-muted-foreground shrink-0" />
+                  ) : canManage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeMutation.mutate(p.policy_id)}
+                    >
+                      Remove
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {kind}
+                    </Badge>
+                  )}
+                </SettingsRow>
+              );
+            })
+          )}
+        </SettingsRowGroup>
       </section>
 
       <Modal open={dialogOpen} onOpenChange={onDialogOpenChange}>
