@@ -14,7 +14,14 @@ import { getCreditAccount } from '../repositories/credit-accounts';
 import { applyAdminOverride } from './account-write-owner';
 import { TRIAL_STATUS } from './effective-tier';
 import { grantCredits } from './credits';
+import {
+  type EntitlementOverrides,
+  type OverrideKey,
+  toStoredOverrides,
+  withoutOverrideKeys,
+} from './entitlement-overrides';
 import { invalidateCachedAccountTier } from './entitlements';
+import { type PlanRecord, resolvePlanRecord } from './plan-catalog';
 import { grantForSeats, isValidTier, MAX_SEATS_PER_ACCOUNT } from './tiers';
 
 export const MAX_TRIAL_DURATION_DAYS = 365;
@@ -95,9 +102,174 @@ function invalidateEntitlementCaches(accountId: string) {
 }
 
 /**
- * Grant (or replace) a trial. Upserts the credit row so a brand-new account
- * can be granted before its first billing event. Re-granting over an existing
- * trial is allowed — it overwrites the window (extend/adjust = re-grant).
+ * The override keys a temporary grant OWNS for its window.
+ *
+ * `grantTemporaryAccess` REPLACES exactly this set on every grant instead of
+ * merging into it. Merging would leave a previous grant's key behind carrying
+ * the previous grant's `expires_at` — an Enterprise pilot followed by a Team
+ * pilot would keep SSO alive on the Enterprise timetable, which is the failure
+ * this primitive exists to end. Overrides outside this set (an operator's
+ * `computeRateMultiplier`, a permanent `enterpriseEntitled`) are untouched.
+ */
+export const TEMPORARY_ACCESS_OVERRIDE_KEYS = [
+  'managedModels',
+  'sso',
+  'scim',
+  'rbac',
+  'auditAccess',
+  'maxConcurrentSessions',
+] as const satisfies readonly OverrideKey[];
+
+/**
+ * PURE. Expand a plan record into the expiring overrides that make an account
+ * BEHAVE as that plan until `endsAtIso`.
+ *
+ * Only what the record actually grants: the enterprise four are written just
+ * when the plan carries them, so a Team pilot never silently hands out SSO.
+ * `managedModels` is always written — a plan that does NOT grant managed models
+ * must say so, otherwise the account's own plan decides and the grant is not a
+ * grant of that plan.
+ */
+export function temporaryAccessOverrides(
+  plan: PlanRecord,
+  endsAtIso: string,
+): EntitlementOverrides {
+  const overrides: EntitlementOverrides = {
+    managedModels: { value: plan.entitlements.managedModels, expires_at: endsAtIso },
+    maxConcurrentSessions: {
+      value: plan.limits.concurrentSessions,
+      expires_at: endsAtIso,
+    },
+  };
+  if (plan.entitlements.sso) overrides.sso = { value: true, expires_at: endsAtIso };
+  if (plan.entitlements.scim) overrides.scim = { value: true, expires_at: endsAtIso };
+  if (plan.entitlements.rbac) overrides.rbac = { value: true, expires_at: endsAtIso };
+  if (plan.entitlements.auditAccess) {
+    overrides.auditAccess = { value: true, expires_at: endsAtIso };
+  }
+  return overrides;
+}
+
+export type GrantTemporaryAccessInput = {
+  accountId: string;
+  /** Plan key the account should behave as for the window (catalog key). */
+  planKey: string;
+  seats: number;
+  durationDays: number;
+  actorUserId?: string | null;
+  note?: string | null;
+  /** Wallet grant in USD credits. Defaults to `grantForSeats(seats)` ($25/seat). */
+  creditGrant?: number;
+  /** Audit-style label for the write-owner log line. */
+  action?: string;
+};
+
+export type TemporaryAccessResult = {
+  before: TrialSnapshot;
+  current: TrialSnapshot;
+  creditGranted: number;
+  /** ISO end of the window — every override entry and the credit grant carry it. */
+  endsAt: string;
+  /** The expiring overrides that were written. */
+  overrides: EntitlementOverrides;
+};
+
+/**
+ * Grant an account temporary access to a plan.
+ *
+ * THE PRIMITIVE BEHIND A TRIAL. A trial is not a special kind of account state —
+ * it is "behave as plan X, with $Y of credits, until date Z", and every part of
+ * that now expires on its own:
+ *
+ *   - the plan's entitlements land in `entitlement_overrides` with
+ *     `expires_at = end`, so the grant lapses by ARITHMETIC. No cron has to
+ *     notice, and nothing has to be un-granted by hand;
+ *   - the wallet grant is expiring and stamped with the same instant;
+ *   - the legacy `trial_*` columns are STILL WRITTEN, unchanged, so the trial
+ *     overlay in `resolve-billing.ts`, the expiry/re-grant sweeps, and the
+ *     admin console keep working exactly as they do today. That duplication is
+ *     deliberate and temporary: it ends when the overlay is retired in favour
+ *     of the overrides, one release after every reader is on this path.
+ *
+ * Upserts the credit row so a brand-new account can be granted before its first
+ * billing event. Re-granting replaces the window (extend/adjust = re-grant).
+ */
+export async function grantTemporaryAccess(
+  input: GrantTemporaryAccessInput,
+): Promise<TemporaryAccessResult> {
+  const creditGrant = input.creditGrant ?? grantForSeats(input.seats);
+  const invalid = validateGrantTrialInput({
+    tierKey: input.planKey,
+    seats: input.seats,
+    durationDays: input.durationDays,
+    creditGrant,
+  });
+  if (invalid) throw new Error(invalid);
+
+  const row = await getCreditAccount(input.accountId);
+  const before = trialSnapshotFromRow(row);
+  const now = new Date();
+  const endsAtIso = new Date(now.getTime() + input.durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const plan = resolvePlanRecord(input.planKey);
+  const overrides: EntitlementOverrides = {
+    ...withoutOverrideKeys(row?.entitlementOverrides, TEMPORARY_ACCESS_OVERRIDE_KEYS),
+    ...temporaryAccessOverrides(plan, endsAtIso),
+  };
+
+  await applyAdminOverride(
+    input.accountId,
+    {
+      entitlementOverrides: toStoredOverrides(overrides),
+      // Legacy trial columns — one-release compatibility, see the doc block.
+      trialStatus: TRIAL_STATUS.ACTIVE,
+      trialTier: input.planKey,
+      trialSeats: input.seats,
+      trialStartedAt: now.toISOString(),
+      trialEndsAt: endsAtIso,
+      trialNote: input.note?.slice(0, 2000) ?? null,
+      trialGrantedBy: input.actorUserId ?? null,
+    },
+    {
+      userId: input.actorUserId ?? null,
+      action: input.action ?? 'admin.account.temporary_access.grant',
+    },
+  );
+
+  if (creditGrant > 0) {
+    // Expiring, stamped with the window's end: granted credits are part of the
+    // grant, they die with it. (They previously landed as PERMANENT credits —
+    // a trial that ended left real spendable money behind.)
+    await grantCredits(
+      input.accountId,
+      creditGrant,
+      TRIAL_GRANT_LEDGER_TYPE,
+      `Trial grant: ${input.planKey} tier, ${input.seats} seats, ${input.durationDays} days`,
+      true,
+      undefined,
+      { expiresAt: endsAtIso },
+    );
+  }
+
+  invalidateEntitlementCaches(input.accountId);
+  return {
+    before,
+    current: trialSnapshotFromRow(await getCreditAccount(input.accountId)),
+    creditGranted: creditGrant,
+    endsAt: endsAtIso,
+    overrides,
+  };
+}
+
+/**
+ * Grant (or replace) a trial.
+ *
+ * A thin naming layer over `grantTemporaryAccess` — same window, same expiring
+ * overrides, same legacy columns. Two differences, both to keep the existing
+ * admin route's contract byte-identical:
+ *   - the wallet grant stays OPT-IN (`credit_grant`, default 0) rather than
+ *     defaulting to `grantForSeats(seats)`;
+ *   - the write is logged as `admin.account.trial.grant`.
  */
 export async function grantTrial(input: GrantTrialInput): Promise<{
   before: TrialSnapshot;
@@ -107,46 +279,17 @@ export async function grantTrial(input: GrantTrialInput): Promise<{
   const invalid = validateGrantTrialInput(input);
   if (invalid) throw new Error(invalid);
 
-  const before = trialSnapshotFromRow(await getCreditAccount(input.accountId));
-  const now = new Date();
-  const endsAt = new Date(now.getTime() + input.durationDays * 24 * 60 * 60 * 1000);
-
-  await applyAdminOverride(
-    input.accountId,
-    {
-      trialStatus: TRIAL_STATUS.ACTIVE,
-      trialTier: input.tierKey,
-      trialSeats: input.seats,
-      trialStartedAt: now.toISOString(),
-      trialEndsAt: endsAt.toISOString(),
-      trialNote: input.note?.slice(0, 2000) ?? null,
-      trialGrantedBy: input.actorUserId ?? null,
-    },
-    { userId: input.actorUserId ?? null, action: 'admin.account.trial.grant' },
-  );
-
-  const creditGranted = input.creditGrant ?? 0;
-  if (creditGranted > 0) {
-    // Expiring, stamped with the trial window's end: trial credits are part of
-    // the trial, they die with it. (They previously landed as PERMANENT
-    // credits — a trial that ended left real spendable money behind.)
-    await grantCredits(
-      input.accountId,
-      creditGranted,
-      TRIAL_GRANT_LEDGER_TYPE,
-      `Trial grant: ${input.tierKey} tier, ${input.seats} seats, ${input.durationDays} days`,
-      true,
-      undefined,
-      { expiresAt: endsAt.toISOString() },
-    );
-  }
-
-  invalidateEntitlementCaches(input.accountId);
-  return {
-    before,
-    current: trialSnapshotFromRow(await getCreditAccount(input.accountId)),
-    creditGranted,
-  };
+  const { before, current, creditGranted } = await grantTemporaryAccess({
+    accountId: input.accountId,
+    planKey: input.tierKey,
+    seats: input.seats,
+    durationDays: input.durationDays,
+    note: input.note ?? null,
+    actorUserId: input.actorUserId ?? null,
+    creditGrant: input.creditGrant ?? 0,
+    action: 'admin.account.trial.grant',
+  });
+  return { before, current, creditGranted };
 }
 
 /**
@@ -164,7 +307,16 @@ export async function revokeTrial(accountId: string): Promise<{
   }
   await applyAdminOverride(
     accountId,
-    { trialStatus: TRIAL_STATUS.REVOKED },
+    {
+      trialStatus: TRIAL_STATUS.REVOKED,
+      // The derived overrides go with it. They carry the ORIGINAL window's
+      // `expires_at`, so leaving them would keep the entitlements the revoke
+      // exists to remove alive for the rest of the trial — "revoked" would
+      // mean nothing until the date it was revoked before.
+      entitlementOverrides: toStoredOverrides(
+        withoutOverrideKeys(row?.entitlementOverrides, TEMPORARY_ACCESS_OVERRIDE_KEYS),
+      ),
+    },
     { action: 'admin.account.trial.revoke' },
   );
   invalidateEntitlementCaches(accountId);
@@ -191,7 +343,15 @@ export async function markTrialConverted(accountId: string): Promise<boolean> {
 
   await applyAdminOverride(
     accountId,
-    { trialStatus: TRIAL_STATUS.CONVERTED },
+    {
+      trialStatus: TRIAL_STATUS.CONVERTED,
+      // Same reason as the revoke: the account is on a real plan now, and its
+      // entitlements must come from that plan, not from a grant whose window
+      // happens to still be open.
+      entitlementOverrides: toStoredOverrides(
+        withoutOverrideKeys(row?.entitlementOverrides, TEMPORARY_ACCESS_OVERRIDE_KEYS),
+      ),
+    },
     { action: 'billing.trial.converted' },
   );
   invalidateEntitlementCaches(accountId);

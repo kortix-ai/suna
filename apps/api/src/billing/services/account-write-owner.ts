@@ -100,6 +100,11 @@ export const ADMIN_OWNED_FIELDS = [
   'demoEnterprise',
   'managedModelsOverride',
   'maxConcurrentSessions',
+  // The JSONB successor to the four columns above. Same ownership, for the
+  // same reason: a provider webhook has no business expressing operator intent,
+  // and a whole-column write from one would erase every override at once
+  // instead of just clobbering one field.
+  'entitlementOverrides',
   'trialStatus',
   'trialTier',
   'trialSeats',

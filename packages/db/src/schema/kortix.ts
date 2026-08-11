@@ -2865,6 +2865,29 @@ export const creditAccounts = kortixSchema.table(
     // even on a tier that normally grants managed models. Resolved in
     // billing/services/entitlements alongside the tier cache.
     managedModelsOverride: boolean('managed_models_override'),
+    // Per-account entitlement overrides, each with an OPTIONAL EXPIRY. One
+    // column instead of one column per override: the four legacy override
+    // columns above (enterprise_entitled, demo_enterprise,
+    // managed_models_override, max_concurrent_sessions) each needed a
+    // migration, a repository accessor, an admin route, and a resolver branch,
+    // and none of them can expire — every temporary grant had to be swept by
+    // hand or left on forever.
+    //
+    // Shape (billing/services/entitlement-overrides.ts is the parser):
+    //   { "<key>": { "value": <boolean|number>, "expires_at"?: "<ISO 8601>" } }
+    // Keys: enterpriseEntitled, demoEnterprise, managedModelsOverride,
+    // maxConcurrentSessions, computeRateMultiplier, and the per-entitlement
+    // booleans sso / scim / rbac / auditAccess / managedModels.
+    //
+    // Read by resolveBillingFromRow, which takes a key here over the matching
+    // legacy column and ignores an entry whose expires_at has passed. The
+    // legacy columns are still written (one-release compatibility) — this
+    // column is additive, and an API version that has never heard of it simply
+    // ignores it. Defaults to '{}' so every row parses without a null check.
+    entitlementOverrides: jsonb('entitlement_overrides')
+      .$type<Record<string, { value: boolean | number; expires_at?: string }>>()
+      .default({})
+      .notNull(),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
@@ -3626,6 +3649,41 @@ export const platformUserRoles = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_platform_user_roles_account_id').on(table.accountId),
     index('idx_platform_user_roles_role').on(table.role),
+  ],
+);
+
+// ─── Impersonation Grants ───────────────────────────────────────────────────
+// A platform admin acting as an account ("open as account") holds a row here.
+// The row IS the capability: the request header carries only the grant id, and
+// every check (owner, expiry, revocation, platform role) is re-read server-side
+// on every request. Nothing about the grant is stateless or self-asserted, so
+// revoking it takes effect immediately and a leaked id is useless to anyone but
+// the admin it was minted for — who already has the platform role.
+//
+// `expires_at` is written by the API and capped at one hour. There is no
+// deletion path: a stopped grant keeps its row with `revoked_at` set, because
+// the audit trail of who acted as whom must outlive the session.
+export const impersonationGrants = kortixSchema.table(
+  'impersonation_grants',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** The REAL platform admin. Never the target account's user. */
+    adminUserId: uuid('admin_user_id').notNull(),
+    /** The account whose context the admin acts in. */
+    targetAccountId: uuid('target_account_id').notNull(),
+    /** Operator-supplied justification, surfaced in the audit trail. */
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    // The one list query: "which grants does this admin still hold?" —
+    // GET /admin/api/impersonate/active, and the console's exit affordance.
+    index('idx_impersonation_grants_admin_expires').on(table.adminUserId, table.expiresAt),
+    // The other read direction: "who has been inside this account?", for an
+    // incident review that starts from the customer, not from the operator.
+    index('idx_impersonation_grants_target').on(table.targetAccountId),
   ],
 );
 

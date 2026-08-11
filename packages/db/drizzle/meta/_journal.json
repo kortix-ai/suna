@@ -323,6 +323,20 @@
       "when": 1786306539063,
       "tag": "20260809201539_preserve_tunnel_audit_history",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786449706506,
+      "tag": "20260811120146_account_entitlement_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786453326204,
+      "tag": "20260811130206_impersonation_grants",
+      "breakpoints": true
     }
   ]
 }

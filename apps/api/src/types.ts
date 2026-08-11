@@ -95,6 +95,15 @@ export interface AuthVariables {
    *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
    *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
   agentGrant?: AgentGrant | null;
+  /** Live impersonation grant id — set only while a platform admin acts as an
+   *  account (middleware/impersonation.ts). Its presence means `accountId` is
+   *  the TARGET account, not the caller's own. */
+  impersonationGrantId?: string;
+  /** The REAL platform admin behind an impersonated request. `userId` stays the
+   *  same id; this exists so audit rows can carry both identities explicitly. */
+  impersonatorUserId?: string;
+  /** Platform role, set by requireAdmin on /v1/admin routes. */
+  platformRole?: string;
 }
 
 // Hono environment type — Variables match exactly what the auth middleware sets.

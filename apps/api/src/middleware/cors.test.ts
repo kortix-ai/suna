@@ -37,6 +37,28 @@ describe('createCorsMiddleware', () => {
     expect(response.headers.get('access-control-max-age')).toBe('600');
   });
 
+  // The act-as grant travels in a custom header, and a custom header missing
+  // from the preflight allowlist is dropped BY THE BROWSER — the request then
+  // runs as the operator's own account with the banner still up. Pin it.
+  test('the impersonation and admin-bypass headers survive a preflight', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware({ internalEnvironment: 'prod', extraOrigins: [] }));
+    app.get('/v1/read', (context) => context.json({ ok: true }));
+
+    const response = await app.request('/v1/read', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://kortix.com',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'authorization,x-kortix-impersonate',
+      },
+    });
+
+    const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase() ?? '';
+    expect(allowed).toContain('x-kortix-impersonate');
+    expect(allowed).toContain('x-kortix-admin-bypass');
+  });
+
   test('an unknown production origin receives no CORS authorization', async () => {
     const app = new Hono();
     app.use(

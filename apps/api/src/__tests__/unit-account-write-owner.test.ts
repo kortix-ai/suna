@@ -52,6 +52,15 @@ describe('applyStripeSync ownership', () => {
     );
   });
 
+  // A whole-column write from a webhook would not clobber one field — it would
+  // erase every override the account carries at once.
+  test('throws on the entitlement_overrides map', async () => {
+    await expect(
+      applyStripeSync(ACCT, { entitlementOverrides: {} } as never),
+    ).rejects.toThrow(/admin-owned field\(s\) entitlementOverrides/);
+    expect(writes).toHaveLength(0);
+  });
+
   test("refuses tier='enterprise' outright", async () => {
     await expect(applyStripeSync(ACCT, { tier: 'enterprise' })).rejects.toThrow(
       /entitlement.*not a tier/,
@@ -123,6 +132,13 @@ describe('applyAdminOverride ownership', () => {
   test('admin-owned fields write through', async () => {
     await applyAdminOverride(ACCT, { enterpriseEntitled: true, maxConcurrentSessions: 500 }, actor);
     expect(writes[0]!.patch).toEqual({ enterpriseEntitled: true, maxConcurrentSessions: 500 });
+  });
+
+  test('the entitlement_overrides map is admin-owned too', async () => {
+    const overrides = { sso: { value: true, expires_at: '2026-12-01T00:00:00.000Z' } };
+    await applyAdminOverride(ACCT, { entitlementOverrides: overrides }, actor);
+    expect(writes[0]!.patch).toEqual({ entitlementOverrides: overrides });
+    expect(invalidated).toEqual([ACCT]);
   });
 });
 

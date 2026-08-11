@@ -19,6 +19,11 @@
  */
 
 import {
+  ENTITLEMENT_OVERRIDE_KEYS,
+  clampComputeRateMultiplier,
+  readOverride,
+} from './entitlement-overrides';
+import {
   PLAN_FAMILY_LABELS,
   type PlanRecord,
   getPlanRecord,
@@ -43,6 +48,12 @@ export interface BillingRow {
   demoEnterprise?: boolean | null;
   managedModelsOverride?: boolean | null;
   maxConcurrentSessions?: number | null;
+  /**
+   * `credit_accounts.entitlement_overrides` — the JSONB override map, each
+   * entry optionally expiring. `unknown` because it is operator-written data
+   * the parser must not trust; see `entitlement-overrides.ts`.
+   */
+  entitlementOverrides?: unknown;
 }
 
 /** Where the resolved plan came from. */
@@ -57,6 +68,13 @@ export interface ResolvedBilling {
   /** Plan entitlements with the account-level overrides applied. */
   entitlements: PlanRecord['entitlements'];
   limits: { concurrentSessions: { value: number; source: BillingLimitSource } };
+  /**
+   * Compute pricing for this account. `rateMultiplier` scales the provider
+   * rate card in `compute-metering.ts`: 1.0 is list price (every account
+   * today), 0 is free compute, and the ceiling is
+   * `MAX_COMPUTE_RATE_MULTIPLIER`.
+   */
+  compute: { rateMultiplier: number; source: BillingLimitSource };
   /** Customer-facing naming. Not wired to any surface yet. */
   display: { label: string; sublabel: string | null };
 }
@@ -129,6 +147,16 @@ function displayFor(plan: PlanRecord): { label: string; sublabel: string | null 
  * entitlements.ts:31-42): a boolean wins in both directions, NULL defers to the
  * plan. `max_concurrent_sessions` overrides the plan cap in both directions
  * (`resolveAccountSessionLimit`, shared/account-limits.ts:151-160).
+ *
+ * Source precedence for every override (see `entitlement-overrides.ts`):
+ *   1. `entitlement_overrides.<key>` — if present AND unexpired at `nowMs`
+ *   2. the legacy column of the same name — if the key is absent
+ *   3. the plan record
+ * and the layering within one resolve is:
+ *   plan entitlements → enterprise expansion (enterprise_entitled /
+ *   demo_enterprise) → managed-models override → PER-ENTITLEMENT overrides.
+ * The last step is what lets one capability be switched off independently of
+ * the all-or-nothing enterprise flag.
  */
 export function resolveBillingFromRow(
   row: BillingRow | null | undefined,
@@ -143,6 +171,7 @@ export function resolveBillingFromRow(
       limits: {
         concurrentSessions: { value: plan.limits.concurrentSessions, source: 'plan' },
       },
+      compute: { rateMultiplier: plan.compute.rateMultiplier, source: 'plan' },
       display: displayFor(plan),
     };
   }
@@ -161,8 +190,21 @@ export function resolveBillingFromRow(
   }
 
   const plan = resolvePlanRecord(key);
+  const ov = row.entitlementOverrides;
 
-  const enterpriseOverlay = row.enterpriseEntitled === true || row.demoEnterprise === true;
+  // OVERRIDE PRECEDENCE, per key: the JSONB entry (when present and unexpired)
+  // wins over the legacy column of the same name; an absent key falls back to
+  // the column. Per KEY, not per row — an account can carry an expiring
+  // `maxConcurrentSessions` in the JSONB and a permanent `enterprise_entitled`
+  // in its column at the same time, and each resolves from its own source.
+  const enterpriseEntitled =
+    readOverride(ov, 'enterpriseEntitled', nowMs) ?? row.enterpriseEntitled === true;
+  const demoEnterprise = readOverride(ov, 'demoEnterprise', nowMs) ?? row.demoEnterprise === true;
+  const managedModelsOverride =
+    readOverride(ov, 'managedModelsOverride', nowMs) ??
+    (typeof row.managedModelsOverride === 'boolean' ? row.managedModelsOverride : undefined);
+
+  const enterpriseOverlay = enterpriseEntitled || demoEnterprise;
   const enterprisePlan = resolvePlanRecord('enterprise');
   const entitlements: PlanRecord['entitlements'] = {
     ...plan.entitlements,
@@ -174,13 +216,27 @@ export function resolveBillingFromRow(
           auditAccess: enterprisePlan.entitlements.auditAccess,
         }
       : {}),
-    managedModels:
-      typeof row.managedModelsOverride === 'boolean'
-        ? row.managedModelsOverride
-        : plan.entitlements.managedModels,
+    managedModels: managedModelsOverride ?? plan.entitlements.managedModels,
   };
 
-  const sessionOverride = positiveOverride(row.maxConcurrentSessions);
+  // Per-entitlement overrides land LAST, so they beat the enterprise expansion
+  // above: `sso: {value:false}` switches SSO off for an enterprise-entitled
+  // account (a contract that excludes it, an abuse containment) without
+  // touching the other three. There is no other way to express that — the
+  // enterprise flag is all-or-nothing by construction.
+  for (const entKey of ENTITLEMENT_OVERRIDE_KEYS) {
+    const value = readOverride(ov, entKey, nowMs);
+    if (value !== undefined) entitlements[entKey] = value;
+  }
+
+  const sessionOverride =
+    positiveOverride(readOverride(ov, 'maxConcurrentSessions', nowMs)) ??
+    positiveOverride(row.maxConcurrentSessions);
+
+  // Custom compute pricing. No legacy column to fall back to — this override
+  // has only ever existed in the JSONB — so the plan record's own multiplier
+  // (1.0 everywhere today) is the floor.
+  const rateOverride = readOverride(ov, 'computeRateMultiplier', nowMs);
 
   return {
     plan,
@@ -192,6 +248,10 @@ export function resolveBillingFromRow(
           ? { value: sessionOverride, source: 'account_override' }
           : { value: plan.limits.concurrentSessions, source: 'plan' },
     },
+    compute:
+      rateOverride !== undefined
+        ? { rateMultiplier: clampComputeRateMultiplier(rateOverride), source: 'account_override' }
+        : { rateMultiplier: plan.compute.rateMultiplier, source: 'plan' },
     display: displayFor(plan),
   };
 }
