@@ -189,6 +189,26 @@ describe('decideImpersonation', () => {
       // what an agent may read in every future session, outliving the grant.
       '/v1/projects/p1/agents/researcher/scope',
       '/v1/projects/p1/secrets/OPENAI_API_KEY/grant',
+      // Connector management, BOTH mounts: connection rows, credentials and
+      // OAuth state outlive the grant like any other minted credential.
+      '/v1/projects/p1/connections',
+      '/v1/projects/p1/connections/me',
+      '/v1/projects/p1/connections/c1/credential',
+      '/v1/projects/p1/connections/c1/connect/finalize',
+      '/v1/projects/p1/connections/c1/oauth2/authorize',
+      '/v1/projects/p1/connectors/slack/oauth2/connection',
+      '/v1/connectors/projects/p1/connectors',
+      '/v1/connectors/projects/p1/connectors/slack/connect',
+      '/v1/connectors/projects/p1/connectors/slack/credential',
+      '/v1/connectors/projects/p1/connectors/slack/secret-binding',
+      '/v1/connectors/projects/p1/policies',
+      // Channel connects bind an external workspace that keeps reaching the
+      // account after the hour.
+      '/v1/projects/p1/channels/slack/connect',
+      '/v1/projects/p1/channels/email/connect',
+      // Setup links: 7-day public-token intake doors minted inside the hour.
+      '/v1/projects/p1/connect-requests',
+      '/v1/projects/p1/secret-requests',
     ]) {
       expect(decide({ path })).toEqual({ ok: false, reason: 'route_forbidden' });
     }
@@ -236,6 +256,13 @@ describe('decideImpersonation', () => {
       // the /grant and /scope leaves mint durable agent governance.
       '/v1/projects/p1/secrets',
       '/v1/projects/p1/agents',
+      // Live connector invocation acts now, inside the audited hour, and
+      // creates nothing durable — support uses it to reproduce issues.
+      '/v1/connectors/projects/p1/call',
+      '/v1/connectors/call',
+      // Trigger writes stay open pending a team decision: they are visible
+      // customer product state, not minted operator access.
+      '/v1/projects/p1/triggers',
       // Audit READ (not the webhooks sub-route) stays open for support.
       '/v1/accounts/33333333-3333-4333-8333-333333333333/audit',
     ]) {
@@ -276,6 +303,13 @@ describe('decideImpersonation', () => {
       // Agent governance written into kortix.yaml.
       '/v1/projects/p1/agents/researcher/scope',
       '/v1/projects/p1/secrets/OPENAI_API_KEY/grant',
+      // Connector credentials + OAuth state, both mounts; channel binds; and
+      // the 7-day public setup-link mints.
+      '/v1/projects/p1/connections/me',
+      '/v1/connectors/projects/p1/connectors/slack/connect/finalize',
+      '/v1/projects/p1/channels/teams/connect',
+      '/v1/projects/p1/connect-requests',
+      '/v1/projects/p1/secret-requests',
     ]) {
       expect(isImpersonationForbiddenPath(path, 'POST'), `POST ${path}`).toBe(true);
     }
