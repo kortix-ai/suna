@@ -14,7 +14,14 @@ jobs:
   deployed-staging:
     name: full suite + quality gates
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # `pnpm test -- --target-full` runs all 433 REST/CLI/browser flows against
+    # deployed staging serially; the real wall-clock is ~25 min of flows plus
+    # ~4 min setup (deps + playwright chromium). A 20-min cap killed the job
+    # mid-run at ~316/433 EVERY release (v0.12.7 and v0.12.8 both cancelled, not
+    # failed) — the gate was structurally un-passable. 45 gives headroom over
+    # the ~30-min real runtime without masking a genuine hang. Follow-up: shard
+    # the runner to bring this back under 20.
+    timeout-minutes: 45
     env:
       KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
       E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
