@@ -160,6 +160,7 @@ describe('provider-neutral preview lifecycle', () => {
 
   it('boots the exact self-host distribution and runs the canonical deployed suite', () => {
     const script = buildPreviewBootstrapScript({
+      provider: 'platinum',
       repository: 'kortix-ai/suna',
       ref: 'refs/pull/6337/head',
       sha: 'a'.repeat(40),
@@ -175,9 +176,23 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toMatch(/if docker compose .* up -d --wait --wait-timeout 300; then/);
     expect(script).toContain('test "$stack_attempt" -lt 2');
     expect(script).toContain('pnpm test -- --target-full');
+    expect(script).not.toContain('--storage-driver=vfs');
     expect(script).toContain('/workspace/kortix-test-results.tar.gz');
     expect(script).toContain('kortix-preview.exit');
     expect(script).not.toContain('ecs-preview');
+  });
+
+  test('uses the kernel-independent Docker storage driver in Daytona previews', () => {
+    const script = buildPreviewBootstrapScript({
+      provider: 'daytona',
+      repository: 'kortix-ai/suna',
+      ref: 'refs/pull/6353/head',
+      sha: 'a'.repeat(40),
+      prNumber: 6353,
+      origin: 'https://preview.example.com/',
+    });
+
+    expect(script).toContain('dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs');
   });
 
   it('falls back only after a Platinum infrastructure failure', async () => {

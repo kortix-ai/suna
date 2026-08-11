@@ -219,11 +219,27 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain('if ! modprobe "$module"; then');
     expect(script).toContain('module_unavailable=$module; docker readiness will decide');
     expect(script).toContain('container_modules_checked=1');
+    expect(script).toContain('docker_pid=$!');
+    expect(script).toContain('kill -0 "$docker_pid" >/dev/null 2>&1 || break');
+    expect(script).toContain('exit 73');
     expect(script).toContain('seq 1 180');
     expect(script).toContain('docker_bridge_ready=1');
     expect(script).not.toContain('supabase_bridge_ready=1');
     expect(script).toContain('tar -C "$ROOT" -czf "$ARTIFACT" tests/test-results');
     expect(script).toContain('tests/test-results/platinum');
+    expect(script).not.toContain('--storage-driver=vfs');
+  });
+
+  test('uses the kernel-independent Docker storage driver on Daytona workers', () => {
+    const script = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: [],
+      provider: 'daytona',
+    });
+
+    expect(script).toContain('dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs');
   });
 
   test('prestarts only the disposable browser database and leaves product processes to the root runner', () => {

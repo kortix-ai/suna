@@ -1,5 +1,9 @@
-import { runDaytonaCi, type DaytonaCiInput } from './daytona-ci';
-import { runPlatinumCi, type PlatinumCiInput } from './platinum-ci';
+import { type DaytonaCiInput, runDaytonaCi } from './daytona-ci';
+import {
+  type PlatinumCiInput,
+  SandboxWorkerInfrastructureError,
+  runPlatinumCi,
+} from './platinum-ci';
 
 export type SandboxCiProvider = 'auto' | 'platinum' | 'daytona';
 
@@ -7,6 +11,25 @@ export function parseSandboxCiProvider(value: string | undefined): SandboxCiProv
   const provider = String(value || 'auto').toLowerCase();
   if (provider === 'auto' || provider === 'platinum' || provider === 'daytona') return provider;
   throw new Error(`TEST_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${value}`);
+}
+
+async function runDaytonaWithInfrastructureRetry(
+  input: DaytonaCiInput,
+  runner: (input: DaytonaCiInput) => Promise<number>,
+): Promise<number> {
+  try {
+    return await runner(input);
+  } catch (error) {
+    if (!(error instanceof SandboxWorkerInfrastructureError) || error.provider !== 'daytona') {
+      throw error;
+    }
+    const retryInput = {
+      ...input,
+      runAttempt: `${input.runAttempt}-infra2`,
+    };
+    console.warn(`[sandbox-ci] provider=daytona infrastructure_retry=2/2 error=${error.message}`);
+    return runner(retryInput);
+  }
 }
 
 export async function runSandboxCi(
@@ -21,7 +44,9 @@ export async function runSandboxCi(
   } = { platinum: runPlatinumCi, daytona: runDaytonaCi },
 ): Promise<number> {
   if (input.provider === 'platinum') return runners.platinum(input.platinum);
-  if (input.provider === 'daytona') return runners.daytona(input.daytona);
+  if (input.provider === 'daytona') {
+    return runDaytonaWithInfrastructureRetry(input.daytona, runners.daytona);
+  }
 
   if (input.platinum.apiKey) {
     try {
@@ -38,5 +63,5 @@ export async function runSandboxCi(
     throw new Error('auto mode requires PLATINUM_API_KEY or DAYTONA_API_KEY');
   }
   console.log('[sandbox-ci] provider=daytona mode=auto');
-  return runners.daytona(input.daytona);
+  return runDaytonaWithInfrastructureRetry(input.daytona, runners.daytona);
 }

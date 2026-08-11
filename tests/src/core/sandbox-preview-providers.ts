@@ -219,7 +219,7 @@ export async function deployPlatinumPreview(
     );
     await api.write(
       `${sandboxId}:/workspace/run-kortix-preview.sh`,
-      buildPreviewBootstrapScript({ ...input, origin }),
+      buildPreviewBootstrapScript({ ...input, provider: 'platinum', origin }),
       '0755',
     );
     const launch = await execPlatinum(api, sandboxId, [
@@ -359,7 +359,7 @@ export async function deployDaytonaPreview(
       sandbox,
       encodedFileCommand(
         '/workspace/run-kortix-preview.sh',
-        buildPreviewBootstrapScript({ ...input, origin }),
+        buildPreviewBootstrapScript({ ...input, provider: 'daytona', origin }),
         '0755',
       ),
       60,

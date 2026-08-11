@@ -38,8 +38,8 @@ describe('Daytona CI worker plan', () => {
   });
 
   test('uses one content-addressed warm snapshot for one lockfile', () => {
-    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v4');
-    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v4-bbbbbbbbbbbbbbbb');
+    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v5');
+    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v5-bbbbbbbbbbbbbbbb');
     expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v3-bbbbbbbbbbbbbbbb-base');
   });
 
@@ -69,7 +69,8 @@ describe('Daytona CI worker plan', () => {
     expect(script).toContain('supabase stop --no-backup');
     expect(script).toContain('.kortix-ci-warm-ready');
     expect(script).toContain('daytona-warm.exit');
-    expect(script).toContain('modprobe "$module"');
+    expect(script).toContain('modprobe "$module" || true');
+    expect(script).toContain('--storage-driver=vfs');
     expect(script).toContain('pkill -TERM -x dockerd');
     expect(script).toContain('pgrep -x containerd');
     expect(script).toContain('rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes');

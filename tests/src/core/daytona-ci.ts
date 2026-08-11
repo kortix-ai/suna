@@ -5,13 +5,14 @@ import {
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
+  SandboxWorkerInfrastructureError,
   buildWorkerScript,
   dockerComposeInstallCommand,
   observePlatinumWorker,
   providerMetadataIdentifier,
 } from './platinum-ci';
 
-export const DAYTONA_CI_SNAPSHOT_VERSION = 'v4';
+export const DAYTONA_CI_SNAPSHOT_VERSION = 'v5';
 const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v3';
 
 const POLL_MS = 3_000;
@@ -493,8 +494,8 @@ trap 'code=$?; finish "$code"' EXIT
 exec > >(tee -a /workspace/daytona-warm.log) 2>&1
 cd /workspace/suna
 rm -f /workspace/.kortix-ci-warm-ready /var/run/docker.pid /var/run/docker.sock
-for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module"; done
-dockerd --host=unix:///var/run/docker.sock >/workspace/daytona-dockerd.log 2>&1 &
+for module in bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modprobe "$module" || true; done
+dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs >/workspace/daytona-dockerd.log 2>&1 &
 timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 docker info >/dev/null
 pnpm exec supabase start --ignore-health-check
@@ -878,6 +879,12 @@ export async function runDaytonaCi(input: DaytonaCiInput): Promise<number> {
     console.log(
       `[daytona-ci] exit=${exitCode} snapshot_ms=${snapshotDurationMs} sandbox_ms=${sandboxCreateDurationMs} worker_ms=${workerDurationMs} total_ms=${Date.now() - totalStartedAt}`,
     );
+    if (exitCode === 73) {
+      throw new SandboxWorkerInfrastructureError(
+        'daytona',
+        'Daytona worker host could not start nested Docker',
+      );
+    }
     return exitCode;
   } finally {
     process.off('SIGINT', onSignal);

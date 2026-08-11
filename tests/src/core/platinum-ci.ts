@@ -38,6 +38,16 @@ export interface PlatinumCiInput {
   root: string;
 }
 
+export class SandboxWorkerInfrastructureError extends Error {
+  constructor(
+    readonly provider: 'platinum' | 'daytona',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SandboxWorkerInfrastructureError';
+  }
+}
+
 export interface PlatinumTemplateSpec {
   name: string;
   version: string;
@@ -441,15 +451,17 @@ echo "[${provider}-ci] container_modules_checked=1"
 
 if ! docker info >/dev/null 2>&1; then
   ${provider === 'daytona' ? 'rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes' : ''}
-  nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
+  nohup dockerd --host=unix:///var/run/docker.sock ${provider === 'daytona' ? '--storage-driver=vfs' : ''} > /workspace/dockerd.log 2>&1 &
+  docker_pid=$!
   for _ in $(seq 1 180); do
     docker info >/dev/null 2>&1 && break
+    kill -0 "$docker_pid" >/dev/null 2>&1 || break
     sleep 1
   done
 fi
 if ! docker info >/dev/null 2>&1; then
   tail -n 240 /workspace/dockerd.log >&2 || true
-  exit 3
+  exit 73
 fi
 echo "[${provider}-ci] docker_ready=1"
 docker network inspect bridge --format '{{.Driver}}' | grep -qx bridge
@@ -1110,6 +1122,12 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
     console.log(
       `[platinum-ci] exit=${exitCode} warm_ms=${warmPrepareDurationMs} worker_ms=${workerDurationMs} total_ms=${metadata.totalDurationMs}`,
     );
+    if (exitCode === 73) {
+      throw new SandboxWorkerInfrastructureError(
+        'platinum',
+        'Platinum worker could not start nested Docker',
+      );
+    }
     return exitCode;
   } finally {
     process.off('SIGINT', onSignal);
