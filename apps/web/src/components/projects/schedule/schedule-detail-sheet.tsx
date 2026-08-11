@@ -152,11 +152,34 @@ export function ScheduleDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
+      {/* `overflow-y-auto` on the CONTENT, not on a flex child.
+
+          This sheet used to be `flex flex-col` with the scrolling delegated to
+          `SheetBody` (`flex-1 min-h-0 overflow-y-auto`). That is the textbook
+          pattern and the merged classes were provably correct — and it still
+          would not scroll. The one sheet in this app that reliably scrolls a
+          long body (`app/admin/accounts/page.tsx:1139`) does not use the flex
+          pattern at all: it scrolls the content element itself. So this does
+          the same, rather than keep defending a chain that reads right and
+          behaves wrong.
+
+          `!overflow-y-auto` is the important part, and the `!` is load-bearing:
+          `sheetVariants`' base sets `overflow-hidden`, and twMerge does NOT
+          treat that as conflicting with `overflow-y-auto` — they are different
+          utility groups, so BOTH survive the merge. `overflow: hidden` then
+          still clamps the y axis depending on which rule the stylesheet emits
+          last. Verified by computing the merged string: without the `!`, the
+          class list contains `overflow-hidden … overflow-y-auto` together.
+          The important flag settles it regardless of source order. */}
+      <SheetContent side="right" className="w-full gap-0 !overflow-y-auto p-0 sm:max-w-xl">
         {/* `text-left` is not redundant: SheetHeader's base is
             `text-center sm:text-left`, which would centre the description on
             a phone while the title row beside it stays left-aligned. */}
-        <SheetHeader className="space-y-3 px-4 pt-4 pb-4 text-left">
+        {/* Sticky, because the content element is now what scrolls: without
+            this the Run now / Pause actions would scroll away and you would
+            have to come back up to reach them. `bg-sidebar` matches the
+            sheet's own surface so content passes behind it, not through it. */}
+        <SheetHeader className="bg-sidebar sticky top-0 z-10 space-y-3 px-4 pt-4 pb-4 text-left">
           <div className="flex min-w-0 items-center gap-3 pr-10">
             <span
               className={cn(
@@ -226,7 +249,16 @@ export function ScheduleDetailSheet({
 
         {/* `items-stretch` overrides SheetBody's `items-start`, which would
             otherwise shrink-wrap every panel to its content width. */}
-        <SheetBody className="min-h-0 flex-1 items-stretch gap-0 space-y-4 overflow-y-auto px-4 pt-0 pb-8">
+        {/* `items-stretch` overrides SheetBody's `items-start`, which would
+            otherwise shrink-wrap every panel to its content width.
+
+            Deliberately NOT a scroll container any more: the content element
+            above owns scrolling now, and a second `overflow-y-auto` here would
+            recreate exactly the nested-scroller bug this sheet already had —
+            the wheel going to whichever surface the cursor sits over. `flex-1`
+            and `min-h-0` go with it; they only meant anything while this was
+            the flex child that scrolled. */}
+        <SheetBody className="items-stretch gap-0 space-y-4 overflow-visible px-4 pt-0 pb-8">
           <WhatItDoesPanel
             projectId={projectId}
             trigger={trigger}
