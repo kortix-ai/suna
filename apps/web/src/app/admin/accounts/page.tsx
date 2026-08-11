@@ -93,7 +93,6 @@ import { cn } from '@/lib/utils';
 
 import { adminLedgerRows } from './ledger-rows';
 import {
-  BOOLEAN_OVERRIDE_KEYS,
   MAX_COMPUTE_RATE_MULTIPLIER,
   MAX_CONCURRENT_SESSIONS_OVERRIDE,
   describeOverridePatch,

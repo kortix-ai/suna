@@ -158,6 +158,14 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // Same permanent-access outcome as the account-scoped member route above.
   { re: /^\/v1\/projects\/[^/]+\/access(\/|$)/ },
   { re: /^\/v1\/account-invites(\/|$)/ },
+  // Agent governance. PUT /agents/:name/scope and POST /secrets/:id/grant
+  // commit durable state into `kortix.yaml`: widening what an agent may read
+  // changes every future session of the project and survives the grant with
+  // no banner and no marker — the same persistence-not-debugging outcome as a
+  // membership row. An operator who needs a scope change lands it through the
+  // customer or an attributable admin route, not from inside the hour.
+  { re: /^\/v1\/projects\/[^/]+\/agents\/[^/]+\/scope(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/secrets\/[^/]+\/grant(\/|$)/ },
   // Audit webhooks. Pointing the customer's audit stream at an operator URL
   // exfiltrates their events and survives the grant.
   { re: /^\/v1\/accounts\/[^/]+\/audit\/webhooks(\/|$)/ },
