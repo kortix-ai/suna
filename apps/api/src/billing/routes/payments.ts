@@ -2,8 +2,8 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import { getStripe } from '../../shared/stripe';
 import { getOrCreateStripeCustomer } from '../services/subscriptions';
-import { canPurchaseCredits, resolveCreditPriceId } from '../services/tiers';
-import { getCreditAccount } from '../repositories/credit-accounts';
+import { resolveCreditPriceId } from '../services/tiers';
+import { resolveAccountBilling } from '../services/billing-cache';
 import {
   getTransactions,
   getTransactionsSummary,
@@ -57,10 +57,15 @@ paymentsRouter.openapi(
 
     if (!amount || amount <= 0) throw new BillingError('Invalid amount');
 
-    const account = await getCreditAccount(accountId);
-    const tierName = account?.tier ?? 'free';
+    // Resolved plan, not the stored `credit_accounts.tier`: an account on an
+    // active admin trial of a paid plan, and a paying per-seat team whose
+    // stored tier is stale, both behave as paid everywhere else — reading the
+    // raw column here refused them a credit purchase they are entitled to.
+    // Fresh read: an admin granting or revoking a trial must take effect on the
+    // next request, and this route initiates a charge.
+    const { entitlements } = await resolveAccountBilling(accountId, { fresh: true });
 
-    if (!canPurchaseCredits(tierName)) {
+    if (!entitlements.canPurchaseCredits) {
       throw new BillingError('Your tier does not allow credit purchases');
     }
 

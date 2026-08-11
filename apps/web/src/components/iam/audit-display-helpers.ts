@@ -192,6 +192,7 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   // ("Ran trial", "Created managed model"); they are operator decisions.
   'POST /v1/admin/api/accounts/:id/trial': 'Granted account trial',
   'DELETE /v1/admin/api/accounts/:id/trial': 'Revoked account trial',
+  'POST /v1/admin/api/accounts/:id/members/:userId/role': 'Changed account member role',
   'POST /v1/admin/api/accounts/:id/managed-models': 'Set managed-models override',
   'POST /v1/admin/api/accounts/:id/enterprise-demo': 'Set enterprise demo flag',
   'POST /v1/admin/api/accounts/:id/enterprise-entitlement': 'Set enterprise entitlement flag',
@@ -467,6 +468,11 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       }
       if (m === 'POST' && raw.endsWith(':rotate')) {
         return { title: 'Rotated secret', detail: name ?? undefined, kind: 'update' };
+      }
+      if (m === 'POST' && s[4] === 'grant') {
+        // Writes the agent's `secrets:` list in kortix.yaml, so it widens what a
+        // session can reach — an access change, not a value change.
+        return { title: 'Granted secret to an agent', detail: name ?? undefined, kind: 'update' };
       }
       // POST /v1/projects/:id/secrets with name in body (not in path).
       // The name isn't recoverable from the URL so we just label the

@@ -34,6 +34,7 @@ export interface PlatinumCiInput {
   runId: string;
   runAttempt: string;
   testArgs: string[];
+  skipSdkPackageTests?: boolean;
   root: string;
 }
 
@@ -368,6 +369,7 @@ export function buildWorkerScript(input: {
   ref: string;
   sha: string;
   testArgs: string[];
+  skipSdkPackageTests?: boolean;
   provider?: 'platinum' | 'daytona';
 }): string {
   const provider = input.provider ?? 'platinum';
@@ -390,6 +392,7 @@ STATUS=/workspace/kortix-test.exit
 ARTIFACT=/workspace/kortix-test-results.tar.gz
 export HOME=/root
 export CI=1
+${input.skipSdkPackageTests ? 'export KORTIX_PACKAGE_SKIP_SDK_TESTS=1' : ''}
 
 exec > >(tee -a "$LOG") 2>&1
 rm -f "$STATUS" "$ARTIFACT"

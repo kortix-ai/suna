@@ -7,6 +7,17 @@ import { resetExpiringCredits } from './credits';
 export { calculateNextCreditGrant } from './credit-grant-schedule';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 
+// STORED TIER ON PURPOSE — do not route this file through the effective-plan
+// resolver (billing/services/resolve-billing.ts).
+//
+// This is a GRANT path: it mints the credits a customer PAID for. The stored
+// `credit_accounts.tier` is Stripe's, written by the subscription webhook
+// reconciliation, and it is the only column that says what was actually
+// charged. The resolver's overlays are entitlement overlays: an admin-issued
+// trial lifts what an account may DO for a window without any money changing
+// hands, and the per-seat self-heal repairs a stale gate. Granting against
+// either would hand out credits nobody paid for, every rotation, forever.
+
 export async function processYearlyCreditRotation(): Promise<{
   processed: number;
   skipped: number;

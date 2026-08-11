@@ -140,9 +140,12 @@ export function setSessionConnectorEnabled(
 export function ResetAxisButton({
   disabled = false,
   onReset,
+  label = 'Reset to default',
 }: {
   disabled?: boolean;
   onReset: () => void;
+  /** Names where the default comes from — "Reset to agent default" etc. */
+  label?: string;
 }) {
   return (
     <Button
@@ -154,7 +157,7 @@ export function ResetAxisButton({
       onClick={onReset}
     >
       <ArrowCounterClockwise className="size-3.5 shrink-0" />
-      Reset to project default
+      {label}
     </Button>
   );
 }

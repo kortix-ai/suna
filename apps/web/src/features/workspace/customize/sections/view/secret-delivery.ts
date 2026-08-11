@@ -220,8 +220,193 @@ export function missingAgentGrantNotice(identifier: string): MissingAgentGrantNo
   return {
     title: 'No agent can receive this secret',
     body: `List ${identifier} under an agent's secrets in kortix.yaml, then run the session with that agent. "secrets: all" does not grant this delivery mode — only an explicit list does.`,
-    manifest: `kortix_version: 2\nagents:\n  my-agent:\n    secrets: [${identifier}]`,
+    manifest: agentGrantSnippet(identifier, null),
   };
+}
+
+/** The slice of the project config the grant action reads. Structural, because
+ *  a capability-filtered response blanks `agent_discovery` that the SDK type
+ *  declares as always present. */
+export type AgentGrantConfig = {
+  agent_discovery?: string | null;
+  default_agent?: string | null;
+  /** @deprecated Server alias for `default_agent`. */
+  open_code_default_agent?: string | null;
+  agents?: readonly { name: string; scope?: { env?: string[] | 'all' } | null }[];
+};
+
+export type AgentGrantCandidate = {
+  name: string;
+  /** The agent's manifest list already names the identifier. */
+  alreadyGranted: boolean;
+  /** The agent's declared `secrets:` value. Null for an agent the manifest does
+   *  not declare — the endpoint upserts one. */
+  currentSecrets: string[] | 'all' | null;
+};
+
+export type AgentGrantPlan = {
+  /** Agents the action can name, in manifest order. Empty means no action. */
+  candidates: AgentGrantCandidate[];
+  /** The agent the action preselects, or null when there is nothing to grant to. */
+  preselected: string | null;
+  /**
+   * This edit writes the manifest's FIRST `agents:` block. The server reports
+   * the final verdict as `adopted_governance`; this is the client's estimate,
+   * and it only ever decides whether to ask for a confirmation.
+   */
+  adoptsGovernance: boolean;
+};
+
+function admitsIdentifier(list: readonly string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * Who can this secret be granted to, and does the grant change the project's
+ * governance posture?
+ *
+ * `agent_discovery` is the server's own verdict on whether the manifest
+ * declares any agent (apps/api/src/projects/git/config.ts `resolveConfigAgents`)
+ * — `declarative` means it does, `opencode` means it declares none. Anything
+ * else is a config we cannot read, and an unread config confirms rather than
+ * guesses: a missed confirmation silently revokes working runtime secrets.
+ */
+export function agentGrantPlan(
+  config: AgentGrantConfig | null | undefined,
+  identifier: string,
+): AgentGrantPlan {
+  const declared: AgentGrantCandidate[] = [];
+  for (const agent of config?.agents ?? []) {
+    const name = agent.name?.trim();
+    if (!name || declared.some((candidate) => candidate.name === name)) continue;
+    const env = agent.scope?.env;
+    declared.push({
+      name,
+      alreadyGranted: Array.isArray(env) && admitsIdentifier(env, identifier),
+      currentSecrets: env === 'all' ? 'all' : Array.isArray(env) ? env : null,
+    });
+  }
+
+  const defaultAgent = (config?.default_agent ?? config?.open_code_default_agent ?? '').trim();
+  // A project can carry a default agent that no manifest entry declares — the
+  // endpoint upserts the entry, so it is still a valid target.
+  const candidates =
+    declared.length > 0 || !defaultAgent
+      ? declared
+      : [{ name: defaultAgent, alreadyGranted: false, currentSecrets: null }];
+  const preselected =
+    candidates.find((candidate) => candidate.name === defaultAgent)?.name ??
+    candidates[0]?.name ??
+    null;
+
+  return {
+    candidates,
+    preselected,
+    adoptsGovernance: config?.agent_discovery !== 'declarative',
+  };
+}
+
+/**
+ * The `secrets:` list one agent ends up with, for the hand-edit snippet.
+ *
+ * `all` and an absent key both withhold broker/egress delivery, so neither can
+ * be appended to and the explicit list starts at this identifier. The grant
+ * endpoint is more generous with `all` — it expands the shorthand to every
+ * identifier the PROJECT holds (`grantSecretToAgentV2`). The client cannot
+ * reproduce that: its secrets list omits another member's private override, so
+ * enumerating here would print a list that silently revokes one.
+ */
+export function mergeAgentSecretGrant(
+  current: readonly string[] | 'all' | null | undefined,
+  identifier: string,
+): string[] {
+  if (!Array.isArray(current)) return [identifier];
+  return admitsIdentifier(current, identifier) ? [...current] : [...current, identifier];
+}
+
+/** The kortix.yaml edit that grants the secret, for anyone editing the repo by hand. */
+export function agentGrantSnippet(
+  identifier: string,
+  agent: string | null,
+  current?: readonly string[] | 'all' | null,
+): string {
+  const secrets = mergeAgentSecretGrant(current, identifier);
+  return `kortix_version: 2\nagents:\n  ${agent ?? 'my-agent'}:\n    secrets: [${secrets.join(', ')}]`;
+}
+
+/** One agent needs no picker, so the button carries the name instead. */
+export function agentGrantActionLabel(plan: AgentGrantPlan, selected: string | null): string {
+  return plan.candidates.length === 1 && selected ? `Grant to ${selected}` : 'Grant';
+}
+
+/** Why picking this agent is not a plain addition. Null when it is. */
+export function agentGrantCandidateHint(candidate: AgentGrantCandidate): string | null {
+  if (candidate.alreadyGranted) return 'Already lists this secret.';
+  if (candidate.currentSecrets === 'all') {
+    return 'Runs on "secrets: all". The grant expands that to an explicit list of the project secrets.';
+  }
+  return null;
+}
+
+export type AgentGrantConfirmation = { title: string; body: string; confirmLabel: string };
+
+/**
+ * The one destructive edge of this action. A project with no `agents:` block
+ * hands every project secret to every agent. The first block flips that to
+ * deny-by-default (apps/api/src/projects/agents.ts), so agents that are not
+ * listed lose the runtime secrets they use today.
+ */
+export function agentGrantConfirmation(identifier: string, agent: string): AgentGrantConfirmation {
+  return {
+    title: 'Start governing agents in kortix.yaml',
+    body: `This project declares no agents yet, so every agent receives every project secret. Granting ${identifier} to ${agent} writes the first agents: block. From then on an agent that is not listed receives no project secrets — including the sandbox secrets that work today. Add the other agents to kortix.yaml to keep their access.`,
+    confirmLabel: `Grant to ${agent}`,
+  };
+}
+
+export type AgentGrantOutcome = {
+  tone: 'success' | 'info';
+  message: string;
+  description?: string;
+};
+
+/** Report what the server actually did — an idempotent call changed nothing. */
+export function agentGrantOutcome(result: {
+  identifier: string;
+  agent: string;
+  already_granted: boolean;
+  adopted_governance: boolean;
+}): AgentGrantOutcome {
+  if (result.already_granted) {
+    return {
+      tone: 'info',
+      message: `${result.agent} already receives ${result.identifier}`,
+      description: 'kortix.yaml was not changed.',
+    };
+  }
+  return {
+    tone: 'success',
+    message: `Granted ${result.identifier} to ${result.agent}`,
+    description: result.adopted_governance
+      ? 'kortix.yaml now declares agents. An agent that is not listed receives no project secrets.'
+      : undefined,
+  };
+}
+
+/** Turn a grant failure into the next action the user can take. */
+export function agentGrantErrorMessage(error: unknown): string {
+  const fields =
+    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
+  if (fields.code === 'manifest_v1_unsupported') {
+    return 'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 2.';
+  }
+  if (fields.code === 'secret_not_grantable') {
+    return 'This secret is disabled. Change its delivery policy before granting it.';
+  }
+  return typeof fields.message === 'string' && fields.message
+    ? fields.message
+    : 'Could not grant the secret.';
 }
 
 export type SecretDeliverySyncFailure = {

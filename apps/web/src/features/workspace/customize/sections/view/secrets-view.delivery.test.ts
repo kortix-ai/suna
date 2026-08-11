@@ -2,6 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+  type AgentGrantConfig,
+  agentGrantActionLabel,
+  agentGrantCandidateHint,
+  agentGrantConfirmation,
+  agentGrantErrorMessage,
+  agentGrantOutcome,
+  agentGrantPlan,
+  agentGrantSnippet,
+  mergeAgentSecretGrant,
+} from './secret-delivery';
+
 /**
  * `SecretsView` cannot be rendered here: `apps/web` has no jsdom and no
  * `@testing-library/react`, and its `bun test` runs WITHOUT `--isolate`, so
@@ -72,10 +84,79 @@ describe('SecretsView warns when no agent can receive the secret', () => {
 
   test('the dialog renders the notice and the kortix.yaml fix', () => {
     expect(code).toMatch(
-      /const grantNotice =\s*row && shouldWarnMissingAgentGrant\(row\.deliveryBlockedReason, strategy\)\s*\?\s*missingAgentGrantNotice\(row\.identifier\)\s*:\s*null;/,
+      /const grantNotice =\s*row && shouldWarnMissingAgentGrant\(row\.deliveryBlockedReason, strategy\) && !grant\.isSuccess\s*\?\s*missingAgentGrantNotice\(row\.identifier\)\s*:\s*null;/,
     );
     expect(code).toContain('{grantNotice.body}');
-    expect(code).toContain('{grantNotice.manifest}');
+    expect(code).toContain('{grantManifest}');
+  });
+
+  test('a completed grant retires the warning the open dialog is still showing', () => {
+    // `row` is the parent's snapshot from when the dialog opened. Refetching
+    // the list cannot change it, so the notice has to stand down on its own.
+    expect(code).toContain('&& !grant.isSuccess');
+  });
+});
+
+describe('SecretsView turns the missing-grant warning into a grant action', () => {
+  const grantMutation = sliceBetween('const grant = useMutation({', 'const startGrant');
+  const startGrant = sliceBetween('const startGrant = () => {', '};');
+
+  test('the scan found the grant mutation and its trigger', () => {
+    // Guard the guards: an empty string passes `.not.toContain` silently.
+    expect(grantMutation.length).toBeGreaterThan(0);
+    expect(startGrant.length).toBeGreaterThan(0);
+  });
+
+  test('the agent list comes from the shared project-config hook', () => {
+    expect(code).toContain('const projectConfig = useProjectConfig(projectId);');
+    expect(code).toContain('const grantPlan = agentGrantPlan(projectConfig, grantIdentifier);');
+  });
+
+  test('the grant goes through the SDK client, never a raw fetch', () => {
+    expect(grantMutation).toContain('grantSecretToAgent(projectId, grantIdentifier, agent)');
+    // A bare `fetch(` call, not `secretsQuery.refetch()`.
+    expect(code).not.toMatch(/(^|[^\w.])fetch\(/);
+  });
+
+  test('an ungoverned project passes the confirm before any commit', () => {
+    expect(startGrant).toContain('if (grantPlan.adoptsGovernance) {');
+    expect(startGrant.indexOf('setGrantConfirmOpen(true);')).toBeGreaterThan(-1);
+    expect(startGrant.indexOf('setGrantConfirmOpen(true);')).toBeLessThan(
+      startGrant.indexOf('grant.mutate('),
+    );
+    expect(code).toContain('<ConfirmDialog');
+    expect(code).toContain('description={grantConfirmation.body}');
+  });
+
+  test('the toast reports what the server did, not what was asked', () => {
+    expect(grantMutation).toContain('const outcome = agentGrantOutcome(result);');
+    expect(grantMutation).toContain('infoToast(outcome.message, options)');
+    expect(grantMutation).toContain('successToast(outcome.message, options)');
+  });
+
+  test('both queries behind the warning refetch on success', () => {
+    // The verdict is computed from the manifest the project detail carries, so
+    // the secrets list alone cannot clear the warning.
+    expect(grantMutation).toContain(
+      'queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });',
+    );
+    expect(grantMutation).toContain('onSaved();');
+  });
+
+  test('a failure stays on screen beside the snippet', () => {
+    expect(code).toContain('{agentGrantErrorMessage(grant.error)}');
+  });
+
+  test('the snippet follows the chosen agent', () => {
+    expect(code).toMatch(
+      /agentGrantSnippet\(\s*grantIdentifier,\s*selectedGrantAgent,\s*selectedGrantCandidate\?\.currentSecrets,?\s*\)/,
+    );
+  });
+
+  test('the action cannot submit the secret form by accident', () => {
+    // The banner sits inside the dialog's <form>; a default-type button would
+    // save the secret instead of granting it.
+    expect(code).toMatch(/type="button"[\s\S]{0,240}onClick=\{startGrant\}/);
   });
 });
 
@@ -98,12 +179,280 @@ describe('SecretsView reports a save that did not reach the running sessions', (
 
   test('the success toast fires only in the else branch', () => {
     expect(onSuccess.match(/successToast\(/g)).toHaveLength(1);
-    expect(code).toContain('import { errorToast, successToast, warningToast } from');
+    expect(code).toContain('import { errorToast, infoToast, successToast, warningToast } from');
   });
 });
 
 describe('SecretsView states the cost of an empty header template', () => {
   test('both template fields name the 401 consequence', () => {
     expect(code.match(/reject with 401\./g)).toHaveLength(2);
+  });
+});
+
+describe('agentGrantPlan', () => {
+  const declarative = (
+    agents: AgentGrantConfig['agents'],
+    extra: Partial<AgentGrantConfig> = {},
+  ): AgentGrantConfig => ({ agent_discovery: 'declarative', agents, ...extra });
+  const ungoverned = (
+    agents: AgentGrantConfig['agents'],
+    extra: Partial<AgentGrantConfig> = {},
+  ): AgentGrantConfig => ({ agent_discovery: 'opencode', agents, ...extra });
+
+  test('a project with no config offers nothing and still demands the confirm', () => {
+    const plan = agentGrantPlan(undefined, 'BOUNDARY_TEST');
+    expect(plan.candidates).toEqual([]);
+    expect(plan.preselected).toBeNull();
+    expect(plan.adoptsGovernance).toBe(true);
+  });
+
+  test('an ungoverned project lists its agents and adopts governance', () => {
+    const plan = agentGrantPlan(
+      ungoverned([{ name: 'build' }, { name: 'support' }], { default_agent: 'support' }),
+      'BOUNDARY_TEST',
+    );
+    expect(plan.candidates.map((candidate) => candidate.name)).toEqual(['build', 'support']);
+    expect(plan.preselected).toBe('support');
+    expect(plan.adoptsGovernance).toBe(true);
+  });
+
+  test('a governed project needs no governance adoption', () => {
+    const plan = agentGrantPlan(
+      declarative([{ name: 'support', scope: { env: ['OTHER'] } }]),
+      'BOUNDARY_TEST',
+    );
+    expect(plan.adoptsGovernance).toBe(false);
+    expect(plan.preselected).toBe('support');
+  });
+
+  test('an unreadable discovery mode confirms rather than guesses', () => {
+    // `detail-capability-filter` blanks `agent_discovery` for a member without
+    // the agents capability. Silence there must not skip the footgun confirm.
+    const plan = agentGrantPlan({ agent_discovery: null, agents: [] }, 'BOUNDARY_TEST');
+    expect(plan.adoptsGovernance).toBe(true);
+  });
+
+  test('an existing list entry is matched case-insensitively', () => {
+    const plan = agentGrantPlan(
+      declarative([{ name: 'support', scope: { env: ['boundary_test'] } }]),
+      'BOUNDARY_TEST',
+    );
+    expect(plan.candidates[0]?.alreadyGranted).toBe(true);
+    expect(plan.candidates[0]?.currentSecrets).toEqual(['boundary_test']);
+  });
+
+  test('an agent on "secrets: all" is grantable, and the narrowing is visible', () => {
+    const plan = agentGrantPlan(
+      declarative([{ name: 'support', scope: { env: 'all' } }]),
+      'BOUNDARY_TEST',
+    );
+    expect(plan.candidates[0]).toEqual({
+      name: 'support',
+      alreadyGranted: false,
+      currentSecrets: 'all',
+    });
+  });
+
+  test('a project that lists no agent falls back to its default agent', () => {
+    const plan = agentGrantPlan(ungoverned([], { default_agent: 'build' }), 'BOUNDARY_TEST');
+    expect(plan.candidates).toEqual([
+      { name: 'build', alreadyGranted: false, currentSecrets: null },
+    ]);
+    expect(plan.preselected).toBe('build');
+  });
+
+  test('the legacy default-agent field is read when the canonical one is absent', () => {
+    const plan = agentGrantPlan(
+      { agent_discovery: 'opencode', agents: [], open_code_default_agent: 'legacy' },
+      'BOUNDARY_TEST',
+    );
+    expect(plan.preselected).toBe('legacy');
+  });
+
+  test('no agents and no default agent leaves nothing to grant to', () => {
+    const plan = agentGrantPlan(ungoverned([]), 'BOUNDARY_TEST');
+    expect(plan.candidates).toEqual([]);
+    expect(plan.preselected).toBeNull();
+  });
+
+  test('repeated and blank agent names are dropped, manifest order is kept', () => {
+    const plan = agentGrantPlan(
+      ungoverned([{ name: 'support' }, { name: '  ' }, { name: 'support' }, { name: 'build' }]),
+      'BOUNDARY_TEST',
+    );
+    expect(plan.candidates.map((candidate) => candidate.name)).toEqual(['support', 'build']);
+    expect(plan.preselected).toBe('support');
+  });
+
+  test('a default agent outside the declared list is not preselected', () => {
+    const plan = agentGrantPlan(
+      declarative([{ name: 'support' }], { default_agent: 'ghost' }),
+      'BOUNDARY_TEST',
+    );
+    expect(plan.preselected).toBe('support');
+  });
+});
+
+describe('mergeAgentSecretGrant', () => {
+  test('an agent with no list starts one', () => {
+    expect(mergeAgentSecretGrant(undefined, 'BOUNDARY_TEST')).toEqual(['BOUNDARY_TEST']);
+  });
+
+  test('"all" cannot carry an explicit grant, so the hand-edit starts fresh', () => {
+    // The endpoint expands `all` to every project identifier. The client sees
+    // only its own slice of them, so the snippet stays minimal instead of
+    // printing a list that would revoke a private override it cannot see.
+    expect(mergeAgentSecretGrant('all', 'BOUNDARY_TEST')).toEqual(['BOUNDARY_TEST']);
+  });
+
+  test('an existing list is appended to, in order', () => {
+    expect(mergeAgentSecretGrant(['A_KEY', 'B_KEY'], 'BOUNDARY_TEST')).toEqual([
+      'A_KEY',
+      'B_KEY',
+      'BOUNDARY_TEST',
+    ]);
+  });
+
+  test('an entry that differs only in case keeps its existing spelling', () => {
+    expect(mergeAgentSecretGrant(['boundary_test'], 'BOUNDARY_TEST')).toEqual(['boundary_test']);
+  });
+});
+
+describe('agentGrantSnippet', () => {
+  test('without a chosen agent it keeps the copyable placeholder', () => {
+    expect(agentGrantSnippet('BOUNDARY_TEST', null)).toBe(
+      'kortix_version: 2\nagents:\n  my-agent:\n    secrets: [BOUNDARY_TEST]',
+    );
+  });
+
+  test('with a chosen agent it shows that agent and the merged list', () => {
+    expect(agentGrantSnippet('BOUNDARY_TEST', 'support', ['A_KEY'])).toBe(
+      'kortix_version: 2\nagents:\n  support:\n    secrets: [A_KEY, BOUNDARY_TEST]',
+    );
+  });
+});
+
+describe('agentGrantActionLabel', () => {
+  const plan = (names: string[]) => ({
+    candidates: names.map((name) => ({ name, alreadyGranted: false, currentSecrets: null })),
+    preselected: names[0] ?? null,
+    adoptsGovernance: false,
+  });
+
+  test('a single agent needs no picker, so the button names it', () => {
+    expect(agentGrantActionLabel(plan(['support']), 'support')).toBe('Grant to support');
+  });
+
+  test('several agents put the name in the picker, not the button', () => {
+    expect(agentGrantActionLabel(plan(['support', 'build']), 'support')).toBe('Grant');
+  });
+
+  test('no selection still reads as the action', () => {
+    expect(agentGrantActionLabel(plan([]), null)).toBe('Grant');
+  });
+});
+
+describe('agentGrantCandidateHint', () => {
+  test('an agent that already lists the secret says so', () => {
+    expect(
+      agentGrantCandidateHint({
+        name: 'support',
+        alreadyGranted: true,
+        currentSecrets: ['BOUNDARY_TEST'],
+      }),
+    ).toBe('Already lists this secret.');
+  });
+
+  test('an "all" agent states what the grant does to the shorthand', () => {
+    // `grantSecretToAgentV2` expands `all` to every project identifier rather
+    // than narrowing it, and the hint must not claim the opposite.
+    expect(
+      agentGrantCandidateHint({ name: 'support', alreadyGranted: false, currentSecrets: 'all' }),
+    ).toBe(
+      'Runs on "secrets: all". The grant expands that to an explicit list of the project secrets.',
+    );
+  });
+
+  test('an ordinary agent needs no hint', () => {
+    expect(
+      agentGrantCandidateHint({ name: 'support', alreadyGranted: false, currentSecrets: null }),
+    ).toBeNull();
+  });
+});
+
+describe('agentGrantConfirmation', () => {
+  const confirmation = agentGrantConfirmation('BOUNDARY_TEST', 'support');
+
+  test('it names the agent and the secret', () => {
+    expect(confirmation.title).toBe('Start governing agents in kortix.yaml');
+    expect(confirmation.body).toContain('support');
+    expect(confirmation.body).toContain('BOUNDARY_TEST');
+    expect(confirmation.confirmLabel).toBe('Grant to support');
+  });
+
+  test('it states the default-deny consequence in plain words', () => {
+    // The whole reason this dialog exists: the first `agents:` block revokes
+    // every project secret from every agent it does not name.
+    expect(confirmation.body).toContain('no project secrets');
+    expect(confirmation.body).toContain('sandbox');
+  });
+});
+
+describe('agentGrantOutcome', () => {
+  test('an unchanged manifest reports no change', () => {
+    const outcome = agentGrantOutcome({
+      identifier: 'BOUNDARY_TEST',
+      agent: 'support',
+      already_granted: true,
+      adopted_governance: false,
+    });
+    expect(outcome.tone).toBe('info');
+    expect(outcome.message).toBe('support already receives BOUNDARY_TEST');
+    expect(outcome.description).toBe('kortix.yaml was not changed.');
+  });
+
+  test('a plain grant reports the commit', () => {
+    const outcome = agentGrantOutcome({
+      identifier: 'BOUNDARY_TEST',
+      agent: 'support',
+      already_granted: false,
+      adopted_governance: false,
+    });
+    expect(outcome.tone).toBe('success');
+    expect(outcome.message).toBe('Granted BOUNDARY_TEST to support');
+    expect(outcome.description).toBeUndefined();
+  });
+
+  test('a grant that adopted governance says what changed for every other agent', () => {
+    const outcome = agentGrantOutcome({
+      identifier: 'BOUNDARY_TEST',
+      agent: 'support',
+      already_granted: false,
+      adopted_governance: true,
+    });
+    expect(outcome.tone).toBe('success');
+    expect(outcome.description).toContain('no project secrets');
+  });
+});
+
+describe('agentGrantErrorMessage', () => {
+  test('a v1 manifest is sent to the file, not to a retry', () => {
+    expect(agentGrantErrorMessage({ code: 'manifest_v1_unsupported', message: 'nope' })).toBe(
+      'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 2.',
+    );
+  });
+
+  test('a disabled secret names the delivery policy as the blocker', () => {
+    expect(agentGrantErrorMessage({ code: 'secret_not_grantable', message: 'nope' })).toBe(
+      'This secret is disabled. Change its delivery policy before granting it.',
+    );
+  });
+
+  test('any other failure surfaces the server message', () => {
+    expect(agentGrantErrorMessage(new Error('agent_not_found'))).toBe('agent_not_found');
+  });
+
+  test('a failure with no message still says something actionable', () => {
+    expect(agentGrantErrorMessage(null)).toBe('Could not grant the secret.');
   });
 });

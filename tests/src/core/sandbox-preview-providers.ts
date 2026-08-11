@@ -468,11 +468,18 @@ interface DaytonaSandboxPage {
   nextCursor?: string | null;
 }
 
+export function daytonaPreviewLabelsFilter(): string {
+  return JSON.stringify({ 'kortix-preview': 'true' });
+}
+
 async function allDaytonaPreviewSandboxes(api: DaytonaApi): Promise<DaytonaSandbox[]> {
   const sandboxes: DaytonaSandbox[] = [];
   let cursor = '';
   do {
-    const query = new URLSearchParams({ limit: '100', labels: 'kortix-preview=true' });
+    const query = new URLSearchParams({
+      limit: '100',
+      labels: daytonaPreviewLabelsFilter(),
+    });
     if (cursor) query.set('cursor', cursor);
     const page = await api.json<DaytonaSandboxPage>(`/sandbox?${query}`);
     sandboxes.push(...(page.items ?? []));

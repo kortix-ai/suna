@@ -85,7 +85,12 @@ jobs:
             core) bun tests/bin/sandbox-ci.ts ;;
             browser-1) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2 ;;
             browser-2) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2 ;;
-            packages) bun tests/bin/sandbox-ci.ts --packages-only ;;
+            packages)
+              if [[ "$TEST_MODE" == "full" ]]; then
+                export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
+              fi
+              bun tests/bin/sandbox-ci.ts --packages-only
+              ;;
             *) echo "::error::Invalid test lane: $TEST_LANE"; exit 2 ;;
           esac
       - name: Delete the sandbox worker

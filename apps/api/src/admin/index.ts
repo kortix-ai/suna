@@ -42,6 +42,7 @@ adminApp.openapi(
     request: {
       query: z.object({
         search: z.string().optional(),
+        accountId: z.string().optional(),
         tier: z.string().optional(),
         paymentStatus: z.string().optional(),
         paid: z.string().optional(),
@@ -67,9 +68,15 @@ adminApp.openapi(
     const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
       await import('drizzle-orm');
     const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
+    // PURE resolver — no I/O, no cache, no clock of its own. It runs over the
+    // row this query already selects, so the `plan` block below costs zero
+    // extra queries (no N+1) and reports the same plan every server gate
+    // enforces for that account.
+    const { resolveBillingFromRow } = await import('../billing/services/resolve-billing');
 
     const {
       search,
+      accountId: accountIdFilter,
       tierValues,
       paymentStatusValues,
       paidOnly,
@@ -94,6 +101,8 @@ adminApp.openapi(
       SELECT count(*)::int FROM kortix.account_members am WHERE am.account_id = ${accounts.accountId})`;
 
     const conds: any[] = [];
+    // Exact-id lookup — the sheet's live row, immune to the list's filters.
+    if (accountIdFilter) conds.push(eq(accounts.accountId, accountIdFilter));
     if (search) {
       conds.push(
         or(
@@ -140,6 +149,14 @@ adminApp.openapi(
         provider: creditAccounts.provider,
         planType: creditAccounts.planType,
         stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
+        // Read by resolveBillingFromRow's per-seat self-heal (a live seat
+        // subscription outranks a stale non-paid `tier`). Not rendered.
+        stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
+        // Read by resolveBillingFromRow's session-limit override. Not rendered
+        // either, but the resolver takes ONE row and answers the WHOLE billing
+        // question from it — handing it a partial row silently mis-answers the
+        // parts this projection does not happen to render today.
+        maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
         billingModel: creditAccounts.billingModel,
         seatCount: creditAccounts.seatCount,
         trialStatus: creditAccounts.trialStatus,
@@ -167,39 +184,58 @@ adminApp.openapi(
       .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
       .where(where);
 
-    const list = rows.map((r) => ({
-      accountId: r.accountId,
-      name: r.name,
-      ownerEmail: r.ownerEmail ?? null,
-      memberCount: Number(r.memberCount ?? 0),
-      balance: r.balance ?? null,
-      expiringCredits: r.expiringCredits ?? null,
-      nonExpiringCredits: r.nonExpiringCredits ?? null,
-      dailyCreditsBalance: r.dailyCreditsBalance ?? null,
-      tier: r.tier ?? null,
-      paymentStatus: r.paymentStatus ?? null,
-      provider: r.provider ?? null,
-      planType: r.planType ?? null,
-      stripeSubscriptionId: r.stripeSubscriptionId ?? null,
-      billingModel: r.billingModel ?? null,
-      seatCount: r.seatCount ?? null,
-      trial: {
-        status: r.trialStatus ?? 'none',
-        tier: r.trialTier ?? null,
-        seats: r.trialSeats ?? null,
-        startedAt: r.trialStartedAt ?? null,
-        endsAt: r.trialEndsAt ?? null,
-        note: r.trialNote ?? null,
-      },
-      managedModelsOverride: r.managedModelsOverride ?? null,
-      demoEnterprise: r.demoEnterprise ?? false,
-      enterpriseEntitled: r.enterpriseEntitled ?? false,
-      // Stripe customer id/email aren't on credit_accounts — left null until a
-      // billing-customers join is added; the console degrades gracefully.
-      billingCustomerId: null,
-      billingCustomerEmail: null,
-      createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
-    }));
+    const now = Date.now();
+    const list = rows.map((r) => {
+      // The plan the account BEHAVES as: an active admin trial and the
+      // per-seat self-heal overlay the stored `tier`, and that is what every
+      // gate enforces. `tier` below stays the STORED column — the tier filter
+      // matches on it server-side, so the two must keep meaning the same thing.
+      const resolved = resolveBillingFromRow(r, now);
+      return {
+        accountId: r.accountId,
+        name: r.name,
+        ownerEmail: r.ownerEmail ?? null,
+        memberCount: Number(r.memberCount ?? 0),
+        balance: r.balance ?? null,
+        expiringCredits: r.expiringCredits ?? null,
+        nonExpiringCredits: r.nonExpiringCredits ?? null,
+        dailyCreditsBalance: r.dailyCreditsBalance ?? null,
+        tier: r.tier ?? null,
+        // RESOLVED plan, named the way the product names plans (Free / Team /
+        // Enterprise + a qualifier). The console renders this instead of mapping
+        // the raw key onto a hand-maintained label table of its own.
+        plan: {
+          key: resolved.plan.key,
+          family: resolved.plan.family,
+          label: resolved.display.label,
+          sublabel: resolved.display.sublabel,
+          status: resolved.plan.status,
+          is_grandfathered: resolved.plan.status === 'grandfathered',
+        },
+        paymentStatus: r.paymentStatus ?? null,
+        provider: r.provider ?? null,
+        planType: r.planType ?? null,
+        stripeSubscriptionId: r.stripeSubscriptionId ?? null,
+        billingModel: r.billingModel ?? null,
+        seatCount: r.seatCount ?? null,
+        trial: {
+          status: r.trialStatus ?? 'none',
+          tier: r.trialTier ?? null,
+          seats: r.trialSeats ?? null,
+          startedAt: r.trialStartedAt ?? null,
+          endsAt: r.trialEndsAt ?? null,
+          note: r.trialNote ?? null,
+        },
+        managedModelsOverride: r.managedModelsOverride ?? null,
+        demoEnterprise: r.demoEnterprise ?? false,
+        enterpriseEntitled: r.enterpriseEntitled ?? false,
+        // Stripe customer id/email aren't on credit_accounts — left null until a
+        // billing-customers join is added; the console degrades gracefully.
+        billingCustomerId: null,
+        billingCustomerEmail: null,
+        createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
+      };
+    });
 
     return c.json({ accounts: list, total: Number(total ?? 0), page, limit, summary: null });
   } catch (e: any) {
@@ -245,6 +281,106 @@ adminApp.openapi(
     return c.json({ users });
   } catch (e: any) {
     return c.json({ users: [], error: e?.message || String(e) }, 500);
+  }
+  },
+);
+
+// ── Set a member's role ──────────────────────────────────────────────────────
+// Platform-admin override of the in-account role system: the customer-facing
+// PATCH /accounts/:id/members/:userId requires the caller to be a member (and
+// owner-role changes require an owner), which support staff are not. This route
+// bypasses membership but keeps the one hard invariant: an account never drops
+// to zero owners.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/members/{userId}/role',
+    tags: ['admin'],
+    summary: "Set an account member's role (platform-admin override)",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string(), userId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: z.object({ role: z.string() }) },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), user_id: z.string(), account_role: z.string() }),
+        'Updated member role',
+      ),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      404: json(z.record(z.string(), z.any()), 'Not a member'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const accountId = c.req.param('id');
+    const userId = c.req.param('userId');
+    const actorUserId = c.get('userId') as string | undefined;
+    const body = await c.req.json().catch(() => ({}));
+    const roleRaw = String(body.role || '').trim();
+
+    if (roleRaw !== 'owner' && roleRaw !== 'admin' && roleRaw !== 'member') {
+      return c.json({ error: 'role must be one of owner|admin|member' }, 400);
+    }
+    const role = roleRaw;
+
+    const { db } = await import('../shared/db');
+    const { accountMembers } = await import('@kortix/db');
+    const { and, eq } = await import('drizzle-orm');
+
+    const [target] = await db
+      .select({ accountRole: accountMembers.accountRole })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1);
+    if (!target) return c.json({ error: 'user is not a member of this account' }, 404);
+    if (target.accountRole === role) {
+      return c.json({ ok: true, user_id: userId, account_role: role });
+    }
+
+    // Never demote the last owner — an ownerless account is unrecoverable
+    // through the product (every owner-gated route would 403 forever).
+    if (target.accountRole === 'owner' && role !== 'owner') {
+      const owners = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
+      if (owners.length <= 1) {
+        return c.json({ error: 'cannot demote the last owner of an account' }, 400);
+      }
+    }
+
+    await db
+      .update(accountMembers)
+      .set({ accountRole: role })
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+
+    try {
+      const { recordAuditEvent } = await import('../shared/audit');
+      await recordAuditEvent({
+        accountId,
+        actorUserId,
+        action: 'admin.account.member_role.set',
+        resourceType: 'account_member',
+        resourceId: userId,
+        before: { account_role: target.accountRole },
+        after: { account_role: role },
+        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        userAgent: c.req.header('user-agent') || null,
+      });
+    } catch {
+      /* audit is best-effort — never block the role change */
+    }
+
+    return c.json({ ok: true, user_id: userId, account_role: role });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
   }
   },
 );
@@ -626,22 +762,32 @@ adminApp.openapi(
     const { isValidTier } = await import('../billing/services/tiers');
     if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
 
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
-    const before = await getSubscriptionInfo(accountId);
-    await upsertCreditAccount(accountId, { tier });
+    // Enterprise is an ENTITLEMENT, not a tier. A `tier='enterprise'` write is
+    // clobbered by the next Stripe subscription sync (webhooks.ts writes the
+    // price-resolved tier back), which silently reverts the account. The flag
+    // survives sync — refuse the wrong primitive here.
+    if (tier === 'enterprise') {
+      return c.json(
+        {
+          error:
+            "enterprise is not assignable as a tier — use POST /admin/api/accounts/{id}/enterprise-entitlement instead (the flag survives Stripe subscription sync; a tier write does not)",
+        },
+        400,
+      );
+    }
 
-    // Tier feeds TWO caches: the limit cache (60s) and the gateway tier-
-    // snapshot cache (30s, entitlements.ts — the managed-models decision on
-    // the auth hot path). Clear both so the change is visible immediately;
-    // clearing only the limit cache left the gateway serving the old tier for
-    // up to 30s. The per-request entitlement read (SSO/SCIM gates) is uncached
-    // and already sees it.
-    const { clearAccountLimitCache } = await import('../shared/account-limits');
-    const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
-    clearAccountLimitCache();
-    invalidateCachedAccountTier(accountId);
+    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
+    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
+    const before = await getSubscriptionInfo(accountId);
+    // `tier` is provider-owned everywhere else, and ADMIN_ASSIGNABLE here: an
+    // operator reassigning a plan by hand is a real support operation. The
+    // chokepoint still refuses 'enterprise' (the 400 above catches it first)
+    // and invalidates the one billing cache the value feeds.
+    await applyAdminOverride(
+      accountId,
+      { tier },
+      { userId: actorUserId ?? null, action: 'admin.account.tier.set' },
+    );
 
     try {
       const { recordAuditEvent } = await import('../shared/audit');
@@ -712,12 +858,14 @@ adminApp.openapi(
         return c.json({ error: 'enabled must be a boolean' }, 400);
       }
 
-      const {
-        isEnterpriseEntitled,
-        setEnterpriseEntitled,
-      } = await import('../billing/repositories/credit-accounts');
+      const { isEnterpriseEntitled } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = await isEnterpriseEntitled(accountId);
-      await setEnterpriseEntitled(accountId, enabled);
+      await applyAdminOverride(
+        accountId,
+        { enterpriseEntitled: enabled },
+        { userId: actorUserId ?? null, action: 'admin.account.enterprise_entitlement.set' },
+      );
 
       // The per-request entitlement read (SSO/SCIM gates) is uncached and sees
       // the change immediately; no tier-cache invalidation needed because
@@ -787,9 +935,8 @@ adminApp.openapi(
     const accountId = c.req.param('id');
     const actorUserId = (c.get('userId') as string | undefined) ?? null;
     const body = c.req.valid('json') as { max_concurrent_sessions: number | null };
-    const { getSubscriptionInfo, upsertCreditAccount } = await import(
-      '../billing/repositories/credit-accounts'
-    );
+    const { getSubscriptionInfo } = await import('../billing/repositories/credit-accounts');
+    const { applyAdminOverride } = await import('../billing/services/account-write-owner');
     const { clearAccountLimitCache } = await import('../shared/account-limits');
     const { recordAuditEvent } = await import('../shared/audit');
 
@@ -804,7 +951,11 @@ adminApp.openapi(
       {
         getCurrent: async () => (await getSubscriptionInfo(accountId))?.maxConcurrentSessions ?? null,
         persist: async (id, value) => {
-          await upsertCreditAccount(id, { maxConcurrentSessions: value });
+          await applyAdminOverride(
+            id,
+            { maxConcurrentSessions: value },
+            { userId: actorUserId, action: 'admin.account.session_limit.set' },
+          );
         },
         clearCache: clearAccountLimitCache,
         recordAudit: recordAuditEvent,
@@ -995,19 +1146,16 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { override: boolean | null };
 
-      const { getCreditAccount, setManagedModelsOverride } = await import(
-        '../billing/repositories/credit-accounts'
-      );
+      const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = (await getCreditAccount(accountId))?.managedModelsOverride ?? null;
-      await setManagedModelsOverride(accountId, body.override);
-
-      // The managed-models answer is served from the shared tier-snapshot
-      // cache (gateway auth hot path) AND the limit cache (sandbox-provision
-      // gateway mount) — clear both so the flip is visible immediately.
-      const { invalidateCachedAccountTier } = await import('../billing/services/entitlements');
-      const { clearAccountLimitCache } = await import('../shared/account-limits');
-      invalidateCachedAccountTier(accountId);
-      clearAccountLimitCache();
+      // The chokepoint invalidates this account's billing cache — the one cache
+      // the managed-models answer is served from on the gateway auth hot path.
+      await applyAdminOverride(
+        accountId,
+        { managedModelsOverride: body.override },
+        { userId: actorUserId, action: 'admin.account.managed_models.set' },
+      );
 
       try {
         const { recordAuditEvent } = await import('../shared/audit');
@@ -1067,11 +1215,14 @@ adminApp.openapi(
       const actorUserId = (c.get('userId') as string | undefined) ?? null;
       const body = c.req.valid('json') as { enabled: boolean };
 
-      const { isDemoEnterprise, setDemoEnterprise } = await import(
-        '../billing/repositories/credit-accounts'
-      );
+      const { isDemoEnterprise } = await import('../billing/repositories/credit-accounts');
+      const { applyAdminOverride } = await import('../billing/services/account-write-owner');
       const before = await isDemoEnterprise(accountId);
-      await setDemoEnterprise(accountId, body.enabled);
+      await applyAdminOverride(
+        accountId,
+        { demoEnterprise: body.enabled },
+        { userId: actorUserId, action: 'admin.account.enterprise_demo.set' },
+      );
 
       try {
         const { recordAuditEvent } = await import('../shared/audit');

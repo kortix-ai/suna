@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -42,19 +43,195 @@ const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
 const ENV_PUSH_TIMEOUT_MS = 15_000;
 
+/**
+ * How long one recorded arm is trusted before the next sync re-arms anyway.
+ * Nothing we run mutates a live sandbox's provider-side attachment behind our
+ * back, so this is not correctness — it is a self-heal for drift we did not
+ * cause (a provider-side loss of the attachment). Long enough that an ordinary
+ * session never pays for it twice; short enough that drift clears without a
+ * deploy.
+ */
+const BOUNDARY_ARM_TTL_MS = 10 * 60_000;
+/** Cap on remembered sandboxes. Entries are only ~120 bytes, but the process is
+ *  long-lived and external ids are never reused, so the map must be bounded. */
+const BOUNDARY_ARM_CACHE_MAX = 2_000;
+/**
+ * The longest a user's turn blocks on the provider edge confirming an arm.
+ *
+ * The arm is NOT abandoned at this deadline — it keeps running and records its
+ * result — we just stop making the person wait for it. Blocking a turn for the
+ * provider's full arm budget (see `waitUntilArmed` in
+ * secrets/platinum-network-boundary.ts) is what pushed
+ * `POST /session/{id}/prompt_async` past the proxy budget and returned 502.
+ */
+const PROMPT_BOUNDARY_ARM_WAIT_MS = 1_500;
+
+/** `secretIds` is what the edge is currently holding. Kept because the digest
+ *  alone cannot tell a WIDENING from a REVOCATION, and the two need opposite
+ *  failure handling — see the shrink check in `syncSandboxEnvForPrompt`. */
+type BoundaryArmRecord = { digest: string; armedAt: number; secretIds: string[] };
+
+/**
+ * Per-sandbox record of the LAST binding set this process successfully armed.
+ *
+ * In-process on purpose: it is a cost optimization, not state anyone reads for
+ * a decision. A fresh API replica (deploy, scale-out, restart) simply misses and
+ * performs exactly one re-arm for that sandbox — the same call it would have
+ * made anyway, applying the same desired state, so a miss is always safe.
+ */
+const armedNetworkBoundaries = new Map<string, BoundaryArmRecord>();
+/** In-flight arms, so two prompts on one sandbox never race two PUTs at the
+ *  provider. Same digest joins; a different digest queues behind it. */
+const inFlightNetworkBoundaries = new Map<string, { digest: string; done: Promise<void> }>();
+
+/** Test seam: drop every remembered arm so a case starts from a cold replica. */
+export function __resetNetworkBoundaryArmCacheForTests(): void {
+  armedNetworkBoundaries.clear();
+  inFlightNetworkBoundaries.clear();
+}
+
+/**
+ * Identity AND material of the binding set, as the provider edge sees it.
+ *
+ * Keyed on everything a re-arm would change at the edge — the replica identity
+ * (`secretId`), the attachment (`alias`), the policy (`hosts`, `header`,
+ * `onEcho`) and the credential itself (`value`). A rotated value or a widened
+ * host list therefore produces a different digest and DOES re-arm; only a
+ * byte-identical desired state is skipped. Order-independent, because binding
+ * order carries no meaning at the edge.
+ *
+ * The secret value is hashed, never retained: only this hex digest is stored.
+ */
+function networkBoundaryDigest(
+  providerName: ProviderName,
+  bindings: NetworkBoundarySecretBinding[],
+): string {
+  const material = bindings
+    .map((binding) =>
+      JSON.stringify([
+        binding.secretId,
+        binding.alias,
+        [...binding.hosts].map((host) => host.toLowerCase()).sort(),
+        binding.header.toLowerCase(),
+        binding.onEcho,
+        binding.value,
+      ]),
+    )
+    .sort()
+    .join('\n');
+  return createHash('sha256').update(`${providerName}\n${material}`).digest('hex');
+}
+
+function rememberNetworkBoundaryArm(externalId: string, digest: string, secretIds: string[]): void {
+  armedNetworkBoundaries.delete(externalId);
+  if (armedNetworkBoundaries.size >= BOUNDARY_ARM_CACHE_MAX) {
+    const cutoff = Date.now() - BOUNDARY_ARM_TTL_MS;
+    for (const [key, record] of armedNetworkBoundaries) {
+      if (record.armedAt <= cutoff) armedNetworkBoundaries.delete(key);
+    }
+    // Still full of live entries — evict the least recently written. Map
+    // iteration is insertion order and every refresh deletes before it sets,
+    // so the first key is the oldest write.
+    while (armedNetworkBoundaries.size >= BOUNDARY_ARM_CACHE_MAX) {
+      const oldest = armedNetworkBoundaries.keys().next();
+      if (oldest.done) break;
+      armedNetworkBoundaries.delete(oldest.value);
+    }
+  }
+  armedNetworkBoundaries.set(externalId, { digest, armedAt: Date.now(), secretIds: [...secretIds] });
+}
+
+function startNetworkBoundaryArm(
+  providerName: ProviderName,
+  externalId: string,
+  bindings: NetworkBoundarySecretBinding[],
+  digest: string,
+): Promise<void> {
+  const previous = inFlightNetworkBoundaries.get(externalId);
+  if (previous?.digest === digest) return previous.done;
+  // A different desired set must not race the one already in flight: the
+  // provider PUT is last-write-wins, so two overlapping arms could leave the
+  // edge on the older set. Queue instead.
+  const done = (previous?.done ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      const provider = getProvider(providerName);
+      if (!provider.syncNetworkBoundary) {
+        throw new Error(
+          `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
+        );
+      }
+      try {
+        await provider.syncNetworkBoundary(externalId, bindings);
+        rememberNetworkBoundaryArm(
+          externalId,
+          digest,
+          bindings.map((binding) => binding.secretId),
+        );
+      } catch (err) {
+        // Never leave a record claiming an arm that did not land — the next
+        // caller must retry it.
+        armedNetworkBoundaries.delete(externalId);
+        throw err;
+      } finally {
+        if (inFlightNetworkBoundaries.get(externalId)?.done === done) {
+          inFlightNetworkBoundaries.delete(externalId);
+        }
+      }
+    });
+  inFlightNetworkBoundaries.set(externalId, { digest, done });
+  return done;
+}
+
+/**
+ * Apply this session's network-boundary bindings at the provider edge.
+ *
+ * Returns `'skipped'` when there is nothing to do (provider does not need the
+ * call, or this sandbox is already armed with this exact set), `'armed'` when
+ * the provider confirmed, and `'pending'` when the caller's wait budget expired
+ * while the arm was still running in the background.
+ *
+ * `maxWaitMs` is the CALLER's patience, not the arm's deadline. Omit it — as
+ * the secret fan-out does — to wait for the real result and report a failure.
+ */
 async function syncProviderNetworkBoundary(
   providerName: ProviderName,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
-): Promise<void> {
-  if (!shouldSyncProviderNetworkBoundary(providerName, bindings.length)) return;
-  const provider = getProvider(providerName);
-  if (!provider.syncNetworkBoundary) {
-    throw new Error(
-      `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
-    );
+  opts?: { maxWaitMs?: number },
+): Promise<'skipped' | 'armed' | 'pending'> {
+  if (!shouldSyncProviderNetworkBoundary(providerName, bindings.length)) return 'skipped';
+  const digest = networkBoundaryDigest(providerName, bindings);
+  const armed = armedNetworkBoundaries.get(externalId);
+  if (armed?.digest === digest && Date.now() - armed.armedAt < BOUNDARY_ARM_TTL_MS) {
+    return 'skipped';
   }
-  await provider.syncNetworkBoundary(externalId, bindings);
+
+  const attempt = startNetworkBoundaryArm(providerName, externalId, bindings, digest);
+  const maxWaitMs = opts?.maxWaitMs;
+  if (!maxWaitMs) {
+    await attempt;
+    return 'armed';
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      // Both legs are handled here, so a rejection that lands AFTER the timeout
+      // wins is still consumed — it can never surface as an unhandled rejection.
+      attempt.then(
+        () => 'armed' as const,
+        (error: unknown) => ({ error }),
+      ),
+      new Promise<'pending'>((resolve) => {
+        timer = setTimeout(() => resolve('pending'), maxWaitMs);
+      }),
+    ]);
+    if (typeof outcome === 'object') throw outcome.error;
+    return outcome;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export interface SandboxEnvSnapshot {
@@ -348,12 +525,80 @@ export async function syncSandboxEnvForPrompt(args: {
     args.requestedAgent,
   );
   if (!snapshot) return;
+  // Resolving the bindings stays FAIL-CLOSED: it re-reads the agent's grant, and
+  // an unresolvable grant must refuse the prompt (the caller maps
+  // SecretGrantResolutionError / AgentSecretGrantMismatchError to its own
+  // response). In practice `resolveSandboxEnvSnapshot` above already resolved the
+  // same grant and threw first — this line cannot silently widen anything.
   const networkBoundary = await resolveSessionNetworkBoundary(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
   );
-  await syncProviderNetworkBoundary(args.providerName, args.externalId, networkBoundary);
+  // Sampled BEFORE the attempt, because a failed arm forgets its record. `true`
+  // means this process already armed a DIFFERENT set on this sandbox (an
+  // unchanged set never reaches the provider at all), so a failure below leaves
+  // the edge holding the PREVIOUS bindings. That is the one case the fail-soft
+  // below does not fully cover: a narrowing that does not land keeps a
+  // credential injectable at the edge — still never readable in the guest —
+  // until the next successful arm. It is logged so it is greppable.
+  // A REVOCATION must not fail soft. When the desired set drops a binding this
+  // process already armed, the arm IS the revocation (the provider PUT shrinks
+  // the attachment and DELETEs the dropped replica). Swallowing that leaves the
+  // edge injecting a credential for an agent that no longer holds the grant —
+  // the value still never enters the guest, but the agent keeps making
+  // authenticated calls, which is a widening, not a broken feature. So a shrink
+  // that fails is raised, exactly as before this change. A widening or a
+  // rotation that fails still forwards the turn.
+  const priorArm = armedNetworkBoundaries.get(args.externalId);
+  const hadPriorArm = priorArm !== undefined;
+  const nextSecretIds = new Set(networkBoundary.map((binding) => binding.secretId));
+  const revokesArmedBinding = (priorArm?.secretIds ?? []).some((id) => !nextSecretIds.has(id));
+  try {
+    // ARMING, by contrast, fails SOFT — a failed or late arm cannot leak.
+    // A network-boundary secret's value never enters the sandbox: the provider
+    // injects it at its own egress edge and the guest receives no value, alias
+    // or placeholder. So skipping the arm cannot disclose anything; the only
+    // consequence is that the agent's outbound request goes without the header
+    // and the upstream answers 401. That is a broken feature, not an exposure —
+    // and it beats the alternative we shipped, where one egress secret made
+    // EVERY turn in the project 502 and the agent could not run at all.
+    //
+    // SCOPE: this fail-soft covers the provider-arming call and nothing else.
+    // It does not extend to the grant resolution above (failing open there would
+    // widen what the agent may read), and it must not be copied into the
+    // provision path in platform/services/session-sandbox.ts — a session that
+    // cannot arm its boundary should still fail to provision, loudly.
+    const armState = await syncProviderNetworkBoundary(
+      args.providerName,
+      args.externalId,
+      networkBoundary,
+      { maxWaitMs: PROMPT_BOUNDARY_ARM_WAIT_MS },
+    );
+    if (armState === 'pending' && revokesArmedBinding) {
+      throw new Error(
+        `network-boundary revocation did not land within ${PROMPT_BOUNDARY_ARM_WAIT_MS}ms for ${args.externalId}`,
+      );
+    }
+    if (armState === 'pending') {
+      console.warn(
+        `[env-sync] network boundary still arming after ${PROMPT_BOUNDARY_ARM_WAIT_MS}ms; ` +
+          `forwarding the prompt without waiting session=${args.sessionId} sandbox=${args.externalId} ` +
+          `bindings=${networkBoundary.length} replaces-previous-set=${hadPriorArm}`,
+      );
+    }
+  } catch (err) {
+    // The one case that must still refuse the turn: an arm that would have
+    // REMOVED a binding the edge is holding. See the comment on
+    // `revokesArmedBinding`.
+    if (revokesArmedBinding) throw err;
+    console.warn(
+      `[env-sync] network-boundary arm failed; continuing the turn without it ` +
+        `session=${args.sessionId} sandbox=${args.externalId} bindings=${networkBoundary.length} ` +
+        `replaces-previous-set=${hadPriorArm}: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
@@ -459,6 +704,11 @@ export async function propagateProjectSecretsToActiveSandboxes(
         if (!snapshot) throw new Error('session env snapshot is unavailable');
         const providerName = row.provider as ProviderName;
         const networkBoundary = await resolveSessionNetworkBoundary(projectId, row.sessionId);
+        // No wait budget and no fail-soft here. This is the secret-CRUD fan-out:
+        // it is the path that DELIVERS a rotated credential to the edge, and its
+        // caller reports the per-sandbox outcome to the author who just saved the
+        // secret. An arming failure has to be visible there, so it stays a
+        // `status: 'failed'` row rather than a warning nobody reads.
         await syncProviderNetworkBoundary(providerName, row.externalId, networkBoundary);
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         const proof = await postEnvToDaemon({

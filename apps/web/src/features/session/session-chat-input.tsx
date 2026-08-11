@@ -1356,7 +1356,6 @@ function SessionChatInputImpl({
             variants={variants}
             selectedVariant={selectedVariant}
             onVariantChange={onVariantChange}
-            projectId={projectId}
             messages={messages}
             onContextClick={onContextClick}
             toolbarSlot={toolbarSlot}

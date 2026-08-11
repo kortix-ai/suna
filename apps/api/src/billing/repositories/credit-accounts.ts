@@ -22,21 +22,6 @@ export async function isDemoEnterprise(accountId: string): Promise<boolean> {
   return row?.demoEnterprise ?? false;
 }
 
-/**
- * Flip the enterprise-demo flag. Upserts the credit row so a brand-new account
- * (no billing row yet) can still preview the enterprise surface — all other
- * columns fall back to their schema defaults (tier 'free', legacy billing, …).
- */
-export async function setDemoEnterprise(accountId: string, enabled: boolean): Promise<void> {
-  await db
-    .insert(creditAccounts)
-    .values({ accountId, demoEnterprise: enabled })
-    .onConflictDoUpdate({
-      target: creditAccounts.accountId,
-      set: { demoEnterprise: enabled, updatedAt: new Date().toISOString() },
-    });
-}
-
 /** Whether the account is flagged as a contracted cloud Enterprise customer.
  *  When true the account resolves all enterprise entitlements (SSO/SCIM/RBAC/
  *  audit) regardless of its billing tier — decoupling feature entitlements
@@ -51,42 +36,13 @@ export async function isEnterpriseEntitled(accountId: string): Promise<boolean> 
   return row?.enterpriseEntitled ?? false;
 }
 
-/**
- * Set the contracted-Enterprise entitlement flag. Upserts the credit row so a
- * brand-new account (no billing row yet) can be flagged at sign-up — all other
- * columns fall back to their schema defaults (tier 'free', legacy billing, …)
- * and the Stripe webhook reconciliation will populate billing_model/tier/seat
- * fields from the customer's subscription without clobbering this entitlement.
- */
-export async function setEnterpriseEntitled(
-  accountId: string,
-  enabled: boolean,
-): Promise<void> {
-  await db
-    .insert(creditAccounts)
-    .values({ accountId, enterpriseEntitled: enabled })
-    .onConflictDoUpdate({
-      target: creditAccounts.accountId,
-      set: { enterpriseEntitled: enabled, updatedAt: new Date().toISOString() },
-    });
-}
-
-/**
- * Set the operator managed-models override. null restores "the effective tier
- * decides". Upserts so a brand-new account (no billing row yet) can be set.
- */
-export async function setManagedModelsOverride(
-  accountId: string,
-  override: boolean | null,
-): Promise<void> {
-  await db
-    .insert(creditAccounts)
-    .values({ accountId, managedModelsOverride: override })
-    .onConflictDoUpdate({
-      target: creditAccounts.accountId,
-      set: { managedModelsOverride: override, updatedAt: new Date().toISOString() },
-    });
-}
+// NOTE — there are deliberately no `setEnterpriseEntitled` /
+// `setManagedModelsOverride` / `setDemoEnterprise` writers here any more.
+// Those three columns are ADMIN-OWNED (billing/services/account-write-owner.ts):
+// every write goes through `applyAdminOverride`, which enforces the ownership
+// boundary against provider sync and invalidates the billing cache. A private
+// per-column setter is exactly the bypass that boundary exists to prevent.
+// The readers above stay — reading is not a write.
 
 export async function getCreditBalance(accountId: string) {
   const [row] = await db

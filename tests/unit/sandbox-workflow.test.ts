@@ -22,6 +22,7 @@ describe('sandbox test workflow', () => {
       'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2',
     );
     expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts --packages-only');
+    expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
     expect(testWorkflow).toContain('timeout-minutes: 90');
     expect(testWorkflow).toContain('SANDBOX_TEST_RUN_ID: ${{ github.run_id }}-${{ matrix.lane }}');
   });

@@ -183,9 +183,15 @@ locals {
     "arn:aws:iam::${local.account_id}:role/kortix-*",
     # compliance-monitoring: KortixEc2CpuAlarmReconciler
     "arn:aws:iam::${local.account_id}:role/Kortix*",
+    # compliance-monitoring manages the DrataSNSSubscriptionInspection inline
+    # policy ON Drata's role (first global-apply run 403'd on GetRolePolicy).
+    "arn:aws:iam::${local.account_id}:role/DrataAutopilotRole",
     # legacy-roles.tf
     "arn:aws:iam::${local.account_id}:role/whatsapp-gateway-*",
-    "arn:aws:iam::${local.account_id}:role/bedrock-logs",
+    # bedrock-logs lives under an IAM path — role/bedrock-logs does NOT match
+    # (second global-apply run 403'd on GetRole). qa-portal is a legacy import.
+    "arn:aws:iam::${local.account_id}:role/service-role/bedrock-logs",
+    "arn:aws:iam::${local.account_id}:role/qa-portal",
     # main.tf service-delivery roles
     "arn:aws:iam::${local.account_id}:role/cloudtrail-cloudwatch-logs-role",
     "arn:aws:iam::${local.account_id}:role/vpc-flow-logs-role",

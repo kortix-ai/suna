@@ -1119,3 +1119,27 @@ export const SecretSchema = z.object({
   requires_rotation: z.boolean(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
+
+export const GrantSecretToAgentInputSchema = z
+  .object({ agent: z.string().trim().min(1).max(200) })
+  .strict();
+export type GrantSecretToAgentInput = z.infer<typeof GrantSecretToAgentInputSchema>;
+
+/**
+ * Result of POST /projects/:projectId/secrets/:identifier/grant — the one-click
+ * fix for `delivery_blocked_reason: 'no_agent_grant'`.
+ *
+ * `adopted_governance` is the field that matters. It is true when the commit
+ * published the project's FIRST agent roster, which flips the project from
+ * "every agent may receive every secret" to "an agent the manifest does not
+ * list receives nothing". Surface it; a caller that ignores it silently
+ * revokes working secrets from every undeclared agent.
+ */
+export const GrantSecretToAgentResultSchema = z.object({
+  identifier: z.string(),
+  agent: z.string(),
+  /** The agent already admitted this identifier, so no commit was made. */
+  already_granted: z.boolean(),
+  adopted_governance: z.boolean(),
+});
+export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;
