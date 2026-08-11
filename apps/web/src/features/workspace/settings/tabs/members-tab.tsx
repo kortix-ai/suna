@@ -845,7 +845,7 @@ export function MembersTabView({
     : members;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
+    <div className="mx-auto w-full max-w-4xl space-y-6">
       {/* The pane's page heading, above the tab bar — it titles the whole
           pane, not one tab, and its copy comes from the rail (`rail.ts`) so it
           can never drift from the "Members" row's own label. Only the role

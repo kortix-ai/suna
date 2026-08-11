@@ -307,7 +307,7 @@ export function ProfileTabView({
       : 'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.';
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="profile" />
 
       {/* Profile picture, email, name — one group, one border, hairlines

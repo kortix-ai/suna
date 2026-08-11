@@ -6,7 +6,6 @@ import {
   CubeIcon as Boxes,
   ChatTeardropIcon,
   CoinsIcon as Coins,
-  CommandIcon as Command,
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FingerprintIcon as Fingerprint,
@@ -143,6 +142,7 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'repositories',
         label: 'Repositories',
         icon: GitFork,
+        description: "Where this workspace's code lives, and how to work on it from your computer.",
       },
       {
         tab: 'schedules',
@@ -163,11 +163,6 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'models',
         label: 'Models',
         icon: Boxes,
-      },
-      {
-        tab: 'instructions',
-        label: 'Instructions',
-        icon: Command,
       },
       {
         tab: 'sandbox',
@@ -228,6 +223,10 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'api-keys',
         label: 'API keys',
         icon: ApiKeys,
+        // The pane opened with a bare title and no line saying what a key is
+        // for, so the first thing a reader met was a list of nouns
+        // ("service accounts", "PAT lifecycle"). Say the job instead.
+        description: 'Let the Kortix CLI, a script, or a CI job use this workspace.',
       },
       {
         tab: 'experimental',

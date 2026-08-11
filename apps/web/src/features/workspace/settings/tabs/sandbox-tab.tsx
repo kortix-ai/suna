@@ -364,7 +364,7 @@ export function SandboxTabView({
   templatesSlot,
 }: SandboxTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <div className="space-y-8">
         <SettingsTabHeader tab="sandbox" action={headerAction} />
         {isLoading ? (

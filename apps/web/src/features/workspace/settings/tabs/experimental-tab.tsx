@@ -241,76 +241,78 @@ export function ExperimentalTabView({
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="experimental" />
 
-      {!isLoading && !isError && showSearch ? (
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <Search />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            placeholder="Search features"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            variant="popover"
-          />
-          <InputGroupSearchClear onClick={() => onQueryChange('')} />
-        </InputGroupSearch>
-      ) : null}
+      <div className="space-y-4">
+        {!isLoading && !isError && showSearch ? (
+          <InputGroupSearch>
+            <InputGroupSearchIcon>
+              <Search />
+            </InputGroupSearchIcon>
+            <InputGroupSearchInput
+              placeholder="Search features"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              variant="popover"
+            />
+            <InputGroupSearchClear onClick={() => onQueryChange('')} />
+          </InputGroupSearch>
+        ) : null}
 
-      {isLoading ? (
-        <Skeleton className="h-40 rounded-md" />
-      ) : isError ? (
-        <ErrorState
-          size="sm"
-          title="Failed to load project"
-          description={errorMessage}
-          action={
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              Retry
-            </Button>
-          }
-        />
-      ) : features.length === 0 ? (
-        // Two different nothings. A search that matches nothing is a dead end
-        // you can back out of by clearing the field; a deployment with no flags
-        // at all is a fact about the deployment. Showing the second in place of
-        // the first reads as "this feature does not exist here" and sends the
-        // reader looking for a problem that is one backspace away — the same
-        // split `secrets-view.tsx` makes.
-        searching ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No matches for <span className="text-foreground font-mono">{query}</span>.
-          </p>
-        ) : (
-          // The shared primitive, not a bare sentence — ported from `main`'s
-          // `feature-flags-view.tsx`, which is what every other empty pane in
-          // this panel renders.
-          <EmptyState
+        {isLoading ? (
+          <Skeleton className="h-40 rounded-md" />
+        ) : isError ? (
+          <ErrorState
             size="sm"
-            icon={FlagIcon}
-            title="No experimental features"
-            description="This deployment exposes no per-project feature flags."
+            title="Failed to load project"
+            description={errorMessage}
+            action={
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            }
           />
-        )
-      ) : (
-        <>
-          <div className="bg-popover divide-border divide-y rounded-md border">
-            {features.map((feature) => (
-              <ExperimentalFeatureRow
-                key={feature.key}
-                feature={feature}
-                pending={pendingKeys.includes(feature.key)}
-                canManage={canManage}
-                onToggle={onToggle}
-              />
-            ))}
-          </div>
-          {showPermissionNotice ? (
-            <p className="text-muted-foreground text-xs">
-              You need the project&apos;s customize-write permission to change a feature flag.
+        ) : features.length === 0 ? (
+          // Two different nothings. A search that matches nothing is a dead end
+          // you can back out of by clearing the field; a deployment with no flags
+          // at all is a fact about the deployment. Showing the second in place of
+          // the first reads as "this feature does not exist here" and sends the
+          // reader looking for a problem that is one backspace away — the same
+          // split `secrets-view.tsx` makes.
+          searching ? (
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              No matches for <span className="text-foreground font-mono">{query}</span>.
             </p>
-          ) : null}
-        </>
-      )}
+          ) : (
+            // The shared primitive, not a bare sentence — ported from `main`'s
+            // `feature-flags-view.tsx`, which is what every other empty pane in
+            // this panel renders.
+            <EmptyState
+              size="sm"
+              icon={FlagIcon}
+              title="No experimental features"
+              description="This deployment exposes no per-project feature flags."
+            />
+          )
+        ) : (
+          <>
+            <div className="bg-popover divide-border divide-y rounded-md border">
+              {features.map((feature) => (
+                <ExperimentalFeatureRow
+                  key={feature.key}
+                  feature={feature}
+                  pending={pendingKeys.includes(feature.key)}
+                  canManage={canManage}
+                  onToggle={onToggle}
+                />
+              ))}
+            </div>
+            {showPermissionNotice ? (
+              <p className="text-muted-foreground text-xs">
+                You need the project&apos;s customize-write permission to change a feature flag.
+              </p>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }

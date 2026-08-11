@@ -184,7 +184,6 @@ const REAL_VIEW_TABS: readonly SettingsTab[] = [
   'schedules',
   'webhooks',
   'models',
-  'instructions',
   'marketplace',
   'review',
   'voice',

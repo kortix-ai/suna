@@ -44,7 +44,7 @@
  * **Layers.** `ProviderConnectView` is pure (props only, no hooks) so it renders
  * under `renderToStaticMarkup` with no `QueryClientProvider` — the repo's only
  * render-assertion idiom. `ProviderConnect` is the container and owns every
- * hook. Same split as `sandbox-tab.tsx` / `instructions-tab.tsx`.
+ * hook. Same split as `sandbox-tab.tsx` / `models-tab.tsx`.
  */
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';

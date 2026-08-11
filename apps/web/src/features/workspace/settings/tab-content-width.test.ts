@@ -12,17 +12,37 @@
  *   FORMS  `max-w-2xl` — single-column settings, the width the design system
  *          already prescribes (`.claude/skills/kortix-design-system/SKILL.md`,
  *          "Container: mx-auto w-full max-w-2xl").
- *   TABLES `max-w-4xl` — surfaces with a real table or a dense list, which
- *          genuinely need the horizontal room.
+ *   TABLES `max-w-4xl` — surfaces with a real table, which genuinely need the
+ *          horizontal room.
+ *
+ * Jay's follow-up (2026-08-12): the rule was right, the classification was not.
+ * Four tabs sat in the TABLE tier with no table anywhere in them — Sandbox,
+ * Snapshots, Groups and Identity render card/row lists, so they were claiming
+ * 896px of column they never used and pulling the eye sideways on every hop
+ * from General. They now sit at `max-w-2xl` with the forms, and `max-w-2xl` is
+ * the panel default — including for the Customize sections the panel mounts
+ * (see the second describe block below).
+ *
+ * The check that decides the tier reads the tab's SUBTREE, not just its own
+ * file. Half these tabs are a container plus a slot, and the table lives in the
+ * slot child: Audit's is in `components/iam/audit-tab.tsx` (13 elements),
+ * Roles' in `components/iam/roles-tab.tsx` (11), Api-keys' in
+ * `components/iam/api-keys-card.tsx` (rewritten 2026-08-12; the table used to
+ * live in the deleted `service-accounts-card.tsx`), Usage's in
+ * `features/billing/credit-transactions.tsx` (15). Grepping only
+ * `settings/tabs/*.tsx` finds a table in `members-tab.tsx` alone and reads those
+ * four as card lists, which is how a 7-column audit log nearly lost 224px of
+ * column. `TAB_SUBTREE` below is that missing hop, and the test asserts each
+ * mapped child is really mounted so the map cannot rot into a rubber stamp.
  *
  * This test exists because the rule is otherwise unenforceable: a new tab that
  * picks its own width compiles, renders, and passes every other test. Adding a
  * tab means adding it to one of the two lists below — deliberately, not by
  * copying whichever neighbour you happened to open first.
  *
- * Two tabs delegate their container to a child view and so declare no width of
- * their own; they are listed as such rather than omitted, so a future reader
- * can tell "delegates" apart from "forgotten".
+ * One tab delegates its container to a child view and so declares no width of
+ * its own; it is listed as such rather than omitted, so a future reader can tell
+ * "delegates" apart from "forgotten".
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -30,6 +50,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const TABS_DIR = join(import.meta.dir, 'tabs');
+const SRC_DIR = join(import.meta.dir, '..', '..', '..');
 
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
@@ -37,29 +58,65 @@ const FORM_TABS = [
   'connected-tab.tsx',
   'experimental-tab.tsx',
   'general-tab.tsx',
+  'groups-tab.tsx',
+  'identity-tab.tsx',
   'organization-tab.tsx',
   'preferences-tab.tsx',
   'profile-tab.tsx',
+  'sandbox-tab.tsx',
+  'snapshots-tab.tsx',
 ];
 
-/** Tables and dense lists, which need the extra horizontal room. */
+/** Real tables, which need the extra horizontal room. */
 const TABLE_TABS = [
   'api-keys-tab.tsx',
   'audit-tab.tsx',
-  'groups-tab.tsx',
-  'identity-tab.tsx',
   'members-tab.tsx',
   'roles-tab.tsx',
-  'sandbox-tab.tsx',
-  'snapshots-tab.tsx',
   'usage-tab.tsx',
 ];
 
 /** Render a child view that brings its own container, so they declare no width. */
-const DELEGATING_TABS = ['instructions-tab.tsx', 'models-tab.tsx'];
+const DELEGATING_TABS = ['models-tab.tsx'];
+
+/** `<Table*>` markup — the ONLY thing that earns a tab the wide tier. */
+const TABLE_MARKUP = /<Table(>|Header|Row|Body|Cell|Head\b)/;
+
+/**
+ * Content each tab mounts through a slot, src-relative. A tab whose body is a
+ * container plus `{someSlot}` holds no markup of its own, so its tier is decided
+ * here — see this file's header comment.
+ */
+const TAB_SUBTREE: Record<string, string[]> = {
+  'api-keys-tab.tsx': ['components/iam/api-keys-card.tsx', 'components/iam/key-rules-card.tsx'],
+  'audit-tab.tsx': ['components/iam/audit-tab.tsx', 'components/iam/audit-webhooks-card.tsx'],
+  'groups-tab.tsx': ['components/iam/groups-tab.tsx'],
+  'identity-tab.tsx': [
+    'components/iam/identity-intro.tsx',
+    'components/iam/scim-card.tsx',
+    'components/iam/sso-card.tsx',
+  ],
+  'roles-tab.tsx': ['components/iam/roles-tab.tsx'],
+  'usage-tab.tsx': [
+    'features/billing/cost-explorer/cost-explorer.tsx',
+    'features/billing/credit-transactions.tsx',
+  ],
+};
+
+function tabSource(file: string): string {
+  return readFileSync(join(TABS_DIR, file), 'utf8');
+}
+
+/** True when the tab renders a table itself OR through a slot child. */
+function rendersTable(file: string): boolean {
+  if (TABLE_MARKUP.test(tabSource(file))) return true;
+  return (TAB_SUBTREE[file] ?? []).some((child) =>
+    TABLE_MARKUP.test(readFileSync(join(SRC_DIR, child), 'utf8')),
+  );
+}
 
 function firstContainerWidth(file: string): string | null {
-  const source = readFileSync(join(TABS_DIR, file), 'utf8');
+  const source = tabSource(file);
   // Only the outermost `mx-auto w-full max-w-*` counts — inner `max-w-*` on a
   // paragraph or a field is a different concern and must not be picked up.
   const match = source.match(/mx-auto w-full (max-w-[a-z0-9]+)/);
@@ -104,4 +161,80 @@ describe('settings tab content width', () => {
     );
     expect([...widths].sort()).toEqual(['max-w-2xl', 'max-w-4xl']);
   });
+
+  // The wide tier is not a matter of taste: it is "this tab renders a table",
+  // in its own file or in the slot child it mounts. Without this, the four tabs
+  // moved down to `max-w-2xl` on 2026-08-12 can drift back up one at a time,
+  // each with its own local justification.
+  test('the wide tier is exactly the tabs that render a table', () => {
+    const wide = [...FORM_TABS, ...TABLE_TABS].filter(rendersTable).sort();
+    expect(wide).toEqual([...TABLE_TABS].sort());
+  });
+
+  // `TAB_SUBTREE` decides four of the five wide tabs, so a stale entry silently
+  // turns the test above into a rubber stamp: point it at a file the tab no
+  // longer mounts and the tier stops being evidence-based. `readFileSync` covers
+  // "the child was deleted"; this covers "the child is no longer mounted here".
+  test('every mapped slot child is actually mounted by its tab', () => {
+    for (const [tab, children] of Object.entries(TAB_SUBTREE)) {
+      const source = tabSource(tab);
+      for (const child of children) {
+        expect(source).toContain(child.replace(/\.tsx$/, ''));
+      }
+    }
+  });
+});
+
+/**
+ * The panel does not only mount `tabs/*.tsx`. Secrets, Channels, Schedules,
+ * Webhooks, Voice, Upgrades and the gateway views are Customize sections that
+ * take their container from `CustomizeSectionWrapper`, and Repositories brings
+ * its own. Those are settings panel content too, so the same two-width rule
+ * governs them — a third width there is exactly the drift this file exists to
+ * stop (the wrapper carried `max-w-3xl` until 2026-08-12).
+ */
+const PANEL_SECTIONS_VIA_WRAPPER = [
+  'features/workspace/customize/sections/view/secrets-view.tsx',
+  'features/workspace/customize/sections/view/channels-view.tsx',
+  'features/workspace/customize/sections/view/voice-view.tsx',
+  'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
+  'features/workspace/customize/sections/view/gateway/gateway-routing.tsx',
+  'features/workspace/customize/sections/view/gateway/gateway-playground.tsx',
+  'components/projects/schedule-view.tsx',
+];
+
+/** Panel sections that declare their own container instead of the wrapper's. */
+const PANEL_SECTIONS_OWN_CONTAINER = ['features/workspace/customize/sections/view/git-view.tsx'];
+
+function srcFile(relative: string): string {
+  return readFileSync(join(SRC_DIR, relative), 'utf8');
+}
+
+describe('customize sections mounted in the settings panel', () => {
+  test('the shared wrapper defaults to the panel column, not a third width', () => {
+    const wrapper = srcFile('features/workspace/customize/sections/component/section-wrapper.tsx');
+    expect(wrapper).toContain('mx-auto w-full max-w-2xl');
+    expect(wrapper).not.toContain('mx-auto w-full max-w-3xl');
+  });
+
+  for (const relative of PANEL_SECTIONS_VIA_WRAPPER) {
+    test(`${relative} takes the wrapper's column unchanged`, () => {
+      const source = srcFile(relative);
+      // Guard against this test quietly becoming unfalsifiable: if the view stops
+      // mounting the wrapper (renamed, refactored, deleted), the width assertion
+      // below would pass on a file that no longer has a container at all.
+      expect(source).toContain('<CustomizeSectionWrapper');
+      // A `className` handed to the wrapper wins over its base width (twMerge),
+      // so a `max-w-*` in the props of that element is an override.
+      const props = source.slice(source.indexOf('<CustomizeSectionWrapper'));
+      const firstElement = props.slice(0, props.indexOf('>'));
+      expect(firstElement).not.toMatch(/max-w-/);
+    });
+  }
+
+  for (const relative of PANEL_SECTIONS_OWN_CONTAINER) {
+    test(`${relative} declares the panel column itself`, () => {
+      expect(srcFile(relative)).toContain('mx-auto w-full max-w-2xl');
+    });
+  }
 });

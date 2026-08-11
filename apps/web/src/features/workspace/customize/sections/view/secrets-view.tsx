@@ -247,7 +247,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
           !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
             <Button size="sm" variant="secondary" onClick={openCreate}>
               <PlusIcon className="size-4 shrink-0" />
-              Add
+              AddS
             </Button>
           ) : null
         }

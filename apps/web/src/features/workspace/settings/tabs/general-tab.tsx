@@ -20,13 +20,43 @@
  *   drift"). Its own behavior is unchanged; only its host page moved.
  * - The Danger Zone (renamed "Delete workspace" per the task brief, to match
  *   the Profile tab's own "Delete account" section naming) — same
- *   `archiveProject` mutation, same `ConfirmDialog`, same recoverable-archive
- *   semantics. The mechanism is still an archive (`archiveProject`), NOT a
- *   hard delete — no `deleteProject` function exists anywhere in `@kortix/sdk`
- *   (checked: `grep -rn "deleteProject\b" packages/sdk/src apps/web/src`
- *   returns nothing). The section heading uses the brief's wording; the row
- *   copy stays honest about what actually happens (hide + recoverable, not
- *   permanent removal), same as the original "Archive Project" copy.
+ *   `archiveProject` mutation. The mechanism is still an archive, NOT a row
+ *   delete: no `deleteProject` exists anywhere in `@kortix/sdk` (checked:
+ *   `grep -rn "deleteProject\b" packages/sdk/src apps/web/src` returns
+ *   nothing).
+ *
+ *   **The copy used to say "recoverable". That was wrong, and it is fixed
+ *   here.** The word described the DB row, not the product. Traced end to end
+ *   (2026-08-12):
+ *   - `archiveProject()` is `DELETE /v1/projects/:id`
+ *     (`packages/sdk/src/core/rest/projects-client/projects.ts`), which sets
+ *     `status: 'archived'` (`apps/api/src/projects/routes/r6.ts`).
+ *   - `loadProjectForUser` — the gate in front of EVERY project-scoped route —
+ *     returns `null` for an archived row
+ *     (`apps/api/src/projects/lib/access.ts:575`). So every session, secret,
+ *     integration and key under it 404s. This is not "hidden from a list".
+ *   - Triggers and scheduled runs only fire for `status = 'active'`
+ *     (`apps/api/src/projects/lib/triggers.ts`,
+ *     `apps/api/src/projects/trigger-execution-store.ts`), so automation stops
+ *     immediately.
+ *   - Nothing in `apps/web` or `@kortix/sdk` can un-archive a project — there
+ *     is no route, no SDK call, and no UI. Only the platform-admin surface can
+ *     even list archived rows (`packages/sdk/src/react/use-admin-projects.ts`).
+ *
+ *   So from the user's side the loss is total and one-way, and the copy now
+ *   says that. What it does NOT say is that the data is erased, because it is
+ *   not — and it explicitly reassures that the Git repository survives, which
+ *   is true: `deleteManagedProjectRepo` runs only under `?purge=true`
+ *   (`r6.ts`), a query param `archiveProject()` never sends. Claiming the repo
+ *   was destroyed would be the one genuinely false thing this dialog could
+ *   say, and it is the thing users would panic about first.
+ *
+ *   Because the action is irreversible AND ambiguous (an account has several
+ *   workspaces; the wrong one is one click away), the confirmation is
+ *   `TypeToConfirmDialog` — the user types the workspace name — rather than the
+ *   one-click `ConfirmDialog`. See `components/ui/type-to-confirm-dialog.tsx`
+ *   for why that primitive exists and why the matcher is a separate pure
+ *   function.
  *
  * **New: the icon field.** Reuses `ProjectIconField`
  * (`features/projects/modal/project-icon-field.tsx`) and
@@ -93,7 +123,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Input } from '@/components/ui/input';
 import {
@@ -107,6 +136,7 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { TypeToConfirmDialog } from '@/components/ui/type-to-confirm-dialog';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { buildProjectEditPatch } from '@/features/projects/modal/project-edit-patch';
 import {
@@ -139,6 +169,40 @@ import {
   pollSandboxProviderTransition,
 } from '../../customize/sections/view/sandbox-provider-result';
 import { SettingsTabHeader } from '../settings-tab-header';
+
+/**
+ * What the user actually loses, in the order they will care about it.
+ *
+ * Module-level and exported on purpose. The dialog renders through a Radix
+ * portal, so `renderToStaticMarkup` emits none of this copy (see
+ * `general-tab.test.tsx`) and a test asserting on rendered output would be
+ * unable to fail. Exporting the array gives the test something real to hold —
+ * see `general-tab.delete-copy.test.ts`.
+ *
+ * Every line is a traced consequence of `status: 'archived'`, not a guess.
+ * The trace, with file references, is in this file's header comment. Two
+ * standing rules for editing this list:
+ *
+ * 1. **Never claim the data is erased.** It is not — the row survives, the
+ *    Git repository survives. Claim only the loss of access, which IS total:
+ *    `loadProjectForUser` 404s every project-scoped route for an archived row.
+ * 2. **Never drop the repository reassurance below.** "Permanent" plus silence
+ *    about the repo reads as "my code is gone", which is the one thing a user
+ *    would panic about and the one thing that is false.
+ */
+export const DELETE_WORKSPACE_CONSEQUENCES = [
+  'Every session in this workspace, with its files, history, and outputs',
+  'All scheduled runs and triggers — they stop firing straight away',
+  'Every connected integration, secret, and API key scoped to this workspace',
+  'Access for everyone on the team — nobody can reach this workspace again',
+] as const;
+
+/** Stated because it is true and because its absence would be read as a
+ *  denial. `archiveProject()` sends no `?purge=true`, which is the only thing
+ *  that deletes a Kortix-managed repository (`apps/api/.../routes/r6.ts`);
+ *  user-connected repositories are never touched at all. */
+export const DELETE_WORKSPACE_REASSURANCE =
+  'Your connected Git repository is not deleted. Any code already pushed to it stays where it is.';
 
 /**
  * A section label between two groups — plain small text, optionally one line
@@ -201,7 +265,7 @@ export function GeneralTabView({
   isArchivePending = false,
 }: GeneralTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="general" />
 
       {isLoading ? (
@@ -230,7 +294,7 @@ export function GeneralTabView({
               <SettingsRowGroup>
                 <SettingsRow
                   label="Delete workspace"
-                  description="Hides it from the active project list. Current sessions remain recoverable."
+                  description="Removes this workspace and everything inside it, for every member. This cannot be undone."
                 >
                   {/* Red text, not a filled button: the weight belongs to the
                       confirmation, not to the affordance that opens it. */}
@@ -249,17 +313,28 @@ export function GeneralTabView({
         </>
       )}
 
-      <ConfirmDialog
+      <TypeToConfirmDialog
         open={archiveOpen}
         onOpenChange={(open) => {
           if (!open) onCloseArchiveDialog();
         }}
         title="Delete workspace?"
         description={
-          workspaceName ? `Archive ${workspaceName}? Current sessions remain recoverable.` : ''
+          <>
+            This deletes <span className="text-foreground font-medium">{workspaceName}</span> for
+            everyone with access to it. It cannot be undone.
+          </>
         }
-        confirmLabel="Delete"
-        confirmVariant="destructive"
+        consequencesTitle="You immediately lose:"
+        consequences={DELETE_WORKSPACE_CONSEQUENCES}
+        reassurance={DELETE_WORKSPACE_REASSURANCE}
+        // The workspace's own name, so confirming proves the user knows WHICH
+        // workspace this is — the mistake that actually costs data. While the
+        // project query is still in flight this is `''`, and
+        // `confirmationPhraseMatches` refuses to arm on a blank phrase.
+        confirmPhrase={workspaceName}
+        confirmLabel="Delete workspace"
+        cancelLabel="Keep workspace"
         onConfirm={onConfirmArchive}
         isPending={isArchivePending}
       />
@@ -425,6 +500,7 @@ function GeneralWorkspaceCard({
           onGlyphChange={(glyph) => applyIcon({ glyph })}
           onClear={() => applyIcon(null)}
           disabled={!canManage || iconMutation.isPending}
+          align="end"
         />
       </SettingsRow>
       {/* A description on every row is not decoration here: `Field`'s
@@ -545,7 +621,7 @@ function SandboxProviderRow({
             <SelectTrigger aria-label="Sandbox provider" className="h-8 w-40 shrink-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="end">
               <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
               {available.map((p) => (
                 <SelectItem key={p} value={p}>

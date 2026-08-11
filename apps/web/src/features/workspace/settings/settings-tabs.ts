@@ -31,7 +31,6 @@ export type SettingsTab =
   | 'schedules'
   | 'webhooks'
   | 'models'
-  | 'instructions'
   | 'marketplace'
   | 'review'
   | 'voice'
@@ -68,7 +67,6 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'schedules',
   'webhooks',
   'models',
-  'instructions',
   'marketplace',
   'review',
   'voice',
@@ -116,17 +114,23 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
 
 /**
  * Sections that stayed in the overlay but changed id across the merge.
- * `commands` -> `instructions` and `settings` -> `general` come from the old
- * Customize overlay; `tokens` -> `api-keys` and `transactions` -> `usage`
- * come from the old account settings surface (`SettingsTabId` in
- * `lib/menu-registry.ts`); `git` -> `repositories` is a rename within
- * Customize; `upgrade` (singular, the old Customize id) -> `upgrades`
- * (plural, the new tab id) so a bookmarked `/customize/upgrade` still
- * resolves instead of silently 404ing; every `llm-*` sub-section collapses
- * into the single `models` tab.
+ * `settings` -> `general` comes from the old Customize overlay; `tokens` ->
+ * `api-keys` and `transactions` -> `usage` come from the old account
+ * settings surface (`SettingsTabId` in `lib/menu-registry.ts`); `git` ->
+ * `repositories` is a rename within Customize; `upgrade` (singular, the old
+ * Customize id) -> `upgrades` (plural, the new tab id) so a bookmarked
+ * `/customize/upgrade` still resolves instead of silently 404ing; every
+ * `llm-*` sub-section collapses into the single `models` tab.
+ *
+ * `commands` is deliberately absent. It used to map to the `instructions`
+ * tab, which was removed along with its only content (`CommandsView`) — a
+ * settings surface with no project-level instructions field behind it. There
+ * is no successor tab to fold it into, so `/customize/commands` resolves to
+ * `null` here and the route falls back to the bare `/settings` overlay
+ * (`customize/[section]/page.tsx`) rather than deep-linking to a tab that no
+ * longer renders anything.
  */
 const RENAMED_TABS: Record<string, SettingsTab> = {
-  commands: 'instructions',
   settings: 'general',
   git: 'repositories',
   tokens: 'api-keys',

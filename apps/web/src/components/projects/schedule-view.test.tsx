@@ -19,7 +19,7 @@ describe('TriggerPauseSwitch — manager-only access gate', () => {
     const out = renderToStaticMarkup(
       <TriggerPauseSwitch canManage paused={false} isPending={false} onToggle={() => {}} />,
     );
-    expect(out).toContain('Pause all triggers');
+    expect(out).toContain('Pause all schedules and webhooks');
     expect(out).toContain('role="switch"');
   });
 
@@ -28,7 +28,7 @@ describe('TriggerPauseSwitch — manager-only access gate', () => {
       <TriggerPauseSwitch canManage={false} paused={false} isPending={false} onToggle={() => {}} />,
     );
     expect(out).toBe('');
-    expect(out).not.toContain('Pause all triggers');
+    expect(out).not.toContain('Pause all schedules and webhooks');
   });
 
   test('reflects the paused state in its label', () => {

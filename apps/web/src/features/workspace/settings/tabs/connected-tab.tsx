@@ -152,7 +152,7 @@ export function ConnectedAccountsTabView({
     );
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="connected" />
 
       {canManageAccount ? <>{githubAppSetupSlot}</> : null}

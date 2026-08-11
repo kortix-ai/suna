@@ -43,6 +43,32 @@ describe('CustomizeSectionWrapper heading — default mode', () => {
   });
 });
 
+describe('CustomizeSectionWrapper content column', () => {
+  // The settings panel mounts Secrets, Channels, Schedules, Webhooks, Voice and
+  // Upgrades through this wrapper, next to tabs that are `max-w-2xl`. It carried
+  // `max-w-3xl` until 2026-08-12, so those six sat 96px wider than General and
+  // the column jumped on every tab switch. Asserted on rendered markup, not on
+  // source text, so it fails if the class is computed away.
+  test('defaults to the settings panel column', () => {
+    const html = render('default', {});
+    expect(html).toContain('max-w-2xl');
+    expect(html).not.toContain('max-w-3xl');
+  });
+
+  // The escape hatch `apps-view.tsx` uses for its 3-up card grid: twMerge drops
+  // the base width when the caller passes one, so an opt-out is explicit and
+  // greppable rather than a second default.
+  test('a caller-supplied width replaces the default instead of stacking', () => {
+    const html = renderToStaticMarkup(
+      <CustomizeSectionWrapper title="Title" className="max-w-5xl">
+        <div>Body</div>
+      </CustomizeSectionWrapper>,
+    );
+    expect(html).toContain('max-w-5xl');
+    expect(html).not.toContain('max-w-2xl');
+  });
+});
+
 describe('CustomizeSectionWrapper heading — fill mode', () => {
   test('renders the docs link before the action when both are given', () => {
     const html = render('fill', {

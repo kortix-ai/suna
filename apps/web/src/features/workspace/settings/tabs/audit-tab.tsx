@@ -141,7 +141,7 @@ export function AuditTabView({
   webhooksSlot,
 }: AuditTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       {/* `space-y-10` wrapper — matches `page.tsx:561`'s gap between the log
           block and the webhooks card exactly. Always rendered, independent
           of which branch below fires. Carries the pane heading as its first

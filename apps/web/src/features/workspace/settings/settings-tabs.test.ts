@@ -21,12 +21,23 @@ describe('SETTINGS_TABS', () => {
       'profile', 'preferences', 'connected',
       'general', 'members', 'secrets', 'channels', 'repositories',
       'schedules', 'webhooks',
-      'models', 'instructions', 'marketplace', 'review', 'voice', 'sandbox', 'snapshots',
+      'models', 'marketplace', 'review', 'voice', 'sandbox', 'snapshots',
       'organization', 'billing', 'usage', 'groups', 'roles', 'identity', 'audit',
       'api-keys', 'experimental', 'upgrades',
     ]) {
       expect(SETTINGS_TABS).toContain(tab as never);
     }
+  });
+
+  // The Instructions tab was removed outright: it only ever rendered
+  // `CommandsView`, and the project-level instructions surface the design doc
+  // described never existed (no `instructions` field on
+  // `ProjectConfigSummary`). It is asserted absent rather than simply left out
+  // of the list above, so re-adding the id without re-adding a real view
+  // fails here instead of shipping a rail row onto the default tab.
+  test('instructions is not a tab', () => {
+    expect(SETTINGS_TABS).not.toContain('instructions' as never);
+    expect(parseSettingsTab('instructions')).toBeNull();
   });
 });
 
@@ -43,8 +54,14 @@ describe('parseSettingsTab', () => {
 });
 
 describe('legacySectionRedirect', () => {
-  test('commands folds into instructions', () => {
-    expect(legacySectionRedirect('p1', 'commands')).toBe('/projects/p1/settings/instructions');
+  // `commands` used to fold into the Instructions tab. That tab is gone and
+  // has no successor, so the id must resolve to `null` — which sends
+  // `customize/[section]/page.tsx` to its bare `/settings` fallback. Pinning
+  // `null` (not a URL) is the point: a stale mapping to `instructions` would
+  // deep-link a bookmark at a segment `parseSettingsTab` now rejects.
+  test('commands no longer resolves — the Instructions tab it named is gone', () => {
+    expect(legacySectionRedirect('p1', 'commands')).toBeNull();
+    expect(legacySectionRedirect('p1', 'instructions')).toBeNull();
   });
 
   test('the old settings section becomes general', () => {
@@ -80,7 +97,6 @@ describe('legacySectionRedirect', () => {
   // transactions being untested in the first place.
   test('every renamed legacy id in RENAMED_TABS is pinned', () => {
     const renames: Record<string, string> = {
-      commands: 'instructions',
       settings: 'general',
       git: 'repositories',
       tokens: 'api-keys',

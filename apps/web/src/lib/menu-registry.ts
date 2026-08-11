@@ -398,12 +398,14 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/settings',
     requiresProject: true,
-    // 'agents', 'skills' and 'commands' were deliberately dropped: those three
-    // graduated out of the overlay into their own palette entries (proj-agents,
-    // proj-skills, proj-commands). Keeping the words here made this bare
-    // Customize entry match those queries too and — since filteredNavItems
-    // preserves registry declaration order rather than ranking by relevance —
-    // it listed ahead of the real Agents/Skills/Commands entries.
+    // 'agents' and 'skills' were deliberately dropped: both graduated out of
+    // the overlay into their own palette entries (proj-agents, proj-skills).
+    // Keeping the words here made this bare Customize entry match those
+    // queries too and — since filteredNavItems preserves registry declaration
+    // order rather than ranking by relevance — it listed ahead of the real
+    // Agents/Skills entries. 'commands' is dropped for a different reason:
+    // the Instructions tab that hosted them no longer exists, so there is
+    // nothing for the query to lead to.
     keywords: 'customize configure project settings',
   },
   {
@@ -453,17 +455,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/skills',
     requiresProject: true,
     keywords: 'skills project customize abilities',
-  },
-  {
-    id: 'proj-commands',
-    label: 'Commands',
-    icon: TerminalSquare,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/instructions',
-    requiresProject: true,
-    keywords: 'commands slash project customize',
   },
   {
     id: 'proj-secrets',

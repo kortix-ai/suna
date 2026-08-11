@@ -44,15 +44,17 @@ describe('railGroups', () => {
     expect(tabs).toContain('voice');
   });
 
-  test('every flag on yields 26 content tabs', () => {
+  test('every flag on yields 25 content tabs', () => {
     // 27 before the `main` merge — Computers graduated to the standalone
     // Connectors page (#6313), taking the `agent_tunnel`-gated rail row and
-    // the whole `computers` tab with it.
+    // the whole `computers` tab with it. 26 until Instructions was removed:
+    // that tab only ever rendered `CommandsView`, and the project-level
+    // instructions surface it was named for never existed.
     const all = flags({
       marketplaceEnabled: true,
       llmGatewayAvailable: true, voiceEnabled: true, reviewEnabled: true,
     });
-    expect(tabsOf(all)).toHaveLength(26);
+    expect(tabsOf(all)).toHaveLength(25);
   });
 
   test('no tab appears in two groups', () => {
@@ -112,8 +114,15 @@ describe('railGroups', () => {
     expect(tabs).toContain('members');
   });
 
-  test('instructions (renamed from commands) is reachable with every flag off — its standalone page was removed', () => {
-    expect(tabsOf(flags())).toContain('instructions');
+  test('instructions has no rail row — the tab was removed, not hidden', () => {
+    // Every flag ON, so this cannot pass merely because a gate is closed.
+    const allOn = flags({
+      marketplaceEnabled: true,
+      llmGatewayAvailable: true,
+      voiceEnabled: true,
+      reviewEnabled: true,
+    });
+    expect(tabsOf(allOn)).not.toContain('instructions');
   });
 
   test('models is reachable in the rail regardless of the llm gateway flag — unlike the legacy llm-management row, it is not flag-gated', () => {

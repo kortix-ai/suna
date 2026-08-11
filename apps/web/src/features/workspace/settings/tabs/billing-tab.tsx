@@ -254,7 +254,7 @@ export function BillingTabView({
 
   if (error) {
     return (
-      <div className="mx-auto w-full max-w-2xl px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl space-y-8">
         <SettingsTabHeader tab="billing" />
         <InfoBanner tone="destructive">{error}</InfoBanner>
       </div>
@@ -262,7 +262,7 @@ export function BillingTabView({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="billing" />
       {showTeamCheckout ? (
         // Linear's upgrade card: the plan name and its one-line pitch on the

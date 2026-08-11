@@ -52,7 +52,6 @@ import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
 import { GroupsTab } from './tabs/groups-tab';
 import { IdentityTab } from './tabs/identity-tab';
-import { InstructionsTab } from './tabs/instructions-tab';
 import { ModelsTab } from './tabs/models-tab';
 // Aliased: `@/stores/settings-panel-store` already exports a TYPE named
 // `MembersTab` ('people' | 'invite', the deep-link intent — imported below
@@ -80,7 +79,6 @@ const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   schedules: 'schedules',
   webhooks: 'webhooks',
   models: 'llm-management',
-  instructions: 'commands',
   sandbox: 'sandbox',
   marketplace: 'marketplace',
   review: 'review',
@@ -522,7 +520,10 @@ export function SettingsPanelShell({
             <TabsContent
               key={item.tab}
               value={item.tab}
-              className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+              className={cn(
+                'mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto',
+                (item.tab !== 'marketplace' && item.tab !== 'models') && 'px-4 py-10 pb-20 lg:py-20',
+              )}
             >
               <SettingsTabPane
                 item={item}
@@ -608,8 +609,6 @@ function SettingsTabPane({
         return <ScheduleView projectId={projectId} type="webhook" />;
       case 'models':
         return <ModelsTab projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />;
-      case 'instructions':
-        return <InstructionsTab projectId={projectId} />;
       case 'marketplace':
         return <MarketplaceView projectId={projectId} />;
       case 'review':

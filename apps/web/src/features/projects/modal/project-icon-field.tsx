@@ -81,6 +81,7 @@ export function ProjectIconField({
   disabled,
   triggerClassName,
   fallbackLabel,
+  align = 'start',
 }: {
   /**
    * Sizing override for the trigger. `/new` renders this as the page's own
@@ -99,6 +100,14 @@ export function ProjectIconField({
    * derived from an empty name is just "?".
    */
   fallbackLabel?: string;
+  /**
+   * Where the picker hangs relative to the trigger. Defaults to `start` —
+   * `/new` and the create modal put the trigger on the leading edge of its
+   * row, so `center`/`end` would push a ~278px popover past the edge.
+   * Settings' Icon row passes `end` because the control sits on the trailing
+   * side of a `SettingsRow`.
+   */
+  align?: 'start' | 'center' | 'end';
   /** `null` renders the unset face. The field can DISPLAY "no icon". */
   value: ProjectIconValue;
   /**
@@ -360,7 +369,7 @@ export function ProjectIconField({
         as an unnamed one.
       */}
       <PopoverContent
-        align="start"
+        align={align}
         aria-label="Choose project icon"
         className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
       >

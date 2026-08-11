@@ -96,37 +96,68 @@ describe('project sessions command palette item', () => {
 });
 
 /**
- * Task 21 — `proj-commands` (`menu-registry.ts:451-459`) resolves directly to
- * the Instructions tab (it does not route through the `/customize/commands`
- * legacy redirect at all). Asserted with `resolveSettingsOverlayHref`, the
- * exact function the command palette itself calls to decide whether a
- * clicked href opens the settings overlay and on which tab
- * (`settings-tabs.ts`), not just a string comparison against the href.
+ * `proj-commands` pointed at `/settings/instructions`. Both the entry and the
+ * Instructions tab are gone. Two things are pinned here, because dropping the
+ * entry alone is not enough to keep the palette honest:
+ *
+ *   1. No registry entry still advertises a `/settings/instructions` href.
+ *      `resolveSettingsOverlayHref` now returns `{ opensOverlay: false }` for
+ *      that path (`parseSettingsTab` rejects the segment), so a leftover entry
+ *      would fall through to a plain `router.push` onto a route with no tab —
+ *      a dead click, not a visible error.
+ *   2. Typing "Commands" surfaces nothing. The word was already stripped from
+ *      `proj-customize`'s keywords to stop it shadowing the real entry; with
+ *      the real entry deleted, that removal is what keeps Customize from
+ *      quietly inheriting the query.
  */
-describe('project commands (Instructions tab) command palette item', () => {
-  test('resolves to the settings overlay on the instructions tab', () => {
-    const commandsItem = paletteItems.find((item) => item.id === 'proj-commands');
-    const href = commandsItem?.href ?? '';
-
-    expect(commandsItem).toBeDefined();
-    expect(href).toBe('/projects/{projectId}/settings/instructions');
-    expect(resolveSettingsOverlayHref(href.replace('{projectId}', 'p1'))).toEqual({
-      opensOverlay: true,
-      tab: 'instructions',
+describe('project commands palette entry is gone with the Instructions tab', () => {
+  test('no entry points at the removed Instructions tab', () => {
+    expect(paletteItems.find((item) => item.id === 'proj-commands')).toBeUndefined();
+    expect(paletteItems.some((item) => item.href?.includes('/settings/instructions'))).toBe(false);
+    expect(resolveSettingsOverlayHref('/projects/p1/settings/instructions')).toEqual({
+      opensOverlay: false,
     });
+  });
+
+  test('typing "Commands" no longer surfaces Customize as a stand-in', () => {
+    const customizeItem = paletteItems.find((item) => item.id === 'proj-customize');
+    expect(customizeItem).toBeDefined();
+    expect(matchesPaletteQuery(customizeItem!, 'Commands')).toBe(false);
+
+    // Deliberately NOT asserting "nothing matches 'Commands'". Two entries
+    // still do, neither of them this change's business:
+    //   - `restart-config` is an ACTION
+    //     (`keywords: 'reload restart config agents skills commands'`) and
+    //     matches correctly — reloading project config does reload commands.
+    //   - `workspace` (`menu-registry.ts:665`) carries the word in its
+    //     keywords and `activePathPrefixes`. It is a PRE-EXISTING dead entry:
+    //     neither `/workspace` nor `/commands` exists under `src/app`, and it
+    //     was already dead before the Instructions tab was removed. Left
+    //     alone here on purpose — folding it into this test would hide it.
+    // What this change owns is narrower: no PROJECT navigation entry offers
+    // to take the user to a commands surface that no longer exists.
+    const projectNavMatches = paletteItems
+      .filter(
+        (item) =>
+          item.kind === 'navigate' &&
+          item.requiresProject === true &&
+          matchesPaletteQuery(item, 'Commands'),
+      )
+      .map((item) => item.id);
+    expect(projectNavMatches).toEqual([]);
   });
 });
 
 describe('graduated capability entries are not shadowed by Customize', () => {
   // filteredNavItems (command-palette.tsx) preserves registry declaration
   // order rather than ranking by relevance, and 'proj-customize' is declared
-  // before 'proj-skills'/'proj-commands'/'proj-connectors'. Before this fix,
-  // Customize's keywords included the words "skills" and "commands", so it
-  // matched — and listed ahead of — those two real entries. Observed live:
-  // query "Skills" -> ["Customize", "Skills", ...].
+  // before 'proj-skills'/'proj-connectors'. Before this fix, Customize's
+  // keywords included the words "skills" and "commands", so it matched — and
+  // listed ahead of — those real entries. Observed live: query "Skills" ->
+  // ["Customize", "Skills", ...]. ("commands" is asserted in the Instructions
+  // removal block above; its own entry no longer exists to be shadowed.)
   const customizeItem = paletteItems.find((item) => item.id === 'proj-customize');
   const skillsItem = paletteItems.find((item) => item.id === 'proj-skills');
-  const commandsItem = paletteItems.find((item) => item.id === 'proj-commands');
   const connectorsItem = paletteItems.find((item) => item.id === 'proj-connectors');
   const policiesItem = paletteItems.find((item) => item.id === 'proj-connectors-policies');
 
@@ -134,12 +165,6 @@ describe('graduated capability entries are not shadowed by Customize', () => {
     expect(skillsItem).toBeDefined();
     expect(matchesPaletteQuery(skillsItem!, 'Skills')).toBe(true);
     expect(matchesPaletteQuery(customizeItem!, 'Skills')).toBe(false);
-  });
-
-  test('typing "Commands" surfaces the real Commands entry; Customize no longer matches', () => {
-    expect(commandsItem).toBeDefined();
-    expect(matchesPaletteQuery(commandsItem!, 'Commands')).toBe(true);
-    expect(matchesPaletteQuery(customizeItem!, 'Commands')).toBe(false);
   });
 
   test('typing "Connectors" still surfaces the Connectors entry', () => {
@@ -159,9 +184,8 @@ describe('graduated capability entries are not shadowed by Customize', () => {
     expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(false);
   });
 
-  test('Connectors and Skills navigate to standalone pages; Commands opens Settings', () => {
+  test('Connectors and Skills navigate to standalone pages', () => {
     expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(commandsItem!.href).toBe('/projects/{projectId}/settings/instructions');
     expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
   });
 

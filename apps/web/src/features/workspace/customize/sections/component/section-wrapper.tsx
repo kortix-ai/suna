@@ -141,9 +141,20 @@ const CustomizeSectionWrapper = ({
     <div className="relative flex h-full min-h-0 flex-col">
       {showSidebarToggleButton ? <SectionSidebarToggle /> : null}
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto">
+        {/* `max-w-2xl` is the settings panel's content column — the same
+            container every tab in `features/workspace/settings/tabs/` uses, and
+            the width the design system prescribes ("Container: mx-auto w-full
+            max-w-2xl"). This wrapper carried `max-w-3xl` until 2026-08-12, so
+            Secrets / Channels / Schedules / Webhooks / Voice / Upgrades sat
+            96px wider than General and the column jumped on every tab switch —
+            even though `capability-page-shell.tsx` and `slack-connect-cover.tsx`
+            already documented this wrapper as being `max-w-2xl`. A surface that
+            genuinely needs more room overrides via `className` (twMerge keeps
+            the caller's `max-w-*`), the way `apps-view.tsx` takes `max-w-5xl`
+            for its card grid. `tab-content-width.test.ts` holds the rule. */}
         <div
           className={cn(
-            'mx-auto w-full max-w-3xl space-y-5 px-4 py-10 pb-20 lg:py-20',
+            'mx-auto w-full max-w-2xl space-y-8 ',
             // showToggle && 'pl-12',
             className,
           )}

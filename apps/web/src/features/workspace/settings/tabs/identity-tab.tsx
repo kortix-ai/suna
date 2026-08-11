@@ -123,7 +123,7 @@ export function IdentityTabView({
   scimSlot,
 }: IdentityTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="identity" />
       {isLoading ? (
         <Skeleton className="h-40 w-full rounded-md" />

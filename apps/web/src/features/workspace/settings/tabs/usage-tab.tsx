@@ -114,7 +114,7 @@ export interface UsageTabViewProps {
  *  `BillingTabView` for the same split. */
 export function UsageTabView({ sessionCostsSlot, creditLedgerSlot }: UsageTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-4xl space-y-8">
       <SettingsTabHeader tab="usage" />
       <section className="space-y-4">
         <SettingsSubsectionHeader

@@ -112,9 +112,17 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
 > = {
   // No `agents` entry: Agents graduated to /projects/<id>/agent, which gates
   // itself on PROJECT_AGENT_READ/WRITE directly (project-settings-nav's
-  // TAB_PREFERENCE and the page's own useProjectCan). This map only covers
-  // sections the Customize rail renders — Commands is one of them again, since
-  // its standalone page was deleted (#6169).
+  // TAB_PREFERENCE and the page's own useProjectCan).
+  //
+  // `commands` no longer backs any settings tab. The Instructions tab that
+  // mapped to it (via `settings-panel.tsx`'s `GATED_TAB_SECTION`) was removed
+  // along with `CommandsView`, so nothing calls
+  // `isCustomizeSectionVisible('commands', …)` in app code today. The leaf
+  // pair is kept deliberately, not by oversight: commands are still a real
+  // project entity (`entity-modal.tsx` gates its writes on
+  // PROJECT_COMMAND_WRITE) and `CustomizeSection` is a `Record` key, so the
+  // entry must exist while the union member does. Delete both together, and
+  // only once no command surface remains anywhere.
   commands: {
     read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,
     write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,

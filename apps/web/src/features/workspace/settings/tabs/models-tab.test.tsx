@@ -9,7 +9,7 @@ import { ModelsTabView } from './models-tab';
  * `ModelsTabView` is the pure, props-only half (see the tab's header comment).
  * `gatewaySlot` stands in for `LlmManagementView`, which cannot render under
  * `renderToStaticMarkup` with no provider tree — same reasoning as
- * `instructions-tab.test.tsx`'s `commandsSlot`.
+ * `sandbox-tab.test.tsx`'s `templatesSlot`.
  */
 describe('ModelsTabView', () => {
   test('renders the pane heading and the gateway slot it is given', () => {

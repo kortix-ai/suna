@@ -79,18 +79,25 @@ export function SettingsRow({
   return (
     <Field
       orientation="horizontal"
-      // A description wraps to two lines, so its control aligns to the top; a
-      // bare label is one line, so its control centres.
+      // The control is ALWAYS vertically centred against the label block —
+      // with a description or without one. (Jay, 2026-08-12: "I want it to be
+      // coming always in the centre.")
       //
-      // `!items-center` is deliberate, not a shortcut. `Field`'s horizontal
-      // variant carries `has-[>[data-slot=field-content]]:items-start`, and
-      // this row ALWAYS renders a `FieldContent` — so that rule always matches,
-      // and at specificity (0,2,0) it beats a plain `items-center` (0,1,0).
-      // Without the important flag the description-less branch is dead code and
-      // every control top-aligns against a single-line label, which is exactly
-      // the kind of half-pixel wrongness that reads as "off" without being
-      // nameable. Verified by reading `field.tsx`'s variant, not assumed.
-      className={cn('gap-4 px-4 py-3', description ? 'items-start' : '!items-center', className)}
+      // This row used to top-align whenever a description was present, on the
+      // theory that a control should meet the first line of a two-line label.
+      // In practice it reads as a control that slipped upward: the right-hand
+      // column stops being a column, because a `h-8` input sits at a different
+      // height in every row depending on whether that row's description
+      // happened to wrap. Centring restores the single scannable right-hand
+      // edge that is the whole point of the grouped-row shape.
+      //
+      // `!items-center` is required, not stylistic. `Field`'s horizontal
+      // variant carries `has-[>[data-slot=field-content]]:items-start`
+      // (`field.tsx:64`), and this row ALWAYS renders a `FieldContent` — so
+      // that rule always matches, and at specificity (0,2,0) it beats a plain
+      // `items-center` (0,1,0). Without the important flag the variant wins and
+      // every control top-aligns regardless of what is passed here.
+      className={cn('gap-4 px-4 py-3 !items-center', className)}
       {...props}
     >
       <FieldContent className="min-w-0 flex-1 gap-0">

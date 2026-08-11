@@ -4,7 +4,7 @@
  * The Models tab — the settings-panel home of the per-project LLM gateway.
  * `settings-panel.tsx:1129-1133` used to mount `LlmManagementView` directly on
  * `case 'models'`; this file gives it the container / pure-view shape every
- * other migrated tab has (`sandbox-tab.tsx`, `instructions-tab.tsx`, …).
+ * other migrated tab has (`sandbox-tab.tsx`, `experimental-tab.tsx`, …).
  *
  * **The `llmGatewayEnabled` gate is preserved EXACTLY, not re-derived.** The
  * panel computes it once as `isLlmGatewayEnabled(project)`
@@ -32,7 +32,7 @@
  * `LlmManagementView` is a SLOT, not rendered inline: it owns
  * `useProjectModels`/`useModelDefaults`/`useIsMutating`/`useSettingsNav` and
  * cannot render under `renderToStaticMarkup` with no provider tree — same
- * reasoning as `instructions-tab.tsx`'s `commandsSlot`.
+ * reasoning as `sandbox-tab.tsx`'s `templatesSlot`.
  *
  * **The pane heading sits above the gateway's own sub-tab bar.**
  * `LlmManagementView` fills its tab with its OWN full-height `Tabs` shell
@@ -42,7 +42,7 @@
  * a shrink-0 strip above that shell, in a `flex h-full min-h-0 flex-col`
  * column, with `gatewaySlot` given `min-h-0 flex-1` so the gateway's own sub-
  * tab bar and per-section scrolling are unchanged — same split
- * `instructions-tab.tsx` uses for `CommandsView`.
+ * `sandbox-tab.tsx` uses for its templates slot.
  *
  * `ModelsTab` is the container: it only exists once this tab is active, which
  * `SettingsTabPane` guarantees (`if (!active) return null;`), so nothing here

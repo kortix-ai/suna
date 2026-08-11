@@ -7,13 +7,12 @@
  * is both `general` and `organization`'s label — see `rail.ts`), which is
  * exactly why the id is read off the switch, never inferred.
  *
- * **Source-level, not a render sweep.** `InstructionsTabView`/`ModelsTabView`
- * delegate their whole body to a hook-driven slot (`CommandsView`/
- * `LlmManagementView`) that needs a `QueryClientProvider` this suite doesn't
- * have — see `instructions-tab.test.tsx`/`models-tab.test.tsx`, which stand a
- * marker `<div>` in for the slot instead of asserting on the real child.
- * Grepping the stripped source for the exact JSX usage is the one mechanism
- * that reaches all 18 files the same way, real slot or not.
+ * **Source-level, not a render sweep.** `ModelsTabView` delegates its whole
+ * body to a hook-driven slot (`LlmManagementView`) that needs a
+ * `QueryClientProvider` this suite doesn't have — see `models-tab.test.tsx`,
+ * which stands a marker `<div>` in for the slot instead of asserting on the
+ * real child. Grepping the stripped source for the exact JSX usage is the one
+ * mechanism that reaches all 17 files the same way, real slot or not.
  *
  * **Comments are stripped before matching.** A doc comment that quotes
  * `<SettingsTabHeader tab="x" />` verbatim would otherwise satisfy the
@@ -50,7 +49,6 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
   'general-tab.tsx': 'general',
   'groups-tab.tsx': 'groups',
   'identity-tab.tsx': 'identity',
-  'instructions-tab.tsx': 'instructions',
   'members-tab.tsx': 'members',
   'models-tab.tsx': 'models',
   'organization-tab.tsx': 'organization',
