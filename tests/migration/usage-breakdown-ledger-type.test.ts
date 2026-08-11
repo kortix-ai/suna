@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import type { getUsageBreakdownThisPeriod as GetUsageBreakdownThisPeriod } from '../../apps/api/src/billing/services/usage-breakdown';
 import { createDb } from '../../packages/db/src/client';
 import { repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 import { DisposablePostgres, dockerAvailable } from './disposable-postgres';
 
 const ROOT = repoRoot();
 const postgres = new DisposablePostgres('kortix-usage-breakdown-test', 'USAGE_BREAKDOWN_TEST_PORT');
-let getUsageBreakdownThisPeriod: typeof import(
-  '../../apps/api/src/billing/services/usage-breakdown',
-).getUsageBreakdownThisPeriod;
+let getUsageBreakdownThisPeriod: typeof GetUsageBreakdownThisPeriod;
 
 const PERIOD_START = '2026-07-01T00:00:00.000Z';
 
