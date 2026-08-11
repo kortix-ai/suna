@@ -2,7 +2,7 @@ import type { FeatureFlagView } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ExperimentalTabView } from './experimental-tab';
+import { ExperimentalTabView, filterFeatures } from './experimental-tab';
 
 const betaFeature: FeatureFlagView = {
   key: 'voice',
@@ -160,5 +160,82 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
     expect(out).not.toContain('Delete workspace');
     expect(out).not.toContain('Sandbox provider');
+  });
+});
+
+/**
+ * Search is CONTROLLED — the container owns the text and hands down an already
+ * filtered `features`. These pin what the view does with the two it receives,
+ * which is the half a hook-free view can be held to: show the field when there
+ * is something to search, and tell the two empty states apart.
+ */
+describe('ExperimentalTabView — search', () => {
+  test('the field appears once there is something to search', () => {
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
+    expect(out).toContain('Search features');
+  });
+
+  test('no field when the deployment exposes no flags at all', () => {
+    // A search box over an empty state is furniture — there is nothing it
+    // could ever match.
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[]} />);
+    expect(out).not.toContain('Search features');
+  });
+
+  test('the field survives a query that matches nothing', () => {
+    // `features` is empty here because the container filtered them all away.
+    // Hiding the field now would remove the only control that can undo it.
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[]} query="zzz" />);
+    expect(out).toContain('Search features');
+  });
+
+  test('a query matching nothing says so, and does not claim the flags do not exist', () => {
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[]} query="zzz" />);
+    expect(out).toContain('No matches for');
+    expect(out).toContain('zzz');
+    expect(out).not.toContain('No experimental features');
+  });
+
+  test('no query and no flags is the deployment-level empty state', () => {
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[]} />);
+    expect(out).toContain('No experimental features');
+    expect(out).not.toContain('No matches for');
+  });
+
+  test('whitespace is not a query — it must not trigger the no-matches message', () => {
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[]} query="   " />);
+    expect(out).toContain('No experimental features');
+    expect(out).not.toContain('No matches for');
+  });
+});
+
+describe('filterFeatures', () => {
+  const all = [betaFeature, experimentalFeature];
+
+  test('a blank query returns the same array, not a copy', () => {
+    // Identity matters: a new array on every keystroke would re-render the
+    // whole list for a stray space.
+    expect(filterFeatures(all, '')).toBe(all);
+    expect(filterFeatures(all, '   ')).toBe(all);
+  });
+
+  test('matches the display name', () => {
+    expect(filterFeatures(all, 'voice').map((f) => f.key)).toEqual(['voice']);
+  });
+
+  test('matches the raw key — the term docs and support threads actually use', () => {
+    expect(filterFeatures(all, 'apps').map((f) => f.key)).toEqual(['apps']);
+  });
+
+  test('matches the description', () => {
+    expect(filterFeatures(all, 'talk to your').map((f) => f.key)).toEqual(['voice']);
+  });
+
+  test('is case-insensitive and ignores surrounding whitespace', () => {
+    expect(filterFeatures(all, '  VOICE  ').map((f) => f.key)).toEqual(['voice']);
+  });
+
+  test('no match returns empty rather than falling back to everything', () => {
+    expect(filterFeatures(all, 'zzz')).toEqual([]);
   });
 });

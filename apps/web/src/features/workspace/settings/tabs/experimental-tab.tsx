@@ -51,10 +51,16 @@
  * in `settings-panel.tsx` guarantees happens only while this tab is active.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -72,7 +78,7 @@ import {
   type ProjectDetail,
 } from '@kortix/sdk';
 import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
-import { FlagIcon } from '@phosphor-icons/react';
+import { FlagIcon, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -105,6 +111,35 @@ const STABILITY_BADGE: Record<
 function originLabel(feature: FeatureFlagView): string {
   if (feature.overridden) return 'Overridden for this project';
   return feature.enabled ? 'Default on' : 'Default off';
+}
+
+/**
+ * Filter the flag list by a search term.
+ *
+ * Exported and pure so it can be tested directly: it lives in the container
+ * (the view is deliberately hook-free), and the container needs a
+ * `QueryClientProvider` to render, so this is the only way its branching gets
+ * covered without a DOM.
+ *
+ * Matches `key` as well as `name` and `description`, and the key is the one
+ * that earns its place: flags get turned on from docs, changelogs and support
+ * threads that name the raw key (`llm_gateway`), not the display name ("LLM
+ * gateway"). A search reading only `name` would miss the exact term the reader
+ * was handed.
+ *
+ * A blank or whitespace-only query returns the input unchanged — same array,
+ * so React Query's result keeps its identity and the list does not re-render
+ * for a stray space.
+ */
+export function filterFeatures<T extends FeatureFlagView>(features: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return features;
+  return features.filter(
+    (f) =>
+      f.name.toLowerCase().includes(q) ||
+      f.key.toLowerCase().includes(q) ||
+      (f.description ?? '').toLowerCase().includes(q),
+  );
 }
 
 function ExperimentalFeatureRow({
@@ -157,6 +192,19 @@ export interface ExperimentalTabViewProps {
   pendingKeys?: readonly string[];
   canManage?: boolean;
   onToggle?: (key: string, next: boolean) => void;
+  /**
+   * Search text, CONTROLLED — the container owns it and hands down an already
+   * filtered `features`.
+   *
+   * It is a prop rather than a `useState` here because this view is
+   * deliberately hook-free so `renderToStaticMarkup` can render it with no
+   * providers (see the header comment). The view still needs the text itself,
+   * not just the filtered result: an empty list means "no matches for X" when
+   * a query is active and "no feature flags at all" when it is not, and those
+   * are different messages.
+   */
+  query?: string;
+  onQueryChange?: (next: string) => void;
   /** Renders the "you need customize-write" line. Separate from `canManage`
    *  because the two differ while the IAM probe is still in flight: the
    *  switches are already disabled (fail-closed) but the reason is not yet
@@ -181,10 +229,32 @@ export function ExperimentalTabView({
   canManage = true,
   onToggle = () => {},
   showPermissionNotice = false,
+  query = '',
+  onQueryChange = () => {},
 }: ExperimentalTabViewProps) {
+  const searching = query.trim().length > 0;
+  // Shown once there is something to search, or while a query is active so the
+  // field does not vanish under the cursor the moment it matches nothing.
+  const showSearch = features.length > 0 || searching;
+
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="experimental" />
+
+      {!isLoading && !isError && showSearch ? (
+        <InputGroupSearch>
+          <InputGroupSearchIcon>
+            <Search />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder="Search features"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            variant="popover"
+          />
+          <InputGroupSearchClear onClick={() => onQueryChange('')} />
+        </InputGroupSearch>
+      ) : null}
 
       {isLoading ? (
         <Skeleton className="h-40 rounded-md" />
@@ -200,15 +270,27 @@ export function ExperimentalTabView({
           }
         />
       ) : features.length === 0 ? (
-        // The shared primitive, not a bare sentence — ported from `main`'s
-        // `feature-flags-view.tsx`, which is what every other empty pane in
-        // this panel renders.
-        <EmptyState
-          size="sm"
-          icon={FlagIcon}
-          title="No experimental features"
-          description="This deployment exposes no per-project feature flags."
-        />
+        // Two different nothings. A search that matches nothing is a dead end
+        // you can back out of by clearing the field; a deployment with no flags
+        // at all is a fact about the deployment. Showing the second in place of
+        // the first reads as "this feature does not exist here" and sends the
+        // reader looking for a problem that is one backspace away — the same
+        // split `secrets-view.tsx` makes.
+        searching ? (
+          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+            No matches for <span className="text-foreground font-mono">{query}</span>.
+          </p>
+        ) : (
+          // The shared primitive, not a bare sentence — ported from `main`'s
+          // `feature-flags-view.tsx`, which is what every other empty pane in
+          // this panel renders.
+          <EmptyState
+            size="sm"
+            icon={FlagIcon}
+            title="No experimental features"
+            description="This deployment exposes no per-project feature flags."
+          />
+        )
       ) : (
         <>
           <div className="bg-popover divide-border divide-y rounded-md border">
@@ -307,11 +389,15 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
     },
   });
 
+  const [query, setQuery] = useState('');
+
   const rawFeatures = (project?.experimental_features ?? []).filter((f) => f.available);
-  const features = rawFeatures.map((f) => ({
+  const withPending = rawFeatures.map((f) => ({
     ...f,
     enabled: pendingValues[f.key] ?? f.enabled,
   }));
+
+  const features = useMemo(() => filterFeatures(withPending, query), [withPending, query]);
 
   const handleToggle = (key: string, next: boolean) => {
     setPendingValues((prev) => ({ ...prev, [key]: next }));
@@ -329,6 +415,8 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       canManage={canEdit}
       onToggle={handleToggle}
       showPermissionNotice={!canEdit && !writeCap.isLoading}
+      query={query}
+      onQueryChange={setQuery}
     />
   );
 }
