@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 
 import { Client } from '../../src/core/client';
 import { loadEnv } from '../../src/core/env';
@@ -29,6 +29,46 @@ interface AccountSummary {
 
 interface CheckoutResult {
   checkout_url: string;
+}
+
+interface CapturedJsonPost<T> {
+  status: number;
+  request: Request;
+  body: T;
+}
+
+async function captureJsonPost<T>(
+  page: Page,
+  path: string,
+  action: () => Promise<void>,
+): Promise<CapturedJsonPost<T>> {
+  let resolveCapture!: (capture: CapturedJsonPost<T>) => void;
+  let rejectCapture!: (error: unknown) => void;
+  const capture = new Promise<CapturedJsonPost<T>>((resolve, reject) => {
+    resolveCapture = resolve;
+    rejectCapture = reject;
+  });
+  const pattern = `**${path}`;
+  const handler = async (route: Route) => {
+    try {
+      const request = route.request();
+      const response = await route.fetch();
+      const body = (await response.json()) as T;
+      await route.fulfill({ response });
+      resolveCapture({ status: response.status(), request, body });
+    } catch (error) {
+      rejectCapture(error);
+      await route.abort().catch(() => {});
+    }
+  };
+
+  await page.route(pattern, handler, { times: 1 });
+  try {
+    await action();
+    return await capture;
+  } finally {
+    await page.unroute(pattern, handler);
+  }
 }
 
 test.describe
@@ -77,19 +117,16 @@ test.describe
       await test.step('The owner starts Team checkout from the Billing page', async () => {
         await page.getByRole('button', { name: 'Subscribe to Team' }).click();
         await expect(page.getByRole('heading', { name: 'Subscribe to Kortix' })).toBeVisible();
-        const checkoutResponsePromise = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'POST' &&
-            new URL(response.url()).pathname === '/v1/billing/create-per-seat-checkout',
+        const checkout = await captureJsonPost<CheckoutResult>(
+          page,
+          '/v1/billing/create-per-seat-checkout',
+          () => page.getByRole('button', { name: /^Subscribe —/ }).click(),
         );
-        await page.getByRole('button', { name: /^Subscribe —/ }).click();
-        const checkoutResponse = await checkoutResponsePromise;
-        expect(checkoutResponse.status()).toBe(200);
-        expect(checkoutResponse.request().postDataJSON()).toMatchObject({
+        expect(checkout.status).toBe(200);
+        expect(checkout.request.postDataJSON()).toMatchObject({
           account_id: accountId,
         });
-        const checkout = (await checkoutResponse.json()) as CheckoutResult;
-        expect(checkout.checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+        expect(checkout.body.checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
       });
 
       await test.step('A real Stripe test subscription activates the account', async () => {
@@ -115,40 +152,33 @@ test.describe
 
       await test.step('The owner starts a one-time credit purchase', async () => {
         await page.getByRole('button', { name: '$10', exact: true }).click();
-        const purchaseResponsePromise = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'POST' &&
-            new URL(response.url()).pathname === '/v1/billing/purchase-credits',
+        const purchase = await captureJsonPost<CheckoutResult>(
+          page,
+          '/v1/billing/purchase-credits',
+          () => page.getByRole('button', { name: 'Buy $10 in credits' }).click(),
         );
-        await page.getByRole('button', { name: 'Buy $10 in credits' }).click();
-        const purchaseResponse = await purchaseResponsePromise;
-        expect(purchaseResponse.status()).toBe(200);
-        expect(purchaseResponse.request().postDataJSON()).toMatchObject({
+        expect(purchase.status).toBe(200);
+        expect(purchase.request.postDataJSON()).toMatchObject({
           account_id: accountId,
           amount: 10,
         });
-        const purchase = (await purchaseResponse.json()) as CheckoutResult;
-        expect(purchase.checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+        expect(purchase.body.checkout_url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
       });
 
       await test.step('The owner opens Stripe Billing Portal for lifecycle actions', async () => {
         await installBrowserSessionDirect(page, session, billingUrl, authOptions);
-        const portalResponsePromise = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'POST' &&
-            new URL(response.url()).pathname === '/v1/billing/create-portal-session',
+        const portal = await captureJsonPost<{ portal_url?: string; url?: string }>(
+          page,
+          '/v1/billing/create-portal-session',
+          () => page.getByRole('button', { name: 'Manage billing' }).last().click(),
         );
-        await page.getByRole('button', { name: 'Manage billing' }).last().click();
-        const portalResponse = await portalResponsePromise;
-        expect(portalResponse.status()).toBe(200);
-        expect(portalResponse.request().postDataJSON()).toMatchObject({
+        expect(portal.status).toBe(200);
+        expect(portal.request.postDataJSON()).toMatchObject({
           account_id: accountId,
         });
-        const portal = (await portalResponse.json()) as {
-          portal_url?: string;
-          url?: string;
-        };
-        expect(portal.portal_url ?? portal.url).toMatch(/^https:\/\/billing\.stripe\.com\//);
+        expect(portal.body.portal_url ?? portal.body.url).toMatch(
+          /^https:\/\/billing\.stripe\.com\//,
+        );
       });
     });
   });

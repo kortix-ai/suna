@@ -36,7 +36,7 @@ flow(
         .exists('$.plan.label')
         .exists('$.plan.status')
         .exists('$.plan.shape')
-        .has('$.plan.is_grandfathered', false)
+        .has('$.plan.is_grandfathered', state.plan?.status === 'grandfathered')
         .has('$.plan.key', state.subscription.tier_key)
         .has('$.tier.name', state.subscription.tier_key);
       if (typeof state.plan?.rank !== 'number') {

@@ -461,9 +461,9 @@ const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-functions': { limit: '384m', reservation: '128m' },
   'supabase-supavisor': { limit: '384m', reservation: '128m' },
   'supabase-studio': { limit: '384m', reservation: '128m' },
-  // The audit's confirmed hog (~500MB observed) — tightest cap, and the
-  // first thing the kernel OOM-killer should reach for.
-  'supabase-analytics': { limit: '640m', reservation: '256m', oomScoreAdj: 500 },
+  // Logflare 1.43.1 reaches ~654MB during a fresh full-stack boot. Keep enough
+  // startup headroom while retaining the positive OOM score for host pressure.
+  'supabase-analytics': { limit: '896m', reservation: '256m', oomScoreAdj: 500 },
   'supabase-vector': { limit: '192m', reservation: '64m', oomScoreAdj: 500 },
   caddy: { limit: '256m', reservation: '64m' },
   cloudflared: { limit: '128m', reservation: '32m' },

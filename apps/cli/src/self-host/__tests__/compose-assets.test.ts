@@ -380,6 +380,7 @@ describe('full self-host Docker distribution', () => {
     expect(document.services['kortix-api']?.mem_limit).toBe('${KORTIX_API_MEMORY_LIMIT:-640m}');
     const analytics = document.services['supabase-analytics'];
     const vector = document.services['supabase-vector'];
+    expect(analytics?.mem_limit).toBe('896m');
     expect(analytics?.oom_score_adj).toBeGreaterThan(0);
     expect(vector?.oom_score_adj).toBeGreaterThan(0);
     // The full worst-case (every STEADY-STATE service simultaneously at its

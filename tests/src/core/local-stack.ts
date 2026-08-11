@@ -322,7 +322,8 @@ export async function localGatewayHealthy(
 
 export async function localWebHealthy(webUrl: string): Promise<boolean> {
   try {
-    const response = await fetch(assertLoopbackHttpUrl(webUrl, "local web"), {
+    const baseUrl = assertLoopbackHttpUrl(webUrl, "local web");
+    const response = await fetch(new URL("/auth", baseUrl), {
       signal: AbortSignal.timeout(5_000),
     });
     return response.ok;

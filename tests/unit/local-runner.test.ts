@@ -176,11 +176,13 @@ describe('local test runner', () => {
 
   it('retries a cold local web route until it is ready', async () => {
     let attempts = 0;
+    const urls: string[] = [];
     const sleeps: number[] = [];
 
     await waitForLocalWeb('http://127.0.0.1:24000', {
       timeoutMs: 1_000,
-      probe: async () => {
+      probe: async (url) => {
+        urls.push(url);
         attempts += 1;
         if (attempts < 3) throw new Error('compiling');
         return new Response(null, { status: 200 });
@@ -191,6 +193,11 @@ describe('local test runner', () => {
     });
 
     expect(attempts).toBe(3);
+    expect(urls).toEqual([
+      'http://127.0.0.1:24000/auth',
+      'http://127.0.0.1:24000/auth',
+      'http://127.0.0.1:24000/auth',
+    ]);
     expect(sleeps).toEqual([250, 250]);
   });
 });

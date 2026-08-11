@@ -222,7 +222,10 @@ export async function waitForLocalWeb(
     sleep?: (ms: number) => Promise<void>;
   } = {},
 ): Promise<void> {
-  const checkedWebUrl = assertLoopbackHttpUrl(webUrl, 'local web').toString();
+  const checkedWebUrl = new URL(
+    '/auth',
+    assertLoopbackHttpUrl(webUrl, 'local web'),
+  ).toString();
   const timeoutMs = options.timeoutMs ?? 60_000;
   const deadline = performance.now() + timeoutMs;
   const probe =
