@@ -142,8 +142,9 @@ For Daytona:
 - Build one OCI base snapshot and one warm captured snapshot per lockfile hash.
 - Use `DAYTONA_CI_TARGET`, then `DAYTONA_TARGET`, to select the nested-Docker
   region. Do not reuse the product `DAYTONA_WARM_TARGET`.
-- Start nested Docker in a temporary builder and pull the Supabase images.
-- Stop Supabase and dockerd before capturing the warm snapshot.
+- Start nested Docker in a temporary builder and pull the exact local-profile
+  Supabase images without starting containers.
+- Stop dockerd before capturing the warm snapshot.
 - Require the warm marker after restore before starting tests.
 - Use a private 6 vCPU, 12 GiB RAM, 40 GiB disk worker. These are the current
   Daytona organization maxima.

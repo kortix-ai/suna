@@ -38,8 +38,8 @@ describe('Daytona CI worker plan', () => {
   });
 
   test('uses one content-addressed warm snapshot for one lockfile', () => {
-    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v6');
-    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v6-bbbbbbbbbbbbbbbb');
+    expect(DAYTONA_CI_SNAPSHOT_VERSION).toBe('v7');
+    expect(daytonaSnapshotName(lockHash)).toBe('kortix-ci-daytona-v7-bbbbbbbbbbbbbbbb');
     expect(daytonaBaseSnapshotName(lockHash)).toBe('kortix-ci-daytona-v4-bbbbbbbbbbbbbbbb-base');
   });
 
@@ -66,8 +66,12 @@ describe('Daytona CI worker plan', () => {
 
   test('pre-pulls local-stack images before capturing the warm snapshot', () => {
     const script = buildDaytonaWarmScript();
-    expect(script).toContain('supabase start --ignore-health-check');
-    expect(script).toContain('supabase stop --no-backup');
+    expect(script).toContain('ghcr.io/supabase/gotrue:v2.194.0');
+    expect(script).toContain('public.ecr.aws/supabase/postgres:17.6.1.156');
+    expect(script).toContain('public.ecr.aws/supabase/studio:2026.07.27-sha-cbb076d');
+    expect(script).toContain('docker pull "$image"');
+    expect(script).not.toContain('supabase start');
+    expect(script).not.toContain('supabase stop');
     expect(script).toContain('.kortix-ci-warm-ready');
     expect(script).toContain('daytona-warm.exit');
     expect(script).toContain('modprobe "$module" || true');

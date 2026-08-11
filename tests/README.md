@@ -173,8 +173,9 @@ deletion fails the workflow and keeps the exact sandbox ID in the log.
 ### Daytona
 
 Daytona first builds an OCI base snapshot. It starts a temporary builder from
-that base. The builder starts nested Docker, pulls the Supabase images, stops
-Supabase and dockerd, writes a warm marker, and captures the warm snapshot.
+that base. The builder starts nested Docker, pulls the exact local-profile
+Supabase images without starting containers, stops dockerd, writes a warm
+marker, and captures the warm snapshot.
 `DAYTONA_CI_TARGET` selects the nested-Docker region. It falls back to
 `DAYTONA_TARGET`, then `us`. Do not reuse the product `DAYTONA_WARM_TARGET`.
 That product variable can select a different sandbox class or region.

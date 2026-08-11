@@ -12,7 +12,7 @@ import {
   providerMetadataIdentifier,
 } from './platinum-ci';
 
-export const DAYTONA_CI_SNAPSHOT_VERSION = 'v6';
+export const DAYTONA_CI_SNAPSHOT_VERSION = 'v7';
 const DAYTONA_CI_BASE_SNAPSHOT_VERSION = 'v4';
 
 const POLL_MS = 3_000;
@@ -498,11 +498,30 @@ for module in bridge br_netfilter veth nf_tables ip_tables iptable_nat; do modpr
 dockerd --host=unix:///var/run/docker.sock --storage-driver=fuse-overlayfs >/workspace/daytona-dockerd.log 2>&1 &
 timeout 180 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 docker info >/dev/null
-pnpm exec supabase start --ignore-health-check
+images=(
+  ghcr.io/supabase/gotrue:v2.194.0
+  public.ecr.aws/supabase/kong:2.8.1
+  public.ecr.aws/supabase/mailpit:v1.30.2
+  public.ecr.aws/supabase/postgres-meta:v0.96.6
+  public.ecr.aws/supabase/postgres:17.6.1.156
+  public.ecr.aws/supabase/postgrest:v14.15
+  public.ecr.aws/supabase/storage-api:v1.67.20
+  public.ecr.aws/supabase/studio:2026.07.27-sha-cbb076d
+)
+for image in "\${images[@]}"; do
+  if docker image inspect "$image" >/dev/null 2>&1; then continue; fi
+  pulled=0
+  for attempt in $(seq 1 8); do
+    if docker pull "$image"; then pulled=1; break; fi
+    delay=$((attempt * 10))
+    echo "[daytona-ci] image_pull_retry image=$image attempt=$attempt/8 delay_s=$delay"
+    sleep "$delay"
+  done
+  test "$pulled" -eq 1
+done
 docker image ls -q | sort -u | wc -l > /workspace/.kortix-ci-warm-ready
 grep -Eq '^[1-9][0-9]*$' /workspace/.kortix-ci-warm-ready
 docker image ls --digests
-pnpm exec supabase stop --no-backup
 pkill -TERM -x dockerd
 timeout 60 sh -c 'while pgrep -x dockerd >/dev/null || pgrep -x containerd >/dev/null; do sleep 1; done'
 rm -f /var/run/docker.pid /var/run/docker.sock
