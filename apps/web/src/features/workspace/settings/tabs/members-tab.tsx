@@ -301,6 +301,35 @@
  * copy has one source, `ACCOUNT_ROLE_DESCRIPTORS`) against this file's own
  * `setAccountRoleChangeTarget`/`onConfirmAccountRoleChange`/
  * `accountRoleMutation.mutate` shape.
+ *
+ * **Linear table shape (2026-08-11) — presentation only.** Jay asked for this
+ * pane to read like Linear's members settings. Five changes, none of which
+ * touch a query, a mutation, or a permission gate:
+ *
+ * 1. The table lost its card. Linear's is borderless — no container border,
+ *    no header fill, no row dividers — with ONE hairline under the column
+ *    headers and a hover highlight carrying the row. See `TABLE_HEAD_CELL`
+ *    below for why the container is local markup while every cell is still
+ *    the shared primitive.
+ * 2. `Joined` is its own right-aligned `tabular-nums` column instead of a
+ *    second line inside the Member cell, so dates align down the table. An
+ *    absent `joined_at` reads as an em dash rather than `formatDate`'s
+ *    "Never", which is nonsense for a join date.
+ * 3. The trailing actions column is gone: the workspace-access `Select` now
+ *    sits in the workspace-access column it edits. Nothing is lost —
+ *    `memberAccessLabel` only returns a `via` annotation for implicit or
+ *    group-sourced access, and `editable` excludes both.
+ * 4. The read-only account role is coloured text, not a filled `Badge` —
+ *    Linear's own treatment. `Badge` is still this file's chip for the
+ *    invite/request rows below.
+ * 5. The header is the pane title, the member count, and one `+` icon button
+ *    at the far right. The Invite button's `canManageMembers` gate and its
+ *    accessible name are unchanged; only its label went icon-only.
+ *
+ * Every capability enumerated above this paragraph is still on the pane, in
+ * the same order, under the same gate: the three rehomed access cards, both
+ * role columns, the account-role `Select` + remove, project pending invites,
+ * access requests, account invites, and Leave account.
  */
 
 import { useTranslations } from 'next-intl';
@@ -350,14 +379,10 @@ import {
 } from '@/components/ui/select';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+// `Table` itself is deliberately NOT imported — this pane needs Linear's
+// borderless container, which that component hard-codes against. See
+// `TABLE_HEAD_CELL`'s comment below.
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -442,6 +467,38 @@ import { memberAccessLabel } from './member-access-label';
 
 const NO_ACCESS = '__none__';
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
+
+/**
+ * Linear's members table (the reference Jay named) is *borderless*: no card
+ * around it, no header fill, no row dividers. Separation comes from row
+ * padding and a hover highlight, with ONE hairline under the column headers.
+ *
+ * `@/components/ui/table`'s `Table` cannot express that — its container `div`
+ * hard-codes `rounded-md border bg-popover` with no className escape hatch,
+ * and 20+ other surfaces depend on that bordered default, so widening the
+ * primitive here would be a repo-wide visual change for one pane. Only the
+ * container is re-implemented (six lines below); `TableHeader`/`TableBody`/
+ * `TableRow`/`TableHead`/`TableCell` are still the shared primitives, with
+ * their borders and header fill turned off per element via `cn`
+ * (`border-b` → `border-b-0`, `bg-secondary` → `bg-transparent` — both are
+ * tailwind-merge conflict groups, so the override genuinely wins rather than
+ * racing on stylesheet order). `TableHeader`'s own `[&_tr]:border-b` is left
+ * intact: that arbitrary-variant rule is exactly the one hairline Linear
+ * keeps.
+ */
+const TABLE_HEAD_CELL = 'text-muted-foreground px-3 py-1.5 text-xs first:pl-0 last:pr-0';
+const TABLE_CELL = 'px-3 py-2.5 first:pl-0 last:pr-0';
+/** Dates get `tabular-nums` so they align down the column, right-aligned in
+ *  their own column the way Linear sets them. */
+const TABLE_DATE_CELL = 'text-muted-foreground text-right tabular-nums';
+
+/** Linear renders the account standing as coloured text, not a filled badge.
+ *  Kortix's palette earns exactly one accent and this is not it, so the
+ *  "colour" here is tonal: an owner/admin reads at full strength, a plain
+ *  member reads muted. */
+function accountRoleToneClass(role: string) {
+  return role === 'owner' || role === 'admin' ? 'text-foreground' : 'text-muted-foreground';
+}
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
@@ -707,15 +764,32 @@ export function MembersTabView({
           from the rail (`rail.ts`) so this pane's heading can never drift
           from the "Members" row's own copy. The invite button and the role
           explainer popover still ride in its `action` slot. */}
+      {/* Linear's members header is the pane title, the member count beside
+          it, and ONE `+` icon button at the far right — no toolbar, no filter
+          chips, no search box. The title and description still come from the
+          rail via `SettingsTabHeader` (they must: it is this pane's page
+          heading), so the count and the `+` ride in its right-hand action
+          slot, which is the same far-right position Linear puts the `+` in.
+          The Invite button is icon-only now; its accessible name is
+          unchanged, and so is its `canManageMembers` gate. */}
       <SettingsTabHeader
         tab="members"
         action={
           <div className="flex items-center gap-2">
+            {members.length > 0 ? (
+              <span className="text-muted-foreground text-sm tabular-nums">{members.length}</span>
+            ) : null}
             {permissionsHelpSlot}
             {canManageMembers ? (
-              <Button type="button" size="sm" onClick={onOpenInvite} className="gap-1.5">
-                <Plus className="size-3.5" />
-                Invite
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                onClick={onOpenInvite}
+                aria-label="Invite"
+                title="Invite"
+              >
+                <Plus className="size-4" />
               </Button>
             ) : null}
           </div>
@@ -742,160 +816,165 @@ export function MembersTabView({
           description="Invite someone to get started."
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Member</TableHead>
-              <TableHead>Account role</TableHead>
-              <TableHead>Workspace access</TableHead>
-              <TableHead className="w-[1%]">
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.map((member) => {
-              const { role, via } = memberAccessLabel(member);
-              const busy = pendingUserIds.has(member.user_id);
-              const editable =
-                canManageMembers &&
-                !member.has_implicit_access &&
-                !isInheritedFromGroupOnly(member);
+        <div className="overflow-x-auto">
+          {/* See `TABLE_HEAD_CELL`'s comment above for why the container is
+              local markup while every cell primitive is still shared. */}
+          <table className="w-full caption-bottom text-sm">
+            <TableHeader className="bg-transparent">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className={TABLE_HEAD_CELL}>Member</TableHead>
+                <TableHead className={TABLE_HEAD_CELL}>Account role</TableHead>
+                <TableHead className={TABLE_HEAD_CELL}>Workspace access</TableHead>
+                <TableHead className={cn(TABLE_HEAD_CELL, 'text-right')}>Joined</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.map((member) => {
+                const { role, via } = memberAccessLabel(member);
+                const busy = pendingUserIds.has(member.user_id);
+                const editable =
+                  canManageMembers &&
+                  !member.has_implicit_access &&
+                  !isInheritedFromGroupOnly(member);
 
-              // JAY-549 — account-scope row actions. Hidden entirely on the
-              // viewer's own row (mirrors page.tsx's per-row `!isSelf`
-              // guard) — self goes through the separate "Leave account"
-              // section instead. See this file's header comment, "JAY-549".
-              const isSelfAccountRow = !!currentUserId && member.user_id === currentUserId;
-              const accountBusy = accountPendingUserIds.has(member.user_id);
-              const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
-              const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
-              const isLastAccountOwner = member.account_role === 'owner' && accountOwnerCount === 1;
+                // JAY-549 — account-scope row actions. Hidden entirely on the
+                // viewer's own row (mirrors page.tsx's per-row `!isSelf`
+                // guard) — self goes through the separate "Leave account"
+                // section instead. See this file's header comment, "JAY-549".
+                const isSelfAccountRow = !!currentUserId && member.user_id === currentUserId;
+                const accountBusy = accountPendingUserIds.has(member.user_id);
+                const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
+                const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
+                const isLastAccountOwner =
+                  member.account_role === 'owner' && accountOwnerCount === 1;
 
-              return (
-                <TableRow key={member.user_id}>
-                  <TableCell className="align-top whitespace-normal">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <UserAvatar email={member.email ?? ''} size="sm" />
-                      <div className="min-w-0">
-                        <p className="text-foreground truncate text-sm font-medium">
+                return (
+                  <TableRow key={member.user_id} className="border-b-0">
+                    <TableCell className={cn(TABLE_CELL, 'whitespace-normal')}>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <UserAvatar email={member.email ?? ''} size="sm" />
+                        <span className="text-foreground min-w-0 truncate">
                           {userLabel(member)}
-                        </p>
-                        <InlineMeta>
-                          <span className="tabular-nums">
-                            Joined {formatDate(member.joined_at)}
-                          </span>
-                        </InlineMeta>
+                        </span>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="align-top">
-                    <div className="flex items-center gap-1">
-                      {accountBusy ? (
-                        <Loading className="text-muted-foreground size-3.5 shrink-0" />
-                      ) : accountRoleEditable ? (
-                        <Select
-                          value={member.account_role}
-                          onValueChange={(next) =>
-                            onRequestAccountRoleChange(member, next as AccountRole)
-                          }
-                        >
-                          <SelectTrigger
-                            className="h-7 w-28 text-xs capitalize"
-                            aria-label={`Account role for ${userLabel(member)}`}
+                    </TableCell>
+                    <TableCell className={TABLE_CELL}>
+                      <div className="flex items-center gap-1">
+                        {accountBusy ? (
+                          <Loading className="text-muted-foreground size-3.5 shrink-0" />
+                        ) : accountRoleEditable ? (
+                          <Select
+                            value={member.account_role}
+                            onValueChange={(next) =>
+                              onRequestAccountRoleChange(member, next as AccountRole)
+                            }
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="owner">
-                              {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
-                            </SelectItem>
-                            <SelectItem value="admin">
-                              {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
-                            </SelectItem>
-                            <SelectItem value="member">
-                              {ACCOUNT_ROLE_DESCRIPTORS.member.label}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          size="sm"
-                          className={
-                            member.account_role === 'owner'
-                              ? 'border-foreground/30 text-foreground capitalize'
-                              : 'capitalize'
-                          }
-                        >
-                          {member.account_role}
-                        </Badge>
-                      )}
-                      {!accountBusy && accountRemovable ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => onRequestRemoveFromAccount(member)}
-                          disabled={isLastAccountOwner}
-                          title={
-                            isLastAccountOwner
-                              ? 'The account needs at least one owner.'
-                              : 'Remove from account'
-                          }
-                          aria-label={`Remove ${userLabel(member)} from account`}
-                        >
-                          <X className="size-3.5" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="align-top">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-foreground text-sm">{role}</span>
-                      {via ? <span className="text-muted-foreground text-xs">{via}</span> : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="align-top">
-                    {busy ? (
-                      <Loading className="text-muted-foreground shrink-0" />
-                    ) : editable ? (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Select
-                          value={member.project_role ?? NO_ACCESS}
-                          onValueChange={(next) =>
-                            onRoleChange(member, next as ProjectRole | typeof NO_ACCESS)
-                          }
-                        >
-                          <SelectTrigger className="h-8 w-32 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NO_ACCESS}>No access</SelectItem>
-                            <ProjectRoleSelectItem role="member" compact />
-                            <ProjectRoleSelectItem role="editor" compact />
-                            <ProjectRoleSelectItem role="manager" compact />
-                          </SelectContent>
-                        </Select>
-                        {member.project_role ? (
+                            <SelectTrigger
+                              className="h-7 w-28 text-xs capitalize"
+                              aria-label={`Account role for ${userLabel(member)}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="owner">
+                                {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
+                              </SelectItem>
+                              <SelectItem value="admin">
+                                {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
+                              </SelectItem>
+                              <SelectItem value="member">
+                                {ACCOUNT_ROLE_DESCRIPTORS.member.label}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          // Coloured text, not a filled badge — Linear's own
+                          // treatment for this column. See
+                          // `accountRoleToneClass` above.
+                          <span
+                            className={cn('capitalize', accountRoleToneClass(member.account_role))}
+                          >
+                            {member.account_role}
+                          </span>
+                        )}
+                        {!accountBusy && accountRemovable ? (
                           <Button
                             type="button"
-                            size="sm"
+                            size="icon-xs"
                             variant="ghost"
-                            onClick={() => onRequestRemove(member)}
-                            title="Remove"
+                            onClick={() => onRequestRemoveFromAccount(member)}
+                            disabled={isLastAccountOwner}
+                            title={
+                              isLastAccountOwner
+                                ? 'The account needs at least one owner.'
+                                : 'Remove from account'
+                            }
+                            aria-label={`Remove ${userLabel(member)} from account`}
                           >
                             <X className="size-3.5" />
                           </Button>
                         ) : null}
                       </div>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                    </TableCell>
+                    {/* One column, one fact: the workspace-access control now
+                        lives in the workspace-access column instead of a
+                        separate trailing actions column, so the label and the
+                        control it edits are no longer two columns apart. No
+                        annotation is lost — `memberAccessLabel` only returns a
+                        `via` for implicit or group-sourced access, and
+                        `editable` excludes both of those cases. */}
+                    <TableCell className={TABLE_CELL}>
+                      {busy ? (
+                        <Loading className="text-muted-foreground shrink-0" />
+                      ) : editable ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Select
+                            value={member.project_role ?? NO_ACCESS}
+                            onValueChange={(next) =>
+                              onRoleChange(member, next as ProjectRole | typeof NO_ACCESS)
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NO_ACCESS}>No access</SelectItem>
+                              <ProjectRoleSelectItem role="member" compact />
+                              <ProjectRoleSelectItem role="editor" compact />
+                              <ProjectRoleSelectItem role="manager" compact />
+                            </SelectContent>
+                          </Select>
+                          {member.project_role ? (
+                            <Button
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              onClick={() => onRequestRemove(member)}
+                              title="Remove"
+                              aria-label={`Remove ${userLabel(member)} from this workspace`}
+                            >
+                              <X className="size-3.5" />
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-foreground">{role}</span>
+                          {via ? (
+                            <span className="text-muted-foreground text-xs">{via}</span>
+                          ) : null}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className={cn(TABLE_CELL, TABLE_DATE_CELL)}>
+                      {member.joined_at ? formatDate(member.joined_at) : '—'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </table>
+        </div>
       )}
 
       {/* Rehomed from `members-view.tsx`, in their existing order — see

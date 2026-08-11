@@ -1,9 +1,24 @@
 'use client';
 
 /**
- * The Profile tab — five sections, each a `SettingsSectionHeader` plus its
- * control: profile picture, display name, email (read-only), two-factor
+ * The Profile tab — profile picture, email, display name, two-factor
  * authentication, and account deletion.
+ *
+ * **Layout: Linear's settings shape** (Jay's reference, 2026-08-11). The pane
+ * opens on its heading and a hairline rule, then rows: label on the left, its
+ * control on the right, consecutive rows sharing ONE bordered box separated by
+ * hairlines — `SettingsRowGroup` / `SettingsRow`
+ * (`components/ui/settings-row.tsx`, whose header explains the rationale).
+ * Sections between groups are a plain small label, not a card header. Three
+ * consequences worth naming, because each replaced something that used to be
+ * here:
+ * - Email is plain right-aligned muted text, not a `readOnly` `<Input>`. A
+ *   disabled-looking text box invites a click that does nothing; a value that
+ *   is not editable should not be dressed as a field.
+ * - Delete account is red TEXT, not a filled destructive button. The
+ *   `ConfirmDialog` behind it is unchanged — only the trigger's weight is.
+ * - The unavailable case (no account deletion on this deployment) shows muted
+ *   text on the right instead of swapping the row out for a paragraph.
  *
  * Ported from `features/accounts/settings/general-tab.tsx` (avatar upload,
  * name save, account deletion) and `features/accounts/settings/
@@ -55,7 +70,8 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { Separator } from '@/components/ui/separator';
+import { SettingsRow, SettingsRowGroup, SettingsSectionLabel } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -82,8 +98,22 @@ export function totpQrSrc(qr: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(qr)}`;
 }
 
+/**
+ * A section label between two groups — plain small text, optionally one line
+ * of explanation, sitting above the next group. Not a card header: it carries
+ * no border and no background, so the bordered group below it reads as the
+ * thing being labelled. Still an `h2` so the pane keeps a real heading outline
+ * (`profile-tab.test.tsx` reads these).
+ *
+ * Deliberately duplicated in `general-tab.tsx` rather than shared: the two
+ * Linear restyles landed in parallel and neither should have edited the other
+ * agent's file. Promote it to `components/ui/settings-row.tsx` once a third
+ * pane needs it.
+ */
 /** One enrolled factor row — pure view, exported for render tests. Moved
- *  here from `security-tab.tsx` (Task 10); this is its only consumer. */
+ *  here from `security-tab.tsx` (Task 10); this is its only consumer.
+ *  Border-less: it is stacked inside a `SettingsRowGroup` with the
+ *  two-factor row, and the group draws the border and the hairlines. */
 export function FactorRow({
   factor,
   onRemove,
@@ -93,13 +123,13 @@ export function FactorRow({
 }) {
   const Icon = factor.factor_type === 'phone' ? Smartphone : KeyRound;
   return (
-    <div className="border-border/60 bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
           <Icon className="text-muted-foreground size-4" />
         </span>
         <div className="min-w-0">
-          <div className="text-foreground truncate text-sm font-medium">
+          <div className="text-foreground truncate text-sm">
             {factor.friendly_name ||
               (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
           </div>
@@ -261,17 +291,58 @@ export function ProfileTabView({
 }: ProfileTabViewProps) {
   const verified = factors.filter((f) => f.status === 'verified');
 
-  return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
-      <SettingsTabHeader tab="profile" />
+  // The right-hand control of the Delete-account row, and the line under its
+  // label. Three states, one row — an unavailable or already-scheduled
+  // deletion changes what the row SAYS and what its control DOES, not which
+  // shape the pane is in. Before this, each state replaced the row with a
+  // paragraph or a banner, so the pane's last block moved as the state
+  // changed. Every gate is unchanged: `accountDeletionSupported` is still the
+  // only thing that decides whether a delete is offered at all.
+  const deleteAccountDescription = !accountDeletionSupported
+    ? "Account deletion isn't available on this deployment. Contact support to close your account."
+    : hasPendingDeletion
+      ? `${
+          deletionScheduledForLabel
+            ? `Scheduled for deletion on ${deletionScheduledForLabel}.`
+            : 'Scheduled for deletion.'
+        } You can cancel any time before then.`
+      : 'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.';
 
-      {/* 1. Profile picture */}
-      <section className="space-y-4">
-        <SettingsSectionHeader
-          title="Profile picture"
-          description="Shown across Kortix wherever your account appears."
-        />
-        <div className="flex items-center gap-4">
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
+      {/* The pane heading, then a hairline spanning the content width — the
+          rule is what separates "which tab am I on" from the settings
+          themselves, and it is why the groups below need no headers. */}
+      <div className="space-y-4">
+        <SettingsTabHeader tab="profile" />
+        <Separator />
+      </div>
+
+      {/* Profile picture, email, name — one group, one border, hairlines
+          between. */}
+      <SettingsRowGroup>
+        <SettingsRow label="Profile picture" description="JPG, PNG, or GIF. Max 5MB.">
+          {avatarUrl ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onRemoveAvatar}
+              disabled={isUploadingAvatar || isRemovingAvatar}
+            >
+              {isRemovingAvatar ? <Loading className="size-3.5 shrink-0" /> : null}
+              Remove
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenFilePicker}
+            disabled={isUploadingAvatar}
+          >
+            Upload
+          </Button>
           <button
             type="button"
             onClick={onOpenFilePicker}
@@ -279,9 +350,9 @@ export function ProfileTabView({
             className="group focus-visible:ring-ring relative shrink-0 cursor-pointer overflow-hidden rounded-md transition-[scale] duration-150 ease-out focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96]"
             aria-label="Upload profile picture"
           >
-            <Avatar className="border-border size-14 border">
+            <Avatar className="border-border size-9 border">
               <AvatarImage src={avatarPreview || avatarUrl} alt={userName} />
-              <AvatarFallback className="bg-muted text-sm font-medium">
+              <AvatarFallback className="bg-muted text-xs font-medium">
                 {getInitials(userName)}
               </AvatarFallback>
             </Avatar>
@@ -299,32 +370,6 @@ export function ProfileTabView({
               />
             )}
           </button>
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onOpenFilePicker}
-                disabled={isUploadingAvatar}
-              >
-                Upload
-              </Button>
-              {avatarUrl ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onRemoveAvatar}
-                  disabled={isUploadingAvatar || isRemovingAvatar}
-                >
-                  {isRemovingAvatar ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-            <p className="text-muted-foreground text-xs">JPG, PNG, or GIF. Max 5MB.</p>
-          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -332,20 +377,24 @@ export function ProfileTabView({
             onChange={onAvatarFileChange}
             className="hidden"
           />
-        </div>
-      </section>
+        </SettingsRow>
 
-      {/* 2. Name */}
-      <section className="space-y-3">
-        <SettingsSectionHeader title="Name" description="Your display name across Kortix." />
-        <div className="flex items-center gap-2">
+        {/* Not editable, so not a field: plain right-aligned muted text. */}
+        <SettingsRow label="Email" description="Used to sign in — cannot be changed here.">
+          <span className="text-muted-foreground truncate text-sm">{userEmail}</span>
+        </SettingsRow>
+
+        <SettingsRow label="Name" description="Your display name across Kortix.">
           <Input
             type="text"
             id="profile-name"
+            // The row label is a heading, not a `<label htmlFor>` — the
+            // control carries its own accessible name.
+            aria-label="Name"
             value={nameDraft}
             onChange={(e) => onNameDraftChange(e.target.value)}
             placeholder="Your name"
-            className="max-w-xs"
+            className="h-8 w-56"
           />
           {isNameDirty ? (
             <Button type="button" size="sm" onClick={onSaveName} disabled={isSavingName}>
@@ -353,45 +402,57 @@ export function ProfileTabView({
               Save
             </Button>
           ) : null}
-        </div>
-      </section>
+        </SettingsRow>
+      </SettingsRowGroup>
 
-      {/* 3. Email */}
+      {/* Security */}
       <section className="space-y-3">
-        <SettingsSectionHeader
-          title="Email"
-          description="Used to sign in — cannot be changed here."
-        />
-        <Input type="text" id="profile-email" value={userEmail} readOnly className="max-w-xs" />
-      </section>
+        <SettingsSectionLabel title="Security" />
 
-      {/* 4. Two-factor authentication */}
-      <section className="space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <SettingsSectionHeader
-            title="Two-factor authentication"
+        <SettingsRowGroup>
+          <SettingsRow
+            label="Two-factor authentication"
             description="Add an authenticator app (TOTP) as a second factor."
-            className="flex-1"
-          />
-          {verified.length > 0 && (
-            <Badge
-              variant="outline"
-              size="xs"
-              className={cn(
-                'mt-0.5 shrink-0 gap-1',
-                sessionVerified
-                  ? 'bg-kortix-green/15 text-kortix-green border-transparent'
-                  : 'text-muted-foreground',
-              )}
-            >
-              <ShieldCheck className="size-3.5" />
-              {sessionVerified ? 'Session verified' : 'Enrolled'}
-            </Badge>
-          )}
-        </div>
+          >
+            {verified.length > 0 && (
+              <Badge
+                variant="outline"
+                size="xs"
+                className={cn(
+                  'shrink-0 gap-1',
+                  sessionVerified
+                    ? 'bg-kortix-green/15 text-kortix-green border-transparent'
+                    : 'text-muted-foreground',
+                )}
+              >
+                <ShieldCheck className="size-3.5" />
+                {sessionVerified ? 'Session verified' : 'Enrolled'}
+              </Badge>
+            )}
+            {enrolling ? null : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onStartEnroll}
+                disabled={isStartingEnroll}
+                className="gap-1.5"
+              >
+                {isStartingEnroll ? <Loading className="size-4" /> : <Plus className="size-4" />}
+                Add authenticator app
+              </Button>
+            )}
+          </SettingsRow>
+          {/* Enrolled factors stack under the row they belong to, inside the
+              same border — `divide-y` draws the hairline between them. */}
+          {!factorsLoading && !factorsError
+            ? factors.map((f) => (
+                <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} />
+              ))
+            : null}
+        </SettingsRowGroup>
 
         {factorsLoading ? (
-          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-10 w-full rounded-md" />
         ) : factorsError ? (
           <ErrorState
             size="sm"
@@ -402,18 +463,11 @@ export function ProfileTabView({
               </Button>
             }
           />
-        ) : (
-          <div className="space-y-2">
-            {factors.length === 0 && !enrolling && (
-              <InfoBanner tone="info" title="No second factor enrolled">
-                Add an authenticator app so you can step up when a workspace requires MFA.
-              </InfoBanner>
-            )}
-            {factors.map((f) => (
-              <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} />
-            ))}
-          </div>
-        )}
+        ) : factors.length === 0 && !enrolling ? (
+          <InfoBanner tone="info" title="No second factor enrolled">
+            Add an authenticator app so you can step up when a workspace requires MFA.
+          </InfoBanner>
+        ) : null}
 
         {enrolling ? (
           <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
@@ -472,18 +526,7 @@ export function ProfileTabView({
               </div>
             </div>
           </div>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onStartEnroll}
-            disabled={isStartingEnroll}
-            className="gap-1.5"
-          >
-            {isStartingEnroll ? <Loading className="size-4" /> : <Plus className="size-4" />}
-            Add authenticator app
-          </Button>
-        )}
+        ) : null}
 
         <ConfirmDialog
           open={removeFactorTarget !== null}
@@ -497,53 +540,36 @@ export function ProfileTabView({
         />
       </section>
 
-      {/* 5. Delete account */}
+      {/* Danger zone */}
       <section className="space-y-3">
-        <SettingsSectionHeader
-          title="Delete account"
-          description="Permanently remove your account and everything it owns."
-        />
-        {!accountDeletionSupported ? (
-          <p className="text-muted-foreground text-xs text-pretty">
-            Account deletion isn&apos;t available on this deployment. Contact support to close your
-            account.
-          </p>
-        ) : hasPendingDeletion ? (
-          <InfoBanner tone="warning">
-            <div className="flex flex-col gap-2">
-              <p className="font-medium">
-                {deletionScheduledForLabel
-                  ? `Your account is scheduled for deletion on ${deletionScheduledForLabel}.`
-                  : 'Your account is scheduled for deletion.'}{' '}
-                You can cancel any time before then.
-              </p>
+        <SettingsSectionLabel title="Danger zone" />
+        <SettingsRowGroup>
+          <SettingsRow label="Delete account" description={deleteAccountDescription}>
+            {!accountDeletionSupported ? (
+              <span className="text-muted-foreground text-sm">Unavailable</span>
+            ) : hasPendingDeletion ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onOpenCancelDeletionDialog}
                 disabled={isCancelingDeletion}
-                className="w-fit"
               >
                 Keep my account
               </Button>
-            </div>
-          </InfoBanner>
-        ) : (
-          <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-            <p className="text-muted-foreground min-w-0 text-xs text-pretty">
-              This deletes every agent, thread, credential, and subscription tied to your account.
-              This cannot be undone.
-            </p>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={onOpenDeleteDialog}
-              className="shrink-0"
-            >
-              Delete account
-            </Button>
-          </div>
-        )}
+            ) : (
+              // Red text, not a filled button: the weight belongs to the
+              // confirmation, not to the affordance that opens it.
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onOpenDeleteDialog}
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                Delete account
+              </Button>
+            )}
+          </SettingsRow>
+        </SettingsRowGroup>
 
         {accountDeletionSupported && (
           <>

@@ -180,6 +180,38 @@ describe('BillingTabView', () => {
     expect(out).not.toContain('Only account owners can manage billing.');
   });
 
+  // ── Linear card shape (2026-08-11 restyle). Linear's billing pane is a plan
+  // card, then labelled sections whose content sits in one bordered box. These
+  // pin that shape, since heading order alone would not catch a regression back
+  // to a stack of loose headers and boxes. ──
+
+  test('the Billing portal section renders its action inside a settings-row group, not a loose header', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView billingEnabled accountOverviewSlot={<div>x</div>} />,
+    );
+    expect(out).toContain('data-slot="settings-row-group"');
+    expect(out).toContain('Invoices and payment methods');
+    expect(out).toContain('>Manage billing<');
+  });
+
+  test('without billing.write the portal row keeps its label and swaps the button for the owner-only note', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView billingEnabled canManageBilling={false} accountOverviewSlot={<div>x</div>} />,
+    );
+    expect(out).toContain('Invoices and payment methods');
+    expect(out).not.toContain('>Manage billing<');
+    expect(out).toContain('Only account owners can manage billing.');
+  });
+
+  test('the team-checkout branch is one bordered card — its heading and its actions share a box', () => {
+    const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling />);
+    const cardIndex = out.indexOf('rounded-md border');
+    expect(cardIndex).toBeGreaterThan(-1);
+    // Both the h2 and the primary action fall inside the card that opens first.
+    expect(out.indexOf('Kortix Team')).toBeGreaterThan(cardIndex);
+    expect(out.indexOf('Subscribe to Team')).toBeGreaterThan(cardIndex);
+  });
+
   test('team-checkout: billing.write shows the Subscribe and Manage billing actions', () => {
     const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling />);
     expect(out).toContain('Subscribe to Team');

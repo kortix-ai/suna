@@ -15,7 +15,9 @@ import { GeneralTabView } from './general-tab';
  */
 describe('GeneralTabView', () => {
   test('renders the general fields slot', () => {
-    const out = renderToStaticMarkup(<GeneralTabView generalFieldsSlot={<div>name-icon-marker</div>} />);
+    const out = renderToStaticMarkup(
+      <GeneralTabView generalFieldsSlot={<div>name-icon-marker</div>} />,
+    );
     expect(out).toContain('name-icon-marker');
   });
 
@@ -37,14 +39,46 @@ describe('GeneralTabView', () => {
   });
 
   test('the sandbox provider slot renders before the Delete workspace section', () => {
-    const out = renderToStaticMarkup(<GeneralTabView sandboxProviderSlot={<div>sandbox-marker</div>} />);
+    const out = renderToStaticMarkup(
+      <GeneralTabView sandboxProviderSlot={<div>sandbox-marker</div>} />,
+    );
     expect(out.indexOf('sandbox-marker')).toBeLessThan(out.indexOf('Delete workspace'));
   });
 
-  test('renders a Delete workspace heading with a destructive action by default', () => {
+  test('renders a Delete workspace row with a destructive action by default', () => {
     const out = renderToStaticMarkup(<GeneralTabView />);
     expect(out).toContain('Delete workspace');
     expect(out).toContain('destructive');
+  });
+
+  /**
+   * Was pinned as a `SettingsSectionHeader` + a bordered box of its own. Since
+   * the Linear restyle every setting is a row inside a `SettingsRowGroup`, so
+   * the assertion moves to the group's own slot — one border around the rows,
+   * hairlines between them, rather than one bordered card per setting.
+   */
+  test('the Delete workspace row sits in a bordered settings group', () => {
+    const out = renderToStaticMarkup(<GeneralTabView />);
+    expect(out).toContain('data-slot="settings-row-group"');
+  });
+
+  /**
+   * Linear's rule, and Jay's: a destructive trigger is red TEXT, and the
+   * filled button is reserved for the confirmation. `bg-destructive/80` is the
+   * `destructive` Button variant's fill — its absence is what says the trigger
+   * did not silently go back to a solid red button. `ConfirmDialog` still
+   * stands between the trigger and the mutation (`confirmVariant` below).
+   */
+  test('Delete workspace is a red text trigger, not a filled destructive button', () => {
+    const out = renderToStaticMarkup(<GeneralTabView />);
+    expect(out).toContain('text-destructive');
+    expect(out).not.toContain('bg-destructive/80');
+  });
+
+  test('the Danger zone label sits above the Delete workspace row', () => {
+    const out = renderToStaticMarkup(<GeneralTabView />);
+    expect(out).toContain('Danger zone');
+    expect(out.indexOf('Danger zone')).toBeLessThan(out.indexOf('Delete workspace'));
   });
 
   test('the Delete workspace section is absent when canDelete is false', () => {

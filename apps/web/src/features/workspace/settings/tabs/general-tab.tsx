@@ -78,6 +78,15 @@
  * every hook only runs once this tab is actually mounted, which
  * `SettingsTabPane` in `settings-panel.tsx` guarantees happens only while
  * this tab is active.
+ *
+ * **Layout: Linear's settings shape** (Jay's reference, 2026-08-11). Heading,
+ * hairline rule, then rows — label left, control right, consecutive rows
+ * sharing ONE bordered box (`SettingsRowGroup` / `SettingsRow`, see
+ * `components/ui/settings-row.tsx`). Icon and Workspace name are one group;
+ * Sandbox and Danger zone each get a plain section label above their own
+ * group. Delete workspace is red TEXT, not a filled destructive button — the
+ * `ConfirmDialog` behind it, and the manager-only `canDelete` gate in front of
+ * it, are both unchanged.
  */
 
 import { useEffect, useState, type ReactNode } from 'react';
@@ -85,7 +94,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Input } from '@/components/ui/input';
 import {
@@ -95,7 +103,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { Separator } from '@/components/ui/separator';
+import { SettingsRow, SettingsRowGroup, SettingsSectionLabel } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -124,7 +133,6 @@ import {
   type SandboxProviderName,
 } from '@kortix/sdk';
 import { contract, invalidateProject, qk } from '@kortix/sdk/react';
-import { TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   applySandboxProviderResult,
@@ -132,6 +140,17 @@ import {
 } from '../../customize/sections/view/sandbox-provider-result';
 import { SettingsTabHeader } from '../settings-tab-header';
 
+/**
+ * A section label between two groups — plain small text, optionally one line
+ * of explanation, sitting above the next group. No border and no background,
+ * so the bordered group below it reads as the thing being labelled. Still an
+ * `h2` so the pane keeps a real heading outline.
+ *
+ * Deliberately duplicated in `profile-tab.tsx` rather than shared: the two
+ * Linear restyles landed in parallel and neither should have edited the other
+ * agent's file. Promote it to `components/ui/settings-row.tsx` once a third
+ * pane needs it.
+ */
 export interface GeneralTabViewProps {
   isLoading?: boolean;
   isError?: boolean;
@@ -182,8 +201,14 @@ export function GeneralTabView({
   isArchivePending = false,
 }: GeneralTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
-      <SettingsTabHeader tab="general" />
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-10">
+      {/* The pane heading, then a hairline spanning the content width — the
+          rule is what separates "which tab am I on" from the settings
+          themselves, and it is why the groups below need no headers. */}
+      <div className="space-y-4">
+        <SettingsTabHeader tab="general" />
+        <Separator />
+      </div>
       {isLoading ? (
         <div className="space-y-5">
           <Skeleton className="h-40 rounded-md" />
@@ -205,27 +230,25 @@ export function GeneralTabView({
           {generalFieldsSlot}
           {sandboxProviderSlot}
           {canDelete ? (
-            <section className="space-y-4">
-              <SettingsSectionHeader title="Delete workspace" />
-              <div className="bg-popover rounded-md border px-4 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-foreground text-sm font-medium">Archive this workspace</p>
-                    <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                      Hides it from the active project list. Current sessions remain recoverable.
-                    </p>
-                  </div>
+            <section className="space-y-3">
+              <SettingsSectionLabel title="Danger zone" />
+              <SettingsRowGroup>
+                <SettingsRow
+                  label="Delete workspace"
+                  description="Hides it from the active project list. Current sessions remain recoverable."
+                >
+                  {/* Red text, not a filled button: the weight belongs to the
+                      confirmation, not to the affordance that opens it. */}
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="sm"
-                    className="shrink-0"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={onOpenArchiveDialog}
                   >
-                    <TrashIcon className="size-4" />
-                    Delete
+                    Delete workspace
                   </Button>
-                </div>
-              </div>
+                </SettingsRow>
+              </SettingsRowGroup>
             </section>
           ) : null}
         </>
@@ -395,11 +418,12 @@ function GeneralWorkspaceCard({
   const saving = isDebouncing || isRenamePending;
 
   return (
-    // No section heading here — the pane heading right above already reads
+    // No section label here — the pane heading right above already reads
     // "General" (this tab's own rail label), and a second "General" directly
     // under it would repeat the same word. See `settings-tab-header.tsx`.
-    <section className="space-y-4">
-      <div className="flex items-start gap-2">
+    // Both fields share ONE bordered group, Linear-style.
+    <SettingsRowGroup>
+      <SettingsRow label="Icon" description="Shown next to the workspace name.">
         <ProjectIconField
           value={toIconValue(project.icon, project.icon_glyph)}
           onChange={(emoji) => applyIcon({ emoji })}
@@ -407,24 +431,33 @@ function GeneralWorkspaceCard({
           onClear={() => applyIcon(null)}
           disabled={!canManage || iconMutation.isPending}
         />
-        <div className="min-w-0 flex-1">
-          <Field>
-            <div className="flex items-center justify-between gap-2">
-              <FieldLabel htmlFor="workspace-name">Workspace name</FieldLabel>
-              {saving ? <SaveStatus /> : null}
-            </div>
-            <Input
-              id="workspace-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!canManage || isRenamePending}
-              maxLength={120}
-              variant="popover"
-            />
-          </Field>
-        </div>
-      </div>
-    </section>
+      </SettingsRow>
+      {/* A description on every row is not decoration here: `Field`'s
+          `has-[>[data-slot=field-content]]:items-start` outranks the
+          `items-center` `SettingsRow` applies when there is no description
+          (specificity 0,2,0 vs 0,1,0), so a description-less row top-aligns
+          its control against a single-line label. See this task's report. */}
+      <SettingsRow
+        label="Workspace name"
+        description="Shown in the workspace switcher and anywhere this workspace is listed."
+      >
+        {saving ? <SaveStatus /> : null}
+        <Input
+          id="workspace-name"
+          // The row label is a heading, not a `<label htmlFor>` — the control
+          // carries its own accessible name.
+          aria-label="Workspace name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!canManage || isRenamePending}
+          maxLength={120}
+          // Not `variant="popover"` any more: the group it now sits in is
+          // itself `bg-popover`, so a popover-tinted input would vanish into
+          // it. The default `bg-input` is what makes it read as a control.
+          className="h-8 w-56"
+        />
+      </SettingsRow>
+    </SettingsRowGroup>
   );
 }
 
@@ -491,43 +524,43 @@ function SandboxProviderRow({
   if (available.length === 0) return null;
 
   return (
-    <section className="space-y-4">
-      <SettingsSectionHeader title="Sandbox provider" />
-      <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-foreground text-sm font-medium">Sandbox provider</p>
-            <Badge variant="highlight" size="sm">
-              Experimental
-            </Badge>
-          </div>
-          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-            Pin this project to a specific sandbox provider, overriding the platform default. New
-            sessions here run on the chosen provider — “Automatic” follows the platform default.
-          </p>
-        </div>
-        <Select
-          value={current ?? AUTO_PROVIDER}
-          onValueChange={(v) =>
-            mutation.mutate(
-              v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
-            )
+    <section className="space-y-3">
+      <SettingsSectionLabel title="Sandbox" />
+      <SettingsRowGroup>
+        <SettingsRow
+          label={
+            <>
+              Sandbox provider
+              <Badge variant="highlight" size="sm">
+                Experimental
+              </Badge>
+            </>
           }
-          disabled={!canManage || mutation.isPending}
+          description="Pin this project to a specific sandbox provider, overriding the platform default. New sessions here run on the chosen provider — “Automatic” follows the platform default."
         >
-          <SelectTrigger className="w-40 shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
-            {available.map((p) => (
-              <SelectItem key={p} value={p}>
-                {label(p)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+          <Select
+            value={current ?? AUTO_PROVIDER}
+            onValueChange={(v) =>
+              mutation.mutate(
+                v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
+              )
+            }
+            disabled={!canManage || mutation.isPending}
+          >
+            <SelectTrigger aria-label="Sandbox provider" className="h-8 w-40 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
+              {available.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {label(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+      </SettingsRowGroup>
     </section>
   );
 }

@@ -73,6 +73,84 @@ describe('MembersTabView', () => {
     expect(out.match(/<tr/g)?.length).toBe(3); // 1 header row + 2 member rows
   });
 
+  // ── Linear table shape (2026-08-11 restyle). Linear's members table is
+  // borderless — no card around it, no header fill, no row dividers — with one
+  // hairline under the column headers, and its date column is right-aligned
+  // `tabular-nums`. These pin the shape, since nothing else would catch a
+  // regression back to the bordered `Table` container. ──
+
+  test('the table is borderless — no bordered `Table` container, no row dividers', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ user_id: 'u1', email: 'a@kortix.com' })]} />,
+    );
+    expect(out).toContain('<table');
+    // `@/components/ui/table`'s `Table` stamps this on its bordered card.
+    expect(out).not.toContain('data-slot="table-container"');
+    // Body rows carry no bottom rule; only the header row does.
+    expect(out).toContain('border-b-0');
+  });
+
+  test('a Joined column renders the join date as right-aligned tabular-nums', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ user_id: 'u1', joined_at: '2026-01-15T00:00:00Z' })]} />,
+    );
+    expect(out).toContain('Joined');
+    expect(out).toContain('tabular-nums');
+    expect(out).toContain('text-right');
+  });
+
+  test('a member with no join date reads as an em dash, not "Never"', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({ joined_at: '' })]} />);
+    expect(out).not.toContain('Never');
+  });
+
+  test('the read-only account role is coloured text, not a filled badge', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ user_id: 'u1', account_role: 'owner' })]} />,
+    );
+    expect(out).toContain('owner');
+    expect(out).not.toContain('data-slot="badge"');
+  });
+
+  test('the Invite control is an icon button carrying its name in aria-label', () => {
+    const out = renderToStaticMarkup(<MembersTabView canManageMembers members={[member({})]} />);
+    expect(out).toContain('aria-label="Invite"');
+    expect(out).not.toContain('>Invite<');
+  });
+
+  test('the member count renders beside the header once there are members', () => {
+    const withMembers = renderToStaticMarkup(
+      <MembersTabView
+        members={[member({ user_id: 'u1' }), member({ user_id: 'u2', email: 'b@kortix.com' })]}
+      />,
+    );
+    expect(withMembers).toContain('>2<');
+
+    // No count while the table is empty — a bare "0" beside the title reads as
+    // a broken widget, and the empty state already says there is nobody.
+    const empty = renderToStaticMarkup(<MembersTabView members={[]} />);
+    expect(empty).not.toContain('>0<');
+  });
+
+  test('the workspace-access control shares the workspace-access column — no trailing actions column', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView
+        members={[
+          member({
+            project_role: 'editor',
+            effective_project_role: 'editor',
+            effective_source: 'direct',
+          }),
+        ]}
+        canManageMembers
+      />,
+    );
+    // Four columns: Member, Account role, Workspace access, Joined. The
+    // character class keeps `<thead` out of the count.
+    expect(out.match(/<th[ >]/g)?.length).toBe(4);
+    expect(out).toContain('role="combobox"');
+  });
+
   test('a group-sourced grant shows memberAccessLabel\'s "via <group>" annotation', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
