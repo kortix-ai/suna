@@ -3758,6 +3758,27 @@ const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
   'TypeError: WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
   'TypeError: WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
   'Unhandled promise rejection: TypeError: WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  // Paper Shaders library's OWN internal guard wording — the SIXTH variant of
+  // this null-WebGL-context crash class, and the ONLY one that is the library's
+  // OWN throw rather than a JS-engine TypeError or a Gecko DOM-binding message.
+  // When the library's internal state check detects that `this.gl` (the WebGL2
+  // context it cached at mount) is `null`, it throws `this.gl is null` directly.
+  // Better Stack pattern
+  // f0c8c42213b12122948f4c8307b1eedb6a51afe9072460604e3be14e0277d3f2
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `this.gl is null`, 1 occurrence / 0 identified users, first 2026-08-10
+  // 14:35:19 UTC (post-v0.12.7), request URL
+  // `https://kortix.com/projects/1d0153d2-…` (project page), browser Firefox
+  // 137.0 on Windows 10 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`), 3 frames in chunk
+  // `app:///_next/static/immutable/chunks/2_t47hwky1w2m.js` (Paper Shaders
+  // library). Pinned in all three capture-path forms (bare, `TypeError: `-prefixed,
+  // and `Unhandled promise rejection: `-prefixed) like the other variants so
+  // every Sentry / runtime capture path classifies consistently.
+  'this.gl is null',
+  'TypeError: this.gl is null',
+  'Unhandled promise rejection: this.gl is null',
 ]
 
 // The exact production event from Better Stack pattern
@@ -3828,13 +3849,13 @@ test('does NOT suppress a real app TypeError with a different null-property name
   // `Cannot read properties of null (reading '<name>')` SHAPE but with an
   // app-property name, not a WebGL2 API method — it must keep reporting so a
   // real null-deref regression is never hidden by the Paper Shaders guard.
-  // Covers all five engine/DOM-binding wordings (V8, old JSC,
-  // SpiderMonkey/Firefox, modern JSC, Gecko/Firefox DOM-binding) so the Firefox
-  // `can't access property "<m>"` pattern, the modern-JSC `null is not an
-  // object (evaluating '<expr>')` pattern, AND the Gecko
-  // `WebGL2RenderingContext.<m>: Argument 1 is not an object.` pattern can't
-  // swallow a real first-party null-deref with a non-WebGL property / method
-  // name.
+  // Covers all six wordings (V8, old JSC, SpiderMonkey/Firefox, modern JSC,
+  // Gecko/Firefox DOM-binding, and the library's OWN `this.gl is null` internal
+  // guard) so the Firefox `can't access property "<m>"` pattern, the modern-JSC
+  // `null is not an object (evaluating '<expr>')` pattern, the Gecko
+  // `WebGL2RenderingContext.<m>: Argument 1 is not an object.` pattern, AND the
+  // bare `this.gl is null` library-guard pattern can't swallow a real
+  // first-party null-deref with a non-WebGL property / method / receiver name.
   const realAppNullDerefMessages = [
     "Cannot read properties of null (reading 'map')",
     "Cannot read properties of null (reading 'length')",
@@ -3862,6 +3883,24 @@ test('does NOT suppress a real app TypeError with a different null-property name
     // Gecko pattern can't swallow a real first-party DOM-API null-deref.
     'CanvasRenderingContext2D.fillRect: Argument 1 is not an object.',
     'WebGL2RenderingContext.someOtherMethod: Argument 1 is not an object.',
+    // Real first-party `this.<other> is null` null-deref — same SHAPE as the
+    // Paper Shaders library-guard `this.gl is null` message but NOT the `this.gl`
+    // receiver (a WebGL2 context field no first-party `apps/web/src/…` code
+    // holds — confirmed by `rg "this\.gl" apps/web/src`). A genuine first-party
+    // null-receiver on a DIFFERENT field (`this.canvas`, `this.context`,
+    // `this.program`, `this.foo`, …) must keep reporting so the bare-string
+    // `this.gl is null` pattern can't swallow it. Substring-anchored, so
+    // `this.global is null` / `this.glide is null` (which CONTAIN `this.gl` as a
+    // prefix of a longer token) do NOT match either — `.includes('this.gl is null')`
+    // requires the exact `this.gl is null` token.
+    'this.canvas is null',
+    'this.context is null',
+    'this.program is null',
+    'this.foo is null',
+    'TypeError: this.bar is null',
+    'Unhandled promise rejection: this.baz is null',
+    'this.global is null',
+    'this.glide is null',
   ]
   for (const message of realAppNullDerefMessages) {
     assert.equal(
@@ -3956,6 +3995,70 @@ test('regression: Gecko/Firefox DOM-binding Paper Shaders null-context crash is 
     }),
     true,
     'expected Sentry gate to suppress the Gecko production message even without a chunk frame (message-only contract)',
+  )
+})
+
+// The exact production event from Better Stack pattern
+// f0c8c42213b12122948f4c8307b1eedb6a51afe9072460604e3be14e0277d3f2 — the
+// Paper Shaders library's OWN internal guard wording of the null-WebGL-context
+// crash class (call site in chunk
+// `app:///_next/static/immutable/chunks/2_t47hwky1w2m.js`, Firefox 137.0 on
+// Windows 10, `/projects/1d0153d2-…` project page, post-v0.12.7). Pinned as a
+// regression test so this exact production wording never pages Better Stack
+// again. Unlike the V8/JSC/SpiderMonkey/Gecko entries (JS-engine / DOM-binding
+// wordings the library triggered by dereferencing the null context), this is
+// the library's OWN explicit throw — `this.gl is null` — fired when its
+// internal state check detects the null WebGL2 context. It is the SIXTH wording
+// variant of the same crash class.
+const PAPER_SHADER_LIBRARY_GUARD_NULL_CONTEXT_PRODUCTION_MESSAGE = 'this.gl is null'
+
+test('regression: Paper Shaders library-guard null-context crash is suppressed (BS pattern f0c8c422…)', () => {
+  // The exact production message (no wrapper prefix — the raw Sentry
+  // `exception.values[].value`).
+  assert.equal(
+    isPaperShaderNullContextNoise(PAPER_SHADER_LIBRARY_GUARD_NULL_CONTEXT_PRODUCTION_MESSAGE),
+    true,
+    'expected the exact library-guard production message to be classified as Paper Shaders null-context noise',
+  )
+  // The runtime (window.onerror / onunhandledrejection) gate must suppress it.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: PAPER_SHADER_LIBRARY_GUARD_NULL_CONTEXT_PRODUCTION_MESSAGE }),
+    true,
+    'expected runtime gate to suppress the library-guard production message',
+  )
+  // The Sentry `beforeSend` gate must suppress it — both WITH the production
+  // chunk frame (the actual prod stack shape) and frameless (the message-only
+  // contract means no chunk-frame anchor is required).
+  const productionChunkFrame = {
+    filename: 'app:///_next/static/immutable/chunks/2_t47hwky1w2m.js',
+  }
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_LIBRARY_GUARD_NULL_CONTEXT_PRODUCTION_MESSAGE,
+            stacktrace: { frames: [productionChunkFrame] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected Sentry gate to suppress the library-guard production message with the production chunk frame',
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_LIBRARY_GUARD_NULL_CONTEXT_PRODUCTION_MESSAGE,
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected Sentry gate to suppress the library-guard production message even without a chunk frame (message-only contract)',
   )
 })
 
