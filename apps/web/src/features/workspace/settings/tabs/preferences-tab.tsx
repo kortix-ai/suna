@@ -46,7 +46,6 @@
  * guarantees happens only while this tab is the active one.
  */
 
-import { useEffect, useState } from 'react';
 import {
   BellIcon as BellSolid,
   CheckCircleIcon as CheckCircleSolid,
@@ -58,6 +57,7 @@ import {
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
+import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
@@ -80,8 +80,8 @@ import { THEME_OPTIONS } from '@/features/layout/user-menu';
 import { useLanguage } from '@/hooks/use-language';
 import { locales, type Locale } from '@/i18n/config';
 import { previewSound } from '@/lib/sounds';
-import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
+import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
 import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
 import {
@@ -89,6 +89,7 @@ import {
   type WebNotificationPermission,
   type WebNotificationPreferences,
 } from '@/stores/web-notification-store';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
   { id: 'off', label: 'Off', description: 'All sounds disabled' },
@@ -279,9 +280,14 @@ export function PreferencesTabView({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+      <SettingsTabHeader tab="preferences" />
+
       {/* 1. Theme */}
       <section className="space-y-3">
-        <SettingsSectionHeader title="Theme" description="Choose how Kortix looks on this device." />
+        <SettingsSectionHeader
+          title="Theme"
+          description="Choose how Kortix looks on this device."
+        />
         {/* Concentric radius: the track pads its thumb by `p-0.5` (2px), and
             `--radius-md` is defined as exactly 2px larger than `--radius-sm`
             (globals.css:320-321). So `rounded-md` track around a `rounded-sm`
@@ -310,7 +316,10 @@ export function PreferencesTabView({
 
       {/* 2. Wallpaper */}
       <section className="space-y-3">
-        <SettingsSectionHeader title="Wallpaper" description="The background behind your workspace." />
+        <SettingsSectionHeader
+          title="Wallpaper"
+          description="The background behind your workspace."
+        />
         <div className="grid w-full grid-cols-3 gap-2">
           {WALLPAPERS.map((wp) => (
             <WallpaperCard
@@ -490,7 +499,12 @@ export function PreferencesTabView({
             className="grid w-fit grid-cols-2 items-center gap-2"
           >
             {MODIFIER_OPTIONS.map((mod) => (
-              <RadioGroupItem key={mod.value} value={mod.value} id={`pref-mod-${mod.value}`} label={mod.label} />
+              <RadioGroupItem
+                key={mod.value}
+                value={mod.value}
+                id={`pref-mod-${mod.value}`}
+                label={mod.label}
+              />
             ))}
           </RadioGroup>
         </div>
@@ -535,7 +549,9 @@ export function PreferencesTabView({
 export function PreferencesTab() {
   const { theme, setTheme, resolvedTheme } = useTheme();
 
-  const wallpaperId = useUserPreferencesStore((s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID);
+  const wallpaperId = useUserPreferencesStore(
+    (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
+  );
   const setWallpaperId = useUserPreferencesStore((s) => s.setWallpaperId);
   const keyboardModifier = useUserPreferencesStore((s) => s.preferences.keyboard.tabSwitchModifier);
   const setKeyboardPreferences = useUserPreferencesStore((s) => s.setKeyboardPreferences);

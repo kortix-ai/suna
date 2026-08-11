@@ -61,7 +61,6 @@ import type { ReactNode } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { RolesTab as RealRolesTab } from '@/components/iam/roles-tab';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountStateKeys } from '@/hooks/billing';
@@ -69,6 +68,7 @@ import { usePermission } from '@/lib/use-permission';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export interface RolesTabViewProps {
@@ -90,17 +90,16 @@ export interface RolesTabViewProps {
  *  `GroupsTabView` for the same split. Does NOT encode the `role.create`
  *  whole-tab gate — that lives in `RolesTabInner`, see this file's header
  *  comment. */
-export function RolesTabView({ isLoading = false, rbacEnabled = false, rolesSlot }: RolesTabViewProps) {
+export function RolesTabView({
+  isLoading = false,
+  rbacEnabled = false,
+  rolesSlot,
+}: RolesTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-10">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
+      <SettingsTabHeader tab="roles" />
       {isLoading ? (
-        <div className="space-y-4">
-          <SettingsSectionHeader
-            title="Roles"
-            description="Custom roles deactivate capabilities by omitting their permissions."
-          />
-          <Skeleton className="h-64 w-full rounded-md" />
-        </div>
+        <Skeleton className="h-64 w-full rounded-md" />
       ) : rbacEnabled ? (
         rolesSlot
       ) : (

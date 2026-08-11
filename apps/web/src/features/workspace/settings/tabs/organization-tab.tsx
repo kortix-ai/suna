@@ -153,6 +153,7 @@ import { getAccount, getAccountState, updateAccountName, type AccountState } fro
 import { CaretDownIcon as ChevronDown } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 /** Byte-identical to `app/(app)/accounts/[id]/page.tsx`'s own local
@@ -205,12 +206,13 @@ export function OrganizationTabView({
 }: OrganizationTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-10">
+      <SettingsTabHeader tab="organization" />
       <div className="space-y-10">
-        {/* 1. General — page.tsx:623-629, no extra gate. */}
-        <section className="space-y-4">
-          <SettingsSectionHeader title="General" />
-          {generalSlot}
-        </section>
+        {/* 1. General — page.tsx:623-629, no extra gate. No section heading:
+            the pane heading right above already reads "General" (this tab's
+            own rail label), and a second "General" directly under it would
+            repeat the same word — see `settings-tab-header.tsx`. */}
+        <section className="space-y-4">{generalSlot}</section>
 
         {/* 2. Security — page.tsx:636-659, no extra gate. MFA is primary;
             session lifetime/idle timeout hide under the closed-by-default

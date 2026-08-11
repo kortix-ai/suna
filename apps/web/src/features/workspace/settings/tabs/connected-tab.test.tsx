@@ -9,7 +9,7 @@ const headings = (html: string): string[] =>
 describe('ConnectedAccountsTabView', () => {
   test('renders one row per provider, in order', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
-    expect(headings(out)).toEqual(['GitHub', 'ChatGPT', 'Claude Code']);
+    expect(headings(out)).toEqual(['Connected accounts', 'GitHub', 'ChatGPT', 'Claude Code']);
   });
 
   test('every row states which scope it writes to', () => {
@@ -20,7 +20,7 @@ describe('ConnectedAccountsTabView', () => {
 
   test('the GitHub row is absent without account.write', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount={false} />);
-    expect(headings(out)).toEqual(['ChatGPT', 'Claude Code']);
+    expect(headings(out)).toEqual(['Connected accounts', 'ChatGPT', 'Claude Code']);
   });
 
   test('each row carries exactly one action button', () => {
@@ -40,7 +40,9 @@ describe('ConnectedAccountsTabView', () => {
   // header comment), so this is the strongest proof available without a DOM
   // or a live network.
   test('the GitHub row renders whenever canManageAccount is true, with no dependency on a project prop existing at all', () => {
-    const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount githubStatus="connected" />);
+    const out = renderToStaticMarkup(
+      <ConnectedAccountsTabView canManageAccount githubStatus="connected" />,
+    );
     expect(headings(out)).toContain('GitHub');
   });
 

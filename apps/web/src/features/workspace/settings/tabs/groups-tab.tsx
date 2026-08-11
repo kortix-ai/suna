@@ -121,7 +121,6 @@ import type { ReactNode } from 'react';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab as RealGroupsTab } from '@/components/iam/groups-tab';
 import { Button } from '@/components/ui/button';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -130,6 +129,7 @@ import { usePermission } from '@/lib/use-permission';
 import { getAccountState, listAccounts, type AccountState } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export interface GroupsTabViewProps {
@@ -164,7 +164,8 @@ export function GroupsTabView({
   onRetryAccountResolution,
 }: GroupsTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-10">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
+      <SettingsTabHeader tab="groups" />
       {accountResolutionFailed ? (
         <ErrorState
           size="sm"
@@ -179,13 +180,7 @@ export function GroupsTabView({
           }
         />
       ) : isLoading ? (
-        <div className="space-y-4">
-          <SettingsSectionHeader
-            title="Groups"
-            description="Bundle members together to grant project access in bulk."
-          />
-          <Skeleton className="h-64 w-full rounded-md" />
-        </div>
+        <Skeleton className="h-64 w-full rounded-md" />
       ) : rbacEnabled ? (
         groupsSlot
       ) : (

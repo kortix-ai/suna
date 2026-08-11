@@ -108,8 +108,8 @@
  * and cannot, click a button and observe a network call.
  */
 
-import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -136,6 +136,7 @@ import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 /** Reused wherever a mutating control is hidden for a `billing.write`-less
@@ -220,6 +221,7 @@ export function BillingTabView({
   if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-2xl space-y-4 px-6 py-10">
+        <SettingsTabHeader tab="billing" />
         <Skeleton className="h-32 w-full rounded-md" />
         <Skeleton className="h-32 w-full rounded-md" />
       </div>
@@ -229,6 +231,7 @@ export function BillingTabView({
   if (error) {
     return (
       <div className="mx-auto w-full max-w-2xl px-6 py-10">
+        <SettingsTabHeader tab="billing" />
         <InfoBanner tone="destructive">{error}</InfoBanner>
       </div>
     );
@@ -236,6 +239,7 @@ export function BillingTabView({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+      <SettingsTabHeader tab="billing" />
       {showTeamCheckout ? (
         <section className="space-y-4">
           <SettingsSectionHeader
@@ -479,9 +483,7 @@ function BillingTabInner({ accountId: resolvedAccountId }: { accountId: string |
           <AutoTopupCard fetchSettings showSaveButton />
         ) : undefined
       }
-      creditTopupSlot={
-        canPurchaseCredits && canManageBilling ? <CreditTopupSection /> : undefined
-      }
+      creditTopupSlot={canPurchaseCredits && canManageBilling ? <CreditTopupSection /> : undefined}
     />
   );
 }

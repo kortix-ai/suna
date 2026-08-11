@@ -1,6 +1,6 @@
+import type { FeatureFlagView } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { FeatureFlagView } from '@kortix/sdk';
 
 import { ExperimentalTabView } from './experimental-tab';
 
@@ -36,7 +36,7 @@ describe('ExperimentalTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
     expect(out).toContain('Experimental');
-    expect(out).toContain('Early-access capabilities that may change or be removed.');
+    expect(out).toContain('Features you can switch on before they are generally available.');
   });
 
   test('renders one row per feature, each with its name, description, and stability badge', () => {

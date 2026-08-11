@@ -120,6 +120,7 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { usePermission } from '@/lib/use-permission';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 /** Bearer-auth curl example. Static — no account-scoped data — so it needs
@@ -165,10 +166,7 @@ export function ApiKeysTabView({ patPolicySlot, serviceAccountsSlot }: ApiKeysTa
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-10">
       <div className="space-y-10">
-        <SettingsSectionHeader
-          title="API keys"
-          description="Token policy and machine identities for CI and automations."
-        />
+        <SettingsTabHeader tab="api-keys" />
         {patPolicySlot}
         {serviceAccountsSlot}
 

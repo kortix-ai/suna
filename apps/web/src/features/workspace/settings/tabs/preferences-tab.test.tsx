@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { THEME_OPTIONS } from '@/features/layout/user-menu';
 import { WALLPAPERS } from '@/lib/wallpapers';
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { PreferencesTabView } from './preferences-tab';
 
 /** Section titles in document order, read from the h2s SettingsSectionHeader emits. */
@@ -11,12 +11,21 @@ const headings = (html: string): string[] =>
 const html = () => renderToStaticMarkup(<PreferencesTabView />);
 
 describe('PreferencesTabView', () => {
-  test('appearance leads', () => {
-    expect(headings(html())[0]).toBe('Theme');
+  test('appearance leads — Theme is the first SECTION heading, right after the pane heading', () => {
+    expect(headings(html())).toEqual([
+      'Preferences',
+      'Theme',
+      'Wallpaper',
+      'Sounds',
+      'Notifications',
+      'Keyboard shortcuts',
+      'Language',
+    ]);
   });
 
   test('renders every preference section in order', () => {
     expect(headings(html())).toEqual([
+      'Preferences',
       'Theme',
       'Wallpaper',
       'Sounds',

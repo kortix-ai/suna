@@ -42,16 +42,23 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { ErrorState } from '@/features/layout/section/error-state';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   useAccountDeletionStatus,
   useCancelAccountDeletion,
@@ -63,6 +70,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
 
@@ -255,6 +263,8 @@ export function ProfileTabView({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+      <SettingsTabHeader tab="profile" />
+
       {/* 1. Profile picture */}
       <section className="space-y-4">
         <SettingsSectionHeader
@@ -266,7 +276,7 @@ export function ProfileTabView({
             type="button"
             onClick={onOpenFilePicker}
             disabled={isUploadingAvatar}
-            className="group focus-visible:ring-ring relative shrink-0 cursor-pointer overflow-hidden rounded-md transition-[scale] duration-150 ease-out active:scale-[0.96] focus-visible:ring-2 focus-visible:outline-none"
+            className="group focus-visible:ring-ring relative shrink-0 cursor-pointer overflow-hidden rounded-md transition-[scale] duration-150 ease-out focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96]"
             aria-label="Upload profile picture"
           >
             <Avatar className="border-border size-14 border">
@@ -348,7 +358,10 @@ export function ProfileTabView({
 
       {/* 3. Email */}
       <section className="space-y-3">
-        <SettingsSectionHeader title="Email" description="Used to sign in — cannot be changed here." />
+        <SettingsSectionHeader
+          title="Email"
+          description="Used to sign in — cannot be changed here."
+        />
         <Input type="text" id="profile-email" value={userEmail} readOnly className="max-w-xs" />
       </section>
 
@@ -367,7 +380,7 @@ export function ProfileTabView({
               className={cn(
                 'mt-0.5 shrink-0 gap-1',
                 sessionVerified
-                  ? 'border-transparent bg-kortix-green/15 text-kortix-green'
+                  ? 'bg-kortix-green/15 text-kortix-green border-transparent'
                   : 'text-muted-foreground',
               )}
             >
@@ -405,10 +418,12 @@ export function ProfileTabView({
         {enrolling ? (
           <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
             <div>
-              <h4 className="text-foreground text-sm font-medium">Scan with your authenticator app</h4>
+              <h4 className="text-foreground text-sm font-medium">
+                Scan with your authenticator app
+              </h4>
               <p className="text-muted-foreground mt-1 text-xs text-pretty">
-                Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code it
-                shows.
+                Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code
+                it shows.
               </p>
             </div>
             <div className="flex items-start gap-4">
@@ -431,7 +446,9 @@ export function ProfileTabView({
                   <Label className="text-xs">6-digit code</Label>
                   <Input
                     value={enrollCode}
-                    onChange={(e) => onEnrollCodeChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) =>
+                      onEnrollCodeChange(e.target.value.replace(/\D/g, '').slice(0, 6))
+                    }
                     placeholder="123456"
                     inputMode="numeric"
                     autoComplete="one-time-code"
@@ -456,7 +473,13 @@ export function ProfileTabView({
             </div>
           </div>
         ) : (
-          <Button size="sm" variant="outline" onClick={onStartEnroll} disabled={isStartingEnroll} className="gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onStartEnroll}
+            disabled={isStartingEnroll}
+            className="gap-1.5"
+          >
             {isStartingEnroll ? <Loading className="size-4" /> : <Plus className="size-4" />}
             Add authenticator app
           </Button>
@@ -508,10 +531,15 @@ export function ProfileTabView({
         ) : (
           <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
             <p className="text-muted-foreground min-w-0 text-xs text-pretty">
-              This deletes every agent, thread, credential, and subscription tied to your account. This
-              cannot be undone.
+              This deletes every agent, thread, credential, and subscription tied to your account.
+              This cannot be undone.
             </p>
-            <Button variant="destructive" size="sm" onClick={onOpenDeleteDialog} className="shrink-0">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onOpenDeleteDialog}
+              className="shrink-0"
+            >
               Delete account
             </Button>
           </div>
@@ -519,10 +547,7 @@ export function ProfileTabView({
 
         {accountDeletionSupported && (
           <>
-            <Modal
-              open={showDeleteDialog}
-              onOpenChange={(open) => !open && onCloseDeleteDialog()}
-            >
+            <Modal open={showDeleteDialog} onOpenChange={(open) => !open && onCloseDeleteDialog()}>
               <ModalContent className="lg:max-w-md" variant="base">
                 <ModalHeader>
                   <ModalTitle>Delete your account?</ModalTitle>
@@ -582,7 +607,11 @@ export function ProfileTabView({
                   </div>
                 </ModalBody>
                 <ModalFooter className="w-full sm:justify-between">
-                  <Button variant="outline-ghost" onClick={onCloseDeleteDialog} className="w-full sm:w-auto">
+                  <Button
+                    variant="outline-ghost"
+                    onClick={onCloseDeleteDialog}
+                    className="w-full sm:w-auto"
+                  >
                     Keep account
                   </Button>
                   <Button

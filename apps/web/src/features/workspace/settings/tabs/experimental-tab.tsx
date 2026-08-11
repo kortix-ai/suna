@@ -55,13 +55,12 @@ import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
 import Loading from '@/components/ui/loading';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { errorToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
@@ -75,6 +74,7 @@ import {
 import { contract, invalidateProject, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { FlagIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 /**
  * Every stability the API can serve, each with its own badge. Ported verbatim
@@ -184,10 +184,7 @@ export function ExperimentalTabView({
 }: ExperimentalTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
-      <SettingsSectionHeader
-        title="Experimental"
-        description="Early-access capabilities that may change or be removed."
-      />
+      <SettingsTabHeader tab="experimental" />
 
       {isLoading ? (
         <Skeleton className="h-40 rounded-md" />
@@ -291,8 +288,9 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
     },
     onSuccess: (updated, variables) => {
       queryClient.setQueryData(qk.project.summary(projectId), updated);
-      queryClient.setQueryData<ProjectDetail | undefined>(qk.project.detail(projectId), (current) =>
-        current ? { ...current, project: updated } : current,
+      queryClient.setQueryData<ProjectDetail | undefined>(
+        qk.project.detail(projectId),
+        (current) => (current ? { ...current, project: updated } : current),
       );
       void invalidateProject(queryClient, projectId);
       // Only projectId is known here, not the owning account_id, so this

@@ -19,6 +19,7 @@ describe('BillingTabView', () => {
       />,
     );
     expect(headings(out)).toEqual([
+      'Billing',
       'Plan, wallet and spend',
       'Auto top-up',
       'Buy credits',
@@ -35,7 +36,7 @@ describe('BillingTabView', () => {
         accountOverviewSlot={<div>account-overview</div>}
       />,
     );
-    expect(headings(out)).toEqual(['Kortix Team']);
+    expect(headings(out)).toEqual(['Billing', 'Kortix Team']);
     expect(out).not.toContain('account-overview');
   });
 
@@ -45,17 +46,22 @@ describe('BillingTabView', () => {
     expect(out).toContain('Manage billing');
   });
 
-  test('loading renders skeletons only, no section headings', () => {
-    const out = renderToStaticMarkup(<BillingTabView isLoading accountOverviewSlot={<div>x</div>} />);
-    expect(headings(out)).toEqual([]);
+  test('loading renders the pane heading and skeletons only, no section headings', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView isLoading accountOverviewSlot={<div>x</div>} />,
+    );
+    expect(headings(out)).toEqual(['Billing']);
     expect(out).not.toContain('account-overview');
   });
 
-  test('an error renders a banner with the message, no section headings', () => {
+  test('an error renders the pane heading and a banner with the message, no section headings', () => {
     const out = renderToStaticMarkup(
-      <BillingTabView error="Failed to load subscription data" accountOverviewSlot={<div>x</div>} />,
+      <BillingTabView
+        error="Failed to load subscription data"
+        accountOverviewSlot={<div>x</div>}
+      />,
     );
-    expect(headings(out)).toEqual([]);
+    expect(headings(out)).toEqual(['Billing']);
     expect(out).toContain('Failed to load subscription data');
     expect(out).toContain('role="alert"');
   });
@@ -111,7 +117,9 @@ describe('BillingTabView', () => {
     expect(withSlots).toContain('claim-per-seat');
     expect(withSlots).toContain('seat-management');
 
-    const withoutSlots = renderToStaticMarkup(<BillingTabView accountOverviewSlot={<div>x</div>} />);
+    const withoutSlots = renderToStaticMarkup(
+      <BillingTabView accountOverviewSlot={<div>x</div>} />,
+    );
     expect(withoutSlots).not.toContain('claim-per-seat');
     expect(withoutSlots).not.toContain('seat-management');
   });
@@ -160,6 +168,7 @@ describe('BillingTabView', () => {
       />,
     );
     expect(headings(out)).toEqual([
+      'Billing',
       'Plan, wallet and spend',
       'Auto top-up',
       'Buy credits',

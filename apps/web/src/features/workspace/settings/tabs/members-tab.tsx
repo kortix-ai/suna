@@ -303,13 +303,13 @@
  * `accountRoleMutation.mutate` shape.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
+import { cn } from '@/lib/utils';
 // Reused, not reimplemented — see `MembersTabInner`'s "Invite deep-link
 // intent" comment below for why this stays imported from `members-view.tsx`
 // rather than moved: it's an exported pure function with its own dedicated,
@@ -320,22 +320,14 @@ import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context
 // from it doesn't change that.
 import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
 
-import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
-import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -356,6 +348,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -365,13 +358,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { usePermission } from '@/lib/use-permission';
 import {
   createPolicy,
   deletePolicy,
@@ -383,6 +374,9 @@ import {
   type IamPolicy,
   type PrincipalType,
 } from '@/lib/iam-client';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { usePermission } from '@/lib/use-permission';
+import { useProjectCan } from '@/lib/use-project-can';
 import {
   approveProjectAccessRequest,
   attachGroupToProject,
@@ -414,8 +408,8 @@ import {
   type AccountInvitation,
   type AccountRole,
   type PendingProjectInvite,
-  type ProjectAccessRequest,
   type ProjectAccessMember,
+  type ProjectAccessRequest,
   type ProjectGroupGrant,
   type ProjectResourceGrant,
   type ProjectRole,
@@ -424,26 +418,27 @@ import {
 import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import {
   RobotIcon as Bot,
-  UsersIcon as UsersSolid,
-  EnvelopeIcon as Mail,
-  PlusIcon as Plus,
-  XIcon as X,
   CheckIcon as Check,
   ClockIcon as Clock,
   ArrowElbowDownRightIcon as CornerDownRight,
   KeyIcon as KeyRound,
+  EnvelopeIcon as Mail,
   PlugIcon as Plug,
+  PlusIcon as Plus,
   ArrowClockwiseIcon as RefreshCw,
   ShieldIcon as Shield,
   SparkleIcon as Sparkles,
   UserIcon as User,
   UsersIcon as Users,
+  UsersIcon as UsersSolid,
+  XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { memberAccessLabel } from './member-access-label';
 import { toArray } from '@/features/workspace/customize/shared/utils';
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
+import { memberAccessLabel } from './member-access-label';
 
 const NO_ACCESS = '__none__';
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
@@ -697,7 +692,8 @@ export function MembersTabView({
   // still see the header + Invite button, not just after the first invite
   // exists — see this file's header comment, "JAY-549".
   const showAccountInvites =
-    !!accountId && (canManageAccountInvites || isAccountInvitesLoading || accountInvites.length > 0);
+    !!accountId &&
+    (canManageAccountInvites || isAccountInvitesLoading || accountInvites.length > 0);
   const showLeaveAccount = !!accountId;
   // Every account-owner row, for the per-row "last owner" guard on "Remove
   // from account" — mirrors `page.tsx`'s own `isLastOwner` (computed inline
@@ -707,9 +703,12 @@ export function MembersTabView({
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-10 px-6 py-10">
-      <SettingsSectionHeader
-        title="Members"
-        description="Every account member's project standing, in one table."
+      {/* No local title/description here — `SettingsTabHeader` pulls both
+          from the rail (`rail.ts`) so this pane's heading can never drift
+          from the "Members" row's own copy. The invite button and the role
+          explainer popover still ride in its `action` slot. */}
+      <SettingsTabHeader
+        tab="members"
         action={
           <div className="flex items-center gap-2">
             {permissionsHelpSlot}
@@ -737,7 +736,11 @@ export function MembersTabView({
           }
         />
       ) : members.length === 0 ? (
-        <EmptyState icon={Users} title="No members yet" description="Invite someone to get started." />
+        <EmptyState
+          icon={Users}
+          title="No members yet"
+          description="Invite someone to get started."
+        />
       ) : (
         <Table>
           <TableHeader>
@@ -755,7 +758,9 @@ export function MembersTabView({
               const { role, via } = memberAccessLabel(member);
               const busy = pendingUserIds.has(member.user_id);
               const editable =
-                canManageMembers && !member.has_implicit_access && !isInheritedFromGroupOnly(member);
+                canManageMembers &&
+                !member.has_implicit_access &&
+                !isInheritedFromGroupOnly(member);
 
               // JAY-549 — account-scope row actions. Hidden entirely on the
               // viewer's own row (mirrors page.tsx's per-row `!isSelf`
@@ -765,8 +770,7 @@ export function MembersTabView({
               const accountBusy = accountPendingUserIds.has(member.user_id);
               const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
               const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
-              const isLastAccountOwner =
-                member.account_role === 'owner' && accountOwnerCount === 1;
+              const isLastAccountOwner = member.account_role === 'owner' && accountOwnerCount === 1;
 
               return (
                 <TableRow key={member.user_id}>
@@ -778,7 +782,9 @@ export function MembersTabView({
                           {userLabel(member)}
                         </p>
                         <InlineMeta>
-                          <span className="tabular-nums">Joined {formatDate(member.joined_at)}</span>
+                          <span className="tabular-nums">
+                            Joined {formatDate(member.joined_at)}
+                          </span>
                         </InlineMeta>
                       </div>
                     </div>
@@ -801,9 +807,15 @@ export function MembersTabView({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="owner">{ACCOUNT_ROLE_DESCRIPTORS.owner.label}</SelectItem>
-                            <SelectItem value="admin">{ACCOUNT_ROLE_DESCRIPTORS.admin.label}</SelectItem>
-                            <SelectItem value="member">{ACCOUNT_ROLE_DESCRIPTORS.member.label}</SelectItem>
+                            <SelectItem value="owner">
+                              {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
+                            </SelectItem>
+                            <SelectItem value="admin">
+                              {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
+                            </SelectItem>
+                            <SelectItem value="member">
+                              {ACCOUNT_ROLE_DESCRIPTORS.member.label}
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
@@ -923,7 +935,9 @@ export function MembersTabView({
                         </Badge>
                       </div>
                       <InlineMeta>
-                        <span className="tabular-nums">Invited {formatDate(invite.created_at)}</span>
+                        <span className="tabular-nums">
+                          Invited {formatDate(invite.created_at)}
+                        </span>
                         {invite.invite_expired ? (
                           <span className="text-kortix-orange">Link expired</span>
                         ) : (
@@ -993,7 +1007,9 @@ export function MembersTabView({
                         {request.requester_email}
                       </span>
                       <InlineMeta>
-                        <span className="tabular-nums">Requested {formatDate(request.created_at)}</span>
+                        <span className="tabular-nums">
+                          Requested {formatDate(request.created_at)}
+                        </span>
                         {request.message ? <span>"{request.message}"</span> : null}
                       </InlineMeta>
                     </div>
@@ -1045,12 +1061,7 @@ export function MembersTabView({
             description="Invitations to join this account, awaiting sign-up."
             action={
               canManageAccountInvites ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={onOpenAccountInvite}
-                  className="gap-1.5"
-                >
+                <Button type="button" size="sm" onClick={onOpenAccountInvite} className="gap-1.5">
                   <Plus className="size-3.5" />
                   Invite
                 </Button>
@@ -1080,7 +1091,9 @@ export function MembersTabView({
                         </Badge>
                       </div>
                       <InlineMeta>
-                        <span className="tabular-nums">Invited {formatDate(invite.created_at)}</span>
+                        <span className="tabular-nums">
+                          Invited {formatDate(invite.created_at)}
+                        </span>
                         <span className="inline-flex items-center gap-1 tabular-nums">
                           <Clock className="size-3" />
                           Expires {formatDate(invite.expires_at)}
@@ -1204,9 +1217,8 @@ export function MembersTabView({
         description={
           cancelAccountInviteTarget ? (
             <span>
-              Revoke the pending invite for{' '}
-              <strong>{cancelAccountInviteTarget.email}</strong>? They&apos;ll need a new invite to
-              join.
+              Revoke the pending invite for <strong>{cancelAccountInviteTarget.email}</strong>?
+              They&apos;ll need a new invite to join.
             </span>
           ) : null
         }
@@ -1441,7 +1453,8 @@ function MembersTabInner({
   }, [requestedMembersTab, activeTab, navigate]);
 
   const [pendingInviteBusyIds, setPendingInviteBusyIds] = useState<Set<string>>(() => new Set());
-  const markInvitePending = (id: string) => setPendingInviteBusyIds((prev) => new Set(prev).add(id));
+  const markInvitePending = (id: string) =>
+    setPendingInviteBusyIds((prev) => new Set(prev).add(id));
   const clearInvitePending = (id: string) =>
     setPendingInviteBusyIds((prev) => {
       const next = new Set(prev);

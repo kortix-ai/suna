@@ -79,7 +79,6 @@ import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { ScimCard } from '@/components/iam/scim-card';
 import { SsoCard } from '@/components/iam/sso-card';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountStateKeys } from '@/hooks/billing';
@@ -87,6 +86,7 @@ import { usePermission } from '@/lib/use-permission';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export interface IdentityTabViewProps {
@@ -123,15 +123,10 @@ export function IdentityTabView({
   scimSlot,
 }: IdentityTabViewProps) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-10">
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-10">
+      <SettingsTabHeader tab="identity" />
       {isLoading ? (
-        <div className="space-y-4">
-          <SettingsSectionHeader
-            title="Identity"
-            description="Bring members in from your identity provider."
-          />
-          <Skeleton className="h-40 w-full rounded-md" />
-        </div>
+        <Skeleton className="h-40 w-full rounded-md" />
       ) : identityEnabled ? (
         <div className="space-y-3">
           {introSlot}
@@ -188,9 +183,7 @@ function IdentityTabInner({ accountId: resolvedAccountId }: { accountId: string 
     <IdentityTabView
       isLoading={entitlementsLoading}
       identityEnabled={identityEnabled}
-      introSlot={
-        resolvedAccountId ? <IdentityIntro accountId={resolvedAccountId} /> : undefined
-      }
+      introSlot={resolvedAccountId ? <IdentityIntro accountId={resolvedAccountId} /> : undefined}
       ssoSlot={
         resolvedAccountId ? (
           <SsoCard accountId={resolvedAccountId} canManage={canWriteAccount} />

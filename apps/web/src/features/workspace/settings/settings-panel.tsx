@@ -232,7 +232,10 @@ import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 import { SecretsView } from '@/features/workspace/customize/sections/view/secrets-view';
 import { VoiceView } from '@/features/workspace/customize/sections/view/voice-view';
-import { SettingsNavProvider, type SettingsNav } from '@/features/workspace/shared/settings-nav-context';
+import {
+  SettingsNavProvider,
+  type SettingsNav,
+} from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
@@ -822,7 +825,9 @@ export function SettingsPanelView({
           'inset-0 top-0 left-0 h-dvh min-h-dvh w-screen max-w-none translate-x-0 translate-y-0 space-y-0 rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none md:rounded-none lg:top-0 lg:left-0 lg:h-dvh lg:min-h-dvh lg:max-w-none lg:translate-x-0 lg:translate-y-0 lg:rounded-none',
         )}
       >
-        <ModalTitle className="sr-only">{project ? `Settings — ${project.name}` : 'Settings'}</ModalTitle>
+        <ModalTitle className="sr-only">
+          {project ? `Settings — ${project.name}` : 'Settings'}
+        </ModalTitle>
 
         <SettingsPanelShell
           tab={tab}
@@ -843,10 +848,7 @@ export function SettingsPanelView({
   );
 }
 
-export type SettingsPanelShellProps = Omit<
-  SettingsPanelViewProps,
-  'open' | 'onOpenChange'
->;
+export type SettingsPanelShellProps = Omit<SettingsPanelViewProps, 'open' | 'onOpenChange'>;
 
 /** Everything the modal shows once it's open, MINUS the modal chrome itself
  *  (`Modal` / `ModalContent` / the portal). Split out purely so this can
@@ -894,7 +896,10 @@ export function SettingsPanelShell({
         onValueChange={(next) => onTabChange(next as SettingsTab)}
         orientation="vertical"
         activationMode="manual"
-        className={cn('min-h-0 flex-1 gap-0', isMobile ? 'flex flex-col' : 'grid grid-cols-[250px_1fr]')}
+        className={cn(
+          'min-h-0 flex-1 gap-0',
+          isMobile ? 'flex flex-col' : 'grid grid-cols-[250px_1fr]',
+        )}
       >
         {isMobile ? (
           <nav
@@ -946,13 +951,13 @@ export function SettingsPanelShell({
             </div>
           </nav>
         ) : (
-          <section className="bg-sidebar flex min-h-0 flex-col border-r py-4">
+          <section className="bg-accent/50 flex min-h-0 flex-col border-r py-2">
             <div className="w-full shrink-0 px-2.5">
               <ModalClose asChild>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-muted-foreground flex w-full items-center justify-start gap-2 px-4 py-2 text-left text-sm font-medium"
+                  className="text-muted-foreground flex w-full items-center justify-start gap-2 px-4 py-0.75 text-left text-sm font-medium"
                 >
                   <ArrowLeft />
                   Back to workspace
@@ -967,16 +972,20 @@ export function SettingsPanelShell({
               className="mt-4 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               {groups.map((group, idx) => (
-                <div key={group.label} className={cn('space-y-1', idx > 0 ? 'mt-4' : undefined)}>
-                  <Label className="text-muted-foreground px-2 pb-1">{group.label}</Label>
+                <div key={group.label} className={cn('space-y-1.5', idx > 0 ? 'mt-4' : undefined)}>
+                  <Label className="text-muted-foreground px-3 text-xs">{group.label}</Label>
                   {/* Radix's `TabsList` can only contain trigger children —
                       the group `Label` above can't live inside it, so each
                       group gets its OWN list rather than one list for the
                       whole rail. Trade-off: arrow-key roving moves within a
                       group, not across the whole rail (see the task report). */}
-                  <TabsList orientation="vertical">
+                  <TabsList orientation="vertical" className="w-full">
                     {group.items.map((item) => (
-                      <TabsTrigger key={item.tab} value={item.tab} className="gap-2.5">
+                      <TabsTrigger
+                        key={item.tab}
+                        value={item.tab}
+                        className="hover:data-[state=inactive]:bg-secondary data-[state=active]:bg-secondary w-full justify-start gap-2.5 py-0.75"
+                      >
                         <RailTriggerBody
                           item={item}
                           count={item.tab === 'review' ? reviewNeedsYou : undefined}
@@ -1211,7 +1220,10 @@ function RailTriggerBody({
       ) : attention ? (
         <span
           aria-hidden
-          className={cn('bg-kortix-orange size-1.5 shrink-0 rounded-full', !horizontal && 'ml-auto')}
+          className={cn(
+            'bg-kortix-orange size-1.5 shrink-0 rounded-full',
+            !horizontal && 'ml-auto',
+          )}
         />
       ) : null}
     </>

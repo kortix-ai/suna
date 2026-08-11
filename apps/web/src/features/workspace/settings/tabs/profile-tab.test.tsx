@@ -11,6 +11,7 @@ const html = () => renderToStaticMarkup(<ProfileTabView />);
 describe('ProfileTabView', () => {
   test('renders every section heading in order', () => {
     expect(headings(html())).toEqual([
+      'Profile',
       'Profile picture',
       'Name',
       'Email',

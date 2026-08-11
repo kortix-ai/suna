@@ -53,9 +53,20 @@
  * under `renderToStaticMarkup` with no `QueryClientProvider`.
  * `ConfigEntityView` already renders its own `SettingsSectionHeader`
  * (title="Commands") via `CustomizeSectionWrapper`
- * (`section-wrapper.tsx:113`), so `InstructionsTabView` intentionally adds
- * no second heading of its own — doing so would stack two headers over one
- * section, not meet the design bar.
+ * (`section-wrapper.tsx:113`), inside its own centered `max-w-3xl` scrolling
+ * container — that's why this tab is listed under `DELEGATING_TABS` in
+ * `tab-content-width.test.ts` rather than owning a width itself.
+ *
+ * **The pane heading sits above that container, not inside it.** Injecting
+ * `SettingsTabHeader` into `CustomizeSectionWrapper`'s own header would mean
+ * editing that shared component (used by every other legacy Customize
+ * section too); stacking it inside `commandsSlot` would double up with
+ * `ConfigEntityView`'s own "Commands" heading one section below. So
+ * `InstructionsTabView` renders `SettingsTabHeader` as a shrink-0 strip
+ * above the slot instead, in its own `flex h-full min-h-0 flex-col` column —
+ * `commandsSlot` keeps `min-h-0 flex-1` so `CommandsView`'s own internal
+ * scroll area still fills the rest of the tab and scrolls independently,
+ * exactly as it did before this heading existed.
  *
  * `InstructionsTab` is the container: it only exists once this tab is
  * active, which `SettingsTabPane` in `settings-panel.tsx` guarantees
@@ -65,6 +76,7 @@
 import type { ReactNode } from 'react';
 
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 export interface InstructionsTabViewProps {
   /** `CommandsView`, built by the container — see this file's header
@@ -77,7 +89,14 @@ export interface InstructionsTabViewProps {
  *  `InstructionsTab` so this renders under `renderToStaticMarkup` — see
  *  `SandboxTabView` for the same split. */
 export function InstructionsTabView({ commandsSlot }: InstructionsTabViewProps) {
-  return <>{commandsSlot}</>;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-6 pt-8">
+        <SettingsTabHeader tab="instructions" />
+      </div>
+      <div className="min-h-0 flex-1">{commandsSlot}</div>
+    </div>
+  );
 }
 
 /** Container: mounts `CommandsView` as the slot. Only ever mounted while

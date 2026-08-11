@@ -82,22 +82,34 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { ProjectIconField, type ProjectIconValue } from '@/features/projects/modal/project-icon-field';
-import { buildProjectEditPatch } from '@/features/projects/modal/project-edit-patch';
-import type { GlyphSelection } from '@/components/ui/glyph-picker';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { ErrorState } from '@/features/layout/section/error-state';
 import { Field, FieldLabel } from '@/components/ui/field';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { buildProjectEditPatch } from '@/features/projects/modal/project-edit-patch';
+import {
+  ProjectIconField,
+  type ProjectIconValue,
+} from '@/features/projects/modal/project-icon-field';
 import {
   renameOnError,
   renameOnMutate,
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
+import { useDebounce } from '@/hooks/use-debounce';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -115,18 +127,10 @@ import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import { TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { useDebounce } from '@/hooks/use-debounce';
-import {
   applySandboxProviderResult,
   pollSandboxProviderTransition,
 } from '../../customize/sections/view/sandbox-provider-result';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 export interface GeneralTabViewProps {
   isLoading?: boolean;
@@ -179,6 +183,7 @@ export function GeneralTabView({
 }: GeneralTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+      <SettingsTabHeader tab="general" />
       {isLoading ? (
         <div className="space-y-5">
           <Skeleton className="h-40 rounded-md" />
@@ -390,8 +395,10 @@ function GeneralWorkspaceCard({
   const saving = isDebouncing || isRenamePending;
 
   return (
+    // No section heading here — the pane heading right above already reads
+    // "General" (this tab's own rail label), and a second "General" directly
+    // under it would repeat the same word. See `settings-tab-header.tsx`.
     <section className="space-y-4">
-      <SettingsSectionHeader title="General" description="Your workspace's name and icon." />
       <div className="flex items-start gap-2">
         <ProjectIconField
           value={toIconValue(project.icon, project.icon_glyph)}

@@ -12,13 +12,15 @@ import { ModelsTabView } from './models-tab';
  * `instructions-tab.test.tsx`'s `commandsSlot`.
  */
 describe('ModelsTabView', () => {
-  test('renders the gateway slot it is given', () => {
+  test('renders the pane heading and the gateway slot it is given', () => {
     const out = renderToStaticMarkup(<ModelsTabView gatewaySlot={<div>gateway-marker</div>} />);
+    expect(out).toContain('Models');
     expect(out).toContain('gateway-marker');
   });
 
-  test('renders empty with no slot — the bare view needs no providers', () => {
-    expect(renderToStaticMarkup(<ModelsTabView />)).toBe('');
+  test('renders the pane heading with no slot — the bare view needs no providers', () => {
+    const out = renderToStaticMarkup(<ModelsTabView />);
+    expect(out).toContain('Models');
   });
 });
 

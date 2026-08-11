@@ -34,6 +34,16 @@
  * cannot render under `renderToStaticMarkup` with no provider tree — same
  * reasoning as `instructions-tab.tsx`'s `commandsSlot`.
  *
+ * **The pane heading sits above the gateway's own sub-tab bar.**
+ * `LlmManagementView` fills its tab with its OWN full-height `Tabs` shell
+ * (Providers/Models/Routing/Playground/…, each an internally-scrolling
+ * `TabsContent`) and declares no width of its own — see `DELEGATING_TABS` in
+ * `tab-content-width.test.ts`. `ModelsTabView` renders `SettingsTabHeader` as
+ * a shrink-0 strip above that shell, in a `flex h-full min-h-0 flex-col`
+ * column, with `gatewaySlot` given `min-h-0 flex-1` so the gateway's own sub-
+ * tab bar and per-section scrolling are unchanged — same split
+ * `instructions-tab.tsx` uses for `CommandsView`.
+ *
  * `ModelsTab` is the container: it only exists once this tab is active, which
  * `SettingsTabPane` guarantees (`if (!active) return null;`), so nothing here
  * fetches on panel open.
@@ -42,6 +52,7 @@
 import type { ReactNode } from 'react';
 
 import { LlmManagementView } from '@/features/workspace/customize/sections/gateway-view';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 export interface ModelsTabViewProps {
   /** `LlmManagementView`, built by the container — see the header comment for
@@ -52,7 +63,14 @@ export interface ModelsTabViewProps {
 
 /** Presentational only — no hooks, no data fetching. */
 export function ModelsTabView({ gatewaySlot }: ModelsTabViewProps) {
-  return <>{gatewaySlot}</>;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-6 pt-8">
+        <SettingsTabHeader tab="models" />
+      </div>
+      <div className="min-h-0 flex-1">{gatewaySlot}</div>
+    </div>
+  );
 }
 
 /** Container. Renders nothing at all while the gateway is disabled. */

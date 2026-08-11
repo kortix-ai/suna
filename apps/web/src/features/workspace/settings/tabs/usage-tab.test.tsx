@@ -19,18 +19,22 @@ describe('UsageTabView', () => {
     expect(h.indexOf('Session costs')).toBeLessThan(h.indexOf('Credit ledger'));
   });
 
-  test('renders exactly the two section headings, in order', () => {
+  test('renders exactly the pane heading and the two section headings, in order', () => {
     const out = renderToStaticMarkup(<UsageTabView />);
-    expect(headings(out)).toEqual(['Session costs', 'Credit ledger']);
+    expect(headings(out)).toEqual(['Usage', 'Session costs', 'Credit ledger']);
   });
 
   test('the session-costs slot renders inside the Session costs section', () => {
-    const out = renderToStaticMarkup(<UsageTabView sessionCostsSlot={<div>session-costs-marker</div>} />);
+    const out = renderToStaticMarkup(
+      <UsageTabView sessionCostsSlot={<div>session-costs-marker</div>} />,
+    );
     expect(out).toContain('session-costs-marker');
   });
 
   test('the credit-ledger slot renders inside the Credit ledger section', () => {
-    const out = renderToStaticMarkup(<UsageTabView creditLedgerSlot={<div>credit-ledger-marker</div>} />);
+    const out = renderToStaticMarkup(
+      <UsageTabView creditLedgerSlot={<div>credit-ledger-marker</div>} />,
+    );
     expect(out).toContain('credit-ledger-marker');
   });
 

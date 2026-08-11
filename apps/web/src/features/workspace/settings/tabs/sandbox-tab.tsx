@@ -87,9 +87,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
-import { Skeleton } from '@/components/ui/skeleton';
 import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -121,6 +120,7 @@ import {
   SandboxTemplateProviderCoverage,
   SandboxTemplateProviderModeBadge,
 } from '../../customize/sections/view/sandbox-provider-coverage';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 const TEMPLATE_SKELETON_ROWS = [
   'sandbox-template-skeleton-1',
@@ -366,11 +366,7 @@ export function SandboxTabView({
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-10">
       <div className="space-y-8">
-        <SettingsSectionHeader
-          title="Sandbox templates"
-          description="Manage sandbox templates and image builds."
-          action={headerAction}
-        />
+        <SettingsTabHeader tab="sandbox" action={headerAction} />
         {isLoading ? (
           <div className="space-y-1">
             {TEMPLATE_SKELETON_ROWS.map((row) => (
@@ -391,9 +387,9 @@ export function SandboxTabView({
         ) : (
           <>
             <p className="text-muted-foreground text-sm text-balance">
-              Sessions boot from a sandbox template. The platform default is shared by every
-              project and clones your repo into <code className="font-mono">/workspace</code> at
-              boot. Add your own templates here or via{' '}
+              Sessions boot from a sandbox template. The platform default is shared by every project
+              and clones your repo into <code className="font-mono">/workspace</code> at boot. Add
+              your own templates here or via{' '}
               {manifestVersion === 2 ? (
                 <>
                   <code className="font-mono">sandbox.templates</code> in{' '}

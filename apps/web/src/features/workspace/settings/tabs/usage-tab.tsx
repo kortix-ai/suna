@@ -96,6 +96,7 @@ import CreditTransactions from '@/features/billing/credit-transactions';
 import { usePermission } from '@/lib/use-permission';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export interface UsageTabViewProps {
@@ -114,6 +115,7 @@ export interface UsageTabViewProps {
 export function UsageTabView({ sessionCostsSlot, creditLedgerSlot }: UsageTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-8 px-6 py-10">
+      <SettingsTabHeader tab="usage" />
       <section className="space-y-4">
         <SettingsSectionHeader
           title="Session costs"

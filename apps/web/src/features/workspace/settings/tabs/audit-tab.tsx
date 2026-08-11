@@ -91,7 +91,6 @@ import type { ReactNode } from 'react';
 import { AuditTab as RealAuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountStateKeys } from '@/hooks/billing';
@@ -99,6 +98,7 @@ import { usePermission } from '@/lib/use-permission';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 
+import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
 export interface AuditTabViewProps {
@@ -144,16 +144,12 @@ export function AuditTabView({
     <div className="mx-auto w-full max-w-4xl px-6 py-10">
       {/* `space-y-10` wrapper — matches `page.tsx:561`'s gap between the log
           block and the webhooks card exactly. Always rendered, independent
-          of which branch below fires. */}
+          of which branch below fires. Carries the pane heading as its first
+          child so it shares this same rhythm. */}
       <div className="space-y-10">
+        <SettingsTabHeader tab="audit" />
         {isLoading ? (
-          <div className="space-y-4">
-            <SettingsSectionHeader
-              title="Audit log"
-              description="Reconstruct activity across people, agents, sessions, and connectors."
-            />
-            <Skeleton className="h-64 w-full rounded-md" />
-          </div>
+          <Skeleton className="h-64 w-full rounded-md" />
         ) : auditEnabled ? (
           auditSlot
         ) : (

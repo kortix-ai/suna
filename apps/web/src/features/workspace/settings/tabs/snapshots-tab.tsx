@@ -117,6 +117,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
+import { SettingsTabHeader } from '../settings-tab-header';
 
 /** Build-status tile icons render solid/fill — a filled status glyph inside
  *  the colored tile, distinct from the app's default outline weight. */
@@ -513,10 +514,7 @@ export function SnapshotsTabView({
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-10">
       <div className="space-y-8">
-        <SettingsSectionHeader
-          title="Snapshots"
-          description="Build log, image status, and failure recovery for this project's sandbox templates."
-        />
+        <SettingsTabHeader tab="snapshots" />
         {isLoading ? (
           <div className="space-y-1">
             {['snapshot-skeleton-1', 'snapshot-skeleton-2', 'snapshot-skeleton-3'].map((row) => (

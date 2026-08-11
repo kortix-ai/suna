@@ -147,7 +147,6 @@ import {
   rememberGitHubSetupReturn,
 } from '@/lib/github-installations';
 import { usePermission } from '@/lib/use-permission';
-import { useSettingsAccountId } from '../use-settings-account-id';
 import {
   deleteGitHubInstallation,
   deleteProjectProviderOAuth,
@@ -158,6 +157,8 @@ import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { SettingsTabHeader } from '../settings-tab-header';
+import { useSettingsAccountId } from '../use-settings-account-id';
 
 export type ProviderRowStatus = 'loading' | 'connected' | 'disconnected' | 'error' | 'unavailable';
 
@@ -294,18 +295,26 @@ export function ConnectedAccountsTabView({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-6 py-10">
+      <SettingsTabHeader tab="connected" />
+
       {/* 1. GitHub — account-scoped, hidden entirely without account.write.
           Paired with the self-host GitHub App setup card immediately after,
           same order and same gate as page.tsx:579-583. */}
       {canManageAccount ? (
         <>
           <section className="space-y-3">
-            <SettingsSectionHeader title="GitHub" description={githubDescription} action={githubAction} />
+            <SettingsSectionHeader
+              title="GitHub"
+              description={githubDescription}
+              action={githubAction}
+            />
             {githubStatus === 'loading' ? <Skeleton className="h-14 w-full" /> : null}
             {githubStatus === 'error' && githubError ? (
               <InfoBanner tone="warning">{githubError}</InfoBanner>
             ) : null}
-            {githubStatus === 'connected' && githubOtherInstallationsCount > 0 && githubManageAllHref ? (
+            {githubStatus === 'connected' &&
+            githubOtherInstallationsCount > 0 &&
+            githubManageAllHref ? (
               <a
                 href={githubManageAllHref}
                 className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
@@ -321,7 +330,11 @@ export function ConnectedAccountsTabView({
 
       {/* 2. ChatGPT — project-scoped. */}
       <section className="space-y-3">
-        <SettingsSectionHeader title="ChatGPT" description={chatgptDescription} action={chatgptAction} />
+        <SettingsSectionHeader
+          title="ChatGPT"
+          description={chatgptDescription}
+          action={chatgptAction}
+        />
         {chatgptStatus === 'loading' ? <Skeleton className="h-14 w-full" /> : null}
         {chatgptShowsSlot ? chatgptConnectSlot : null}
       </section>
@@ -397,7 +410,8 @@ export function ConnectedAccountsTab({
         : 'disconnected';
 
   const disconnectGitHubMutation = useMutation({
-    mutationFn: (installationId: string) => deleteGitHubInstallation(resolvedAccountId!, installationId),
+    mutationFn: (installationId: string) =>
+      deleteGitHubInstallation(resolvedAccountId!, installationId),
     onSuccess: () => {
       successToast('GitHub disconnected');
       queryClient.invalidateQueries({ queryKey: ['github-installations', resolvedAccountId] });
@@ -409,7 +423,9 @@ export function ConnectedAccountsTab({
   const handleConnectGitHub = () => {
     if (!resolvedAccountId) return;
     rememberGitHubSetupReturn(
-      typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/projects',
+      typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : '/projects',
     );
     router.push(`/github/setup?account_id=${encodeURIComponent(resolvedAccountId)}`);
   };
@@ -421,10 +437,8 @@ export function ConnectedAccountsTab({
   };
 
   // --- ChatGPT (project-scoped) ------------------------------------------
-  const { connected: chatgptConnected, isLoading: chatgptLoading } = useChatGptSubscriptionConnected(
-    projectId ?? '',
-    !!projectId,
-  );
+  const { connected: chatgptConnected, isLoading: chatgptLoading } =
+    useChatGptSubscriptionConnected(projectId ?? '', !!projectId);
 
   const chatgptStatus: ProviderRowStatus = !projectId
     ? 'unavailable'
@@ -456,16 +470,23 @@ export function ConnectedAccountsTab({
       githubStatus={githubStatus}
       githubInstallationName={
         primaryInstallation
-          ? githubInstallationLabel(primaryInstallation.installation_id, primaryInstallation.owner_login)
+          ? githubInstallationLabel(
+              primaryInstallation.installation_id,
+              primaryInstallation.owner_login,
+            )
           : null
       }
-      githubError={installationsQuery.error instanceof Error ? installationsQuery.error.message : null}
+      githubError={
+        installationsQuery.error instanceof Error ? installationsQuery.error.message : null
+      }
       onConnectGitHub={handleConnectGitHub}
       onDisconnectGitHub={handleDisconnectGitHub}
       isGitHubActionPending={disconnectGitHubMutation.isPending}
       githubOtherInstallationsCount={otherInstallationsCount}
       githubManageAllHref={resolvedAccountId ? `/accounts/${resolvedAccountId}?tab=git` : undefined}
-      githubAppSetupSlot={canManageAccount ? <GitHubAppSetupCard canManage={canManageAccount} /> : undefined}
+      githubAppSetupSlot={
+        canManageAccount ? <GitHubAppSetupCard canManage={canManageAccount} /> : undefined
+      }
       chatgptStatus={chatgptStatus}
       chatgptConnectSlot={
         projectId ? <ChatGptSubscriptionConnect projectId={projectId} /> : undefined

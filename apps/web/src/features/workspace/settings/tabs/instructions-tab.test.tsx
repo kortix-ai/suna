@@ -13,15 +13,16 @@ import { InstructionsTabView } from './instructions-tab';
  * with no provider, i.e. actually runs) when `instructions` is active.
  */
 describe('InstructionsTabView', () => {
-  test('renders the commands slot it is given', () => {
+  test('renders the pane heading and the commands slot it is given', () => {
     const out = renderToStaticMarkup(
       <InstructionsTabView commandsSlot={<div>commands-list-marker</div>} />,
     );
+    expect(out).toContain('Instructions');
     expect(out).toContain('commands-list-marker');
   });
 
-  test('renders empty with no slot — the bare view needs no providers', () => {
+  test('renders the pane heading with no slot — the bare view needs no providers', () => {
     const out = renderToStaticMarkup(<InstructionsTabView />);
-    expect(out).toBe('');
+    expect(out).toContain('Instructions');
   });
 });

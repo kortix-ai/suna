@@ -1,6 +1,6 @@
+import type { AccountInvitation, ProjectAccessMember } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { AccountInvitation, ProjectAccessMember } from '@kortix/sdk';
 
 import { MembersTabView } from './members-tab';
 
@@ -47,11 +47,13 @@ describe('MembersTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<MembersTabView />);
     expect(out).toContain('Members');
-    expect(out).toContain('project standing, in one table.');
+    expect(out).toContain('Who can reach this workspace, and what each person can do.');
   });
 
   test('renders the permissions help slot in the header action', () => {
-    const out = renderToStaticMarkup(<MembersTabView permissionsHelpSlot={<div>help-marker</div>} />);
+    const out = renderToStaticMarkup(
+      <MembersTabView permissionsHelpSlot={<div>help-marker</div>} />,
+    );
     expect(out).toContain('help-marker');
   });
 
@@ -89,7 +91,9 @@ describe('MembersTabView', () => {
   });
 
   test('an account member with no project access reads as an em dash, not a hidden row', () => {
-    const out = renderToStaticMarkup(<MembersTabView members={[member({ email: 'none@kortix.com' })]} />);
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ email: 'none@kortix.com' })]} />,
+    );
     expect(out).toContain('none@kortix.com');
     expect(out).toContain('—');
   });
@@ -97,7 +101,13 @@ describe('MembersTabView', () => {
   test('no role select or remove control when canManageMembers is false', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
-        members={[member({ project_role: 'editor', effective_project_role: 'editor', effective_source: 'direct' })]}
+        members={[
+          member({
+            project_role: 'editor',
+            effective_project_role: 'editor',
+            effective_source: 'direct',
+          }),
+        ]}
         canManageMembers={false}
       />,
     );
@@ -107,7 +117,13 @@ describe('MembersTabView', () => {
   test('a role select renders for a directly-granted member when canManageMembers is true', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
-        members={[member({ project_role: 'editor', effective_project_role: 'editor', effective_source: 'direct' })]}
+        members={[
+          member({
+            project_role: 'editor',
+            effective_project_role: 'editor',
+            effective_source: 'direct',
+          }),
+        ]}
         canManageMembers
       />,
     );
@@ -148,14 +164,20 @@ describe('MembersTabView', () => {
   });
 
   test('the Invite button only renders when canManageMembers is true', () => {
-    const withPerm = renderToStaticMarkup(<MembersTabView canManageMembers members={[member({})]} />);
-    const withoutPerm = renderToStaticMarkup(<MembersTabView canManageMembers={false} members={[member({})]} />);
+    const withPerm = renderToStaticMarkup(
+      <MembersTabView canManageMembers members={[member({})]} />,
+    );
+    const withoutPerm = renderToStaticMarkup(
+      <MembersTabView canManageMembers={false} members={[member({})]} />,
+    );
     expect(withPerm).toContain('Invite');
     expect(withoutPerm).not.toContain('>Invite<');
   });
 
   test('renders the invite dialog slot', () => {
-    const out = renderToStaticMarkup(<MembersTabView inviteDialogSlot={<div>invite-dialog-marker</div>} />);
+    const out = renderToStaticMarkup(
+      <MembersTabView inviteDialogSlot={<div>invite-dialog-marker</div>} />,
+    );
     expect(out).toContain('invite-dialog-marker');
   });
 
@@ -175,7 +197,9 @@ describe('MembersTabView', () => {
     // order: ProjectGroupGrantsCard, ResourceAccessCard,
     // ProjectRoleAssignmentsCard) — see members-tab.tsx's header comment.
     expect(out.indexOf('group-grants-marker')).toBeLessThan(out.indexOf('resource-access-marker'));
-    expect(out.indexOf('resource-access-marker')).toBeLessThan(out.indexOf('role-assignments-marker'));
+    expect(out.indexOf('resource-access-marker')).toBeLessThan(
+      out.indexOf('role-assignments-marker'),
+    );
     // Below the table, not inside it.
     expect(out.indexOf('</table>')).toBeLessThan(out.indexOf('group-grants-marker'));
   });
@@ -314,7 +338,9 @@ describe('MembersTabView', () => {
   });
 
   test('leave account section renders only when an accountId is resolved', () => {
-    const withAccount = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
+    const withAccount = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" />,
+    );
     const withoutAccount = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
     expect(withAccount).toContain('Leave account');
     expect(withoutAccount).not.toContain('Leave account');
@@ -325,7 +351,7 @@ describe('MembersTabView', () => {
       <MembersTabView members={[member({})]} accountId="acc1" isLastOwner />,
     );
     expect(out).toContain('disabled=""');
-    expect(out).toContain("only owner");
+    expect(out).toContain('only owner');
   });
 
   test('the Leave button is enabled when the viewer is not the last owner', () => {
@@ -389,7 +415,7 @@ describe('MembersTabView', () => {
     expect(out).not.toContain('Remove other@kortix.com from account');
   });
 
-  test('both account-role controls are hidden on the viewer\'s own row, even with both permissions', () => {
+  test("both account-role controls are hidden on the viewer's own row, even with both permissions", () => {
     const out = renderToStaticMarkup(
       <MembersTabView
         members={[member({ user_id: 'viewer', email: 'self@kortix.com' })]}

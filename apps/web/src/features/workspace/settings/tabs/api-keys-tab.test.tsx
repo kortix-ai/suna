@@ -15,7 +15,7 @@ describe('ApiKeysTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ApiKeysTabView />);
     expect(out).toContain('API keys');
-    expect(out).toContain('Token policy and machine identities for CI and automations.');
+    expect(out).toContain('Tokens that let scripts and CI act as this organization.');
   });
 
   test('renders the PAT policy slot', () => {
