@@ -135,6 +135,98 @@ describe('E2B template adapter', () => {
     expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('building');
   });
 
+  test('settles a stale waiting list entry as build_failed when its only build errored', async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, method: init?.method ?? 'GET' });
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 });
+      // The list endpoint is stale: it still reports `waiting` while the
+      // detail endpoint's only build errored (E2B killed it).
+      if (url.endsWith('/templates/tpl-errored')) {
+        return Response.json({
+          templateID: 'tpl-errored',
+          names: ['team/kortix-e2b-template'],
+          builds: [
+            {
+              buildID: 'f0e915cc-f75b-4fa2-b908-ca9eb75a8717',
+              status: 'error',
+            },
+          ],
+        });
+      }
+      return Response.json([
+        {
+          templateID: 'tpl-errored',
+          names: ['team/kortix-e2b-template'],
+          aliases: ['kortix-e2b-template'],
+          buildStatus: 'waiting',
+        },
+      ]);
+    }) as unknown as typeof fetch;
+
+    expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('build_failed');
+    expect(requests.filter((request) => request.method === 'DELETE')).toEqual([]);
+    expect(requests).toContainEqual({
+      url: 'https://api.e2b.essentia.kortix.com/templates/tpl-errored',
+      method: 'GET',
+    });
+  });
+
+  test('reaps a template whose build never started instead of waiting forever', async () => {
+    const deletes: string[] = [];
+    globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'DELETE') {
+        deletes.push(url);
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/templates/tpl-zombie')) {
+        return Response.json({
+          templateID: 'tpl-zombie',
+          names: ['team/kortix-e2b-template'],
+          builds: [{ buildID: '00000000-0000-0000-0000-000000000000', status: 'waiting' }],
+        });
+      }
+      return Response.json([
+        {
+          templateID: 'tpl-zombie',
+          names: ['team/kortix-e2b-template'],
+          aliases: ['kortix-e2b-template'],
+          buildStatus: 'waiting',
+        },
+      ]);
+    }) as unknown as typeof fetch;
+
+    expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('missing');
+    expect(deletes).toEqual([
+      'https://api.e2b.essentia.kortix.com/templates/tpl-zombie',
+    ]);
+  });
+
+  test('keeps polling a legitimately queued build with a real buildID', async () => {
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/templates/tpl-queued')) {
+        return Response.json({
+          templateID: 'tpl-queued',
+          names: ['team/kortix-e2b-template'],
+          builds: [{ buildID: '292ab042-4de5-464d-8833-7c441dba982c', status: 'waiting' }],
+        });
+      }
+      return Response.json([
+        {
+          templateID: 'tpl-queued',
+          names: ['team/kortix-e2b-template'],
+          aliases: ['kortix-e2b-template'],
+          buildStatus: 'waiting',
+        },
+      ]);
+    }) as unknown as typeof fetch;
+
+    expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('building');
+  });
+
   test('keeps an E2B control-plane failure unknown instead of claiming the template is absent', async () => {
     globalThis.fetch = mock(
       async () => new Response('upstream unavailable', { status: 503 }),

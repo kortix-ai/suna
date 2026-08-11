@@ -1,26 +1,48 @@
 diff --git a/dist/index.js b/dist/index.js
-index 32f120cb13590a20c411262974dd656857eff8bc..1053e6e7b4b21e0855581c28f53595cc46c7f7f1 100644
+index 32f120cb13590a20c411262974dd656857eff8bc..f18cd38685ea2d42ce67d4281cad07675577e04a 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -5927,7 +5927,7 @@ async function putFileStream(url, filePath, size, signal) {
+@@ -5925,10 +5925,17 @@ async function uploadFile(options, stackTrace, abortOpts) {
+ async function putFileStream(url, filePath, size, signal) {
+ 	var _ref;
  	const undici = await loadUndici();
++	// GCS presigned PUT URLs are signed with an EMPTY Content-Type. Bun sniffs
++	// a content type from Bun.file's extension and tacks it onto the request,
++	// which breaks the signature (SignatureDoesNotMatch -> 403 Forbidden).
++	// Pin the header to an empty string on the Bun path so the signature
++	// matches; the Node stream path is left untouched.
++	const headers = { "Content-Length": size.toString() };
++	if (globalThis.Bun) headers["Content-Type"] = "";
  	return await ((_ref = undici === null || undici === void 0 ? void 0 : undici.fetch) !== null && _ref !== void 0 ? _ref : fetch)(url, {
  		method: "PUT",
 -		body: node_stream.default.Readable.toWeb(node_fs.default.createReadStream(filePath)),
+-		headers: { "Content-Length": size.toString() },
 +		body: globalThis.Bun ? globalThis.Bun.file(filePath) : node_stream.default.Readable.toWeb(node_fs.default.createReadStream(filePath)),
- 		headers: { "Content-Length": size.toString() },
++		headers,
  		duplex: "half",
  		signal
+ 	});
 diff --git a/dist/index.mjs b/dist/index.mjs
-index 89ad39bc2bc81d1a104457a6edc5230bc10ccd3e..c8d698b8c201d9144cac1dbd1f9df0d05319fda9 100644
+index 89ad39bc2bc81d1a104457a6edc5230bc10ccd3e..bd2cf2eadddb371e0f28fa220853e56ab8b678fe 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -5880,7 +5880,7 @@ async function putFileStream(url, filePath, size, signal) {
+@@ -5878,10 +5878,17 @@ async function uploadFile(options, stackTrace, abortOpts) {
+ async function putFileStream(url, filePath, size, signal) {
+ 	var _ref;
  	const undici = await loadUndici();
++	// GCS presigned PUT URLs are signed with an EMPTY Content-Type. Bun sniffs
++	// a content type from Bun.file's extension and tacks it onto the request,
++	// which breaks the signature (SignatureDoesNotMatch -> 403 Forbidden).
++	// Pin the header to an empty string on the Bun path so the signature
++	// matches; the Node stream path is left untouched.
++	const headers = { "Content-Length": size.toString() };
++	if (globalThis.Bun) headers["Content-Type"] = "";
  	return await ((_ref = undici === null || undici === void 0 ? void 0 : undici.fetch) !== null && _ref !== void 0 ? _ref : fetch)(url, {
  		method: "PUT",
 -		body: stream.Readable.toWeb(fs.createReadStream(filePath)),
+-		headers: { "Content-Length": size.toString() },
 +		body: globalThis.Bun ? globalThis.Bun.file(filePath) : stream.Readable.toWeb(fs.createReadStream(filePath)),
- 		headers: { "Content-Length": size.toString() },
++		headers,
  		duplex: "half",
  		signal
+ 	});

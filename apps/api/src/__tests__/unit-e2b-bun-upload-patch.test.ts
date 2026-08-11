@@ -23,5 +23,9 @@ describe('E2B template uploads on Bun', () => {
     const patch = readRepoFile(patchPath as string);
     expect(patch.match(/globalThis\.Bun \? globalThis\.Bun\.file\(filePath\)/g)).toHaveLength(2);
     expect(patch).toContain('Readable.toWeb');
+    // GCS signs the presigned PUT with an EMPTY Content-Type; Bun sniffs one
+    // from Bun.file's extension and breaks the signature (403). The patch must
+    // pin Content-Type to an empty string on the Bun path.
+    expect(patch.match(/headers\["Content-Type"\] = ""/g)).toHaveLength(2);
   });
 });

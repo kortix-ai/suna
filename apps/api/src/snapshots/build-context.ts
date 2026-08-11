@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
-import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
+import { buildMetaSandboxDockerfile, META_AGENT_GUIDE } from '@kortix/shared/sandbox';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
 import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
@@ -186,6 +186,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
   await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
   await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
   await stageManagedSkills(join(contextDir, 'managed-skills'));
+  await writeFileFs(join(contextDir, 'meta-agents.md'), META_AGENT_GUIDE);
   await writeFileFs(
     join(contextDir, 'kortix-llm-catalog.json'),
     JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
@@ -201,6 +202,7 @@ export async function stageMetaBuildContext(): Promise<StagedContext> {
       entrypointScriptPath: 'kortix-entrypoint',
       catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
+      agentGuidePath: 'meta-agents.md',
     }),
   );
   return { contextDir, composedPath, dockerfileName };

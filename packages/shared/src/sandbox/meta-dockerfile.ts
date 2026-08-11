@@ -1,4 +1,10 @@
-import { NODE_VERSION, OPENCODE_VERSION, PNPM_VERSION } from '../runtime-versions';
+import {
+  NODE_VERSION,
+  OPENCODE_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PNPM_VERSION,
+} from '../runtime-versions';
 
 export interface MetaSandboxDockerfileOptions {
   agentBinaryPath: string;
@@ -8,6 +14,13 @@ export interface MetaSandboxDockerfileOptions {
   /** Staged managed `kortix-*` skills dir — overlaid into the harness skills
    *  dir at boot so the coordinator learns the `kortix` CLI properly. */
   managedSkillsPath: string;
+  /**
+   * Staged file holding `META_AGENT_GUIDE`. The guide is COPYed from this file
+   * instead of an inline heredoc: E2B's Dockerfile parser rejects heredoc COPY
+   * instructions (it feeds the heredoc destination to the source-path
+   * validator), so the meta image must be built from a plain relative COPY.
+   */
+  agentGuidePath: string;
 }
 
 export const META_AGENT_GUIDE = [
@@ -60,7 +73,7 @@ export const META_AGENT_GUIDE = [
  */
 export function buildMetaSandboxDockerfile(options: MetaSandboxDockerfileOptions): string {
   return `# syntax=docker/dockerfile:1.7
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 RUN apt-get update \\
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
@@ -72,12 +85,25 @@ RUN useradd --create-home --shell /bin/bash kortix \\
  && chown -R kortix:kortix /workspace /opt/kortix /ephemeral
 
 ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\
-    PATH="/home/kortix/.local/share/pnpm/bin:\${PATH}"
-RUN curl -fsSL https://get.pnpm.io/install.sh \\
-      | env HOME=/home/kortix SHELL=/bin/bash PNPM_VERSION=${PNPM_VERSION} sh - \\
- && HOME=/home/kortix pnpm runtime set node ${NODE_VERSION} --global \\
- && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \\
- && ln -sf "\$(command -v node)" /usr/local/bin/node \\
+    PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:$PATH
+USER kortix
+RUN mkdir -p /home/kortix/.local/bin \\
+ && case "$(uname -m)" in \\
+      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\
+      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\
+      *) echo "unsupported pnpm architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+ && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/pnpm.tar.gz \\
+      "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-\${pnpm_arch}.tar.gz" \\
+ && echo "\${pnpm_sha}  /tmp/pnpm.tar.gz" | sha256sum -c - \\
+ && tar -xzf /tmp/pnpm.tar.gz -C /home/kortix/.local/bin \\
+ && rm /tmp/pnpm.tar.gz \\
+ && test "$(pnpm --version)" = "${PNPM_VERSION}" \\
+ && HOME=/home/kortix pnpm runtime set node ${NODE_VERSION} -g \\
+ && test "$(node --version)" = "v${NODE_VERSION}" \\
+ && HOME=/home/kortix pnpm add --global --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}"
+USER root
+RUN ln -sf "$(command -v node)" /usr/local/bin/node \\
  && chown -R kortix:kortix /home/kortix
 
 COPY ${options.agentBinaryPath} /tmp/kortix-agent.gz
@@ -88,9 +114,7 @@ RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
  && rm /tmp/kortix-agent.gz /tmp/kortix.gz
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 RUN chmod 0755 /usr/local/bin/kortix-entrypoint
-COPY --chown=kortix:kortix <<'KORTIX_META_AGENT_GUIDE' /workspace/AGENTS.md
-${META_AGENT_GUIDE}
-KORTIX_META_AGENT_GUIDE
+COPY --chown=kortix:kortix ${options.agentGuidePath} /workspace/AGENTS.md
 COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
 COPY --chown=kortix:kortix ${options.managedSkillsPath} /opt/kortix/managed-skills
 

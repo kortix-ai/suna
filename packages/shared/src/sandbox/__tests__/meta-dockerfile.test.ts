@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
+import { buildMetaSandboxDockerfile, META_AGENT_GUIDE } from '../meta-dockerfile';
 
 describe('buildMetaSandboxDockerfile', () => {
   test('contains only the platform coordination runtime', () => {
@@ -10,41 +10,53 @@ describe('buildMetaSandboxDockerfile', () => {
       entrypointScriptPath: 'artifacts/kortix-entrypoint.sh',
       catalogPath: 'artifacts/llm-catalog.json',
       managedSkillsPath: 'artifacts/managed-skills',
+      agentGuidePath: 'artifacts/meta-agents.md',
     });
 
-    expect(dockerfile).toContain('FROM debian:bookworm-slim');
-    expect(dockerfile).toContain('https://get.pnpm.io/install.sh');
-    expect(dockerfile).toContain('PNPM_VERSION=11.15.1');
-    expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
+    expect(dockerfile).toContain('FROM ubuntu:24.04');
+    expect(dockerfile).toContain('v11.15.1/pnpm-linux-');
+    expect(dockerfile).toContain('pnpm runtime set node 22.23.1 -g');
     expect(dockerfile).toContain('opencode-ai@1.17.11');
+    expect(dockerfile).not.toContain('get.pnpm.io/install.sh');
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
-    expect(dockerfile).toContain('PATH="/home/kortix/.local/share/pnpm/bin:${PATH}"');
+    expect(dockerfile).toContain('PATH=/home/kortix/.local/bin:/home/kortix/.local/share/pnpm/bin:$PATH');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# Kortix Meta Agent');
-    expect(dockerfile).toContain('You coordinate work. You do not perform project work in this sandbox.');
+    // The agent guide is a staged-file COPY, not an inline heredoc: E2B's
+    // Dockerfile parser rejects heredoc COPY instructions.
     expect(dockerfile).toContain(
+      'COPY --chown=kortix:kortix artifacts/meta-agents.md /workspace/AGENTS.md',
+    );
+    expect(dockerfile).not.toContain('<<');
+    expect(dockerfile).not.toContain('KORTIX_META_AGENT_GUIDE');
+    expect(META_AGENT_GUIDE).toContain('# Kortix Meta Agent');
+    expect(META_AGENT_GUIDE).toContain(
+      'You coordinate work. You do not perform project work in this sandbox.',
+    );
+    expect(META_AGENT_GUIDE).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
     );
-    expect(dockerfile).toContain(
+    expect(META_AGENT_GUIDE).toContain(
       'To spawn a session with input files, use `kortix sessions new --with-file <local path> --prompt "<task>"`.',
     );
-    expect(dockerfile).toContain('Each file lands in /workspace/incoming/ before the prompt is delivered');
-    expect(dockerfile).toContain(
+    expect(META_AGENT_GUIDE).toContain(
+      'Each file lands in /workspace/incoming/ before the prompt is delivered',
+    );
+    expect(META_AGENT_GUIDE).toContain(
       'Specialized sessions do their task themselves and never spawn sessions.',
     );
-    expect(dockerfile).toContain(
+    expect(META_AGENT_GUIDE).toContain(
       'Specialized sessions run full sandboxes with Python (via `uv` — tell them to use `uv run`/`uvx`/`uv pip`,',
     );
-    expect(dockerfile).toContain('Read the `kortix-cli` skill before coordinating');
-    expect(dockerfile).toContain(
+    expect(META_AGENT_GUIDE).toContain('Read the `kortix-cli` skill before coordinating');
+    expect(META_AGENT_GUIDE).toContain(
       'Wait for a session with `kortix sessions wait-for <session-id> --timeout 120`',
     );
-    expect(dockerfile).toContain(
+    expect(META_AGENT_GUIDE).toContain(
       'It grants every project action allowed to the user who started this session.',
     );
-    expect(dockerfile).toContain(
+    expect(META_AGENT_GUIDE).toContain(
       'It cannot access another project, account administration, project secrets, or connectors.',
     );
     expect(dockerfile).not.toContain('artifacts/AGENTS.md');

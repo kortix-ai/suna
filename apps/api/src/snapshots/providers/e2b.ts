@@ -25,6 +25,19 @@ interface E2BTemplateView {
   names?: string[];
   aliases?: string[];
   buildStatus?: string;
+  buildID?: string;
+}
+
+interface E2BBuildView {
+  buildID?: string;
+  status?: string;
+}
+
+interface E2BTemplateDetail {
+  templateID?: string;
+  names?: string[];
+  aliases?: string[];
+  builds?: E2BBuildView[];
 }
 
 function connectionOpts() {
@@ -65,6 +78,37 @@ function matchesTemplate(template: E2BTemplateView, name: string): boolean {
   );
 }
 
+const NOOP_BUILD_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * The template list endpoint caches `buildStatus`/`buildID` and can report a
+ * template as `waiting` long after its only build failed or was never picked
+ * up. The detail endpoint (`GET /templates/{templateID}`) carries the actual
+ * `builds[]`: the per-build status that decides whether a build is in flight,
+ * finished, or stranded.
+ */
+async function fetchTemplateDetail(templateID: string): Promise<E2BTemplateDetail | null> {
+  const response = await fetch(
+    `${apiBaseUrl()}/templates/${encodeURIComponent(templateID)}`,
+    {
+      headers: { 'X-API-KEY': config.E2B_API_KEY },
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok)
+    throw new Error(
+      `E2B template detail ${templateID} -> ${response.status} ${(await response.text()).slice(0, 300)}`,
+    );
+  return response.json() as Promise<E2BTemplateDetail>;
+}
+
+function latestBuild(detail: E2BTemplateDetail): E2BBuildView | null {
+  const builds = detail.builds ?? [];
+  if (builds.length === 0) return null;
+  return builds[0] ?? null;
+}
+
 class E2BAdapter implements SandboxProviderAdapter {
   readonly id = 'e2b' as const;
 
@@ -89,6 +133,31 @@ class E2BAdapter implements SandboxProviderAdapter {
             input.isShared,
           );
     observeTemplates.invalidate();
+    // Delete-before-build: clear any template stuck under this name (a `waiting`
+    // zombie E2B never executed, an errored template, or a stale identity) so
+    // `Template.build` requests a brand-new build. Agentica proved this unclogs
+    // E2B's build queue on this same account; a `ready` template is never
+    // deleted here — the state machine only reaches buildSnapshot when the
+    // snapshot is missing or failed. Never fatal: a cleanup fault must not
+    // block the build, and concurrent replicas tolerate the 404s.
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        const stale = (await observeTemplates()).find((item) =>
+          matchesTemplate(item, input.snapshotName),
+        );
+        if (stale && stale.buildStatus !== 'ready') {
+          console.warn(
+            `[snapshots] ${input.snapshotName} [e2b]: deleting stale template ${stale.templateID} (${stale.buildStatus}) before building`,
+          );
+          await this.deleteE2BTemplate(stale.templateID, input.snapshotName);
+        }
+      } catch (error) {
+        console.warn(
+          `[snapshots] ${input.snapshotName} [e2b]: pre-build cleanup failed, building anyway: ` +
+            `${(error as Error)?.message ?? error}`,
+        );
+      }
+    }
     try {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start
       // command. E2B executes that command while finalizing the template, before
@@ -138,13 +207,57 @@ class E2BAdapter implements SandboxProviderAdapter {
         matchesTemplate(item, snapshotName),
       );
       if (!template) return 'missing';
-      // Template.exists() becomes true when E2B creates the template identity,
-      // before its launchable :default tag exists. Only buildStatus=ready is a
-      // usable snapshot; every non-terminal provider status is canonicalized to
-      // building so the UI keeps polling and the session path falls back cold.
-      return normalizeExistingProviderState(template.buildStatus);
+      // The list advertises a launchable :default tag only once the build
+      // finished; every pre-terminal status is canonicalized through the
+      // per-build detail so a stale `waiting` can settle instead of looping.
+      if (template.buildStatus === 'ready') return 'active';
+      const detail = await fetchTemplateDetail(template.templateID);
+      if (detail === null) {
+        observeTemplates.invalidate();
+        return 'missing';
+      }
+      if (!detail.builds) {
+        // The detail endpoint returned an unparseable shape (e.g. a list
+        // payload). Fall back to the list's canonicalized status instead of
+        // guessing — the same conservative contract as before.
+        return normalizeExistingProviderState(template.buildStatus);
+      }
+      const build = latestBuild(detail);
+      if (!build || !build.buildID || build.buildID === NOOP_BUILD_ID) {
+        // The template identity exists but no real build ever started — E2B
+        // stranded it in its queue (e.g. `waiting` since it was created, or
+        // killed before execution). Reap it so the next build starts fresh.
+        console.warn(
+          `[snapshots] ${snapshotName} [e2b]: reaping template ${template.templateID} with no real build`,
+        );
+        await this.deleteE2BTemplate(template.templateID, snapshotName);
+        return 'missing';
+      }
+      const status = String(build.status ?? '').trim().toLowerCase();
+      if (status === 'ready') return 'active';
+      if (status === 'error' || status === 'cancelled' || status === 'canceled') {
+        return 'build_failed';
+      }
+      // waiting / building with a real buildID: legitimately queued or running.
+      return 'building';
     } catch {
       return 'unknown';
+    }
+  }
+
+  async deleteE2BTemplate(templateID: string, snapshotName: string): Promise<void> {
+    const response = await fetch(
+      `${apiBaseUrl()}/templates/${encodeURIComponent(templateID)}`,
+      {
+        method: 'DELETE',
+        headers: { 'X-API-KEY': config.E2B_API_KEY },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`,
+      );
     }
   }
 
@@ -154,19 +267,7 @@ class E2BAdapter implements SandboxProviderAdapter {
     try {
       const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
       if (!template) return;
-      const response = await fetch(
-        `${apiBaseUrl()}/templates/${encodeURIComponent(template.templateID)}`,
-        {
-          method: 'DELETE',
-          headers: { 'X-API-KEY': config.E2B_API_KEY },
-          signal: AbortSignal.timeout(30_000),
-        },
-      );
-      if (!response.ok && response.status !== 404) {
-        throw new Error(
-          `E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`,
-        );
-      }
+      await this.deleteE2BTemplate(template.templateID, snapshotName);
     } finally {
       observeTemplates.invalidate();
     }
