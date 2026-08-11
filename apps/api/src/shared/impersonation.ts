@@ -175,6 +175,26 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // sso, scim (directory sync), and the token routes above.
   { re: /^\/v1\/accounts\/[^/]+\/iam\/sso(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/scim(\/|$)/ },
+  // Connectors. A connection row carries a stored credential or OAuth state
+  // for an external service; connecting a workspace or app the OPERATOR
+  // controls is a durable exfiltration channel that outlives the grant, the
+  // same shape as an audit webhook. Both mounts of the management surface are
+  // blocked for writes: the project-scoped one and the /v1/connectors one.
+  // Reads (inventory, status, catalog) stay open — they are what support
+  // needs. Live invocation (`/call`) stays open too: it acts now, inside the
+  // audited hour, and creates nothing durable.
+  { re: /^\/v1\/projects\/[^/]+\/connections(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/connectors\/[^/]+\/oauth2\/connection(\/|$)/ },
+  { re: /^\/v1\/connectors\/projects\/[^/]+\/connectors(\/|$)/ },
+  { re: /^\/v1\/connectors\/projects\/[^/]+\/policies(\/|$)/ },
+  // Channels are connections too: email/slack/teams connect binds an external
+  // workspace or address that keeps reaching the account after the hour.
+  { re: /^\/v1\/projects\/[^/]+\/channels\/[^/]+\/connect(\/|$)/ },
+  // Setup links. connect-requests and secret-requests mint 7-day tokens whose
+  // consuming routes are public (`/v1/setup-links/*`) — a link minted inside
+  // the hour is a credential-intake door that works for days after it.
+  { re: /^\/v1\/projects\/[^/]+\/connect-requests(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/secret-requests(\/|$)/ },
   // Public shares. `expires_at` is optional, and the consuming route
   // (`/v1/public/session-shares/:shareId`) is mounted before auth — an
   // omitted expiry is a permanent unauthenticated link to a customer session.
