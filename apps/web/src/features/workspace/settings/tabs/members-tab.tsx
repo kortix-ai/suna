@@ -853,20 +853,20 @@ export function MembersTabView({
         onValueChange={(next) => onSectionChange(next as MembersSection)}
         className="gap-6"
       >
-        <TabsList type="underline" className="flex w-full items-center justify-start">
-          <TabsTrigger value="people" className="w-fit flex-none gap-1.5">
+        <TabsList type="underline" className="flex h-auto w-full items-center justify-start">
+          <TabsTrigger value="people" className="w-fit flex-none gap-1.5 pb-3">
             People
             {members.length > 0 ? (
               <span className="text-muted-foreground text-xs tabular-nums">{members.length}</span>
             ) : null}
           </TabsTrigger>
-          <TabsTrigger value="invites" className="w-fit flex-none gap-1.5">
+          <TabsTrigger value="invites" className="w-fit flex-none gap-1.5 pb-3">
             Invites
             {waitingCount > 0 ? (
               <span className="text-muted-foreground text-xs tabular-nums">{waitingCount}</span>
             ) : null}
           </TabsTrigger>
-          <TabsTrigger value="access" className="w-fit flex-none">
+          <TabsTrigger value="access" className="w-fit flex-none pb-3">
             Access
           </TabsTrigger>
         </TabsList>
@@ -955,7 +955,7 @@ export function MembersTabView({
                       member.account_role === 'owner' && accountOwnerCount === 1;
 
                     return (
-                      <TableRow key={member.user_id} className="border-b-0">
+                      <TableRow key={member.user_id} className="border-b-0 hover:bg-transparent">
                         <TableCell className={cn(TABLE_CELL, 'whitespace-normal')}>
                           <div className="flex min-w-0 items-center gap-2.5">
                             <UserAvatar email={member.email ?? ''} size="sm" />
@@ -1854,7 +1854,9 @@ function MembersTabInner({
     onSuccess: () => {
       successToast(`Left ${accountQuery.data?.name ?? 'account'}`);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      router.push('/accounts');
+      //  is the page this panel replaced. After leaving, the
+      // account's settings are no longer yours to see, so land on projects.
+      router.push('/projects');
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to leave account'),
   });
@@ -2352,6 +2354,9 @@ function ProjectGroupGrantsCard({
   accountId: string;
   canManage: boolean;
 }) {
+  // Switches the panel's tab rather than navigating away — Groups is a tab
+  // in this same panel now, not a separate account page.
+  const { navigate } = useSettingsNav();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const grantsKey = qk.project.groupGrants(projectId);
@@ -2473,18 +2478,17 @@ function ProjectGroupGrantsCard({
       <section className="space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
+            {/* Was "Group access" / "Attach an account group to this project…"
+                routed through auto-generated i18n keys. Plain words, written
+                here: nobody thinks of it as "attaching" anything. */}
             <h3 className="text-sm font-medium">
-              {tHardcodedUi.raw(
-                'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleGroupfbf9c01c',
-              )}
+              Groups
               {grants.length > 0 ? (
                 <span className="text-muted-foreground ml-1.5 font-normal">({grants.length})</span>
               ) : null}
             </h3>
-            <p className="text-muted-foreground mt-1 text-xs">
-              {tHardcodedUi.raw(
-                'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAttach372d6d3a',
-              )}
+            <p className="text-muted-foreground mt-1 text-xs text-pretty">
+              Give a whole group access here at once. Everyone in the group gets the role you pick.
             </p>
           </div>
 
@@ -2558,14 +2562,20 @@ function ProjectGroupGrantsCard({
             description={
               canManage && groups.length === 0 ? (
                 <>
-                  {tHardcodedUi.raw(
-                    'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextCreateOne549d8748',
-                  )}{' '}
-                  <a href={`/accounts/${accountId}`} className="hover:text-foreground underline">
-                    {tHardcodedUi.raw(
-                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccountPage432b8a72',
-                    )}
-                  </a>
+                  {/* Was an <a> to `/accounts/{id}` — the page the settings
+                      panel replaced. Groups now live in this same panel, so
+                      this switches tabs instead of navigating away: no reload,
+                      and the panel stays open where the user already is.
+                      `/settings/groups` remains a real URL for anyone linking
+                      in from outside. */}
+                  Create one in{' '}
+                  <button
+                    type="button"
+                    onClick={() => navigate('groups')}
+                    className="hover:text-foreground cursor-pointer underline underline-offset-2"
+                  >
+                    Groups
+                  </button>
                   .
                 </>
               ) : canManage && available.length === 0 && groups.length > 0 ? (
@@ -2981,18 +2991,21 @@ function ResourceAccessCard({
       <section className="space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
+            {/* Was "Resource access" over a five-line paragraph explaining
+                USE-vs-edit, inheritance, and declared skills/connectors/
+                secrets. The rule underneath is two sentences; the rest was
+                restating it. "Agents" says what the list contains — nobody
+                arrives looking for a "resource". */}
             <h3 className="text-sm font-medium">
-              Resource access
+              Agents
               {grants.length > 0 ? (
                 <span className="text-muted-foreground ml-1.5 font-normal">({grants.length})</span>
               ) : null}
             </h3>
-            <p className="text-muted-foreground mt-1 text-xs">
-              Assign agents to a member or group to control who can USE them. An agent with no
-              assignment is open to everyone with project access; assigning one restricts it to the
-              people or groups you choose — they inherit that agent's declared skills, connectors,
-              and secrets to use in its sessions. This only ever grants USE, never edit: changing
-              the agent, a skill, a connector, or a secret still requires the editor role.
+            <p className="text-muted-foreground mt-1 text-xs text-pretty">
+              Choose who can use each agent. An agent with nobody assigned is open to everyone in
+              this workspace. Being assigned never allows editing — that still needs the editor
+              role.
             </p>
           </div>
 
@@ -3208,6 +3221,8 @@ function ProjectRoleAssignmentsCard({
   canManage: boolean;
   members: ProjectAccessMember[];
 }) {
+  // Same reason as ProjectGroupGrantsCard: Roles is a tab in this panel.
+  const { navigate } = useSettingsNav();
   const queryClient = useQueryClient();
   // qk.project.policies — the IAM role-policy family. See
   // ProjectGroupGrantsCard's policiesQuery above for why this is NOT
@@ -3468,11 +3483,18 @@ function ProjectRoleAssignmentsCard({
           <p className="text-muted-foreground text-xs">
             {customRoles.length === 0 ? (
               <>
-                No custom roles exist yet. Create one on the{' '}
-                <a href={`/accounts/${accountId}?tab=roles`} className="underline">
-                  account Roles page
-                </a>
-                , then bind it here for this project.
+                {/* Same replacement as the Groups link above: `/accounts/{id}
+                    ?tab=roles` is the page this panel replaced, and Roles is a
+                    tab in this very panel. */}
+                No custom roles yet. Create one in{' '}
+                <button
+                  type="button"
+                  onClick={() => navigate('roles')}
+                  className="hover:text-foreground cursor-pointer underline underline-offset-2"
+                >
+                  Roles
+                </button>
+                , then apply it here.
               </>
             ) : (
               'No custom-role assignments on this project yet. Bind one above to grant a member, group, or agent a custom role here.'
