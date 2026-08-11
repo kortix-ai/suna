@@ -74,7 +74,7 @@ const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> 
   runtime: {
     label: 'Sandbox',
     description: 'Available to agent code and commands as an environment variable.',
-    tone: 'warning',
+    tone: 'secondary',
   },
   broker: {
     label: 'Kortix service',
