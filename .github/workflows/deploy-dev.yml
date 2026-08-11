@@ -38,9 +38,25 @@ on:
           - all
           - frontend
 
+# One group for every surface, and it must NOT cancel what is already running.
+#
+# `cancel-in-progress: true` starved the slowest surface out of existence. The
+# multi-arch API image takes ~23 min to build; main lands every ~10-20 min during
+# the day; and the group is workflow-wide, so a frontend-only push cancelled an
+# in-flight API build. Measured 2026-08-10: 19 of 30 runs cancelled, the API image
+# had not deployed in 3.5 h, and 5 API commits were stranded — the run that finally
+# landed only survived because the trunk went quiet in the evening.
+#
+# Queueing instead guarantees forward progress. GitHub keeps at most one pending
+# run per group and cancels the previous pending one, so a burst of pushes still
+# collapses into a single follow-up deploy — the newest commit wins, it just waits
+# its turn. This matches deploy-prod, rollback-prod and promote, which have always
+# used `false` for the same reason.
+#
+# It also stops `migrate-db` being killed mid-migration by an unrelated push.
 concurrency:
   group: deploy-dev
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────
@@ -109,10 +125,12 @@ jobs:
             apps_router:
               - 'infra/cloudflare/workers/apps-router/**'
               - '.github/workflows/deploy-dev.yml'
-            # Only the roots this pipeline actually applies. environments/dev is
-            # deliberately absent: it reads an operator-local terraform.tfvars
-            # and is still applied by hand (see terraform-apply.yml).
+            # Every dev root this pipeline applies. environments/dev used to be
+            # excluded here because it read an operator-local terraform.tfvars
+            # and was applied by hand; those inputs are committed now, so the
+            # root is applied like any other (see terraform-apply.yml).
             terraform:
+              - 'infra/terraform/environments/dev/**'
               - 'infra/terraform/environments/dev-web/**'
               - 'infra/terraform/modules/**'
               - '.github/workflows/terraform-apply.yml'
@@ -137,6 +155,7 @@ jobs:
             else
               api=true
               apps_router=true
+              gateway=true
               frontend=true
               terraform=true
             fi
@@ -158,25 +177,62 @@ jobs:
             echo "- Frontend: ${{ steps.outputs.outputs.frontend }}"
             echo "- CLI: ${{ steps.outputs.outputs.cli }}"
             echo "- Apps router: ${{ steps.outputs.outputs.apps_router }}"
-            echo "- Terraform (dev-web): ${{ steps.outputs.outputs.terraform }}"
+            echo "- Terraform (dev + dev-web): ${{ steps.outputs.outputs.terraform }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Apply dev Terraform before any image rolls ──────────────────────────────
-  # Infrastructure first, then the image that runs on it. Skipped when nothing
-  # under the dev roots changed, and skipped entirely until the repo variable
+  # Infrastructure first, then the image that runs on it. Two roots, applied in
+  # order: environments/dev (API + gateway ALB/ECS/DNS) then environments/dev-web
+  # (the frontend service). Both are skipped when nothing under the dev roots
+  # changed, and both are skipped entirely until the repo variable
   # TF_APPLY_ROLE_ARN_DEV is set — so merging this before the IAM role exists
-  # cannot break the dev pipeline. The image jobs below treat a SKIPPED
-  # terraform job as a pass and a FAILED one as a blocker.
+  # cannot break the dev pipeline. The image jobs below treat a SKIPPED terraform
+  # job as a pass and a FAILED one as a blocker.
   #
   # The `github.ref` condition keeps the documented "manual branch run" of this
   # workflow working: terraform-apply.yml refuses any commit that is not on
-  # `main`, so on a branch dispatch this job would fail and block the image
+  # `main`, so on a branch dispatch these jobs would fail and block the image
   # deploys. Skipping is the correct outcome there — a branch run deploys
   # images, never infrastructure.
+
+  # environments/dev is the API root. It plans `api_image`, so it waits for
+  # tag-api: the value must be an image that exists, and the freshly published
+  # :dev-<sha8> tag is the one this run is about to roll onto ECS. tag-api only
+  # pushes to Docker Hub, so infrastructure still converges before anything
+  # touches AWS. When no API changed, tag-api is skipped and the root keeps its
+  # committed default (:dev-latest) — never a tag nobody published.
+  terraform-dev-api:
+    name: Apply dev API Terraform
+    needs: [detect-changes, tag-api]
+    if: >-
+      ${{ always()
+        && needs.detect-changes.outputs.terraform == 'true'
+        && vars.TF_APPLY_ROLE_ARN_DEV != ''
+        && github.ref == 'refs/heads/main'
+        && (needs.tag-api.result == 'success' || needs.tag-api.result == 'skipped') }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/dev
+      api_image: ${{ needs.tag-api.outputs.image || 'kortix/kortix-api:dev-latest' }}
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
+      github_environment: dev
+      trusted_branch: main
+      cloudflare: true
+    secrets: inherit
+
   terraform-dev:
-    name: Apply dev Terraform
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.terraform == 'true' && vars.TF_APPLY_ROLE_ARN_DEV != '' && github.ref == 'refs/heads/main' }}
+    name: Apply dev web Terraform
+    needs: [detect-changes, terraform-dev-api]
+    if: >-
+      ${{ always()
+        && needs.detect-changes.outputs.terraform == 'true'
+        && vars.TF_APPLY_ROLE_ARN_DEV != ''
+        && github.ref == 'refs/heads/main'
+        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped') }}
     permissions:
       contents: read
       id-token: write
@@ -372,15 +428,18 @@ jobs:
   # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
   deploy-api-ecs:
     name: Deploy API to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, tag-api, migrate-db, terraform-dev]
-    # `always()` is required because terraform-dev is SKIPPED whenever no dev
-    # Terraform changed — without it GitHub would skip this job too. Every other
-    # upstream is still required to have succeeded.
+    needs: [detect-changes, dev-version, tag-api, migrate-db, terraform-dev-api, terraform-dev]
+    # `always()` is required because both terraform jobs are SKIPPED whenever no
+    # dev Terraform changed — without it GitHub would skip this job too. Every
+    # other upstream is still required to have succeeded. Both roots are listed:
+    # a failed terraform-dev-api skips terraform-dev, and a skip alone must not
+    # read as a pass for the root that actually failed.
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.api == 'true'
         && needs.tag-api.result == 'success'
         && needs.migrate-db.result == 'success'
+        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
@@ -660,13 +719,15 @@ jobs:
 
   deploy-web-ecs:
     name: Deploy frontend to dev (ECS Fargate)
-    needs: [detect-changes, dev-version, build-frontend, terraform-dev]
+    needs: [detect-changes, dev-version, build-frontend, terraform-dev-api, terraform-dev]
     # Same soft dependency as deploy-api-ecs: environments/dev-web owns the web
-    # ALB, WAF association, and task roles this image runs behind.
+    # ALB, WAF association, and task roles this image runs behind, and
+    # environments/dev must have converged before it.
     if: >-
       ${{ always()
         && needs.detect-changes.outputs.frontend == 'true'
         && needs.build-frontend.result == 'success'
+        && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:

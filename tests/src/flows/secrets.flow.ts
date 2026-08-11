@@ -124,6 +124,7 @@ flow(
       "GET /v1/projects/:projectId/secrets",
       "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
       "POST /v1/projects/:projectId/secrets/:identifier/broker",
+      "POST /v1/projects/:projectId/secrets/:identifier/grant",
       "POST /v1/projects/:projectId/secrets/sync",
       "GET /v1/accounts/:accountId/audit",
     ],
@@ -253,6 +254,48 @@ flow(
       } else {
         r.status(409).body().has("$.code", "secret_delivery_unavailable");
       }
+    });
+
+    // The grant route's success path commits kortix.yaml, and the local profile
+    // has no writable git backend — every sibling manifest-writing route
+    // (agents/:agentName/scope in IAM-*, agents/:agentName/config in PROJ-*) is
+    // covered the same way, at the boundary the profile can reach. The commit
+    // itself is covered by apps/api/src/__tests__/unit-secret-grant-route.test.ts.
+    await ctx.step("granting an unknown secret is refused", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/grant",
+          { agent: "kortix" },
+          { params: { projectId: p.id, identifier: "NO_SUCH_SECRET" } },
+        );
+      r.status(404);
+    });
+
+    await ctx.step("granting rejects a malformed identifier before touching the manifest", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/grant",
+          { agent: "kortix" },
+          { params: { projectId: p.id, identifier: "not a valid identifier" } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("granting requires an agent name", async () => {
+      // Status only: the OpenAPI request validator rejects the body before the
+      // handler runs, so the envelope is its ZodError shape, not the handler's
+      // `{ code: 'invalid_body' }`. The handler's own codes are asserted in
+      // apps/api/src/__tests__/unit-secret-grant-route.test.ts.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/grant",
+          {},
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(400);
     });
 
     await ctx.step("transparent egress rejects controls the provider cannot enforce", async () => {

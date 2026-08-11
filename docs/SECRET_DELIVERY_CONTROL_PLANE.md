@@ -234,7 +234,7 @@ All three must hold. Each one used to fail silently.
 | # | Requirement | Where it is set | Result when wrong |
 | --- | --- | --- | --- |
 | 1 | The session runs on Platinum | Customize -> Feature flags -> Sandbox provider | No binding is attached. The request leaves without the header. |
-| 2 | An agent `secrets:` list NAMES the identifier | `kortix.yaml` | `resolveSecretDelivery` withholds the row. No binding. |
+| 2 | An agent `secrets:` list NAMES the identifier | `kortix.yaml`, by hand or through the grant route below | `resolveSecretDelivery` withholds the row. No binding. |
 | 3 | The header value template renders what the API expects | Secret editor -> Header value template | The header carries the bare value with no scheme. Upstream returns `401`. |
 
 Requirement 1 is project scope, not deployment scope.
@@ -379,10 +379,86 @@ is the source of truth and the next session start reapplies it.
 | Provider replica, attach, arm, erase | `apps/api/src/secrets/platinum-network-boundary.ts` |
 | Deployment capability flag | `apps/api/src/secrets/network-boundary-availability.ts` |
 | Session grant + allowlist resolution | `apps/api/src/projects/lib/network-secret-boundary.ts` |
+| Agents-map merge and upsert behind the grant | `apps/api/src/projects/lib/agent-config-v2.ts` |
+| Default-deny for an agent the manifest omits | `apps/api/src/projects/agents.ts` |
 | Provider adapter and teardown | `apps/api/src/platform/providers/platinum.ts` |
 | Save routes | `apps/api/src/projects/routes/r3.ts` |
 | Web editor | `apps/web/src/features/workspace/customize/sections/view/secrets-view.tsx` |
 | CLI | `apps/cli/src/commands/secrets.ts` |
+
+## Repairing a missing agent grant
+
+Requirement 2 was the one prerequisite the Secrets page could not satisfy: it
+needs a manifest commit, not a secret write. `delivery_blocked_reason` named the
+problem and stopped there. The API now performs the edit as well, so a surface
+that renders the warning can also clear it.
+
+```http
+POST /v1/projects/{projectId}/secrets/{identifier}/grant
+{ "agent": "my-agent" }
+```
+
+```json
+{
+  "identifier": "STRIPE_API_KEY",
+  "agent": "my-agent",
+  "already_granted": false,
+  "adopted_governance": true
+}
+```
+
+| Outcome | Status | Code |
+| --- | --- | --- |
+| Granted, or already granted | `200` | — |
+| The manifest is `kortix.toml` | `400` | `manifest_v1_unsupported` |
+| Unknown project, secret, or manifest | `404` | — |
+| The secret's strategy is `denied` | `409` | `secret_not_grantable` |
+
+The route resolves the secret by identifier on the project, loads the manifest
+for edit, and calls `grantSecretToAgentV2`
+(`apps/api/src/projects/lib/agent-config-v2.ts`). The merge only ever widens:
+
+| The agent's current `secrets` | Result |
+| --- | --- |
+| Missing from the roster | Upserted with `secrets: [identifier]` |
+| An explicit list | The identifier is appended; every other field survives |
+| A list that already admits it | `already_granted: true`, no commit, no rewrite |
+| `all` | Expanded to today's project identifiers plus this one |
+
+The `all` expansion is not cosmetic. `resolveSecretDelivery` withholds an
+`egress` or `broker` row from an `'all'` grant, so the grant must become an
+explicit list for the secret to arrive. Writing only the new identifier would
+revoke every other project secret from that agent, so the route writes out the
+identifiers `'all'` resolves to today. Delivery is unchanged at that moment; a
+secret added later needs its own grant.
+
+The upsert is the one behavioral difference from
+`PUT /:projectId/agents/:agentName/scope`, which sets `notFound` and answers
+`404 agent_not_found` instead of creating (`applyAgentScopeV2` versus
+`applyAgentBlockV2`). Membership compares case-insensitively. A real edit
+commits `chore(agents): grant <IDENTIFIER> to <agent>`.
+
+### `adopted_governance` reports a project-wide rule change
+
+`adopted_governance` is `true` when the manifest declared NO agents before the
+edit, and also when the repository had no manifest file at all and
+`loadManifestForEdit` synthesized one. Both cases publish the project's first
+roster. That single commit changes the project's default: `agents.ts` returns a
+default-deny grant for any concrete agent the manifest does not list, so every
+agent outside the new block loses every project secret — including the `runtime`
+rows it received before the commit.
+
+The web client therefore confirms before it sends a request that can set the
+flag, and the confirmation tells the person to list every agent that needs
+secrets. An API caller gets the same information after the fact in the response.
+
+An `already_granted` response always reports `adopted_governance: false`. No
+commit ran, so nothing was adopted.
+
+A v1 manifest cannot express the agents map. `grantSecretToAgentV2` refuses
+before any edit and returns `unsupportedV1`, which the route maps to `400
+manifest_v1_unsupported`. The message asks for an upgrade to `kortix_version: 2`
+instead of rewriting the file format for the project.
 
 ## Connector credentials
 
@@ -417,6 +493,12 @@ remain write-only.
 `delivery_blocked_reason` is optional and nullable. Its only value today is
 `'no_agent_grant'`. Treat `null` as "granted, not applicable, or unknown", never
 as "blocked".
+
+A surface that renders that reason should also offer the repair. The web editor
+turns the warning into an agent choice and calls
+`POST /:projectId/secrets/:identifier/grant`. It confirms the governance change
+first, because a project's first `agents:` block default-denies every agent it
+omits.
 
 `POST /:projectId/secrets` and `PUT /:projectId/secrets/:identifier/strategy`
 additionally return `delivery_sync`. No other route returns it.
@@ -514,6 +596,15 @@ without returning the new value to a client.
 - A response that would echo an egress secret is killed by the proxy.
 - A failed push to a running sandbox returns `delivery_sync.ok === false`. The
   save still succeeds.
+- A grant for an identifier the agent already admits returns `200` with
+  `already_granted: true` and makes no commit.
+- A grant that adds the project's first `agents:` block returns
+  `adopted_governance: true`. From that commit on, an unlisted agent receives no
+  project secret of any strategy.
+- A grant against a `kortix.toml` project returns `400` with
+  `code: 'manifest_v1_unsupported'`.
+- A grant for a `denied` secret returns `409` with
+  `code: 'secret_not_grantable'`.
 - A stale, expired, or revoked session handle returns `409`.
 - A host, method, or path mismatch returns `403`.
 - A connector binding blocks secret deletion and incompatible strategy changes
@@ -537,6 +628,9 @@ Every change to this control plane must prove these paths:
 6. Rotation changes future use without exposing the value.
 7. Audit rows contain reconstruction metadata and no secret material.
 8. API, SDK, CLI, and web behavior agree on the stored policy.
+9. A grant writes the identifier into the named agent, clears
+   `delivery_blocked_reason`, and preserves that agent's other governance
+   fields. Repeating it commits nothing.
 
 Platinum network substitution also requires a live provider test. That test
 must prove injection, sandbox non-disclosure, rotation, revocation, and echo

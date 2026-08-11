@@ -27,13 +27,13 @@ name: Terraform Apply
 #     runs would break drift detection with "state snapshot was created by a
 #     newer Terraform". Bump both files together or neither.
 #
-# NOT AUTO-APPLIED (still manual): environments/dev and environments/prod. Both
-# roots read an operator-local, gitignored terraform.tfvars whose committed
-# .example diverges from the variable defaults (dev/prod set api_environment
-# and prod pins api_image to a release tag). Applying them from CI with plain
-# defaults would plan against inputs no operator ever used.
-# infra/terraform/README.md carries the full root-by-root table and the TODO
-# that unblocks those two.
+# EVERY root under infra/terraform is now driven from here. environments/dev and
+# environments/prod were the last two manual ones: they read an operator-local,
+# gitignored terraform.tfvars, so CI planned inputs no operator ever used. Every
+# value from those files now lives in committed variable defaults, except
+# `api_image` — that one changes per deploy, so the caller passes it (see the
+# input below) and CI plans the exact image the same run ships.
+# infra/terraform/README.md carries the full root-by-root table.
 
 on:
   workflow_call:
@@ -42,6 +42,14 @@ on:
         description: Terraform root directory, relative to the repository root.
         required: true
         type: string
+      allow_deletes:
+        description: >-
+          Permit planned deletes (reviewed cleanups only — e.g. retiring an IAM
+          group after its user was removed). The guard still prints every
+          delete; it just does not block. Never set on automatic triggers.
+        required: false
+        type: boolean
+        default: false
       aws_region:
         description: Region for the OIDC session and the state backend.
         required: false
@@ -60,6 +68,16 @@ on:
           Branch the applied commit must be reachable from (main, staging, prod).
           Enforced in-workflow before any credential is minted.
         required: true
+        type: string
+      api_image:
+        description: >-
+          API container image for roots that declare `api_image`
+          (environments/dev, environments/prod). Exported as TF_VAR_api_image,
+          which outranks the root's committed default. Leave empty for every
+          other root — the value is per-deploy, so it is the one input that
+          cannot be committed.
+        required: false
+        default: ""
         type: string
       cloudflare:
         description: Pass CLOUDFLARE_API_TOKEN as TF_VAR_cloudflare_api_token.
@@ -82,6 +100,7 @@ permissions:
 
 env:
   TF_VERSION: 1.15.8
+  ALLOW_DELETES: ${{ inputs.allow_deletes && 'true' || 'false' }}
 
 jobs:
   apply:
@@ -157,6 +176,25 @@ jobs:
           fi
           printf 'TF_VAR_cloudflare_api_token=%s\n' "$CLOUDFLARE_API_TOKEN" >> "$GITHUB_ENV"
 
+      # The image tag is the one input a root cannot commit: it changes on every
+      # deploy, and a stale pin would seed a task-definition pointing at an image
+      # nobody ships. TF_VAR_ outranks the variable default and is the same
+      # mechanism the Cloudflare token above uses. Validate the reference first —
+      # an empty or malformed caller expression must fail here, not silently
+      # register a broken task-def the next time one is created.
+      - name: Pin the API image
+        if: inputs.api_image != ''
+        env:
+          API_IMAGE: ${{ inputs.api_image }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$API_IMAGE" | grep -Eq '^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'; then
+            echo "::error::api_image is not a valid <repository>:<tag> reference: '${API_IMAGE}'."
+            exit 1
+          fi
+          printf 'TF_VAR_api_image=%s\n' "$API_IMAGE" >> "$GITHUB_ENV"
+          echo "$TF_ROOT plans api_image=${API_IMAGE}."
+
       - name: terraform init
         run: terraform -chdir="$TF_ROOT" init -input=false -no-color
 
@@ -208,6 +246,15 @@ jobs:
             | map({action: .[0], count: length})
           ' "$RUNNER_TEMP/plan.json"
 
+          if [ "$blocked_destructive_changes" != "0" ] && [ "${ALLOW_DELETES}" = "true" ]; then
+            echo "::warning::$TF_ROOT plans $blocked_destructive_changes destructive change(s) — permitted by allow_deletes (reviewed cleanup):"
+            jq -r '
+              .resource_changes[]?
+              | select(.change.actions | index("delete"))
+              | "  \(.address): \(.change.actions | join(","))"
+            ' "$RUNNER_TEMP/plan.json"
+            blocked_destructive_changes=0
+          fi
           if [ "$blocked_destructive_changes" != "0" ]; then
             echo "::error::$TF_ROOT plans $blocked_destructive_changes blocked destructive change(s). Apply it by hand after review."
             jq -r '
@@ -238,11 +285,14 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          API_IMAGE: ${{ inputs.api_image }}
         run: |
           {
             echo "### Terraform apply — \`${TF_ROOT}\`"
             echo "- Region: \`${{ inputs.aws_region }}\`"
             echo "- Environment: \`${{ inputs.github_environment }}\`"
             echo "- Terraform: \`${TF_VERSION}\`"
+            echo "- API image: \`${API_IMAGE:-committed default}\`"
             echo "- Result: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

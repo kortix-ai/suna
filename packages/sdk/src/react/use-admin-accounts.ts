@@ -19,6 +19,29 @@ export interface AdminAccountTrial {
   note: string | null;
 }
 
+/**
+ * The plan an account BEHAVES as, as the list route resolves it.
+ *
+ * Distinct from `AdminAccount.tier`, which stays the STORED
+ * `credit_accounts.tier` the tier filter matches on. An active admin trial and
+ * the per-seat self-heal overlay that column, so the two disagree exactly when
+ * it matters most — and the console must show the resolved one.
+ */
+export interface AdminAccountPlan {
+  /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+  key: string;
+  /** Public ladder position: there are exactly three families. */
+  family: 'free' | 'team' | 'enterprise';
+  /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+  label: string;
+  /** Qualifier to render muted after the label, e.g.
+   *  '$40/seat/mo · grandfathered'. Null when the plan needs none. */
+  sublabel: string | null;
+  status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+  /** Sold once, still honored exactly as sold, no longer offered. */
+  is_grandfathered: boolean;
+}
+
 export interface AdminAccount {
   accountId: string;
   name: string | null;
@@ -28,7 +51,12 @@ export interface AdminAccount {
   expiringCredits: string | null;
   nonExpiringCredits: string | null;
   dailyCreditsBalance: string | null;
+  /** STORED `credit_accounts.tier` — what the tier filter matches on. For what
+   *  the account behaves as, read {@link AdminAccount.plan}. */
   tier: string | null;
+  /** Resolved plan. Optional: an API older than the plan resolver omits it, so
+   *  a console pointed at one falls back to the raw tier key. */
+  plan?: AdminAccountPlan;
   paymentStatus: string | null;
   provider: string | null;
   planType: string | null;
@@ -157,6 +185,34 @@ export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
     },
     staleTime: 15_000,
     placeholderData: (prev) => prev,
+  });
+}
+
+/** Wire path of the exact-id single-account lookup (list route + accountId filter). */
+export function adminAccountLookupPath(accountId: string): string {
+  return `/admin/api/accounts?accountId=${encodeURIComponent(accountId)}&limit=1`;
+}
+
+/**
+ * Live single-account row for the admin detail sheet. Uses the list route's
+ * exact-id filter, so it stays correct when the list's own filters (tier,
+ * balance, payment status) no longer match the account after a mutation —
+ * the bug where the sheet kept rendering a pre-mutation snapshot.
+ * Invalidated by the same ['admin','accounts', accountId] subtree every admin
+ * mutation already targets.
+ */
+export function useAdminAccount(accountId: string | null) {
+  return useQuery<AdminAccount | null>({
+    queryKey: ['admin', 'accounts', accountId, 'detail'],
+    enabled: !!accountId,
+    queryFn: async () => {
+      const response = await backendApi.get<AdminAccountsResponse>(
+        adminAccountLookupPath(accountId!),
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data?.accounts?.[0] ?? null;
+    },
+    staleTime: 5_000,
   });
 }
 
@@ -355,6 +411,38 @@ export function useAdminSetEnterpriseEntitled() {
       const response = await backendApi.post<{ ok: boolean; enabled: boolean }>(
         `/admin/api/accounts/${accountId}/enterprise-entitlement`,
         { enabled },
+      );
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    onSuccess: (_data, { accountId }) => invalidateAdminAccount(queryClient, accountId),
+  });
+}
+
+export type AdminAccountMemberRole = 'owner' | 'admin' | 'member';
+
+/** Wire path of the platform-admin member-role override route. */
+export function adminMemberRolePath(accountId: string, userId: string): string {
+  return `/admin/api/accounts/${accountId}/members/${userId}/role`;
+}
+
+/**
+ * Platform-admin override of an account member's role. Bypasses the in-account
+ * permission rules (which require the caller to be a member), but the server
+ * still refuses to demote an account's last owner. Invalidates the account
+ * subtree, which includes the users list the Users tab renders.
+ */
+export function useAdminSetMemberRole() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { ok: boolean; user_id: string; account_role: string },
+    Error,
+    { accountId: string; userId: string; role: AdminAccountMemberRole }
+  >({
+    mutationFn: async ({ accountId, userId, role }) => {
+      const response = await backendApi.post<{ ok: boolean; user_id: string; account_role: string }>(
+        adminMemberRolePath(accountId, userId),
+        { role },
       );
       if (response.error) throw new Error(response.error.message);
       return response.data!;

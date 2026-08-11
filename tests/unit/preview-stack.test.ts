@@ -26,12 +26,14 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy frontend:3000');
   });
 
-  it('adds only the preview edge, Mailpit, and direct loopback database port', () => {
+  it('adds preview ingress, Mailpit, direct database access, and preview-only Auth capacity', () => {
     const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
     expect(overlay).toContain('preview-edge:');
     expect(overlay).toContain('mailpit:');
     expect(overlay).toContain('127.0.0.1:15432:5432');
     expect(overlay).toContain('/workspace/suna/tests/test-results:/reports:ro');
+    expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
+    expect(overlay).toContain('GOTRUE_RATE_LIMIT_EMAIL_SENT: "10000"');
     expect(overlay).not.toContain('volumes/db/data');
   });
 

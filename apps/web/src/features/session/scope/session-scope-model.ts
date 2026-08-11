@@ -188,21 +188,29 @@ export function resetSessionConnectorBindings(
   };
 }
 
-/** How an axis reads in the UI. "Project default" is the norm, never "none". */
-export const SESSION_SCOPE_INHERITED_LABEL = 'Project default';
+/**
+ * How an inherited axis reads in the UI — the agent defines both defaults.
+ * Secrets: `intersectSecretGrants(grant, null)` returns the AGENT's grant
+ * untouched. Connectors: the agent's grant decides WHICH connectors the session
+ * may use; each granted alias then resolves to the project's default connection
+ * (`resolveProjectDefaultConnectorConnection`) — a resolution detail the row
+ * description carries, not the label.
+ */
+export const SESSION_SCOPE_SECRETS_INHERITED_LABEL = 'Agent default';
+export const SESSION_SCOPE_CONNECTORS_INHERITED_LABEL = 'Agent default';
 
 export function sessionSecretsSummary(draft: SessionScopeDraft): string {
   if (draft.secrets === undefined) return 'Unchanged';
   // `null` = inherit whatever the agent's grant allows. Calling this "All
   // allowed" overstated it, and calling it "None selected" inverted it.
-  if (draft.secrets === null) return SESSION_SCOPE_INHERITED_LABEL;
+  if (draft.secrets === null) return SESSION_SCOPE_SECRETS_INHERITED_LABEL;
   if (draft.secrets.length === 0) return 'None allowed';
   return `${draft.secrets.length} selected`;
 }
 
 export function sessionConnectorsSummary(draft: SessionScopeDraft): string {
   if (draft.connector_bindings === undefined) return 'Unchanged';
-  if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_INHERITED_LABEL;
+  if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_CONNECTORS_INHERITED_LABEL;
   const bound = Object.keys(draft.connector_bindings);
   // A required-but-unconnected alias is selected too — it has no connection to
   // bind, which is precisely why it is recorded separately.

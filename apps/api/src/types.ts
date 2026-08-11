@@ -189,7 +189,44 @@ export interface AccountStateResponse {
   /** True when a Stripe subscription is currently providing service. Distinct
    *  from `subscription.subscription_id`, which stays set after cancellation. */
   has_active_subscription: boolean;
+  /**
+   * The plan the account BEHAVES as, named the way the product names plans.
+   *
+   * Distinct from `subscription` on purpose. `subscription.tier_key` is the
+   * STORED `credit_accounts.tier` — the plan Stripe sold. This block is the
+   * RESOLVED plan: an active admin-issued trial and the per-seat self-heal
+   * overlay the stored tier (billing/services/resolve-billing.ts), so a
+   * trialing account reports the plan its gates actually enforce. `tier.name`,
+   * `tier.display_name`, `tier.entitlements` and `limits.concurrent_sessions`
+   * come from the same resolved view.
+   *
+   * Optional: additive field, so a client built against the older shape still
+   * type-checks. The API always sends it.
+   */
+  plan?: {
+    /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+    key: string;
+    /** Public ladder position: there are exactly three families. */
+    family: 'free' | 'team' | 'enterprise';
+    /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+    label: string;
+    /** Qualifier under the label, e.g. '$200/mo · grandfathered'. Null when
+     *  the plan needs no qualifier. */
+    sublabel: string | null;
+    /** Lifecycle: sellable today, sold-once-and-honored, defined-but-never-sold,
+     *  or the absence of a plan. */
+    status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+    /** How the recurring charge is computed. */
+    shape: 'none' | 'flat' | 'seat' | 'contract';
+    /** Strictly ordered ladder position (0 = no plan). Compare, don't display. */
+    rank: number;
+    /** `status === 'grandfathered'`, surfaced directly so the UI can render the
+     *  plan as sold rather than mapping it onto a current plan it is not. */
+    is_grandfathered: boolean;
+  };
   subscription: {
+    /** STORED `credit_accounts.tier` — the plan Stripe sold. For the plan the
+     *  account behaves as (trial / per-seat self-heal applied), read `plan`. */
     tier_key: string;
     tier_display_name: string;
     status: string;
@@ -206,8 +243,11 @@ export interface AccountStateResponse {
     can_purchase_credits: boolean;
   };
   tier: {
+    /** RESOLVED plan key — the plan every gate enforces (see `plan`). */
     name: string;
     display_name: string;
+    /** STORED plan's recurring credit grant. A trial grants no credits, so this
+     *  keeps describing the subscription, not the resolved plan. */
     monthly_credits: number;
     can_purchase_credits: boolean;
     /** Enterprise feature gates for this tier — drives whether the UI shows

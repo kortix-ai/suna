@@ -26,6 +26,31 @@ export interface UpstreamErrorDetail {
   code?: string | number;
 }
 
+const CONTEXT_OVERFLOW_PATTERNS = [
+  /context length (?:is )?exceeded/i,
+  /exceeds? (?:the )?context window/i,
+  /maximum context length is \d+ tokens[\s\S]*\brequested\b/i,
+  /prompt is too long/i,
+  /input is too long/i,
+  /(?:input|prompt)[\s\S]*exceeds?[\s\S]*context (?:limit|window)/i,
+];
+
+/**
+ * Convert provider-specific context overflow responses into the one semantic
+ * code OpenAI-compatible clients use. Some providers return only HTTP 400 (or
+ * `invalid_request_error`) and put the actual classification in the message.
+ */
+export function normalizeUpstreamErrorCode(
+  code: string | number | undefined,
+  message: string,
+): string | number | undefined {
+  if (code === 'context_length_exceeded') return code;
+  if (CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(message))) {
+    return 'context_length_exceeded';
+  }
+  return code;
+}
+
 /**
  * Mine a PARSED upstream error object (the shape `{error:{message,code,type,
  * param}}` OpenAI-compatible upstreams use, the Anthropic shape
@@ -49,7 +74,8 @@ export function extractUpstreamErrorDetail(parsed: unknown): UpstreamErrorDetail
           : typeof err.type === 'string' && err.type.length > 0
             ? err.type
             : undefined;
-      return { message, ...(code !== undefined ? { code } : {}) };
+      const normalizedCode = normalizeUpstreamErrorCode(code, message);
+      return { message, ...(normalizedCode !== undefined ? { code: normalizedCode } : {}) };
     }
   }
 
@@ -62,7 +88,8 @@ export function extractUpstreamErrorDetail(parsed: unknown): UpstreamErrorDetail
         : typeof root.type === 'string' && root.type.length > 0
           ? root.type
           : undefined;
-    return { message, ...(code !== undefined ? { code } : {}) };
+    const normalizedCode = normalizeUpstreamErrorCode(code, message);
+    return { message, ...(normalizedCode !== undefined ? { code: normalizedCode } : {}) };
   }
 
   return null;

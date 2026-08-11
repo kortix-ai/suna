@@ -160,10 +160,21 @@ resource "aws_iam_role_policy" "ses_send" {
       Sid    = "SendEmail"
       Effect = "Allow"
       Action = ["ses:SendEmail"]
-      Resource = [
-        for identity in var.ses_send_identity_names :
-        "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:identity/${identity}"
-      ]
+      # SESv2 SendEmail authorizes against BOTH the sending identity AND the
+      # configuration set named in the request — omitting the config-set ARN
+      # 403s the whole send (found live on dev 2026-08-10: assumed-role send
+      # denied on configuration-set/kortix-transactional while the identity
+      # resources were correctly granted).
+      Resource = concat(
+        [
+          for identity in var.ses_send_identity_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:identity/${identity}"
+        ],
+        [
+          for cs in var.ses_send_configuration_set_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${cs}"
+        ],
+      )
     }]
   })
 }

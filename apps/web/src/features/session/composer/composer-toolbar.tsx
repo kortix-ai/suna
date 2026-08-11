@@ -18,12 +18,21 @@ import { TokenProgress } from './token-progress';
 /**
  * The composer's bottom toolbar — the familiar one.
  *
- *  - LEFT: attach, agent, model — all inline, all always visible, each
- *    showing its current value at rest. Variant (thinking mode) and
- *    reasoning effort moved INSIDE the model popover (Task 10) — they're
- *    settings on top of the selected model, not peers of it, and folding
- *    them in kept the row from growing with every new per-model knob.
+ *  - LEFT: attach, agent, model, reasoning effort — all inline, all showing
+ *    their current value at rest. Variant (thinking mode) stays folded inside
+ *    the model popover: it is a setting on top of the selected model, not a
+ *    peer of it. Reasoning effort is NOT — it is a per-project setting, so it
+ *    sits beside the model rather than two clicks inside it.
  *  - RIGHT: token progress (ambient, no label), voice, send/stop.
+ *
+ * Reasoning effort's placement is contested and was resolved deliberately.
+ * `main` removed it from this bar (PR #6381: "it lives inside the
+ * session-overrides panel — the bar keeps only agent + model") and its
+ * overrides panel does carry a working control. This branch keeps it here as
+ * well, by explicit decision, which means it is reachable from both places.
+ * If that duplication is unwanted, the fix is to delete the
+ * `ReasoningEffortSelector` render below plus the `reasoningMenuOpen` pair —
+ * not to assume a merge dropped it by accident.
  *
  * Two earlier passes are recorded here so they are not re-attempted:
  *

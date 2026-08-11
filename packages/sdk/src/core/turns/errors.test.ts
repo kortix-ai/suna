@@ -27,6 +27,28 @@ function gatewayBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const attemptFailures = [
+  {
+    attempt: 1,
+    provider: 'openai-codex',
+    route_model: 'codex/gpt-5.6-sol',
+    resolved_model: 'gpt-5.6-sol',
+    stage: 'stream_error',
+    status: 400,
+    code: 'context_length_exceeded',
+    message: 'Your input exceeds the context window of this model.',
+  },
+  {
+    attempt: 2,
+    provider: 'aster',
+    route_model: 'glm-5.2',
+    resolved_model: 'glm-5.2',
+    stage: 'stream_probe',
+    code: 'stream_probe_timeout',
+    message: 'upstream stream probe timeout exceeded (60000ms with no bytes)',
+  },
+];
+
 describe('unwrapError — unchanged plain-message behavior', () => {
   test('extracts message from a plain object', () => {
     expect(unwrapError({ message: 'boom' })).toBe('boom');
@@ -76,6 +98,46 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
   test('carries upstream_status as a number when present', () => {
     const details = extractGatewayErrorDetails(gatewayBody({ upstream_status: 429 }));
     expect(details?.upstreamStatus).toBe(429);
+  });
+
+  test('preserves every gateway candidate failure in order', () => {
+    const details = extractGatewayErrorDetails(gatewayBody({ attempt_failures: attemptFailures }));
+    expect(details?.attemptFailures).toEqual([
+      {
+        attempt: 1,
+        provider: 'openai-codex',
+        routeModel: 'codex/gpt-5.6-sol',
+        resolvedModel: 'gpt-5.6-sol',
+        stage: 'stream_error',
+        status: 400,
+        code: 'context_length_exceeded',
+        message: 'Your input exceeds the context window of this model.',
+      },
+      {
+        attempt: 2,
+        provider: 'aster',
+        routeModel: 'glm-5.2',
+        resolvedModel: 'glm-5.2',
+        stage: 'stream_probe',
+        status: undefined,
+        code: 'stream_probe_timeout',
+        message: 'upstream stream probe timeout exceeded (60000ms with no bytes)',
+      },
+    ]);
+  });
+
+  test('drops malformed attempt failures instead of exposing untrusted shapes', () => {
+    const details = extractGatewayErrorDetails(
+      gatewayBody({
+        attempt_failures: [
+          ...attemptFailures,
+          { provider: 123, message: null },
+          { ...attemptFailures[0], status: Number.NaN },
+          { ...attemptFailures[0], code: Number.POSITIVE_INFINITY },
+        ],
+      }),
+    );
+    expect(details?.attemptFailures).toHaveLength(2);
   });
 
   test("recovers the envelope from opencode's ApiError shape (data.responseBody)", () => {

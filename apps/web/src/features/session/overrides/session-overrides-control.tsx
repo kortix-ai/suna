@@ -14,7 +14,8 @@ import { type ReactNode, useState } from 'react';
  * One overridable axis of a session.
  *
  * `summary` is what the axis is set to RIGHT NOW, and for an axis nobody
- * touched that string is "Project default" — never "none". `overridden` is what
+ * touched that string names its real source (usually "Agent default" — the
+ * agent's grant defines the defaults) — never "none". `overridden` is what
  * earns the badge: a session should look inherited until the user deliberately
  * takes it off the default.
  */
@@ -35,6 +36,8 @@ export interface SessionOverrideRow {
    * catalog can never hide the only way back to the default.
    */
   onReset?: () => void;
+  /** Names where the default comes from — "Reset to agent default" etc. */
+  resetLabel?: string;
   /** Shown instead of the editor when the axis cannot be edited here. */
   readOnly?: boolean;
 }
@@ -46,8 +49,13 @@ export interface SessionOverridesControlProps {
   saveDisabled?: boolean;
   /** Extra note above the footer — e.g. the non-retroactive secrets warning. */
   notice?: ReactNode;
-  onSave: () => void;
-  triggerLabel?: string;
+  /**
+   * Commits the scope draft. Resolves `true` when the save succeeded (or there
+   * was nothing to write) — the popover closes on it, which is the visible
+   * result of the click. Agent/model/effort apply the moment they are picked;
+   * only secrets/connectors wait for Save.
+   */
+  onSave: () => boolean | Promise<boolean>;
 }
 
 /**
@@ -71,7 +79,7 @@ export function SessionOverridesControlContent({
   saveDisabled = false,
   notice,
   onSave,
-}: Omit<SessionOverridesControlProps, 'triggerLabel'>) {
+}: SessionOverridesControlProps) {
   const [focusedId, setFocusedId] = useState<string | null>(rows[0]?.id ?? null);
   const focused = rows.find((row) => row.id === focusedId) ?? rows[0];
   const controlsDisabled = disabled || saving;
@@ -137,7 +145,11 @@ export function SessionOverridesControlContent({
               </p>
               <div className="mt-3">{focused.editor}</div>
               {focused.overridden && focused.onReset ? (
-                <ResetAxisButton disabled={controlsDisabled} onReset={focused.onReset} />
+                <ResetAxisButton
+                  disabled={controlsDisabled}
+                  onReset={focused.onReset}
+                  label={focused.resetLabel}
+                />
               ) : null}
             </>
           ) : null}
@@ -163,12 +175,21 @@ export function SessionOverridesControlContent({
   );
 }
 
-export function SessionOverridesControl({
-  triggerLabel = 'Session',
-  ...contentProps
-}: SessionOverridesControlProps) {
+export function SessionOverridesControl({ onSave, ...contentProps }: SessionOverridesControlProps) {
+  const [open, setOpen] = useState(false);
+  // Closing the panel is the visible result of a successful Save. A failed
+  // save keeps it open — the error toast plus a still-open panel says
+  // "not saved" without losing the draft.
+  const saveAndClose = async () => {
+    const saved = await onSave();
+    if (saved) setOpen(false);
+    return saved;
+  };
+  // The trigger is an icon and nothing else, in the same muted tone as the
+  // agent/model selectors beside it — the axes and their overrides live inside
+  // the panel, never on the composer bar.
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -176,9 +197,9 @@ export function SessionOverridesControl({
           size="toolbar"
           disabled={contentProps.disabled || contentProps.saving}
           aria-label="Session overrides"
+          className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
         >
           <SlidersHorizontal className="size-3.5 shrink-0" />
-          {triggerLabel}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -195,7 +216,7 @@ export function SessionOverridesControl({
           if (target?.closest('[data-radix-popper-content-wrapper]')) event.preventDefault();
         }}
       >
-        <SessionOverridesControlContent {...contentProps} />
+        <SessionOverridesControlContent {...contentProps} onSave={saveAndClose} />
       </PopoverContent>
     </Popover>
   );

@@ -349,6 +349,24 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 //                                object (here the null WebGL2 context). Pattern
 //                                `fd773de2…` (Firefox 152 on Android 17,
 //                                `getAttribLocation`, marketing homepage).
+//   - Paper Shaders library's OWN internal guard: the bare `this.gl is null`
+//                                string. This is NOT a JS-engine TypeError and
+//                                NOT a Gecko DOM-binding message — it is the
+//                                library's OWN explicit `throw new Error(
+//                                'this.gl is null')` (or equivalent assertion
+//                                message) when its internal state check detects
+//                                that `this.gl` (the WebGL2 context it cached at
+//                                mount) is `null`. Whereas every other entry is
+//                                the JS engine / DOM binding wording the library
+//                                triggered by dereferencing the null context,
+//                                this is the library's OWN wording — it fires on
+//                                engines that DON'T surface a JS-engine
+//                                TypeError for the same deref (e.g. some Firefox
+//                                / SpiderMonkey builds where the method call is
+//                                short-circuited by the library's guard before
+//                                the engine ever throws). Pattern `f0c8c422…`
+//                                (Firefox 137.0 on Windows 10, Gecko engine,
+//                                `/projects/:id` project page, post-v0.12.7).
 // `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
 // stripped before matching so all capture paths (window.onerror,
 // onunhandledrejection, Sentry exception) classify consistently.
@@ -418,6 +436,40 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // `Unhandled promise rejection: ` wrappers are stripped.
   'WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
   'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  // Paper Shaders library's OWN internal guard wording — the SIXTH variant of
+  // this null-WebGL-context crash class, and the ONLY one that is the library's
+  // OWN throw rather than a JS-engine TypeError or a Gecko DOM-binding message.
+  // When the library's internal state check detects that `this.gl` (the WebGL2
+  // context it cached at mount) is `null` (after a context-loss / GPU-blacklist
+  // event, or a stripped WebView that returned `null` from `getContext('webgl2')`
+  // and bypassed the `supportsWebGL2()` probe), it throws its OWN message
+  // `this.gl is null` directly — NOT a JS-engine `TypeError` from dereferencing
+  // the null context, and NOT a Gecko DOM-binding message. This fires on engines
+  // that DON'T surface a JS-engine TypeError for the same deref (e.g. some
+  // Firefox / SpiderMonkey builds where the library's own guard short-circuits
+  // the method call before the engine ever throws). Better Stack pattern
+  // f0c8c42213b12122948f4c8307b1eedb6a51afe9072460604e3be14e0277d3f2
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `this.gl is null`, 1 occurrence / 0 identified users, first 2026-08-10
+  // 14:35:19 UTC (post-v0.12.7), request URL
+  // `https://kortix.com/projects/1d0153d2-…` (project page), browser Firefox
+  // 137.0 on Windows 10 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`), 3 frames in chunk
+  // `app:///_next/static/immutable/chunks/2_t47hwky1w2m.js` (Paper Shaders
+  // library). Message-only contract (no chunk-frame anchor, no first-party
+  // negative guard) — same as the other engine variants — because (a) `this.gl
+  // is null` is the library's OWN canonical wording, never a coincidental
+  // app-logic phrase (no first-party `apps/web/src/…` code holds a `this.gl`
+  // field — confirmed by `rg "this\.gl" apps/web/src`), and (b) the unhandled-
+  // rejection stack carries only minified `@paper-design/shaders` chunk frames,
+  // so a first-party negative guard would never fire for this class anyway. The
+  // substring match is specific enough that near-worded first-party null-derefs
+  // (`this.foo is null`, `this.context is null`, `this.canvas is null`, …) do NOT
+  // match — only the exact `this.gl is null` token does. `stripErrorWrappers`
+  // strips `TypeError: ` / `Unhandled promise rejection: ` prefixes, leaving the
+  // bare `this.gl is null` to match verbatim.
+  'this.gl is null',
 ] as const;
 
 // Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate
@@ -1919,18 +1971,20 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Matches all five JS-engine / DOM-binding wordings: V8
- * (`Cannot read properties of null (reading '<m>')`), old JSC
+ * Matches all six wordings of this class: five JS-engine / DOM-binding variants
+ * — V8 (`Cannot read properties of null (reading '<m>')`), old JSC
  * (`Cannot read property '<m>' of null`), SpiderMonkey/Firefox
  * (`can't access property "<m>"<…>`), modern JSC (Safari / Chrome-on-iOS
  * CriOS, which uses WebKit/JSC rather than V8:
  * `null is not an object (evaluating 'this.gl.<m>')`), and Gecko/Firefox
  * DOM-binding (`WebGL2RenderingContext.<m>: Argument 1 is not an object.` —
  * Firefox's DOM bindings throw on the method call itself when the `this`
- * binding is the null WebGL2 context). Never page Better Stack
- * for this class. See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full
- * rationale and the `supportsWebGL2()` probe in `shader-safe.tsx` for the
- * primary guard.
+ * binding is the null WebGL2 context) — PLUS the library's OWN internal guard
+ * wording (`this.gl is null` — the library's own explicit throw when its state
+ * check detects the null context, distinct from any JS-engine TypeError).
+ * Never page Better Stack for this class. See
+ * `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and the
+ * `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
  */
 export function isPaperShaderNullContextNoise(message: unknown): boolean {
   const stripped = stripErrorWrappers(normalizeString(message));

@@ -3,6 +3,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
+import type { SessionOverrideSlot } from '@/features/session/overrides/session-overrides-toolbar';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import {
   type AttachedFile,
@@ -66,6 +67,7 @@ export function ComposerChatInput({
   onReorderQueuedMessage,
   onRetryQueuedMessage,
   onAgentSelectionChange,
+  sandboxSlot,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -108,6 +110,8 @@ export function ComposerChatInput({
   onRetryQueuedMessage?: (id: string) => void;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
+  /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
+  sandboxSlot?: SessionOverrideSlot;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -165,6 +169,7 @@ export function ComposerChatInput({
           onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
           providers={providers}
           defaultModel={local.model.defaults.resolveDefaultFor(selectedAgentName ?? undefined)}
+          sandboxSlot={sandboxSlot}
         />
       ) : null,
     [
@@ -176,6 +181,7 @@ export function ComposerChatInput({
       projectId,
       providers,
       providersLoading,
+      sandboxSlot,
       selectedAgentName,
       sessionId,
     ],

@@ -78,15 +78,50 @@ describe('admin accounts — Entitlements tab', () => {
     }
   });
 
-  test('legacy tiers are labelled as legacy wherever tier keys render', () => {
-    const catalog = pageSource.match(/TIER_CATALOG[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
-    expect(catalog).toContain('legacy: true');
-    expect(pageSource).toMatch(/entry\.legacy \? `\$\{entry\.label\} · legacy` : entry\.label/);
+  // The page used to own a TIER_CATALOG and stamp "· legacy" onto any key in
+  // it — a second, hand-maintained plan vocabulary that drifted from the
+  // server's. The API now resolves the plan (trial + per-seat self-heal
+  // applied) and ships it as `account.plan`; the page renders that.
+  test('an account plan is rendered from the API plan block, never re-derived', () => {
+    expect(pageSource).not.toContain('TIER_CATALOG');
+    expect(pageSource).not.toMatch(/function tierLabel\b/);
+    expect(pageSource).toMatch(/account\.plan\?\.label \?\? tierKeyLabel\(account\.tier\)/);
+    expect(pageSource).toContain('account.plan?.sublabel');
+    // Every place a plan is shown goes through the one component.
+    for (const site of [
+      '<PlanBadge account={account} />',
+      '<PlanBadge account={account} size="default" />',
+      '<PlanBadge key="tier" account={account} />',
+    ]) {
+      expect(pageSource).toContain(site);
+    }
   });
 
-  test('the open sheet re-resolves against the refetched list so a mutation shows its result', () => {
+  test('the word "legacy" is gone from the page entirely', () => {
+    expect(pageSource).not.toContain('· legacy');
+    expect(pageSource.toLowerCase()).not.toContain('legacy');
+  });
+
+  test('the tier filter still sends raw tier keys, grandfathered ones grouped', () => {
+    // The list route filters on the STORED credit_accounts.tier column, so the
+    // filter values must stay the raw keys even though nothing else on the
+    // page names a plan from them.
+    const options = pageSource.match(/TIER_OPTIONS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
+    expect(options).not.toBe('');
+    for (const key of ['free', 'none', 'per_seat', 'tier_25_200', 'enterprise']) {
+      expect(options).toContain(`value: '${key}'`);
+    }
+    expect(options).toContain('grandfathered: true');
+    expect(pageSource).toContain('Grandfathered');
+  });
+
+  test('the open sheet resolves a live row via the exact-id lookup, with list/snapshot fallback', () => {
+    // The live source is useAdminAccount (immune to list filters); the filtered
+    // list row and the click-time snapshot are only fallbacks while it loads.
+    expect(pageSource).toContain('useAdminAccount(selected?.accountId ?? null)');
+    expect(pageSource).toContain('selectedDetail.data ??');
     expect(pageSource).toContain(
-      'accounts.find((a) => a.accountId === selected.accountId) ?? selected',
+      'accounts.find((a) => a.accountId === selected.accountId) ??',
     );
     expect(pageSource).toContain('<AccountDetailSheet account={selectedAccount}');
   });

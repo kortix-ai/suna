@@ -21,6 +21,40 @@ linked, not inlined.
 
 ## Register
 
+### A per-turn hot path must not contain an unbounded third-party round-trip (2026-08-11)
+
+**When:** adding an `await` to the prompt path — `syncSandboxEnvForPrompt`
+(`apps/api/src/projects/lib/sandbox-env-sync.ts`) and everything it calls. The
+network-boundary sync ran a FULL provider re-arm before every turn: manifest
+resolve, GET/PUT sandbox secrets, `ensureSecret` per binding, then
+`waitUntilArmed` at 40 × 250 ms — up to ~10 s, past the proxy budget. One egress
+secret therefore broke every agent turn in the project. Arm once at session
+start or in the background, bound the wait, and fail soft ONLY where a skipped
+call cannot widen access (a boundary value never enters the guest, so the worst
+case is a 401 upstream, not a leak). It also ran before `postEnvToDaemon`, so its
+failure skipped the ordinary runtime-secret push too.
+*Incident:* 2026-08-11 — same session, same sandbox: egress secret active →
+`prompt_async` 502 in 5.2 s, disabled → 200 in 1.2 s. Found only when the product
+owner said "I cannot test this on dev"; the symptom was a spinner stuck on
+"Considering next steps…", naming neither secrets nor the provider.
+*Enforcer:* none — build it.
+
+### A deploy workflow must not cancel a build it cannot outrun (2026-08-10)
+
+**When:** setting `concurrency.cancel-in-progress` on any
+`.github/workflows/deploy-*`. A workflow-wide group with `true` starves the
+SLOWEST surface, because every surface shares the group: a frontend-only push
+kills an in-flight multi-arch API build (~23 min) whenever `main` lands faster
+than that build takes (~10–20 min by day). Queue instead — GitHub holds one
+pending run and cancels the previous pending one, so a burst still collapses to a
+single deploy and the newest commit still wins. `true` also lets an unrelated
+push kill `migrate-db` mid-migration.
+*Incident:* 2026-08-10 — 19 of 30 Deploy Dev runs cancelled, `dev-api` pinned to
+`d1ed3589` for 3.5 h with 5 API commits stranded; it landed only once the trunk
+went quiet that evening.
+*Enforcer:* none — and `deploy-staging` is still `true`, where a cancelled
+`migrate-db` would hit `STAGING_DATABASE_URL`. Build the guard.
+
 ### One CREATE INDEX CONCURRENTLY per table at a time (2026-08-10)
 
 **When:** building indexes on a live table (runbooks, .concurrent.ts migrations).

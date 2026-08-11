@@ -153,14 +153,17 @@ describe('createSessionScopeDraft', () => {
 });
 
 describe('session scope summaries', () => {
-  test('names an inherited axis the project default, never "none"', () => {
-    expect(sessionSecretsSummary({ secrets: null })).toBe('Project default');
+  test('names an inherited axis after its real source, never "none"', () => {
+    // The agent's grant defines both defaults: which secrets flow, and which
+    // connectors are usable (each then resolving to the project's default
+    // connection — a detail the row description carries, not the label).
+    expect(sessionSecretsSummary({ secrets: null })).toBe('Agent default');
     expect(
       sessionConnectorsSummary({
         connector_bindings: { mail: { connection_id: 'connection-mail-1' } },
         connector_bindings_inherited: true,
       }),
-    ).toBe('Project default');
+    ).toBe('Agent default');
   });
 
   test('names an explicit empty override honestly', () => {

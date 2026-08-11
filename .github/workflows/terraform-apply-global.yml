@@ -25,6 +25,14 @@ on:
       - ".github/workflows/terraform-apply-global.yml"
       - ".github/workflows/terraform-apply.yml"
   workflow_dispatch:
+    inputs:
+      allow_deletes:
+        description: >-
+          Permit planned deletes in BOTH roots (reviewed cleanups only).
+          Forwarded to the reusable apply's destructive-change guard.
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: terraform-apply-global
@@ -48,6 +56,7 @@ jobs:
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
       trusted_branch: main
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   security-baseline:
@@ -64,4 +73,5 @@ jobs:
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
       trusted_branch: main
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit

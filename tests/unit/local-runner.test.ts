@@ -24,21 +24,26 @@ describe('local test runner', () => {
     expect(plan.lanes[0]?.command.slice(-2)).toEqual(['--id', 'ACC-4']);
   });
 
-  it('adds every app and package test plus publish checks without running SDK twice', () => {
+  it('runs the SDK explicitly and suppresses its duplicate package invocation in full mode', () => {
     const plan = buildLocalTestPlan(['--full']);
 
     expect(plan.mode).toBe('full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual([
       'api-cli-flows',
+      'sdk',
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
       'browser',
       'package-quality',
     ]);
-    expect(plan.lanes.at(-1)?.command).toEqual(['bun', 'tests/bin/package-quality.ts']);
+    expect(plan.lanes.at(-1)).toEqual({
+      name: 'package-quality',
+      command: ['bun', 'tests/bin/package-quality.ts'],
+      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+    });
     expect(plan.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
-      ['api-cli-flows', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['api-cli-flows', 'sdk', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
       ['browser'],
       ['package-quality'],
     ]);
@@ -89,7 +94,7 @@ describe('local test runner', () => {
 
   it('uses one CI browser worker and preserves explicit concurrency', () => {
     expect(resolveBrowserWorkers(undefined, true)).toBe(1);
-    expect(resolveBrowserWorkers(undefined, false)).toBe(4);
+    expect(resolveBrowserWorkers(undefined, false)).toBe(2);
     expect(resolveBrowserWorkers('2', true)).toBe(2);
   });
 

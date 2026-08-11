@@ -14,6 +14,8 @@ export type AdminAccountsSortDir = 'asc' | 'desc';
 
 export interface AdminAccountsListQuery {
   search: string;
+  /** Exact account-id match — the admin sheet's live single-row lookup. */
+  accountId: string | null;
   tierValues: string[];
   paymentStatusValues: string[];
   paidOnly: boolean;
@@ -62,8 +64,11 @@ export function parseAdminAccountsListQuery(
   const minBalanceRaw = get('minBalance');
   const maxBalanceRaw = get('maxBalance');
 
+  const accountIdRaw = (get('accountId') || '').trim();
+
   return {
     search: (get('search') || '').trim(),
+    accountId: accountIdRaw.length ? accountIdRaw : null,
     tierValues: csv(get('tier')),
     paymentStatusValues: csv(get('paymentStatus')),
     paidOnly: get('paid') === 'true',

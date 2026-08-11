@@ -7,7 +7,10 @@ import {
   runSandboxPreview,
   selectStalePreviewSandboxIds,
 } from '../src/core/sandbox-preview';
-import { platinumPreviewIdempotencyKey } from '../src/core/sandbox-preview-providers';
+import {
+  daytonaPreviewLabelsFilter,
+  platinumPreviewIdempotencyKey,
+} from '../src/core/sandbox-preview-providers';
 
 const input = {
   provider: 'auto' as const,
@@ -44,6 +47,10 @@ describe('provider-neutral preview lifecycle', () => {
     );
   });
 
+  it('encodes the Daytona preview ownership filter as JSON', () => {
+    expect(daytonaPreviewLabelsFilter()).toBe('{"kortix-preview":"true"}');
+  });
+
   it('requires the exact SHA-256 of the pull request lockfile', () => {
     expect(previewLockfileHash('A'.repeat(64))).toBe('a'.repeat(64));
     expect(() => previewLockfileHash('a'.repeat(40))).toThrow('64 hex characters');
@@ -62,6 +69,9 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain('apps/cli/src/index.ts self-host init');
     expect(script).toContain('tests/bin/preview-stack.ts');
     expect(script).toContain('docker compose');
+    expect(script).toContain('for stack_attempt in 1 2; do');
+    expect(script).toMatch(/if docker compose .* up -d --wait --wait-timeout 300; then/);
+    expect(script).toContain('test "$stack_attempt" -lt 2');
     expect(script).toContain('pnpm test -- --target-full');
     expect(script).toContain('/workspace/kortix-test-results.tar.gz');
     expect(script).toContain('kortix-preview.exit');
