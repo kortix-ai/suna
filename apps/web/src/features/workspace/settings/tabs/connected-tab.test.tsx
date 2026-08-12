@@ -3,13 +3,31 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ConnectedAccountsTabView } from './connected-tab';
 
+/** The pane heading. Rows are NOT headings — see `rowLabels`. */
 const headings = (html: string): string[] =>
   [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
+
+/**
+ * The provider row labels, in document order.
+ *
+ * These assertions used to go through `headings()`, from when each provider
+ * was its own `<h3>` section. The rows are `SettingsRow`s now, so a label is
+ * a `FieldTitle` — `<div data-slot="field-label">` (`ui/field.tsx:125`) — and
+ * `headings()` matches only the pane's own `<h2>`. Reading the label slot is
+ * the same assertion against the shape the component actually renders.
+ */
+const rowLabels = (html: string): string[] =>
+  [...html.matchAll(/<div[^>]*data-slot="field-label"[^>]*>([^<]*)<\/div>/g)].map((m) => m[1]);
+
+/** `Skeleton` (`ui/skeleton.tsx`) carries no data-slot; `animate-pulse` is its
+ *  stable marker and nothing else in this view animates. */
+const skeletons = (html: string): number => [...html.matchAll(/animate-pulse/g)].length;
 
 describe('ConnectedAccountsTabView', () => {
   test('renders one row per provider, in order', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
-    expect(headings(out)).toEqual(['Connected accounts', 'GitHub', 'ChatGPT', 'Claude Code']);
+    expect(headings(out)).toEqual(['Connected accounts']);
+    expect(rowLabels(out)).toEqual(['GitHub', 'ChatGPT']);
   });
 
   test('every row states which scope it writes to', () => {
@@ -20,12 +38,12 @@ describe('ConnectedAccountsTabView', () => {
 
   test('the GitHub row is absent without account.write', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount={false} />);
-    expect(headings(out)).toEqual(['Connected accounts', 'ChatGPT', 'Claude Code']);
+    expect(rowLabels(out)).toEqual(['ChatGPT']);
   });
 
   test('each row carries exactly one action button', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
-    expect([...out.matchAll(/<button/g)]).toHaveLength(3);
+    expect([...out.matchAll(/<button/g)]).toHaveLength(2);
   });
 
   // Fix round 1, finding 1 — proof that the GitHub row renders purely off
@@ -43,7 +61,44 @@ describe('ConnectedAccountsTabView', () => {
     const out = renderToStaticMarkup(
       <ConnectedAccountsTabView canManageAccount githubStatus="connected" />,
     );
-    expect(headings(out)).toContain('GitHub');
+    expect(rowLabels(out)).toContain('GitHub');
+  });
+
+  // Jay, 2026-08-12 — the loading state belongs to the row's action slot.
+  // It used to be a full-width `h-14` `Skeleton` rendered BELOW the row while
+  // the action slot rendered `null`: the row looked finished (label,
+  // description, no control) with an unexplained grey block under it, and the
+  // block's disappearance changed the section's height. These three tests pin
+  // the replacement so it cannot regress to a sibling block again.
+  describe('a provider whose status has not resolved', () => {
+    test('puts a skeleton in the action slot and renders no button for that row', () => {
+      const out = renderToStaticMarkup(
+        <ConnectedAccountsTabView canManageAccount githubStatus="loading" />,
+      );
+      // One skeleton (GitHub's action slot), one button (ChatGPT's, resolved).
+      expect(skeletons(out)).toBe(1);
+      expect([...out.matchAll(/<button/g)]).toHaveLength(1);
+    });
+
+    test('shape-matches the button it replaces, so the row height never changes', () => {
+      const out = renderToStaticMarkup(
+        <ConnectedAccountsTabView canManageAccount githubStatus="loading" />,
+      );
+      // `Button size="sm"` is `h-8` and the base class is `rounded-md`
+      // (`ui/button.tsx:8,60`) — the skeleton claims exactly that box.
+      expect(out).toMatch(/animate-pulse[^"]*"|"[^"]*h-8[^"]*rounded-md/);
+      expect(out).toContain('h-8 w-24 rounded-md');
+    });
+
+    test('does not assert a connection state it cannot know yet', () => {
+      const out = renderToStaticMarkup(
+        <ConnectedAccountsTabView canManageAccount githubStatus="loading" chatgptStatus="loading" />,
+      );
+      expect(out).not.toMatch(/Install the GitHub App/);
+      expect(out).not.toMatch(/Sign in with a ChatGPT Plus/);
+      expect(out).toMatch(/Checking this account/);
+      expect(out).toMatch(/Checking this workspace/);
+    });
   });
 
   // Fix round 1, finding 2 — a second installation gets a link, not a second
@@ -59,7 +114,7 @@ describe('ConnectedAccountsTabView', () => {
         githubManageAllHref="/accounts/acc_1?tab=git"
       />,
     );
-    expect([...out.matchAll(/<button/g)]).toHaveLength(3);
+    expect([...out.matchAll(/<button/g)]).toHaveLength(2);
     expect(out).toContain('href="/accounts/acc_1?tab=git"');
     expect(out).toMatch(/\+2 more installations/);
   });

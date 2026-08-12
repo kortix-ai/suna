@@ -70,6 +70,27 @@ export interface ConnectedAccountsTabViewProps {
   isChatGptWaiting?: boolean;
 }
 
+/**
+ * The action slot's own loading state — a skeleton shaped like the `size="sm"`
+ * button that replaces it (`h-8`, `rounded-md`), so the row never changes
+ * height when the provider's status resolves.
+ *
+ * Replaces a full-width `h-14` skeleton that sat BELOW the row while the
+ * action slot rendered nothing. That read as a phantom second row appearing
+ * and then vanishing — the row itself looked finished (label, description, no
+ * control) with an unexplained grey block under it (Jay, 2026-08-12).
+ *
+ * A skeleton rather than a disabled button: while the status query is in
+ * flight we do not yet know whether this row offers "Connect" or "Disconnect",
+ * so any real button would have to show a label that flips once the query
+ * lands. The skeleton claims the space without claiming the answer. `Loading`
+ * is for an action the user started; this is a placeholder for content that
+ * has not arrived, which is `Skeleton`'s job per the design system.
+ */
+function ActionSkeleton() {
+  return <Skeleton className="h-8 w-24 rounded-md" />;
+}
+
 export function ConnectedAccountsTabView({
   canManageAccount = true,
   githubStatus = 'disconnected',
@@ -89,15 +110,24 @@ export function ConnectedAccountsTabView({
   isChatGptActionPending = false,
   isChatGptWaiting = false,
 }: ConnectedAccountsTabViewProps) {
+  // `loading` gets its own branch rather than falling through to the
+  // disconnected copy. Without it the row asserted "Install the GitHub App"
+  // before the query that answers that had returned, then flipped to
+  // "Connected as …" — a claim the row could not yet make, and the same
+  // flash-of-wrong-state the action slot's skeleton exists to avoid.
   const githubDescription =
-    githubStatus === 'connected' && githubInstallationName
-      ? `Connected as ${githubInstallationName} — installed for this account, shared by every project.`
-      : githubStatus === 'error'
-        ? 'GitHub status unavailable for this account.'
-        : 'Install the GitHub App for this account so every project can import its repositories.';
+    githubStatus === 'loading'
+      ? 'Checking this account for a GitHub App installation.'
+      : githubStatus === 'connected' && githubInstallationName
+        ? `Connected as ${githubInstallationName} — installed for this account, shared by every project.`
+        : githubStatus === 'error'
+          ? 'GitHub status unavailable for this account.'
+          : 'Install the GitHub App for this account so every project can import its repositories.';
 
   const githubAction =
-    githubStatus === 'loading' ? null : githubStatus === 'connected' ? (
+    githubStatus === 'loading' ? (
+      <ActionSkeleton />
+    ) : githubStatus === 'connected' ? (
       <Button
         type="button"
         variant="secondary"
@@ -114,24 +144,29 @@ export function ConnectedAccountsTabView({
       </Button>
     );
 
+  // Same reasoning as `githubDescription` above — see that comment.
   const chatgptDescription =
-    chatgptStatus === 'connected'
-      ? 'ChatGPT Plus/Pro connected for this workspace.'
-      : chatgptStatus === 'unavailable'
-        ? 'Open a project to connect a ChatGPT subscription for this workspace.'
-        : 'Sign in with a ChatGPT Plus or Pro subscription for this workspace.';
+    chatgptStatus === 'loading'
+      ? 'Checking this workspace for a connected ChatGPT subscription.'
+      : chatgptStatus === 'connected'
+        ? 'ChatGPT Plus/Pro connected for this workspace.'
+        : chatgptStatus === 'unavailable'
+          ? 'Open a project to connect a ChatGPT subscription for this workspace.'
+          : 'Sign in with a ChatGPT Plus or Pro subscription for this workspace.';
 
   // One control at a time, and always the one the current state calls for:
   // Cancel while authorizing, Disconnect once connected, Connect otherwise.
   const chatgptAction =
-    chatgptStatus === 'loading' ? null : isChatGptWaiting ? (
+    chatgptStatus === 'loading' ? (
+      <ActionSkeleton />
+    ) : isChatGptWaiting ? (
       <Button type="button" variant="secondary" size="sm" onClick={onCancelChatGpt}>
         Cancel
       </Button>
     ) : chatgptStatus === 'connected' ? (
       <Button
         type="button"
-        variant="secondary"
+        variant="destructive"
         size="sm"
         onClick={onDisconnectChatGpt}
         disabled={isChatGptActionPending}
@@ -163,7 +198,6 @@ export function ConnectedAccountsTabView({
             <SettingsRow label="GitHub" description={githubDescription}>
               {githubAction}
             </SettingsRow>
-            {githubStatus === 'loading' ? <Skeleton className="h-14 w-full" /> : null}
             {githubStatus === 'error' && githubError ? (
               <InfoBanner tone="warning">{githubError}</InfoBanner>
             ) : null}
@@ -185,7 +219,6 @@ export function ConnectedAccountsTabView({
           <SettingsRow label="ChatGPT" description={chatgptDescription}>
             {chatgptAction}
           </SettingsRow>
-          {chatgptStatus === 'loading' ? <Skeleton className="h-14 w-full" /> : null}
           {/* Only while authorizing, and only the code + auth link — the row
               above already carries the name, the explanation, and the button. */}
           {chatgptChallengeSlot ? <div className="px-4 pb-3">{chatgptChallengeSlot}</div> : null}
