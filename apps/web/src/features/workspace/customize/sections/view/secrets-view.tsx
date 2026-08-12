@@ -3,9 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 import {
+  AsteriskIcon as Asterisk,
   KeyIcon as KeyRound,
+  LockSimpleIcon as Lock,
   DotsThreeIcon as MoreHorizontal,
-  PlugIcon as Plug,
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
@@ -62,11 +64,11 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSecret,
   type ProjectSecretsResponse,
@@ -171,7 +173,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -232,7 +234,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   };
   const openProviderManagement = () => {
     if (llmGatewayEnabled) {
-      openCustomize('llm-providers');
+      navigate('llm-providers');
     } else {
       setProviderModalOpen(true);
     }
@@ -240,26 +242,18 @@ export function SecretsView({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <CustomizeSectionWrapper
-        title="Secrets"
-        description="Store encrypted values and control where each value can be used."
-        action={
-          !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" onClick={openProviderManagement}>
-                <Plug className="size-4 shrink-0" />
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextConnectLLMd75427c8',
-                )}
-              </Button>
+      <div className="mx-auto w-full max-w-2xl space-y-8">
+        <SettingsTabHeader
+          tab="secrets"
+          action={
+            !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
               <Button size="sm" variant="secondary" onClick={openCreate}>
                 <PlusIcon className="size-4 shrink-0" />
                 Add
               </Button>
-            </div>
-          ) : null
-        }
-      >
+            ) : null
+          }
+        />
         <div className="space-y-4">
           <InputGroupSearch>
             <InputGroupSearchIcon>
@@ -372,7 +366,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
             </>
           )}
         </div>
-      </CustomizeSectionWrapper>
+      </div>
       <ProjectProviderModal
         projectId={projectId}
         open={providerModalOpen}
@@ -498,6 +492,52 @@ function statusLabel(row: SecretRow): string {
   return row.configured ? 'Set' : 'Not set';
 }
 
+/**
+ * The two marks that can sit beside a secret's identifier.
+ *
+ * This replaced three word-badges — `Managed`, `Required`, `Optional` — that
+ * sat on their own line under the identifier. Each carried one bit and cost a
+ * word, and because `Optional` rendered on every optional row, *every* row had
+ * a badge. `Required` therefore marked nothing: the one state worth spotting
+ * looked exactly as busy as the default.
+ *
+ * So `Optional` is gone rather than shortened. It is the default — a row with
+ * no mark is optional, and dropping it leaves `Required` as the only thing in
+ * the column, which is the entire job of the column.
+ *
+ * The other two become icons with a `Hint`, so they read at a glance and still
+ * announce themselves to a screen reader:
+ *   lock      — managed by Kortix, you cannot edit it
+ *   asterisk  — required; orange while unset, muted once set, the same
+ *               "required field" convention every form uses
+ */
+function SecretMarks({ row }: { row: SecretRow }) {
+  if (!row.system && row.requirement !== 'required') return null;
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {row.system ? (
+        <Hint label="Managed by Kortix" side="top">
+          <Lock
+            className="text-muted-foreground size-3.5 shrink-0"
+            aria-label="Managed by Kortix"
+          />
+        </Hint>
+      ) : null}
+      {row.requirement === 'required' ? (
+        <Hint label={row.configured ? 'Required' : 'Required — not set'} side="top">
+          <Asterisk
+            className={cn(
+              'size-3.5 shrink-0',
+              row.configured ? 'text-muted-foreground' : 'text-kortix-orange',
+            )}
+            aria-label={row.configured ? 'Required' : 'Required, not set'}
+          />
+        </Hint>
+      ) : null}
+    </span>
+  );
+}
+
 function SecretTableRow({
   row,
   canManage,
@@ -520,37 +560,27 @@ function SecretTableRow({
     <TableRow
       className={cn(row.requirement === 'required' && !row.configured && 'bg-kortix-orange/[0.04]')}
     >
-      <TableCell className="max-w-[220px]">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <code className="text-foreground truncate font-mono text-xs">{row.identifier}</code>
+      {/* The identifier and its marks share one line — the cell used to stack
+          three blocks (identifier, → key, a badge row), so a five-row table
+          read as fifteen. `→ key` still gets its own muted line, but only on
+          the rows where the key actually differs from the identifier. */}
+      <TableCell className="max-w-[260px] align-middle">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <code className="text-foreground truncate font-mono text-xs">{row.identifier}</code>
+            <SecretMarks row={row} />
+          </div>
           {distinctKey && (
             <code className="text-muted-foreground truncate font-mono text-xs">→ {row.key}</code>
           )}
-          <div className="flex flex-wrap gap-1">
-            {row.system && (
-              <Badge variant="outline" size="xs">
-                Managed
-              </Badge>
-            )}
-            {row.requirement === 'required' && (
-              <Badge variant="warning" size="xs">
-                Required
-              </Badge>
-            )}
-            {row.requirement === 'optional' && (
-              <Badge variant="outline" size="xs">
-                Optional
-              </Badge>
-            )}
-          </div>
         </div>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
+      <TableCell className="text-muted-foreground max-w-[160px] align-middle text-xs whitespace-nowrap">
         {statusLabel(row)}
       </TableCell>
-      <TableCell className="max-w-[220px] whitespace-normal">
+      <TableCell className="max-w-[220px] align-middle whitespace-normal">
         <div className="flex flex-col items-start gap-1">
-          <Badge variant={delivery.tone} size="xs">
+          <Badge variant={delivery.tone} size="sm">
             {delivery.label}
           </Badge>
           {row.requiresRotation && (

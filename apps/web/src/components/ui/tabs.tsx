@@ -103,6 +103,8 @@ const TabsActiveValueContext = React.createContext<string>('');
 const TabsListTypeContext = React.createContext<TabsListType>('default');
 const TabsAnimateContext = React.createContext<'fluid' | 'none'>('fluid');
 const TabsSizeContext = React.createContext<TabsSize>('default');
+/** Lets `TabsTrigger` adapt to a vertical `TabsList` without every caller re-passing orientation. */
+const TabsOrientationContext = React.createContext<'horizontal' | 'vertical'>('horizontal');
 
 function Tabs({
   className,
@@ -144,6 +146,13 @@ interface TabsListProps extends React.ComponentProps<typeof TabsPrimitive.List> 
   /** Active underline stroke. Only applies when `type="underline"`. Default `sm`. */
   underlineSize?: TabsUnderlineSize;
   animate?: 'fluid' | 'none';
+  /**
+   * `vertical` stacks triggers full-width in a column (e.g. a settings
+   * rail) instead of laying them out inline. This is a styling switch only —
+   * `aria-orientation` still comes from `orientation` on the `Tabs` root, per
+   * Radix. Default `horizontal`.
+   */
+  orientation?: 'horizontal' | 'vertical';
 }
 
 function TabsList({
@@ -152,21 +161,26 @@ function TabsList({
   size = 'default',
   underlineSize = 'sm',
   animate = 'fluid',
+  orientation = 'horizontal',
   children,
   ...props
 }: TabsListProps) {
   const activeValue = React.useContext(TabsActiveValueContext);
+  const isVertical = orientation === 'vertical';
   const useSlidingIndicator = type === 'default' && animate === 'fluid';
 
   const list = (
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        type === 'default' &&
+        !isVertical &&
+          type === 'default' &&
           'relative z-10 inline-flex h-full w-fit items-center justify-center gap-1',
-        type === 'underline' && tabsListUnderlineBaseClasses,
-        type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
-        type === 'underline' && tabsListHeightClasses[size],
+        !isVertical && type === 'underline' && tabsListUnderlineBaseClasses,
+        !isVertical && type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
+        !isVertical && type === 'underline' && tabsListHeightClasses[size],
+        isVertical &&
+          'flex h-auto w-full flex-col items-stretch gap-0.5 rounded-none bg-transparent p-0',
         className,
       )}
       {...props}
@@ -179,31 +193,38 @@ function TabsList({
     <TabsListTypeContext.Provider value={type}>
       <TabsAnimateContext.Provider value={animate}>
         <TabsSizeContext.Provider value={size}>
-          {useSlidingIndicator ? (
-            <SlidingTabIndicator
-              activeId={activeValue}
-              className={cn(
-                'text-muted-foreground inline-flex w-fit items-center justify-center',
-                tabsListHeightClasses[size],
-                className,
-              )}
-              indicatorClassName="bg-input rounded-[calc(var(--radius)-2.5px)]"
-            >
-              {list}
-            </SlidingTabIndicator>
-          ) : type === 'underline' ? (
-            list
-          ) : (
-            <div
-              className={cn(
-                'text-muted-foreground inline-flex w-fit items-center justify-center',
-                tabsListHeightClasses[size],
-                className,
-              )}
-            >
-              {list}
-            </div>
-          )}
+          <TabsOrientationContext.Provider value={orientation}>
+            {isVertical ? (
+              // The sliding pill indicator only measures the x-axis (see
+              // SlidingTabIndicator) — in a column it would collapse to a
+              // zero-width bar, so vertical lists render without it.
+              list
+            ) : useSlidingIndicator ? (
+              <SlidingTabIndicator
+                activeId={activeValue}
+                className={cn(
+                  'text-muted-foreground inline-flex w-fit items-center justify-center',
+                  tabsListHeightClasses[size],
+                  className,
+                )}
+                indicatorClassName="bg-input rounded-[calc(var(--radius)-2.5px)]"
+              >
+                {list}
+              </SlidingTabIndicator>
+            ) : type === 'underline' ? (
+              list
+            ) : (
+              <div
+                className={cn(
+                  'text-muted-foreground inline-flex w-fit items-center justify-center',
+                  tabsListHeightClasses[size],
+                  className,
+                )}
+              >
+                {list}
+              </div>
+            )}
+          </TabsOrientationContext.Provider>
         </TabsSizeContext.Provider>
       </TabsAnimateContext.Provider>
     </TabsListTypeContext.Provider>
@@ -223,11 +244,13 @@ function TabsTrigger({
   const listType = React.useContext(TabsListTypeContext);
   const animate = React.useContext(TabsAnimateContext);
   const listSize = React.useContext(TabsSizeContext);
+  const listOrientation = React.useContext(TabsOrientationContext);
   const size = resolveTabsTriggerSize(sizeProp, listSize);
   const isUnderlineList = listType === 'underline';
   const isOutline = !isUnderlineList && variant === 'outline';
   // Outline paints its own border; the sliding pill fill would fight it.
   const useSlidingIndicator = !isUnderlineList && !isOutline && animate === 'fluid';
+  const isVertical = listOrientation === 'vertical';
 
   return (
     <TabsPrimitive.Trigger
@@ -256,6 +279,7 @@ function TabsTrigger({
         // Outline: bordered active chip — matches Button `outline` (border + transparent fill).
         isOutline &&
           'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground relative z-10 bg-transparent data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+        isVertical && 'w-full justify-start text-left',
         className,
       )}
       {...props}

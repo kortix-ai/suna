@@ -41,7 +41,7 @@ import { startTemplateSetupSession } from '@/features/projects/modal/template-se
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -74,7 +74,7 @@ export function AddToProjectModal({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const closeCustomize = useCustomizeStore((s) => s.close);
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const isProject = item.type === 'registry:project';
   const humanizedTitle = item.title.replaceAll('-', ' ');
 

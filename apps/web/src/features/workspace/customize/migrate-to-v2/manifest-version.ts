@@ -37,7 +37,7 @@ export interface ProjectManifestVersionState {
 
 /**
  * Reads the SAME `qk.project.detail(id)` query the rest of Customize already
- * fetches (`customize-panel.tsx`, `config-entity-view.tsx`) — this hook
+ * fetches (the legacy panel, `config-entity-view.tsx`) — this hook
  * doesn't issue its own network request when that query is already warm;
  * react-query dedupes on the identical key + queryFn.
  */

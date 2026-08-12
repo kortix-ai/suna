@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   type SsoGroupMapping,
@@ -258,7 +259,23 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
             <Skeleton className="h-12 w-full rounded-md" />
           </div>
         )}
-        {!provider && !providerQuery.isLoading && (
+        {!provider && !providerQuery.isLoading && providerQuery.isError && (
+          <div className="px-4 py-5">
+            <ErrorState
+              size="sm"
+              title="Couldn't load SSO status"
+              description={
+                providerQuery.error instanceof Error ? providerQuery.error.message : undefined
+              }
+              action={
+                <Button variant="outline" size="sm" onClick={() => providerQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          </div>
+        )}
+        {!provider && !providerQuery.isLoading && !providerQuery.isError && (
           <div className="px-4 py-5">
             <p className="text-foreground text-sm font-medium">Not connected yet</p>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">

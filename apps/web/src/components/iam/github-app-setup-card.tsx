@@ -5,33 +5,56 @@
 // paste in credentials for an App that already exists, or a personal/
 // fine-grained access token for the quickest path. No CLI, no SSH.
 //
-// On the hosted Kortix deployment (source 'env') the App is configured by
-// the operator via env vars — this card still renders there, but as a
-// read-only "Connected via environment" summary; the separate cloud
-// `GitHubConnectionCard` (per-account App installs) is what a hosted
-// customer actually uses, gated on `source === 'env'` at the call site in
-// accounts/[id]/page.tsx.
+// Layout, and why it is this shape:
+//
+//   header       title + one status badge + what managed-git actually does
+//   ├ setup      ONE bordered group. Three method rows, hairline-separated,
+//   │            each stating its own tradeoff up front; the selected row
+//   │            reveals its form directly beneath it.
+//   └ connected  identity row (owner) → labelled facts grid → action footer
+//
+// The setup step used to be an underline tab strip: three long triggers plus a
+// badge, no horizontal scroll, inside a `max-w-2xl` settings panel — it broke
+// at mobile width, and each option's tradeoff ("scoped and revocable" versus
+// "a plain long-lived token") was only readable after clicking that tab. Rows
+// put all three tradeoffs on screen at once and stack instead of overflowing.
+//
+// The connected step used to be a single row with owner, method, App slug and
+// installation id run together in one wrapping line of muted text, so nothing
+// but the installation id said what it was. Every fact is now labelled, and
+// this file's sibling `sso-card.tsx` uses the same two-column `<dl>` for the
+// same job.
+//
+// On the hosted Kortix deployment (source 'env') the App is configured by the
+// operator via env vars — this card still renders there, but its footer says
+// so and offers no controls; the separate cloud `GitHubConnectionCard`
+// (per-account App installs) is what a hosted customer actually uses, gated on
+// `source === 'env'` at the call site in accounts/[id]/page.tsx.
 
 import {
   ArrowSquareOutIcon as ExternalLink,
   FileCodeIcon as FileCode2,
-  GithubLogoIcon as Github,
   KeyIcon as KeyRound,
+  WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Github } from '@/features/icon/icons/github';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type GitHubAppStatus,
   disconnectGitHubApp,
@@ -82,12 +105,46 @@ function submitManifestForm(
 
 type SetupMethod = 'manifest' | 'existing-app' | 'pat';
 
+/**
+ * The three methods, with the tradeoff each one makes stated on the row itself.
+ * This is the whole point of the rows-over-tabs change: a reader choosing how
+ * to connect can compare all three without clicking any of them.
+ */
+const SETUP_METHODS: ReadonlyArray<{
+  id: SetupMethod;
+  title: string;
+  tradeoff: string;
+  recommended?: boolean;
+}> = [
+  {
+    id: 'manifest',
+    title: 'Create a GitHub App',
+    tradeoff:
+      'Scoped permissions, revocable any time, no long-lived token to leak. You pick which repositories it reaches while installing it.',
+    recommended: true,
+  },
+  {
+    id: 'existing-app',
+    title: 'Paste an existing App',
+    tradeoff:
+      'Same security, for an App you already made or share across instances. Needs its App ID, private key and installation ID.',
+  },
+  {
+    id: 'pat',
+    title: 'Use an access token',
+    tradeoff:
+      'Fastest, and the weakest: one long-lived token instead of a scoped per-repository grant.',
+  },
+];
+
+/** How managed-git authenticates to GitHub — the mechanism only. Where the
+ *  configuration came from ('env' versus the UI) is a separate axis, carried by
+ *  the header badge and the footer note. */
 function methodLabel(source: GitHubAppStatus['source']): string {
   switch (source) {
     case 'db':
-      return 'GitHub App';
     case 'env':
-      return 'GitHub App (environment)';
+      return 'GitHub App';
     case 'pat':
       return 'Personal access token';
     default:
@@ -104,6 +161,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const fieldId = useId();
 
   const [org, setOrg] = useState('');
   const [method, setMethod] = useState<SetupMethod>('manifest');
@@ -206,10 +264,10 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     return (
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-3 w-64" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-72" />
         </div>
-        <Skeleton className="h-24 w-full rounded-md" />
+        <Skeleton className="h-44 w-full rounded-md" />
       </div>
     );
   }
@@ -233,282 +291,430 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       /\b(403|401|forbidden|unauthorized|admin access)\b/i.test(err?.message ?? '');
     if (forbidden) return null;
     return (
-      <div className="space-y-2">
-        <p className="text-foreground text-sm font-medium">Managed GitHub</p>
-        <p className="text-muted-foreground text-sm">
-          Could not load the GitHub connection status.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
-          Retry
-        </Button>
+      <div className="space-y-4">
+        <CardHeading />
+        <div className="bg-popover rounded-md border px-4 py-5">
+          <ErrorState
+            size="sm"
+            title="Couldn't load GitHub status"
+            description={err?.message || undefined}
+            action={
+              <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        </div>
       </div>
     );
   }
 
   const status: GitHubAppStatus = statusQuery.data;
   const showSetup = !status.configured || reconfiguring;
+  const anyPending = startMutation.isPending || appMutation.isPending || patMutation.isPending;
 
   return (
     <div className="space-y-4">
-      <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">Managed GitHub</p>
-        <p className="text-muted-foreground text-xs">
-          {status.configured
-            ? 'Powers repository creation and pushes for this instance.'
-            : 'Every Kortix project is a git repository the server creates and pushes to on your behalf — connect GitHub to enable projects.'}
-        </p>
-      </div>
+      <CardHeading
+        badges={
+          <>
+            {status.configured ? (
+              <Badge variant="success" size="sm">
+                Connected
+              </Badge>
+            ) : (
+              <Badge variant="muted" size="sm">
+                Not connected
+              </Badge>
+            )}
+            {status.configured && status.source === 'env' ? (
+              <Badge variant="muted" size="sm">
+                Environment
+              </Badge>
+            ) : null}
+          </>
+        }
+        description={
+          status.configured
+            ? 'Powers repository creation and pushes for every project on this instance.'
+            : 'Every Kortix project is a git repository the server creates and pushes to on your behalf. Connect GitHub once here to enable projects.'
+        }
+        action={
+          reconfiguring ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={anyPending}
+              onClick={() => setReconfiguring(false)}
+            >
+              Cancel
+            </Button>
+          ) : null
+        }
+      />
 
       {showSetup ? (
         <div className="space-y-3">
           {reconfiguring ? (
-            <div className="flex items-center justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setReconfiguring(false)}
-              >
-                Cancel
-              </Button>
-            </div>
+            <InfoBanner tone="warning" icon={WarningIcon} title="Replacing the current connection">
+              The connection you have now keeps working until a replacement is saved.
+            </InfoBanner>
           ) : null}
 
-          <Tabs value={method} onValueChange={(v) => setMethod(v as SetupMethod)}>
-            <TabsList type="underline" className="flex w-full items-center justify-start">
-              <TabsTrigger value="manifest" className="w-fit flex-none gap-1.5">
-                Create GitHub App
-                <Badge variant="highlight" size="xs">
-                  Recommended
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="existing-app" className="w-fit flex-none">
-                Paste an existing App
-              </TabsTrigger>
-              <TabsTrigger value="pat" className="w-fit flex-none">
-                Use a token
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="manifest" className="space-y-3 pt-4">
-              <p className="text-muted-foreground text-xs">
-                Creates a GitHub App owned by your org — scoped permissions, revocable anytime, no
-                long-lived token to leak. You&apos;ll pick which repos to grant at install.
-              </p>
-              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">GitHub organization (optional)</Label>
-                  <Input
-                    value={org}
-                    onChange={(e) => setOrg(e.target.value)}
-                    placeholder="e.g. acme-inc"
-                    disabled={startMutation.isPending}
-                    variant="popover"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    Leave blank to create the App under your personal GitHub account instead of an
-                    organization.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={startMutation.isPending}
-                  onClick={() => startMutation.mutate()}
-                >
-                  {startMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : (
-                    <Github className="size-4" />
-                  )}
-                  {startMutation.isPending ? 'Redirecting to GitHub' : 'Create GitHub App'}
-                </Button>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="existing-app" className="space-y-3 pt-4">
-              <p className="text-muted-foreground text-xs">
-                Already have a GitHub App — created by hand, or shared from another instance? Paste
-                its credentials and installation below.
-              </p>
-              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">App ID</Label>
-                  <Input
-                    value={appId}
-                    onChange={(e) => setAppId(e.target.value)}
-                    placeholder="123456"
-                    disabled={appMutation.isPending}
-                    variant="popover"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Private key (PEM)</Label>
-                  <Textarea
-                    value={appPrivateKey}
-                    onChange={(e) => setAppPrivateKey(e.target.value)}
-                    placeholder="-----BEGIN RSA PRIVATE KEY-----"
-                    disabled={appMutation.isPending}
-                    rows={5}
-                    className="resize-y font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Installation ID</Label>
-                  <Input
-                    value={appInstallationId}
-                    onChange={(e) => setAppInstallationId(e.target.value)}
-                    placeholder="987654"
-                    disabled={appMutation.isPending}
-                    variant="popover"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    From the App&apos;s installation URL:
-                    github.com/settings/installations/&lt;id&gt;
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={
-                    appMutation.isPending ||
-                    !appId.trim() ||
-                    !appPrivateKey.trim() ||
-                    !appInstallationId.trim()
+          {/* One bordered group; the rows are its hairline-divided children, so
+              nothing nests a second radius inside the first. `RadioGroup` owns
+              the roving tab index, arrow-key navigation and announcement — the
+              rows are `RadioGroupItem`s, not a hand-rolled selection list. */}
+          <RadioGroup
+            value={method}
+            onValueChange={(value) => setMethod(value as SetupMethod)}
+            aria-label="How Kortix authenticates to GitHub"
+            className="bg-popover divide-border gap-0 divide-y overflow-hidden rounded-md border"
+          >
+            {SETUP_METHODS.map((entry) => (
+              // Controlled with no `onOpenChange` on purpose: the radio owns
+              // `method`, and `method` owns every row's open state. A toggle
+              // here would be a second source of truth for the same fact.
+              // (See disclosure.tsx's own note on the controlled contract.)
+              <Disclosure key={entry.id} open={method === entry.id}>
+                <RadioGroupItem
+                  value={entry.id}
+                  // `size="lg"` is what supplies `px-4`, matching the panel
+                  // rhythm — the size classes land after `className` in the
+                  // item's own `cn`, so padding cannot be overridden here.
+                  size="lg"
+                  disabled={anyPending}
+                  className="rounded-none"
+                  label={
+                    <span className="flex flex-wrap items-center gap-2">
+                      {entry.title}
+                      {entry.recommended ? (
+                        <Badge variant="highlight" size="xs">
+                          Recommended
+                        </Badge>
+                      ) : null}
+                    </span>
                   }
-                  onClick={() => appMutation.mutate()}
-                >
-                  {appMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : (
-                    <FileCode2 className="size-4" />
-                  )}
-                  {appMutation.isPending ? 'Connecting' : 'Connect App'}
-                </Button>
-              </div>
-            </TabsContent>
+                  description={entry.tradeoff}
+                />
 
-            <TabsContent value="pat" className="space-y-3 pt-4">
-              <p className="text-muted-foreground text-xs">
-                Quickest to set up, but a plain token rather than a scoped, revocable App. Create a
-                dedicated fine-grained token (GitHub → Settings → Developer settings → Fine-grained
-                tokens) — don&apos;t paste your everyday personal token.
-              </p>
-              <div className="bg-muted/50 rounded-md border px-3 py-2.5 text-xs">
-                <p className="mb-1 font-medium">Token settings that make this work</p>
-                <ul className="text-muted-foreground list-disc space-y-0.5 pl-4">
-                  <li>
-                    <span className="text-foreground">Resource owner</span>: the user or org that
-                    should own project repos — must match the owner field below.
-                  </li>
-                  <li>
-                    <span className="text-foreground">Repository access</span>: All repositories —
-                    Kortix creates a new repo per project, so a fixed repo list can&apos;t cover
-                    future ones.
-                  </li>
-                  <li>
-                    <span className="text-foreground">Permissions</span>: Administration — Read and
-                    write (create repos, manage collaborators) · Contents — Read and write (push,
-                    pull, branches). Metadata: Read is added automatically. Nothing else.
-                  </li>
-                  <li>
-                    Org tokens may need approval under the org&apos;s Settings → Third-party Access
-                    → Personal access tokens.
-                  </li>
-                </ul>
-              </div>
-              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Personal / fine-grained access token</Label>
-                  <Input
-                    type="password"
-                    value={patToken}
-                    onChange={(e) => setPatToken(e.target.value)}
-                    placeholder="github_pat_..."
-                    disabled={patMutation.isPending}
-                    variant="popover"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">GitHub owner (user or org)</Label>
-                  <Input
-                    value={patOwner}
-                    onChange={(e) => setPatOwner(e.target.value)}
-                    placeholder="e.g. acme-inc"
-                    disabled={patMutation.isPending}
-                    variant="popover"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={patMutation.isPending || !patToken.trim() || !patOwner.trim()}
-                  onClick={() => patMutation.mutate()}
-                >
-                  {patMutation.isPending ? (
-                    <Loading className="size-4 shrink-0" />
-                  ) : (
-                    <KeyRound className="size-4" />
-                  )}
-                  {patMutation.isPending ? 'Connecting' : 'Connect token'}
-                </Button>
-              </div>
-            </TabsContent>
-          </Tabs>
+                <DisclosureContent contentClassName="border-border border-t">
+                  {entry.id === 'manifest' ? (
+                    <div className="space-y-4 px-4 py-5">
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        GitHub opens next: you confirm the App, choose which repositories it may
+                        access, and land back here connected.
+                      </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${fieldId}-org`} className="text-xs">
+                          GitHub organization (optional)
+                        </Label>
+                        <Input
+                          id={`${fieldId}-org`}
+                          value={org}
+                          onChange={(e) => setOrg(e.target.value)}
+                          placeholder="e.g. acme-inc"
+                          disabled={startMutation.isPending}
+                          autoComplete="off"
+                          spellCheck={false}
+                          variant="popover"
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          Leave blank to create the App under your personal GitHub account instead
+                          of an organization.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={startMutation.isPending}
+                        onClick={() => startMutation.mutate()}
+                      >
+                        {startMutation.isPending ? (
+                          <Loading className="size-4 shrink-0" />
+                        ) : (
+                          <Github className="size-4" />
+                        )}
+                        {startMutation.isPending ? 'Redirecting to GitHub' : 'Create GitHub App'}
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {entry.id === 'existing-app' ? (
+                    <div className="space-y-4 px-4 py-5">
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${fieldId}-app-id`} className="text-xs">
+                          App ID
+                        </Label>
+                        <Input
+                          id={`${fieldId}-app-id`}
+                          value={appId}
+                          onChange={(e) => setAppId(e.target.value)}
+                          placeholder="123456"
+                          disabled={appMutation.isPending}
+                          autoComplete="off"
+                          spellCheck={false}
+                          variant="popover"
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          On the App&apos;s GitHub settings page, under About.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${fieldId}-pem`} className="text-xs">
+                          Private key (PEM)
+                        </Label>
+                        <Textarea
+                          id={`${fieldId}-pem`}
+                          value={appPrivateKey}
+                          onChange={(e) => setAppPrivateKey(e.target.value)}
+                          placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                          disabled={appMutation.isPending}
+                          rows={5}
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="resize-y font-mono text-xs"
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          The whole file, including both header lines. Stored encrypted and never
+                          shown again.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${fieldId}-installation-id`} className="text-xs">
+                          Installation ID
+                        </Label>
+                        <Input
+                          id={`${fieldId}-installation-id`}
+                          value={appInstallationId}
+                          onChange={(e) => setAppInstallationId(e.target.value)}
+                          placeholder="987654"
+                          disabled={appMutation.isPending}
+                          autoComplete="off"
+                          spellCheck={false}
+                          variant="popover"
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          The last path segment of the App&apos;s installation URL:{' '}
+                          <span className="font-mono">
+                            github.com/settings/installations/&lt;id&gt;
+                          </span>
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={
+                          appMutation.isPending ||
+                          !appId.trim() ||
+                          !appPrivateKey.trim() ||
+                          !appInstallationId.trim()
+                        }
+                        onClick={() => appMutation.mutate()}
+                      >
+                        {appMutation.isPending ? (
+                          <Loading className="size-4 shrink-0" />
+                        ) : (
+                          <FileCode2 className="size-4" />
+                        )}
+                        {appMutation.isPending ? 'Connecting' : 'Connect App'}
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {entry.id === 'pat' ? (
+                    <div className="divide-border divide-y">
+                      {/* Requirements first, as their own flush section: a
+                            token with the wrong resource owner or repository
+                            scope fails at the first project, and the failure
+                            gives no hint which setting was wrong. */}
+                      <div className="space-y-3 px-4 py-4">
+                        <p className="text-foreground text-xs font-medium">
+                          Token settings that make this work
+                        </p>
+                        <dl className="space-y-2 text-xs">
+                          <div className="sm:flex sm:gap-3">
+                            <dt className="text-muted-foreground sm:w-[8.5rem] sm:shrink-0">
+                              Resource owner
+                            </dt>
+                            <dd className="text-foreground leading-relaxed">
+                              The user or org that should own project repos — must match the owner
+                              field below.
+                            </dd>
+                          </div>
+                          <div className="sm:flex sm:gap-3">
+                            <dt className="text-muted-foreground sm:w-[8.5rem] sm:shrink-0">
+                              Repository access
+                            </dt>
+                            <dd className="text-foreground leading-relaxed">
+                              All repositories — Kortix creates a new repo per project, so a fixed
+                              repo list cannot cover future ones.
+                            </dd>
+                          </div>
+                          <div className="sm:flex sm:gap-3">
+                            <dt className="text-muted-foreground sm:w-[8.5rem] sm:shrink-0">
+                              Permissions
+                            </dt>
+                            <dd className="text-foreground leading-relaxed">
+                              Administration — Read and write (create repos, manage collaborators).
+                              Contents — Read and write (push, pull, branches). Metadata: Read is
+                              added automatically. Nothing else.
+                            </dd>
+                          </div>
+                        </dl>
+                        <p className="text-muted-foreground text-xs leading-relaxed">
+                          Create it under GitHub → Settings → Developer settings → Fine-grained
+                          tokens. Do not paste your everyday personal token. Org tokens may also
+                          need approval under the org&apos;s Settings → Third-party Access →
+                          Personal access tokens.
+                        </p>
+                      </div>
+
+                      <div className="space-y-4 px-4 py-5">
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`${fieldId}-pat`} className="text-xs">
+                            Personal / fine-grained access token
+                          </Label>
+                          <Input
+                            id={`${fieldId}-pat`}
+                            type="password"
+                            value={patToken}
+                            onChange={(e) => setPatToken(e.target.value)}
+                            placeholder="github_pat_..."
+                            disabled={patMutation.isPending}
+                            autoComplete="off"
+                            spellCheck={false}
+                            variant="popover"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`${fieldId}-pat-owner`} className="text-xs">
+                            GitHub owner (user or org)
+                          </Label>
+                          <Input
+                            id={`${fieldId}-pat-owner`}
+                            value={patOwner}
+                            onChange={(e) => setPatOwner(e.target.value)}
+                            placeholder="e.g. acme-inc"
+                            disabled={patMutation.isPending}
+                            autoComplete="off"
+                            spellCheck={false}
+                            variant="popover"
+                          />
+                          <p className="text-muted-foreground text-xs">
+                            Must match the token&apos;s resource owner exactly.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={patMutation.isPending || !patToken.trim() || !patOwner.trim()}
+                          onClick={() => patMutation.mutate()}
+                        >
+                          {patMutation.isPending ? (
+                            <Loading className="size-4 shrink-0" />
+                          ) : (
+                            <KeyRound className="size-4" />
+                          )}
+                          {patMutation.isPending ? 'Connecting' : 'Connect token'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </DisclosureContent>
+              </Disclosure>
+            ))}
+          </RadioGroup>
         </div>
       ) : (
-        <div className="bg-popover flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3.5">
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-foreground truncate text-sm font-medium">
+        <div className="bg-popover overflow-hidden rounded-md border">
+          {/* Identity: who owns the repositories Kortix is about to create. */}
+          <div className="flex items-start gap-3 px-4 py-4">
+            <span
+              aria-hidden
+              className="bg-muted/40 text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm border"
+            >
+              <Github className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-foreground truncate text-sm font-medium">
                 {status.owner ?? 'Managed GitHub'}
-              </span>
-              <Badge variant="success" size="sm">
-                Connected
-              </Badge>
-            </div>
-            <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-              <span>{methodLabel(status.source)}</span>
-              {status.slug ? (
-                <a
-                  href={`https://github.com/apps/${status.slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-foreground inline-flex items-center gap-1"
-                >
-                  {status.slug}
-                  <ExternalLink className="size-3" />
-                </a>
-              ) : null}
-              {status.installation_id ? <span>Installation {status.installation_id}</span> : null}
+              </p>
+              <p className="text-muted-foreground text-pretty text-xs leading-relaxed">
+                {status.source === 'pat'
+                  ? 'New project repositories are created under this owner with the stored access token.'
+                  : 'New project repositories are created under this account by the GitHub App.'}
+              </p>
             </div>
           </div>
-          {status.source === 'env' ? (
-            <span className="text-muted-foreground text-xs">Configured via environment</span>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setReconfiguring(true)}
-              >
-                Reconfigure
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                onClick={() => setConfirmDisconnectOpen(true)}
-              >
-                Disconnect
-              </Button>
+
+          {/* Facts: one label per value, so nothing floats unexplained. */}
+          <dl className="border-border grid gap-x-8 gap-y-4 border-t px-4 py-4 sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-muted-foreground text-xs">Authentication</dt>
+              <dd className="text-foreground mt-1 truncate text-xs font-medium">
+                {methodLabel(status.source)}
+              </dd>
             </div>
-          )}
+            {status.slug ? (
+              <div className="min-w-0">
+                <dt className="text-muted-foreground text-xs">GitHub App</dt>
+                <dd className="mt-1">
+                  <a
+                    href={`https://github.com/apps/${status.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-foreground hover:text-muted-foreground inline-flex max-w-full items-center gap-1 font-mono text-xs transition-colors"
+                  >
+                    <span className="truncate">{status.slug}</span>
+                    <ExternalLink className="size-3 shrink-0" />
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+            {status.installation_id ? (
+              <div className="min-w-0">
+                <dt className="text-muted-foreground text-xs">Installation</dt>
+                <dd className="text-foreground mt-1 truncate font-mono text-xs tabular-nums">
+                  {status.installation_id}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+
+          <div className="border-border border-t px-4 py-3">
+            {status.source === 'env' ? (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Configured by environment variables on the server. Change or remove this connection
+                by updating those variables and restarting the API.
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReconfiguring(true)}
+                >
+                  Reconfigure
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setConfirmDisconnectOpen(true)}
+                >
+                  Disconnect
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -522,6 +728,32 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
         onConfirm={() => disconnectMutation.mutate()}
         isPending={disconnectMutation.isPending}
       />
+    </div>
+  );
+}
+
+/** Title + status badges + one line of what managed-git does, with an optional
+ *  right-hand action. Shared by the loaded card and the error state so both
+ *  read as the same panel rather than two unrelated blocks. */
+function CardHeading({
+  badges,
+  description = 'Every Kortix project is a git repository the server creates and pushes to on your behalf.',
+  action,
+}: {
+  badges?: React.ReactNode;
+  description?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-foreground flex flex-wrap items-center gap-2 text-sm font-medium">
+          Managed GitHub
+          {badges}
+        </p>
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{description}</p>
+      </div>
+      {action}
     </div>
   );
 }

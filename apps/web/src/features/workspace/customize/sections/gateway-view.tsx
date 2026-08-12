@@ -10,9 +10,14 @@
  * Routing; this shared picker is the single project-default surface.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
- * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
- * section, which we read once (and follow on change) to pick the initial tab —
- * Providers is the default, core surface.
+ * Customize rail. Deep-links / `openCustomize('llm-providers')` set the
+ * hosting panel's section, read here via `useSettingsNav()` (once, and
+ * followed on change) to pick the initial tab — Providers is the default,
+ * core surface.
+ *
+ * This view reads `useSettingsNav()`, never a store directly, so it mounts
+ * under either the legacy Customize panel or the new Settings panel — see
+ * `features/workspace/shared/settings-nav-context.tsx`.
  */
 
 import { useEffect, useState } from 'react';
@@ -20,7 +25,8 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { ProviderConnect } from '@/features/providers/provider-connect';
+import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
@@ -30,15 +36,15 @@ import { GatewayPlayground } from '@/features/workspace/customize/sections/view/
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@kortix/sdk/react';
 import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
-import type { CustomizeSection } from '@/lib/customize-sections';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
 type LlmTab =
   | 'providers'
+  | 'models'
   | 'routing'
   | 'playground'
   | 'overview'
@@ -49,6 +55,7 @@ type LlmTab =
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'providers', label: 'Providers' },
+  { id: 'models', label: 'Models' },
   { id: 'routing', label: 'Routing' },
   { id: 'playground', label: 'Playground' },
   { id: 'overview', label: 'Overview' },
@@ -58,7 +65,27 @@ const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'api', label: 'API' },
 ];
 
-const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
+/**
+ * The legacy Customize overlay's `llm-*` `CustomizeSection` ids. The new
+ * Settings overlay's `SettingsTab` union has no equivalent — every one of
+ * these collapses into the single `models` tab at the redirect
+ * (`settings-tabs.ts`'s `RENAMED_TABS`), so `activeTab` is never one of them
+ * while mounted there; this map only fires while mounted under the legacy
+ * panel (deleted once the cutover is complete) or for a raw deep-link value
+ * that slips through before a redirect resolves. Kept local (not imported
+ * from the legacy Customize-sections module, which no longer exists) since nothing
+ * else needs this exact 7-member set.
+ */
+type LegacyLlmSubTab =
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
+  | 'llm-api';
+
+const TAB_BY_SECTION: Partial<Record<LegacyLlmSubTab, LlmTab>> = {
   'llm-management': 'providers',
   'llm-providers': 'providers',
   'llm-overview': 'overview',
@@ -69,10 +96,10 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
 };
 
 export function LlmManagementView({ projectId }: { projectId: string }) {
-  const open = useCustomizeStore((s) => s.open);
-  const section = useCustomizeStore((s) => s.section);
-  const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
-  const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
+  const { isOpen: open, activeTab: section } = useSettingsNav();
+  const [tab, setTab] = useState<LlmTab>(
+    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
+  );
 
   // The project default is the single model authority for this project. Account
   // and platform defaults are display-only inheritance when no project value is
@@ -100,7 +127,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
   useEffect(() => {
-    const next = TAB_BY_SECTION[section];
+    const next = TAB_BY_SECTION[section as LegacyLlmSubTab];
     if (next) setTab(next);
   }, [section]);
 
@@ -144,15 +171,18 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
 
       {/* min-h-0 lets each panel actually shrink inside the flex column so
           overflow-y-auto scrolls instead of clipping tall content. */}
+      {/* JAY-510: the settings-panel path mounts `ProviderConnect` DIRECTLY —
+          no Modal, no dialog, so connecting Anthropic here opens nothing. The
+          modal shell (`ProjectProviderModal`) is only for the model selector
+          and the Secrets tab, which are dialogs by construction. */}
       <TabsContent value="providers" className="min-h-0 overflow-y-auto">
-        <ProjectProviderModal
-          asPanel
-          projectId={projectId}
-          open={open}
-          onOpenChange={() => {}}
-          defaultTab={llmProvidersTab}
-          canWrite={canWrite}
-        />
+        <ProviderConnect projectId={projectId} canWrite={canWrite} enabled={open} />
+      </TabsContent>
+      {/* The model-visibility list used to sit one level deeper, inside the
+          provider modal's own "Models" tab. Flattened to a sibling here so it
+          keeps a home now that `ProviderConnect` has no tabs of its own. */}
+      <TabsContent value="models" className="min-h-0 overflow-y-auto">
+        <ModelsTab projectId={projectId} />
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
         <GatewayOverview projectId={projectId} />

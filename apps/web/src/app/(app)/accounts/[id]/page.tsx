@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  CaretDownIcon as ChevronDown,
   ClockIcon as Clock,
   CoinsIcon as Coins,
   CreditCardIcon as CreditCard,
@@ -25,6 +24,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
@@ -32,19 +32,17 @@ import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
+import { KeyRulesCard } from '@/components/iam/key-rules-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
-import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
-import { SessionControlsCard } from '@/components/iam/session-controls-card';
+import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,6 +80,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -583,13 +582,15 @@ export default function AccountSettingsPage() {
               </div>
             ) : null}
 
-            {/* Tokens — the machine-access surface: PAT lifecycle policy +
-                service accounts. Both cards carry their own title/description
-                headers, so the pane header above is the only chrome. */}
+            {/* Tokens — the machine-access surface. Same two components the
+                settings panel's API keys tab mounts (`tabs/api-keys-tab.tsx`),
+                in the same order: the keys themselves first, the rules that
+                govern them second. Both carry their own section headers, so
+                the pane header above is the only other chrome. */}
             {activeSection === 'tokens' && canWriteAccount ? (
               <div className="space-y-10">
-                <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
-                <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
+                <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
+                <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
               </div>
             ) : null}
 
@@ -628,34 +629,24 @@ export default function AccountSettingsPage() {
                   />
                 </SettingsGroup>
 
-                {/* MFA is the only security control 95% of accounts ever touch —
-                  keep it primary. Session lifetime + idle timeout tuning
-                  matters for compliance shops but is noise for everyone else,
-                  so it hides under an "Advanced" disclosure (closed by
-                  default). */}
+                {/* MFA and the session policy are one decision — how hard it
+                    is to hold a session here — so they share one bordered
+                    group. The "Advanced" disclosure that used to hide session
+                    lifetime + idle timeout is gone: as full cards they were
+                    genuinely too much, as two rows they cost two lines. See
+                    `components/iam/session-controls-card.tsx`. */}
                 <SettingsGroup title="Security" description="Account-wide sign-in requirements.">
-                  <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
-                  <Disclosure variant="outline" className="group bg-popover overflow-hidden">
-                    <DisclosureTrigger className="px-4 py-3">
-                      <div className="flex w-full cursor-pointer items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-foreground text-sm font-medium">Advanced</p>
-                          <p className="text-muted-foreground mt-0.5 text-xs">
-                            Session lifetime and idle timeout.
-                          </p>
-                        </div>
-                        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                      </div>
-                    </DisclosureTrigger>
-                    <DisclosureContent contentClassName="border-border border-t">
-                      <div className="px-4 py-5">
-                        <SessionControlsCard
-                          accountId={account.account_id}
-                          canManage={canWriteAccount}
-                        />
-                      </div>
-                    </DisclosureContent>
-                  </Disclosure>
+                  <SettingsRowGroup>
+                    <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
+                    <SessionControlsCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsRowGroup>
+                  <AccountSessionsPanel
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
                 </SettingsGroup>
 
                 {/* Tucked away, not headline: this reports whether the
@@ -671,10 +662,12 @@ export default function AccountSettingsPage() {
                     title="Enterprise features"
                     description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
                   >
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
+                    <SettingsRowGroup>
+                      <EnterpriseDemoCard
+                        accountId={account.account_id}
+                        canManage={canWriteAccount}
+                      />
+                    </SettingsRowGroup>
                   </SettingsGroup>
                 ) : null}
 

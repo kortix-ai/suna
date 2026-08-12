@@ -3,8 +3,8 @@
  *
  * Mirrors the auth pattern from `08-accounts-project-access.spec.ts`:
  * provisions a fresh Supabase user via the admin API, signs them in to get a
- * session, then drives the Next dashboard. We verify the Customize → Sandbox
- * panel:
+ * session, then drives the Next dashboard. We verify the settings panel's
+ * Sandbox templates tab:
  *
  *   1. Provision a managed-GitHub project for the test user.
  *   2. GET /sandboxes — platform default present (API-level smoke).
@@ -30,7 +30,11 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
+import {
+  dismissOnboarding,
+  openSettingsTab,
+  selectAccountForUi,
+} from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
@@ -54,22 +58,15 @@ interface TemplateCreateResult {
 async function openSandboxSection(page: Page, projectId: string) {
   await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
-  await page.getByRole("button", { name: /^Settings/i }).click();
-  await expect(page.getByRole("dialog", { name: /Customize/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const sandboxHeading = page.getByRole("heading", {
-    name: /Sandbox templates/i,
-  });
-  if (
-    !(await sandboxHeading.isVisible({ timeout: 5_000 }).catch(() => false))
-  ) {
-    await page.getByRole("button", { name: /^Sandbox templates$/i }).click();
-  }
+  // "Sandbox templates" is the rail label for the `sandbox` tab (rail.ts) and
+  // the `SettingsTabHeader` title the pane renders from it.
+  const panel = await openSettingsTab(page, "Sandbox templates");
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), {
     timeout: 30_000,
   });
-  await expect(sandboxHeading).toBeVisible({ timeout: 30_000 });
+  await expect(
+    panel.getByRole("heading", { name: "Sandbox templates", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe("12 — Sandbox templates UI", () => {
@@ -160,15 +157,23 @@ test.describe("12 — Sandbox templates UI", () => {
     ).toBeVisible({
       timeout: 60_000,
     });
+
+    // The card is pinned by its lowercase `default` slug badge — the platform
+    // default's old "Platform default · shared by every project" sub-line is
+    // gone; `is_default` now renders as a `Default` badge in the same header
+    // (sandbox-tab.tsx:472-476, and `describeBase`'s comment above it).
+    const platformRow = page
+      .getByRole("listitem")
+      .filter({ has: page.getByText("default", { exact: true }) });
+    await expect(platformRow).toHaveCount(1);
+    // Last exact "Default" in the card is that badge (the first is the
+    // template name), so this holds whatever the platform default is called.
     await expect(
-      page.getByText(/Platform default · shared by every project/),
+      platformRow.getByText("Default", { exact: true }).last(),
     ).toBeVisible();
 
     // Every available provider reports its real launch state. A local stack can
     // legitimately report Not ready when no provider snapshot exists.
-    const platformRow = page
-      .getByRole("listitem")
-      .filter({ hasText: "Platform default" });
     const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
     await expect(platformRow).toContainText(
       new RegExp(`Daytona[^A-Za-z]*(?:${launchState})`),
