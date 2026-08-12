@@ -96,6 +96,32 @@ describe('ProfileTabView — two-factor error state', () => {
   });
 });
 
+/**
+ * The other two answers the factor list can give. Loading is a shape-matched
+ * skeleton, not a blank gap; a populated list is its own answer, so neither
+ * banner may appear next to it. Added with the error state above — before it,
+ * `{!factorsLoading && !factorsError ? factors.map(…) : null}` had no else
+ * branch at all, so two of the four states rendered literally nothing.
+ */
+describe('ProfileTabView — two-factor list states', () => {
+  test('an in-flight factor list shows a skeleton, not a blank gap', () => {
+    const out = renderToStaticMarkup(<ProfileTabView factorsLoading />);
+    expect(out).toContain('animate-pulse');
+    expect(out).not.toContain('No second factor enrolled');
+  });
+
+  test('an enrolled factor renders as a row, with neither banner', () => {
+    const out = renderToStaticMarkup(
+      <ProfileTabView
+        factors={[{ id: 'f1', friendly_name: 'My phone', factor_type: 'totp', status: 'verified' }]}
+      />,
+    );
+    expect(out).toContain('My phone');
+    expect(out).not.toContain('No second factor enrolled');
+    expect(out).not.toContain('load your authenticator apps');
+  });
+});
+
 // Ported from the deleted `features/accounts/settings/security-tab.test.tsx`
 // (Task 10) — `FactorRow` and `totpQrSrc` moved into `profile-tab.tsx`, this
 // tab being their only remaining consumer once the legacy user-settings

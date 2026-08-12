@@ -20,6 +20,12 @@
  * - The unavailable case (no account deletion on this deployment) shows muted
  *   text on the right instead of swapping the row out for a paragraph.
  *
+ * The factor list answers in four states and each one is visible: loading
+ * (skeleton row), failed (red `InfoBanner` + Retry), empty (yellow "No second
+ * factor enrolled" nudge), and populated (`FactorRow`s). A failed fetch never
+ * borrows the empty-state copy — that copy asserts the account has no second
+ * factor, which a failed fetch cannot know.
+ *
  * Ported from `features/accounts/settings/general-tab.tsx` (avatar upload,
  * name save, account deletion) and `features/accounts/settings/
  * security-tab.tsx` (MFA factor list and TOTP enrollment). Task 10 deleted
@@ -46,8 +52,10 @@ import {
   KeyIcon as KeyRound,
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
+  ShieldWarningIcon as ShieldWarning,
   DeviceMobileIcon as Smartphone,
   TrashIcon as Trash2,
+  WarningIcon as Warning,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -72,6 +80,7 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   useAccountDeletionStatus,
@@ -430,13 +439,45 @@ export function ProfileTabView({
             )}
           </SettingsRow>
           {/* Enrolled factors stack under the row they belong to, inside the
-              same border — `divide-y` draws the hairline between them. */}
-          {!factorsLoading && !factorsError
-            ? factors.map((f) => (
-                <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} />
-              ))
-            : null}
+              same border — `divide-y` draws the hairline between them. While
+              the list is in flight, one shape-matched skeleton stands in for a
+              factor row, so the group does not jump when the answer lands. */}
+          {factorsLoading ? (
+            <div className="px-4 py-3">
+              <Skeleton className="h-8 w-full rounded-sm" />
+            </div>
+          ) : factorsError ? null : (
+            factors.map((f) => <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} />)
+          )}
         </SettingsRowGroup>
+
+        {/* The three answers the factor list can give, below the group so no
+            banner nests a second border inside it:
+            - it failed  → say so, in red, with a Retry. Never the empty-state
+              copy: "No second factor enrolled" is a claim about the account,
+              and a fetch that failed knows nothing about the account.
+            - it is empty → the enrollment nudge, in yellow.
+            - it has factors → nothing here; the rows above ARE the answer.
+            Loading outranks both: an in-flight list has no answer yet. */}
+        {!factorsLoading && factorsError ? (
+          <InfoBanner
+            tone="destructive"
+            icon={Warning}
+            title="Couldn’t load your authenticator apps"
+            action={
+              <Button variant="outline" size="sm" onClick={onRetryFactors}>
+                Retry
+              </Button>
+            }
+          >
+            Your two-factor settings are unchanged — this is only the list failing to load.
+          </InfoBanner>
+        ) : !factorsLoading && factors.length === 0 && !enrolling ? (
+          <InfoBanner tone="info" icon={ShieldWarning} title="No second factor enrolled">
+            If your organization requires MFA, you’ll be blocked from gated actions until you enroll
+            an authenticator here.
+          </InfoBanner>
+        ) : null}
 
         {enrolling ? (
           <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
@@ -526,7 +567,16 @@ export function ProfileTabView({
                 Keep my account
               </Button>
             ) : (
-              <Button variant="destructive" size="sm" onClick={onOpenDeleteDialog}>
+              /* Red text, not a filled button: the weight belongs to the
+                 confirmation inside the modal, not to the affordance that
+                 opens it. Same trigger as `general-tab.tsx`'s Delete
+                 workspace. */
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={onOpenDeleteDialog}
+              >
                 Delete account
               </Button>
             )}
