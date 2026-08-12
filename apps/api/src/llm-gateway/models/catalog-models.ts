@@ -85,14 +85,6 @@ function codexName(id: string): string {
 // backfill of its own). Better to compact a little early than never.
 const DEFAULT_SERVED_LIMIT = { context: 200_000, output: 32_000 } as const;
 
-// The ChatGPT-subscription transport has a lower context window than the
-// generic OpenAI API entry in models.dev. Official OpenAI Codex documentation
-// specifies 272k total tokens for GPT-5.6 Sol. Reserve the model's published
-// 128k output ceiling so OpenCode compacts before the 144k input boundary.
-const CODEX_CONSUMER_LIMITS: Record<string, { context: number; input: number; output: number }> = {
-  'gpt-5.6-sol': { context: 272_000, input: 144_000, output: 128_000 },
-};
-
 // Coerce a (possibly partial or zero) models.dev limit into a guaranteed-positive
 // window. Some non-chat catalog entries (whisper audio, NVIDIA video/TTS models)
 // report context:0 — fall back to the default so EVERY served model can be sized.
@@ -264,7 +256,6 @@ export function gatewayCodexModels(
   const catalogModelById = modelsById(catalog);
   for (const id of codexModelIds()) {
     const model = catalogModelById.get(`openai/${id}`);
-    const consumerLimit = CODEX_CONSUMER_LIMITS[id];
     out[`codex/${id}`] = {
       name: `${model?.name ?? codexName(id)} (ChatGPT)`,
       // Codex is a ChatGPT subscription, not the raw `openai` BYOK provider —
@@ -290,7 +281,7 @@ export function gatewayCodexModels(
       ...(typeof model?.description === 'string' ? { description: model.description } : {}),
       ...(typeof model?.open_weights === 'boolean' ? { open_weights: model.open_weights } : {}),
       ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
-      limit: consumerLimit ?? servedLimit(model?.limit),
+      limit: servedLimit(model?.limit),
     };
   }
   return out;
