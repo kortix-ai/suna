@@ -11,7 +11,7 @@ import {
 
 const secret = 'test-secret-at-least-sixteen-characters';
 
-function dependencies() {
+function dependencies(controlSecret: string = secret) {
   const builds: any[] = [];
   const creates: any[] = [];
   const appRuntimeStarts: string[] = [];
@@ -51,12 +51,67 @@ function dependencies() {
   const hosting = new AppHostingProvider({
     snapshotProvider: () => snapshot,
     runtimeProvider: () => runtime,
-    controlSecret: secret,
+    controlSecret,
     fetch: fetch as typeof globalThis.fetch,
     sleep: async () => {},
   });
   return { hosting, builds, creates, appRuntimeStarts, ingressCalls, fetchCalls };
 }
+
+describe('appControlToken', () => {
+  // Prod ran a sub-16-character API_KEY_SECRET, so every App deployment died at
+  // provisioning with "App control secret must contain at least 16 characters"
+  // after a full image build. The secret is the scrypt salt for API-key hashes
+  // and the HKDF root for project secrets, so it cannot be rotated to satisfy a
+  // length floor. HKDF gives a fixed 32-byte key from any non-empty secret.
+  test('derives a token from a secret shorter than 16 characters', () => {
+    const token = appControlToken('runtime-1', 'short');
+    expect(token).toBe(appControlToken('runtime-1', 'short'));
+    expect(token).toHaveLength(43);
+  });
+
+  test('separates tokens by secret and by runtime id', () => {
+    expect(appControlToken('runtime-1', 'short')).not.toBe(appControlToken('runtime-1', 'other'));
+    expect(appControlToken('runtime-1', 'short')).not.toBe(appControlToken('runtime-2', 'short'));
+    expect(appControlToken('runtime-1', secret)).not.toBe(appControlToken('runtime-1', 'short'));
+  });
+
+  test('rejects a missing runtime id or an empty secret', () => {
+    expect(() => appControlToken('', secret)).toThrow('runtimeId is required');
+    expect(() => appControlToken('runtime-1', '')).toThrow('App control secret is required');
+  });
+
+  // The prod failure surfaced at provisioning, not in the helper: the image had
+  // already built and `createRuntime` threw while deriving the appd bearer.
+  test('provisions an App runtime on a server whose secret is 5 characters', async () => {
+    const { hosting, creates, appRuntimeStarts } = dependencies('short');
+    const result = await hosting.createRuntime({
+      provider: 'platinum',
+      runtimeId: 'runtime-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+      name: 'app-bharat-ai-v1',
+      snapshotName: 'kortix-app-deployment-1',
+      machine: { cpuCores: 1, memoryGb: 2, diskGb: 10 },
+    });
+
+    expect(creates[0].envVars.KORTIX_APPD_TOKEN).toBe(appControlToken('runtime-1', 'short'));
+    expect(result.controlTokenHash).toBe(
+      appControlTokenHash(appControlToken('runtime-1', 'short')),
+    );
+    expect(appRuntimeStarts).toEqual(['box-1']);
+  });
+
+  // A control call must present the same bearer the runtime was created with,
+  // or every status/log request against a short-secret server returns 401.
+  test('signs control requests with the same short-secret bearer', async () => {
+    const { hosting, fetchCalls } = dependencies('short');
+    await hosting.status('platinum', 'box-1', 'runtime-1');
+    expect(fetchCalls[0].init.headers.Authorization).toBe(
+      `Bearer ${appControlToken('runtime-1', 'short')}`,
+    );
+  });
+});
 
 describe('AppHostingProvider', () => {
   test('derives a stable non-reversible control token hash', () => {

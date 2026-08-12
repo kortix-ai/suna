@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, hkdfSync } from 'node:crypto';
 import { config, type SandboxProviderName } from '../config';
 import {
   getProvider,
@@ -79,14 +79,47 @@ function defaultDependencies(): HostingDependencies {
 }
 
 /**
+ * HKDF-SHA256 turns any non-empty server secret into the fixed 32-byte key the
+ * control-token HMAC needs, so no deployment depends on how long the raw secret
+ * happens to be.
+ *
+ * The earlier `secret.length < 16` floor read API_KEY_SECRET directly, and that
+ * value cannot be lengthened to satisfy it: it is the scrypt salt for every
+ * stored API-key hash (shared/crypto.ts) and the HKDF input keying material for
+ * every encrypted project secret (projects/secrets.ts). Rotating it invalidates
+ * both. An environment whose secret was under 16 characters therefore failed
+ * every App deployment at provisioning, after a full image build.
+ *
+ * Stretching is a length fix, not an entropy fix. The derived key is only as
+ * strong as the secret behind it, and App runtimes receive their own token in
+ * `KORTIX_APPD_TOKEN`, so a low-entropy API_KEY_SECRET still deserves its own
+ * planned rotation with a re-hash and re-encrypt migration.
+ */
+function appControlKey(secret: string): Buffer {
+  return Buffer.from(
+    hkdfSync(
+      'sha256',
+      Buffer.from(secret, 'utf8'),
+      Buffer.from('kortix-appd-control', 'utf8'),
+      Buffer.from('kortix-appd-control-key:v1', 'utf8'),
+      32,
+    ),
+  );
+}
+
+/**
  * The database stores only this hash. The API reconstructs the bearer from the
  * stable runtime id and a server secret after process restarts.
+ *
+ * v2 derives the HMAC key through `appControlKey`. Any runtime provisioned
+ * under v1 holds a token this no longer reproduces, so its control requests
+ * fail until the App is redeployed.
  */
 export function appControlToken(runtimeId: string, secret: string): string {
   if (!runtimeId) throw new Error('runtimeId is required');
-  if (secret.length < 16) throw new Error('App control secret must contain at least 16 characters');
-  return createHmac('sha256', secret)
-    .update('kortix-appd-control:v1\0')
+  if (!secret) throw new Error('App control secret is required');
+  return createHmac('sha256', appControlKey(secret))
+    .update('kortix-appd-control:v2\0')
     .update(runtimeId)
     .digest('base64url');
 }
