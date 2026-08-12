@@ -9,6 +9,7 @@ import {
 import {
   type DisposableInbox,
   createDisposableInbox,
+  emailProviderStatus,
 } from "../helpers/inbox";
 import {
   type AuthSession,
@@ -171,6 +172,11 @@ function toGitHubWebUrl(repoUrl: string): string {
 
 test.describe("08 — Accounts, invites, and project access", () => {
   test.setTimeout(300_000);
+
+  test.beforeEach(async () => {
+    const { available, reason } = await emailProviderStatus();
+    test.skip(!available, `email provider unavailable: ${reason}`);
+  });
 
   test.afterEach(async () => {
     for (const accountId of createdAccountIds) {

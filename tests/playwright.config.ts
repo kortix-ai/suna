@@ -15,14 +15,22 @@ export function resolveBrowserWorkers(value: string | undefined, ci: boolean): n
 
 const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(process.env.CI));
 
+// A deployed target (staging/preview) shares one origin with the concurrent
+// REST lane, so transient overload (5xx laundered into MAINTENANCE_MODE by the
+// edge) shows up as slow/empty page loads. Give deployed runs more retries and
+// longer element/action timeouts so a transient blip self-heals; local stays
+// tight and fast. Signalled by KE2E_TARGET, which local-runner sets only for
+// deployed lanes.
+const deployedTarget = Boolean(process.env.KE2E_TARGET);
+
 export default defineConfig({
   testDir: './e2e/specs',
   timeout: 300_000,
   expect: {
-    timeout: 30_000,
+    timeout: deployedTarget ? 45_000 : 30_000,
   },
   fullyParallel: true,
-  retries: process.env.CI ? 2 : 0,
+  retries: deployedTarget ? 3 : process.env.CI ? 2 : 0,
   workers,
   reporter: [
     ['list'],
@@ -38,7 +46,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    actionTimeout: 20_000,
+    actionTimeout: deployedTarget ? 30_000 : 20_000,
     navigationTimeout: 60_000,
   },
   projects: [
