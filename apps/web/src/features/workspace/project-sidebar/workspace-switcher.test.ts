@@ -35,4 +35,28 @@ describe('WorkspaceSwitcher keeps what the sidebar UserMenu used to provide', ()
     expect(code).toContain('useSettingsPanelStore.getState().openSettings(tab)');
     expect(code).not.toContain('SidePanelUserSettings');
   });
+
+  /**
+   * The TAB the row passes, which the test above does not pin.
+   *
+   * `ProjectSidebar` mounts this control on every project route, and
+   * `ProjectShell` renders `SettingsPanel` as a sibling
+   * (`project-layout/project-shell.tsx:195`) — so unlike the header
+   * `UserMenu`, this row's store write really does open the overlay. That
+   * makes a wrong tab a live bug, not a no-op: `general` is Workspace →
+   * General in `settings/settings-tabs.ts`, a PROJECT-scoped tab, so a row
+   * labelled "User Settings" would land the user on the workspace pane
+   * instead of their own profile.
+   *
+   * `code` has comments stripped (see above), so prose naming `general` — and
+   * this file's own explanation of why it is wrong — cannot satisfy or defeat
+   * the match. Both directions are asserted: the right tab present AND the
+   * wrong one absent.
+   */
+  test('User Settings is wired to `profile`, not the project-scoped `general`', () => {
+    const calls = [...code.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls).toContain('profile');
+    expect(calls).not.toContain('general');
+  });
 });

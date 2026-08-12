@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { MonitorIcon, Moon, Sun } from '@phosphor-icons/react';
 
+import { parseSettingsTab, type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 import { THEME_OPTIONS } from './user-menu';
@@ -58,25 +59,91 @@ describe('THEME_OPTIONS', () => {
 
 /**
  * `openUserSettings` and the billing row's onClick both live inside
- * `UserMenu`, unexported — the file is frozen to a call-target-only diff
- * (Task 10; the product owner has a separate restructuring plan for it), so
- * exporting a testable handle would itself be a disallowed structural
- * change. The reachable contract is what they call:
- * `useSettingsPanelStore.getState().openSettings(tab)`. This asserts store
- * state after invoking that call directly, standing in for "click the
- * settings row" / "click the billing row", which `renderToStaticMarkup`
- * cannot reach anyway — see this file's top for why (no DOM, portalled
- * `DropdownMenuContent`).
+ * `UserMenu`, unexported, and `renderToStaticMarkup` cannot reach a portalled
+ * `DropdownMenuContent` anyway — see this file's top. So the reachable proof
+ * of what a row DOES is the source text, which is what the source-scan tests
+ * below read.
+ *
+ * The two store tests that open this block are NOT that proof and never were:
+ * they invoke the store themselves, so they pass whatever the menu is wired
+ * to. They are kept, retitled to say what they actually cover — that
+ * `openSettings(tab)` sets `open` and `tab`, the contract the OTHER settings
+ * mounts (`project-shell.tsx:195`, `standalone-settings-route.tsx:113`) rely
+ * on. `UserMenu` itself no longer touches the store at all; see
+ * `openUserSettings`' header comment in the component.
  */
 describe('user menu settings entry points', () => {
-  test('the user settings row opens the panel on profile', () => {
+  test('the settings panel store opens on the profile tab when asked for it', () => {
     useSettingsPanelStore.getState().openSettings('profile');
     expect(useSettingsPanelStore.getState().open).toBe(true);
     expect(useSettingsPanelStore.getState().tab).toBe('profile');
   });
 
-  test('the billing row opens the panel on billing', () => {
+  test('the settings panel store opens on the billing tab when asked for it', () => {
     useSettingsPanelStore.getState().openSettings('billing');
     expect(useSettingsPanelStore.getState().tab).toBe('billing');
+  });
+
+  /**
+   * The two tests above invoke the store directly, so they pass no matter
+   * which tab the menu actually passes — they could not fail when the row
+   * regressed to `openUserSettings('general')` (Workspace → General, a
+   * project-scoped tab that `ACCOUNT_SCOPED_SETTINGS_TABS` filters out with
+   * no project open). With no DOM harness the only reachable proof of the
+   * call TARGET is the source itself, so this reads the file and asserts both
+   * directions: the correct tab is present AND the wrong one is absent.
+   */
+  test('the user settings row is wired to `profile`, not the project-scoped `general`', async () => {
+    const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
+    const calls = [...source.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
+    expect(calls).toContain('profile');
+    expect(calls).not.toContain('general');
+  });
+
+  /**
+   * The rows must NAVIGATE, not poke the store.
+   *
+   * `UserMenu`'s only mount is the app header
+   * (`features/layout/app-header.tsx:108`), rendered only by
+   * `app/(app)/accounts/layout.tsx:26`. `SettingsPanel` has exactly two mounts
+   * (`project-layout/project-shell.tsx:195`,
+   * `workspace/settings/standalone-settings-route.tsx:113`) and neither is in
+   * the `/accounts` tree. So `openSettings(tab)` from here set `open: true`
+   * with no subscriber and the Settings and Billing rows did NOTHING when
+   * clicked. `/settings/<tab>` is the account-scoped route that mounts the
+   * panel itself.
+   *
+   * Comments are stripped before matching, so the prose above — which names
+   * `useSettingsPanelStore` and `openSettings` repeatedly — cannot defeat the
+   * absence assertion.
+   */
+  test('the settings and billing rows navigate to /settings/<tab> instead of writing to the store', async () => {
+    const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+    expect(code).toContain('router.push(`/settings/${tab}`)');
+    // The store is unreachable from this mount — no call, and no import left
+    // behind to make one look reachable.
+    expect(code).not.toContain('useSettingsPanelStore');
+
+    const calls = [...code.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
+    expect(calls).toContain('profile');
+    expect(calls).toContain('billing');
+  });
+
+  /**
+   * Every tab these rows build a URL from must be a segment
+   * `app/(app)/settings/[tab]/page.tsx` accepts, or the route silently falls
+   * back to `STANDALONE_DEFAULT_SETTINGS_TAB` and Billing opens on Profile.
+   */
+  test('every tab the rows navigate to is a real /settings segment', async () => {
+    const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    const calls = [...code.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
+
+    expect(calls.length).toBeGreaterThan(0);
+    for (const tab of calls) {
+      expect(parseSettingsTab(tab)).toBe(tab as SettingsTab);
+    }
   });
 });

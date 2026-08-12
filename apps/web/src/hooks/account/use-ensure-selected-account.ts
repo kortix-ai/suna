@@ -14,16 +14,26 @@
  * which renders Billing/Usage/Identity/Audit/API keys/Organization as EMPTY —
  * indistinguishable from "you lack permission".
  *
- * This lived inline in `features/layout/user-menu.tsx` and was reachable only
- * because `ProjectSidebar` renders `UserMenu` next to every `SettingsPanel`
- * mount. `app/(app)/settings*` mounts the panel with no sidebar, so the effect
- * had to become callable on its own rather than be copied — see
- * `features/workspace/settings/standalone-settings-route.tsx`.
+ * This lived inline in `features/layout/user-menu.tsx`, back when a `UserMenu`
+ * sat in the project sidebar's footer next to every `SettingsPanel` mount. That
+ * footer menu is gone. `ProjectSidebar` now renders `WorkspaceSwitcher`
+ * (`features/workspace/project-sidebar/project-sidebar.tsx:116`) and no
+ * `UserMenu` at all, and `UserMenu`'s single remaining mount is the app header
+ * (`features/layout/app-header.tsx:108`), which only the `app/(app)/accounts`
+ * tree renders — and that tree has no `SettingsPanel` in it. So the effect had to become
+ * callable on its own rather than be copied, and each of the three surfaces
+ * that needs it calls it directly:
+ *
+ * - `WorkspaceSwitcher`, for the project-shell panel mount
+ *   (`project-layout/project-shell.tsx:195`);
+ * - `StandaloneSettingsRoute`, for the project-less panel mount at
+ *   `app/(app)/settings*` (`features/workspace/settings/standalone-settings-route.tsx`);
+ * - `UserMenu`, for the accounts pages.
  *
  * Idempotent and safe to call from more than one mounted component: the
- * `['accounts']` query key and `staleTime` match `UserMenu`'s, so React Query
- * serves both from one fetch, and the write is skipped once the stored id is
- * valid.
+ * `['accounts']` query key and `staleTime` match every caller's, so React Query
+ * serves them all from one fetch, and the write is skipped once the stored id
+ * is valid.
  */
 
 import { useEffect } from 'react';

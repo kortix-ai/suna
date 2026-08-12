@@ -12,10 +12,16 @@
  * like the things you can move to. No account name, no email, no avatar — you
  * already know who you are; what a sidebar has to tell you is where you are.
  *
- * User settings opens the same settings panel as the header `UserMenu`, through
- * the same `useSettingsPanelStore.openSettings(tab)` call. `main` authored this
- * against the deleted `SidePanelUserSettings` modal; this branch replaced that
- * modal with the panel (JAY-498), so the row was repointed rather than dropped.
+ * User settings opens the same settings surface the header `UserMenu` opens,
+ * on the same `profile` tab — but by a different mechanism, and the difference
+ * is not cosmetic. This control only ever renders under `ProjectShell`, which
+ * mounts `SettingsPanel` as a sibling (`project-shell.tsx:195`), so poking
+ * `useSettingsPanelStore.openSettings(tab)` has a renderer subscribed and the
+ * overlay opens in place. `UserMenu` mounts only in the app header under the
+ * `app/(app)/accounts` tree, where no `SettingsPanel` exists, so its rows
+ * navigate to `/settings/<tab>` instead. `main` authored this row against the
+ * deleted `SidePanelUserSettings` modal; this branch replaced that modal with
+ * the panel (JAY-498), so the row was repointed rather than dropped.
  * Account settings (`/accounts/:id`) is reached from that panel — not from this
  * menu — so the switcher stays about the workspace.
  *
@@ -75,14 +81,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Seeds `selectedAccountId` for a brand-new sign-in. Pre-merge this ran here
-  // by way of `ProjectSidebar` rendering `UserMenu` in its footer — see the
-  // hook's own header comment, which names that mount as its reachability
-  // guarantee. `main` replaced that footer menu with THIS control, so the call
-  // moved with it rather than being silently dropped: without it, every
-  // account-scoped settings tab opened on a project whose detail query has not
-  // resolved yet has no account id to probe with, and renders as though the
-  // permission were denied. Same `['accounts']` key and `staleTime` as every
-  // other caller, so React Query serves them all from one fetch.
+  // by way of a `UserMenu` in the project sidebar's FOOTER. That footer menu no
+  // longer exists: `ProjectSidebar` renders THIS control and nothing else menu-
+  // like (`project-sidebar.tsx:116`), and `UserMenu`'s only remaining mount is
+  // the app header (`features/layout/app-header.tsx:108`, reached only from the
+  // `app/(app)/accounts` tree). So the call moved here with the control rather
+  // than being silently dropped: without it, every account-scoped settings tab
+  // opened on a project whose detail query has not resolved yet has no account
+  // id to probe with, and renders as though the permission were denied. Same
+  // `['accounts']` key and `staleTime` as every other caller, so React Query
+  // serves them all from one fetch.
   useEnsureSelectedAccount();
 
   const deferAfterClose = (fn: () => void) => {
@@ -176,7 +184,18 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               </DropdownMenuSub>
               <DropdownMenuSeparator />
 
-              <DropdownMenuItem onSelect={() => openUserSettings('general')} size="sm">
+              {/* `profile`, NOT `general`. In the merged settings vocabulary
+                  (`settings/settings-tabs.ts`) `general` is Workspace →
+                  General, a PROJECT-scoped tab — a row labelled "User
+                  Settings" that opens it lands the user on the workspace pane.
+                  The user's own name/email/avatar/delete-account surface is the
+                  `profile` tab, and it is the tab `/settings` opens on
+                  (`STANDALONE_DEFAULT_SETTINGS_TAB`). This row pokes the store
+                  rather than navigating because `ProjectSidebar` only mounts
+                  under `ProjectShell`, which renders `SettingsPanel` as a
+                  sibling (`project-layout/project-shell.tsx:195`) — the
+                  header `UserMenu` has no such renderer and must navigate. */}
+              <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
                 User Settings
               </DropdownMenuItem>

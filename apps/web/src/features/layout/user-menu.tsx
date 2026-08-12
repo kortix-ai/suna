@@ -29,7 +29,6 @@ import { cn } from '@/lib/utils';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { listAccounts } from '@kortix/sdk';
 import {
   GearSixIcon as CogOne,
@@ -103,8 +102,31 @@ export function UserMenu({
     requestAnimationFrame(() => fn());
   };
 
+  /**
+   * NAVIGATE, do not poke the store.
+   *
+   * `useSettingsPanelStore.openSettings(tab)` only opens something when a
+   * `SettingsPanel` is mounted to observe it. There are exactly two such mounts
+   * — `project-layout/project-shell.tsx:195` and
+   * `workspace/settings/standalone-settings-route.tsx:113` — and `UserMenu` is
+   * inside NEITHER. Its only mount is the app header
+   * (`features/layout/app-header.tsx:108`, `variant="header"`), and the only
+   * layout rendering that header is `app/(app)/accounts/layout.tsx:26`. So a
+   * store write here set `open: true` with no subscriber and the rows did
+   * nothing at all — the click was silently swallowed.
+   *
+   * `/settings/<tab>` is the account-scoped door into the same overlay
+   * (`app/(app)/settings/[tab]/page.tsx` -> `StandaloneSettingsRoute`, which
+   * mounts the panel itself and validates the segment through
+   * `parseSettingsTab`). `SettingsTab` is the segment vocabulary, so the
+   * template needs no mapping table.
+   *
+   * `deferAfterClose` stays: the dropdown closes on the current frame and the
+   * navigation runs on the next, so the menu is not left mounted over a
+   * route transition.
+   */
   const openUserSettings = (tab: SettingsTab) =>
-    deferAfterClose(() => useSettingsPanelStore.getState().openSettings(tab));
+    deferAfterClose(() => router.push(`/settings/${tab}`));
 
   const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
@@ -204,7 +226,15 @@ export function UserMenu({
         {/* Personal settings sits high: it is the item people come here for. The
             account row above goes to the account page — a different
             destination, which is why this one is not also called "settings". */}
-        <DropdownMenuItem onClick={() => openUserSettings('general')} size="sm">
+        {/* `profile`, NOT `general`. In the merged settings vocabulary
+            (`settings-tabs.ts`) `general` is Workspace → General, a
+            PROJECT-scoped tab; the user's own name/email/avatar/delete-account
+            surface — what the pre-merge `SidePanelUserSettings` called
+            `general` — is the `profile` tab. `general` is also absent from
+            `ACCOUNT_SCOPED_SETTINGS_TABS`, so with no project open the rail
+            filters it out and the panel falls back anyway. Same tab
+            `/settings` opens on (`STANDALONE_DEFAULT_SETTINGS_TAB`). */}
+        <DropdownMenuItem onClick={() => openUserSettings('profile')} size="sm">
           <CogOne />
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
         </DropdownMenuItem>
@@ -214,13 +244,13 @@ export function UserMenu({
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
+        {/* Same store-vs-navigate reasoning as the row above — see
+            `openUserSettings`. The `isBillingEnabled() && canManageBilling`
+            gate is unchanged: the route renders the Billing tab for anyone who
+            reaches it, so the row staying hidden is what keeps a member without
+            `billing.write` from being handed the link. */}
         {isBillingEnabled() && canManageBilling && (
-          <DropdownMenuItem
-            onClick={() =>
-              deferAfterClose(() => useSettingsPanelStore.getState().openSettings('billing'))
-            }
-            size="sm"
-          >
+          <DropdownMenuItem onClick={() => openUserSettings('billing')} size="sm">
             <CreditCard />
             Billing
           </DropdownMenuItem>
