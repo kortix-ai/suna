@@ -229,7 +229,18 @@ export class Client {
     apiUrl: string,
     private readonly identity: Identity = ANON,
     private readonly defaultTimeoutMs = 60_000,
-    private readonly transientGatewayRetries = 0,
+    // Retry gateway-generated transient 502/503/504 by DEFAULT, for every client
+    // — including the fixture clients (world.ts, provision.ts) that create
+    // sessions/sandboxes. Under concurrent deployed load a session-create can
+    // briefly exceed the edge timeout and come back as a laundered 503
+    // MAINTENANCE_MODE (Retry-After set, NO x-request-id); retrying lets it
+    // self-heal when the momentary contention clears. SAFE: the classifier
+    // (isKe2eTransientGatewayResponse) only matches responses WITHOUT
+    // x-request-id, so a genuine app 5xx still fails. Overridable per env
+    // (KE2E_GATEWAY_RETRIES) via runner.ts.
+    private readonly transientGatewayRetries = Number(
+      process.env.KE2E_GATEWAY_RETRIES ?? 3,
+    ),
   ) {
     this.origin = new URL(apiUrl).origin;
   }
