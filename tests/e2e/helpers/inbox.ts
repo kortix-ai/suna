@@ -126,6 +126,29 @@ function localMailpitInbox(mailpitUrl: string): DisposableInbox {
   };
 }
 
+/** Delete only THIS suite's leaked inboxes (kortix-e2e-*), never anyone else's. */
+async function purgeE2eInboxes(
+  baseUrl: string,
+  headers: Record<string, string>,
+): Promise<void> {
+  const res = await fetch(`${baseUrl}/inboxes?limit=100`, { headers });
+  if (!res.ok) return;
+  const body = (await res.json().catch(() => ({}))) as {
+    inboxes?: Array<{ inbox_id?: string }>;
+  };
+  const mine = (body.inboxes ?? [])
+    .map((entry) => entry.inbox_id)
+    .filter((id): id is string => typeof id === "string" && id.startsWith("kortix-e2e-"));
+  await Promise.all(
+    mine.map((id) =>
+      fetch(`${baseUrl}/inboxes/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers,
+      }).catch(() => undefined),
+    ),
+  );
+}
+
 async function agentMailInbox(apiKey: string): Promise<DisposableInbox> {
   const baseUrl = (process.env.E2E_AGENTMAIL_API_URL || "https://api.agentmail.to/v0").replace(
     /\/+$/,
@@ -136,18 +159,30 @@ async function agentMailInbox(apiKey: string): Promise<DisposableInbox> {
     "Content-Type": "application/json",
   };
   const unique = `${Date.now()}-${randomUUID().slice(0, 8)}`;
-  const inbox = await json<AgentMailInboxResponse>(
-    await fetch(`${baseUrl}/inboxes`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        username: `kortix-e2e-${unique}`,
-        display_name: "Kortix E2E",
-        client_id: `kortix-browser-auth-${unique}`,
-      }),
-    }),
-    200,
-  );
+  const createBody = JSON.stringify({
+    username: `kortix-e2e-${unique}`,
+    display_name: "Kortix E2E",
+    client_id: `kortix-browser-auth-${unique}`,
+  });
+  const createOnce = () =>
+    fetch(`${baseUrl}/inboxes`, { method: "POST", headers, body: createBody });
+
+  // AgentMail caps inboxes per account (10 on the free plan). E2E inboxes are
+  // ephemeral but a crashed run can leak them and fill the quota, which 403s
+  // every later inbox create with limit_exceeded. On that specific error, sweep
+  // our OWN leaked inboxes (kortix-e2e-*, never anyone else's) and retry once.
+  let created = await createOnce();
+  if (created.status === 403) {
+    const detail = await created
+      .clone()
+      .json()
+      .catch(() => ({}) as { code?: string });
+    if (detail?.code === "limit_exceeded") {
+      await purgeE2eInboxes(baseUrl, headers);
+      created = await createOnce();
+    }
+  }
+  const inbox = await json<AgentMailInboxResponse>(created, 200);
 
   const readLatestMessage = async (after: Date): Promise<string | null> => {
     const listUrl = new URL(

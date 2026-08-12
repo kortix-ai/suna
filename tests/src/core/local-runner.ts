@@ -173,7 +173,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   if (targetFull) {
     const lanes = [targetApiFull, targetBrowserFull];
-    return { mode: 'target-full', lanes, stages: [lanes] };
+    // SERIALIZE the two deployed lanes (two stages, not one concurrent stage).
+    // Running the REST flow lane and the browser lane against the same staging
+    // origin at once drove sustained (multi-minute) origin overload that the
+    // edge laundered into MAINTENANCE_MODE — session-create (sandbox provision,
+    // the heaviest op) is the tipping point. A per-request retry can't outlast a
+    // minutes-long degradation; removing the concurrent peak is the real fix.
+    // Costs wall-clock (why tests-release.yml runs at 75m), buys a stable gate.
+    return { mode: 'target-full', lanes, stages: [[targetApiFull], [targetBrowserFull]] };
   }
   if (full) {
     const fullFlows: LocalTestLane = {
