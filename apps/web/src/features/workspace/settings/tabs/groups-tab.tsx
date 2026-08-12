@@ -83,13 +83,18 @@
  * - `SettingsPanel` has TWO mounts, and both run the seeding query beside
  *   this tab. `ProjectShell` (`features/workspace/project-layout/
  *   project-shell.tsx:185,195` — `ProjectSidebar` and `SettingsPanel` as
- *   siblings) renders `UserMenu`, and `app/(app)/settings*` renders
- *   `StandaloneSettingsRoute` with no sidebar and therefore no `UserMenu`.
- *   Both reach the same `['accounts']` query and the same self-heal, because
- *   it was extracted out of `UserMenu` into
- *   `hooks/account/use-ensure-selected-account.ts` and both mounts call it.
- *   (JAY-547 — before that, the standalone route bounced to a project route
- *   instead of mounting the panel, so `UserMenu` was the only path.)
+ *   siblings) reaches it through `ProjectSidebar`, which renders
+ *   `WorkspaceSwitcher` (`project-sidebar/project-sidebar.tsx:116`) — NOT a
+ *   `UserMenu`; there is no `UserMenu` anywhere under `project-sidebar/`, its
+ *   only mount being the app header (`features/layout/app-header.tsx:108`),
+ *   which only the `app/(app)/accounts` tree renders. `app/(app)/settings*`
+ *   renders `StandaloneSettingsRoute`, which has no sidebar at all and calls
+ *   the hook itself. Both reach the same `['accounts']` query and the same
+ *   self-heal, because it was extracted out of `UserMenu` into
+ *   `hooks/account/use-ensure-selected-account.ts` and every such surface
+ *   calls it. (JAY-547 — before that, the standalone route bounced to a
+ *   project route instead of mounting the panel, so the sidebar was the only
+ *   path.)
  *
  * Conclusion: "resolved to genuinely zero accounts" is unreachable for a
  * successful fetch — but the FETCH ITSELF can fail (network/API outage) and

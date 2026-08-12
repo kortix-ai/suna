@@ -105,21 +105,40 @@ describe('MembersTabView', () => {
     expect(out.match(/<tr/g)?.length).toBe(3); // 1 header row + 2 member rows
   });
 
-  // ── Linear table shape (2026-08-11 restyle). Linear's members table is
-  // borderless — no card around it, no header fill, no row dividers — with one
-  // hairline under the column headers, and its date column is right-aligned
-  // `tabular-nums`. These pin the shape, since nothing else would catch a
-  // regression back to the bordered `Table` container. ──
+  // ── Table shape. This pane and Secrets are the settings panel's only two
+  // tables, and they must be the same object. These pin that, since nothing
+  // else would catch a drift back to the borderless local container this pane
+  // carried for a day (2026-08-11 → 2026-08-12). ──
 
-  test('the table is borderless — no bordered `Table` container, no row dividers', () => {
+  test('the table is the shared bordered `Table`, the same one Secrets uses', () => {
     const out = renderToStaticMarkup(
       <MembersTabView members={[member({ user_id: 'u1', email: 'a@kortix.com' })]} />,
     );
-    expect(out).toContain('<table');
-    // `@/components/ui/table`'s `Table` stamps this on its bordered card.
-    expect(out).not.toContain('data-slot="table-container"');
-    // Body rows carry no bottom rule; only the header row does.
-    expect(out).toContain('border-b-0');
+    // `@/components/ui/table`'s `Table` stamps this on its bordered card. A
+    // local `<table>` container does not.
+    expect(out).toContain('data-slot="table-container"');
+    expect(out).toContain('data-slot="table-head"');
+    expect(out).toContain('data-slot="table-cell"');
+  });
+
+  test('nothing cancels the primitive — no borderless-era overrides survive', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ user_id: 'u1', email: 'a@kortix.com' })]} />,
+    );
+    // Scoped to the table subtree on purpose: `bg-transparent` also lives in
+    // `TabsTrigger`'s and `Input`'s own base classes, so asserting on the whole
+    // document would fail on markup that has nothing to do with this table.
+    const table = out.slice(out.indexOf('data-slot="table-container"'));
+    // Body rows keep their hairline divider — `border-b-0` was the override
+    // that removed it.
+    expect(table).not.toContain('border-b-0');
+    // The header keeps its fill. `TableHeader`'s `bg-accent` and a re-added
+    // `bg-transparent` are the same tailwind-merge conflict group, so this
+    // assertion fails the moment one is cancelled by the other.
+    expect(table).toContain('bg-accent');
+    // …and body rows keep the hover highlight.
+    const body = table.slice(table.indexOf('data-slot="table-body"'));
+    expect(body).toContain('hover:bg-popover-foreground/5');
   });
 
   test('a Joined column renders the join date as right-aligned tabular-nums', () => {
@@ -578,19 +597,47 @@ describe('MembersTabView', () => {
     expect(out).toContain('Leave this account');
   });
 
-  test('the Leave button is disabled when the viewer is the last owner', () => {
+  /**
+   * The sole owner does not get a Leave row at all. It used to render disabled,
+   * with a line explaining why — a control that can never do anything, plus an
+   * apology for it. `isLastOwner` means "the viewer IS the only owner"
+   * (`currentAccountRole === 'owner' && ownerCount <= 1`), so this hides
+   * exactly the case that could never work.
+   */
+  test('the sole owner gets no leave-account row at all, not a disabled one', () => {
     const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" isLastOwner />,
+      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" isLastOwner />,
     );
-    expect(out).toContain('disabled=""');
-    expect(out).toContain('only owner');
+    expect(out).not.toContain('Leave Acme');
+    // …and no leftover apology for a control that is no longer there.
+    expect(out).not.toContain('only owner');
   });
 
-  test('the Leave button is enabled when the viewer is not the last owner', () => {
+  /**
+   * A CO-owner can genuinely leave, so the gate is "only owner", never "is an
+   * owner" — the second would take a working capability away from anyone who
+   * shares ownership. This is the test that fails if the two are ever conflated.
+   */
+  test('a co-owner keeps the leave-account row, enabled', () => {
     const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" isLastOwner={false} />,
+      <MembersTabView
+        members={[member({ user_id: 'u1', account_role: 'owner' })]}
+        accountId="acc1"
+        accountName="Acme"
+        isLastOwner={false}
+      />,
     );
+    expect(out).toContain('Leave Acme');
     expect(out).not.toContain('disabled=""');
+  });
+
+  test('the leave-account row is a settings row, not hand-rolled markup', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
+    );
+    const row = out.slice(out.indexOf('Leave Acme') - 2000);
+    expect(row).toContain('data-slot="settings-row-group"');
+    expect(row).toContain('data-slot="field-description"');
   });
 
   // ── JAY-549: inviteAccountMember / updateAccountMemberRole /
