@@ -14,6 +14,7 @@ import {
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
   MessageAttachments,
+  MessageMetaRow,
   type NormalizedAttachment,
 } from '@/features/session/turn/user-message';
 import { cn } from '@/lib/utils';
@@ -147,9 +148,26 @@ function OptimisticUserBubble({
           )}
         </div>
       )}
-      <div className="flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-        <CopyButton code={text} size="sm" />
-      </div>
+      {/* The same row the server turn renders, for the same reason the
+          attachments strip is shared: anything shaped differently on one side
+          shows up as a twitch at handover. Its height comes from the copy
+          button, so it matches the real turn's row exactly.
+
+          `timestamp` is deliberately `null`. This turn has no server message,
+          so the only stamp available is a local clock read — and this component
+          is mounted TWICE (boot shell, then chat) with a crossfade between. A
+          clock read at mount would differ between the two, which is the same
+          two-clocks bug that already made the elapsed timer run backwards here.
+          The row stays empty until `time.created` arrives with the real
+          message; the label then appears without moving anything. */}
+      <MessageMetaRow
+        timestamp={null}
+        actions={
+          <div className="flex shrink-0 items-center opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
+            <CopyButton code={text} size="sm" />
+          </div>
+        }
+      />
     </div>
   );
 }

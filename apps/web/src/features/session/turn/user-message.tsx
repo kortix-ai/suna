@@ -19,6 +19,7 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import {
   PreviewImage,
@@ -55,6 +56,8 @@ import {
   SystemNotificationCard,
 } from '../message-parsing';
 
+import { messageCreatedAt } from './message-time';
+import { MessageTimeLabel } from './message-time-label';
 import { useHasPlan } from './plan-card';
 
 // ============================================================================
@@ -649,9 +652,17 @@ export function MessageAttachments({
 }
 
 // ============================================================================
-// User message actions — edit (rewind) + copy
+// User message meta — when it was sent, whether it was edited, what you can do
 // ============================================================================
 
+/**
+ * The hover-revealed controls: edit-from-here and copy.
+ *
+ * `opacity`, never mounting/unmounting — the row keeps its height whether or
+ * not the pointer is over the turn, so hovering a transcript never reflows it.
+ * `focus-within` matches the assistant turn's action bar: controls that only
+ * appear on hover are unreachable by keyboard otherwise.
+ */
 function UserMessageActions({
   copyText,
   messageId,
@@ -668,7 +679,7 @@ function UserMessageActions({
   // Copy stays available while the agent is busy / rewind is locked.
   // Only edit-from-here is gated — hiding the whole bar was wrong.
   return (
-    <div className="flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
+    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
       {!rewindDisabled && (
         <Hint label="Edit from here" side="bottom" align="center">
           <Button
@@ -683,6 +694,49 @@ function UserMessageActions({
         </Hint>
       )}
       <CopyButton code={copyText} size="sm" />
+    </div>
+  );
+}
+
+/**
+ * The line under a user bubble: when it was sent, whether it was edited, and
+ * the actions — in that order, right-aligned against the same rail as the
+ * bubble.
+ *
+ * ONE row, deliberately. The actions row already existed and already occupied
+ * height on every turn (it fades, it does not mount), so folding the timestamp
+ * into it buys a permanently visible "when" for zero extra vertical space —
+ * which matters both for a long transcript and for the optimistic → real
+ * crossfade, where a new row appearing would show up as the thread twitching.
+ *
+ * Because the actions never change size, the timestamp does not move when the
+ * buttons fade in.
+ *
+ * Shared with `OptimisticTurn` so the pending turn and the server turn cannot
+ * drift — the same reason `MessageAttachments` is shared.
+ */
+export function MessageMetaRow({
+  timestamp,
+  edited,
+  actions,
+}: {
+  /** Epoch milliseconds, or `null` when the backend never stamped one. */
+  timestamp: number | null;
+  edited?: boolean;
+  actions?: React.ReactNode;
+}) {
+  // Nothing to say and nothing to do — don't leave an empty row behind.
+  if (timestamp === null && !edited && !actions) return null;
+
+  return (
+    <div className="flex w-full items-center justify-end gap-2">
+      {/* `InlineMeta` owns the `·` separator and drops absent children, so a
+          message with no stamp never renders a leading bullet. */}
+      <InlineMeta>
+        {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
+        {edited && 'edited'}
+      </InlineMeta>
+      {actions}
     </div>
   );
 }
@@ -815,6 +869,11 @@ export function UserMessage({
         rewindDisabled={rewindDisabled}
       />
     ) : null;
+
+  // When the user sent this. Read here rather than threaded down from the turn
+  // so every branch below — channel card, trigger card, command card, bubble —
+  // gets it from one place.
+  const createdAt = messageCreatedAt(message);
 
   // Detect channel message (Telegram/Slack) in user message
   const channelMessageInfo = useMemo(() => {
@@ -1045,7 +1104,7 @@ export function UserMessage({
             </div>
           )}
         </div>
-        {actions}
+        <MessageMetaRow timestamp={createdAt} edited={isEdited} actions={actions} />
       </div>
     );
   }
@@ -1075,7 +1134,7 @@ export function UserMessage({
             </div>
           )}
         </div>
-        {actions}
+        <MessageMetaRow timestamp={createdAt} edited={isEdited} actions={actions} />
       </div>
     );
   }
@@ -1113,7 +1172,7 @@ export function UserMessage({
             ))}
           </div>
         )}
-        {actions}
+        <MessageMetaRow timestamp={createdAt} edited={isEdited} actions={actions} />
       </div>
     );
   }
@@ -1266,7 +1325,10 @@ export function UserMessage({
           )}
         </div>
       )}
-      {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
+      {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
+          under the bubble they describe — notification cards below are separate
+          objects and must not come between a message and its own meta. */}
+      <MessageMetaRow timestamp={createdAt} edited={isEdited} actions={actions} />
 
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
       {dcpNotifications.length > 0 && (
@@ -1283,7 +1345,6 @@ export function UserMessage({
           ))}
         </div>
       )}
-      {actions}
     </div>
   );
 }

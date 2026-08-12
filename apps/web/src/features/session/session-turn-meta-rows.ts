@@ -6,21 +6,13 @@
  */
 
 import { formatCost, formatDuration, formatTokens } from '@/ui';
-import type { MessageWithParts, Turn, TurnCostInfo } from '@/ui';
+import type { Turn, TurnCostInfo } from '@/ui';
 import { formatDistanceStrict } from 'date-fns';
 
-/** `Message` is a union whose user and assistant arms carry different `time`
- *  shapes, and neither is on the shared `info` type. One narrow accessor here
- *  replaces the `(info as any)?.time?.created` casts that were spread across
- *  `session-chat.tsx`. */
-function messageTime(message: MessageWithParts | undefined): {
-  created?: number;
-  completed?: number;
-} {
-  return (
-    (message?.info as { time?: { created?: number; completed?: number } } | undefined)?.time ?? {}
-  );
-}
+// The narrow accessor for the `Message` union's `time` field lives in
+// `turn/message-time` — the same one the user bubble's timestamp reads through,
+// so there is exactly one place that knows how to get a stamp off a message.
+import { messageTime } from './turn/message-time';
 
 export interface SessionTurnSpan {
   startedAt: number | null;
