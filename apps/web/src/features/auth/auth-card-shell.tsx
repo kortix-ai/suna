@@ -31,6 +31,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
   const terms = (
     <Link
       href="/legal/terms"
+      prefetch={false}
       onClick={(event) => onLegalClick(event, '/legal/terms')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
