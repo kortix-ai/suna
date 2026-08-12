@@ -172,15 +172,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     return { mode: 'target', lanes, stages: [lanes] };
   }
   if (targetFull) {
+    // Lanes run CONCURRENTLY (one stage). An earlier serialize experiment did
+    // NOT fix the session-create MAINTENANCE_MODE (the real cause was fixture
+    // clients not retrying the laundered 503 — fixed in client.ts) and it
+    // doubled wall-clock past the JWT lifetime, adding a 401 tail. With every
+    // client now retrying transient gateway errors, concurrent contention
+    // self-heals and the run fits the 60m budget.
     const lanes = [targetApiFull, targetBrowserFull];
-    // SERIALIZE the two deployed lanes (two stages, not one concurrent stage).
-    // Running the REST flow lane and the browser lane against the same staging
-    // origin at once drove sustained (multi-minute) origin overload that the
-    // edge laundered into MAINTENANCE_MODE — session-create (sandbox provision,
-    // the heaviest op) is the tipping point. A per-request retry can't outlast a
-    // minutes-long degradation; removing the concurrent peak is the real fix.
-    // Costs wall-clock (why tests-release.yml runs at 75m), buys a stable gate.
-    return { mode: 'target-full', lanes, stages: [[targetApiFull], [targetBrowserFull]] };
+    return { mode: 'target-full', lanes, stages: [lanes] };
   }
   if (full) {
     const fullFlows: LocalTestLane = {

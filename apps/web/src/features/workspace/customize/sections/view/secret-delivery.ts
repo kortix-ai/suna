@@ -538,20 +538,31 @@ const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const EXACT_HOST =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
+/** The hosts the textarea declares: lowercased, deduplicated, first-seen order.
+ *  The policy and the verification probe both read the list from here, so the
+ *  host the user is told to probe is a host the boundary actually watches. */
+export function parseBoundaryHosts(hosts: string): string[] {
+  return [
+    ...new Set(
+      hosts
+        .split(/[\s,]+/)
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export function buildNetworkBoundaryPolicy(
   form: NetworkBoundaryPolicyForm,
 ): SecretEgressPolicy | null {
-  const hosts = form.hosts
-    .split(/[\s,]+/)
-    .map((host) => host.trim().toLowerCase())
-    .filter(Boolean);
+  const hosts = parseBoundaryHosts(form.hosts);
   const target = form.injectionTarget.trim();
   const template = form.template.trim();
   if (hosts.length === 0 || hosts.some((host) => !EXACT_HOST.test(host))) return null;
   if (!HEADER_NAME.test(target)) return null;
   if (template && !template.includes('{{secret}}')) return null;
   return {
-    rules: [...new Set(hosts)].map((host) => ({ host })),
+    rules: hosts.map((host) => ({ host })),
     inject: {
       kind: 'header',
       name: target,
@@ -559,6 +570,43 @@ export function buildNetworkBoundaryPolicy(
     },
     on_no_match: 'deny',
     tls: 'terminate',
+  };
+}
+
+export type NetworkBoundaryEchoNotice = {
+  title: string;
+  /** The symptom, then what it actually means. */
+  body: string;
+  /** The shell probe that separates a working boundary from a missing header. */
+  probe: string;
+  docsHref: string;
+  docsLabel: string;
+};
+
+/**
+ * The one thing about this mode nobody can deduce from inside the sandbox.
+ *
+ * The boundary cuts any response that would carry the value back into the
+ * guest, so an echo endpoint answers `curl: (52) Empty reply from server` —
+ * byte-identical to a dead host. A product owner lost days to exactly that
+ * reading, and their agent invented a TLS explanation for it. The panel that
+ * configures the mode is the last place to say so before someone tests it.
+ *
+ * The probe names the first declared host so it can be pasted as-is; with no
+ * host typed yet it falls back to a placeholder rather than an empty URL.
+ */
+export function networkBoundaryEchoNotice(hosts: string): NetworkBoundaryEchoNotice {
+  const host = parseBoundaryHosts(hosts)[0] ?? 'api.example.com';
+  return {
+    title: 'A blocked echo looks exactly like a dead host',
+    body: 'A response that would carry this value back into the sandbox is cut, so curl reports "curl: (52) Empty reply from server". On an allowed host that is the boundary working, not the host being down.',
+    probe: [
+      '# Probe an endpoint that USES the credential, never one that echoes headers.',
+      `curl -s -o /dev/null -w '%{http_code}\\n' https://${host}/<authenticated-path>`,
+      '# 200 = the header arrived. 401 = it did not.',
+    ].join('\n'),
+    docsHref: '/docs/project/secrets#verify-it-with-two-probes',
+    docsLabel: 'Verify it with two probes',
   };
 }
 

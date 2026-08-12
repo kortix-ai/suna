@@ -9,6 +9,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -108,6 +109,7 @@ import {
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
+  networkBoundaryEchoNotice,
   secretDeliveryBlockedReason,
   secretDeliveryOptions,
   secretDeliveryPresentation,
@@ -930,6 +932,7 @@ function SecretDialog({
     networkBoundary,
   );
   const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);
+  const echoNotice = networkBoundaryEchoNotice(brokerHosts);
   // The dialog keeps the row it opened with, so a completed grant clears its own
   // warning — the refetch only reaches the table behind it.
   const grantNotice =
@@ -1175,8 +1178,23 @@ function SecretDialog({
                   )}
 
                   <InfoBanner tone="neutral" title="Not readable inside the sandbox">
-                    The sandbox receives no value, alias, or placeholder. Secret values echoed by an
-                    upstream response are blocked at the boundary.
+                    The sandbox receives no value, alias, or placeholder. The agent sends an
+                    ordinary request and the header appears in flight.
+                  </InfoBanner>
+
+                  <InfoBanner tone="neutral" title={echoNotice.title}>
+                    <span className="block text-pretty">{echoNotice.body}</span>
+                    <pre className="border-border bg-muted mt-2 overflow-x-auto rounded-sm border p-2 font-mono text-xs leading-relaxed">
+                      {echoNotice.probe}
+                    </pre>
+                    <Link
+                      href={echoNotice.docsHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-foreground mt-2 inline-block text-xs underline underline-offset-2"
+                    >
+                      {echoNotice.docsLabel}
+                    </Link>
                   </InfoBanner>
 
                   <Field>

@@ -24,11 +24,13 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path
  */
 import {
   addConnector,
+  brokerSecretRequest,
   callWithApprovalHandoff,
   connectorClient,
   mintConnectLink,
   mintSecretLink,
   removeConnector,
+  type BrokerMethod,
   type ConnectorClient,
 } from './gateway.ts';
 
@@ -41,6 +43,16 @@ interface JsonRpcRequest {
 
 // The MCP server identity is `kortix-connectors`, matching the CLI command tree.
 const SERVER_INFO = { name: 'kortix-connectors', version: '0.3.0' };
+
+const BROKER_METHODS: BrokerMethod[] = [
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+];
 
 const MAX_ATTACHMENT_FILES = 20;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -352,6 +364,42 @@ const META_TOOLS = [
     readOnly: false,
   },
   {
+    name: 'secret_call',
+    description:
+      'Make an HTTPS request that needs a project API key, WITHOUT ever holding the key. Kortix injects the credential outside this sandbox and returns only the upstream response. Use this for any secret listed as "HTTPS broker" in your secret capabilities — there is no environment variable for those and no value you can read, so this tool is the only way to use them. Pass the secret\'s identifier plus the full https:// URL; add the request\'s own non-secret headers if it needs them, and never add an Authorization header yourself.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        identifier: {
+          type: 'string',
+          description:
+            'Secret identifier exactly as listed in your secret capabilities, e.g. "STRIPE_KEY". Not the value.',
+        },
+        url: {
+          type: 'string',
+          description: 'Full HTTPS URL to call, e.g. "https://api.stripe.com/v1/charges".',
+        },
+        method: {
+          type: 'string',
+          enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+          description: 'HTTP method (default GET).',
+        },
+        headers: {
+          type: 'object',
+          description:
+            'Non-secret request headers, { "content-type": "application/json" }. Omit the credential header — Kortix adds it.',
+        },
+        body: {
+          type: 'string',
+          description: 'Request body as a string. For JSON, pass the serialized JSON text.',
+        },
+      },
+      required: ['identifier', 'url'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
     name: 'add_connector',
     description:
       'Add or update a connector on this project now. The command commits kortix.yaml to main and syncs it server-side. Use `connect` for Pipedream or `request_secret` for its credential. For Pipedream pass provider="pipedream" and app (for example, "smartlead").',
@@ -586,6 +634,62 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
             instructions:
               'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The value is never pasted into chat; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
           }),
+          isError: false,
+        };
+      } catch (err) {
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          isError: true,
+        };
+      }
+    }
+
+    case 'secret_call': {
+      const identifier = typeof args.identifier === 'string' ? args.identifier : '';
+      const url = typeof args.url === 'string' ? args.url : '';
+      if (!identifier || !url) {
+        return {
+          content: content({ ok: false, error: 'identifier and url are required' }),
+          isError: true,
+        };
+      }
+      const method =
+        typeof args.method === 'string' && BROKER_METHODS.includes(args.method as BrokerMethod)
+          ? (args.method as BrokerMethod)
+          : undefined;
+      const rawHeaders = asRecord(args.headers);
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(rawHeaders)) {
+        if (typeof value === 'string') headers[key.toLowerCase()] = value;
+      }
+      try {
+        const result = await brokerSecretRequest({
+          identifier,
+          url,
+          method,
+          headers,
+          ...(typeof args.body === 'string' ? { body: args.body } : {}),
+        });
+        // Hand back text when the upstream says it is text; base64 otherwise.
+        // A model cannot act on a base64 blob, and silently utf8-decoding an
+        // image would be worse than labelling it.
+        const contentType = result.headers['content-type'] ?? '';
+        const isText =
+          contentType.startsWith('text/') ||
+          contentType.includes('json') ||
+          contentType.includes('xml') ||
+          contentType.includes('javascript');
+        return {
+          content: content({
+            ok: true,
+            status: result.status,
+            headers: result.headers,
+            ...(isText
+              ? { body: Buffer.from(result.body_base64, 'base64').toString('utf8') }
+              : { body_base64: result.body_base64 }),
+          }),
+          // A 4xx/5xx is a real answer from upstream, not a tool failure — the
+          // model needs the status and body to decide what to do next.
           isError: false,
         };
       } catch (err) {

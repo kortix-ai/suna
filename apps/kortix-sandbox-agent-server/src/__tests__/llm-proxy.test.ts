@@ -150,7 +150,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
     expect(json).toBeDefined()
     const cfg = JSON.parse(json!)
 
-    expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connector', 'mcp'])
+    expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
     expect(cfg.mcp['kortix-connectors'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
     expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
     expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).not.toBe('real-session-exec-token')

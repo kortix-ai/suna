@@ -189,6 +189,31 @@ describe('SecretsView states the cost of an empty header template', () => {
   });
 });
 
+/**
+ * The panel is the last surface before someone tests the boundary by hand. The
+ * text has to come from the helper, because a hardcoded copy here drifts from
+ * the hosts the user typed and stops naming a host they can actually probe.
+ */
+describe('SecretsView states the echo caveat in the boundary panel', () => {
+  const panel = sliceBetween("{strategy === 'egress' && (", "{strategy === 'broker' && (");
+
+  test('the scan found the network-boundary panel', () => {
+    expect(panel.length).toBeGreaterThan(0);
+  });
+
+  test('the caveat is derived from the declared hosts, not hardcoded', () => {
+    expect(code).toContain('const echoNotice = networkBoundaryEchoNotice(brokerHosts);');
+    expect(panel).toContain('title={echoNotice.title}');
+    expect(panel).toContain('{echoNotice.body}');
+    expect(panel).toContain('{echoNotice.probe}');
+    expect(panel).toContain('href={echoNotice.docsHref}');
+  });
+
+  test('the old sentence that never said what the block looks like is gone', () => {
+    expect(code).not.toContain('Secret values echoed by an upstream response are blocked');
+  });
+});
+
 describe('agentGrantPlan', () => {
   const declarative = (
     agents: AgentGrantConfig['agents'],
