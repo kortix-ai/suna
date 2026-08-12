@@ -27,46 +27,33 @@ import {
   ActivityIcon as Activity,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
-  CubeIcon as Boxes,
   CalendarIcon as Calendar,
   GearSixIcon as CogOne,
-  GearSixIcon as CogOneSolid,
   CoinsIcon as Coins,
   CompassIcon as Compass,
-  ShippingContainerIcon as Container,
   CreditCardIcon as CreditCardSolid,
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
-  GitPullRequestIcon as GitPullRequest,
   GlobeIcon as Globe,
-  HashIcon as Hash,
-  TrayIcon as Inbox,
-  KeyboardIcon as Keyboard,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
-  PaletteIcon as Palette,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
-  ReceiptIcon as Receipt,
   ArrowClockwiseIcon as RefreshCw,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
-  StorefrontIcon as Store,
   TerminalWindowIcon as Terminal,
   TerminalWindowIcon as TerminalSquare,
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
-  SpeakerHighIcon as Volume2,
   ImagesSquareIcon as WallpaperIcon,
-  WaveformIcon as Waveform,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -171,7 +158,19 @@ export interface MenuItemDef {
   // --- Display hints ---
   /** Keyboard shortcut string to show (e.g. "⌘J") */
   shortcut?: string;
-  /** Extra search keywords for the command palette (cmdk `value`) */
+  /**
+   * Extra search keywords for the command palette.
+   *
+   * This plus `label` is the WHOLE searchable text of a palette row — `id` and
+   * `group` are deliberately NOT searchable, because a user has never seen
+   * `nav-accounts` or `preferences` and cannot mean them. See
+   * `buildPaletteSearchText` in `features/workspace/command-palette.tsx`.
+   *
+   * A word belongs here only when it NAMES THIS ROW: a synonym, an alias, or
+   * something this row itself contains. A word that names a neighbouring
+   * row's subject is a defect — it answers a query this row is the wrong
+   * answer to. `command-palette-search.test.ts` pins the known instances.
+   */
   keywords?: string;
   /** If true, item is only shown when billing is enabled */
   requiresBilling?: boolean;
@@ -316,7 +315,11 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'action',
     actionId: 'restartConfig',
-    keywords: 'reload restart config agents skills commands',
+    // 'agents skills commands' removed for the same reason they were removed
+    // from `proj-customize` below: they name the Agents, Skills and Connectors
+    // destinations. This row restarts the process that READS those files; a
+    // user typing "skills" wants the Skills page, never a restart.
+    keywords: 'reload restart config',
     requiresSession: true,
   },
   {
@@ -371,7 +374,13 @@ export const menuRegistry: MenuItemDef[] = [
     // that tab in place rather than navigating away, which is what the
     // `/accounts` href used to do.
     href: '/settings/organization',
-    keywords: 'accounts teams organizations members switch manage',
+    // 'members' is deliberately absent. It names the SETTINGS MEMBERS TAB and
+    // the 'proj-invite' action, not the account switcher, so typing "member"
+    // used to return Accounts ahead of the two rows that actually answer it.
+    // A keyword belongs on a row only when it names that row — a synonym, an
+    // alias, or something the row itself contains. Words that name a
+    // neighbouring row's subject are removed on sight.
+    keywords: 'accounts teams organizations switch manage',
   },
   {
     id: 'proj-sessions',
@@ -385,7 +394,10 @@ export const menuRegistry: MenuItemDef[] = [
     // without the palette's nested picker.
     href: '/projects/{projectId}/sessions',
     requiresProject: true,
-    keywords: 'sessions runs threads project conversations open',
+    // 'project' dropped with the rest of the legacy "project customize" tail:
+    // it names 'nav-projects', and carrying it here made a one-word query for
+    // Projects return eight unrelated rows.
+    keywords: 'sessions runs threads conversations open',
   },
   {
     id: 'proj-customize',
@@ -394,7 +406,13 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/settings',
+    // Names a tab. The bare `/projects/{projectId}/settings` this used to
+    // carry resolved to `{ tab: undefined }` (resolveSettingsOverlayHref),
+    // which `openSettings` reads as "keep whatever was last open" — so the
+    // one entry labelled "Customize" landed somewhere different on every
+    // click. `general` is the project workspace tab and survives every flag,
+    // matching `DEFAULT_SETTINGS_TAB`.
+    href: '/projects/{projectId}/settings/general',
     requiresProject: true,
     // 'agents' and 'skills' were deliberately dropped: both graduated out of
     // the overlay into their own palette entries (proj-agents, proj-skills).
@@ -403,8 +421,18 @@ export const menuRegistry: MenuItemDef[] = [
     // order rather than ranking by relevance — it listed ahead of the real
     // Agents/Skills entries. 'commands' is dropped for a different reason:
     // the Instructions tab that hosted them no longer exists, so there is
-    // nothing for the query to lead to.
-    keywords: 'customize configure project settings',
+    // nothing for the query to lead to. 'project settings' went the same way
+    // when the per-tab entries moved to `settings-palette-items.ts`: the
+    // derived Workspace › General row carries those words now, and leaving
+    // them here would list this generic door ahead of the named tab.
+    //
+    // The inverse leak has been closed too: five sibling rows (proj-agents,
+    // proj-skills, proj-connectors, proj-connectors-policies, proj-invite)
+    // used to end in the legacy tail 'project customize', so "customize"
+    // returned six rows. Only this one, whose LABEL is Customize, keeps the
+    // word here; on the settings side only the Workspace General tab keeps it,
+    // which is where this row's href lands.
+    keywords: 'customize configure',
   },
   {
     id: 'proj-files',
@@ -415,7 +443,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/files',
     requiresProject: true,
-    keywords: 'files repository project drive browser explorer',
+    keywords: 'files repository drive browser explorer',
   },
   {
     id: 'proj-apps',
@@ -441,7 +469,7 @@ export const menuRegistry: MenuItemDef[] = [
     // redirect costs a second navigation and paints the overlay route first.
     href: '/projects/{projectId}/agent',
     requiresProject: true,
-    keywords: 'agents subagents project customize ai',
+    keywords: 'agents subagents ai',
   },
   {
     id: 'proj-skills',
@@ -452,18 +480,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/skills',
     requiresProject: true,
-    keywords: 'skills project customize abilities',
-  },
-  {
-    id: 'proj-secrets',
-    label: 'Customize · Secrets',
-    icon: KeyRound,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/secrets',
-    requiresProject: true,
-    keywords: 'secrets env environment variables project customize',
+    keywords: 'skills abilities',
   },
   {
     id: 'proj-connectors',
@@ -474,8 +491,10 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/connectors',
     requiresProject: true,
-    keywords:
-      'connectors connections pipedream mcp openapi postman collections apps connector project customize',
+    // 'apps' removed: it is the label of `proj-apps` (deployments), so the
+    // one-word query for that page returned Connectors as well. 'connector' /
+    // 'connectors' / 'connections' still cover everything this row is called.
+    keywords: 'connectors connections pipedream mcp openapi postman collections connector',
   },
   {
     id: 'proj-connectors-policies',
@@ -491,92 +510,7 @@ export const menuRegistry: MenuItemDef[] = [
     // TODO(capabilities): restore deep link to Global rules once the connectors page hosts PoliciesPanel
     href: '/projects/{projectId}/connectors',
     requiresProject: true,
-    keywords:
-      'policies approval block require_approval rules tools connector guardrails project customize',
-  },
-  {
-    id: 'proj-git',
-    label: 'Customize · Git',
-    icon: GitPullRequest,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/repositories',
-    requiresProject: true,
-    keywords:
-      'git repository provider github code storage clone proxy branch sync project customize',
-  },
-  {
-    id: 'proj-sandbox',
-    label: 'Customize · Sandbox templates',
-    icon: Container,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/sandbox',
-    requiresProject: true,
-    keywords: 'sandbox templates image snapshot runtime environment project customize',
-  },
-  {
-    id: 'proj-marketplace',
-    label: 'Customize · Marketplace',
-    icon: Store,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/marketplace',
-    requiresProject: true,
-    requiresFlag: 'marketplace',
-    keywords: 'marketplace store install templates agents skills browse project customize',
-  },
-  {
-    id: 'proj-llm',
-    label: 'Customize · LLM',
-    icon: Boxes,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/models',
-    requiresProject: true,
-    requiresFlag: 'llm_gateway',
-    keywords:
-      'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai project customize',
-  },
-  {
-    id: 'proj-review',
-    label: 'Customize · Review Center',
-    icon: Inbox,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/review',
-    requiresProject: true,
-    requiresFlag: 'review_center',
-    keywords:
-      'review center inbox approvals change requests approve reject needs you project customize',
-  },
-  {
-    id: 'proj-voice',
-    label: 'Customize · Voice',
-    icon: Waveform,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/voice',
-    requiresProject: true,
-    requiresFlag: 'voice',
-    keywords: 'voice call speak spoken conversation livekit bot name project customize',
-  },
-  {
-    id: 'proj-members',
-    label: 'Customize · Members',
-    icon: UsersSolid,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/members',
-    requiresProject: true,
-    keywords: 'members team access collaborators project customize',
+    keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
   {
     id: 'proj-invite',
@@ -587,52 +521,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'inviteMembers',
     requiresProject: true,
-    keywords: 'invite members add teammate email collaborator people access send project customize',
-  },
-  {
-    id: 'proj-schedules',
-    label: 'Customize · Schedules',
-    icon: Calendar,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/schedules',
-    requiresProject: true,
-    keywords: 'schedules cron triggers timed project customize',
-  },
-  {
-    id: 'proj-webhooks',
-    label: 'Customize · Webhooks',
-    icon: Webhook,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/webhooks',
-    requiresProject: true,
-    keywords: 'webhooks triggers http project customize',
-  },
-  {
-    id: 'proj-channels',
-    label: 'Customize · Channels',
-    icon: Hash,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/channels',
-    requiresProject: true,
-    keywords:
-      'channels slack email agent mail agentmail agentic mail inbox messaging notifications connections project customize',
-  },
-  {
-    id: 'proj-settings',
-    label: 'Project settings',
-    icon: CogOneSolid,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/settings/general',
-    requiresProject: true,
-    keywords: 'project settings repository general danger zone',
+    keywords: 'invite members add teammate email collaborator people access send',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -845,59 +734,50 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'llm providers models anthropic openai openrouter google groq xai',
   },
   // ──────────────────────────────────────────────────────────────────────────
-  // PREFERENCES — open settings modal to a tab
+  // PREFERENCES / ACCOUNT — `kind: 'settings'`, userMenu only.
+  //
+  // THE COMMAND PALETTE NO LONGER TAKES ITS SETTINGS DESTINATIONS FROM HERE.
+  // Every settings tab is derived from `railGroups()` by
+  // `features/workspace/settings-palette-items.ts` — the same single source
+  // the rail and the pane headings read. Twelve `proj-*` entries and four
+  // `kind: 'settings'` entries were removed with that change; four more lost
+  // only their `'commandPalette'` surface. Do not re-add a settings
+  // destination here: it will double-list against the derived row, and a
+  // hand-written list is what let nine tabs ship with no palette entry at all.
+  //
+  // `pref-appearance`, `pref-sounds`, `pref-shortcuts` (all superseded by the
+  // derived `preferences` row) and `account-transactions` (superseded by
+  // `usage`) declared no surface other than the palette and are gone
+  // entirely. `LEGACY_SETTINGS_TAB_MAP` still maps their `SettingsTabId`s,
+  // which is what the three below rely on.
+  //
+  // `account-referrals` is gone for a different reason: `referrals` is not a
+  // member of `SettingsTab` at all, so it fell through to `general` — a
+  // mislabelled destination. Its only live surface, `ReferralModal`, mounts
+  // inside `UserMenu` -> `AppHeader`, i.e. only under `/accounts/**`, and
+  // nothing calls `useReferralDialog().openDialog()`. Pointing a palette
+  // entry at it would reproduce the "store with no renderer" defect this
+  // change exists to remove.
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'pref-general',
     label: 'General',
     icon: CogOne,
     group: 'preferences',
-    showIn: ['commandPalette', 'userMenu'],
+    showIn: ['userMenu'],
     kind: 'settings',
     settingsTab: 'general',
-    keywords: 'settings preferences general profile name email language',
+    // 'profile name email' left with the palette surface: they name the USER
+    // profile, and `settingsTab: 'general'` is the project WORKSPACE tab.
+    // The derived `profile` row carries them now.
+    keywords: 'settings preferences general language',
   },
-  {
-    id: 'pref-appearance',
-    label: 'Appearance',
-    icon: Palette,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'appearance',
-    keywords: 'appearance theme color mode wallpaper shader shaders background',
-  },
-  {
-    id: 'pref-sounds',
-    label: 'Sounds',
-    icon: Volume2,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'sounds',
-    keywords: 'sounds audio volume notification sound effects mute',
-  },
-
-  {
-    id: 'pref-shortcuts',
-    label: 'Shortcuts',
-    icon: Keyboard,
-    group: 'preferences',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'shortcuts',
-    keywords: 'shortcuts keyboard hotkeys keybindings keys',
-  },
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // ACCOUNT — open settings modal to billing-related tabs
-  // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'account-billing',
     label: 'Billing',
     icon: CreditCardSolid,
     group: 'account',
-    showIn: ['commandPalette', 'userMenu'],
+    showIn: ['userMenu'],
     kind: 'settings',
     settingsTab: 'billing',
     keywords:
@@ -905,32 +785,11 @@ export const menuRegistry: MenuItemDef[] = [
     requiresBilling: true,
   },
   {
-    id: 'account-transactions',
-    label: 'Credits ledger',
-    icon: Receipt,
-    group: 'account',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'transactions',
-    keywords: 'credits ledger transactions history purchases receipts',
-  },
-  {
-    id: 'account-referrals',
-    label: 'Referrals',
-    icon: UsersSolid,
-    group: 'account',
-    showIn: ['commandPalette'],
-    kind: 'settings',
-    settingsTab: 'referrals',
-    keywords: 'referrals invite share friends earn',
-    requiresBilling: true,
-  },
-  {
     id: 'account-tokens',
     label: 'API keys',
     icon: KeyRound,
     group: 'account',
-    showIn: ['commandPalette', 'userMenu'],
+    showIn: ['userMenu'],
     kind: 'settings',
     settingsTab: 'tokens',
     keywords: 'api keys tokens personal access pat cli command line authentication',
