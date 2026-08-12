@@ -214,3 +214,54 @@ export async function createDisposableInbox(): Promise<DisposableInbox> {
     "browser authentication requires E2E_MAILPIT_URL locally or E2E_AGENTMAIL_API_KEY on a deployed target",
   );
 }
+
+export interface EmailProviderStatus {
+  available: boolean;
+  reason: string;
+}
+
+let emailProviderStatusPromise: Promise<EmailProviderStatus> | null = null;
+
+/**
+ * Whether an email inbox provider is actually usable — probed once per process.
+ * Mailpit (local) is authoritative by presence. For AgentMail on a deployed
+ * target the key can be present but rejected (expired/suspended → 403), so we
+ * make one live call. Email-dependent specs use this to `test.skip` with a
+ * clear reason instead of hard-failing inbox creation.
+ *
+ * NOTE: on the strict deployed lane (`E2E_REQUIRE_ALL_BROWSER=1`) a skip is
+ * still converted to a failure by strict-skip-reporter.ts — by design, a
+ * release gate must surface broken email delivery. This graceful skip therefore
+ * only degrades cleanly on local / non-strict runs.
+ */
+export function emailProviderStatus(): Promise<EmailProviderStatus> {
+  if (emailProviderStatusPromise) return emailProviderStatusPromise;
+  emailProviderStatusPromise = (async () => {
+    const mailpitUrl = process.env.E2E_MAILPIT_URL?.trim();
+    if (mailpitUrl) return { available: true, reason: "mailpit" };
+
+    const agentMailApiKey = process.env.E2E_AGENTMAIL_API_KEY?.trim();
+    if (agentMailApiKey) {
+      const baseUrl = (process.env.E2E_AGENTMAIL_API_URL || "https://api.agentmail.to/v0").replace(
+        /\/+$/,
+        "",
+      );
+      try {
+        const res = await fetch(`${baseUrl}/inboxes?limit=1`, {
+          headers: { Authorization: `Bearer ${agentMailApiKey}` },
+        });
+        return res.ok
+          ? { available: true, reason: "agentmail" }
+          : { available: false, reason: `AgentMail key rejected (HTTP ${res.status})` };
+      } catch (error) {
+        return { available: false, reason: `AgentMail unreachable: ${String(error)}` };
+      }
+    }
+
+    return {
+      available: false,
+      reason: "no email provider (set E2E_MAILPIT_URL or a valid E2E_AGENTMAIL_API_KEY)",
+    };
+  })();
+  return emailProviderStatusPromise;
+}

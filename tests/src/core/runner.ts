@@ -125,7 +125,17 @@ async function runOneFlow(
     steps.length = 0;
     const stack = world.newStack();
     const ctx: FlowContext = {
-      client: new Client(env.apiUrl),
+      // Every flow's client retries gateway-generated transient 502/503/504
+      // (incl. the Cloudflare worker's MAINTENANCE_MODE laundering of an
+      // overloaded staging origin — see accounts.flow.ts and
+      // isKe2eTransientGatewayResponse). This is SAFE because that classifier
+      // requires the response to carry NO x-request-id; a genuine app 5xx does
+      // carry one and is never retried. Retrying at the request layer (not just
+      // on .status() gates) also self-heals body-only assertions that would
+      // otherwise surface the laundered 503 as a hard AssertionError.
+      client: new Client(env.apiUrl).withTransientGatewayRetries(
+        Number(process.env.KE2E_GATEWAY_RETRIES ?? 3),
+      ),
       P: world.principals,
       env,
       track: (kind, id, meta) => stack.push(kind, id, meta),

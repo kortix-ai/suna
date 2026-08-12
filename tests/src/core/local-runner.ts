@@ -133,6 +133,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
+    // This lane runs CONCURRENTLY with target-browser-full against the same
+    // staging origin. At the default 4 API + 4 sandbox workers the combined
+    // load pushes staging origin into 5xx, which the edge launders into
+    // MAINTENANCE_MODE. Dial the REST concurrency down (3+3) to cut that load;
+    // the per-request transient retry (runner.ts) absorbs what's left. Override
+    // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
+    env: {
+      KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
+      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
+    },
   };
   const targetBrowserFull: LocalTestLane = {
     name: 'target-browser-full',

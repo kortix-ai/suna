@@ -36,11 +36,21 @@ flow(
         .exists('$.plan.label')
         .exists('$.plan.status')
         .exists('$.plan.shape')
-        .has('$.plan.is_grandfathered', false)
+        .exists('$.plan.is_grandfathered')
         .has('$.plan.key', state.subscription.tier_key)
         .has('$.tier.name', state.subscription.tier_key);
       if (typeof state.plan?.rank !== 'number') {
         throw new Error(`plan.rank must be a number, got ${JSON.stringify(state.plan?.rank)}`);
+      }
+      // `is_grandfathered` is resolved from the account's stored
+      // is_grandfathered_free column, so on a shared long-lived fixture account
+      // it is legitimately data-dependent — pin the TYPE, not a fixed value.
+      // (A fixed `false` here flaked the release gate once the shared OWNER
+      // account was grandfathered upstream.)
+      if (typeof state.plan?.is_grandfathered !== 'boolean') {
+        throw new Error(
+          `plan.is_grandfathered must be a boolean, got ${JSON.stringify(state.plan?.is_grandfathered)}`,
+        );
       }
       if (!['free', 'team', 'enterprise'].includes(String(state.plan?.family))) {
         throw new Error(`plan.family must be a public family, got ${String(state.plan?.family)}`);
