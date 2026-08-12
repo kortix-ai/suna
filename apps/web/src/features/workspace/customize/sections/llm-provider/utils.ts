@@ -9,13 +9,12 @@ export function providerCredentialSummary(provider: LlmProviderEntry): string {
   return provider.envVars.join(' · ');
 }
 
-export function providerDisconnectPlan(
-  provider: Pick<LlmProviderEntry, 'id' | 'envVars'>,
-): { oauthProvider: string | null; secretNames: string[] } {
+export function providerDisconnectPlan(provider: Pick<LlmProviderEntry, 'id' | 'envVars'>): {
+  oauthProvider: string | null;
+  secretNames: string[];
+} {
   const removesSubscription = provider.id === 'codex' || provider.id === 'openai';
-  const names = new Set(
-    provider.envVars.filter((name) => name !== CODEX_AUTH_JSON_SECRET_NAME),
-  );
+  const names = new Set(provider.envVars.filter((name) => name !== CODEX_AUTH_JSON_SECRET_NAME));
   if (removesSubscription) names.add(LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME);
   return {
     oauthProvider: removesSubscription ? 'openai' : null,
@@ -89,7 +88,9 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
  * has nothing left to fold.
  */
 export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
-  return defaultTab === 'models' ? 'models' : 'providers';
+  if (defaultTab === 'models') return 'models';
+  if (defaultTab === 'custom') return 'custom';
+  return 'providers';
 }
 
 export function helpHostnameFromUrl(helpUrl: string | null): string | null {
@@ -155,11 +156,19 @@ export function prettyFieldLabel(envVar: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+/**
+ * What an empty credential field says.
+ *
+ * A multi-field provider gets the field's own PLAIN name — "Secret access
+ * key", not `Enter AWS_SECRET_ACCESS_KEY…`. The env-var name is the shape the
+ * value is stored under; it is not what the provider's own console calls the
+ * thing you are copying, which is the only name that helps you find it.
+ */
 export function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): string {
   if (provider.envVars.length === 1) {
     return `Paste your ${provider.label} API key…`;
   }
-  return `Enter ${envVar}…`;
+  return prettyFieldLabel(envVar);
 }
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -201,4 +210,178 @@ export function formatPricePerMillion(usd: number | null | undefined): string {
   if (usd < 0.01) return `$${usd.toFixed(4)}`;
   if (usd < 1) return `$${usd.toFixed(3)}`;
   return `$${usd.toFixed(2)}`;
+}
+
+/**
+ * Should focus leaving a provider's credential fields actually WRITE?
+ *
+ * The "Add a key" grid has no Connect button — the save fires when focus
+ * leaves the row (`provider-connect.tsx`'s `ProviderKeyFields`). That trigger
+ * fires constantly and mostly on rows nobody touched, so the whole safety of
+ * the auto-save is this one predicate:
+ *
+ *  1. **Nothing typed** — tabbing across a screen of empty fields must not
+ *     fire a request per row.
+ *  2. **Half a credential** — Bedrock needs an id, a secret AND a region.
+ *     Saving after the first field stores a credential that cannot
+ *     authenticate, and the provider would then report itself connected.
+ *  3. **Unchanged** — re-entering and leaving a row you already saved is not
+ *     an edit. `savedValues` is the post-success snapshot, so this compares
+ *     against what the server actually has rather than a dirty flag that four
+ *     call sites would have to remember to clear.
+ *
+ * Pure and exported so all three rules are pinned by tests; the component only
+ * supplies the inputs.
+ */
+export function shouldSaveCredential(input: {
+  providerId: string;
+  envVars: string[];
+  /** Keyed `${providerId}:${envVar}` — what is in the fields right now. */
+  values: Record<string, string>;
+  /** Keyed the same way — what the last successful save wrote. */
+  savedValues: Record<string, string>;
+}): boolean {
+  if (input.envVars.length === 0) return false;
+  const typed = input.envVars.map((envVar) => {
+    const key = `${input.providerId}:${envVar}`;
+    return { key, value: (input.values[key] ?? '').trim() };
+  });
+  if (typed.some(({ value }) => !value)) return false;
+  return typed.some(({ key, value }) => input.savedValues[key] !== value);
+}
+
+/** The minimum a provider entry needs for `orderProviderRows` to place it. */
+export interface OrderableProvider {
+  id: string;
+  label: string;
+  envVars: string[];
+}
+
+/**
+ * Which providers the API-keys list shows, and IN WHAT ORDER.
+ *
+ * The order is FIXED and does not depend on whether a provider has a key.
+ * That is the whole point, and it is the defect this function exists to make
+ * untestable-to-reintroduce: the list used to sort connected providers into a
+ * separate block above the rest, so finishing a key field made that row jump
+ * out of the list you were reading and a new section appear under your cursor.
+ *
+ *  - **No search** — the first-class three, in their declared order, then any
+ *    OTHER provider that already has a key. A short, stable list; a provider's
+ *    position never changes because you typed in it.
+ *  - **Search** — every catalog match, connected or not, in catalog order.
+ *    This is the long tail's only entrance, and it is enough: nobody scrolls
+ *    181 providers, they look for the one they hold an account with. It
+ *    replaced a "Show 181 more providers" disclosure whose number read as a
+ *    warning rather than an invitation.
+ *
+ * Matching covers label, id and env-var name, so both "bedrock" and
+ * "AWS_ACCESS_KEY_ID" find AWS.
+ */
+export function orderProviderRows<T extends OrderableProvider>(input: {
+  providers: T[];
+  firstClassIds: readonly string[];
+  connectedIds: ReadonlySet<string>;
+  search: string;
+}): T[] {
+  const query = input.search.trim().toLowerCase();
+  if (query) {
+    return input.providers.filter(
+      (provider) =>
+        provider.label.toLowerCase().includes(query) ||
+        provider.id.toLowerCase().includes(query) ||
+        provider.envVars.some((envVar) => envVar.toLowerCase().includes(query)),
+    );
+  }
+
+  const byId = new Map(input.providers.map((provider) => [provider.id, provider]));
+  const firstClass = input.firstClassIds
+    .map((id) => byId.get(id))
+    .filter((provider): provider is T => !!provider);
+  const shown = new Set(firstClass.map((provider) => provider.id));
+  const connectedExtras = input.providers.filter(
+    (provider) => input.connectedIds.has(provider.id) && !shown.has(provider.id),
+  );
+  return [...firstClass, ...connectedExtras];
+}
+
+// ─── Plain-English model descriptions ────────────────────────────────────────
+//
+// The Models tab used to print the catalog's own numbers at the reader —
+// "200K ctx · $3.00 / $15.00 per 1M" — which is precise and, to anyone who has
+// not priced an LLM before, unreadable. These helpers restate the SAME three
+// facts (context window, price, capabilities) in words. The numbers are not
+// deleted: they move behind the tab's "Show technical details" toggle, so the
+// row leads with meaning and the exact figure stays one click away.
+
+/**
+ * English prose runs roughly ¾ of a word per token — the rule of thumb every
+ * provider publishes. Deliberately approximate, and every caller says "about":
+ * this exists to let someone picture "a long book" vs "a few emails", not to
+ * budget a request.
+ */
+const WORDS_PER_TOKEN = 0.75;
+
+/** "about 150,000 words" — a context window a non-technical reader can picture. */
+export function formatWordCapacity(tokens: number | null | undefined): string {
+  if (!tokens || tokens <= 0) return '';
+  const words = tokens * WORDS_PER_TOKEN;
+  if (words >= 1_000_000) {
+    const millions = words / 1_000_000;
+    return `about ${Number.isInteger(millions) ? millions : millions.toFixed(1)} million words`;
+  }
+  if (words >= 1_000) return `about ${Math.round(words / 1_000).toLocaleString('en-US')},000 words`;
+  return `about ${Math.round(words).toLocaleString('en-US')} words`;
+}
+
+/**
+ * A cost band, from the OUTPUT rate per 1M tokens — the side that dominates a
+ * chat bill, and the only one whose spread is wide enough to band meaningfully
+ * (input rates cluster far more tightly).
+ *
+ * The wording is a statement about PRICE and nothing else. "Low cost" does not
+ * promise a model is worse, and the bands never say "best" or "balanced" —
+ * this file has no basis for a quality claim and must not imply one.
+ */
+export function costBandLabel(outputUsdPerMillion: number | null | undefined): string {
+  const usd = outputUsdPerMillion;
+  if (usd === null || usd === undefined || Number.isNaN(usd)) return '';
+  if (usd <= 0) return 'Free to run';
+  if (usd < 2) return 'Low cost';
+  if (usd < 15) return 'Mid cost';
+  return 'Higher cost';
+}
+
+export interface ModelPlainFacts {
+  reasoning?: boolean;
+  vision?: boolean;
+  outputUsdPerMillion?: number | null;
+  contextTokens?: number | null;
+}
+
+/**
+ * The ONE muted line under a model's name — "Mid cost · reads images · holds
+ * about 150,000 words".
+ *
+ * It carries every fact the row used to spend three extra lines on: the price
+ * band, the capabilities, and the context window. Ordered cheapest-to-read
+ * first: cost decides most choices, capability decides the rest, and size is
+ * the tiebreaker nobody starts with.
+ *
+ * Tool calling is deliberately absent: near every served model has it, so a
+ * phrase on 95% of rows carries no information and only adds a word to scan
+ * past.
+ *
+ * Empty string when the catalog knows none of these — the row then renders no
+ * subtitle at all rather than a filler phrase that says nothing.
+ */
+export function modelPlainSummary(facts: ModelPlainFacts): string {
+  const parts: string[] = [];
+  const cost = costBandLabel(facts.outputUsdPerMillion);
+  if (cost) parts.push(cost);
+  if (facts.vision) parts.push('reads images');
+  if (facts.reasoning) parts.push('thinks before answering');
+  const words = formatWordCapacity(facts.contextTokens);
+  if (words) parts.push(`holds ${words}`);
+  return parts.join(' · ');
 }

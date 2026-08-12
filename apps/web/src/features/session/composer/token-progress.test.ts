@@ -10,7 +10,9 @@ import {
   contextUsageHeadlineKind,
   formatContextCount,
   getContextLimit,
+  getLastAssistantTokenBreakdown,
   getLastAssistantTokenTotal,
+  getSelectedModelName,
 } from './token-progress';
 
 function assistantMessage(tokens: Record<string, unknown> | undefined): MessageWithParts {
@@ -60,6 +62,101 @@ describe('getLastAssistantTokenTotal', () => {
   test('ignores user messages entirely, even if they carry a tokens-shaped field', () => {
     const messages = [assistantMessage({ input: 10, output: 10 }), userMessage()];
     expect(getLastAssistantTokenTotal(messages)).toBe(20);
+  });
+});
+
+describe('getLastAssistantTokenBreakdown', () => {
+  test('returns an all-zero breakdown for undefined or empty message lists', () => {
+    expect(getLastAssistantTokenBreakdown(undefined)).toEqual({
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: 0,
+      total: 0,
+    });
+    expect(getLastAssistantTokenBreakdown([])).toEqual({
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: 0,
+      total: 0,
+    });
+  });
+
+  test('splits the reading per kind and folds cache read+write into one number', () => {
+    const messages = [
+      userMessage(),
+      assistantMessage({ input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } }),
+    ];
+    expect(getLastAssistantTokenBreakdown(messages)).toEqual({
+      input: 100,
+      output: 50,
+      reasoning: 10,
+      cache: 7,
+      total: 167,
+    });
+  });
+
+  test('every field defaults to 0 when the model omits it', () => {
+    // The card only renders rows above zero; a missing `reasoning` must read as
+    // 0 rather than NaN, which would render as "0" but poison `total`.
+    const breakdown = getLastAssistantTokenBreakdown([assistantMessage({ input: 40 })]);
+    expect(breakdown).toEqual({ input: 40, output: 0, reasoning: 0, cache: 0, total: 40 });
+    expect(Number.isNaN(breakdown.total)).toBe(false);
+  });
+
+  test('the parts always sum to the total it reports', () => {
+    // The bar is a fraction of `total` and the rows below it are the parts —
+    // if these drift the card contradicts itself on screen.
+    const b = getLastAssistantTokenBreakdown([
+      assistantMessage({ input: 1234, output: 99, reasoning: 7, cache: { read: 500, write: 21 } }),
+    ]);
+    expect(b.input + b.output + b.reasoning + b.cache).toBe(b.total);
+  });
+
+  test('skips a still-streaming trailing turn and reports the last real reading', () => {
+    const messages = [
+      assistantMessage({ input: 100, output: 50 }),
+      userMessage(),
+      assistantMessage(undefined),
+    ];
+    expect(getLastAssistantTokenBreakdown(messages).total).toBe(150);
+    expect(getLastAssistantTokenBreakdown(messages).input).toBe(100);
+  });
+
+  test('getLastAssistantTokenTotal stays exactly the breakdown total', () => {
+    const messages = [
+      assistantMessage({ input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } }),
+    ];
+    expect(getLastAssistantTokenTotal(messages)).toBe(
+      getLastAssistantTokenBreakdown(messages).total,
+    );
+  });
+});
+
+describe('getSelectedModelName', () => {
+  test('returns null when there is nothing to resolve against', () => {
+    expect(getSelectedModelName(undefined, undefined)).toBeNull();
+    expect(getSelectedModelName([flatModel()], null)).toBeNull();
+  });
+
+  test('returns the catalog display name for the selected model', () => {
+    const models = [flatModel({ modelID: 'claude-5', modelName: 'Claude Opus 5' })];
+    expect(getSelectedModelName(models, { providerID: 'anthropic', modelID: 'claude-5' })).toBe(
+      'Claude Opus 5',
+    );
+  });
+
+  test('returns null rather than a raw id when the catalog does not know the model', () => {
+    // A bare `anthropic/claude-…-20250929` is worse than no line at all in a
+    // card this small, so the card falls back to its own generic label.
+    const models = [flatModel({ modelID: 'claude-5' })];
+    expect(getSelectedModelName(models, { providerID: 'openai', modelID: 'gpt-5' })).toBeNull();
+  });
+
+  test('treats a blank or whitespace-only name as absent', () => {
+    const models = [flatModel({ modelID: 'claude-5', modelName: '   ' })];
+    expect(getSelectedModelName(models, { providerID: 'anthropic', modelID: 'claude-5' })).toBeNull();
   });
 });
 

@@ -98,6 +98,22 @@ export function createSlashSuggestion(
   // `command` closure.
   const onSelect = (row: SlashRow) => latestCommand?.(row);
 
+  /**
+   * The pointer is the selection too. Hovering a row moves the SAME index the
+   * arrow keys move, so the highlight, the detail pane, and what Enter runs
+   * are always the one row under the cursor.
+   *
+   * Stable reference, same reason as `onSelect` above. The `setSelectedIndex`
+   * return value is the render guard — `pointermove` fires continuously while
+   * the mouse travels within one row, and only the first of those events
+   * changes anything. See `MenuNavState.setSelectedIndex`.
+   */
+  const onHover = (row: SlashRow) => {
+    if (nav.setSelectedIndex(row.index)) {
+      renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
+    }
+  };
+
   const recompute = (query: string): SlashSection[] => {
     const sections = buildSlashSections({
       commands: opts.getCommands(),
@@ -115,7 +131,7 @@ export function createSlashSuggestion(
       latestCommand = props.command;
       renderer = new ReactRenderer(SlashMenu, {
         editor: props.editor,
-        props: { sections, selectedIndex: nav.getSelectedIndex(), onSelect },
+        props: { sections, selectedIndex: nav.getSelectedIndex(), onSelect, onHover },
       });
       unmount = opts.dockSelector
         ? mountDockedMenu(props, renderer.element)
@@ -127,7 +143,7 @@ export function createSlashSuggestion(
       nav.setQuery(props.query);
       const sections = recompute(props.query);
       latestCommand = props.command;
-      renderer?.updateProps({ sections, selectedIndex: nav.getSelectedIndex(), onSelect });
+      renderer?.updateProps({ sections, selectedIndex: nav.getSelectedIndex(), onSelect, onHover });
     },
     onKeyDown({ event }) {
       if (!nav.getRows().length) return false;

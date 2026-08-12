@@ -5452,12 +5452,19 @@
       "titleHealthy": "Gesprächsraum",
       "titleWarning": "Wird voll",
       "titleDanger": "Fast voll",
-      "labelUsed": "Belegt",
-      "labelLimit": "Limit",
       "percentFull": "{percent}% voll",
       "tipWarning": "Längere Chats können frühere Nachrichten vergessen.",
       "tipDanger": "Ältere Nachrichten können bald wegfallen.",
-      "viewDetails": "Details anzeigen"
+      "viewDetails": "Details anzeigen",
+      "labelInput": "Eingabe",
+      "labelCached": "Zwischengespeichert",
+      "labelOutput": "Ausgabe",
+      "labelReasoning": "Denkprozess",
+      "usedCount": "{used} verwendet",
+      "remainingCount": "{remaining} frei",
+      "windowMeta": "{limit} Fenster",
+      "modelUnknown": "Aktuelles Modell",
+      "meterLabel": "Kontextauslastung"
     },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "Noch keine Aktionen.",

@@ -5452,12 +5452,19 @@
       "titleHealthy": "Espaço da conversa",
       "titleWarning": "Está a ficar cheio",
       "titleDanger": "Quase cheio",
-      "labelUsed": "Usado",
-      "labelLimit": "Limite",
       "percentFull": "{percent}% cheio",
       "tipWarning": "Conversas longas podem esquecer mensagens anteriores.",
       "tipDanger": "Mensagens antigas podem desaparecer em breve.",
-      "viewDetails": "Ver detalhes"
+      "viewDetails": "Ver detalhes",
+      "labelInput": "Entrada",
+      "labelCached": "Em cache",
+      "labelOutput": "Saída",
+      "labelReasoning": "Raciocínio",
+      "usedCount": "{used} usados",
+      "remainingCount": "{remaining} restantes",
+      "windowMeta": "janela de {limit}",
+      "modelUnknown": "Modelo atual",
+      "meterLabel": "Uso do contexto"
     },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "Ainda não há ações.",

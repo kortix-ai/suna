@@ -23,11 +23,16 @@ export function MentionMenu({
   selectedIndex,
   loading,
   onSelect,
+  onHover,
 }: {
   sections: MentionSection[];
   selectedIndex: number;
   loading: boolean;
   onSelect: (row: MenuRow) => void;
+  /** Hovering a row makes it the selection — see `MenuRow`'s own comment for
+   *  why that is `pointermove` and not `pointerenter`. Keeps this menu's one
+   *  highlight honest: what you point at is what Enter takes. */
+  onHover?: (row: MenuRow) => void;
 }) {
   if (!sections.length && !loading) return null;
 
@@ -39,7 +44,7 @@ export function MentionMenu({
     //
     // 12px, not the `/` menu's 16px: this one floats at the caret and is half
     // the width, so it should read as lighter than the docked palette.
-    <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-xl">
+    <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-lg">
       <div
         role="listbox"
         aria-label="Mention suggestions"
@@ -55,6 +60,7 @@ export function MentionMenu({
                 id={`mention-row-${row.index}`}
                 selected={row.index === selectedIndex}
                 onSelect={() => onSelect(row)}
+                onHover={() => onHover?.(row)}
               >
                 <RowIcon row={row} />
                 <span className="min-w-0 truncate text-sm">{rowTitle(row)}</span>
@@ -110,6 +116,7 @@ export interface MentionMenuHostProps {
   now: number;
   selectedIndex: number;
   onSelect: (row: MenuRow) => void;
+  onHover?: (row: MenuRow) => void;
   onRowsChange: (rows: MenuRow[]) => void;
 }
 
@@ -131,6 +138,7 @@ export function MentionMenuHost({
   now,
   selectedIndex,
   onSelect,
+  onHover,
   onRowsChange,
 }: MentionMenuHostProps) {
   const { files, isLoading } = useFileSearch(query, true);
@@ -144,5 +152,13 @@ export function MentionMenuHost({
     onRowsChange(rows);
   }, [rows, onRowsChange]);
 
-  return <MentionMenu sections={sections} selectedIndex={selectedIndex} loading={isLoading} onSelect={onSelect} />;
+  return (
+    <MentionMenu
+      sections={sections}
+      selectedIndex={selectedIndex}
+      loading={isLoading}
+      onSelect={onSelect}
+      onHover={onHover}
+    />
+  );
 }

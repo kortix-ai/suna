@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { ProviderConnect } from '@/features/providers/provider-connect';
+import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
 import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
 import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
@@ -45,6 +46,7 @@ import { useIsMutating } from '@tanstack/react-query';
 type LlmTab =
   | 'providers'
   | 'models'
+  | 'custom'
   | 'routing'
   | 'playground'
   | 'overview'
@@ -54,8 +56,12 @@ type LlmTab =
   | 'api';
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
-  { id: 'providers', label: 'Providers' },
+  { id: 'providers', label: 'API keys' },
   { id: 'models', label: 'Models' },
+  // The custom-provider form used to be section 4 of the Providers tab. It
+  // moved to its own tab so the screen everyone uses to paste a key stops
+  // ending in a form almost nobody fills — see `custom-provider-panel.tsx`.
+  { id: 'custom', label: 'Custom' },
   { id: 'routing', label: 'Routing' },
   { id: 'playground', label: 'Playground' },
   { id: 'overview', label: 'Overview' },
@@ -183,6 +189,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           keeps a home now that `ProviderConnect` has no tabs of its own. */}
       <TabsContent value="models" className="min-h-0 overflow-y-auto">
         <ModelsTab projectId={projectId} />
+      </TabsContent>
+      <TabsContent value="custom" className="min-h-0 overflow-y-auto">
+        <CustomProviderPanel projectId={projectId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
         <GatewayOverview projectId={projectId} />

@@ -76,6 +76,12 @@ function SlashRowIcon({
  * no extra state and no extra render path: the same prop that paints the
  * highlight paints the detail.
  *
+ * `onHover` folds the mouse into that same single index. Pointing at a skill,
+ * command, or action MAKES it the selection — the highlight moves, the detail
+ * pane describes what is under the cursor, and Enter takes what you are
+ * pointing at. Without it, hover was a second, weaker highlight that painted a
+ * row the pane refused to describe and Enter refused to run.
+ *
  * The detail pane is hidden below `sm`. On a phone there is no room for two
  * columns beside a keyboard, and the row list is the part you actually need —
  * so the card degrades to the single column rather than shrinking both panes
@@ -101,10 +107,12 @@ export function SlashMenu({
   sections,
   selectedIndex,
   onSelect,
+  onHover,
 }: {
   sections: SlashSection[];
   selectedIndex: number;
   onSelect: (row: SlashRow) => void;
+  onHover?: (row: SlashRow) => void;
 }) {
   if (!sections.length) return null;
 
@@ -135,6 +143,7 @@ export function SlashMenu({
                   id={`slash-row-${row.index}`}
                   selected={row.index === selectedIndex}
                   onSelect={() => onSelect(row)}
+                  onHover={() => onHover?.(row)}
                 >
                   <SlashRowIcon
                     row={row}
@@ -171,7 +180,7 @@ export function SlashMenu({
       </div>
 
       {active && (
-        <div className="border-border hidden w-[45%] max-w-[24rem] shrink-0 flex-col overflow-y-auto border-l p-4 sm:flex">
+        <div className="border-border hidden w-[56%] max-w-[24rem] shrink-0 flex-col overflow-y-auto border-l p-4 sm:flex">
           <div className="flex items-start gap-2.5">
             <SlashRowIcon
               row={active.row}

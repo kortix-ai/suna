@@ -19,7 +19,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import Loading from '@/components/ui/loading';
 import {
   PreviewImage,
   PreviewImageContent,
@@ -33,15 +32,15 @@ import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import {
+  isAgentPart,
+  isFilePart,
+  isTextPart,
+  splitUserParts,
   type AgentPart,
   type Command,
   type FilePart,
   type MessageWithParts,
   type TextPart,
-  isAgentPart,
-  isFilePart,
-  isTextPart,
-  splitUserParts,
 } from '@/ui';
 import {
   FILE_TILE_SURFACE,
@@ -960,7 +959,9 @@ export function UserMessage({
    */
   const commandSplit = commandInfo?.split;
   const bodyText = effectiveCommandInfo
-    ? (commandSplit ? commandSplit.after : (effectiveCommandInfo.args ?? ''))
+    ? commandSplit
+      ? commandSplit.after
+      : (effectiveCommandInfo.args ?? '')
     : text;
 
   const copyText = useMemo(() => {
@@ -1266,6 +1267,23 @@ export function UserMessage({
       )}
     >
       {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
+
+      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
+      {dcpNotifications.length > 0 && (
+        <div className="mt-1 flex w-full flex-col gap-1.5">
+          {dcpNotifications.map((n, i) => (
+            <DCPNotificationCard key={i} notification={n} />
+          ))}
+        </div>
+      )}
+      {systemNotifications.length > 0 && (
+        <div className="mt-1 flex w-full flex-col gap-1.5">
+          {systemNotifications.map((n, i) => (
+            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
+          ))}
+        </div>
+      )}
+
       {/* No text means no bubble. Attach a file and send with nothing typed and
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
@@ -1325,22 +1343,6 @@ export function UserMessage({
           under the bubble they describe — notification cards below are separate
           objects and must not come between a message and its own meta. */}
       {actions}
-
-      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
-      {dcpNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {dcpNotifications.map((n, i) => (
-            <DCPNotificationCard key={i} notification={n} />
-          ))}
-        </div>
-      )}
-      {systemNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {systemNotifications.map((n, i) => (
-            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

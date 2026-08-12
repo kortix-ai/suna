@@ -5452,12 +5452,19 @@
       "titleHealthy": "Espace de conversation",
       "titleWarning": "Se remplit",
       "titleDanger": "Presque plein",
-      "labelUsed": "Utilisé",
-      "labelLimit": "Limite",
       "percentFull": "{percent}% plein",
       "tipWarning": "Les longs chats peuvent oublier les messages plus anciens.",
       "tipDanger": "Les messages plus anciens peuvent bientôt disparaître.",
-      "viewDetails": "Voir les détails"
+      "viewDetails": "Voir les détails",
+      "labelInput": "Entrée",
+      "labelCached": "En cache",
+      "labelOutput": "Sortie",
+      "labelReasoning": "Raisonnement",
+      "usedCount": "{used} utilisés",
+      "remainingCount": "{remaining} restants",
+      "windowMeta": "fenêtre de {limit}",
+      "modelUnknown": "Modèle actuel",
+      "meterLabel": "Utilisation du contexte"
     },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "Aucune action pour le moment.",

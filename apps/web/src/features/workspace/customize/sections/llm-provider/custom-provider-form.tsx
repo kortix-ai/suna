@@ -129,39 +129,8 @@ export function CustomProviderForm({
   }
 
   return (
-    <div className="space-y-4 px-5 pt-3 pb-5">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
-        onClick={onBack}
-      >
-        <ChevronLeft className="size-3.5 shrink-0" />
-        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}
-      </Button>
+    <div className="space-y-4 px-5 py-4">
 
-      <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-        <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
-          <Plus className="size-4 shrink-0" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line987JsxTextCustomProvider',
-            )}
-          </div>
-          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey',
-            )}{' '}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
-              .opencode/opencode.jsonc
-            </code>
-            .
-          </p>
-        </div>
-      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
@@ -300,7 +269,7 @@ export function CustomProviderForm({
             counts against gateway budgets, and never participates in routing
             policy/fallback. Disclosed here since nothing else in this flow
             says so. */}
-        <InfoBanner tone="warning" icon={Info}>
+        <InfoBanner tone="warning" icon={Info} title="Note">
           Requests to a custom provider go straight to its own endpoint — they don&apos;t pass
           through the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or
           routing.

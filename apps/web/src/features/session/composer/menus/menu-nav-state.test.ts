@@ -204,6 +204,112 @@ describe('MenuNavState — move()', () => {
 });
 
 /**
+ * `setSelectedIndex` is what makes hover an equal citizen with the arrow
+ * keys: the row under the pointer becomes THE selection, so the `/` menu's
+ * detail pane describes what you are pointing at and Enter runs it. Both
+ * menus call it from `pointermove` (see `MenuRow` in `menu-shell.tsx` for why
+ * `pointermove` and not `pointerenter`), which is why the boolean return
+ * matters — the caller re-renders only when the index truly moved.
+ */
+describe('MenuNavState — setSelectedIndex() (pointer-driven selection)', () => {
+  test('points the selection at an exact row, and Enter would take that row', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1', 'r2', 'r3']);
+
+    expect(nav.setSelectedIndex(2)).toBe(true);
+    expect(nav.getSelectedIndex()).toBe(2);
+    expect(nav.getSelectedRow()).toBe('r2');
+  });
+
+  // The render guard. `pointermove` fires continuously while the mouse
+  // travels inside ONE row; every event after the first names the index the
+  // state already holds, and each `true` would push a fresh prop set through
+  // `ReactRenderer`.
+  test('re-selecting the row already selected returns false — nothing to re-render', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1', 'r2']);
+
+    expect(nav.setSelectedIndex(1)).toBe(true);
+    expect(nav.setSelectedIndex(1)).toBe(false);
+    expect(nav.setSelectedIndex(1)).toBe(false);
+    expect(nav.getSelectedIndex()).toBe(1);
+  });
+
+  test('index 0 while already at 0 also returns false — the opening state is not a change', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1']);
+
+    expect(nav.setSelectedIndex(0)).toBe(false);
+  });
+
+  // A row list that shrank between the render the pointer is over and this
+  // call (a debounced file search resolving under the cursor) hands us an
+  // index past the end. Clamp, exactly like `setRows` does.
+  test('an out-of-range index from a stale row list clamps instead of escaping the list', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1']);
+
+    expect(nav.setSelectedIndex(7)).toBe(true);
+    expect(nav.getSelectedIndex()).toBe(1);
+    expect(nav.getSelectedRow()).toBe('r1');
+
+    expect(nav.setSelectedIndex(-3)).toBe(true);
+    expect(nav.getSelectedIndex()).toBe(0);
+  });
+
+  test('is a no-op with zero rows, like move()', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('nonexistentfile');
+
+    expect(nav.setSelectedIndex(2)).toBe(false);
+    expect(nav.getSelectedIndex()).toBe(0);
+    expect(nav.getSelectedRow()).toBeUndefined();
+  });
+
+  // Same `isOpen` gate `setRows` has: a `pointermove` can land after the menu
+  // closed (the pointer is over rows that are being torn down), and it must
+  // not move a selection nothing is showing.
+  test('a call arriving AFTER close() is ignored', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1', 'r2']);
+    nav.close();
+
+    expect(nav.setSelectedIndex(2)).toBe(false);
+    expect(nav.getSelectedIndex()).toBe(0);
+  });
+
+  test('keyboard and pointer share one index — move() continues from where hover left off', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1', 'r2', 'r3']);
+
+    nav.setSelectedIndex(2); // pointer lands on r2
+    nav.move(1); // then the arrow key takes over
+    expect(nav.getSelectedRow()).toBe('r3');
+  });
+
+  // Hover does not pin the selection: typing another character is still a
+  // fresh list, and `setQuery`'s reset must win over wherever the mouse was.
+  test('a query change still resets to 0 after a hover', () => {
+    const nav = new MenuNavState<string>();
+    nav.open('a');
+    nav.setRows(['r0', 'r1', 'r2']);
+    nav.setSelectedIndex(2);
+
+    nav.setQuery('ab');
+    nav.setRows(['x0', 'x1']);
+
+    expect(nav.getSelectedIndex()).toBe(0);
+    expect(nav.getSelectedRow()).toBe('x0');
+  });
+});
+
+/**
  * Task 9's seam: `useMenuRevalidation` needs to know when a `@`/`/` menu
  * OPENS, independent of whether it ever has any rows — `onHasRowsChange`
  * above deliberately answers a different question (`@nonexistentfile` never

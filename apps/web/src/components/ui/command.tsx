@@ -80,8 +80,8 @@ function CommandInput({
     <div
       data-slot="command-input-wrapper"
       className={cn(
-        'border-border/50 flex items-center border-b',
-        compact ? 'h-11 gap-2.5 px-4' : 'h-9 gap-3 px-4',
+        'border-border flex items-center border-b',
+        compact ? 'h-11 gap-2.5 px-4' : 'h-10 gap-3 px-4',
       )}
     >
       {/* <SearchIcon className="size-4 shrink-0 opacity-50" /> */}

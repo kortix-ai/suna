@@ -3698,24 +3698,18 @@ export function SessionChat({
     [local.model],
   );
 
+  // Only the ACCOUNT default is settable from the picker now — it is the one
+  // scope with no screen of its own. The project default lives in the provider
+  // modal's Models tab and the agent default on the agent's detail page, both
+  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
   const chatModelDefaultControls: ModelDefaultControls = useMemo(
     () => ({
-      agentName: lockedAgentName ?? local.agent.current?.name,
+      accountDefault: local.model.defaults.accountDefault ?? null,
       onSetAccountDefault: (m) => {
         void local.model.defaults.setAccountDefault(m);
       },
-      onSetAgentDefault:
-        lockedAgentName || local.agent.current
-          ? (m) => {
-              const name = lockedAgentName ?? local.agent.current?.name;
-              if (name) void local.model.defaults.setAgentDefault(name, m);
-            }
-          : undefined,
-      onSetProjectDefault: (m) => {
-        void local.model.defaults.setProjectDefault(m);
-      },
     }),
-    [lockedAgentName, local.agent, local.model.defaults],
+    [local.model.defaults],
   );
 
   const handleVariantChange = useCallback(
@@ -3788,7 +3782,7 @@ export function SessionChat({
             className={cn(
               'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
               questionPromptVisible
-                ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                ? 'max-h-130 translate-y-0 opacity-100 duration-300'
                 : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
             )}
           >
@@ -4193,9 +4187,7 @@ export function SessionChat({
 
               <div
                 className={cn(
-                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2',
-                  'transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)]',
-                  'motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-[opacity]',
+                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2 transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-opacity',
                   showScrollButton
                     ? 'translate-y-0 scale-100 opacity-100 duration-150'
                     : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
@@ -4207,7 +4199,7 @@ export function SessionChat({
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 shadow-xs',
+                    'hit-area-2 hover:bg-secondary border-border border shadow-xs',
                     'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
                   )}
                   onClick={smoothScrollToAbsoluteBottom}

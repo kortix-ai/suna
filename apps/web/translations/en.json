@@ -5516,12 +5516,19 @@
       "titleHealthy": "Conversation space",
       "titleWarning": "Getting full",
       "titleDanger": "Almost full",
-      "labelUsed": "Used",
-      "labelLimit": "Limit",
       "percentFull": "{percent}% full",
       "tipWarning": "Longer chats may forget earlier messages.",
       "tipDanger": "Older messages may drop soon.",
-      "viewDetails": "View details"
+      "viewDetails": "View details",
+      "labelInput": "Input",
+      "labelCached": "Cached",
+      "labelOutput": "Output",
+      "labelReasoning": "Reasoning",
+      "usedCount": "{used} used",
+      "remainingCount": "{remaining} left",
+      "windowMeta": "{limit} window",
+      "modelUnknown": "Current model",
+      "meterLabel": "Context usage"
     },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "No actions yet.",

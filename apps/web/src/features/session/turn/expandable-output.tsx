@@ -233,7 +233,9 @@ export function ExpandableOutput({
     // bails out of the render entirely — see `nextContentHeight` for why a
     // zero-height observation has to be rejected rather than stored.
     const measure = () =>
-      setContentHeight((previous) => nextContentHeight(previous, el.getBoundingClientRect().height));
+      setContentHeight((previous) =>
+        nextContentHeight(previous, el.getBoundingClientRect().height),
+      );
 
     // First read after the next frame, so layout has settled.
     const rafId = requestAnimationFrame(measure);

@@ -5452,12 +5452,19 @@
       "titleHealthy": "会話の容量",
       "titleWarning": "容量がいっぱいに近づいています",
       "titleDanger": "ほぼ上限です",
-      "labelUsed": "使用中",
-      "labelLimit": "上限",
       "percentFull": "{percent}% 使用",
       "tipWarning": "長いチャットでは、以前のメッセージを忘れることがあります。",
       "tipDanger": "古いメッセージがまもなく削除される可能性があります。",
-      "viewDetails": "詳細を見る"
+      "viewDetails": "詳細を見る",
+      "labelInput": "入力",
+      "labelCached": "キャッシュ",
+      "labelOutput": "出力",
+      "labelReasoning": "推論",
+      "usedCount": "{used} 使用",
+      "remainingCount": "残り {remaining}",
+      "windowMeta": "{limit} のウィンドウ",
+      "modelUnknown": "現在のモデル",
+      "meterLabel": "コンテキスト使用量"
     },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "まだアクションはありません。",

@@ -5452,12 +5452,19 @@
       "titleHealthy": "对话空间",
       "titleWarning": "快满了",
       "titleDanger": "几乎已满",
-      "labelUsed": "已用",
-      "labelLimit": "上限",
       "percentFull": "已用 {percent}%",
       "tipWarning": "较长的对话可能会忘记更早的消息。",
       "tipDanger": "较早的消息可能很快被丢弃。",
-      "viewDetails": "查看详情"
+      "viewDetails": "查看详情",
+      "labelInput": "输入",
+      "labelCached": "缓存",
+      "labelOutput": "输出",
+      "labelReasoning": "推理",
+      "usedCount": "已用 {used}",
+      "remainingCount": "剩余 {remaining}",
+      "windowMeta": "{limit} 窗口",
+      "modelUnknown": "当前模型",
+      "meterLabel": "上下文用量"
     },
     "componentsSessionSessionActionsPanel": {
       "line152JsxTextNoActionsYet": "尚无操作。",

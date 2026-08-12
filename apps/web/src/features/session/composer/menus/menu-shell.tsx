@@ -42,6 +42,12 @@ export interface MenuRowProps {
   id: string;
   selected: boolean;
   onSelect: () => void;
+  /**
+   * The pointer genuinely moved over this row — make it the selected row.
+   * Optional: a menu that leaves it off keeps the plain `hover:` tint and a
+   * separate keyboard highlight.
+   */
+  onHover?: () => void;
   children: React.ReactNode;
   className?: string;
 }
@@ -63,12 +69,38 @@ export interface MenuRowProps {
  * row is the only thing that knows its own DOM node. Without it, arrowing past
  * the bottom of a scrollable list moves an invisible selection — the list stays
  * put and the highlighted row is off-screen.
+ *
+ * ## Why hover uses `pointermove`, not `pointerenter`
+ *
+ * `pointerenter`/`mouseenter` fire whenever the element moves under the
+ * cursor — including when the LIST scrolls under a cursor that never moved.
+ * Wiring hover-to-select to them means arrowing down the list slides the next
+ * row beneath a resting mouse, which fires enter, which drags the selection
+ * straight back: the keyboard and the mouse fight and the keyboard loses.
+ * `pointermove` fires only on real pointer travel, so a stationary mouse
+ * cannot claim anything. (Same reason `cmdk` and Radix's menus use it.)
+ *
+ * Touch is excluded: a finger dragging across the list to scroll it is not
+ * "hovering", and repainting the `/` menu's detail pane under the drag would
+ * be pure noise.
  */
-export function MenuRow({ id, selected, onSelect, children, className }: MenuRowProps) {
+export function MenuRow({ id, selected, onSelect, onHover, children, className }: MenuRowProps) {
   const ref = useRef<HTMLButtonElement | null>(null);
+  /**
+   * The other half of the same fight. A hovered row must NOT scroll itself
+   * into view: reach for the half-clipped row at the bottom edge, and a
+   * `scrollIntoView` triggered by your own hover slides the list up under the
+   * cursor, putting a different row where you were aiming. Only keyboard
+   * selection — the case the scroll exists for — can move the list.
+   *
+   * `pointermove` sets it; the browser re-runs hit testing after a scroll, so
+   * `pointerleave` fires and clears it even when the pointer itself is what
+   * stayed still.
+   */
+  const pointerInside = useRef(false);
 
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: 'nearest' });
+    if (selected && !pointerInside.current) ref.current?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
 
   return (
@@ -81,6 +113,14 @@ export function MenuRow({ id, selected, onSelect, children, className }: MenuRow
       onMouseDown={(e) => {
         e.preventDefault();
         onSelect();
+      }}
+      onPointerMove={(e) => {
+        if (e.pointerType === 'touch') return;
+        pointerInside.current = true;
+        onHover?.();
+      }}
+      onPointerLeave={() => {
+        pointerInside.current = false;
       }}
       className={cn(
         'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',

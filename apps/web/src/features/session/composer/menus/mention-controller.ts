@@ -71,6 +71,19 @@ export function createMentionSuggestion(
   // when nothing else changed.
   const onSelect = (row: MenuRow) => latestCommand?.(row);
 
+  /**
+   * Hover moves the same index the arrow keys move, so this menu shows ONE
+   * highlight and Enter always takes the row under the cursor. Stable
+   * reference for the same shallow-diff reason as `onSelect`; the boolean
+   * return is the re-render guard, since `pointermove` fires continuously
+   * across a single row. See `MenuNavState.setSelectedIndex` and `MenuRow`.
+   */
+  const onHover = (row: MenuRow) => {
+    if (nav.setSelectedIndex(row.index)) {
+      renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
+    }
+  };
+
   const handleRowsChange = (rows: MenuRow[]) => {
     nav.setRows(rows);
     renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
@@ -92,6 +105,7 @@ export function createMentionSuggestion(
           now: Date.now(),
           selectedIndex: nav.getSelectedIndex(),
           onSelect,
+          onHover,
           onRowsChange: handleRowsChange,
         } satisfies MentionMenuHostProps,
       });
@@ -110,6 +124,7 @@ export function createMentionSuggestion(
         currentSessionId: opts.getCurrentSessionId(),
         selectedIndex: nav.getSelectedIndex(),
         onSelect,
+        onHover,
       });
     },
     onKeyDown({ event }) {

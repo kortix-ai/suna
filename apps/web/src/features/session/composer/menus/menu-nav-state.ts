@@ -150,6 +150,30 @@ export class MenuNavState<TRow> {
     this.selectedIndex = moveSelection(this.selectedIndex, delta, this.rows.length);
   }
 
+  /**
+   * Point the highlight at one exact row — the pointer's counterpart to
+   * `move()`, used by the menus' hover handling so the row under the cursor
+   * IS the selected row (one highlight, not a keyboard one plus a hover one,
+   * and the `/` menu's detail pane follows the mouse).
+   *
+   * Returns whether the index actually moved. The caller uses that to decide
+   * whether to re-render: this is driven by `pointermove`, which fires dozens
+   * of times crossing a single 32px row, and every event after the first
+   * names the index the state already holds. Without the check, each mouse
+   * twitch would push a fresh prop set through `ReactRenderer`.
+   *
+   * Clamped and gated on `isOpen` for the same reasons `setRows` is — see
+   * that method and the `isOpen` field comment. An out-of-range index is a
+   * stale row list, not a crash.
+   */
+  setSelectedIndex(index: number): boolean {
+    if (!this.isOpen || !this.rows.length) return false;
+    const next = clampSelection(index, this.rows.length);
+    if (next === this.selectedIndex) return false;
+    this.selectedIndex = next;
+    return true;
+  }
+
   getSelectedIndex(): number {
     return this.selectedIndex;
   }
