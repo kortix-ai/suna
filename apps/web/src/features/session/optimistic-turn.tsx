@@ -2,7 +2,6 @@
 
 import { useMemo } from 'react';
 
-import { CopyButton } from '@/components/markdown/copy-button';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -14,8 +13,8 @@ import {
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
   MessageAttachments,
-  MessageMetaRow,
   type NormalizedAttachment,
+  UserMessageActions,
 } from '@/features/session/turn/user-message';
 import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
@@ -160,14 +159,7 @@ function OptimisticUserBubble({
           two-clocks bug that already made the elapsed timer run backwards here.
           The row stays empty until `time.created` arrives with the real
           message; the label then appears without moving anything. */}
-      <MessageMetaRow
-        timestamp={null}
-        actions={
-          <div className="flex shrink-0 items-center opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
-            <CopyButton code={text} size="sm" />
-          </div>
-        }
-      />
+      <UserMessageActions timestamp={null} copyText={text} />
     </div>
   );
 }

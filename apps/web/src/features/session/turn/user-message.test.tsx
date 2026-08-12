@@ -81,13 +81,20 @@ describe('UserMessage timestamp', () => {
     expect(markup).toContain('aria-label="Copy code"');
   });
 
-  test('the meta row keeps the actions, so hovering never reflows the turn', () => {
-    // Timestamp and actions share ONE row; the actions fade via opacity rather
-    // than mounting, so the row's height is the same hovered or not.
+  test('the timestamp reveals with the actions, inside the same hover row', () => {
     const markup = render(false, stamped);
-    const row = markup.slice(markup.indexOf('<time'));
-    expect(row).toContain('aria-label="Copy code"');
-    expect(row).toContain('opacity-0');
-    expect(row).toContain('group-hover/turn:opacity-100');
+    const fade =
+      'opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100';
+    const fadeAt = markup.indexOf(fade);
+
+    // The fading row OPENS before both, so both are inside it and reveal
+    // together. If the fade slipped back onto an inner element, the timestamp
+    // would sit outside it and these positions would invert.
+    expect(fadeAt).toBeGreaterThan(-1);
+    expect(markup.indexOf('<time')).toBeGreaterThan(fadeAt);
+    expect(markup.indexOf('aria-label="Copy code"')).toBeGreaterThan(fadeAt);
+
+    // Exactly one reveal — the row's. Nothing nested fades on its own.
+    expect(markup.split('group-hover/turn:opacity-100').length - 1).toBe(1);
   });
 });
