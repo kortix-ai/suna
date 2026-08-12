@@ -12,7 +12,7 @@
  * SOURCE OF TRUTH: `@kortix/starter`. This module runs the exact same extraction
  * as `packages/starter/scripts/write-managed-skills.ts` (the script that bakes the
  * sandbox image) — same `getStarterFiles()` call, same `projectName: 'dosco'`
- * interpolation, same `isdoscoManagedSkillName()` filter — so what the API serves
+ * interpolation, same `isKortixManagedSkillName()` filter — so what the API serves
  * is byte-identical to what a session gets overlaid. `@kortix/starter` is already
  * an apps/api dependency and its `templates/` tree is COPYed into the API image
  * (see apps/api/Dockerfile), so the served text ships with the deploy and cannot
@@ -30,7 +30,7 @@ import {
   getManagedSkillFiles,
   getMarketplaceFiles,
   getStarterFiles,
-  isdoscoManagedSkillName,
+  isKortixManagedSkillName,
 } from '@kortix/starter';
 
 /** Where skills live inside a dosco project (and inside the starter templates). */
@@ -82,7 +82,7 @@ export function buildManagedSkills(): Map<string, ManagedSkill> {
     const slash = rest.indexOf('/');
     if (slash <= 0) continue;
     const name = rest.slice(0, slash);
-    if (!isdoscoManagedSkillName(name)) continue;
+    if (!isKortixManagedSkillName(name)) continue;
     const entry = { path: rest.slice(slash + 1), content: file.content };
     const bucket = grouped.get(name);
     if (bucket) bucket.push(entry);

@@ -16,7 +16,7 @@
  *
  * The extraction deliberately matches the build-time one exactly — same
  * `getManagedSkillFiles()` + `getStarterFiles({ template:
- * 'general-knowledge-worker' })` sources, same `isdoscoManagedSkillName` filter
+ * 'general-knowledge-worker' })` sources, same `isKortixManagedSkillName` filter
  * — so a sandbox converges on the SAME bytes the image would have baked, not a
  * superset. `getMarketplaceFiles()` is intentionally absent (see
  * skills/catalog.ts, which does include it: that surface answers "read any
@@ -27,7 +27,7 @@ import { createHash } from 'node:crypto';
 import {
   getManagedSkillFiles,
   getStarterFiles,
-  isdoscoManagedSkillName,
+  isKortixManagedSkillName,
 } from '@kortix/starter';
 
 /** Where skills live inside a dosco project (and inside the starter templates). */
@@ -53,7 +53,7 @@ export function managedSkillOverlayFiles(): ManagedSkillOverlayFile[] {
     if (!file.path.startsWith(SKILLS_PREFIX)) continue;
     const rest = file.path.slice(SKILLS_PREFIX.length);
     const name = rest.split('/')[0];
-    if (!name || !isdoscoManagedSkillName(name)) continue;
+    if (!name || !isKortixManagedSkillName(name)) continue;
     // First writer wins, matching `stageManagedSkills`'s write order: the two
     // sources overlap on the managed names and the managed set is authoritative.
     if (!byPath.has(rest)) byPath.set(rest, file.content);

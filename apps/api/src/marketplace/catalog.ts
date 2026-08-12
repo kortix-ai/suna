@@ -21,7 +21,7 @@ import {
   getProjectTemplateFiles,
   getStarterCatalogSourceMap,
   getStarterFiles,
-  isdoscoManagedSkillName,
+  isKortixManagedSkillName,
 } from "@kortix/starter";
 import { parse as parseYaml } from "yaml";
 import {
@@ -364,7 +364,7 @@ function buildStarterRegistry(): RegistryJson {
   });
   for (const item of registry.items ?? []) {
     const primaryPath = item.files?.[0]?.path;
-    if (item.type === "registry:skill" && isdoscoManagedSkillName(item.name)) {
+    if (item.type === "registry:skill" && isKortixManagedSkillName(item.name)) {
       item.categories = [
         ...new Set([...(item.categories ?? []), "kortix-managed"]),
       ];
