@@ -529,6 +529,11 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (m === 'DELETE' && s.length === 4) return { title: 'Deleted trigger', kind: 'delete' };
       if (m === 'POST' && s[4] === 'fire') return { title: 'Fired trigger', kind: 'create' };
     }
+    // Monitor event intake — the project monitor box appending to its event
+    // log (sandbox-token-only; see docs/specs/2026-08-12-monitors.md).
+    if (s[0] === 'projects' && s[2] === 'monitors' && s[3] === 'ingest' && m === 'POST') {
+      return { title: 'Ingested monitor events', kind: 'create' };
+    }
     return null;
   },
   // ── Project lifecycle ────────────────────────────────────────────

@@ -115,6 +115,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       review_center: false,
       meta_agent: false,
       apps: false,
+      monitors: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -187,6 +188,10 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     run_at: null,
     timezone: 'UTC',
     secret_env: null,
+    run: null,
+    mode: null,
+    interval_seconds: null,
+    expect_event_within_seconds: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
     session_id: null,
@@ -492,6 +497,24 @@ describe('TriggerSchema', () => {
     ).not.toThrow();
   });
 
+  // `monitor` is the third trigger type (docs/specs/2026-08-12-monitors.md):
+  // no cron/secret_env wiring, a `run` command plus a `mode` instead.
+  test('accepts a monitor trigger', () => {
+    expect(() =>
+      TriggerSchema.strict().parse(
+        triggerFixture({
+          type: 'monitor',
+          cron: null,
+          run: './monitors/checkout-errors.ts',
+          mode: 'poll',
+          interval_seconds: 60,
+          expect_event_within_seconds: 86400,
+          session_mode: 'reuse',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   test('list response is an envelope, not a bare array', () => {
     expect(() =>
       TriggerListSchema.strict().parse({
@@ -638,6 +661,7 @@ describe('envelopes', () => {
       'review_center',
       'meta_agent',
       'apps',
+      'monitors',
     ]);
   });
 

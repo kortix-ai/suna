@@ -107,6 +107,21 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     });
   });
 
+  test('monitors is explicit opt-in and gated on Platinum availability', () => {
+    const available = Boolean(config.PLATINUM_API_KEY);
+    expect(findCatalogFlag('monitors')).toMatchObject({
+      name: 'Monitors',
+      stability: 'experimental',
+      available,
+      enabled: false,
+    });
+    // Off by default everywhere; a project's explicit opt-in wins only where
+    // the platform can actually run a persistent box (Platinum configured).
+    expect(resolveFeatureFlag({}, 'monitors')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { monitors: true } }, 'monitors')).toBe(available);
+    expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
+  });
+
   test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {
     expect(resolveFeatureFlag({}, 'marketplace')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { marketplace: false } }, 'marketplace')).toBe(false);

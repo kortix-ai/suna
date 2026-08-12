@@ -54,6 +54,9 @@ import {
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  DURATION_RE,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -317,8 +320,9 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron or webhook (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
     required: ['slug', 'type'],
@@ -347,6 +351,15 @@ function triggerSchema(): JsonSchemaFragment {
       timezone: { type: 'string' },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+      // `type: monitor` only — the repo command the platform supervises 24/7,
+      // its shape, and the two duration bounds. The FLOORS (interval ≥ 30s,
+      // expect_event_within ≥ 5m) are value ranges over a formatted string,
+      // which JSON Schema can't express — the imperative validator owns them
+      // (see json-schema.conformance.test.ts's documented-divergence block).
+      run: { type: 'string', minLength: 1, maxLength: MONITOR_RUN_MAX_LENGTH },
+      mode: { type: 'string', enum: [...MONITOR_MODES] },
+      interval: durationSchema,
+      expect_event_within: durationSchema,
     },
     additionalProperties: true,
     allOf: [
@@ -367,6 +380,38 @@ function triggerSchema(): JsonSchemaFragment {
       {
         if: { properties: { type: { const: 'webhook' } } },
         then: { anyOf: [{ required: ['secret_env'] }, { required: ['secretEnv'] }] },
+      },
+      {
+        // A monitor names its command and its shape, and carries none of the
+        // cron/webhook wiring (`false` = the key may not appear at all).
+        if: { properties: { type: { const: 'monitor' } } },
+        then: {
+          required: ['run', 'mode'],
+          properties: {
+            cron: false,
+            schedule: false,
+            run_at: false,
+            runAt: false,
+            timezone: false,
+            secret_env: false,
+            secretEnv: false,
+          },
+        },
+      },
+      {
+        // `interval` is the poll period: required on poll, forbidden on stream.
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'poll' } },
+          required: ['mode'],
+        },
+        then: { required: ['interval'] },
+      },
+      {
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'stream' } },
+          required: ['mode'],
+        },
+        then: { properties: { interval: false } },
       },
     ],
   };

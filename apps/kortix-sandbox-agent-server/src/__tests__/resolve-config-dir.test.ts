@@ -41,6 +41,9 @@ function cfg(overrides: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: 'blob:none',
     cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
     ...overrides,
   }
 }
