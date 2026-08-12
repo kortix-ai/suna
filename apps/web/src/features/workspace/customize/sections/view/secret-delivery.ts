@@ -72,9 +72,13 @@ export type SecretDeliveryPresentation = {
 
 const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> = {
   runtime: {
+    // The only mode where agent code can read the value, so the badge is a
+    // warning and not a neutral label. `secrets-view.tsx` says the same thing
+    // in longhand right below it (`InfoBanner tone="warning"`, "Readable inside
+    // the sandbox"); the two must agree.
     label: 'Sandbox',
     description: 'Available to agent code and commands as an environment variable.',
-    tone: 'secondary',
+    tone: 'warning',
   },
   broker: {
     label: 'Kortix service',

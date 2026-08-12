@@ -167,7 +167,16 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 
   test('the cover sits flush, with no tinted band fighting its own gradient', () => {
     expect(connectCardSource).not.toContain('bg-muted/30 border-b p-4');
-    expect(connectCardSource).toMatch(/<div className="border-b">\s*<SlackConnectCover/);
+    const wrapper = connectCardSource.match(/<div className="([^"]*)">\s*<SlackConnectCover/)?.[1];
+    // Read the wrapper's classes rather than pin its whole string: the cover is
+    // `scale-120`, so the wrapper's `overflow-hidden` is load-bearing — without
+    // it the upscaled band spills over the copy beneath. What must not appear
+    // is a fill or an inset, either of which puts a second surface between the
+    // panel and the cover's own gradient.
+    const classes = wrapper?.split(/\s+/).filter(Boolean) ?? [];
+    expect(classes).toContain('border-b');
+    expect(classes.filter((name) => name.startsWith('bg-'))).toEqual([]);
+    expect(classes.filter((name) => /^-?p[xytblrse]?-/.test(name))).toEqual([]);
   });
 
   test('a self-hosted install with no managed app is a path, not an EmptyState', () => {

@@ -24,6 +24,19 @@ const source = readFileSync(join(import.meta.dir, 'git-view.tsx'), 'utf8');
  */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
+/**
+ * The shared control this pane's copyable lines delegate to.
+ *
+ * `git-view.tsx` used to hold its own `CopyValue`, animation and all. That
+ * component is now `@/components/markdown/copy-button`, so the guarantee is
+ * asserted where it lives — and paired with an assertion that this pane still
+ * uses it, so moving the box out again cannot pass by relocating it twice.
+ */
+const copyControl = readFileSync(
+  join(import.meta.dir, '../../../../../components/markdown/copy-button.tsx'),
+  'utf8',
+);
+
 test('formats the live Code Storage provider identifier', () => {
   expect(providerLabel('code-storage')).toBe('Kortix Code Storage');
   expect(providerLabel('code_storage')).toBe('Kortix Code Storage');
@@ -58,9 +71,18 @@ test('never echoes a raw connection status enum at the user', () => {
 });
 
 test('copy control keeps both icons in an animated fixed-size box', () => {
-  expect(source).toContain('<AnimatePresence initial={false}');
-  expect(source).toContain("filter: 'blur(4px)'");
-  expect(source).toContain('duration: 0.3, bounce: 0');
+  // The pane must reach the box through the shared control...
+  expect(source).toContain("import { CopyButton } from '@/components/markdown/copy-button'");
+  expect(source).toContain('<CopyButton code={value}');
+  // ...and the box must still be a box: one fixed `size-5` cell both icons are
+  // absolutely positioned inside, so swapping copy for check cannot reflow the
+  // line, cross-faded rather than cut.
+  expect(copyControl).toContain('relative inline-flex size-5');
+  expect(copyControl).toContain('<AnimatePresence initial={false}');
+  expect(copyControl).toContain("filter: 'blur(4px)'");
+  // Closing braces included: `bounce: 0` is a prefix of `bounce: 0.4`, so the
+  // bare needle passed on a bouncy spring — the one value this pins.
+  expect(copyControl).toContain("transition={{ type: 'spring', duration: 0.3, bounce: 0 }}");
 });
 
 test('develop locally includes the environment-aware CLI installer before clone', () => {
@@ -79,9 +101,12 @@ test('the comment-stripped view of the source can still fail', () => {
   expect(code).toContain('export function GitView');
   expect(code).toContain('<SettingsTabHeader tab="repositories" />');
   expect(code.length).toBeGreaterThan(source.length / 3);
-  // This phrase exists ONLY in the header comment.
-  expect(source).toContain('four headings for one idea');
-  expect(code).not.toContain('four headings for one idea');
+  // The canary is the exact string the next test asserts is absent from the
+  // code. `OwnGitClient`'s doc comment quotes the old section name verbatim to
+  // say what it replaced, so it exists in `source` and must not survive into
+  // `code` — which is the whole reason that assertion reads `code` at all.
+  expect(source).toContain('Kortix proxy origin');
+  expect(code).not.toContain('Kortix proxy origin');
 });
 
 test('renders exactly one page heading, from the shared rail entry', () => {
