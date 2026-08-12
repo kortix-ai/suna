@@ -239,6 +239,54 @@ describe('sendAndRecover', () => {
     if (!result.ok) expect(result.error.kind).toBe('billing');
     expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'idle' });
   });
+
+  test('re-sending one submission keeps its wire messageID, so the proxy still absorbs it', async () => {
+    // A host retries a failed send by calling this again with the same queue
+    // entry. Without the stable id the second call mints a new `messageID`, the
+    // request body differs, and the proxy's body-hash dedupe delivers a prompt
+    // that already reached opencode a SECOND time.
+    const sent: Array<Record<string, unknown>> = [];
+    promptImpl = async (args) => {
+      sent.push(args as Record<string, unknown>);
+      return { data: {} };
+    };
+    const submission = {
+      sessionId: 'sess-retry',
+      messageId: 'msg-1',
+      parts: [{ type: 'text' as const, text: 'hi' }],
+      clientMessageId: 'cm_42',
+    };
+
+    await sendAndRecover(submission);
+    await sendAndRecover(submission);
+
+    expect(sent).toHaveLength(2);
+    expect(sent[0].messageID).toBeTruthy();
+    expect(sent[1].messageID).toBe(sent[0].messageID);
+  });
+
+  test('a different submission of the same text still gets its own messageID', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    promptImpl = async (args) => {
+      sent.push(args as Record<string, unknown>);
+      return { data: {} };
+    };
+
+    await sendAndRecover({
+      sessionId: 'sess-retry',
+      messageId: 'msg-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_1',
+    });
+    await sendAndRecover({
+      sessionId: 'sess-retry',
+      messageId: 'msg-2',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_2',
+    });
+
+    expect(sent[0].messageID).not.toBe(sent[1].messageID);
+  });
 });
 
 describe('applyOptimisticAbort', () => {

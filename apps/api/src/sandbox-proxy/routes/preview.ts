@@ -11,14 +11,7 @@ import {
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import {
-  AgentSecretGrantMismatchError,
-  SecretGrantResolutionError,
-} from '../../projects/lib/secret-grant';
-import {
-  SessionGrantRemintError,
-  remintGrantForAgentSwitch,
-} from '../../projects/lib/session-token-grant';
+import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { recordSessionActivity } from '../../projects/session-activity';
@@ -33,10 +26,7 @@ import {
   turnDeliveryGraceMs,
   turnGrantMs,
 } from '../../projects/sandbox-deadline';
-import {
-  extractPromptInfo,
-  generateSessionTitleFromFirstPrompt,
-} from '../../projects/session-title-generate';
+import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
@@ -52,6 +42,18 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
+import {
+  DEFAULT_AGENT_SENTINEL,
+  type PrePromptEnvSyncDeps,
+  agentSwitchConflictResponse,
+  bodyWithoutPromptAgent,
+  errorMessage,
+  jsonProxyError,
+  requestedPromptAgent,
+  runPrePromptEnvSync,
+  secretGrantErrorResponse,
+  shouldSyncProjectEnvBeforeProxy,
+} from '../pre-prompt-env-sync';
 import {
   PROXY_RETRY_BUDGET_MS,
   isLongTurnCompletionRequest,
@@ -101,21 +103,19 @@ export const STRIP_FORWARD_HEADERS = new Set([
   KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
 
-function jsonProxyError(body: Record<string, unknown>, status: number, origin?: string): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
-  return new Response(JSON.stringify(body), {
-    status,
-    headers,
-  });
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : String(error || fallback);
-}
+// The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit
+// test can reach it without evaluating this route — importing this file caches
+// its collaborators and silently disables every sibling suite's `mock.module`
+// (see the header comment there). Re-exported so existing import paths, and the
+// suites that already read these names off `./preview`, keep working.
+export {
+  bodyWithoutPromptAgent,
+  requestedPromptAgent,
+  runPrePromptEnvSync,
+  secretGrantErrorResponse,
+  shouldSyncProjectEnvBeforeProxy,
+} from '../pre-prompt-env-sync';
+export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
 // SANDBOX_TOUCH_INTERVAL_MS in ../backend.ts, for the same reason: a single page
@@ -137,18 +137,6 @@ export function bindSandboxRequestContext(
   setContextField('projectId', record.projectId);
   setContextField('sessionId', record.sessionId);
   setContextField('sandboxId', sandboxId);
-}
-
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
-
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
 }
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
@@ -377,14 +365,6 @@ function sanitizeRedirectLocation(
   }
 }
 
-// === Project-env pre-sync (before a prompt reaches opencode) ===
-
-function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
-  if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
-}
-
 // True only when a fetch failure PROVES nothing reached the box: the upstream
 // actively refused the connection (nothing was ever accepted). Any other thrown
 // error — timeout, abort, connection reset mid-flight — is ambiguous: the
@@ -401,23 +381,6 @@ function isConnectionRefusedError(err: unknown): boolean {
   if (codes.some((c) => c === 'ECONNREFUSED')) return true;
   const message = typeof e.message === 'string' ? e.message : '';
   return /econnrefused|connection refused|failed to connect|unable to connect/i.test(message);
-}
-
-function requestedPromptAgent(
-  body: ArrayBuffer | undefined,
-  incomingHeaders: Headers,
-): string | null {
-  if (!body) return null;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return null;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-      agent?: unknown;
-    };
-    return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -577,73 +540,6 @@ async function connectorGateRefusal(
   );
 }
 
-function agentSwitchConflictResponse(
-  expectedAgent: string,
-  requestedAgent: string,
-  origin?: string,
-): Response {
-  return jsonProxyError(
-    {
-      error: 'agent switch requires a new session',
-      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      expected_agent: expectedAgent,
-      requested_agent: requestedAgent,
-    },
-    409,
-    origin,
-  );
-}
-
-/**
- * Map a secret-grant failure from the pre-prompt env sync onto its response, or
- * null when the error is an ordinary env-sync failure the caller should handle
- * with its existing retry/502 logic.
- *
- * Both cases refuse the prompt rather than forwarding it: the sandbox's env is
- * provisioned for ONE agent's grant, so a prompt we can't prove is entitled to
- * that env must not reach OpenCode. See projects/lib/secret-grant.ts.
- */
-export function secretGrantErrorResponse(err: unknown, origin?: string): Response | null {
-  // The prompt asked for an agent whose grant differs from the session's. 409,
-  // matching the existing agent-immutability contract the web client already
-  // codes against — re-scoping now cannot un-read what the session's agent
-  // already pulled into the box.
-  if (err instanceof AgentSecretGrantMismatchError) {
-    return agentSwitchConflictResponse(err.sessionAgent, err.requestedAgent, origin);
-  }
-  // We could not establish what this agent may read. 503 rather than 502: the
-  // sandbox is fine, our ability to VERIFY entitlement is what failed, and
-  // retrying is the correct client response.
-  // The switch was legal but we could not rewrite the token's grant to match the
-  // agent now running. 503 for the same reason as above — and refusing is the
-  // point: forwarding would run the new agent against the OLD agent's connector
-  // and CLI grants, which is exactly the escalation the re-mint closes.
-  if (err instanceof SessionGrantRemintError) {
-    return jsonProxyError(
-      { error: err.message, code: 'AGENT_SWITCH_GRANT_UNAPPLIED' },
-      503,
-      origin,
-    );
-  }
-  if (err instanceof SecretGrantResolutionError) {
-    return jsonProxyError(
-      { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
-      503,
-      origin,
-    );
-  }
-  return null;
-}
-
-// The sentinel name a session carries when it isn't bound to a *concrete* agent.
-// `project_sessions.agent_name` defaults to this, and no agent is literally named
-// "default" — the runtime resolves it to OpenCode's configured `default_agent`
-// (conventionally `kortix`). It is therefore non-binding: a "default" session's
-// connector token carries the least-privileged grant (null = full for ungoverned
-// projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
-// can never use it to escalate into another agent's connector / Kortix-CLI grant.
-const DEFAULT_AGENT_SENTINEL = 'default';
-
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
 // run a DIFFERENT *concrete* agent than the one this session's connector token was
 // minted for. That — and only that — is the escalation the policy prevents (see
@@ -665,28 +561,18 @@ function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: st
   return requestedAgent !== sessionAgent;
 }
 
-// Drop the prompt's `agent` field entirely so OpenCode resolves its own
-// `default_agent`. Used for non-concrete ('default') sessions: the box must
-// always run the agent it booted with — the one the connector token was minted
-// for — regardless of which concrete name the client speculatively echoed.
-function bodyWithoutPromptAgent(
-  body: ArrayBuffer | undefined,
-  incomingHeaders: Headers,
-): ArrayBuffer | undefined {
-  if (!body) return body;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return body;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-      agent?: unknown;
-    };
-    if (!('agent' in parsed)) return body;
-    parsed.agent = undefined;
-    return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
-  } catch {
-    return body;
-  }
-}
+// The REAL collaborators for the pre-prompt turn-start block. Built HERE, not in
+// ../pre-prompt-env-sync.ts: this file is re-evaluated by every proxy suite
+// under its own `mock.module` stubs, so binding the four modules here is what
+// keeps those stubs effective. Binding them in the extracted module instead
+// would cache the real ones for the whole process the first time any test
+// touched it.
+const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
+  syncEnv: syncSandboxEnvForPrompt,
+  remintGrant: remintGrantForAgentSwitch,
+  scheduleSnapshot: scheduleOpencodeSnapshotSync,
+  generateTitle: generateSessionTitleFromFirstPrompt,
+};
 
 // === Core HTTP forwarder ======================================================
 //
@@ -1110,7 +996,6 @@ export async function forwardToSandbox(
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
-        const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
         // The agent-lock 409 and the project.agent.read 403 used to live here.
         // They now run in `agentSwitchRefusal`, above the dedupe claim and above
         // the connector gate — see that function for why both moves matter.
@@ -1121,74 +1006,44 @@ export async function forwardToSandbox(
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }
-        // A prompt is the one moment this sandbox is guaranteed awake, so off
-        // it we (1) generate the Kortix-owned session title from this first
-        // prompt, using the model the user picked, and (2) refresh the
-        // opencode_sessions snapshot the conversation list reads. Both are
-        // fire-and-forget and never block the prompt.
-        const prompt = extractPromptInfo(requestBody, incomingHeaders);
-        if (userId && prompt.text) {
-          void generateSessionTitleFromFirstPrompt({
-            sessionId: record.sessionId,
-            projectId: record.projectId,
-            accountId: record.accountId,
+        const refusal = await runPrePromptEnvSync(
+          {
+            record,
+            sandboxId,
+            port,
             userId,
-            firstPromptText: prompt.text,
-            modelHint: prompt.model ?? undefined,
-          });
-        }
-        scheduleOpencodeSnapshotSync({
-          sessionId: record.sessionId,
-          projectId: record.projectId,
-          externalId: record.externalId,
-        });
-        try {
-          await syncSandboxEnvForPrompt({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            externalId: record.externalId,
-            serviceKey,
+            origin,
             previewUrl,
             providerHeaders: ingress.headers,
-            providerName: record.provider as ProviderName,
-            // The secret grant is resolved from the agent this prompt actually
-            // runs, not the session's create-time column — see
-            // projects/lib/secret-grant.ts.
+            serviceKey,
             requestedAgent,
-          });
-          // The env sync above applied the running agent's secret grant, or
-          // refused it when the optional strict lock is enabled. Re-point the
-          // token's connector/CLI grant at the agent that will actually run — it was
-          // frozen at mint from the BOOT agent, and those gates read it at call
-          // time. Only on a real switch: an ordinary turn resolves to the
-          // session's own agent and skips the manifest read entirely.
-          await remintGrantForAgentSwitch({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            sessionAgent,
-            requestedAgent,
-          });
-        } catch (err) {
-          // Fail closed on anything to do with the secret grant: refuse the
-          // prompt rather than forwarding it against an env we can't vouch for.
-          const grantResponse = secretGrantErrorResponse(err, origin);
-          if (grantResponse) {
-            console.warn(
-              `[PREVIEW] Secret grant refused prompt for ${sandboxId}:${port}: ${errorMessage(err, 'secret grant error')}`,
-            );
-            return grantResponse;
+            body: requestBody,
+            incomingHeaders,
+          },
+          REAL_PRE_PROMPT_DEPS,
+        );
+        if (refusal) {
+          // The refusal was raised BELOW `claimPromptDelivery`, so returning it
+          // as-is burns the caller's Idempotency-Key: their retry — the exact
+          // thing a 503 tells them to make — would come back
+          // `200 {"deduplicated":true}` and the message would be silently lost.
+          //
+          // Safe by construction: `runPrePromptEnvSync` talks to the DAEMON's
+          // /kortix/env, never to opencode's session endpoints, and it runs
+          // strictly before the upstream fetch — so nothing was delivered and a
+          // re-delivery cannot double-enqueue. `promptDeliveryMayHaveReachedUpstream`
+          // keeps that honest for the one path that could contradict it: a retry
+          // attempt whose PREVIOUS attempt already fetched. Then the failure is
+          // ambiguous and the claim must stay, exactly as in the giveup path.
+          //
+          // The defect is not new and is not command-specific — it is one of the
+          // "three existing early returns [that] sit after the claim" named on
+          // the connector gate above. Enabling this block for `/command` is what
+          // made fixing it a precondition rather than a cleanup.
+          if (promptDedupeKey && !promptDeliveryMayHaveReachedUpstream) {
+            releasePromptDelivery(promptDedupeKey);
           }
-          const message = errorMessage(err, 'project env sync failed');
-          if (isRetryableEnvSyncFailure(message)) {
-            // Treat daemon/preview-transient env-sync failures like any other
-            // sandbox-port reachability miss: retry/wake in the outer loop, then
-            // return the friendly port-unreachable response if the sandbox never
-            // recovers. Throwing HTTPException here bypassed that retry path and
-            // turned expected 502/timeouts from Daytona into Better Stack errors.
-            throw new Error(message);
-          }
-          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
-          return jsonProxyError({ error: message }, 502, origin);
+          return refusal;
         }
       }
 

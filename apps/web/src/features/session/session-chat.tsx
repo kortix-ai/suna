@@ -30,7 +30,10 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
+import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
+import { ExpandableOutput } from './turn/expandable-output';
+import { TurnViewport } from './turn/turn-viewport';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
@@ -69,7 +72,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
-import { errorToast, infoToast } from '@/components/ui/toast';
+import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
@@ -1408,9 +1411,17 @@ function SessionTurnImpl({
                       {commandForTurn.name}
                     </span>
                   </div>
-                  <div className="min-h-0 overflow-hidden px-4 py-3 text-sm">
+                  {/* Command output clamps to a readable height and opens from a
+                      centred toggle on the fade. `from-secondary` matches the
+                      panel this sits on — the gradient has to dissolve into the
+                      surface, not paint a band over it. */}
+                  <ExpandableOutput
+                    className="min-h-0"
+                    fadeClassName="from-secondary"
+                    contentClassName="px-4 py-3 text-sm"
+                  >
                     <SandboxUrlDetector content={response} isStreaming={false} />
-                  </div>
+                  </ExpandableOutput>
                 </div>
                 <CodeBlockEndpoints content={response} />
               </div>
@@ -2260,29 +2271,30 @@ export function SessionChat({
       // Undo rather than a confirm dialog. A queue is something you curate —
       // gating every removal behind a modal would make it unusable, and the
       // thing being removed is a draft, not data. Reversible beats guarded.
+      //
+      // The toast is given an explicit id so the button can close it: `toast`
+      // hands its own id only to its render callback, and `options.button` is
+      // rendered verbatim, so without this the button has nothing to dismiss and
+      // sits there for the full 5s after it has already been pressed. See
+      // `createQueueUndoAction`, which also latches — a double-click beats the
+      // dismiss, and re-running the restore would put the entry back twice
+      // (two prompts, or two runs of the same `/command`).
+      const undoToastId = `queue-undo-${sessionId}-${removed.id}`;
+      // Everything the entry carried, minus the queue's own bookkeeping — see
+      // `restoreQueuedMessage`. The field list that used to be written out here
+      // dropped `command` and `files`, turning an undone `/webapp` into a plain
+      // (often empty) message.
+      const undo = createQueueUndoAction({
+        sessionId,
+        removed,
+        index,
+        dismiss: () => dismissToast(undoToastId),
+      });
       infoToast('Removed from queue', {
+        id: undoToastId,
         duration: 5000,
         button: (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              const current = useMessageQueueStore.getState();
-              current.enqueue(sessionId, {
-                text: removed.text,
-                mentions: removed.mentions,
-                agent: removed.agent,
-                model: removed.model,
-                variant: removed.variant,
-              });
-              // Put it back where it was, not at the tail.
-              if (index >= 0) {
-                const restored = current.getSessionQueue(sessionId).pending;
-                const last = restored[restored.length - 1];
-                if (last) current.reorder(sessionId, last.id, index);
-              }
-            }}
-          >
+          <Button size="sm" variant="outline" onClick={undo}>
             Undo
           </Button>
         ),
@@ -2870,6 +2882,14 @@ export function SessionChat({
         agent?: string | null;
         model?: { providerID: string; modelID: string } | null;
         variant?: string | null;
+        /**
+         * The queue entry's stable key, when this send is a queued entry being
+         * dispatched. Re-dispatching the SAME entry (a retry) re-sends one wire
+         * `messageID` so the sandbox proxy still recognises the delivery;
+         * a different entry, even with identical text, gets its own. Omitted
+         * for a direct composer send, which has no retry path.
+         */
+        clientMessageId?: string;
       },
     ) => {
       setCommandError(null);
@@ -3058,10 +3078,20 @@ export function SessionChat({
       // callers (queue drain, input box) can handle send failures, but the
       // actual response body still arrives via the sync store.
       //
-      // Don't send part IDs or messageID — let the server generate them with
-      // its own clock. Client-generated IDs can sort before server IDs due to
-      // clock skew (browser vs Docker container), causing the server's loop to
-      // exit immediately thinking the prompt was already answered.
+      // Don't send part IDs. `ascendingId` encodes the HIGH bits of the id
+      // clock where opencode encodes the LOW 48 (see the warning on it in the
+      // SDK), so a client id of that shape sorts before EVERY server id: the
+      // server's "has this prompt already been answered?" ordering check reads
+      // a stale assistant reply as the answer and the turn never runs.
+      //
+      // The `messageID` is a different matter and IS sent — by the SDK, not
+      // from here. `promptOpenCodeMessage` mints it in opencode's own wire
+      // format and places it above everything already in this session's
+      // transcript, which is what makes it safe; without one, two identical
+      // prompts inside 60s hash to a single proxy delivery and the second is
+      // silently dropped. Do not "restore" the old no-messageID behaviour on
+      // the strength of the part-id reasoning above — they are not the same
+      // hazard, and the mint is the guard against this one.
       const mappedParts = parts.map((p: any) => {
         if (p.type === 'file')
           return {
@@ -3115,6 +3145,9 @@ export function SessionChat({
                 ...(selectedAgent ? { agent: selectedAgent } : {}),
                 ...(selectedModel ? { model: selectedModel } : {}),
                 ...(selectedVariant ? { variant: selectedVariant } : {}),
+                ...(overrides?.clientMessageId
+                  ? { clientMessageId: overrides.clientMessageId }
+                  : {}),
               });
               return { ok: true } as const;
             } catch (cause) {
@@ -3128,6 +3161,9 @@ export function SessionChat({
             sessionId,
             messageId: messageID,
             parts: mappedParts,
+            ...(overrides?.clientMessageId
+              ? { clientMessageId: overrides.clientMessageId }
+              : {}),
             options: {
               // Pass the session's directory so opencode resolves project-scoped
               // agents (.opencode/agent/*.md under the project) and applies them
@@ -3291,6 +3327,15 @@ export function SessionChat({
         agent: message.agent,
         model: message.model,
         variant: message.variant,
+        // The entry's stable key, carried so a RETRY of this same entry sends
+        // the same wire `messageID`. Without it the retry mints a new one, the
+        // request body differs, and the proxy's 60s body-hash dedupe delivers a
+        // prompt that already reached opencode a second time — the second
+        // prompt then aborts the turn the first one started. `retry` preserves
+        // `clientMessageId` (it moves the entry, it does not re-create it), so
+        // a retry is the same submission by construction while the NEXT
+        // enqueue, even of identical text, is a different one.
+        clientMessageId: message.clientMessageId,
       });
     },
     [handleSend, commands],
@@ -4042,13 +4087,10 @@ export function SessionChat({
                         // Fall through to the normal turn renderer instead.
 
                         return (
-                          <div
+                          <TurnViewport
                             key={turn.userMessage.info.id}
-                            data-turn-id={turn.userMessage.info.id}
-                            className={cn(
-                              '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
-                              turnIndex === 0 ? '' : 'mt-12',
-                            )}
+                            turnId={turn.userMessage.info.id}
+                            className={turnIndex === 0 ? '' : 'mt-12'}
                           >
                             {/* Compaction divider — shown before the first turn after compaction */}
                             {hasCompaction && (
@@ -4085,7 +4127,7 @@ export function SessionChat({
                                 !!readOnly || !sessionState || isBusy || sessionState.rewindPending
                               }
                             />
-                          </div>
+                          </TurnViewport>
                         );
                       })}
                     </ToolActivateContext.Provider>

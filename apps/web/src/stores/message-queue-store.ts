@@ -41,6 +41,7 @@ import {
   reorderQueued,
   retryFailed,
   type QueuedMessage,
+  type QueuedMessageInput,
   type SessionQueue,
 } from '@kortix/sdk/message-queue';
 import { create } from 'zustand';
@@ -62,17 +63,27 @@ export function hadAttachments(message: WebQueuedMessage): number {
   return (message.files ?? []).filter((f) => f.kind === 'lost').length;
 }
 
-/** What a composer hands in. Ids and timestamps are the store's job. */
-export interface EnqueueInput {
-  text: string;
-  files?: AttachedFile[];
-  mentions?: TrackedMention[];
-  agent?: string | null;
-  model?: { providerID: string; modelID: string } | null;
-  variant?: string | null;
-  /** A `/` slash command to run instead of sending `text`. See the SDK type. */
-  command?: { name: string; split?: { before: string; after: string } };
-}
+/**
+ * What a composer hands in. Ids and timestamps are the store's job.
+ *
+ * **Derived from the SDK's input type, never re-declared.** This used to be a
+ * hand-written duplicate of `QueuedMessageInput`'s field list, and the two drifted
+ * the moment the queue grew a field: `command` (27279d2232) had to be added here
+ * by hand, and every call site that built one of these by hand kept dropping it.
+ * Subtracting the three fields the store mints itself is the only difference
+ * this type is allowed to have.
+ *
+ * `files` is `QueuedAttachment[]`, not `AttachedFile[]` — the wider union comes
+ * free with the parameterisation, and it is what lets Undo put back an entry
+ * whose attachments a reload had already reduced to `{ kind: 'lost' }`. Filtering
+ * those out on the way back in would restore an entry that quietly claims it
+ * never had attachments at all. `sendQueuedMessage` drops them at dispatch, which
+ * is the right place: by then the user has seen them.
+ */
+export type EnqueueInput = Omit<
+  QueuedMessageInput<QueuedAttachment, TrackedMention>,
+  'id' | 'clientMessageId' | 'createdAt'
+>;
 
 interface MessageQueueState {
   queues: Record<string, WebSessionQueue>;
@@ -244,21 +255,23 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
     enqueue: (sessionId, input) =>
       mutate(sessionId, (queue) =>
         enqueueIn(queue, {
+          // Spread, not a field list. A field list here is a second place for
+          // a new queue field to be silently dropped, and it has already cost
+          // one: `command` reached the queue type in 27279d2232 and had to be
+          // remembered here by hand.
+          //
+          // The spread also passes agent/model/variant through EXACTLY as
+          // given — `undefined` and `null` are not interchangeable downstream.
+          // `handleSend` reads `undefined` as "use whatever is selected when
+          // this sends" and `null` as "send no agent / model / variant at
+          // all". Coercing an uncaptured value to null strips the user's model
+          // from the send, and the instant shell enqueues without any of the
+          // three.
+          ...input,
+          // After the spread: these three are the store's to mint, and no
+          // caller's value for them may win.
           id: nextId('q'),
           clientMessageId: nextId('cm'),
-          text: input.text,
-          files: input.files,
-          mentions: input.mentions,
-          // Passed through EXACTLY as given — `undefined` and `null` are not
-          // interchangeable downstream. `handleSend` reads `undefined` as "use
-          // whatever is selected when this sends" and `null` as "send no agent
-          // / model / variant at all". Coercing an uncaptured value to null
-          // strips the user's model from the send, and the instant shell
-          // enqueues without any of the three.
-          agent: input.agent,
-          model: input.model,
-          variant: input.variant,
-          command: input.command,
           createdAt: Date.now(),
         }),
       ),

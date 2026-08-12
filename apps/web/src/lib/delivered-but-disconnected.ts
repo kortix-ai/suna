@@ -24,12 +24,32 @@
  * the cost of guessing wrong here is a silently dropped message.
  */
 
-/** Transport gave up waiting for a response it had already asked for. */
+/**
+ * Transport gave up waiting for a response it had already asked for.
+ *
+ * `sandbox port unreachable` is NOT one of these, and the one-word gap between
+ * it and `sandbox upstream unreachable` is the whole reason it is called out
+ * here rather than silently absent. Both come out of `portUnreachableResponse`
+ * in `apps/api/src/sandbox-proxy/routes/preview.ts`, and only one of them says
+ * anything about a prompt:
+ *
+ *   - `sandbox upstream unreachable` (preview.ts:1546) is the final giveup, and
+ *     for a prompt delivery it is reached with `promptDeliveryMaybeAccepted`
+ *     still true — the box may already hold the message. Delivered. It matches
+ *     the `upstream unreachable` entry below.
+ *   - `sandbox port unreachable` (preview.ts:1370) is guarded by
+ *     `!promptDelivery && isBrowserNavigation(...)`. It is the dead-preview-port
+ *     answer to a BROWSER NAVIGATION — a prompt POST can never receive it, and
+ *     nothing about a dead port implies the agent saw anything.
+ *
+ * Listing the port case as "delivered" therefore bought nothing and cost the
+ * failure toast for any mutation aimed at a dead port: the send would be
+ * silently swallowed while the user waited for a turn that was never running.
+ */
 const DELIVERED_BUT_DISCONNECTED = [
   'upstream unreachable',
   'long_turn_proxy_timeout',
   'outran this connection',
-  'sandbox port unreachable',
 ];
 
 /**

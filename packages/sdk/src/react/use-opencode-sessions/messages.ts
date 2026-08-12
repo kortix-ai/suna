@@ -174,6 +174,17 @@ export function useOpenCodeMessages(sessionId: string) {
  * Generate a monotonic ascending ID compatible with the server's Identifier.ascending().
  * Server format: prefix + "_" + 12-char hex timestamp + 14-char random base62 = prefix_<26 chars>
  * Server validates: z.string().startsWith("msg") for messages, "prt" for parts.
+ *
+ * ⚠️ **The time field is NOT comparable with a server-minted id, despite the
+ * name.** opencode encodes the LOW 6 bytes of `Date.now() * 0x1000 + counter`;
+ * this keeps the HIGH 12 hex digits of the same number (`.slice(0, 12)` of a
+ * 14-digit string, i.e. a divide by 256). Today that yields `msg_19ff…` where
+ * opencode mints `msg_fa4a…`, so EVERY id from here sorts before EVERY id from
+ * the server. Local-only ids (an optimistic message a host renders while its
+ * prompt is in flight) do not care. **Anything that goes on the wire does** —
+ * use `mintPromptMessageId` below, which encodes the field the way opencode
+ * does. Left as-is on purpose: this is a published export, and hosts key
+ * optimistic state on the exact strings it returns.
  */
 let lastIdTimestamp = 0;
 let idCounter = 0;
@@ -192,11 +203,179 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   return `${prefix}_${hex}${rand}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// One prompt submission = one client-minted `messageID`.
+//
+// The Kortix sandbox proxy refuses to deliver a prompt body it may already have
+// delivered. It identifies a delivery by the caller's `Idempotency-Key` header
+// or — when there is none, which is always for a browser, since that header is
+// not on the API's CORS allow-list — by a **sha256 of the request body**, with a
+// 60s TTL (`apps/api/src/sandbox-proxy/prompt-dedupe.ts`, `promptDeliveryKey`).
+// A repeat is answered `200 {"status":"duplicate","deduplicated":true}` and
+// never reaches opencode.
+//
+// The payload below is built from the session id, the mapped parts (whose
+// client ids are dropped), and the model/agent picks — nothing else. So sending
+// the same text twice within 60s produced a BYTE-IDENTICAL body, and the second
+// submission was silently lost: no error, no turn, nothing on screen. Minting a
+// per-submission id makes the two bodies differ by construction, while a RETRY
+// of one submission keeps its id so the proxy's real duplicate protection still
+// fires (see the retry loop in `promptOpenCodeMessage`).
+//
+// "One submission" is bigger than one call. The internal retry loop is only the
+// retry the SDK owns; a host retries too — apps/web's message queue re-dispatches
+// a failed entry through `retry` → `sendQueuedMessage` → `handleSend` →
+// `sendParts`, which lands here as a FRESH call. Minting per call there would
+// deliver a prompt that reached opencode but reported failure a SECOND time, and
+// the second prompt aborts the turn the first one started. So the caller may
+// name its submission with `clientMessageId` — the queue entry's own stable key
+// (`QueuedMessageInput.clientMessageId`) — and every dispatch of that submission
+// resolves to the one wire id.
+//
+// The caller names the submission; this module still owns the wire FORMAT.
+// A host id (`cm_12`, or `ascendingId`'s `msg_19ff…`, which encodes the wrong
+// bits — see the warning on it) cannot be used on the wire: opencode orders by
+// the id's clock prefix, so a badly-shaped id reads as already-answered and the
+// turn never runs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// `BigInt(0x…)` rather than the `0x…n` literal, throughout. This package is
+// typechecked by its consumers as well as by itself, and apps/web's tsconfig
+// targets below ES2020, where the literal syntax is `TS2737: BigInt literals
+// are not available`. The call form compiles under every target and is exact —
+// each value below is far inside `Number.MAX_SAFE_INTEGER`.
+/** opencode keeps the low 6 bytes of its id clock, so the field wraps ~every 2.2y. */
+const WIRE_ID_TIME_MASK = BigInt(0xffffffffffff);
+/** Sub-millisecond slots per millisecond in that clock (`Date.now() * 0x1000`). */
+const WIRE_ID_TIME_SCALE = BigInt(0x1000);
+/**
+ * Ceiling on the correction taken from the session's own transcript: 1h of
+ * clock. Large enough to absorb any realistic browser-vs-sandbox skew, small
+ * enough that one wrapped or malformed id cannot drag every later id weeks into
+ * the future.
+ */
+const MAX_WIRE_ID_CLOCK_CORRECTION = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCALE;
+const WIRE_MESSAGE_ID_TIME = /^msg_([0-9a-f]{12})/;
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+// Monotonic tie-break for two submissions inside the same millisecond. Scoped
+// to the LAST session deliberately: a skew correction learned from one
+// session's transcript must not follow the user into another session, where it
+// would push a fresh user message past assistant replies that come after it.
+let lastMintedSessionId = '';
+let lastMintedWireId = BigInt(0);
+
+/** The highest id-clock value this session's transcript already shows, or null. */
+function newestKnownMessageTime(sessionId: string): bigint | null {
+  const messages = useSyncStore.getState().messages[sessionId];
+  if (!messages?.length) return null;
+  let newest: bigint | null = null;
+  for (const message of messages) {
+    const match = WIRE_MESSAGE_ID_TIME.exec(message?.id ?? '');
+    if (!match) continue;
+    const encoded = BigInt(`0x${match[1]}`);
+    if (newest === null || encoded > newest) newest = encoded;
+  }
+  return newest;
+}
+
+/**
+ * Mint the `messageID` for ONE prompt submission, in opencode's own
+ * `Identifier.ascending("message")` wire format: `msg_` + the low 48 bits of
+ * `Date.now() * 0x1000` as 12 hex chars + 14 random base62 chars.
+ *
+ * Ordering is load-bearing, which is why this does not reuse `ascendingId`
+ * (see the warning on it): opencode resolves "has this prompt already been
+ * answered?" by id order, so a user message that sorts before the assistant
+ * replies already on record is read as answered and the turn never runs — the
+ * same silent loss this whole change exists to remove. Two guards keep the
+ * minted id above everything already known:
+ *
+ *  1. If this session's transcript already holds a HIGHER id — the browser
+ *     clock lags the sandbox's — start just above it, bounded by
+ *     {@link MAX_WIRE_ID_CLOCK_CORRECTION}.
+ *  2. Never repeat or go below the previous id minted for this same session,
+ *     so two submissions inside one millisecond still order.
+ */
+function mintPromptMessageId(sessionId: string): string {
+  let encoded = (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  const newest = newestKnownMessageTime(sessionId);
+  if (newest !== null && newest >= encoded && newest - encoded <= MAX_WIRE_ID_CLOCK_CORRECTION) {
+    encoded = newest + BigInt(1);
+  }
+  if (sessionId === lastMintedSessionId && encoded <= lastMintedWireId) {
+    encoded = lastMintedWireId + BigInt(1);
+  }
+  encoded &= WIRE_ID_TIME_MASK;
+  lastMintedSessionId = sessionId;
+  lastMintedWireId = encoded;
+
+  let random = '';
+  for (let i = 0; i < 14; i++) random += BASE62[Math.floor(Math.random() * 62)];
+  return `msg_${encoded.toString(16).padStart(12, '0')}${random}`;
+}
+
+/**
+ * How many submissions' wire ids to remember. One `Map` entry per queued
+ * message, so a long-lived tab must not keep them all. Past the window the
+ * oldest submission re-mints on its next dispatch — i.e. it degrades to exactly
+ * the per-call behaviour, never to a wrong id — and 256 entries is far more than
+ * the 60s the proxy's dedupe actually spans.
+ */
+const MAX_REMEMBERED_SUBMISSIONS = 256;
+const submissionWireIds = new Map<string, string>();
+
+/**
+ * The wire `messageID` for ONE submission: minted on first dispatch, then reused
+ * for every later dispatch of the same `clientMessageId` in the same session.
+ *
+ * Keyed by session as well as by the caller's id because a host mints queue keys
+ * per session store, not globally, and an id has to sort against ITS session's
+ * transcript — `mintPromptMessageId` reads that transcript to place it.
+ */
+function submissionWireId(sessionId: string, clientMessageId: string | undefined): string {
+  if (!clientMessageId) return mintPromptMessageId(sessionId);
+  const key = `${sessionId} ${clientMessageId}`;
+  const known = submissionWireIds.get(key);
+  if (known) return known;
+  const minted = mintPromptMessageId(sessionId);
+  submissionWireIds.set(key, minted);
+  // `Map` iterates in insertion order, so the first key is the oldest.
+  while (submissionWireIds.size > MAX_REMEMBERED_SUBMISSIONS) {
+    const oldest = submissionWireIds.keys().next().value;
+    if (oldest === undefined) break;
+    submissionWireIds.delete(oldest);
+  }
+  return minted;
+}
+
 export interface SendOpenCodeMessageArgs {
   sessionId: string;
   parts: PromptPart[];
   options?: SendMessageOptions;
+  /**
+   * Identity of THIS submission on the wire. Omit it and one is minted per
+   * call — which is what keeps two identical prompts from hashing to a single
+   * proxy delivery. Pass one only to re-send a submission you already made and
+   * want the proxy to recognise as the same delivery.
+   *
+   * Prefer `clientMessageId` unless you are already holding a wire-format id:
+   * this one is used verbatim, so a badly-shaped id (see `ascendingId`) sorts
+   * below the server's and makes opencode read the prompt as already answered.
+   */
   messageID?: string;
+  /**
+   * Stable name for the SUBMISSION this call dispatches — the host's own key,
+   * e.g. `QueuedMessageInput.clientMessageId`. Two calls carrying the same one
+   * are the same submission and send the same wire `messageID`, so the proxy's
+   * body-hash dedupe still absorbs a host-level retry. Two different ones are
+   * two submissions and always differ, so a deliberate identical re-send is
+   * never swallowed.
+   *
+   * Any string works — this is an identity, not a format. The wire id is minted
+   * here from it.
+   */
+  clientMessageId?: string;
 }
 
 /** Error thrown by `promptOpenCodeMessage` on a non-2xx response — carries the
@@ -234,16 +413,24 @@ export async function promptOpenCodeMessage({
   parts,
   options,
   messageID,
+  clientMessageId,
 }: SendOpenCodeMessageArgs): Promise<void> {
   const mappedParts = parts.map((p) => {
     if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
     if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
     return { type: 'text' as const, text: p.text };
   });
+  // Resolved ONCE, here, outside the retry loop below — every attempt of this
+  // submission re-sends the same id, so the proxy's dedupe still short-circuits
+  // a genuine retry, while the NEXT submission gets a fresh id and can never be
+  // mistaken for this one. `clientMessageId` extends "this submission" past the
+  // loop to the host's own retry of the same queue entry; without it a fresh
+  // call always means a fresh id.
+  const promptMessageId = messageID ?? submissionWireId(sessionId, clientMessageId);
   const payload = {
     sessionID: sessionId,
     parts: mappedParts,
-    ...(messageID && { messageID }),
+    messageID: promptMessageId,
     ...(options?.directory && { directory: options.directory }),
     ...(options?.model && { model: options.model }),
     ...(options?.agent && { agent: options.agent }),

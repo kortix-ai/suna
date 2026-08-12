@@ -61,11 +61,22 @@ describe('session-title invariant', () => {
   test('B — the title generator has exactly four entry points', () => {
     // Adding a prompt transport and titling it its own way is the failure this
     // catches; the hook set is documented here, in one enforced place.
+    //
+    // FOUR hooks, FIVE files: the proxy's pre-prompt hook is split across
+    // `sandbox-proxy/routes/preview.ts` and `sandbox-proxy/pre-prompt-env-sync.ts`
+    // (see the header on the latter — the route cannot be imported by a unit
+    // test without caching its collaborators past every sibling's `mock.module`).
+    // The two are one entry point and must be counted as one.
     expect(
       offenders(/from '[^']*session-title-generate'/, [
         'projects/lib/sessions.ts',
         'projects/session-lifecycle/engine.ts',
         'sandbox-proxy/routes/preview.ts',
+        // Hook 3, extracted. `runPrePromptEnvSync` is the block that used to sit
+        // inline in preview.ts; it calls the generator through an injected
+        // `deps.generateTitle`, so the route still owns the only real binding.
+        // Not a new title author — the same one, moved for testability.
+        'sandbox-proxy/pre-prompt-env-sync.ts',
         // Turn-end second-chance retry: a session whose only prompt was baked
         // in-guest (KORTIX_INITIAL_PROMPT) never crosses another titling hook.
         // The generator stays the single writer (needsTitle + CAS), so this is

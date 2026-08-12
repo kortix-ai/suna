@@ -5,7 +5,11 @@ import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
 import { useRuntimeSessions } from '@kortix/sdk/react';
-import { ArrowBendDoubleUpLeftIcon, ArrowUpLeftIcon as ArrowUpLeft } from '@phosphor-icons/react';
+import {
+  ArrowBendDoubleUpLeftIcon,
+  ArrowUpLeftIcon as ArrowUpLeft,
+  WarningIcon,
+} from '@phosphor-icons/react';
 import type { JSONContent } from '@tiptap/core';
 import { useTranslations } from 'next-intl';
 import type { RefObject } from 'react';
@@ -19,6 +23,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
@@ -39,6 +44,11 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
 import { AttachmentTiles } from './attachment-tiles';
+import {
+  draftWillRunCommand,
+  planCommandAttachments,
+  readCommandChipLabel,
+} from './command-attachments';
 import {
   appendTranscribedText,
   planDraftSubmission,
@@ -165,6 +175,10 @@ export interface SessionChatInputProps {
 }
 
 const EMPTY_QUEUE: QueuedMessageView[] = [];
+
+/** Stable identities for the command-chip subscription below. */
+const NO_SUBSCRIPTION = () => {};
+const NO_COMMAND_CHIP = () => null;
 
 const EMPTY_DOCUMENT = textToDocument('');
 
@@ -377,6 +391,50 @@ function ComposerImpl({
     return () => editorElement.removeEventListener('paste', onPasteCapture, true);
   }, [editorElement, disabled, lockForQuestion, appendAttachedFiles]);
 
+  /**
+   * Whether the draft carries a `/` command chip — the other half of the
+   * attachment guard in `command-attachments.ts`.
+   *
+   * Watched ONLY while something is attached, because that is the only state
+   * in which the answer changes anything. With no attachments nothing is
+   * observed and nothing is read, so ordinary typing costs what it did before.
+   *
+   * A `MutationObserver` rather than an editor callback: `onEmptyChange` fires
+   * on the empty↔non-empty boundary only (`trackEmptyBoundary`), so it never
+   * sees a chip inserted into a draft that already has text — and adding a new
+   * prop to `ComposerEditor` would reach outside this change. The chip is an
+   * atom node with a stable `data-mention` attribute, and the selector is
+   * pinned to `MentionNode`'s real rendered output by a test.
+   *
+   * Both orders are covered: attach-then-type is caught by the observer, and
+   * type-then-attach by the snapshot React reads when the subscription changes
+   * on the first attachment.
+   *
+   * `useSyncExternalStore`, not `useState` + an effect: the editor's DOM is
+   * literally an external store here, and reading it in an effect would render
+   * once with a stale answer and again with the real one.
+   */
+  const hasAttachments = attachedFiles.length > 0;
+  const subscribeToCommandChip = useCallback(
+    (onChange: () => void) => {
+      if (!editorElement || !hasAttachments) return NO_SUBSCRIPTION;
+      const observer = new MutationObserver(onChange);
+      observer.observe(editorElement, { childList: true, subtree: true });
+      return () => observer.disconnect();
+    },
+    [editorElement, hasAttachments],
+  );
+  // A string or null, so the snapshot is stable by value and cannot loop.
+  const readChipSnapshot = useCallback(
+    () => (hasAttachments ? readCommandChipLabel(editorElement) : null),
+    [editorElement, hasAttachments],
+  );
+  const draftCommandChipLabel = useSyncExternalStore(
+    subscribeToCommandChip,
+    readChipSnapshot,
+    NO_COMMAND_CHIP,
+  );
+
   const cycleAgent = useCallback((): boolean => {
     if (primaryAgents.length <= 1 || !onAgentChange || agentSelectorLocked) return false;
     const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
@@ -525,6 +583,19 @@ function ComposerImpl({
     (!availableSelectedModel || !hasSelectableModels);
   const canSubmit = !isEmpty || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
+  /**
+   * A `/` command cannot carry the attached files, so this state refuses the
+   * submit and says why — before anything is sent and before anything is
+   * cleared. See `command-attachments.ts` for why carrying them is not
+   * reachable from here.
+   *
+   * Kept out of `submitDisabled` on purpose: that value also gates the voice
+   * recorder, and dictation is one of the ways out of this state.
+   */
+  const commandAttachmentPlan = planCommandAttachments({
+    isCommand: draftWillRunCommand(draftCommandChipLabel, commands),
+    attachmentCount: attachedFiles.length,
+  });
 
   const prefillId = prefill?.id;
   const prefillText = prefill?.text ?? '';
@@ -675,6 +746,22 @@ function ComposerImpl({
       commands: commands ?? [],
     });
     if (plan.kind === 'command') {
+      // A command cannot deliver the attached files, and the code below is
+      // about to clear them and revoke their object URLs. Refuse the whole
+      // submission instead — before either dispatch path and before the clear,
+      // so the direct call and the queued entry are guarded by one check
+      // rather than two that can drift. Nothing is sent, nothing is cleared,
+      // and the reason is already on screen next to the send button; the toast
+      // covers the keyboard path, which no disabled button can gate.
+      const guard = planCommandAttachments({
+        isCommand: true,
+        attachmentCount: attachedFiles.length,
+      });
+      if (guard.kind === 'refuse') {
+        toast.error(guard.message, { description: guard.description });
+        return;
+      }
+
       // A command takes its turn like everything else.
       //
       // This branch used to `return` before the queue decision below, which
@@ -693,6 +780,8 @@ function ComposerImpl({
           runtimeReady,
         })
       ) {
+        // No files: the guard above proves there are none to pass. `undefined`
+        // here is a fact about the draft, not a discard.
         onQueueMessage(plan.args ?? '', undefined, undefined, {
           name: plan.command.name,
           split: draft?.commandSplit,
@@ -940,6 +1029,31 @@ function ComposerImpl({
 
           <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
 
+          {/*
+            The `/` command + attachments refusal. Directly under the tiles it
+            refers to, and above the editor, so the files, the reason, and the
+            two ways out are all in one glance.
+
+            `role="alert"`: this appears in response to the user's own edit but
+            it also DISABLES the send button, and a control that goes dead with
+            no announcement is the exact "indistinguishable from broken" state
+            the notice bar above the card exists to prevent.
+          */}
+          {commandAttachmentPlan.kind === 'refuse' && (
+            <div
+              role="alert"
+              className="text-muted-foreground flex items-start gap-2 px-4 pt-3 text-xs"
+            >
+              <WarningIcon className="mt-px size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 text-balance">
+                <span className="text-foreground font-medium">
+                  {commandAttachmentPlan.message}.
+                </span>{' '}
+                {commandAttachmentPlan.description}
+              </span>
+            </div>
+          )}
+
           <div
             className={cn(
               'flex min-w-0 flex-col px-2 pb-2',
@@ -1013,7 +1127,7 @@ function ComposerImpl({
               questionCanAct={questionCanAct}
               hasText={!isEmpty}
               canSubmit={canSubmit}
-              submitDisabled={submitDisabled}
+              submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
               disabled={disabled}
               modelUnavailable={modelUnavailable}
               onSubmit={handleSubmit}

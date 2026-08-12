@@ -3,10 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { chipClass } from '@/features/session/mention-chip';
+import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import type { MessageWithParts } from '@/ui';
 
-import { UserMessage } from './user-message';
+import { UserMessage, UserMessageBubble } from './user-message';
 
 const message = {
   info: { id: 'message-1', role: 'user' },
@@ -111,5 +111,78 @@ describe('UserMessage renders a /command exactly as the composer does', () => {
     });
     expect(markup).toContain('aria-label="command: /webapp"');
     expect(markup).not.toContain('THE-WHOLE-TEMPLATE-FILE');
+  });
+});
+
+/**
+ * The deepest `<button>` nesting level reached anywhere in a markup string.
+ * 1 is a normal control; 2 means one button lives inside another.
+ */
+function maxButtonDepth(html: string): number {
+  let depth = 0;
+  let max = 0;
+  for (const tag of html.match(/<button\b|<\/button>/g) ?? []) {
+    if (tag === '</button>') depth -= 1;
+    else max = Math.max(max, (depth += 1));
+  }
+  return max;
+}
+
+describe('UserMessageBubble — a clamped message is expandable without swallowing its chips', () => {
+  // `canExpand` is a prop here for the reason stated on the component: it is
+  // set by a ResizeObserver that never runs under `renderToStaticMarkup`, so
+  // driving it through `UserMessage` would render the un-clamped branch and
+  // these assertions could not fail.
+  const renderBubble = (props: Partial<React.ComponentProps<typeof UserMessageBubble>> = {}) =>
+    renderToStaticMarkup(
+      <UserMessageBubble canExpand expanded={false} onToggle={() => {}} textId="m1-text" {...props}>
+        <MentionChip kind="file" label="src/index.ts" onClick={() => {}} />
+      </UserMessageBubble>,
+    );
+
+  test('the bubble itself is not a control, so the chips are not nested inside one', () => {
+    // A `role="button"` + `tabIndex={0}` bubble wrapping `<button>` chips is
+    // invalid: a button's subtree is flattened to its accessible name, so the
+    // chips stop being reachable controls for assistive technology and the
+    // bubble becomes a keyboard trap around them.
+    const markup = renderBubble();
+    expect(markup).not.toContain('role="button"');
+    expect(markup).not.toContain('tabindex');
+    expect(maxButtonDepth(markup)).toBe(1);
+  });
+
+  test('the expand affordance is a real button, named and stateful', () => {
+    const collapsed = renderBubble();
+    expect(collapsed).toContain('aria-label="Expand message"');
+    expect(collapsed).toContain('aria-expanded="false"');
+    expect(collapsed).toContain('aria-controls="m1-text"');
+
+    const open = renderBubble({ expanded: true });
+    expect(open).toContain('aria-label="Collapse message"');
+    expect(open).toContain('aria-expanded="true"');
+  });
+
+  test('the toggle points at the region it actually expands', () => {
+    // `aria-controls` is a promise that the id exists. Without the `id` on the
+    // clamped text div it names nothing.
+    const markup = renderBubble();
+    expect(markup).toContain('id="m1-text"');
+  });
+
+  test('the chips stay independently focusable controls', () => {
+    const markup = renderBubble();
+    expect(markup).toContain('aria-label="file mention: src/index.ts"');
+    // Two controls in the bubble: the chip and the expand toggle. Neither is
+    // inside the other.
+    expect(markup.match(/<button\b/g)?.length).toBe(2);
+  });
+
+  test('an unclamped bubble offers no expand control and no ARIA state at all', () => {
+    const markup = renderBubble({ canExpand: false });
+    expect(markup).not.toContain('aria-label="Expand message"');
+    expect(markup).not.toContain('aria-expanded');
+    expect(markup).not.toContain('role="button"');
+    // The chip is still the one and only control.
+    expect(markup.match(/<button\b/g)?.length).toBe(1);
   });
 });

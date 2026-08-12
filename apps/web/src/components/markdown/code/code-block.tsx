@@ -73,7 +73,10 @@ export function CodeBlock({
       )}
     >
       <figcaption className="flex items-center justify-between gap-2 px-2 py-0.5 text-[12px]">
-        <span className="text-muted-foreground font-mono font-medium tracking-wide lowercase select-none">
+        <span
+          data-testid="code-block-language"
+          className="text-muted-foreground font-mono font-medium tracking-wide lowercase select-none"
+        >
           {languageLabel(language)}
         </span>
         {code && !isStreaming && <CopyButton code={code} />}

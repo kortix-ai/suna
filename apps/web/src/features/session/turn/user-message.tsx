@@ -617,6 +617,134 @@ export function MessageAttachments({
 }
 
 // ============================================================================
+// The bubble
+// ============================================================================
+
+/**
+ * The message bubble, including the clamp and its expand affordance.
+ *
+ * The expand control is the CHEVRON, not the bubble. The bubble used to carry
+ * `role="button"` + `tabIndex={0}` whenever the text was clamped, and it
+ * contains `MentionChip` buttons — a file or session chip that opens what it
+ * names. Interactive content inside a `role="button"` is invalid for a reason
+ * that bites in practice: assistive technology flattens a button's subtree into
+ * its accessible name, so the chips stopped existing as controls, while still
+ * being tab stops in the browser — a bubble that a keyboard user could enter,
+ * tab through, and never operate.
+ *
+ * Promoting the chevron — which already sat exactly where the affordance reads
+ * — makes it a real `<button>` with a name (`Expand message`), state
+ * (`aria-expanded`) and a target (`aria-controls` → the clamped region). The
+ * bubble keeps a plain `onClick` because clicking anywhere in a long message to
+ * open it is a mouse convenience worth keeping, and a div with a click handler
+ * claims nothing to a screen reader. That click is also why `MentionChip` calls
+ * `stopPropagation`: without it, opening a file would toggle the bubble too.
+ *
+ * Exported, and taking `canExpand` as a PROP rather than measuring it, because
+ * the measurement is a `ResizeObserver` in `UserMessage` that only exists in a
+ * browser. Under `renderToStaticMarkup` — the only render this app can test —
+ * effects never commit, so `canExpand` is permanently `false` and every
+ * assertion about the clamped bubble would pass no matter what the clamped
+ * branch renders. The seam is what makes the expanded/collapsed markup able to
+ * fail at all.
+ */
+export function UserMessageBubble({
+  canExpand,
+  expanded,
+  onToggle,
+  fullWidth,
+  textId,
+  textRef,
+  replyContext,
+  children,
+}: {
+  /** The text overflows its clamp, so there is something to expand. */
+  canExpand: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  /** A plan-owning turn takes the full column instead of hugging its text. */
+  fullWidth?: boolean;
+  /** Ties the toggle's `aria-controls` to the region it expands. */
+  textId: string;
+  textRef?: React.RefObject<HTMLDivElement | null>;
+  replyContext?: string | null;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        BUBBLE_SURFACE,
+        'relative overflow-hidden',
+        fullWidth ? 'w-full' : 'w-fit',
+        canExpand && 'cursor-pointer transition-colors',
+      )}
+      onClick={() => canExpand && onToggle()}
+    >
+      {/* Quoted context — a rule, not a card.
+          A filled, bordered banner sitting on the already-filled bubble
+          made two nested surfaces, and the louder one was the quote rather
+          than the message the reader actually came for. A left rule says
+          "this part is quoted" with no chrome at all, and lets the message
+          lead again.
+          `line-clamp-2` replaces the old `slice(0, 150) + '...'` AND
+          `truncate` pair: two truncations that could stack two ellipses,
+          and cut mid-word at the container edge. Clamping wraps to a
+          second line and ends cleanly, and the full text stays in the DOM
+          to select and copy. */}
+      {replyContext && (
+        <blockquote className="border-border mb-2 border-l-2 pl-2.5">
+          <p className="text-muted-foreground line-clamp-2 text-xs leading-5">{replyContext}</p>
+        </blockquote>
+      )}
+
+      {/* Text content */}
+      {children && (
+        <div className="relative">
+          <div
+            ref={textRef}
+            id={textId}
+            className={cn(
+              'max-w-full min-w-0',
+              BUBBLE_TEXT,
+              !expanded && 'max-h-[200px] overflow-hidden',
+            )}
+          >
+            {children}
+          </div>
+
+          {/* Gradient fade for collapsed long messages. Keyed to `muted`
+              so it dissolves into the bubble it sits on, not the old card. */}
+          {canExpand && !expanded && (
+            <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+          )}
+
+          {/* The expand/collapse control. `stopPropagation` because the bubble
+              behind it still toggles on click — without it one press would fire
+              both handlers and cancel itself out. */}
+          {canExpand && (
+            <button
+              type="button"
+              aria-label={expanded ? 'Collapse message' : 'Expand message'}
+              aria-expanded={expanded}
+              aria-controls={textId}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              className="bg-muted/80 text-muted-foreground hover:bg-muted focus-visible:ring-ring absolute right-0 bottom-0 z-10 cursor-pointer rounded-md p-1 backdrop-blur-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <ChevronDown
+                className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+              />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // User message actions — edit (rewind) + copy
 // ============================================================================
 
@@ -1077,110 +1205,56 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || replyContext || effectiveCommandInfo) && (
-        <div
-          className={cn(
-            BUBBLE_SURFACE,
-            'relative overflow-hidden',
-            showPlan ? 'w-full' : 'w-fit',
-            canExpand && 'cursor-pointer transition-colors',
-            // showPlan && 'shadow',
-          )}
-          role={canExpand ? 'button' : undefined}
-          tabIndex={canExpand ? 0 : undefined}
-          aria-expanded={canExpand ? expanded : undefined}
-          onClick={() => canExpand && setExpanded(!expanded)}
-          onKeyDown={(e) => {
-            if (e.target !== e.currentTarget) return;
-            if (!canExpand) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setExpanded(!expanded);
-            }
-          }}
+        <UserMessageBubble
+          canExpand={canExpand}
+          expanded={expanded}
+          onToggle={() => setExpanded(!expanded)}
+          fullWidth={showPlan}
+          textId={`${message.info.id}-text`}
+          textRef={textRef}
+          replyContext={replyContext}
         >
-          {/* Quoted context — a rule, not a card.
-              A filled, bordered banner sitting on the already-filled bubble
-              made two nested surfaces, and the louder one was the quote rather
-              than the message the reader actually came for. A left rule says
-              "this part is quoted" with no chrome at all, and lets the message
-              lead again.
-              `line-clamp-2` replaces the old `slice(0, 150) + '...'` AND
-              `truncate` pair: two truncations that could stack two ellipses,
-              and cut mid-word at the container edge. Clamping wraps to a
-              second line and ends cleanly, and the full text stays in the DOM
-              to select and copy. */}
-          {replyContext && (
-            <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-              <p className="text-muted-foreground line-clamp-2 text-xs leading-5">{replyContext}</p>
-            </blockquote>
-          )}
-
-          {/* Text content */}
           {(bodyText || effectiveCommandInfo) && (
-            <div className="relative">
-              <div
-                ref={textRef}
-                className={cn(
-                  'max-w-full min-w-0',
-                  BUBBLE_TEXT,
-                  !expanded && 'max-h-[200px] overflow-hidden',
-                )}
-              >
-                {/* The `/command` chip sits exactly where it was typed —
-                    leading the line, between two words, or trailing — because
-                    that is where the composer drew it. `split.before` is the
-                    prose that preceded the chip; without it every command
-                    message rebuilt as `/name` + args and a chip typed
-                    mid-sentence silently jumped to the front. */}
-                {effectiveCommandInfo && (
-                  <>
-                    {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
-                    <MentionChip kind="command" label={effectiveCommandInfo.name} />
-                    {bodyText ? ' ' : null}
-                  </>
-                )}
-                {segments.map((seg, i) =>
-                  seg.type === 'file' ? (
-                    <MentionChip
-                      key={i}
-                      kind="file"
-                      label={seg.text.replace(/^@/, '')}
-                      onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
-                    />
-                  ) : seg.type === 'session' ? (
-                    <MentionChip
-                      key={i}
-                      kind="session"
-                      label={seg.text.replace(/^@/, '')}
-                      onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
-                    />
-                  ) : seg.type === 'agent' ? (
-                    // Static: an agent is named, not navigable. Same surface,
-                    // no press affordance it cannot honour.
-                    <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
-                  ) : (
-                    <span key={i}>{seg.text}</span>
-                  ),
-                )}
-              </div>
-
-              {/* Gradient fade for collapsed long messages. Keyed to `muted`
-                  so it dissolves into the bubble it sits on, not the old card. */}
-              {canExpand && !expanded && (
-                <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+            <>
+              {/* The `/command` chip sits exactly where it was typed —
+                  leading the line, between two words, or trailing — because
+                  that is where the composer drew it. `split.before` is the
+                  prose that preceded the chip; without it every command
+                  message rebuilt as `/name` + args and a chip typed
+                  mid-sentence silently jumped to the front. */}
+              {effectiveCommandInfo && (
+                <>
+                  {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
+                  <MentionChip kind="command" label={effectiveCommandInfo.name} />
+                  {bodyText ? ' ' : null}
+                </>
               )}
-
-              {/* Expand/collapse indicator */}
-              {canExpand && (
-                <div className="bg-muted/80 text-muted-foreground absolute right-0 bottom-0 z-10 rounded-md p-1 backdrop-blur-sm">
-                  <ChevronDown
-                    className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+              {segments.map((seg, i) =>
+                seg.type === 'file' ? (
+                  <MentionChip
+                    key={i}
+                    kind="file"
+                    label={seg.text.replace(/^@/, '')}
+                    onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
                   />
-                </div>
+                ) : seg.type === 'session' ? (
+                  <MentionChip
+                    key={i}
+                    kind="session"
+                    label={seg.text.replace(/^@/, '')}
+                    onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+                  />
+                ) : seg.type === 'agent' ? (
+                  // Static: an agent is named, not navigable. Same surface,
+                  // no press affordance it cannot honour.
+                  <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
+                ) : (
+                  <span key={i}>{seg.text}</span>
+                ),
               )}
-            </div>
+            </>
           )}
-        </div>
+        </UserMessageBubble>
       )}
       {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
 

@@ -52,6 +52,50 @@ describe('isDeliveredButDisconnected — nothing was delivered, keep failing', (
     expect(isDeliveredButDisconnected(null)).toBe(false);
     expect(isDeliveredButDisconnected(undefined)).toBe(false);
   });
+
+  test('a dead PREVIEW PORT is not a prompt delivery', () => {
+    // `portUnreachableResponse(..., reason: 'sandbox port unreachable')` in
+    // `apps/api/src/sandbox-proxy/routes/preview.ts:1370` is guarded by
+    // `!promptDelivery && isBrowserNavigation(incomingHeaders)` — it answers a
+    // BROWSER NAVIGATION to a dead preview port, and never a prompt POST.
+    // Nothing about it says the agent received anything, so a mutation that
+    // somehow saw it must still surface its failure toast.
+    expect(isDeliveredButDisconnected('sandbox port unreachable')).toBe(false);
+    expect(
+      isDeliveredButDisconnected(
+        errorMessageOf({ error: 'sandbox port unreachable', port: 3000, status: 502 }),
+      ),
+    ).toBe(false);
+  });
+
+  test('the port case does not drag the ambiguous DELIVERY case down with it', () => {
+    // The two reasons differ by one word and only one of them means "the box
+    // may already have the message": `sandbox upstream unreachable` is the
+    // giveup at `preview.ts:1546`, reached with `promptDeliveryMaybeAccepted`
+    // still true. Pin both directions so a future edit cannot collapse them.
+    expect(isDeliveredButDisconnected('sandbox upstream unreachable')).toBe(true);
+    expect(isDeliveredButDisconnected('sandbox port unreachable')).toBe(false);
+  });
+
+  test('a sandbox that is not ready yet never delivered anything', () => {
+    // The other `portUnreachableResponse` reason a mutation can actually see
+    // (`preview.ts:969`), for a row that is not `active`.
+    const notReady = 'sandbox not ready (status: stopped)';
+
+    expect(isDeliveredButDisconnected(notReady)).toBe(false);
+    // …and that `false` is the classifier DISCRIMINATING, not the classifier
+    // being blind to this envelope. The same string with the one phrase that
+    // does mean "already on the wire" swapped in flips to true, so the
+    // assertion above can no longer pass merely by falling through — which is
+    // what it did when it was the only line in this test.
+    expect(isDeliveredButDisconnected(notReady.replace('not ready', 'upstream unreachable'))).toBe(
+      true,
+    );
+    // The default direction is the safe one, and it is deliberate: an
+    // unrecognised failure is NOT delivered. Guessing "delivered" for anything
+    // unknown swallows the user's message with no toast and no turn.
+    expect(isDeliveredButDisconnected('sandbox exploded in a brand new way')).toBe(false);
+  });
 });
 
 describe('errorMessageOf', () => {

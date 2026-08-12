@@ -19,6 +19,7 @@ mock.module('../../core/http/logger', () => ({
   logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
 }));
 
+import { useSyncStore } from '../../browser/stores/sync-store';
 import {
   extractSendErrorMessage,
   getSendRetryDelayMs,
@@ -223,6 +224,269 @@ describe('promptOpenCodeMessage', () => {
     } finally {
       globalThis.setTimeout = realSetTimeout;
     }
+  });
+});
+
+// ── One prompt submission = one client-minted messageID ────────────────────
+//
+// The Kortix sandbox proxy dedupes a prompt delivery by its Idempotency-Key
+// or — when the caller sends none, which the browser never does — by a sha256
+// of the REQUEST BODY, with a 60s TTL
+// (`apps/api/src/sandbox-proxy/prompt-dedupe.ts`, `promptDeliveryKey`). A
+// repeat is answered `200 {"status":"duplicate","deduplicated":true}` and is
+// never forwarded to opencode.
+//
+// `promptOpenCodeMessage` used to build a payload out of nothing but the
+// session id, the mapped parts (part ids dropped) and the model/agent picks —
+// so sending the SAME text twice inside 60s produced a byte-identical body,
+// the second POST hashed to the same key, and the message was silently lost:
+// no error, no turn, nothing on screen. A per-submission `messageID` makes the
+// two bodies differ by construction, while a retry of ONE submission keeps its
+// id so the proxy's real duplicate protection still fires.
+const ID_TIME_MASK = 0xffffffffffffn;
+/** The 12-hex time field of a `msg_…`/`prt_…` wire id, decoded. */
+const encodedOf = (id: string): bigint => BigInt(`0x${id.slice(4, 16)}`);
+/** What opencode's `Identifier.ascending()` encodes for a given wall clock. */
+const encodedAt = (ms: number): bigint => (BigInt(ms) * 0x1000n) & ID_TIME_MASK;
+const wireMessageId = (ms: number): string =>
+  `msg_${encodedAt(ms).toString(16).padStart(12, '0')}AAAAAAAAAAAAAA`;
+
+/** Collapse the retry backoff so a boot-window test doesn't cost ~30s. */
+async function withInstantBackoff<T>(run: () => Promise<T>): Promise<T> {
+  const realSetTimeout = globalThis.setTimeout;
+  (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
+    fn: (...args: unknown[]) => void,
+  ) => realSetTimeout(fn, 0)) as typeof setTimeout;
+  try {
+    return await run();
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+}
+
+describe('promptOpenCodeMessage messageID', () => {
+  let captured: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    captured = [];
+    promptImpl = async (args) => {
+      captured.push(args as Record<string, unknown>);
+      return { data: {} };
+    };
+    useSyncStore.setState({ messages: {} });
+  });
+
+  test('mints a messageID for a submission that carries none', async () => {
+    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].messageID).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+  });
+
+  test('two identical submissions differ, so the proxy cannot hash them to one delivery', async () => {
+    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+
+    expect(captured).toHaveLength(2);
+    const [first, second] = captured;
+    expect(first.messageID).toBeTruthy();
+    expect(second.messageID).toBeTruthy();
+    expect(first.messageID).not.toBe(second.messageID);
+    // Everything ELSE is byte-identical — the id is the only thing separating
+    // the two deliveries, which is exactly the claim being made.
+    expect({ ...first, messageID: null }).toEqual({ ...second, messageID: null });
+  });
+
+  test('the internal boot-window retry loop re-sends ONE messageID, not a new one per attempt', async () => {
+    // A new id per attempt would defeat the proxy's dedupe claim and let a
+    // retry double-enqueue the same prompt — the 3x-queued bug.
+    let calls = 0;
+    promptImpl = async (args) => {
+      captured.push(args as Record<string, unknown>);
+      calls++;
+      if (calls < 3) {
+        return {
+          error: { message: 'opencode not ready' },
+          response: new Response(null, { status: 503 }),
+        };
+      }
+      return { data: {} };
+    };
+
+    await withInstantBackoff(() =>
+      promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
+    );
+
+    expect(captured).toHaveLength(3);
+    expect(captured[0].messageID).toBeTruthy();
+    expect(new Set(captured.map((p) => p.messageID)).size).toBe(1);
+  });
+
+  test('a caller-supplied messageID is never overwritten', async () => {
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      messageID: 'msg_callersupplied000000000',
+    });
+
+    expect(captured[0].messageID).toBe('msg_callersupplied000000000');
+  });
+
+  test('a HOST retry of one submission reuses its messageID, so the proxy still absorbs it', async () => {
+    // The internal retry loop above is not the only retry. A queued message
+    // that failed is re-dispatched by the host (message-queue `retry` →
+    // `sendQueuedMessage` → `handleSend` → `sendParts`), which is a FRESH call
+    // to this function. Minting per call there means a prompt that reached
+    // opencode but reported failure is delivered TWICE — the proxy's 60s body
+    // hash can no longer absorb it, because the id makes the bodies differ.
+    // `clientMessageId` is the queue entry's own stable key (see
+    // `QueuedMessageInput.clientMessageId`), so one submission keeps one id
+    // across every dispatch of it.
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_7',
+    });
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_7',
+    });
+
+    expect(captured).toHaveLength(2);
+    expect(captured[0].messageID).toBeTruthy();
+    expect(captured[1].messageID).toBe(captured[0].messageID);
+    // …and the whole body with it, which is what the proxy actually hashes.
+    expect(captured[0]).toEqual(captured[1]);
+  });
+
+  test('two DIFFERENT submissions of the same text keep different ids', async () => {
+    // The other half of the contract: a deliberate identical re-send is a new
+    // submission with a new queue entry, and must NOT be swallowed as a
+    // duplicate. Threading the stable id must not undo that.
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_7',
+    });
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_8',
+    });
+
+    expect(captured[0].messageID).not.toBe(captured[1].messageID);
+  });
+
+  test('the stable id is scoped per session, so one queue key cannot collide across sessions', async () => {
+    // Queue keys are minted per host store, not globally, and a message id has
+    // to sort against ITS session's transcript. Two sessions sharing a key must
+    // not share an id.
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_7',
+    });
+    await promptOpenCodeMessage({
+      sessionId: 'sess-2',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_7',
+    });
+
+    expect(captured[0].messageID).not.toBe(captured[1].messageID);
+  });
+
+  test('an explicit messageID still wins over a clientMessageId', async () => {
+    await promptOpenCodeMessage({
+      sessionId: 'sess-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_7',
+      messageID: 'msg_callersupplied000000000',
+    });
+
+    expect(captured[0].messageID).toBe('msg_callersupplied000000000');
+  });
+
+  test('the remembered ids are bounded, and forgetting only degrades to a fresh id', async () => {
+    // A long-lived tab must not accumulate one entry per message forever. The
+    // cache is a small insertion-ordered window: past it the oldest submission
+    // re-mints, which is exactly today's behaviour, never a wrong id.
+    await promptOpenCodeMessage({
+      sessionId: 'sess-bound',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_first',
+    });
+    const first = captured[0].messageID;
+    for (let i = 0; i < 256; i++) {
+      await promptOpenCodeMessage({
+        sessionId: 'sess-bound',
+        parts: [{ type: 'text', text: 'hi' }],
+        clientMessageId: `cm_filler_${i}`,
+      });
+    }
+    await promptOpenCodeMessage({
+      sessionId: 'sess-bound',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_first',
+    });
+
+    expect(captured[captured.length - 1].messageID).not.toBe(first);
+    // The MOST RECENT submission is still remembered — the window evicts the
+    // oldest, not everything.
+    await promptOpenCodeMessage({
+      sessionId: 'sess-bound',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_filler_255',
+    });
+    const recent = captured.filter((p) => p.messageID === captured[256].messageID);
+    expect(recent).toHaveLength(2);
+  });
+
+  test('encodes the LOW 48 bits of the clock, exactly like opencode Identifier.ascending()', async () => {
+    // Not a cosmetic detail. opencode writes `(Date.now() * 0x1000 + counter)`
+    // truncated to its low 6 bytes; the `ascendingId` helper in this module
+    // keeps the HIGH 12 hex digits instead (`.slice(0, 12)` of a 14-digit
+    // string), which today yields `msg_19ff…` where the server mints
+    // `msg_fa4a…`. A message id in that format sorts BEFORE every id the
+    // server ever made, so it lands at the top of the transcript and the
+    // server's own "has this prompt already been answered?" ordering check
+    // reads a stale assistant reply as the answer to it — which is why
+    // apps/web deliberately sends no client ids today.
+    const before = Date.now();
+    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+    const after = Date.now();
+
+    const minted = encodedOf(captured[0].messageID as string);
+    expect(minted).toBeGreaterThanOrEqual(encodedAt(before));
+    // Small slack for the monotonic tie-break that separates same-millisecond
+    // submissions; anything larger means the clock is not what is encoded.
+    expect(minted).toBeLessThanOrEqual(encodedAt(after) + 1000n);
+  });
+
+  test('outranks the newest message already in the session when the browser clock lags', async () => {
+    const skewed = wireMessageId(Date.now() + 10 * 60_000);
+    useSyncStore.setState({
+      messages: { 'sess-skew': [{ id: skewed, role: 'user' } as never] },
+    });
+
+    await promptOpenCodeMessage({ sessionId: 'sess-skew', parts: [{ type: 'text', text: 'hi' }] });
+
+    expect(encodedOf(captured[0].messageID as string)).toBeGreaterThan(encodedOf(skewed));
+  });
+
+  test('ignores a wildly-out-of-range id in the store instead of jumping the clock to it', async () => {
+    // A wrapped/garbage id must not drag every later id 30 days into the
+    // future — the correction is a bounded clock-skew fix, not a follow-me.
+    const absurd = wireMessageId(Date.now() + 30 * 24 * 60 * 60_000);
+    useSyncStore.setState({
+      messages: { 'sess-absurd': [{ id: absurd, role: 'user' } as never] },
+    });
+
+    const before = Date.now();
+    await promptOpenCodeMessage({ sessionId: 'sess-absurd', parts: [{ type: 'text', text: 'hi' }] });
+
+    const minted = encodedOf(captured[0].messageID as string);
+    expect(minted).toBeLessThan(encodedAt(before + 60_000));
   });
 });
 

@@ -942,6 +942,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       agent?: string | null;
       variant?: string | null;
       directory?: string | null;
+      /**
+       * Stable name for the submission these parts belong to — a host's queue
+       * key, say. Re-dispatching a failed send with the same one keeps one wire
+       * `messageID`, so the proxy's duplicate protection still absorbs the
+       * retry instead of delivering the prompt twice. Omit it and every call is
+       * a new submission. See `SendOpenCodeMessageArgs.clientMessageId`.
+       */
+      clientMessageId?: string;
     },
   ): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
@@ -968,6 +976,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         sessionId: ocSessionId,
         parts,
         ...(Object.keys(opts).length ? { options: opts } : {}),
+        ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
       }),
     );
     setRestRewind(commitSessionRewind);

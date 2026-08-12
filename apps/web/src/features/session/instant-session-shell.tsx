@@ -161,8 +161,20 @@ export function InstantSessionShell({
     (s) => s.queues[sessionId]?.pending ?? EMPTY_PENDING,
   );
   const handleQueueMessage = useCallback(
-    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      useMessageQueueStore.getState().enqueue(sessionId, { text, files, mentions });
+    (
+      text: string,
+      files?: AttachedFile[],
+      mentions?: TrackedMention[],
+      // A `/` command submitted while the computer is still booting queues like
+      // anything else. This parameter was missing, so the composer's fourth
+      // argument landed nowhere: the entry was stored as a plain message whose
+      // text is the command's ARGUMENTS — empty, for an argument-less command —
+      // and SessionChat later drained it as a prompt with no command at all.
+      command?: { name: string; split?: { before: string; after: string } },
+    ) => {
+      // No agent/model/variant: nothing is resolved yet during boot, and
+      // `undefined` correctly means "decide when this actually sends".
+      useMessageQueueStore.getState().enqueue(sessionId, { text, files, mentions, command });
     },
     [sessionId],
   );

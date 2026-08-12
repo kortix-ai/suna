@@ -306,6 +306,24 @@ describe('transitions are delegated to the SDK reducer', () => {
     expect(restored.variant).toBeUndefined();
   });
 
+  test('the store mints the ids and the timestamp, and a caller cannot override them', () => {
+    // `enqueue` spreads its input so no field can be silently dropped (that is
+    // how the Undo path lost `command`). The spread has to come FIRST, or a
+    // stale `id`/`createdAt` riding along on a re-enqueued entry would win over
+    // the fresh one — two queue entries could then share an id.
+    useMessageQueueStore.getState().enqueue(A, {
+      text: 'restored',
+      id: 'q_stale',
+      clientMessageId: 'cm_stale',
+      createdAt: 1,
+    } as never);
+
+    const [queued] = useMessageQueueStore.getState().getSessionQueue(A).pending;
+    expect(queued.id).not.toBe('q_stale');
+    expect(queued.clientMessageId).not.toBe('cm_stale');
+    expect(queued.createdAt).toBeGreaterThan(1);
+  });
+
   test('every queued message gets a distinct id and idempotency key', () => {
     const s = useMessageQueueStore.getState();
     s.enqueue(A, { text: 'one' });

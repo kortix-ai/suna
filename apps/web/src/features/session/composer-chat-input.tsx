@@ -9,7 +9,6 @@ import {
   type AttachedFile,
   SessionChatInput,
   type SessionChatInputProps,
-  type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { useRuntimeConfig } from '@kortix/sdk/react';
 import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
@@ -103,7 +102,11 @@ export function ComposerChatInput({
   queuePaused?: SessionChatInputProps['queuePaused'];
   queueIsRunning?: SessionChatInputProps['queueIsRunning'];
   onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
-  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  // Mirrored from the composer rather than re-typed, like every other queue
+  // prop here. The re-typed copy silently lagged a parameter behind: it stopped
+  // at `mentions`, so the `command` argument the composer has passed since
+  // 27279d2232 was invisible to every host reading this file for the contract.
+  onQueueMessage?: SessionChatInputProps['onQueueMessage'];
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;

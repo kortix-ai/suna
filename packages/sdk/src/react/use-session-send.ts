@@ -215,6 +215,13 @@ export interface SendAndRecoverArgs {
   messageId: string;
   parts: PromptPart[];
   options?: SendMessageOptions;
+  /**
+   * Stable name for the submission, so re-dispatching a failed send keeps one
+   * wire `messageID` and the proxy's duplicate protection still absorbs it.
+   * Distinct from `messageId` above, which is the LOCAL optimistic message and
+   * never goes on the wire. See `SendOpenCodeMessageArgs.clientMessageId`.
+   */
+  clientMessageId?: string;
   getClient?: () => OpenCodeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
 }
@@ -241,6 +248,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
       sessionId: args.sessionId,
       parts: args.parts,
       options: args.options,
+      ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
     });
     return { ok: true };
   } catch (cause) {

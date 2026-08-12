@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { FILE_TILE_SURFACE, TILE_SURFACE } from '../attachment-tile';
 import { AttachmentTiles, FileTileWithPreview } from './attachment-tiles';
 import type { AttachedFile } from './types';
 
@@ -56,8 +57,10 @@ describe('AttachmentTiles', () => {
     // Body text once (title= and aria-label= also mention the name).
     expect(markup.match(/>AdmitCard-260411128971\.pdf</g)?.length).toBe(1);
     expect(markup).toContain('line-clamp-2');
-    // Cap + min-w-0 let the clamp ellipsize; `truncate` (nowrap) defeats it.
-    expect(markup).toContain('max-w-60');
+    // A bounded width + min-w-0 let the clamp ellipsize; `truncate` (nowrap)
+    // defeats it. `w-30` is FILE_TILE_SURFACE's fixed 7.5rem width — the tile
+    // cannot grow to the filename's max-content width, so the clamp fires.
+    expect(markup).toContain('w-30');
     expect(markup).toContain('min-w-0');
     expect(markup).not.toMatch(/line-clamp-2[^"]*\btruncate\b|\btruncate\b[^"]*line-clamp-2/);
   });
@@ -66,24 +69,28 @@ describe('AttachmentTiles', () => {
     const markup = renderToStaticMarkup(
       <AttachmentTiles files={[localImage('photo.png')]} onRemove={() => {}} />,
     );
-    // TILE_SURFACE — an 80×80 square.
+    // TILE_SURFACE — an 80×80 square, taken from the shared module rather than
+    // pasted, so a hand-rolled copy in the composer fails this.
+    expect(markup).toContain(TILE_SURFACE);
     expect(markup).toContain('size-20');
-    // NOT FILE_TILE_SURFACE's rectangle sizing.
-    expect(markup).not.toContain('min-w-40');
+    // NOT FILE_TILE_SURFACE's wider rectangle.
+    expect(markup).not.toContain('w-30');
+    expect(markup).not.toContain(FILE_TILE_SURFACE);
   });
 
   test('a non-image tile is the sent message rectangle (FILE_TILE_SURFACE), not the image square', () => {
-    // A PDF used to render as an 80×80 square while composing and an 80×160
+    // A PDF used to render as an 80×80 square while composing and a wider
     // rectangle once sent (`user-message.tsx`'s file-tile branch) — the exact
-    // drift this task exists to eliminate. Pin the correct shape per kind.
+    // drift this task exists to eliminate. Pin the correct shape per kind:
+    // FILE_TILE_SURFACE is 80px tall (`size-20`) and 120px wide (`w-30`), so
+    // `w-30` is what separates it from the image square.
     const markup = renderToStaticMarkup(
       <AttachmentTiles files={[localDoc('notes.txt')]} onRemove={() => {}} />,
     );
-    expect(markup).toContain('h-20');
-    expect(markup).toContain('min-w-40');
-    expect(markup).toContain('max-w-60');
-    // NOT TILE_SURFACE's square sizing.
-    expect(markup).not.toContain('size-20');
+    expect(markup).toContain(FILE_TILE_SURFACE);
+    expect(markup).toContain('w-30');
+    // NOT TILE_SURFACE — the square is the image treatment.
+    expect(markup).not.toContain(TILE_SURFACE);
   });
 
   test('remove button is reachable without hover: touch and keyboard-focus classes', () => {
