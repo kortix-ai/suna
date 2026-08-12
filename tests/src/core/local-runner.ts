@@ -133,18 +133,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
-    // This lane runs CONCURRENTLY with target-browser-full (2 workers), and
-    // BOTH boot real sandboxes on the shared staging Daytona provider. The
-    // provider handled ~3 concurrent boots fine when only this lane booted
-    // (browser lane was blocked at the SSO wall), but once the browser lane
-    // started booting too, the combined concurrency saturated the provider and
-    // RUN-*/SESS-* "session runtime ready" waits timed out at ~16 min. Cap this
-    // lane's sandbox boots at 1 so total concurrent boots (1 here + 2 browser)
-    // stay at the ~3 the provider tolerates. API (non-sandbox) workers stay
-    // higher — those flows are fast and don't provision. Override via env.
+    // Runs as its OWN stage (serialized before the browser lane — see below),
+    // so it has the staging Daytona provider to itself. 3 concurrent sandbox
+    // boots is proven to reach runtime-ready fine on its own; the API
+    // (non-sandbox) workers stay at 3 too since those flows are fast. Override
+    // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
     env: {
       KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
-      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '1',
+      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
     },
   };
   const targetBrowserFull: LocalTestLane = {
@@ -175,14 +171,20 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     return { mode: 'target', lanes, stages: [lanes] };
   }
   if (targetFull) {
-    // Lanes run CONCURRENTLY (one stage). An earlier serialize experiment did
-    // NOT fix the session-create MAINTENANCE_MODE (the real cause was fixture
-    // clients not retrying the laundered 503 — fixed in client.ts) and it
-    // doubled wall-clock past the JWT lifetime, adding a 401 tail. With every
-    // client now retrying transient gateway errors, concurrent contention
-    // self-heals and the run fits the 60m budget.
+    // SERIALIZE the two lanes (two stages). Both provision heavy OpenCode
+    // sessions on the shared staging Daytona provider; staging can service ONE
+    // lane's session-provisioning (proven: flow lane's ~3 concurrent sessions
+    // reach runtime-ready fine when the browser lane is idle) but not both at
+    // once — concurrent provisioning starved RUN-*/SESS-* "runtime ready" for
+    // ~16 min until they timed out. Reducing per-lane worker counts did NOT
+    // help (the browser lane's sessions are the heavy ones), so the lanes must
+    // not provision simultaneously. This costs wall-clock (~115m sequential,
+    // why tests-release runs at 120m), but each lane alone stays within the
+    // provider's throughput. The earlier serialize attempt only failed on the
+    // now-fixed JWT expiry (staging tokens are 2h) — each lane mints its tokens
+    // inside its own <60m window. Follow-up: shard onto isolated provisioners.
     const lanes = [targetApiFull, targetBrowserFull];
-    return { mode: 'target-full', lanes, stages: [lanes] };
+    return { mode: 'target-full', lanes, stages: [[targetApiFull], [targetBrowserFull]] };
   }
   if (full) {
     const fullFlows: LocalTestLane = {
