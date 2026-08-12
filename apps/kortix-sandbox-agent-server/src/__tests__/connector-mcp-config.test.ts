@@ -89,7 +89,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
         PATH: '/usr/local/bin:/usr/bin:/bin',
       },
     })
-    expect(server.command).toEqual(['/usr/local/bin/kortix', 'connector', 'mcp'])
+    expect(server.command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
   })
 
   test('returns undefined when no contributor applies', async () => {

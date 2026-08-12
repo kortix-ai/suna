@@ -20,10 +20,11 @@ jobs:
     # the early REST flows), then the post-test secret-guard/upload steps push
     # the job past 45m. The old 20-min cap killed it at ~316/433 EVERY release
     # (v0.12.7 and v0.12.8 both cancelled, not failed) — the gate was
-    # structurally un-passable. 60 gives ~13 min headroom over the ~47-min real
-    # runtime without masking a genuine hang. Follow-up: shard the runner
-    # (matrix over flow domains + browser) to bring this back under 20.
-    timeout-minutes: 60
+    # structurally un-passable. The two lanes now run SERIALLY (not concurrently)
+    # so they stop overloading the staging origin into MAINTENANCE_MODE — that
+    # trades ~47m concurrent for ~60m sequential, so the cap is 75m. Follow-up:
+    # shard the runner (matrix over flow domains + browser) to bring this down.
+    timeout-minutes: 75
     env:
       KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
       E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}

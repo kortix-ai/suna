@@ -187,8 +187,18 @@ export async function installBrowserSessionDirect(
       sameSite: "Lax" as const,
     })),
   );
-  await page.goto(returnUrl, {
-    waitUntil: "domcontentloaded",
-    timeout: 180_000,
-  });
+  // Retry the authenticated landing navigation on a transient origin 5xx. Under
+  // the concurrent deployed load the edge launders an overloaded origin into a
+  // 503 MAINTENANCE_MODE page; a fresh goto a moment later renders the real app.
+  // A 4xx (e.g. a genuine 404) is NOT retried — only origin overload is.
+  const maxNav = 4;
+  for (let attempt = 1; attempt <= maxNav; attempt += 1) {
+    const response = await page.goto(returnUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 180_000,
+    });
+    const status = response?.status() ?? 0;
+    if (status < 500 || attempt === maxNav) return;
+    await page.waitForTimeout(Math.min(2_000 * attempt, 8_000));
+  }
 }

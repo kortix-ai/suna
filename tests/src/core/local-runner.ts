@@ -133,6 +133,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
+    // This lane runs CONCURRENTLY with target-browser-full against the same
+    // staging origin. At the default 4 API + 4 sandbox workers the combined
+    // load pushes staging origin into 5xx, which the edge launders into
+    // MAINTENANCE_MODE. Dial the REST concurrency down (3+3) to cut that load;
+    // the per-request transient retry (runner.ts) absorbs what's left. Override
+    // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
+    env: {
+      KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
+      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
+    },
   };
   const targetBrowserFull: LocalTestLane = {
     name: 'target-browser-full',
@@ -163,7 +173,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   if (targetFull) {
     const lanes = [targetApiFull, targetBrowserFull];
-    return { mode: 'target-full', lanes, stages: [lanes] };
+    // SERIALIZE the two deployed lanes (two stages, not one concurrent stage).
+    // Running the REST flow lane and the browser lane against the same staging
+    // origin at once drove sustained (multi-minute) origin overload that the
+    // edge laundered into MAINTENANCE_MODE — session-create (sandbox provision,
+    // the heaviest op) is the tipping point. A per-request retry can't outlast a
+    // minutes-long degradation; removing the concurrent peak is the real fix.
+    // Costs wall-clock (why tests-release.yml runs at 75m), buys a stable gate.
+    return { mode: 'target-full', lanes, stages: [[targetApiFull], [targetBrowserFull]] };
   }
   if (full) {
     const fullFlows: LocalTestLane = {
