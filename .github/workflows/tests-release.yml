@@ -43,6 +43,12 @@ jobs:
       E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
       KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
       WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+      # Staging is behind Vercel SSO deployment protection; the browser lane must
+      # send x-vercel-protection-bypass (playwright.config) or every authenticated
+      # page 302s to vercel.com/sso-api. This env was missing when tests-release
+      # replaced the old qa-release gate, so the browser lane could never reach
+      # the app.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - uses: actions/checkout@v7
       - name: Require the deployed staging source SHA

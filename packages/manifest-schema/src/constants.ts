@@ -17,7 +17,58 @@ export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
-export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
+
+/**
+ * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
+ * exits; `stream` runs it once and keeps it alive. Both emit events as stdout
+ * lines — downstream (filter → prompt → session_mode) cannot tell them apart.
+ * See docs/specs/2026-08-12-monitors.md §"The monitor contract (v1)".
+ */
+export const MONITOR_MODES = ['poll', 'stream'] as const;
+
+/** Floor for `interval` on a `mode: poll` monitor — the platform bound. */
+export const MONITOR_MIN_INTERVAL_SECONDS = 30;
+/** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
+export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
+export const MONITOR_RUN_MAX_LENGTH = 1024;
+
+/**
+ * Duration literal accepted by `interval` / `expect_event_within`: a positive
+ * integer plus one unit suffix (`30s`, `5m`, `24h`, `7d`). Deliberately not a
+ * bare number — "60" reads as either seconds or minutes depending on the
+ * reader, and the manifest is a human-review surface.
+ */
+export const DURATION_RE = /^([1-9][0-9]*)(s|m|h|d)$/;
+
+const DURATION_UNIT_SECONDS: Readonly<Record<string, number>> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+};
+
+/** Parse a {@link DURATION_RE} literal to whole seconds. Null when malformed. */
+export function parseDurationSeconds(raw: string): number | null {
+  const match = DURATION_RE.exec(raw.trim());
+  if (!match) return null;
+  return Number(match[1]) * DURATION_UNIT_SECONDS[match[2]!]!;
+}
+
+/**
+ * Inverse of {@link parseDurationSeconds}, in the largest unit that divides
+ * evenly (`60` → `"1m"`, `86400` → `"1d"`). Canonical, so a spec that
+ * round-trips through the CRUD write path emits one stable form — the same
+ * normalization `run_at` already gets (parsed, then re-emitted as ISO-8601).
+ */
+export function formatDurationSeconds(seconds: number): string {
+  if (!Number.isInteger(seconds) || seconds <= 0) return `${seconds}s`;
+  if (seconds % 86400 === 0) return `${seconds / 86400}d`;
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
 // Providers a kortix.yaml may declare. `channel` is included because the
 // platform itself writes a `connectors:` entry with `provider: channel` into the
 // manifest when a Slack/email channel is connected (see connector/channel-manifest.ts), so

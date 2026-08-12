@@ -14,6 +14,7 @@ import {
   scheduleHistoryBackfill,
 } from './git'
 import { logger } from './logger'
+import { MonitorRunner, parseMonitorSpecs } from './monitor-runner'
 import {
   catalogIsDegraded,
   createOpencodeSupervisor,
@@ -103,6 +104,14 @@ async function main() {
   // written by Platinum restore.
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() === '1') {
     await runWarmSeedMode(cfg, bootTime, bootState, bootMark, staticWeb)
+    return
+  }
+
+  // Monitor box (docs/specs/2026-08-12-monitors.md D4). Same daemon, same
+  // image, same repo checkout — but it supervises the project's monitor
+  // processes instead of opencode, and never starts an LLM at all.
+  if (cfg.workload === 'monitor') {
+    await runMonitorMode(cfg, bootTime, bootState, bootMark, staticWeb)
     return
   }
 
@@ -555,6 +564,104 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   writeFileSync(file, body, { mode: 0o600 })
   process.env.KORTIX_LLM_CATALOG_FILE = file
   logger.info('[seed] baked full model catalog for seed', { file, models: count })
+}
+
+/**
+ * Monitor mode — the box that watches things 24/7
+ * (docs/specs/2026-08-12-monitors.md D4).
+ *
+ * It shares the session boot exactly up to the repo checkout, because monitor
+ * commands ARE repo code and need the same working tree an agent gets. From
+ * there it diverges completely: no opencode, no LLM, no session. The proxy
+ * still binds so /kortix/health answers (the box is otherwise invisible while
+ * it is healthy), and MonitorRunner owns everything after that.
+ *
+ * The repo is checked out at the project's DEFAULT branch: the API omits
+ * KORTIX_BRANCH_NAME for a monitor box, so materializeRepo leaves the checkout
+ * on default-branch HEAD instead of minting a session branch. A monitor watches
+ * what is shipped, not what some session is working on.
+ */
+async function runMonitorMode(
+  cfg: Config,
+  bootTime: number,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+  staticWeb: ReturnType<typeof startStaticWebServer>,
+): Promise<void> {
+  const projectEnv = createProjectEnvStore()
+  // Monitor processes inherit this process's env (the provider injected the
+  // project's runtime secrets there), and the agent env file keeps the same
+  // shell contract a session shell has.
+  writeAgentEnvFile(projectEnv)
+
+  try {
+    await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
+    await configureGitCredentialHelper(cfg, OPENCODE_HOME)
+  } catch (err) {
+    logger.warn('[monitor] git setup failed', { err: err instanceof Error ? err.message : String(err) })
+  }
+  bootMark('git-identity')
+
+  // The supervisor is constructed but NEVER started — it exists only because
+  // the proxy's route table is built around it. /kortix/health answers without
+  // touching opencode; every opencode route cleanly 503s, which is the honest
+  // answer for a box that has no agent.
+  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
+    onStartupMark: bootMark,
+  })
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
+  bootMark('proxy-up')
+
+  if (cfg.autoClone) {
+    await materializeRepo(cfg).catch((err) => {
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+      logger.error('[monitor] repo materialization failed', err)
+    })
+  }
+  bootMark('repo-materialized')
+
+  const specs = parseMonitorSpecs(cfg.monitorsJson)
+  // Fail LOUD and INERT, never crash-loop: the reconciler would just re-create
+  // a box that exits, so a misconfigured box stays up, answers health, and says
+  // exactly what is wrong.
+  if (!cfg.projectId || !cfg.apiUrl || !cfg.sandboxToken) {
+    logger.error('[monitor] missing project/API/token env; no monitor will run', {
+      hasProjectId: !!cfg.projectId,
+      hasApiUrl: !!cfg.apiUrl,
+      hasToken: !!cfg.sandboxToken,
+    })
+    return
+  }
+  if (!cfg.monitorBoxEpoch) {
+    // Without the epoch the server rejects every batch with 409. Running the
+    // monitors anyway would burn the box's CPU producing events nothing can
+    // accept, so don't.
+    logger.error('[monitor] KORTIX_MONITOR_BOX_EPOCH is unset; refusing to run monitors')
+    return
+  }
+  if (specs.length === 0) {
+    logger.warn('[monitor] no monitors to run; the box is idle')
+    return
+  }
+
+  const runner = new MonitorRunner({
+    apiUrl: cfg.apiUrl,
+    projectId: cfg.projectId,
+    token: cfg.sandboxToken,
+    boxEpoch: cfg.monitorBoxEpoch,
+    monitors: specs,
+    cwd: cfg.projectTarget,
+  })
+  runner.start()
+  bootMark('monitors-started')
+  // Best-effort drain on shutdown: a SIGTERM'd box should deliver the lines it
+  // already captured rather than take them to the grave.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      void runner.stop()
+    })
+  }
 }
 
 async function runWarmSeedMode(

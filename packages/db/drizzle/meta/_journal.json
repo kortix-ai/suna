@@ -337,6 +337,20 @@
       "when": 1786453326204,
       "tag": "20260811130206_impersonation_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786501589424,
+      "tag": "20260812022629_monitor_events_and_boxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786503220628,
+      "tag": "20260812025340_monitor_workload_type",
+      "breakpoints": true
     }
   ]
 }

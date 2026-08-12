@@ -59,6 +59,13 @@ export class SandboxTemplateNotFoundError extends Error {
   }
 }
 
+/**
+ * Which runtime contract a provider object hosts. One name per workload, used
+ * verbatim as `sandbox_compute_sessions.workload_type`, so the union and that
+ * column's CHECK constraint must stay in lockstep.
+ */
+export type SandboxWorkloadType = 'session' | 'app' | 'monitor';
+
 export interface CreateSandboxOpts {
   accountId: string;
   userId: string;
@@ -82,8 +89,14 @@ export interface CreateSandboxOpts {
   /**
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
+   *
+   * `monitor` is the per-project monitor box (docs/specs/2026-08-12-monitors.md
+   * D3): the SAME image and the SAME agent port as a session, running the
+   * daemon in monitor mode instead of opencode. It differs from a session only
+   * in lifecycle (`autoStopInterval: 0` → persistent) and in having no
+   * `session_sandboxes` row.
    */
-  workloadType?: 'session' | 'app';
+  workloadType?: SandboxWorkloadType;
   /** Provider-normalized App machine limits. Session snapshots retain their existing limits. */
   resourceSpec?: {
     cpuCores: number;
@@ -94,7 +107,7 @@ export interface CreateSandboxOpts {
   publishedPorts?: number[];
 }
 
-export function sandboxWorkloadType(opts: CreateSandboxOpts): 'session' | 'app' {
+export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {
   return opts.workloadType ?? 'session';
 }
 
@@ -104,6 +117,9 @@ export function assertWorkloadCredential(
   envVars: Record<string, string>,
 ): void {
   const workloadType = sandboxWorkloadType(opts);
+  // A monitor box runs the SAME daemon a session runs, so it carries the SAME
+  // sandbox credential — the ingest route is a sandbox-token route. Only the
+  // App runtime speaks the appd control protocol and needs the appd token.
   const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
   if (!envVars[required]) {
     throw new Error(

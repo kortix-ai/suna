@@ -22,6 +22,10 @@ function schedule(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
     runAt: null,
     timezone: 'America/Los_Angeles',
     secretEnv: null,
+    run: null,
+    monitorMode: null,
+    intervalSeconds: null,
+    expectEventWithinSeconds: null,
     sessionMode: 'fresh',
     pinnedSessionId: null,
     sessionKey: null,
@@ -109,5 +113,50 @@ describe('schedule revision', () => {
     expect(
       triggerScheduleRevision(schedule({ filter: { 'body.z': 'last', 'body.a': 'first' } })),
     ).toBe(triggerScheduleRevision(schedule({ filter: { 'body.a': 'first', 'body.z': 'last' } })));
+  });
+});
+
+// A monitor is cataloged like any other trigger, but it has no schedule: the
+// observer drains its event log instead. `next_fire_at` must stay NULL so the
+// cron sweep — which claims on `trigger_type = 'cron'` — can never see it.
+describe('type = "monitor" never schedules', () => {
+  const monitor = (overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec =>
+    schedule({
+      type: 'monitor',
+      cron: null,
+      runAt: null,
+      timezone: 'UTC',
+      run: './monitors/checkout.ts',
+      monitorMode: 'stream',
+      intervalSeconds: null,
+      expectEventWithinSeconds: null,
+      sessionMode: 'reuse',
+      ...overrides,
+    });
+
+  test('claims no initial or next slot', () => {
+    expect(initialTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
+    expect(advanceTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
+  });
+
+  test('its revision tracks the monitor fields', () => {
+    const original = triggerScheduleRevision(monitor());
+    expect(triggerScheduleRevision(monitor())).toBe(original);
+    expect(triggerScheduleRevision(monitor({ run: './monitors/other.ts' }))).not.toBe(original);
+    expect(triggerScheduleRevision(monitor({ monitorMode: 'poll', intervalSeconds: 60 }))).not.toBe(
+      original,
+    );
+    expect(triggerScheduleRevision(monitor({ expectEventWithinSeconds: 86_400 }))).not.toBe(
+      original,
+    );
+  });
+
+  // Adding the monitor fields to the hash unconditionally would rewrite every
+  // cron/webhook revision on deploy, which re-upserts the catalog row and
+  // re-arms already-fired one-off `run_at` triggers fleet-wide.
+  test('a cron revision is unchanged by the monitor fields', () => {
+    expect(triggerScheduleRevision(schedule({ run: './x.ts', monitorMode: 'poll' }))).toBe(
+      triggerScheduleRevision(schedule()),
+    );
   });
 });

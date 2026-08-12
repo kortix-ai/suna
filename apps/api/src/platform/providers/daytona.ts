@@ -82,7 +82,7 @@ function reportIfDiskQuotaError(err: unknown, reason: string): never {
 // otherwise one env would stop another env's sandboxes. `kortix.managed` marks
 // "we created it"; `kortix.env` pins the owning environment. The reaper lists
 // by exactly these labels (see listManagedRunningSandboxes).
-function managedSandboxLabels(workloadType?: 'session' | 'app'): Record<string, string> {
+function managedSandboxLabels(workloadType?: SandboxWorkloadType): Record<string, string> {
   return {
     'kortix.managed': 'true',
     'kortix.env': config.INTERNAL_KORTIX_ENV,
@@ -100,6 +100,7 @@ import type {
   ProvisioningStatus,
   ResolvedSandboxIngress,
   SandboxIngressRequest,
+  SandboxWorkloadType,
 } from './index';
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start

@@ -14,6 +14,7 @@ export type SessionInvocationSource =
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'
+  | 'trigger:monitor'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
