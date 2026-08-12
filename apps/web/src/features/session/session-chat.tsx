@@ -39,6 +39,7 @@ import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
+import { mergeQueuedBatch } from './queued-batch';
 import { useMessageQueueDrain } from './use-message-queue-drain';
 
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
@@ -108,6 +109,7 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import {
   type WebQueuedMessage,
   type WebSessionQueue,
+  inFlightIdsOf,
   useMessageQueueStore,
 } from '@/stores/message-queue-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
@@ -416,6 +418,7 @@ const EMPTY_SESSION_QUEUE: WebSessionQueue = Object.freeze({
   pending: [],
   failed: [],
   inFlightId: null,
+  inFlightIds: [],
 });
 
 /** How long "Stop & send" will wait for the server to confirm the abort before
@@ -2225,6 +2228,9 @@ export function SessionChat({
   const sessionQueue = useMessageQueueStore((s) => s.queues[sessionId]) ?? EMPTY_SESSION_QUEUE;
   const queuedMessages = sessionQueue.pending;
   const failedQueuedMessages = sessionQueue.failed;
+  // Plural: the queue drains as one batch, so several rows are on the wire at
+  // once and every one of them has to be locked against edit/remove/reorder.
+  const queueInFlightIds = inFlightIdsOf(sessionQueue);
 
   // Anything queued in the instant shell while the computer was still booting
   // is already here — the shell writes into this same store under this same
@@ -3210,7 +3216,7 @@ export function SessionChat({
           isBusy:
             isBusy || hasActiveQuestion || hasPendingApproval || pendingPermissions.length > 0,
           pendingCount: sessionQueue.pending.length,
-          hasInFlight: !!sessionQueue.inFlightId,
+          hasInFlight: queueInFlightIds.length > 0,
         });
         if (shouldQueue) {
           handleQueueMessage(text);
@@ -3230,14 +3236,14 @@ export function SessionChat({
     hasPendingApproval,
     pendingPermissions.length,
     sessionQueue.pending.length,
-    sessionQueue.inFlightId,
+    queueInFlightIds.length,
     handleSend,
     handleQueueMessage,
     registerSender,
     unregisterSender,
   ]);
 
-  // Release queued messages, one per turn, only when the turn actually ended.
+  // Release the whole queue on one prompt, only when the turn actually ended.
   //
   // What used to be here drained the WHOLE queue whenever any tool part flipped
   // to 'completed' or 'error', or whenever the debounced `isBusy` fell. Both
@@ -3275,30 +3281,27 @@ export function SessionChat({
     ],
   );
 
-  /** See `sendQueuedMessage`'s command branch for why this is a ref. */
+  /** See `sendQueuedBatch`'s command branch for why this is a ref. */
   const handleCommandRef = useRef<
     ((command: Command, args?: string, split?: { before: string; after: string }) => boolean) | null
   >(null);
 
-  const sendQueuedMessage = useCallback(
-    async (message: WebQueuedMessage) => {
-      // ONE message. The queue is first-come-first-served: `queue[0]` goes out
-      // by itself, and the rest wait for the turn it starts to finish. Merging
-      // the queue into a single prompt would destroy that ordering and hand the
-      // agent several unrelated instructions at once.
-      //
-      // Files that did not survive being stored carry no data — send the text
-      // rather than a broken attachment. The composer shows the user that the
-      // attachments were dropped.
+  const sendQueuedBatch = useCallback(
+    async (batch: WebQueuedMessage[]) => {
+      const head = batch[0];
+      if (!head) return;
+
       // A queued `/` command runs through the command path, not the prompt
       // path. `runCommand` expands a server-side template; sending the same
       // entry as text would deliver the literal arguments with no command at
-      // all. The command list is re-read HERE rather than captured at enqueue,
-      // so an entry can never dispatch a command that has since been removed.
-      if (message.command) {
-        const resolved = commands?.find((c) => c.name === message.command!.name);
+      // all. `claimBatch` guarantees a command arrives alone — it can never
+      // share a prompt with text entries. The command list is re-read HERE
+      // rather than captured at enqueue, so an entry can never dispatch a
+      // command that has since been removed.
+      if (head.command) {
+        const resolved = commands?.find((c) => c.name === head.command!.name);
         if (!resolved) {
-          throw new Error(`Command /${message.command.name} is no longer available`);
+          throw new Error(`Command /${head.command.name} is no longer available`);
         }
         // Through a ref, not the binding. `handleCommand` is declared ~180
         // lines BELOW this callback, so naming it in the dependency array
@@ -3307,10 +3310,10 @@ export function SessionChat({
         // after both exist, and only ever read here at dispatch time.
         const dispatched = handleCommandRef.current?.(
           resolved,
-          message.text || undefined,
-          message.command.split,
+          head.text || undefined,
+          head.command.split,
         );
-        // A swallowed dispatch must REJECT. `dispatchOne` marks a resolved send
+        // A swallowed dispatch must REJECT. The drain marks a resolved send
         // complete and deletes the entry, so reporting success here would drop
         // the command silently — the one outcome a queue must never have.
         // Throwing puts it in `failed` with a reason and a retry button.
@@ -3320,21 +3323,18 @@ export function SessionChat({
         return;
       }
 
-      const files = message.files?.filter((f): f is AttachedFile => f.kind !== 'lost');
-      await handleSend(message.text, files?.length ? files : undefined, message.mentions, {
-        agent: message.agent,
-        model: message.model,
-        variant: message.variant,
-        // The entry's stable key, carried so a RETRY of this same entry sends
-        // the same wire `messageID`. Without it the retry mints a new one, the
-        // request body differs, and the proxy's 60s body-hash dedupe delivers a
-        // prompt that already reached opencode a second time — the second
-        // prompt then aborts the turn the first one started. `retry` preserves
-        // `clientMessageId` (it moves the entry, it does not re-create it), so
-        // a retry is the same submission by construction while the NEXT
-        // enqueue, even of identical text, is a different one.
-        clientMessageId: message.clientMessageId,
-      });
+      // ONE `handleSend` for the whole batch, never a loop over it. `handleSend`
+      // resolves when the server ACKs the prompt (204), not when the turn ends,
+      // so a second call would land its message inside the first one's live
+      // turn — RC4 in the design doc, and the reason this queue exists.
+      // `mergeQueuedBatch` decides what the single prompt contains, including
+      // the head's `clientMessageId` so a RETRY of an entry re-sends the same
+      // wire `messageID` — without it the retry mints a new one, the request
+      // body differs, and the proxy's 60s body-hash dedupe delivers a prompt
+      // that already reached opencode a second time.
+      const merged = mergeQueuedBatch(batch);
+      if (!merged) return;
+      await handleSend(merged.text, merged.files, merged.mentions, merged.overrides);
     },
     [handleSend, commands],
   );
@@ -3342,7 +3342,7 @@ export function SessionChat({
   const queueDrain = useMessageQueueDrain({
     sessionId,
     gates: queueGates,
-    send: sendQueuedMessage,
+    send: sendQueuedBatch,
   });
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
@@ -3496,7 +3496,7 @@ export function SessionChat({
   // the old executeCommand.isPending check from the TQ mutation).
   const commandInFlightRef = useRef(false);
 
-  // Publish `handleCommand` for `sendQueuedMessage`, which is declared above it
+  // Publish `handleCommand` for `sendQueuedBatch`, which is declared above it
   // and therefore cannot name it directly (temporal dead zone). Written on
   // every commit so the queue always dispatches through the CURRENT closure,
   // not one captured when the callback was first created.
@@ -3509,7 +3509,7 @@ export function SessionChat({
       // Returns whether the command was DISPATCHED, not whether it succeeded.
       // The queue needs that distinction: a swallowed dispatch that reports
       // success has its entry marked complete and deleted, so the command is
-      // lost with nothing on screen to say so. See `sendQueuedMessage`.
+      // lost with nothing on screen to say so. See `sendQueuedBatch`.
       if (commandInFlightRef.current) return false;
       setCommandError(null);
 
@@ -4243,7 +4243,7 @@ export function SessionChat({
                 isBusy={isBusy}
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
-                queueInFlightId={sessionQueue.inFlightId}
+                queueInFlightIds={queueInFlightIds}
                 queuePaused={queueDrain.paused}
                 queueIsRunning={isBusy}
                 onSendQueuedMessageNow={handleQueueSendNow}

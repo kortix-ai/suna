@@ -3,9 +3,10 @@
 /**
  * The queue, shown as what it is: a numbered list of what goes next.
  *
- * The queue is first come, first served — `1` sends when this turn ends, then
- * `2`, then `3`. The number in each row says that outright, which is why there
- * is no header explaining it and no summary line to collapse.
+ * All of it sends when this turn ends, as one message, in this order. The
+ * numbers are the order, not a schedule of separate turns — nothing here waits
+ * for anything else in the list. That is why there is no header explaining it
+ * and no summary line to collapse.
  *
  * ## What was here before, and why it went
  *
@@ -65,8 +66,13 @@ export interface QueuedMessageView {
 export interface QueuedMessagesProps {
   messages: QueuedMessageView[];
   failed?: QueuedMessageView[];
-  /** The message currently on the wire. It cannot be edited, moved or removed. */
-  inFlightId?: string | null;
+  /**
+   * The messages currently on the wire, oldest first.
+   *
+   * Plural because the queue drains as a batch: one prompt carries every
+   * message that was waiting. None of them can be edited, moved or removed.
+   */
+  inFlightIds?: string[];
   onRemove?: (id: string) => void;
   onEdit?: (id: string, text: string) => void;
   onReorder?: (id: string, toIndex: number) => void;
@@ -363,10 +369,13 @@ function useOverflowing(ref: React.RefObject<HTMLElement | null>, deps: number) 
   return overflowing;
 }
 
+/** Stable identity, so the default does not look like a change every render. */
+const EMPTY_IN_FLIGHT: string[] = [];
+
 export function QueuedMessages({
   messages,
   failed = [],
-  inFlightId = null,
+  inFlightIds = EMPTY_IN_FLIGHT,
   onRemove,
   onEdit,
   onReorder,
@@ -377,8 +386,9 @@ export function QueuedMessages({
 }: QueuedMessagesProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const overflowing = useOverflowing(listRef, messages.length + failed.length);
-  // Nothing may be reordered into or above a message already being sent.
-  const minIndex = inFlightId ? 1 : 0;
+  // Nothing may be reordered into or above a message already being sent. A
+  // batch is several such rows, so the floor is the batch size, not 1.
+  const minIndex = inFlightIds.length;
 
   /** Keep the keyboard in the list when a row is removed from under it. */
   const focusAfterRemove = useCallback(
@@ -435,7 +445,7 @@ export function QueuedMessages({
             index={index}
             total={messages.length}
             minIndex={minIndex}
-            isInFlight={message.id === inFlightId}
+            isInFlight={inFlightIds.includes(message.id)}
             isRunning={isRunning}
             onRemove={onRemove}
             onEdit={onEdit}

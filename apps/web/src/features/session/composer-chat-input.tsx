@@ -57,7 +57,7 @@ export function ComposerChatInput({
   clearOnSend,
   queuedMessages,
   failedQueuedMessages,
-  queueInFlightId,
+  queueInFlightIds,
   queuePaused,
   queueIsRunning,
   onSendQueuedMessageNow,
@@ -100,7 +100,7 @@ export function ComposerChatInput({
   /** Queued-while-busy support, passed straight through to SessionChatInput. */
   queuedMessages?: SessionChatInputProps['queuedMessages'];
   failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
-  queueInFlightId?: SessionChatInputProps['queueInFlightId'];
+  queueInFlightIds?: SessionChatInputProps['queueInFlightIds'];
   queuePaused?: SessionChatInputProps['queuePaused'];
   queueIsRunning?: SessionChatInputProps['queueIsRunning'];
   onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
@@ -203,7 +203,7 @@ export function ComposerChatInput({
       clearOnSend={clearOnSend}
       queuedMessages={queuedMessages}
       failedQueuedMessages={failedQueuedMessages}
-      queueInFlightId={queueInFlightId}
+      queueInFlightIds={queueInFlightIds}
       queuePaused={queuePaused}
       queueIsRunning={queueIsRunning}
       onSendQueuedMessageNow={onSendQueuedMessageNow}

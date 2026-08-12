@@ -77,7 +77,9 @@ export interface SessionChatInputProps {
   isBusy?: boolean;
   queuedMessages?: QueuedMessageView[];
   failedQueuedMessages?: QueuedMessageView[];
-  queueInFlightId?: string | null;
+  /** The queued messages currently on the wire. Cannot be edited, moved or removed.
+   *  Plural: the queue drains as one batch, so several rows are live at once. */
+  queueInFlightIds?: string[];
   /**
    * The queue is held by a stop. Dims the list — never silent.
    *
@@ -242,6 +244,8 @@ export interface SessionChatInputProps {
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
 const EMPTY_QUEUE: QueuedMessageView[] = [];
+/** Same, for the in-flight ids. */
+const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -276,7 +280,7 @@ function ComposerImpl({
   isBusy = false,
   queuedMessages,
   failedQueuedMessages,
-  queueInFlightId = null,
+  queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
   queuePaused = false,
   queueIsRunning = false,
   onQueueMessage,
@@ -845,7 +849,7 @@ function ComposerImpl({
         shouldQueueInsteadOfSend({
           isBusy,
           pendingCount: queuedMessages?.length ?? 0,
-          hasInFlight: queueInFlightId != null,
+          hasInFlight: queueInFlightIds.length > 0,
           runtimeReady,
         })
       ) {
@@ -904,7 +908,7 @@ function ComposerImpl({
       shouldQueueInsteadOfSend({
         isBusy,
         pendingCount: queuedMessages?.length ?? 0,
-        hasInFlight: queueInFlightId != null,
+        hasInFlight: queueInFlightIds.length > 0,
         runtimeReady,
       })
     ) {
@@ -955,7 +959,7 @@ function ComposerImpl({
     isBusy,
     onQueueMessage,
     queuedMessages,
-    queueInFlightId,
+    queueInFlightIds,
     onCommand,
     commands,
     attachedFiles,
@@ -1092,7 +1096,7 @@ function ComposerImpl({
                 <QueuedMessages
                   messages={queuedMessages ?? EMPTY_QUEUE}
                   failed={failedQueuedMessages}
-                  inFlightId={queueInFlightId}
+                  inFlightIds={queueInFlightIds}
                   paused={queuePaused}
                   isRunning={queueIsRunning}
                   onRemove={onRemoveQueuedMessage}

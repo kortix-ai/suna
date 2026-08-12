@@ -8556,3 +8556,71 @@ and `'mode' does not exist in type 'UpdateProjectTriggerInput'`.
 deletions** — `ProjectMonitorMode` on `.` and `./projects-client`. Purely
 additive, so no consumer breaks. The runtime surface snapshot is unchanged (the
 addition is a type, not a value).
+
+## Session `queue-batch` — `claimBatch` on the message queue (2026-08-13)
+
+**Why.** Reported by Marko: the web session queue released one message per turn.
+Three queued messages meant three full agent runs, with the agent answering each
+in isolation. Claude Code and Codex flush the whole queue at the turn boundary.
+
+**Claimed SDK scope, in `core/session/message-queue.ts` only:**
+- New `claimBatch(state)` — claims the maximal leading run of `pending` that
+  shares the head's `agent`/`model`/`variant`, recording the claim in the same
+  transition. One prompt carries one set of dispatch options, so a batch ends
+  where they change.
+- New `inFlightIdsOf(state)` — the single read path for the lock, tolerating a
+  state persisted before `inFlightIds` existed.
+- `SessionQueue.inFlightIds?: string[]` — **optional on purpose.** Required
+  would stop a consumer's hand-built `SessionQueue` literal from compiling,
+  which the package's own rules class as breaking. `inFlightId` keeps its name
+  and meaning as the head of that array; every transition writes both.
+- `completeInFlight` / `failInFlight` / `removeQueued` / `editQueued` /
+  `reorderQueued` now act on the whole in-flight batch rather than one id. A
+  row the user can still edit while it is on the wire is a bug the single-id
+  lock could not prevent.
+
+**Additive only.** No name renamed or removed, no optional field made required,
+no subpath added, `version` untouched.
+
+**RED first.** `bun test src/core/session/message-queue.test.ts` before
+implementation: `SyntaxError: Export named 'claimBatch' not found in module
+'.../message-queue.ts'` — `0 pass`, `1 fail`, `1 error`.
+
+**Gates, real output:**
+- `pnpm --filter @kortix/sdk typecheck` — clean (`tsc --noEmit` + examples).
+- `pnpm --filter @kortix/sdk test` — `1901 pass`, `2 skip`, `0 fail`, `7244
+  expect()` calls across `145` files. Session baseline measured on this branch
+  before the change: `1883 pass`, `2 skip`, `0 fail`, `145` files.
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test passed`.
+
+**Snapshots re-recorded, both purely additive:**
+`public-surface.snapshot.json` +2 (`claimBatch`, `inFlightIdsOf` on
+`./message-queue`), `public-type-surface.snapshot.json` +2 (same names). The
+type-surface tool's own drift report labelled both `← added — additive, fine`.
+Nothing removed, nothing renamed.
+
+**Host side (not SDK, recorded for context):** `apps/web` gained
+`features/session/queued-batch.ts` (`mergeQueuedBatch`, pure) and now makes
+exactly ONE `handleSend` call per batch. A loop would reintroduce RC4 from
+`docs/superpowers/specs/2026-08-05-session-message-queue-design.md` —
+`handleSend` resolves on the server's 204 ACK, not on turn end.
+
+### 2026-08-13 — merge `main` → `message-input`: `claimBatch` learns command boundaries
+
+Semantic merge fix, TDD (RED first). `main` brought batch drain (`claimBatch`,
+`inFlightIds`); this branch brought `command` entries on `QueuedMessage`. Git
+auto-merged both cleanly into code that compiled but was wrong: `claimBatch`
+would merge a queued `/` command's args into a plain text prompt.
+
+**Changed** — `core/session/message-queue.ts`: `claimBatch` now claims a
+command entry alone and stops a text batch before a command entry. Additive
+behavior change, no public name touched, no snapshot drift.
+
+**Evidence** — `pnpm --filter @kortix/sdk test`: 1922 pass, 0 fail (145 files;
++2 new `claimBatch` command tests). `typecheck` clean. `smoke:install` passed
+(`✔ install smoke test passed`).
+
+**Host side (context):** `apps/web` `mergeQueuedBatch` now carries the head
+entry's `clientMessageId` in `overrides`, preserving the branch's retry-dedupe
+guarantee through the batch path; `session-chat.tsx` `sendQueuedBatch` =
+command dispatch (batch of one, guaranteed by `claimBatch`) + merged text send.

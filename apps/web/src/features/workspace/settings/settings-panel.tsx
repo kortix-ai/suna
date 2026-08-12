@@ -4,13 +4,13 @@ import { ScheduleView } from '@/components/projects/schedule-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Label } from '@/components/ui/label';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import { Label } from '@/components/ui/label';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -48,7 +48,13 @@ import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { UPGRADE_ITEM, filterRailGroups, isRailItemActive, railGroups, railItemMatches } from './rail';
+import {
+  UPGRADE_ITEM,
+  filterRailGroups,
+  isRailItemActive,
+  railGroups,
+  railItemMatches,
+} from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { ApiKeysTab } from './tabs/api-keys-tab';
 import { AuditTab } from './tabs/audit-tab';
@@ -570,7 +576,7 @@ export function SettingsPanelShell({
               value={item.tab}
               className={cn(
                 'mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto',
-                (item.tab !== 'marketplace' && item.tab !== 'models') && 'px-4 py-10 pb-20 lg:py-20',
+                item.tab !== 'marketplace' && item.tab !== 'models' && 'px-4 py-10 pb-20 lg:py-20',
               )}
             >
               <SettingsTabPane

@@ -22,9 +22,11 @@
  * **Superseded for host use by `./message-queue`.** This module owns dispatch
  * (it holds closures and calls them), which is exactly what a host cannot
  * persist, reorder, or edit — a `dispatch` closure does not survive a page
- * reload. `message-queue.ts` keeps the same one-at-a-time and never-jump-the-
- * line guarantees but expresses them as pure transitions over serializable
- * data, so the queue can be stored, reordered, and rewritten by the user.
+ * reload. `message-queue.ts` keeps the same never-jump-the-line guarantee but
+ * expresses it as pure transitions over serializable data, so the queue can be
+ * stored, reordered, and rewritten by the user. It also releases the queue as
+ * one batch (`claimBatch`) rather than one message per turn, which this module
+ * cannot do: it owns dispatch as a per-message closure.
  *
  * This module stays exported and tested: it is published API. New host code
  * should reach for `message-queue` instead.

@@ -107,28 +107,39 @@
  * the `canManageBilling` read/write split, and slot presence — they do not,
  * and cannot, click a button and observe a network call.
  *
- * **Linear card shape (2026-08-11) — presentation only.** Jay asked for this
- * pane to read like Linear's billing settings: a plan card, then labelled
- * sections whose content sits in one bordered box. Three changes, none of
- * which touch a query, a mutation, or a permission gate:
+ * **Restyle (2026-08-13) — presentation, plus one deliberate content change.**
+ * The pane had five section headings and six bordered boxes for four facts and
+ * three actions: "Plan, wallet and spend" wrapped `AccountOverviewTab`, which
+ * emitted three labelled sections of its own; "Auto top-up" and "Buy credits"
+ * each got a heading plus a padded `SettingsRowGroup` around a component that
+ * repeated the heading inside it; and "Billing portal" was a whole section for
+ * one button. Jay's brief: fewer boxes, no nesting, no jargon.
  *
- * 1. The team-checkout branch is now ONE bordered card — plan name and pitch
- *    on the left, the quiet `Manage billing` link next to the filled
- *    `Subscribe to Team` button on the right. Before, the name and pitch sat
- *    outside the card and the two buttons were stranded in a box beneath
- *    them, which read as two unrelated blocks.
- * 2. `Billing portal` is a `SettingsRow` inside a `SettingsRowGroup` (label
- *    and explanation left, control right) rather than a section header with
- *    the button in its action slot and the owner-only note loose below it.
- *    Linear closes its billing pane the same way — a section label, then the
- *    invoice surface in a bordered box. Kortix has no invoice list of its
- *    own; Stripe's portal IS that surface.
- * 3. Section rhythm tightened (`space-y-8` → `space-y-6`, `space-y-4` →
- *    `space-y-3`) to Linear's density.
+ * 1. **The portal moved into the pane header.** It is one link out to Stripe,
+ *    not a section — `SettingsTabHeader`'s `action` slot is exactly where a
+ *    pane-level escape hatch belongs, and it costs zero vertical space there.
+ *    The "Invoices and payment methods" row and its `SettingsRowGroup` are
+ *    gone with it.
+ * 2. **Add credits and Auto top-up share one card.** Same gate
+ *    (`canPurchaseCredits && canManageBilling`), same concern — getting credit
+ *    into the wallet — so they are two sections inside one border separated by
+ *    a hairline, not two headings over two boxes. The heading lives inside the
+ *    card; `CreditTopupSection` and `AutoTopupCard` still render no chrome of
+ *    their own, so the modal and `/accounts/[id]` hosts are unaffected.
+ * 3. **The balance card now renders in the team-checkout branch too.** This is
+ *    the one behavioural change, and it is read-only: `showTeamCheckout` is
+ *    true for every account without an active subscription — i.e. every free
+ *    user — and it used to replace the entire pane, so a free user opening
+ *    Billing could not see their own balance, only an upgrade pitch. The
+ *    upgrade card now sits *under* the balance instead of instead of it.
+ *    Nothing mutating was added to that branch: `canPurchaseCredits` is the
+ *    gate on the credits card, exactly as before.
+ * 4. **The owner-only note is one line at the foot of the pane**, not a
+ *    per-section replacement, since with the portal in the header there is no
+ *    longer a row for it to sit in.
  *
- * Everything the tab rendered before still renders, in the same order, under
- * the same gate: plan/wallet/spend, the per-seat claim, seat management, auto
- * top-up, buy credits, the portal, and the credits-ran-out banner.
+ * Every gate is unchanged: `billingEnabled`, `canPurchaseCredits`, and
+ * `canManageBilling` admit exactly what they admitted before.
  */
 
 import type { ReactNode } from 'react';
@@ -137,8 +148,6 @@ import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
@@ -244,151 +253,103 @@ export function BillingTabView({
 }: BillingTabViewProps) {
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-4 px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl space-y-4">
         <SettingsTabHeader tab="billing" />
-        <Skeleton className="h-32 w-full rounded-md" />
-        <Skeleton className="h-32 w-full rounded-md" />
+        <Skeleton className="h-[9.5rem] w-full rounded-md" />
+        <Skeleton className="h-28 w-full rounded-md" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-8">
+      <div className="mx-auto w-full max-w-2xl space-y-4">
         <SettingsTabHeader tab="billing" />
         <InfoBanner tone="destructive">{error}</InfoBanner>
       </div>
     );
   }
 
+  // One link out to Stripe, in the pane header. Hidden entirely when the
+  // deployment has billing off (self-host: there is no portal to open) or the
+  // viewer lacks `billing.write` (opening the portal creates a Stripe session
+  // — a mutation the server rejects anyway).
+  const portalAction =
+    billingEnabled && canManageBilling ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        className="gap-1.5"
+        onClick={onManageSubscription}
+        disabled={isManagingSubscription}
+      >
+        {isManagingSubscription ? <Loading className="size-3.5 shrink-0" /> : null}
+        Manage billing
+      </Button>
+    ) : undefined;
+
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="billing" />
-      {showTeamCheckout ? (
-        // Linear's upgrade card: the plan name and its one-line pitch on the
-        // left, a quiet text link next to the filled primary action on the
-        // right, all inside ONE bordered card. Previously the name and pitch
-        // sat outside the card as a section header with the two buttons
-        // stranded in a box below them, which read as two unrelated blocks.
-        // `SettingsSubsectionHeader` stays — it is what emits this section's h2,
-        // and moving it inside the card changes only where the border is
-        // drawn.
-        <section>
-          <div className="bg-popover rounded-md border p-4">
-            <SettingsSubsectionHeader
-              title="Kortix Team"
-              description="Subscribe to put your whole team on Kortix — LLM compute and AI Computers, one wallet."
-              action={
-                canManageBilling ? (
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground gap-1.5"
-                      onClick={onManageSubscription}
-                      disabled={isManagingSubscription}
-                    >
-                      {isManagingSubscription ? <Loading className="size-4 shrink-0" /> : null}
-                      Manage billing
-                    </Button>
-                    <Button type="button" size="sm" onClick={onSubscribeTeam} className="shrink-0">
-                      Subscribe to Team
-                    </Button>
-                  </div>
-                ) : undefined
-              }
-            />
-            {canManageBilling ? null : (
-              <p className="text-muted-foreground mt-3 text-xs">{OWNER_ONLY_BILLING_NOTE}</p>
-            )}
+    <div className="mx-auto w-full max-w-2xl space-y-4">
+      <SettingsTabHeader tab="billing" action={portalAction} />
+
+      {showCreditsRanOutBanner && (
+        <InfoBanner tone="warning" title="You ran out of credits">
+          {canPurchaseCredits
+            ? 'Add credits below, or turn on auto top-up so it never happens again.'
+            : 'Add credits to keep your agents running.'}
+        </InfoBanner>
+      )}
+
+      {/* 1. Balance, plan, spend and limits. Read-only, so it renders in both
+          branches — including for a free account with no subscription, which
+          used to see the upgrade pitch and nothing else (see this file's
+          header comment). */}
+      {accountOverviewSlot}
+
+      {/* 2. The upgrade pitch, for an account with no active subscription. */}
+      {showTeamCheckout && canManageBilling ? (
+        <div className="bg-popover flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-4">
+          <div className="min-w-0 space-y-1">
+            <h3 className="text-foreground text-sm font-medium">Kortix Team</h3>
+            <p className="text-muted-foreground max-w-md text-xs text-pretty">
+              Put your whole team on Kortix — LLM compute and AI Computers, one wallet.
+            </p>
           </div>
-        </section>
-      ) : (
-        <>
-          {/* 1. Plan, wallet, and spend — always first (see the task brief).
-              Read-only; visible to every account.write holder regardless of
-              canManageBilling (see this file's header comment). */}
-          {showCreditsRanOutBanner && (
-            <InfoBanner tone="warning" title="You ran out of credits">
-              {canPurchaseCredits
-                ? 'Buy credits below or turn on auto top-up so it never happens again.'
-                : 'Top up your wallet to keep your agents running.'}
-            </InfoBanner>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            onClick={onSubscribeTeam}
+            className="shrink-0 transition-transform active:scale-[0.96]"
+          >
+            Subscribe to Team
+          </Button>
+        </div>
+      ) : null}
 
-          <section className="space-y-3">
-            <SettingsSubsectionHeader title="Plan, wallet and spend" />
-            {accountOverviewSlot}
+      {/* 3. Per-seat claim / seat management. The claim slot is only ever
+          built by the container when canManageBilling is also true (it's a
+          mutation) — seat management is a pure read-only display, so it
+          carries no such gate. Each self-guards on whether it applies. */}
+      {claimPerSeatSlot}
+      {seatManagementSlot}
+
+      {/* 4. Getting credit into the wallet: a one-time top-up, and the rule
+          that repeats it. Same gate, same concern, one card. */}
+      {canPurchaseCredits && canManageBilling && (
+        <div className="bg-popover rounded-md border">
+          <section className="space-y-3 px-4 py-4">
+            <h3 className="text-foreground text-sm font-medium">Add credits</h3>
+            {creditTopupSlot}
           </section>
+          {autoTopupSlot ? <div className="border-t px-4 py-4">{autoTopupSlot}</div> : null}
+        </div>
+      )}
 
-          {/* 2. Per-seat claim / seat management. The claim slot is only ever
-              built by the container when canManageBilling is also true (it's
-              a mutation) — seat management is a pure read-only display, so it
-              carries no such gate. Each self-guards on whether it applies,
-              same as the source file. */}
-          {claimPerSeatSlot}
-          {seatManagementSlot}
-
-          {/* 3. Auto top-up — mutation, gated on canManageBilling too. */}
-          {canPurchaseCredits && canManageBilling && (
-            <section className="space-y-3">
-              <SettingsSubsectionHeader title="Auto top-up" description="Never run out again" />
-              <SettingsRowGroup className="px-4 py-3">{autoTopupSlot}</SettingsRowGroup>
-            </section>
-          )}
-
-          {/* 4. Buy credits — mutation, gated on canManageBilling too. */}
-          {canPurchaseCredits && canManageBilling && (
-            <section className="space-y-3">
-              <SettingsSubsectionHeader title="Buy credits" description="One-time top-up" />
-              <SettingsRowGroup className="px-4 py-3">{creditTopupSlot}</SettingsRowGroup>
-            </section>
-          )}
-
-          {/* 5. Billing portal — the Stripe billing portal doesn't exist
-              without billing enabled (self-host with billing off); hide the
-              whole section rather than let it 404/error on click. Opening
-              the portal is a mutation (creates a Stripe session), so the
-              button is replaced by the owner-only note when canManageBilling
-              is false — the section itself stays visible so an admin still
-              knows a portal exists. */}
-          {billingEnabled ? (
-            // Linear closes its billing pane with a section label and the
-            // invoice surface inside a bordered box. Kortix has no invoice
-            // list of its own — Stripe's portal IS that surface — so the
-            // section label stays "Billing portal" and the box beneath it is
-            // one `SettingsRow`: what it does on the left, the control that
-            // opens it on the right. The owner-only note takes the control's
-            // place rather than sitting loose under the header, so the row
-            // reads the same whether or not the viewer holds `billing.write`.
-            <section className="space-y-3">
-              <SettingsSubsectionHeader title="Billing portal" />
-              <SettingsRowGroup>
-                <SettingsRow
-                  label="Invoices and payment methods"
-                  description="Manage your subscription, payment methods, and invoices in Stripe."
-                >
-                  {canManageBilling ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0 gap-1.5"
-                      onClick={onManageSubscription}
-                      disabled={isManagingSubscription}
-                    >
-                      {isManagingSubscription ? <Loading className="size-4 shrink-0" /> : null}
-                      Manage billing
-                    </Button>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">{OWNER_ONLY_BILLING_NOTE}</span>
-                  )}
-                </SettingsRow>
-              </SettingsRowGroup>
-            </section>
-          ) : null}
-        </>
+      {/* 5. One line, once, for a viewer who can read this pane but not act on
+          it — an `account.write` admin without `billing.write`. */}
+      {canManageBilling ? null : (
+        <p className="text-muted-foreground text-xs">{OWNER_ONLY_BILLING_NOTE}</p>
       )}
     </div>
   );

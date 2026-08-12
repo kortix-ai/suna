@@ -2,18 +2,33 @@
 
 /**
  * Drives the queue: watches the gates, waits for a real end-of-turn, and sends
- * exactly one message when it arrives.
+ * everything that is waiting when it arrives.
  *
- * First come, first served. `queue[0]` goes out alone; everything behind it
- * waits for the turn that message starts to finish, then the new head goes.
- * That ordering IS the feature — merging the queue into one prompt would hand
- * the agent several unrelated instructions at once and lose the sequence the
- * user typed them in.
+ * **The whole queue goes out together, on one prompt.** Three messages typed
+ * during a turn reach the agent as one turn's worth of instructions, in the
+ * order they were typed. This is what Claude Code and Codex do, and it is what
+ * a queue means to the person typing into it: the follow-ups are usually parts
+ * of one thought ("also fix the tests", "and update the docs"), not three
+ * separate errands that each deserve their own agent run.
  *
- * What was broken was never the one-at-a-time rule. It was that the queue kept
- * stopping: a latch that waited for a busy period the tab might never observe,
- * and a gate that stayed closed forever after the stop button. Both are gone.
- * See `message-queue-boundary.ts`.
+ * It replaces a one-message-per-turn rule that was a correct fix aimed at the
+ * wrong target. The bug it was written against (`a9fc74d9d3`, RC4 in the
+ * design doc) was a drain that *looped* `handleSend` over the queue — and
+ * since `handleSend` resolves when the server ACKs the prompt, not when the
+ * turn ends, messages 2..N were dispatched into message 1's live turn. The
+ * answer to N racing turns is one turn carrying N messages, not N turns in
+ * series: with the latter, a user who typed three quick follow-ups waited for
+ * three full agent runs, and the agent answered each in isolation without ever
+ * seeing the other two.
+ *
+ * The batching is `claimBatch`'s, in the SDK. It stops at a change of
+ * agent/model/variant, because one prompt carries one of each — so a message
+ * still sends under the model it was queued with.
+ *
+ * What was broken beyond the batching was that the queue kept stopping: a
+ * latch that waited for a busy period the tab might never observe, and a gate
+ * that stayed closed forever after the stop button. Both are gone. See
+ * `message-queue-boundary.ts`.
  *
  * All of the judgment lives in `message-queue-boundary.ts` as pure functions,
  * and the claim/complete/fail bookkeeping lives in the store. What is left here
@@ -47,8 +62,14 @@ import {
 export interface UseMessageQueueDrainOptions {
   sessionId: string;
   gates: QueueDrainGates;
-  /** Put the message on the wire. Must reject if the send did not land. */
-  send: (message: WebQueuedMessage) => Promise<void>;
+  /**
+   * Put the batch on the wire as ONE prompt, in the order given. Must reject
+   * if the send did not land.
+   *
+   * Never a loop over sends. A second prompt issued before the first turn ends
+   * lands inside it, which is the interleaving this queue exists to prevent.
+   */
+  send: (messages: WebQueuedMessage[]) => Promise<void>;
 }
 
 export interface MessageQueueDrainControls {
@@ -112,17 +133,18 @@ export function useMessageQueueDrain({
 
   const tickRef = useRef<() => void>(() => {});
 
-  const dispatchOne = useCallback(
-    async (claimed: WebQueuedMessage) => {
+  const dispatchClaimed = useCallback(
+    async (claimed: WebQueuedMessage[]) => {
+      if (claimed.length === 0) return;
       sendingRef.current = true;
       try {
         await sendRef.current(claimed);
         useMessageQueueStore.getState().complete(sessionId);
       } catch (cause) {
-        // Set it aside with its reason; never back at the head. Requeueing a
+        // Set them aside with the reason; never back at the head. Requeueing a
         // failure is how the queue used to wedge, and how a prompt the server
-        // already accepted got sent a second time. The head moving on is the
-        // point: one bad message must not stop the queue.
+        // already accepted got sent a second time. The queue moving on is the
+        // point: one bad send must not stop it.
         useMessageQueueStore.getState().fail(sessionId, errorMessage(cause));
       } finally {
         sendingRef.current = false;
@@ -149,9 +171,9 @@ export function useMessageQueueDrain({
 
     switch (action.kind) {
       case 'dispatch': {
-        // The head, and only the head.
-        const claimed = useMessageQueueStore.getState().claimNext(sessionId);
-        if (claimed) void dispatchOne(claimed);
+        // Everything waiting, as one prompt.
+        const claimed = useMessageQueueStore.getState().claimBatch(sessionId);
+        void dispatchClaimed(claimed);
         return;
       }
       case 'wait':
@@ -161,7 +183,7 @@ export function useMessageQueueDrain({
       case 'idle':
         return;
     }
-  }, [sessionId, dispatchOne]);
+  }, [sessionId, dispatchClaimed]);
 
   // Refresh the mutable reads after every commit. Declared BEFORE the gate
   // effect below, so by the time a gate change calls `tick`, the refs it reads
@@ -223,20 +245,25 @@ export function useMessageQueueDrain({
 
   const dispatchNow = useCallback(
     async (id: string) => {
-      const queue = useMessageQueueStore.getState().getSessionQueue(sessionId);
-      const target = queue.pending.find((m) => m.id === id);
-      if (!target || target.id === queue.inFlightId) return;
+      const store = useMessageQueueStore.getState();
+      const target = store.getSessionQueue(sessionId).pending.find((m) => m.id === id);
+      if (!target || store.getInFlightIds(sessionId).includes(id)) return;
 
       // Explicit user action, so order yields to intent: move it to the front,
       // clear the pause the stop button just set, and claim it — alone. This is
       // the one path that jumps the queue, and it only ever runs from a click.
+      //
+      // Alone, and deliberately not `claimBatch`: the button lives on one row
+      // and says "send this". Interrupting the agent to send three messages
+      // when the user pointed at one is not what the click asked for. The rest
+      // of the queue drains together at the next boundary, as usual.
       setPausedState(false);
       useMessageQueueStore.getState().reorder(sessionId, id, 0);
       machineRef.current = createDrainMachine();
       const claimed = useMessageQueueStore.getState().claimNext(sessionId);
-      if (claimed) await dispatchOne(claimed);
+      if (claimed) await dispatchClaimed([claimed]);
     },
-    [sessionId, dispatchOne, setPausedState],
+    [sessionId, dispatchClaimed, setPausedState],
   );
 
   return { pause, resume, paused, dispatchNow };

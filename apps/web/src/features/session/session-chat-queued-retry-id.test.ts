@@ -29,9 +29,13 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
   // the turn the first one started. `clientMessageId` is what makes a retry the
   // same submission.
   test('the queue dispatch carries the entry stable key into handleSend', () => {
-    const dispatch = between('const sendQueuedMessage = useCallback(', 'const queueDrain =');
+    // The key itself is packed by `mergeQueuedBatch` (overrides.clientMessageId
+    // = the head entry's — asserted behaviorally in queued-batch.test.ts); this
+    // proves the dispatch hands those overrides to `handleSend` unmodified.
+    const dispatch = between('const sendQueuedBatch = useCallback(', 'const queueDrain =');
 
-    expect(dispatch).toContain('clientMessageId: message.clientMessageId');
+    expect(dispatch).toContain('mergeQueuedBatch(batch)');
+    expect(dispatch).toContain('handleSend(merged.text, merged.files, merged.mentions, merged.overrides)');
   });
 
   test('handleSend accepts it as an override rather than minting its own', () => {

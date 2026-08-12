@@ -279,9 +279,12 @@ async function probeBoxWorkload(
   externalId: string,
 ): Promise<'monitor' | 'session' | null> {
   try {
-    const ingress = await provider.resolveIngress(externalId, { port: 8000, transport: 'http' });
-    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/health`, {
-      headers: ingress.headers ?? {},
+    // resolveEndpoint, not resolveIngress: the exposed edge is gated by the
+    // per-box serviceKey bearer, and only resolveEndpoint attaches it — a bare
+    // ingress URL answers 401 and the probe would silently no-op forever.
+    const endpoint = await provider.resolveEndpoint(externalId);
+    const res = await fetch(`${endpoint.url.replace(/\/$/, '')}/kortix/health`, {
+      headers: endpoint.headers ?? {},
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return null;
