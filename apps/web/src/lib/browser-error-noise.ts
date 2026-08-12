@@ -4062,6 +4062,183 @@ export function isFramelessNetworkErrorNoise(input: {
   return true;
 }
 
+// Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+// noise. A headless-browser or automation tool (Selenium, Puppeteer, Playwright,
+// or a scraper) injects a script that attempts
+// `Object.defineProperty(navigator, 'webdriver', { get: () => undefined })` to
+// hide its automation footprint from bot-detection on the page it is crawling.
+// In some Chrome builds `navigator.webdriver` is a NON-configurable property,
+// so the `defineProperty` trap throws `TypeError: Cannot redefine property:
+// webdriver`. The throw originates in the injected automation/anti-detection
+// script — NEVER in first-party Kortix code — and surfaces as an UNCAUGHT global
+// `onerror` (mechanism `auto.browser.global_handlers.onerror`, `handled:false`
+// — never reaches a React error boundary). Better Stack pattern
+// ee14e84d1a150ae094e20722e619083499d8b29206445a2ef349ff42db6d0f7f
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `Cannot redefine property: webdriver`, call site function
+// `Object.defineProperty`, call site file `<anonymous>`, 1 occurrence / 0
+// identified users, first 2026-08-12 07:49:16 UTC, request URL
+// `https://kortix.com/projects/61df2bc0-…` (project page), browser Chrome on
+// Windows 10. Stack: 3 frames, ALL `<anonymous>` (functions `?`, `?`,
+// `Object.defineProperty`) — NO resolved first-party `apps/web/src/…` frame
+// and NO chunk frame at all. This is bot/scanner noise, NOT a product bug: a
+// real first-party `Object.defineProperty` call that redefined a non-
+// configurable property would de-minify to `apps/web/src/…` frames (Sentry
+// uploads sourcemaps), and `navigator.webdriver` is never touched by
+// first-party app code.
+//
+// The EXACT message `Cannot redefine property: webdriver` is the V8/Chrome
+// canonical `TypeError` for a `defineProperty` on a non-configurable property
+// (the property name `webdriver` pins it to `navigator.webdriver` specifically,
+// never a coincidental app-logic `defineProperty` regression). BUT the matcher
+// carries a NEGATIVE guard: if ANY frame (or the window.onerror `filename`)
+// resolves to a de-minified first-party `apps/web/src/…` source path, the event
+// keeps reporting — a real first-party `defineProperty` regression
+// de-minifies to `apps/web/src/…` and must not be hidden. The production event
+// carries only `<anonymous>` frames, so the negative guard does NOT fire for
+// it. A frameless capture with this exact message still classifies as noise
+// — the `webdriver` property name is the specific anchor (it is never a
+// first-party Kortix API surface). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `defineProperty` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const REDEFINE_WEBDRIVER_NOISE_MESSAGE = /^Cannot redefine property: webdriver$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the bot / automation-framework /
+ * scraper `Cannot redefine property: webdriver` noise class: an injected
+ * anti-detection script attempts
+ * `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+ * footprint, and Chrome throws a `TypeError` because `navigator.webdriver` is
+ * non-configurable in that build. The throw originates in the injected
+ * automation script, never first-party Kortix code. Requires the EXACT message
+ * (case-sensitive; the `webdriver` property name pins it to
+ * `navigator.webdriver` specifically) AND a NEGATIVE guard: if any frame (or
+ * the window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting (a real first-party
+ * `defineProperty` regression de-minifies to `apps/web/src/…` and must not be
+ * hidden). The production event carries only `<anonymous>` frames, so the
+ * negative guard does NOT fire for it. A frameless capture with this exact
+ * message still classifies as noise — the `webdriver` property name is the
+ * specific anchor. See `REDEFINE_WEBDRIVER_NOISE_MESSAGE` for the full
+ * rationale and Better Stack pattern `ee14e84d…`.
+ */
+export function isRedefineWebdriverNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!REDEFINE_WEBDRIVER_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code called `defineProperty` on a
+  // non-configurable property → a real first-party regression; keep reporting
+  // so the call site can be found + fixed. A real first-party `defineProperty`
+  // regression de-minifies to `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
+// Transient fetch-abort `signal timed out` noise — the Bun / native
+// `TimeoutError` raised by `AbortSignal.timeout()` when a client-side fetch
+// exceeds its 30s deadline. This is the SAME transient-timeout class as the
+// prior API pattern `c672fb5e…` which was fixed by PR #4709 (API-side
+// `SENTRY_IGNORE_ERRORS` filter for `'The operation timed out.'`). The existing
+// API-side filter covers `'The operation timed out.'` but NOT the frontend's
+// `'signal timed out'` wording. The SDK's `makeRequest` aborts on its 30s
+// deadline and the abort surfaces as `TimeoutError: signal timed out` in the
+// frontend's `onunhandledrejection` handler (the rejection reaches Sentry
+// through a fire-and-forget path that bypasses `handleApiError`'s timeout
+// guard). The SDK already has a bounded retry for transient gateway statuses
+// (#4609) and the API already filters its own timeout (#4709), but the
+// frontend rejection still reaches Sentry.
+//
+// Better Stack pattern
+// 73e683c3aad440ccf4cc817f0484366cc66ba26b9435517fc8c86d4f7d258d60
+// (Kortix Frontend prod, application_id 2346967): `TimeoutError`, message
+// `signal timed out`, 24 occurrences / 0 identified users, first 2026-05-16
+// (recurring), last 2026-08-12 04:08:45 UTC, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`), request URL
+// `https://kortix.com/projects/…/sessions/…` (session pages), browser Chrome
+// on macOS, tags `DOMException.code: 23` (InvalidStateError — the network
+// abort). Stack: NONE — the exception value has NO `stacktrace` key at all
+// (frameless capture). A transient network/timeout error, not a code bug.
+//
+// The EXACT message `signal timed out` is the canonical `TimeoutError` message
+// from `AbortSignal.timeout()` — it is specific enough to anchor on without a
+// frame guard (a real first-party `throw new Error('signal timed out')` would
+// be unusual). For conservativism, the matcher carries an OPTIONAL negative
+// guard: if ANY frame (or the window.onerror `filename`) resolves to a
+// de-minified first-party `apps/web/src/…` source path, the event keeps
+// reporting (a real first-party `signal timed out` throw de-minifies to
+// `apps/web/src/…` and must not be hidden). The production event has NO frames
+// at all, so the negative guard does NOT fire for it. A frameless capture
+// with this exact message classifies as noise — the message is the canonical
+// `AbortSignal.timeout()` wording. Sibling to `isClientRequestTimeoutMessage`
+// (the SDK's typed `Request timed out after <N>s:` wording, #4531) — this is
+// the NATIVE `TimeoutError` wording the bare `AbortSignal.timeout()` promise
+// rejection surfaces with, distinct from the SDK's wrapped `ApiError`
+// message. Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors`
+// list — that gate has no frame context; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the safe gate.
+const SIGNAL_TIMEOUT_NOISE_MESSAGE = /^signal timed out$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient fetch-abort
+ * `signal timed out` noise class: the native `TimeoutError` raised by
+ * `AbortSignal.timeout()` when a client-side fetch exceeds its 30s deadline.
+ * The SDK's `makeRequest` aborts on its 30s deadline and the abort surfaces as
+ * `TimeoutError: signal timed out` in the frontend's `onunhandledrejection`
+ * handler; it reaches Sentry through a fire-and-forget path that bypasses
+ * `handleApiError`'s timeout guard. A transient network/timeout error, not a
+ * code bug. Requires the EXACT message (case-sensitive; the canonical
+ * `AbortSignal.timeout()` `TimeoutError` wording) AND a NEGATIVE guard: if
+ * any frame (or the window.onerror `filename`) resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `signal timed out` throw de-minifies to `apps/web/src/…` and
+ * must not be hidden). The production event has NO frames at all, so the
+ * negative guard does NOT fire for it. A frameless capture with this exact
+ * message classifies as noise. Sibling of `isClientRequestTimeoutMessage` (the
+ * SDK's typed `Request timed out after <N>s:` wording). See
+ * `SIGNAL_TIMEOUT_NOISE_MESSAGE` for the full rationale and Better Stack
+ * pattern `73e683c3…`.
+ */
+export function isSignalTimeoutNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!SIGNAL_TIMEOUT_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code threw `signal timed out` →
+  // a real first-party regression; keep reporting so the call site can be
+  // found + fixed. A real first-party `signal timed out` throw de-minifies to
+  // `apps/web/src/…` and is never hidden. The production event has NO frames,
+  // so this guard does NOT fire for it.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -4415,6 +4592,42 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // carries a chunk/source frame keeps reporting. See
   // `isUnresolvableStackOverflowNoise`.
   if (isUnresolvableStackOverflowNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+  // noise — an injected anti-detection script attempts
+  // `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+  // footprint, and Chrome throws a `TypeError` because `navigator.webdriver`
+  // is non-configurable in that build. The throw is in the injected
+  // automation script, never first-party code. Requires the EXACT message AND
+  // a NEGATIVE guard: a resolved first-party `apps/web/src/…` filename means
+  // our own code called `defineProperty` on a non-configurable property → a
+  // real first-party regression; keep reporting. The production event has
+  // only `<anonymous>` frames, so the negative guard does NOT fire for it. A
+  // frameless window.onerror capture with the exact message + no first-party
+  // filename drops. See `isRedefineWebdriverNoise` and Better Stack pattern
+  // `ee14e84d…`.
+  if (isRedefineWebdriverNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
+  // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
+  // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
+  // surfaces as `TimeoutError: signal timed out` in the frontend's
+  // `onunhandledrejection`; it reaches the runtime gate through a fire-and-
+  // forget path. The API already filters its OWN timeout wording
+  // (`The operation timed out.`, #4709), but the frontend's `signal timed out`
+  // wording is NOT covered. A transient network/timeout error, not a code
+  // bug. Requires the EXACT message AND a NEGATIVE guard: a resolved
+  // first-party `apps/web/src/…` filename means our own code threw
+  // `signal timed out` → a real first-party regression; keep reporting. The
+  // production event has NO frames, so the negative guard does NOT fire for
+  // it. A frameless window.onerror capture with the exact message + no
+  // first-party filename drops. See `isSignalTimeoutNoise` and Better Stack
+  // pattern `73e683c3…`.
+  if (isSignalTimeoutNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -5091,6 +5304,45 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // negative guard does not fire for them. NOT in `ignoreErrors` (no frame
   // context there). See `isDocumentStateNotFoundNoise`.
   if (isDocumentStateNotFoundNoise({ message, frames })) {
+    return true;
+  }
+
+  // Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+  // noise — an injected anti-detection script attempts
+  // `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+  // footprint, and Chrome throws a `TypeError` because `navigator.webdriver`
+  // is non-configurable in that build. The throw is in the injected
+  // automation script, never first-party code. Requires the EXACT message AND
+  // a NEGATIVE guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code called `defineProperty` on a non-configurable property → a real
+  // first-party regression; keep reporting. The production event carries only
+  // `<anonymous>` frames, so the negative guard does NOT fire for it. A
+  // frameless capture with this exact message still classifies as noise (the
+  // `webdriver` property name is the specific anchor). NOT in `ignoreErrors`
+  // (no frame context there). See `isRedefineWebdriverNoise` and Better Stack
+  // pattern `ee14e84d…`.
+  if (isRedefineWebdriverNoise({ message, frames })) {
+    return true;
+  }
+
+  // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
+  // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
+  // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
+  // surfaces as `TimeoutError: signal timed out` in the frontend's
+  // `onunhandledrejection`; it reaches Sentry through a fire-and-forget path
+  // that bypasses `handleApiError`'s timeout guard. The API already filters
+  // its OWN timeout wording (`The operation timed out.`, #4709), but the
+  // frontend's `signal timed out` wording is NOT covered. A transient
+  // network/timeout error, not a code bug. Requires the EXACT message AND a
+  // NEGATIVE guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw `signal timed out` → a real first-party regression; keep
+  // reporting. The production event has NO frames at all, so the negative
+  // guard does NOT fire for it. A frameless capture with this exact message
+  // classifies as noise. Sibling of `isClientRequestTimeoutMessage` (the SDK's
+  // typed `Request timed out after <N>s:` wording). NOT in `ignoreErrors` (no
+  // frame context there). See `isSignalTimeoutNoise` and Better Stack pattern
+  // `73e683c3…`.
+  if (isSignalTimeoutNoise({ message, frames })) {
     return true;
   }
 
