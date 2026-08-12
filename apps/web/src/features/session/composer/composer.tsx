@@ -726,7 +726,7 @@ function ComposerImpl({
     [cycleAgent],
   );
 
-  const handleSubmit = useCallback(async () => {
+  const dispatchSubmission = useCallback(async () => {
     if (modelUnavailable) {
       toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
         description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -895,6 +895,40 @@ function ComposerImpl({
     onCustomAnswer,
     onQuestionAction,
   ]);
+
+  /**
+   * One user action = one submission, even if the action fires twice.
+   *
+   * The sandbox proxy used to absorb an accidental double-fire for free: with
+   * no `Idempotency-Key` (the browser cannot send one — it is absent from the
+   * API's CORS allow-list) it deduped a delivery by sha256 of the request body,
+   * so two identical prompts inside 60s collapsed to one. Giving each
+   * submission its own `messageID` deliberately ended that, because the same
+   * mechanism was silently swallowing prompts a user MEANT to send twice.
+   *
+   * That leaves the accidental case with nothing behind it. `dispatchSubmission`
+   * clears the editor synchronously before it awaits, which stops a repeat of
+   * the TEXT — but `setAttachedFiles([])` is React state and has not flushed, so
+   * a second Enter in the same tick could still get past the empty-draft guard
+   * on `attachedFiles.length > 0` and post an empty message carrying the files.
+   *
+   * A latch is the honest fix, and it belongs here rather than in the transport:
+   * only this layer knows the difference between one user action and two. A ref,
+   * not state, because it has to be observable in the same tick it is set.
+   */
+  const submissionInFlight = useRef(false);
+  const handleSubmit = useCallback(async () => {
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    try {
+      await dispatchSubmission();
+    } finally {
+      // `finally`, so a throw from any dispatch path cannot wedge the composer
+      // into permanently refusing to send. `dispatchSubmission` already handles
+      // its own send failure and restores the draft; this only releases the gate.
+      submissionInFlight.current = false;
+    }
+  }, [dispatchSubmission]);
 
   const editorPlaceholder = resolveEditorPlaceholder({
     lockForApproval,

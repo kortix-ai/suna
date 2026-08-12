@@ -255,6 +255,34 @@ const WIRE_ID_TIME_SCALE = BigInt(0x1000);
  * the future.
  */
 const MAX_WIRE_ID_CLOCK_CORRECTION = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCALE;
+/**
+ * How far back to date a mint before the correction below lifts it into place.
+ *
+ * The two clocks are not the same clock. opencode mints the ASSISTANT reply
+ * from the sandbox's clock; this mints the USER message from the browser's. The
+ * sync store sorts the transcript by raw id, so a browser running fast puts the
+ * prompt ABOVE the reply that answers it — and it is self-sustaining, because
+ * the next mint corrects off the user's own future-dated message. Every reply
+ * then lands above its prompt, for as long as the clock is wrong.
+ *
+ * The fix is an asymmetry rather than a skew estimate, because the two error
+ * directions do NOT cost the same:
+ *
+ *   - too EARLY is self-correcting. `newestKnownMessageTime` lifts the mint
+ *     above everything already on record, which is exactly where it belongs.
+ *   - too LATE is the bug, and nothing downstream can detect it.
+ *
+ * So never trust the browser clock forward. Backdate it past any ordinary
+ * drift, then let the transcript place the id. In a session with history the
+ * value barely matters — the lift decides the answer. It only decides anything
+ * for the FIRST message of a session, where there is no history to lift above
+ * and the reply is the only thing to sort against.
+ *
+ * 2 minutes: comfortably past unsynced-clock drift (Windows re-syncs weekly and
+ * can be tens of seconds out), and far under `MAX_WIRE_ID_CLOCK_CORRECTION` so
+ * the lift still engages.
+ */
+const CLOCK_SKEW_BACKDATE_MS = 2 * 60 * 1000;
 const WIRE_MESSAGE_ID_TIME = /^msg_([0-9a-f]{12})/;
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
@@ -298,7 +326,8 @@ function newestKnownMessageTime(sessionId: string): bigint | null {
  *     so two submissions inside one millisecond still order.
  */
 function mintPromptMessageId(sessionId: string): string {
-  let encoded = (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  let encoded =
+    (BigInt(Date.now() - CLOCK_SKEW_BACKDATE_MS) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
   const newest = newestKnownMessageTime(sessionId);
   if (newest !== null && newest >= encoded && newest - encoded <= MAX_WIRE_ID_CLOCK_CORRECTION) {
     encoded = newest + BigInt(1);

@@ -322,6 +322,61 @@ describe('promptOpenCodeMessage messageID', () => {
     expect(new Set(captured.map((p) => p.messageID)).size).toBe(1);
   });
 
+  test('a browser clock AHEAD of the sandbox still mints BELOW the next server id', async () => {
+    // K1. opencode mints the assistant reply from the SANDBOX clock; this mints
+    // the user message from the BROWSER clock. Trust the browser and a machine
+    // running fast puts its own prompt ABOVE the reply that answers it — the
+    // sync store sorts by raw id (`a.id < b.id`), so the transcript renders the
+    // answer above the question, permanently, for that user.
+    //
+    // The fix is an asymmetry, not a skew estimate: too EARLY is harmless
+    // (the lift-above-newest guard below corrects it), too LATE is the bug. So
+    // the mint is backdated and then lifted, never trusted forward.
+    const sandboxNow = Date.parse('2026-08-12T12:00:00.000Z');
+    // The transcript proves where the sandbox clock actually is.
+    useSyncStore.setState({
+      messages: { 'sess-skew': [{ id: wireMessageId(sandboxNow - 1_000) }] as never },
+    });
+
+    const realNow = Date.now;
+    // Browser runs 60s fast — well inside ordinary unsynced-clock drift.
+    Date.now = () => sandboxNow + 60_000;
+    try {
+      await promptOpenCodeMessage({
+        sessionId: 'sess-skew',
+        parts: [{ type: 'text', text: 'hi' }],
+      });
+    } finally {
+      Date.now = realNow;
+    }
+
+    const minted = encodedOf(captured[0].messageID as string);
+    // Above everything already on record, so opencode does not read the prompt
+    // as already answered...
+    expect(minted).toBeGreaterThan(encodedOf(wireMessageId(sandboxNow - 1_000)));
+    // ...and below what the sandbox will mint next, so the reply sorts after it.
+    expect(minted).toBeLessThan(encodedAt(sandboxNow));
+  });
+
+  test('a normal clock still mints above the newest known message', async () => {
+    // The backdate must not push a mint BELOW real history — that is the other
+    // failure mode, and it is worse: opencode reads a stale assistant reply as
+    // the answer and the turn never runs at all.
+    const now = Date.now();
+    useSyncStore.setState({
+      messages: { 'sess-ok': [{ id: wireMessageId(now - 2_000) }] as never },
+    });
+
+    await promptOpenCodeMessage({
+      sessionId: 'sess-ok',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+
+    expect(encodedOf(captured[0].messageID as string)).toBeGreaterThan(
+      encodedOf(wireMessageId(now - 2_000)),
+    );
+  });
+
   test('a caller-supplied messageID is never overwritten', async () => {
     await promptOpenCodeMessage({
       sessionId: 'sess-1',
@@ -456,11 +511,19 @@ describe('promptOpenCodeMessage messageID', () => {
     await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
     const after = Date.now();
 
+    // The window is the browser clock MINUS `CLOCK_SKEW_BACKDATE_MS`: a mint is
+    // deliberately backdated so it can never sort above the reply that answers
+    // it, then lifted into place off the transcript (see the constant's note in
+    // messages.ts). Pinned here rather than imported — the constant is internal,
+    // and a change to it SHOULD have to be restated in this test.
+    const BACKDATE_MS = 2 * 60 * 1000;
     const minted = encodedOf(captured[0].messageID as string);
-    expect(minted).toBeGreaterThanOrEqual(encodedAt(before));
+    expect(minted).toBeGreaterThanOrEqual(encodedAt(before - BACKDATE_MS));
     // Small slack for the monotonic tie-break that separates same-millisecond
     // submissions; anything larger means the clock is not what is encoded.
-    expect(minted).toBeLessThanOrEqual(encodedAt(after) + 1000n);
+    // This bound is what still catches the HIGH-bits regression — `msg_19ff…`
+    // is a different order of magnitude, not a near miss.
+    expect(minted).toBeLessThanOrEqual(encodedAt(after - BACKDATE_MS) + 1000n);
   });
 
   test('outranks the newest message already in the session when the browser clock lags', async () => {
