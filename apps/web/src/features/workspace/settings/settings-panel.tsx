@@ -5,6 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -39,10 +45,10 @@ import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
+import { ArrowLeftIcon as ArrowLeft, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
-import { UPGRADE_ITEM, isRailItemActive, railGroups } from './rail';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { UPGRADE_ITEM, filterRailGroups, isRailItemActive, railGroups, railItemMatches } from './rail';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { ApiKeysTab } from './tabs/api-keys-tab';
 import { AuditTab } from './tabs/audit-tab';
@@ -399,6 +405,16 @@ export function SettingsPanelShell({
   reviewNeedsYou,
   llmGatewayEnabled,
 }: SettingsPanelShellProps) {
+  const [query, setQuery] = useState('');
+
+  // Only the DESKTOP RAIL is filtered. `allItems` still drives every
+  // `TabsContent` below and the mobile scroller, so typing never unmounts the
+  // pane you are reading, and `SettingsPanel`'s "is the active tab still
+  // visible" effect — which reads `allItems`, not this — cannot fire mid-query
+  // and move you off the tab you were on.
+  const visibleGroups = useMemo(() => filterRailGroups(groups, query), [groups, query]);
+  const upgradeVisible = railItemMatches(UPGRADE_ITEM, query);
+
   return (
     <>
       <div className="kx-titlebar-spacer shrink-0" />
@@ -476,13 +492,33 @@ export function SettingsPanelShell({
               </ModalClose>
             </div>
 
+            {/* Directly under Back to workspace, above everything it filters,
+                and outside the scrolling <nav> — the field stays put while the
+                results move under it. */}
+            <div className="mt-2 w-full shrink-0 px-2.5">
+              <InputGroupSearch>
+                <InputGroupSearchIcon>
+                  <Search />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  placeholder="Search settings"
+                  aria-label="Search settings"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  variant="popover"
+                  className="h-8"
+                />
+                <InputGroupSearchClear onClick={() => setQuery('')} />
+              </InputGroupSearch>
+            </div>
+
             {project ? <RelatedProjectsSwitcher project={project} /> : null}
 
             <nav
               aria-label="Settings"
               className="mt-4 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              {groups.map((group, idx) => (
+              {visibleGroups.map((group, idx) => (
                 <div key={group.label} className={cn('space-y-1.5', idx > 0 ? 'mt-4' : undefined)}>
                   <Label className="text-muted-foreground px-3 text-xs">{group.label}</Label>
                   <TabsList orientation="vertical" className="w-full">
@@ -501,9 +537,21 @@ export function SettingsPanelShell({
                   </TabsList>
                 </div>
               ))}
+
+              {/* The documented no-match shape (design system, "Search +
+                  loading + empty flow"), not an EmptyState — a 250px rail has
+                  no room for an icon and a call to action. */}
+              {visibleGroups.length === 0 && !upgradeVisible ? (
+                <p className="text-muted-foreground px-3 py-6 text-center text-xs text-balance">
+                  No settings match “{query.trim()}”.
+                </p>
+              ) : null}
             </nav>
 
-            {upgradeAllowed && (
+            {/* Upgrades is pinned outside the scrolling groups, so it has to be
+                filtered on its own or it would sit there contradicting a search
+                that matched nothing. */}
+            {upgradeAllowed && upgradeVisible && (
               <div className="mt-2 shrink-0 px-2.5 pt-3">
                 <TabsList orientation="vertical">
                   <TabsTrigger value={UPGRADE_ITEM.tab} className="gap-2.5">

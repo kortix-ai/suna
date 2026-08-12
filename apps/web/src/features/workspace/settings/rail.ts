@@ -140,6 +140,7 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'members',
         label: 'Members',
         icon: UsersRound,
+        description: 'Who can reach this workspace, and what each person can do.',
       },
       {
         tab: 'secrets',
@@ -269,6 +270,7 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'experimental',
         label: 'Experimental',
         icon: Flask,
+        description: 'Features you can switch on before they are generally available.',
       },
     ],
   },
@@ -307,6 +309,59 @@ export function railGroups(flags: RailFlags): readonly RailGroup[] {
     }
     return g;
   });
+}
+
+/**
+ * Whether one rail row answers a search query.
+ *
+ * Matches the label first — that is the word a person is typing — and the
+ * description second, so a query can find a tab by what it does rather than
+ * only by what it is called: "sso" finds Identity, "cli" finds API keys.
+ * Neither string is long enough for that to produce noise at this rail's size.
+ */
+export function railItemMatches(item: RailItem, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    item.label.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false)
+  );
+}
+
+/**
+ * The rail narrowed to a search query, with its grouping intact.
+ *
+ * **The groups survive the filter — that is the point.** A flat list of
+ * matches would strip the one thing that tells Workspace › General and
+ * Organization › General apart (see `RailItem.description`), so a result set
+ * is still groups: every group that keeps at least one row keeps its heading,
+ * in the same order, and a group with no matches disappears whole. Typing
+ * "profile" leaves the "You" heading with Profile under it, not a bare row
+ * floating where five groups used to be.
+ *
+ * **A group name is itself a query.** Typing "organization" keeps the whole
+ * Organization group rather than nothing, because the group label is the only
+ * name some of its rows share — a person looking for billing-adjacent
+ * settings knows the group before they know which tab. A group matched this
+ * way keeps every item; its rows are not filtered again against the same
+ * query, or "organization" would match the group and then discard all seven
+ * rows for not containing the word.
+ *
+ * Returns `groups` unchanged for a blank query, by identity, so an unfiltered
+ * rail does no work and memoized callers see a stable reference.
+ */
+export function filterRailGroups(
+  groups: readonly RailGroup[],
+  query: string,
+): readonly RailGroup[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return groups;
+  return groups
+    .map((group) =>
+      group.label.toLowerCase().includes(q)
+        ? group
+        : { ...group, items: group.items.filter((item) => railItemMatches(item, q)) },
+    )
+    .filter((group) => group.items.length > 0);
 }
 
 /**

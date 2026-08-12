@@ -97,6 +97,51 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).toContain(`>${group.label}<`);
     }
   });
+
+  /**
+   * The rail's search field (Jay, 2026-08-12: "below the back to workspace
+   * button ... it should be a group filter").
+   *
+   * What the query DOES to the rail is `filterRailGroups`' job and is pinned
+   * in `rail.test.ts` against the real groups — a pure function, so those
+   * tests can cover every case without a DOM. These three cover only what
+   * this file can see: that the field is rendered, where it sits, and that
+   * its presence changes nothing until someone types.
+   */
+  describe('the rail search field', () => {
+    test('renders once, labelled, in the desktop rail', () => {
+      const html = render();
+      expect(html).toContain('data-slot="input-group-search-control"');
+      expect((html.match(/data-slot="input-group-search"/g) ?? []).length).toBe(1);
+      expect(html).toContain('aria-label="Search settings"');
+    });
+
+    test('sits below Back to workspace and above the first group', () => {
+      const html = render();
+      const back = html.indexOf('Back to workspace');
+      const field = html.indexOf('data-slot="input-group-search"');
+      const firstGroup = html.indexOf(`>${allGroups[0].label}<`);
+      expect(back).toBeGreaterThan(-1);
+      expect(back).toBeLessThan(field);
+      expect(field).toBeLessThan(firstGroup);
+    });
+
+    test('is desktop-only — the mobile rail is a horizontal scroller with no room for it', () => {
+      expect(render({ isMobile: true })).not.toContain('data-slot="input-group-search"');
+    });
+
+    test('changes nothing before anyone types — every group and tab still renders', () => {
+      const html = render();
+      const tabCount = (html.match(/role="tab"/g) ?? []).length;
+      expect(tabCount).toBeGreaterThan(20);
+      for (const group of allGroups) {
+        expect(html).toContain(`>${group.label}<`);
+      }
+      // The empty-state line belongs to a query that matched nothing, so it
+      // must not be in the markup on a blank query.
+      expect(html).not.toContain('No settings match');
+    });
+  });
 });
 
 /**

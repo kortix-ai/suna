@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { type RailFlags, isRailItemActive, railGroups } from './rail';
+import {
+  UPGRADE_ITEM,
+  filterRailGroups,
+  isRailItemActive,
+  railGroups,
+  railItemMatches,
+  type RailFlags,
+} from './rail';
 import type { RailItem } from './type';
 
 const item = (tab: RailItem['tab']): RailItem => ({ tab, label: tab });
@@ -17,7 +24,11 @@ const tabsOf = (f: RailFlags): string[] => railGroups(f).flatMap((g) => g.items.
 describe('railGroups', () => {
   test('renders the five groups in order', () => {
     expect(railGroups(flags()).map((g) => g.label)).toEqual([
-      'You', 'Workspace', 'Agent', 'Organization', 'Developer',
+      'You',
+      'Workspace',
+      'Agent',
+      'Organization',
+      'Developer',
     ]);
   });
 
@@ -38,7 +49,9 @@ describe('railGroups', () => {
   });
 
   test('two flags in one group both land — the rail.ts:110 regression', () => {
-    const tabs = tabsOf(flags({ marketplaceEnabled: true, reviewEnabled: true, voiceEnabled: true }));
+    const tabs = tabsOf(
+      flags({ marketplaceEnabled: true, reviewEnabled: true, voiceEnabled: true }),
+    );
     expect(tabs).toContain('marketplace');
     expect(tabs).toContain('review');
     expect(tabs).toContain('voice');
@@ -52,13 +65,17 @@ describe('railGroups', () => {
     // instructions surface it was named for never existed.
     const all = flags({
       marketplaceEnabled: true,
-      llmGatewayAvailable: true, voiceEnabled: true, reviewEnabled: true,
+      llmGatewayAvailable: true,
+      voiceEnabled: true,
+      reviewEnabled: true,
     });
     expect(tabsOf(all)).toHaveLength(25);
   });
 
   test('no tab appears in two groups', () => {
-    const tabs = tabsOf(flags({ marketplaceEnabled: true, voiceEnabled: true, reviewEnabled: true }));
+    const tabs = tabsOf(
+      flags({ marketplaceEnabled: true, voiceEnabled: true, reviewEnabled: true }),
+    );
     expect(new Set(tabs).size).toBe(tabs.length);
   });
 
@@ -178,5 +195,86 @@ describe('isRailItemActive', () => {
   test('the models item is not active for a non-llm tab', () => {
     expect(isRailItemActive(item('models'), 'channels')).toBe(false);
     expect(isRailItemActive(item('models'), 'repositories')).toBe(false);
+  });
+});
+
+describe('filterRailGroups', () => {
+  const all = () => railGroups(flags());
+  const shape = (gs: readonly { label: string; items: readonly RailItem[] }[]) =>
+    gs.map((g) => [g.label, g.items.map((i) => i.tab)] as const);
+
+  test('a blank query returns the same groups, by identity', () => {
+    const groups = all();
+    expect(filterRailGroups(groups, '')).toBe(groups);
+    expect(filterRailGroups(groups, '   ')).toBe(groups);
+  });
+
+  // The headline requirement: a match keeps its GROUP, heading and all — a
+  // result is never a bare row floating where five groups used to be.
+  test('a matching row keeps its group heading, and every other group goes', () => {
+    expect(shape(filterRailGroups(all(), 'profile'))).toEqual([['You', ['profile']]]);
+  });
+
+  test('matching is case-insensitive and ignores surrounding space', () => {
+    expect(shape(filterRailGroups(all(), '  PROFILE '))).toEqual([['You', ['profile']]]);
+  });
+
+  test('a group name is itself a query, and keeps all of its rows', () => {
+    const [group, ...rest] = filterRailGroups(all(), 'organization');
+    expect(rest).toEqual([]);
+    expect(group.label).toBe('Organization');
+    // Not re-filtered against the query — only one of these rows contains the
+    // word "organization" in its own label or description.
+    expect(group.items.map((i) => i.tab)).toEqual(
+      all()
+        .find((g) => g.label === 'Organization')!
+        .items.map((i) => i.tab),
+    );
+  });
+
+  test('a row is findable by its description, not only its label', () => {
+    // `api-keys`: "Let the Kortix CLI, a script, or a CI job use this workspace."
+    expect(shape(filterRailGroups(all(), 'cli'))).toEqual([['Developer', ['api-keys']]]);
+  });
+
+  test('groups keep their original order when several match', () => {
+    // Three, not two: `experimental`'s description ("Features you can switch on
+    // before they are generally available.") contains "general" as a substring.
+    // That is the filter working as designed — the test above pins that a row
+    // is findable by its description — and it is the cost of substring matching
+    // over prose. The invariant this test exists for is the ORDER: Workspace
+    // before Organization before Developer, matching `STATIC_GROUPS`.
+    expect(filterRailGroups(all(), 'general').map((g) => g.label)).toEqual([
+      'Workspace',
+      'Organization',
+      'Developer',
+    ]);
+  });
+
+  test('a query nothing matches returns no groups at all', () => {
+    expect(filterRailGroups(all(), 'zzzznotathing')).toEqual([]);
+  });
+
+  test('it never invents a row that railGroups did not produce', () => {
+    const visible = filterRailGroups(all(), 'e').flatMap((g) => g.items.map((i) => i.tab));
+    const every = tabsOf(flags());
+    expect(visible.every((t) => every.includes(t))).toBe(true);
+  });
+});
+
+describe('railItemMatches', () => {
+  test('a blank query matches everything, so the pinned rows stay put', () => {
+    expect(railItemMatches(UPGRADE_ITEM, '')).toBe(true);
+    expect(railItemMatches(UPGRADE_ITEM, '  ')).toBe(true);
+  });
+
+  test('it filters the pinned Upgrades row like any other', () => {
+    expect(railItemMatches(UPGRADE_ITEM, 'upgrade')).toBe(true);
+    expect(railItemMatches(UPGRADE_ITEM, 'profile')).toBe(false);
+  });
+
+  test('an item with no description matches on its label alone', () => {
+    expect(railItemMatches(item('profile'), 'prof')).toBe(true);
+    expect(railItemMatches(item('profile'), 'billing')).toBe(false);
   });
 });
