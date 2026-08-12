@@ -121,6 +121,12 @@ export function createHealthRouter(
       daemon: 'ok',
       status,
       runtimeReady,
+      // Which boot path this daemon took. An agent binary that predates
+      // monitor mode omits the field entirely, which is exactly what the
+      // monitor-box reconciler uses to detect a stale-agent box and recreate
+      // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
+      // booted the session path can never run monitors).
+      workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
       opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),

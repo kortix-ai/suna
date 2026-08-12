@@ -177,6 +177,8 @@
   --color-background: var(--background);
   --color-pane: var(--pane);
   --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-foreground-weak: var(--foreground-weak);
   --font-sans: var(--font-roobert);
   --font-mono: var(--font-roobert-mono);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -643,6 +645,8 @@
   --background: oklch(1 0 0); /* canvas */
   --pane: oklch(1 0 0); /* #ffffff */
   --foreground: oklch(0 0 0); /* ink */
+  --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
+  --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
   --card: oklch(0.9672 0 0); /* surface-1 */
   --card-foreground: oklch(0 0 0);
   --popover: oklch(1 0 0); /* canvas — top surface, separated by hairline + shadow */
@@ -706,6 +710,8 @@
   --background: oklch(0.17 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
+  --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
+  --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
   --card: oklch(0.1913 0 0); /* surface-1 #141414 */
   --card-foreground: oklch(1 0 0);
   --popover: oklch(0.1913 0 0); /* surface-1 */

@@ -14,7 +14,7 @@
 import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { type StartStash, writeStartStash } from '@kortix/sdk/react';
 
 /** Pure — the exact stash payload an upgrade session is seeded with. */
@@ -30,7 +30,7 @@ export interface RunUpgrade {
 }
 
 export function useRunUpgrade(projectId: string): RunUpgrade {
-  const closeCustomize = useCustomizeStore((s) => s.close);
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const [pending, setPending] = useState(false);
   const newSession = useNewProjectSession(projectId);
 

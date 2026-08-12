@@ -4,6 +4,7 @@ import { Claude } from '@/features/icon/icons/claude';
 import { Github } from '@/features/icon/icons/github';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
 import type { ComponentType, ReactNode } from 'react';
 
@@ -40,11 +41,16 @@ const BRAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   openclaw: OpenClaw,
   github: Github,
   grok: GrokMark,
+  // Without this entry a Slack cover fell through to the Google favicon
+  // service — a network request to a third party for a mark this repo already
+  // ships as an SVG. Slack keeps its own colours, same as `Claude` (#D97757);
+  // brands with a mandated palette are not recoloured to `currentColor`.
+  slack: Slack,
 };
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="border-border bg-card flex size-14 items-center justify-center overflow-hidden rounded-2xl border shadow-2xs sm:size-16">
+    <span className="border-foreground/10 bg-card flex size-14 items-center justify-center overflow-hidden rounded-2xl border sm:size-16">
       {children}
     </span>
   );

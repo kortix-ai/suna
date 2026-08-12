@@ -18,7 +18,37 @@
  * section — like the standalone Files page — hides for plain members by design.
  */
 
-import type { CustomizeSection } from '@/lib/customize-sections';
+/**
+ * The internal gating-key vocabulary for `CUSTOMIZE_SECTION_ACCESS` below —
+ * previously imported from the legacy Customize-sections module (the legacy Customize
+ * overlay's OWN section-id space), which was deleted when the settings-panel
+ * cutover retired that overlay. This union lives here now because gating is
+ * the only thing it still does: `settings-panel.tsx`'s `GATED_TAB_SECTION`
+ * maps a `SettingsTab` onto one of these ids to reuse the IAM read leaf below
+ * — the ids themselves never reach the UI as tab names anymore.
+ */
+export type CustomizeSection =
+  | 'git'
+  | 'review'
+  | 'commands'
+  | 'marketplace'
+  | 'secrets'
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
+  | 'llm-api'
+  | 'members'
+  | 'schedules'
+  | 'webhooks'
+  | 'channels'
+  | 'voice'
+  | 'sandbox'
+  | 'settings'
+  | 'feature-flags'
+  | 'upgrade';
 
 export const PROJECT_ACTIONS = {
   PROJECT_READ: 'project.read',
@@ -82,9 +112,17 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
 > = {
   // No `agents` entry: Agents graduated to /projects/<id>/agent, which gates
   // itself on PROJECT_AGENT_READ/WRITE directly (project-settings-nav's
-  // TAB_PREFERENCE and the page's own useProjectCan). This map only covers
-  // sections the Customize rail renders — Commands is one of them again, since
-  // its standalone page was deleted (#6169).
+  // TAB_PREFERENCE and the page's own useProjectCan).
+  //
+  // `commands` no longer backs any settings tab. The Instructions tab that
+  // mapped to it (via `settings-panel.tsx`'s `GATED_TAB_SECTION`) was removed
+  // along with `CommandsView`, so nothing calls
+  // `isCustomizeSectionVisible('commands', …)` in app code today. The leaf
+  // pair is kept deliberately, not by oversight: commands are still a real
+  // project entity (`entity-modal.tsx` gates its writes on
+  // PROJECT_COMMAND_WRITE) and `CustomizeSection` is a `Record` key, so the
+  // entry must exist while the union member does. Delete both together, and
+  // only once no command surface remains anywhere.
   commands: {
     read: PROJECT_ACTIONS.PROJECT_COMMAND_READ,
     write: PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,

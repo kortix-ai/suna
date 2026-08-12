@@ -133,15 +133,18 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
-    // This lane runs CONCURRENTLY with target-browser-full against the same
-    // staging origin. At the default 4 API + 4 sandbox workers the combined
-    // load pushes staging origin into 5xx, which the edge launders into
-    // MAINTENANCE_MODE. Dial the REST concurrency down (3+3) to cut that load;
-    // the per-request transient retry (runner.ts) absorbs what's left. Override
-    // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
+    // This lane runs CONCURRENTLY with target-browser-full (2 workers), and
+    // BOTH boot real sandboxes on the shared staging Daytona provider. The
+    // provider handled ~3 concurrent boots fine when only this lane booted
+    // (browser lane was blocked at the SSO wall), but once the browser lane
+    // started booting too, the combined concurrency saturated the provider and
+    // RUN-*/SESS-* "session runtime ready" waits timed out at ~16 min. Cap this
+    // lane's sandbox boots at 1 so total concurrent boots (1 here + 2 browser)
+    // stay at the ~3 the provider tolerates. API (non-sandbox) workers stay
+    // higher — those flows are fast and don't provision. Override via env.
     env: {
       KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
-      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
+      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '1',
     },
   };
   const targetBrowserFull: LocalTestLane = {

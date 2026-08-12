@@ -1,22 +1,23 @@
 'use client';
 
 /**
- * /projects/[id]/customize/[section] — deep-link entry into the Customize
- * overlay for a specific section (e.g. `/customize/agents`).
- *
- * Customize is now a full-screen overlay (see customize-store), not a route.
- * This page exists only so bookmarks / Cmd+K deep links keep working: it opens
- * the overlay on the requested section and drops you on the project home behind
- * it. Connectors, Skills, and Commands graduated out of the overlay — see
- * `legacyCustomizeRedirect` — so a link into one of those lands on the new
- * standalone page instead.
+ * /projects/[id]/customize/[section] — legacy deep-link entry into what is
+ * now the Settings overlay (e.g. `/customize/git`, `/customize/agents`). The
+ * Customize overlay itself no longer exists — it was merged into Settings
+ * (see `features/workspace/settings/settings-panel.tsx`) — and this route is
+ * kept ONLY so bookmarks / Cmd+K deep links keep working: it resolves the
+ * path segment (preferring it) or the legacy `?section=` query through
+ * `legacySectionRedirect`, which folds every renamed tab (`git` ->
+ * `repositories`, `commands` -> `instructions`, every `llm-*` -> `models`,
+ * ...) and every graduated section (`agents`, `connectors`, `skills`, ...)
+ * onto its current home, and replaces straight there. An unresolvable
+ * segment falls back to the bare `/settings` route.
  */
 
 import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
 
 export default function ProjectCustomizeSectionRedirect() {
   const params = useParams<{ id: string; section: string }>();
@@ -27,22 +28,11 @@ export default function ProjectCustomizeSectionRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
-    // Files, Changes, Connectors, Skills, and Commands graduated out of
-    // Customize into their own standalone pages. Prefer the path section,
-    // then fall back to the legacy query.
     const redirect =
-      legacyCustomizeRedirect(projectId, rawSection) ??
-      legacyCustomizeRedirect(projectId, searchParams.get('section'));
-    if (redirect) {
-      router.replace(redirect);
-      return;
-    }
-    const section =
-      parseCustomizeSection(rawSection) ??
-      parseCustomizeSection(searchParams.get('section')) ??
-      undefined;
-    useCustomizeStore.getState().openCustomize(section);
-    router.replace(`/projects/${projectId}`);
+      legacySectionRedirect(projectId, rawSection) ??
+      legacySectionRedirect(projectId, searchParams.get('section')) ??
+      `/projects/${projectId}/settings`;
+    router.replace(redirect);
   }, [projectId, rawSection, searchParams, router]);
 
   return null;

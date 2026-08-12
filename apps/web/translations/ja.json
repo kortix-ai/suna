@@ -4370,24 +4370,6 @@
       "line68JsxTextCreateARole": "ロールを作成",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "名前またはキーでロールを検索..."
     },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "このインスタンスにアクセスできるユーザーです。チームメイトをメールで招待してください — すでに Kortix を使っている場合はすぐにアクセスでき、そうでない場合は登録リンクを送信します。",
-      "line142JsxTextInviteTeammate": "チームメイトを招待",
-      "line149JsxTextLoadingTeam": "チームを読み込み中…",
-      "line152JsxAttrTitleFailedToLoadMembers": "メンバーを読み込めませんでした",
-      "line160JsxAttrTitleJustYouForNow": "今のところ、あなただけです",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "このインスタンスで共同作業するチームメイトを招待します。相手にはあなたがアクセス権を付与したプロジェクトが表示され、そのセッションはあなたのものとは別に非公開のまま保たれます。",
-      "line166JsxTextInviteTeammate": "チームメイトを招待",
-      "line205JsxAttrTitleRemoveFromTeam": "チームから削除しますか？",
-      "line221JsxAttrTitleRevokeInvite": "招待を取り消しますか？",
-      "line324JsxTextPending": "保留中 ·",
-      "line332JsxTextExpires": "· 有効期限",
-      "line345JsxAttrAriaLabelRevokeInvite": "招待を取り消す",
-      "line412JsxAttrAriaLabelMemberActions": "メンバー操作",
-      "line564JsxTextEmailAddress": "メールアドレス",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "まだ Kortix を利用していない場合は、登録リンクを送信します。"
-    },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "AES-256-GCM で暗号化され、このプロジェクトのみにスコープ設定されています。エージェントは次を介して読み取ります:",
       "line67JsxTextNewCredential": "新しい認証情報",

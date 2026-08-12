@@ -34,16 +34,27 @@ import {
   sessionLastActivityAt,
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import {
+  PALETTE_NO_PROJECT_DEFAULT_TAB,
+  filterSettingsPaletteGroups,
+  settingsPaletteGroups,
+  settingsPaletteSearchText,
+} from '@/features/workspace/settings-palette-items';
+import type { RailFlags } from '@/features/workspace/settings/rail';
+import {
+  DEFAULT_SETTINGS_TAB,
+  resolveSettingsOverlayHref,
+  type SettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { resolveCustomizeOverlayHref } from '@/lib/customize-sections';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type KortixAccount,
   type KortixProject,
@@ -81,7 +92,6 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Kbd } from '@/components/ui/kbd';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { useWorkspaceSearch } from '@/features/files';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
@@ -127,6 +137,70 @@ function sanitizeCmdkValue(value: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * The searchable text of a registry-backed palette row — and, because cmdk
+ * scores a row by its `value` and nothing else, its cmdk `value` too.
+ *
+ * **Label plus curated keywords. Never `id`, never `group`.** Both used to be
+ * in here. `id` made `nav-accounts`, `proj-secrets`, `pref-general` and
+ * `account-tokens` searchable, so "nav", "proj", "pref" and "account" each
+ * returned a whole family of rows by a string the user has never seen. `group`
+ * made every row in the `account` group answer "account" whatever it meant.
+ * Neither is user-visible, so neither can be what the user meant.
+ *
+ * **This is also the row's cmdk selection identity**, which cmdk requires to
+ * be unique — two rows sharing a `value` are both marked `aria-selected` and
+ * Enter always fires the first one. cmdk 0.2.1 (the installed version, checked
+ * against `node_modules/cmdk/dist/index.d.ts`) has no separate `keywords` prop
+ * to move the search text onto, and `CommandDialog` in `components/ui/command`
+ * forwards neither `filter` nor `shouldFilter`, so the value is the only lever.
+ * Uniqueness therefore rests on the curated text itself, which is safe because
+ * a collision means two rows with the SAME label and the SAME keywords — rows
+ * a user could not tell apart either. `command-palette-search.test.ts` asserts
+ * it for every row the palette can render at once.
+ */
+export function buildPaletteSearchText(item: { label: string; keywords?: string }): string {
+  return sanitizeCmdkValue(`${item.label} ${item.keywords ?? ''}`);
+}
+
+/**
+ * Legacy `SettingsTabId` (menu-registry's vocabulary) -> new `SettingsTab`
+ * (settings-tabs.ts), for the command-palette items whose `kind` is
+ * `'settings'`. Task 10 retired the legacy user-settings modal these items
+ * used to open directly, in favor of `useSettingsPanelStore` — the same
+ * overlay the `'navigate'` branch below already opens via
+ * `resolveSettingsOverlayHref`.
+ *
+ * `tokens` -> `api-keys` and `transactions` -> `usage` mirror
+ * `RENAMED_TABS` in `settings-tabs.ts` (same rename, same source
+ * vocabulary). `appearance`, `sounds`, and `shortcuts` all merged into the
+ * new `preferences` tab — `tabs/preferences-tab.tsx` already hosts all
+ * three (wallpaper/theme, sound-pack controls, and a full "Keyboard
+ * shortcuts" section with the modifier picker and shortcut list).
+ *
+ * NOTE: no palette entry uses `kind: 'settings'` any more — every settings
+ * destination is now derived from the rail (`settings-palette-items.ts`), so
+ * `handleOpenSettings` below is unreachable from the current registry. The
+ * map and the branch stay because `MenuItemDef.kind` still admits
+ * `'settings'` and the `userMenu` surface still declares entries with it; if
+ * one is re-added to `showIn: ['commandPalette']` it must open through
+ * `openSettingsTab`, not through a raw `openSettings` call.
+ *
+ * `referrals` is deliberately absent: there is no `referrals` member of
+ * `SettingsTab`, and the only live referral surface (`ReferralModal`) mounts
+ * inside `UserMenu` -> `AppHeader`, i.e. only on `/accounts/**`. Its registry
+ * entry was removed rather than mapped — see `menu-registry.ts`.
+ */
+export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
+  general: 'general',
+  billing: 'billing',
+  tokens: 'api-keys',
+  transactions: 'usage',
+  appearance: 'preferences',
+  sounds: 'preferences',
+  shortcuts: 'preferences',
+};
 
 const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-projects': 'projects',
@@ -343,8 +417,6 @@ export function CommandPalette() {
   const [compactOpen, setCompactOpen] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -581,12 +653,66 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase();
     const words = q.split(/\s+/).filter(Boolean);
     return allPaletteItems.filter((item) => {
-      const haystack = [item.label, item.id, item.group, item.keywords || '']
-        .join(' ')
-        .toLowerCase();
+      // Exactly the string that becomes the cmdk `value` below, so the two
+      // filters in play read the same text.
+      //
+      // THIS FILTER DECIDES WHAT IS VISIBLE, not cmdk's. Every CommandGroup in
+      // this file passes `forceMount`, and cmdk 0.2.1 propagates a group's
+      // `forceMount` to its items through the group context
+      // (`g = props.forceMount ?? groupContext.forceMount` in
+      // `cmdk/dist/index.mjs`), so cmdk's own scorer never removes one of
+      // these rows — it only RANKS them, by scoring the same `value`. That is
+      // why a stale keyword here is a wrong ANSWER rather than a wrong order,
+      // and why the two can never disagree about which rows exist.
+      //
+      // They do still disagree about the query: this is a per-word substring
+      // test, cmdk's is an ordered-subsequence score. "session terminal" keeps
+      // Open Terminal here and scores 0 in cmdk, which sorts it last instead
+      // of dropping it. Do NOT remove `forceMount` from a group without
+      // replacing this filter — that is what turns the disagreement into
+      // rows vanishing under a heading that is still rendered.
+      const haystack = buildPaletteSearchText(item).toLowerCase();
       return words.every((w) => haystack.includes(w));
     });
   }, [allPaletteItems, hasQuery, query]);
+
+  /**
+   * The settings rail's flags, in the rail's own vocabulary.
+   *
+   * `llmGatewayAvailable` is passed for completeness only — `railGroups`
+   * never reads it (rail.ts documents that the Models row is ungated on
+   * purpose), which is exactly why the derived Models row no longer inherits
+   * the `llm_gateway` gate the old `proj-llm` registry entry carried.
+   */
+  const railFlags = useMemo<RailFlags>(
+    () => ({
+      marketplaceEnabled: projectFlags.marketplace,
+      llmGatewayAvailable: projectFlags.llm_gateway,
+      voiceEnabled: projectFlags.voice,
+      reviewEnabled: projectFlags.review_center,
+    }),
+    [projectFlags],
+  );
+
+  const allSettingsGroups = useMemo(
+    () =>
+      settingsPaletteGroups({
+        hasProject: !!projectId,
+        flags: railFlags,
+        billingEnabled,
+      }),
+    [projectId, railFlags, billingEnabled],
+  );
+
+  const filteredSettingsGroups = useMemo(
+    () => (hasQuery ? filterSettingsPaletteGroups(allSettingsGroups, query) : []),
+    [allSettingsGroups, hasQuery, query],
+  );
+
+  const settingsResultCount = useMemo(
+    () => filteredSettingsGroups.reduce((total, group) => total + group.items.length, 0),
+    [filteredSettingsGroups],
+  );
 
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
@@ -813,8 +939,13 @@ export function CommandPalette() {
 
   const hasSessionResults = rootSessionResults.length > 0;
   const hasProjectResults = rootProjectResults.length > 0;
+  const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
-    hasNavResults || hasSessionResults || hasProjectResults || hasSessionActionResults;
+    hasNavResults ||
+    hasSessionResults ||
+    hasProjectResults ||
+    hasSessionActionResults ||
+    hasSettingsResults;
 
   const showNoResults = hasQuery && queryLongEnough && !hasAnyResults;
 
@@ -1038,13 +1169,40 @@ export function CommandPalette() {
     [handleOpenQuickView],
   );
 
+  /**
+   * The ONE door every settings destination goes through.
+   *
+   * **The rule: open the overlay only where it is mounted, otherwise
+   * navigate.** `SettingsPanel` has exactly two mounts — `ProjectShell`
+   * (`project-layout/project-shell.tsx`, every `/projects/*` route) and
+   * `StandaloneSettingsRoute` (`/settings`, which mounts no palette). This
+   * palette also mounts under `AppHeader`, whose only route group is
+   * `/accounts/**`, and that layout renders no panel. `projectId` is non-null
+   * exactly on `/projects/*` (see its definition above), so it is precisely
+   * the "is the panel mounted?" signal.
+   *
+   * Calling `openSettings()` where no panel is mounted did two things, both
+   * bad: the click did nothing, AND `open: true` stuck in the module-level
+   * store (`stores/settings-panel-store.ts`), so the overlay sprang open
+   * unrequested on the next client-side navigation into a project.
+   */
+  const openSettingsTab = useCallback(
+    (tab: SettingsTab) => {
+      close();
+      if (projectId) {
+        useSettingsPanelStore.getState().openSettings(tab);
+        return;
+      }
+      router.push(`/settings/${tab}`);
+    },
+    [close, projectId, router],
+  );
+
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
-      close();
-      setSettingsTab(tab);
-      setSettingsOpen(true);
+      openSettingsTab(LEGACY_SETTINGS_TAB_MAP[tab] ?? DEFAULT_SETTINGS_TAB);
     },
-    [close],
+    [openSettingsTab],
   );
 
   const handleOpenPlan = useCallback(() => {
@@ -1100,7 +1258,7 @@ export function CommandPalette() {
   }, [currentSessionId, close]);
 
   const handleInviteMembers = useCallback(() => {
-    useCustomizeStore.getState().openCustomize('members', { membersTab: 'invite' });
+    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
     close();
   }, [close]);
 
@@ -1212,13 +1370,21 @@ export function CommandPalette() {
         case 'navigate': {
           const href = item.href || '';
 
-          // See resolveCustomizeOverlayHref's doc comment for why a stale
-          // `/customize/<graduated-or-unknown-section>` href must fall through
+          // See resolveSettingsOverlayHref's doc comment for why a stale
+          // `/settings/<graduated-or-unknown-tab>` href must fall through
           // to router.push below instead of opening the overlay.
-          const overlayMatch = resolveCustomizeOverlayHref(href);
+          const overlayMatch = resolveSettingsOverlayHref(href);
           if (overlayMatch.opensOverlay) {
-            useCustomizeStore.getState().openCustomize(overlayMatch.section);
-            close();
+            // A tab-less `/settings` href resolves to `tab: undefined`, which
+            // `openSettings` reads as "keep whatever was last open" — a
+            // non-deterministic destination for a deterministic click. Name
+            // the tab instead: the project workspace default with a project,
+            // the account-scoped default without one (`general` is itself a
+            // project tab and is filtered out of a project-less rail).
+            openSettingsTab(
+              overlayMatch.tab ??
+                (projectId ? DEFAULT_SETTINGS_TAB : PALETTE_NO_PROJECT_DEFAULT_TAB),
+            );
             break;
           }
 
@@ -1262,7 +1428,16 @@ export function CommandPalette() {
         }
       }
     },
-    [router, close, handleOpenSettings, handleSetTheme, handleSetWallpaper, actionHandlers],
+    [
+      router,
+      close,
+      projectId,
+      openSettingsTab,
+      handleOpenSettings,
+      handleSetTheme,
+      handleSetWallpaper,
+      actionHandlers,
+    ],
   );
 
   const handleSelectAgent = useCallback(
@@ -1299,7 +1474,8 @@ export function CommandPalette() {
       filteredNavItems.length +
       rootSessionResults.length +
       rootProjectResults.length +
-      sessionActionItems.length
+      sessionActionItems.length +
+      settingsResultCount
     );
   }, [
     page,
@@ -1308,6 +1484,7 @@ export function CommandPalette() {
     rootSessionResults,
     rootProjectResults,
     sessionActionItems,
+    settingsResultCount,
     filteredAgents,
     visibleModels,
     filteredProjectsList,
@@ -1385,7 +1562,7 @@ export function CommandPalette() {
                               <CommandItem
                                 key={item.id}
                                 value={sanitizeCmdkValue(
-                                  `suggestion ${item.label} ${item.keywords || ''}`,
+                                  `suggestion ${buildPaletteSearchText(item)}`,
                                 )}
                                 onSelect={() =>
                                   submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
@@ -1593,9 +1770,7 @@ export function CommandPalette() {
                           return (
                             <CommandItem
                               key={item.id}
-                              value={sanitizeCmdkValue(
-                                `${item.group} ${item.label} ${item.id} ${item.keywords || ''}`,
-                              )}
+                              value={buildPaletteSearchText(item)}
                               onSelect={() =>
                                 submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
                               }
@@ -1619,6 +1794,38 @@ export function CommandPalette() {
                         })}
                       </CommandGroup>
                     )}
+
+                    {/* One group per rail group, headings and order intact.
+                        Flattening them would strip the only thing that tells
+                        Workspace › General and Organization › General apart —
+                        the same reason `filterRailGroups` keeps the rail's
+                        groups through a search. */}
+                    {filteredSettingsGroups.map((group) => (
+                      <CommandGroup
+                        key={group.label}
+                        heading={`Settings · ${group.label}`}
+                        forceMount
+                      >
+                        {group.items.map((item) => {
+                          const SettingsIcon = item.icon;
+                          return (
+                            <CommandItem
+                              key={item.id}
+                              // `item.tab` is deliberately absent — an internal
+                              // slug, same class as the registry `id` dropped
+                              // from the Navigation rows above.
+                              value={sanitizeCmdkValue(
+                                `settings ${settingsPaletteSearchText(item)}`,
+                              )}
+                              onSelect={() => openSettingsTab(item.tab)}
+                            >
+                              <SettingsIcon className="size-4" />
+                              <span className="flex-1">{item.label}</span>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    ))}
 
                     {hasSessionResults && (
                       <CommandGroup heading="Sessions" forceMount>
@@ -2054,12 +2261,6 @@ export function CommandPalette() {
           />
         </>
       )}
-
-      <SidePanelUserSettings
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultTab={settingsTab}
-      />
 
       <AlertDialog open={logoutConfirmOpen} onOpenChange={handleOverlayClose(setLogoutConfirmOpen)}>
         <AlertDialogContent>

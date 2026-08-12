@@ -4370,24 +4370,6 @@
       "line68JsxTextCreateARole": "创建角色",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "按名称或键搜索角色..."
     },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "有权访问此实例的人员。通过电子邮件邀请队友 — 如果他们已经使用 Kortix，将立即获得访问权限；否则我们会向他们发送注册链接。",
-      "line142JsxTextInviteTeammate": "邀请队友",
-      "line149JsxTextLoadingTeam": "正在加载团队…",
-      "line152JsxAttrTitleFailedToLoadMembers": "无法加载成员",
-      "line160JsxAttrTitleJustYouForNow": "目前只有你",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "邀请队友在此实例上协作。他们会看到你授予其访问权限的项目，并且他们的会话会与你的会话保持私密隔离。",
-      "line166JsxTextInviteTeammate": "邀请队友",
-      "line205JsxAttrTitleRemoveFromTeam": "从团队中移除？",
-      "line221JsxAttrTitleRevokeInvite": "撤销邀请？",
-      "line324JsxTextPending": "待处理 ·",
-      "line332JsxTextExpires": "· 到期",
-      "line345JsxAttrAriaLabelRevokeInvite": "撤销邀请",
-      "line412JsxAttrAriaLabelMemberActions": "成员操作",
-      "line564JsxTextEmailAddress": "电子邮件地址",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "如果他们还没有 Kortix，我们会发送注册链接。"
-    },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "使用 AES-256-GCM 加密，仅限定于此项目。代理通过以下方式读取",
       "line67JsxTextNewCredential": "新凭据",

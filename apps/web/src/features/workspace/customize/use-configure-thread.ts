@@ -17,7 +17,7 @@ import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { writeStartStash } from '@kortix/sdk/react';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 export type ConfigureKind = 'agent' | 'skill' | 'command';
 
@@ -59,7 +59,7 @@ export interface ConfigureThread {
 }
 
 export function useConfigureThread(projectId: string): ConfigureThread {
-  const closeCustomize = useCustomizeStore((s) => s.close);
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const [pending, setPending] = useState(false);
   const newSession = useNewProjectSession(projectId);
 

@@ -195,6 +195,7 @@ export async function loadLiveMonitorBox(projectId: string): Promise<MonitorBoxS
       status: projectMonitorBoxes.status,
       manifestRevision: projectMonitorBoxes.manifestRevision,
       externalId: projectMonitorBoxes.externalId,
+      createdAt: projectMonitorBoxes.createdAt,
     })
     .from(projectMonitorBoxes)
     .where(
@@ -262,6 +263,36 @@ async function stopMonitorBox(
  * steady state of a provider hiccup — changes nothing, because acting on it
  * would destroy a healthy box during an outage.
  */
+/** Floor before a running box may be recycled for a stale agent — gives the
+ *  post-deploy template refresh time to land and never probes a booting box. */
+const STALE_AGENT_RECYCLE_MIN_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * Ask the box's daemon which boot path it took. `'monitor'` = current binary in
+ * monitor mode; `'session'` = the daemon booted the session path (an agent
+ * binary that predates monitor mode omits the field — same verdict); `null` =
+ * unreachable/unparseable, in which case the caller must do nothing (the
+ * provider's own status governs and the box may legitimately still be booting).
+ */
+async function probeBoxWorkload(
+  provider: ReturnType<typeof getProvider>,
+  externalId: string,
+): Promise<'monitor' | 'session' | null> {
+  try {
+    const ingress = await provider.resolveIngress(externalId, { port: 8000, transport: 'http' });
+    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/health`, {
+      headers: ingress.headers ?? {},
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { daemon?: string; workload?: string };
+    if (body?.daemon !== 'ok') return null;
+    return body.workload === 'monitor' ? 'monitor' : 'session';
+  } catch {
+    return null;
+  }
+}
+
 async function observeMonitorBox(
   project: MonitorProjectSnapshot,
   box: MonitorBoxSnapshot,
@@ -278,6 +309,24 @@ async function observeMonitorBox(
       .update(projectMonitorBoxes)
       .set({ lastHeartbeatAt: now, updatedAt: now })
       .where(eq(projectMonitorBoxes.boxId, box.boxId));
+    // A running box whose daemon booted the SESSION path can never run
+    // monitors: the baked agent binary predates monitor mode. The shared
+    // template refreshes asynchronously after a deploy, so a box created in
+    // that window bakes the old binary (observed live on dev 2026-08-12:
+    // env said KORTIX_WORKLOAD=monitor, health said opencode/session).
+    // Recycle it; the next pass recreates it from the refreshed template.
+    // The age floor stops a churn loop while the template pipeline is still
+    // catching up, and keeps the probe off freshly-booting boxes.
+    const ageMs = box.createdAt ? now.getTime() - new Date(box.createdAt).getTime() : 0;
+    if (ageMs > STALE_AGENT_RECYCLE_MIN_AGE_MS) {
+      const workload = await probeBoxWorkload(provider, box.externalId);
+      if (workload === 'session') {
+        console.warn(
+          `[monitor-box] box ${box.boxId} daemon lacks monitor mode (stale agent binary); recycling`,
+        );
+        await stopMonitorBox(project, box, 'daemon booted without monitor mode (stale agent binary)');
+      }
+    }
     return;
   }
   if (status === 'stopped') {

@@ -1,16 +1,21 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { FlagIcon } from '@phosphor-icons/react';
 
 /**
  * The one screen a flag-gated surface shows when its feature is OFF.
  *
  * It never offers to enable the feature. Activation happens in exactly one
- * place — Customize → Feature flags — so there is a single control, a single
+ * place — Settings → Experimental — so there is a single control, a single
  * permission leaf (`project.customize.write`), and no per-feature switch to
  * hunt for. The button here just takes you there.
+ *
+ * `main` shipped this pointing at the Customize overlay's Feature flags
+ * section (`openCustomize('feature-flags')`); that overlay is gone, and the
+ * flag list lives on the settings panel's Experimental tab, so the button
+ * opens that instead. Same destination content, same single control.
  *
  * Only reachable surfaces render this. A gated NAV entry, palette action, or
  * rail item must be absent entirely when its flag is off; this is for the case
@@ -25,7 +30,7 @@ export function FeatureGateScreen({
   /** One sentence: what turning it on would give this project. */
   description: string;
 }) {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openSettings = useSettingsPanelStore((state) => state.openSettings);
 
   return (
     <div className="bg-popover rounded-md border px-4 py-5">
@@ -45,7 +50,7 @@ export function FeatureGateScreen({
           size="sm"
           variant="secondary"
           className="shrink-0"
-          onClick={() => openCustomize('feature-flags')}
+          onClick={() => openSettings('experimental')}
         >
           Feature flags
         </Button>

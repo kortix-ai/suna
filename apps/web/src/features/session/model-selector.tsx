@@ -41,7 +41,7 @@ import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
-export { ConnectProviderContent } from '@/features/providers/connect-provider-content';
+// Re-export for consumers
 export { Tag };
 
 export function ConnectProviderDialog({

@@ -18,7 +18,12 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { dismissOnboarding, selectAccountForUi } from "../helpers/ui";
+import {
+  dismissOnboarding,
+  openSettingsTab,
+  selectAccountForUi,
+  settingsPanel,
+} from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
@@ -136,26 +141,23 @@ async function createProjectForAccessTest(
   return project;
 }
 
-async function openCustomizeSection(
-  page: Page,
-  projectId: string,
-  section: string,
-  heading: RegExp,
-) {
+/**
+ * Opens one tab of the settings panel from the project page.
+ *
+ * `tab` is a rail label from
+ * `apps/web/src/features/workspace/settings/rail.ts`; the pane's own heading
+ * is that same label (`SettingsTabHeader` reads it off the rail entry), so
+ * the heading assertion below is what proves the pane — not just the rail
+ * row — actually rendered.
+ */
+async function openSettingsSection(page: Page, projectId: string, tab: string) {
   await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
-  await page.getByRole("button", { name: /^Settings/i }).click();
-  const dialog = page.getByRole("dialog", { name: /Customize/i });
-  await expect(dialog).toBeVisible({ timeout: 30_000 });
-  const targetHeading = page.getByRole("heading", { name: heading });
-  if (!(await targetHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    const label = section === "members" ? "Members" : "Settings";
-    await dialog
-      .getByRole("button", { name: new RegExp(`^${label}$`, "i") })
-      .click();
-  }
-  await expect(targetHeading).toBeVisible({ timeout: 30_000 });
-  return dialog;
+  const panel = await openSettingsTab(page, tab);
+  await expect(
+    panel.getByRole("heading", { name: tab, exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  return panel;
 }
 
 function byEmail(members: ProjectAccessMember[], email: string) {
@@ -476,9 +478,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(page.getByText("Triggers", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Tunnel", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Settings" }).first().click();
-    await expect(
-      page.getByRole("dialog", { name: /Customize/i }),
-    ).toBeVisible();
+    await expect(settingsPanel(page)).toBeVisible();
     await expect(
       page.locator(
         'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
@@ -541,33 +541,62 @@ test.describe("08 — Accounts, invites, and project access", () => {
     ).toBe(true);
 
     await selectAccountForUi(page, account.account_id);
-    const settingsDialog = await openCustomizeSection(
+    // The repo link. It used to be "View on GitHub" in the Customize overlay's
+    // Settings section, built from `project.repo_url`
+    // (main: `settings-view.tsx:281,355-359`). That section is split into the
+    // General and Repositories tabs and the link did NOT come with it
+    // (`general-tab.tsx`'s header: "What did NOT move here: Repository …
+    // merged into GitView"). The only surviving repo link is
+    // `git-view.tsx:174-183`, whose href comes from the project's git
+    // CONNECTION, so its accessible name is `owner/repo`, not "View on
+    // GitHub".
+    //
+    // KNOWN GAP — a project with `repo_url` but no `project_git_connections`
+    // row now shows "Not linked yet" and no link at all. The CI trace for this
+    // spec proves that is exactly this project's state
+    // (`GET /projects/:id` → `git_connection: null`, `repo_url` set), because
+    // `seedDatabaseProject` never writes a connection row. Either the app has
+    // to fall back to `project.repo_url` or the fixture has to seed a
+    // connection; do not delete this assertion to go green.
+    const repositoriesPanel = await openSettingsSection(
       page,
       project.project_id,
-      "settings",
-      /^Settings$/i,
+      "Repositories",
     );
-    const githubLink = settingsDialog.getByRole("link", {
-      name: /View on GitHub/i,
+    const githubLink = repositoriesPanel.getByRole("link", {
+      name: projectRepoWebUrl.replace("https://github.com/", ""),
+      exact: true,
     });
-    await expect(githubLink).toBeVisible();
+    await expect(
+      githubLink,
+      "settings no longer links to the project repo: git-view.tsx renders the link only from a project_git_connections row, and this project has repo_url with git_connection: null",
+    ).toBeVisible();
     await expect(githubLink).toHaveAttribute("href", projectRepoWebUrl);
 
-    const membersDialog = await openCustomizeSection(
+    const membersPanel = await openSettingsSection(
       page,
       project.project_id,
-      "members",
-      /Project members/i,
+      "Members",
     );
     // Wait for the initial access inventory before submitting a mutation.
     // Otherwise a slow pre-mutation response can overwrite the invalidated query.
+    // The member list is a `Table` now (`members-tab.tsx:926-1080`), so a
+    // member is a `row`, not a list item.
     await expect(
-      membersDialog.locator("li").filter({ hasText: ownerEmail }).first(),
+      membersPanel.getByRole("row").filter({ hasText: ownerEmail }).first(),
     ).toBeVisible();
-    await membersDialog.getByRole("tab", { name: /^Invite/i }).click();
-    await membersDialog.getByLabel("Emails").fill(memberEmail);
-    await membersDialog.locator("#invite-role").click();
-    await page.getByRole("option", { name: /^Member$/i }).click();
+    // Inviting is a dialog off the People tab's own Invite button
+    // (`members-tab.tsx:888`, `InviteMemberDialog`), not the "Invite" tab the
+    // old members section carried. The dialog is portalled, so it is a sibling
+    // of the settings panel rather than a descendant.
+    await membersPanel.getByRole("button", { name: "Invite", exact: true }).click();
+    const inviteDialog = page.getByRole("dialog", { name: "Invite a member" });
+    await expect(inviteDialog).toBeVisible();
+    await inviteDialog.getByLabel("Email", { exact: true }).fill(memberEmail);
+    await inviteDialog.locator("#invite-member-role").click();
+    // Each option renders its role name plus a capability blurb, so the
+    // accessible name is "Member <blurb>" — matched on the role word only.
+    await page.getByRole("option", { name: /^Member\b/ }).click();
     const accessInvite = page.waitForResponse(
       (response) =>
         response
@@ -575,15 +604,20 @@ test.describe("08 — Accounts, invites, and project access", () => {
           .includes(`/v1/projects/${project.project_id}/access/invite`) &&
         response.request().method() === "POST",
     );
-    await membersDialog.getByRole("button", { name: /^Invite$/i }).click();
+    await inviteDialog.getByRole("button", { name: "Invite", exact: true }).click();
     expect((await accessInvite).status()).toBe(200);
-    await membersDialog.getByRole("tab", { name: /^People$/i }).click();
-    const memberAccessRow = membersDialog
-      .locator("li")
+    await expect(inviteDialog).toHaveCount(0);
+    const memberAccessRow = membersPanel
+      .getByRole("row")
       .filter({ hasText: memberEmail })
       .first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
-    await expect(memberAccessRow.getByRole("combobox")).toContainText("Member");
+    // Third column = "Workspace access" (`members-tab.tsx:930-934`). Pinned by
+    // column because that select carries no accessible name of its own, and
+    // the row's other combobox is the account-role one beside it.
+    await expect(
+      memberAccessRow.getByRole("cell").nth(2).getByRole("combobox"),
+    ).toContainText("Member");
 
     // Initialize member auth before persisting the organization. Otherwise the
     // auth reset clears the selection and the personal account wins /projects.

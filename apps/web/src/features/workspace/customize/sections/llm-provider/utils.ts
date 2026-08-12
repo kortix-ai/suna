@@ -81,14 +81,15 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
   };
 }
 
-export function pickInitialTab(
-  defaultTab: ActiveTab | undefined,
-  hasConnections: boolean,
-): ActiveTab {
-  if (defaultTab === 'catalog') return 'catalog';
-  if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
-  if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';
-  return 'catalog';
+/**
+ * Which of the modal's two tabs to open on. `models` is the only tab a caller
+ * can ask for that is not the default — `providers` already shows both the
+ * connected list and the add-a-provider rows (JAY-510), so the old
+ * `hasConnections` fallback that folded 'connected'/'models' back to 'catalog'
+ * has nothing left to fold.
+ */
+export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
+  return defaultTab === 'models' ? 'models' : 'providers';
 }
 
 export function helpHostnameFromUrl(helpUrl: string | null): string | null {

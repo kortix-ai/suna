@@ -20,8 +20,9 @@ const chatGateSource = readFileSync(join(import.meta.dir, 'model-connection-gate
 
 describe('model management entry-point routing', () => {
   test('maps each precise action to the matching project modal tab', () => {
-    expect(projectProviderModalTab('providers')).toBe('catalog');
-    expect(projectProviderModalTab('connected')).toBe('connected');
+    // JAY-510 merged 'catalog' + 'connected' into the single `providers` tab.
+    expect(projectProviderModalTab('providers')).toBe('providers');
+    expect(projectProviderModalTab('connected')).toBe('providers');
     expect(projectProviderModalTab('models')).toBe('models');
   });
 
