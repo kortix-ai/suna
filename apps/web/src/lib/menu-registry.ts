@@ -100,9 +100,7 @@ export type SettingsTabId =
   | 'transactions'
   | 'referrals'
   | 'tokens'
-  | 'shortcuts'
-  | 'instance-members'
-  | 'instance-projects';
+  | 'shortcuts';
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =
@@ -1081,55 +1079,14 @@ export function isItemActive(item: MenuItemDef, pathname: string | null): boolea
 // Settings modal tabs — derived from the same registry
 // ============================================================================
 
-export interface SettingsTab {
-  id: SettingsTabId;
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-}
-
-/** Preference tabs for the settings modal */
-export function getPreferenceTabs(): SettingsTab[] {
-  const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'shortcuts'];
-  return preferenceIds.map((tabId) => {
-    const item = menuRegistry.find((i) => i.kind === 'settings' && i.settingsTab === tabId);
-    if (!item) {
-      // Fallback — should not happen if registry is complete
-      return { id: tabId, label: tabId, icon: CogOne };
-    }
-    return { id: tabId, label: item.label, icon: item.icon };
-  });
-}
-
 /**
- * Instance-scoped tabs. Only injected into the settings modal when the
- * current route is inside an instance (`/instances/:id/...`). Returns an
- * empty array otherwise so the "Instance" section disappears entirely
- * on `/instances` list or account-level pages.
+ * The `SettingsTab` interface and its three builders (`getPreferenceTabs`,
+ * `getInstanceTabs`, `getAccountTabs`) lived here until the merged settings
+ * panel landed. Their only consumer was `SidePanelUserSettings`, deleted with
+ * the modal it drove; `settings/rail.ts` now owns the rail's own vocabulary.
+ * `SettingsTabId` itself stays — the command palette's
+ * `LEGACY_SETTINGS_TAB_MAP` and both modal stores still speak it.
  */
-export function getInstanceTabs(): SettingsTab[] {
-  return [{ id: 'instance-members', label: 'Team', icon: UsersSolid }];
-}
-
-/** Account tabs for the settings modal */
-export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
-  const items: SettingsTab[] = [
-    { id: 'billing', label: 'Billing', icon: CreditCardSolid },
-    { id: 'transactions', label: 'Credits ledger', icon: Receipt },
-    { id: 'tokens', label: 'API keys', icon: KeyRound },
-  ];
-  // Referrals tab disabled for now
-  // if (billingEnabled) {
-  //   items.push({ id: 'referrals', label: 'Referrals', icon: Users });
-  // }
-  // Enrich labels/icons from registry where possible
-  return items.map((tab) => {
-    const item = menuRegistry.find((i) => i.settingsTab === tab.id);
-    if (item) {
-      return { ...tab, label: item.label, icon: item.icon };
-    }
-    return tab;
-  });
-}
 
 /** Theme options (used in user menu & command palette) */
 export const themeOptions = menuRegistry

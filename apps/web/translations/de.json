@@ -4370,24 +4370,6 @@
       "line68JsxTextCreateARole": "Rolle erstellen",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "Rollen nach Name oder Schlüssel suchen..."
     },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "Personen mit Zugriff auf diese Instanz. Lade Teammitglieder per E-Mail ein — sie erhalten sofort Zugriff, wenn sie Kortix bereits nutzen, andernfalls senden wir ihnen einen Registrierungslink.",
-      "line142JsxTextInviteTeammate": "Teammitglied einladen",
-      "line149JsxTextLoadingTeam": "Team wird geladen…",
-      "line152JsxAttrTitleFailedToLoadMembers": "Mitglieder konnten nicht geladen werden",
-      "line160JsxAttrTitleJustYouForNow": "Vorerst nur du",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "Lade ein Teammitglied ein, um an dieser Instanz zusammenzuarbeiten. Es sieht Projekte, für die du Zugriff gewährst, und seine Sitzungen bleiben von deinen getrennt.",
-      "line166JsxTextInviteTeammate": "Teammitglied einladen",
-      "line205JsxAttrTitleRemoveFromTeam": "Aus dem Team entfernen?",
-      "line221JsxAttrTitleRevokeInvite": "Einladung widerrufen?",
-      "line324JsxTextPending": "Ausstehend ·",
-      "line332JsxTextExpires": "· läuft ab",
-      "line345JsxAttrAriaLabelRevokeInvite": "Einladung widerrufen",
-      "line412JsxAttrAriaLabelMemberActions": "Mitgliederaktionen",
-      "line564JsxTextEmailAddress": "E-Mail-Adresse",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "Falls sie Kortix noch nicht haben, senden wir einen Registrierungslink."
-    },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "AES-256-GCM-verschlüsselt, nur auf dieses Projekt beschränkt. Agenten lesen über",
       "line67JsxTextNewCredential": "Neuer Zugangswert",

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
+import { consumeMembersTabIntent } from './members-tab-intent';
 import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 

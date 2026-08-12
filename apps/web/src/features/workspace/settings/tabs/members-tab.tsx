@@ -55,37 +55,22 @@
  * (reused, not reimplemented) — see `project-role-descriptors.ts`'s own
  * header comment; that file is NOT modified here, per the brief.
  *
- * **What this tab does NOT carry forward from `MembersView` — said loudly,
- * per the task's standing orphan-sweep rule, not silently.** `members-view.tsx`
- * is NOT in this task's Files list (Create `members-tab.tsx`,
- * `tabs/member-access-label.ts`; Modify `settings-panel.tsx` — no mention of
- * `members-view.tsx`), and the brief's own TDD steps scope this task to
- * exactly the unified table plus pending invites and access requests below
- * it — no invite-by-email composer, no project group-grant management, no
- * per-resource (agent/skill) grants, no custom-role assignment UI. Once
- * `settings-panel.tsx`'s `case 'members'` stops mounting `<MembersView
- * projectId={projectId} />` in favor of `<MembersTab projectId={projectId} />`,
- * `MembersView` (and every private helper inside it —
- * `ProjectGroupGrantsCard`, `ResourceAccessCard`, `ProjectRoleAssignmentsCard`,
- * `consumeMembersTabIntent`'s Invite deep-link target) has NO OTHER caller:
- * `grep -rln "MembersView\b" src` (excluding tests) matches only
- * `settings-panel.tsx` and `members-view.tsx` itself, and `grep -rln
- * "PermissionsHelpPopover" src` (excluding tests) matches only
- * `accounts/[id]/page.tsx`, `members-view.tsx`, and its own definition file
- * — so once this mount flips, `MembersView`'s OWN export becomes
- * unreachable (its `PermissionsHelpPopover` usage does not save it — this
- * tab's own new usage does that independently). The file still compiles
- * (tsc stays 17) and its tests still pass (nothing here touches them), so
- * this is the same "unreachable but green" shape the brief already accepts
- * for `ACCOUNT_ROLE_DESCRIPTORS` — reported here explicitly rather than
- * discovered later. `ProjectGroupGrantsCard`'s bulk group-access grants,
- * `ResourceAccessCard`'s per-agent/skill scoping, and
- * `ProjectRoleAssignmentsCard`'s custom-role bindings are real capabilities
- * with no replacement surface after this change — a real gap needing its
- * own follow-up task, not a silent regression this file hides.
- * `member-sort.ts`/`member-sort.test.ts` (the accessMembers list sorter) is
- * untouched and still used by `members-view.tsx` alone — also now only
- * reachable through the same dangling file.
+ * **`members-view.tsx` is gone — this file absorbed it.** Taking over
+ * `settings-panel.tsx`'s `case 'members'` left `MembersView` with no caller,
+ * so it was deleted along with everything only it reached:
+ * `customize/sections/member-sort.ts` (+ its test), which had become
+ * reachable from its own test alone. Its three substantive cards were NOT
+ * dropped — `ProjectGroupGrantsCard` (bulk group-access grants),
+ * `ResourceAccessCard` (per-agent/skill scoping) and
+ * `ProjectRoleAssignmentsCard` (custom-role bindings) were moved into this
+ * file (cut, not copied — see their slots below), and
+ * `consumeMembersTabIntent` moved to `members-tab-intent.ts` beside its only
+ * caller. `PermissionsHelpPopover` keeps a live mount here as this tab's own
+ * header action, independent of `accounts/[id]/page.tsx`'s.
+ *
+ * What genuinely did not carry forward is the bulk invite-by-email composer;
+ * `InviteMemberDialog` / `InviteToAccountDialog` below are single-email by
+ * this file's own convention — see the "Invite-to-account" note further down.
  *
  * `MembersTabView` is the pure, props-only half — no hooks, no data
  * fetching. `MembersTab` is the container: every hook only runs while this
@@ -393,15 +378,13 @@ import {
 import { useAuth } from '@/features/providers/auth-provider';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { cn } from '@/lib/utils';
-// Reused, not reimplemented — see `MembersTabInner`'s "Invite deep-link
-// intent" comment below for why this stays imported from `members-view.tsx`
-// rather than moved: it's an exported pure function with its own dedicated,
-// already-passing test coverage (`members-view.test.ts`'s "reviewer-found
-// sequence" — the JAY-530 stale-intent fix), and `members-view.tsx` staying
-// unreachable as a mounted React tree is fine per the coordinator (a
-// separate decision from deleting it); importing one exported pure helper
-// from it doesn't change that.
-import { consumeMembersTabIntent } from '@/features/workspace/customize/sections/view/members-view';
+// Moved here from `members-view.tsx` when that file was deleted — it was the
+// one live export in an otherwise dead module. Reused, not reimplemented: an
+// exported pure function with its own dedicated test coverage
+// (`members-tab-intent.test.ts`'s "reviewer-found sequence" — the JAY-530
+// stale-intent fix). See `MembersTabInner`'s "Invite deep-link intent"
+// comment below for what it does.
+import { consumeMembersTabIntent } from './members-tab-intent';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';

@@ -2,20 +2,20 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { consumeMembersTabIntent } from './members-view';
+import { consumeMembersTabIntent } from './members-tab-intent';
 
 /**
  * Regression pin for a real review finding on this task: `membersTab` is a
  * one-shot deep-link intent, not persistent state. A first draft cleared it
  * only as a side effect of `openSettings`, which `navigate()` deliberately
  * doesn't replicate (see `consumeMembersTabIntent`'s doc comment in
- * `members-view.tsx`) — so a stale `'invite'` request could survive an
+ * `members-tab-intent.ts`) — so a stale `'invite'` request could survive an
  * unrelated `navigate()` call and replay on a later, unconnected visit to
  * Members. This test reproduces the reviewer's exact reachable sequence
  * against the real `useSettingsPanelStore` + the real
- * `buildSettingsPanelSettingsNav` adapter — `MembersView` mounts under the
- * Settings overlay now (see `settings-panel.tsx`'s `SettingsTabPane`), so
- * this is the live store behind it, standing in for `MembersView`'s own
+ * `buildSettingsPanelSettingsNav` adapter — the Members pane mounts under the
+ * Settings overlay (see `settings-panel.tsx`'s `SettingsTabPane`), so this is
+ * the live store behind it, standing in for `MembersTabInner`'s own
  * mount-time effect via `consumeMembersTabIntent` (the same function the
  * component calls).
  */
