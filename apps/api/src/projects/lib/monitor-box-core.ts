@@ -93,6 +93,10 @@ export interface MonitorBoxSnapshot {
   status: string;
   manifestRevision: string | null;
   externalId: string | null;
+  /** Row creation time — gates the stale-agent recycle so a box that is still
+   *  booting (or a template that is still refreshing post-deploy) is not
+   *  churned. Null on legacy loads that did not select it. */
+  createdAt?: Date | null;
 }
 
 export type MonitorBoxAction =
