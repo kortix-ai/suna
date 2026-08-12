@@ -36,6 +36,7 @@ import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
+import { mergeQueuedBatch } from './queued-batch';
 import { useMessageQueueDrain } from './use-message-queue-drain';
 
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
@@ -109,6 +110,7 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import {
   type WebQueuedMessage,
   type WebSessionQueue,
+  inFlightIdsOf,
   useMessageQueueStore,
 } from '@/stores/message-queue-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
@@ -417,6 +419,7 @@ const EMPTY_SESSION_QUEUE: WebSessionQueue = Object.freeze({
   pending: [],
   failed: [],
   inFlightId: null,
+  inFlightIds: [],
 });
 
 /** How long "Stop & send" will wait for the server to confirm the abort before
@@ -2209,6 +2212,9 @@ export function SessionChat({
   const sessionQueue = useMessageQueueStore((s) => s.queues[sessionId]) ?? EMPTY_SESSION_QUEUE;
   const queuedMessages = sessionQueue.pending;
   const failedQueuedMessages = sessionQueue.failed;
+  // Plural: the queue drains as one batch, so several rows are on the wire at
+  // once and every one of them has to be locked against edit/remove/reorder.
+  const queueInFlightIds = inFlightIdsOf(sessionQueue);
 
   // Anything queued in the instant shell while the computer was still booting
   // is already here — the shell writes into this same store under this same
@@ -3165,7 +3171,7 @@ export function SessionChat({
           isBusy:
             isBusy || hasActiveQuestion || hasPendingApproval || pendingPermissions.length > 0,
           pendingCount: sessionQueue.pending.length,
-          hasInFlight: !!sessionQueue.inFlightId,
+          hasInFlight: queueInFlightIds.length > 0,
         });
         if (shouldQueue) {
           handleQueueMessage(text);
@@ -3185,14 +3191,14 @@ export function SessionChat({
     hasPendingApproval,
     pendingPermissions.length,
     sessionQueue.pending.length,
-    sessionQueue.inFlightId,
+    queueInFlightIds.length,
     handleSend,
     handleQueueMessage,
     registerSender,
     unregisterSender,
   ]);
 
-  // Release queued messages, one per turn, only when the turn actually ended.
+  // Release the whole queue on one prompt, only when the turn actually ended.
   //
   // What used to be here drained the WHOLE queue whenever any tool part flipped
   // to 'completed' or 'error', or whenever the debounced `isBusy` fell. Both
@@ -3225,22 +3231,16 @@ export function SessionChat({
     ],
   );
 
-  const sendQueuedMessage = useCallback(
-    async (message: WebQueuedMessage) => {
-      // ONE message. The queue is first-come-first-served: `queue[0]` goes out
-      // by itself, and the rest wait for the turn it starts to finish. Merging
-      // the queue into a single prompt would destroy that ordering and hand the
-      // agent several unrelated instructions at once.
-      //
-      // Files that did not survive being stored carry no data — send the text
-      // rather than a broken attachment. The composer shows the user that the
-      // attachments were dropped.
-      const files = message.files?.filter((f): f is AttachedFile => f.kind !== 'lost');
-      await handleSend(message.text, files?.length ? files : undefined, message.mentions, {
-        agent: message.agent,
-        model: message.model,
-        variant: message.variant,
-      });
+  const sendQueuedBatch = useCallback(
+    async (batch: WebQueuedMessage[]) => {
+      // ONE `handleSend` for the whole batch, never a loop over it. `handleSend`
+      // resolves when the server ACKs the prompt (204), not when the turn ends,
+      // so a second call would land its message inside the first one's live
+      // turn — RC4 in the design doc, and the reason this queue exists.
+      // `mergeQueuedBatch` decides what the single prompt contains.
+      const merged = mergeQueuedBatch(batch);
+      if (!merged) return;
+      await handleSend(merged.text, merged.files, merged.mentions, merged.overrides);
     },
     [handleSend],
   );
@@ -3248,7 +3248,7 @@ export function SessionChat({
   const queueDrain = useMessageQueueDrain({
     sessionId,
     gates: queueGates,
-    send: sendQueuedMessage,
+    send: sendQueuedBatch,
   });
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
@@ -4137,7 +4137,7 @@ export function SessionChat({
                 isBusy={isBusy}
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
-                queueInFlightId={sessionQueue.inFlightId}
+                queueInFlightIds={queueInFlightIds}
                 queuePaused={queueDrain.paused}
                 queueIsRunning={isBusy}
                 onSendQueuedMessageNow={handleQueueSendNow}

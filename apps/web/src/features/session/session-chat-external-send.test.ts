@@ -23,7 +23,11 @@ describe('SessionChat external agent tasks', () => {
     expect(registration).toContain('hasPendingApproval');
     expect(registration).toContain('pendingPermissions.length > 0');
     expect(registration).toContain('sessionQueue.pending.length');
-    expect(registration).toContain('sessionQueue.inFlightId');
+    // The full expression, not a prefix of it. `sessionQueue.inFlightId` is a
+    // substring of `sessionQueue.inFlightIds`, so the looser assertion kept
+    // passing after this code stopped reading that field at all — a test that
+    // cannot fail is worse than no test.
+    expect(registration).toContain('queueInFlightIds.length > 0');
     expect(registration).toContain('handleQueueMessage(text)');
   });
 });
