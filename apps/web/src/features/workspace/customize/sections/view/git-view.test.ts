@@ -1,7 +1,11 @@
+import type { ProjectGitConnection } from '@kortix/sdk';
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
+import { projectRepoFallback, RepositoryValue } from './git-view';
 import {
   connectionStatusLabel,
   providerLabel,
@@ -133,4 +137,126 @@ test('every technical setting carries a docs link', () => {
   expect(code).toContain("const DOCS_MANIFEST = '/docs/project/manifest'");
   expect(code).toContain('<DocsLink href={DOCS_MANIFEST} />');
   expect(code).toContain('action={<DocsLink href={DOCS_CLI} />}');
+});
+
+/**
+ * The Repository row's three states.
+ *
+ * The regression these pin: this pane read `connection?.repo_url` only, so a
+ * project carrying its own `repo_url` with NO `project_git_connections` row
+ * rendered "Not linked yet" and offered no way to reach a repository that was
+ * sitting in the project record. `settings-view.tsx` on `main` linked straight
+ * off `project.repo_url` and never consulted a connection at all.
+ *
+ * `RepositoryValue` is rendered directly with `createElement` — this file is a
+ * `.ts`, so it has no JSX, and `apps/web` has no DOM harness. Static markup is
+ * enough: every claim here is about what the row emits, not about behaviour.
+ */
+const connection: ProjectGitConnection = {
+  connection_id: 'c1',
+  account_id: 'a1',
+  project_id: 'p1',
+  provider: 'github',
+  repo_url: 'https://github.com/acme/connected.git',
+  repo_owner: 'acme',
+  repo_name: 'connected',
+  external_repo_id: null,
+  default_branch: 'main',
+  auth_method: 'app',
+  installation_id: null,
+  visibility: 'private',
+  status: 'connected',
+  last_validated_at: null,
+  last_error_code: null,
+  last_error_message: null,
+  metadata: {},
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+};
+
+const renderRepositoryValue = (props: Parameters<typeof RepositoryValue>[0]) =>
+  renderToStaticMarkup(createElement(RepositoryValue, props));
+
+test('with a connection row, the connection is the source of truth', () => {
+  // Both are set and they disagree. The connection wins — it is the only thing
+  // that knows the owner/name split the backend resolved.
+  const out = renderRepositoryValue({
+    connection,
+    repoUrl: 'https://github.com/acme/stale-project.git',
+  });
+  expect(out).toContain('href="https://github.com/acme/connected"');
+  expect(out).toContain('acme/connected');
+  expect(out).not.toContain('stale-project');
+});
+
+test('with no connection row, the project repo_url is still linked', () => {
+  const out = renderRepositoryValue({
+    connection: null,
+    repoUrl: 'https://github.com/acme/project.git',
+  });
+  expect(out).toContain('href="https://github.com/acme/project"');
+  expect(out).toContain('acme/project');
+  // The exact state that used to render as a dead end.
+  expect(out).not.toContain('Not linked yet');
+});
+
+test('the fallback link opens safely, matching main', () => {
+  const out = renderRepositoryValue({
+    connection: undefined,
+    repoUrl: 'https://github.com/acme/project.git',
+  });
+  expect(out).toContain('target="_blank"');
+  expect(out).toContain('rel="noopener noreferrer"');
+});
+
+test('with neither a connection nor an address, the row says so and links nothing', () => {
+  const out = renderRepositoryValue({ connection: null, repoUrl: '' });
+  expect(out).toContain('Not linked yet');
+  expect(out).not.toContain('<a ');
+});
+
+test('an address on a host with no web page is shown, not linked, and not called unlinked', () => {
+  // Code Storage has no human web page (`repositoryWebUrl` returns null for it),
+  // so the address is text. Claiming "Not linked yet" here would be false: the
+  // project knows exactly where its code is.
+  const out = renderRepositoryValue({
+    connection: null,
+    repoUrl: 'https://kortix.code.storage/9f3a.git',
+  });
+  expect(out).toContain('https://kortix.code.storage/9f3a.git');
+  expect(out).not.toContain('<a ');
+  expect(out).not.toContain('Not linked yet');
+});
+
+test('projectRepoFallback places both address forms main linked', () => {
+  expect(projectRepoFallback('https://github.com/acme/project.git')).toEqual({
+    provider: 'github',
+    label: 'acme/project',
+    webUrl: 'https://github.com/acme/project',
+  });
+  // `settings-view.tsx` on `main` matched `git@github.com:owner/repo` too.
+  expect(projectRepoFallback('git@github.com:acme/project.git')).toEqual({
+    provider: 'github',
+    label: 'acme/project',
+    webUrl: 'https://github.com/acme/project',
+  });
+  expect(projectRepoFallback('https://gitlab.com/acme/project')?.provider).toBe('gitlab');
+});
+
+test('projectRepoFallback never guesses a URL for a host it cannot place', () => {
+  expect(projectRepoFallback('https://kortix.code.storage/9f3a.git')).toBeNull();
+  expect(projectRepoFallback('https://git.example.com/acme/project.git')).toBeNull();
+  expect(projectRepoFallback('')).toBeNull();
+  expect(projectRepoFallback(null)).toBeNull();
+  expect(projectRepoFallback('   ')).toBeNull();
+  // A bare host with no owner/name is not a repository address.
+  expect(projectRepoFallback('https://github.com/acme')).toBeNull();
+});
+
+test('the provider sentence follows the same fallback the value does', () => {
+  // Without this the row would read "Hosted on Git." directly beside a GitHub
+  // link, because `providerSentence` was fed `connection?.provider` alone.
+  expect(code).toContain('providerSentence(repositoryProvider)');
+  expect(code).toContain('projectRepoFallback(project.repo_url)?.provider');
+  expect(code).toContain('<RepositoryValue connection={connection} repoUrl={project.repo_url} />');
 });

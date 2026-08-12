@@ -1039,7 +1039,10 @@ export function MembersTabView({
                                 onRoleChange(member, next as ProjectRole | typeof NO_ACCESS)
                               }
                             >
-                              <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectTrigger
+                                className="h-7 w-32 text-xs"
+                                aria-label={`Workspace access for ${userLabel(member)}`}
+                              >
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>

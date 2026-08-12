@@ -68,6 +68,32 @@ describe('ExperimentalTabView', () => {
     expect(out).toContain('aria-checked="false"');
   });
 
+  test('every switch carries an accessible name, taken from its own visible row title', () => {
+    // The regression this pins: `main`'s `feature-flags-view.tsx` put
+    // `aria-label={flag.name}` on the Switch and the port dropped it, leaving
+    // every toggle on this tab an unnamed `switch` — a control a screen-reader
+    // user hears as "switch, on" with no way to tell which feature it governs.
+    // Restored as `aria-labelledby` pointed at the row's printed name, so the
+    // spoken label and the visible one cannot drift apart.
+    const out = renderToStaticMarkup(
+      <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
+    );
+    expect(out).toContain('id="feature-flag-voice"');
+    expect(out).toContain('id="feature-flag-apps"');
+    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-voice"/);
+    expect(out).toMatch(/role="switch"[^>]*aria-labelledby="feature-flag-apps"/);
+    // Every switch in the pane is named — none may ship unlabelled.
+    expect(out.match(/role="switch"/g)?.length).toBe(2);
+    expect(out.match(/aria-labelledby="feature-flag-/g)?.length).toBe(2);
+  });
+
+  test('the id a switch points at is the element holding the feature name', () => {
+    // `aria-labelledby` is only a name if the target exists and holds the text.
+    // A dangling id would leave the switch just as unnamed as before.
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
+    expect(out).toMatch(/id="feature-flag-voice"[^>]*>Voice</);
+  });
+
   test('a pending feature key disables its own switch', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature]} pendingKeys={['voice']} canManage />,

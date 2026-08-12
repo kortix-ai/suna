@@ -161,20 +161,80 @@ function StatusValue({ status }: { status: string | null | undefined }) {
   );
 }
 
-function RepositoryValue({ connection }: { connection: ProjectGitConnection | null | undefined }) {
+/**
+ * What the project's OWN `repo_url` says about its repository, for projects
+ * that have no `project_git_connections` row.
+ *
+ * A connection row is not the only way a project knows where its code lives:
+ * `KortixProject.repo_url` is a required column, and a project can carry one
+ * without ever having a connection row created for it. The pane used to read
+ * the connection only, so those projects rendered "Not linked yet" and offered
+ * no way to reach a repository that was sitting in the project record — the
+ * regression this restores. `settings-view.tsx` on `main` linked straight off
+ * `project.repo_url` and did not consult a connection at all.
+ *
+ * Returns `null` for an address this cannot place, so an unrecognized host
+ * stays plain text instead of becoming a guessed URL. Both the SSH form
+ * (`git@github.com:acme/project.git`) and the HTTPS form resolve, because
+ * `main` linked both.
+ */
+export function projectRepoFallback(
+  repoUrl: string | null | undefined,
+): { provider: 'github' | 'gitlab'; label: string; webUrl: string | null } | null {
+  const raw = repoUrl?.trim();
+  if (!raw) return null;
+
+  const segments = raw
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/^[^@/]*@/, '')
+    .replace(/\/+$/, '')
+    .split(/[:/]/)
+    .filter(Boolean);
+  if (segments.length < 3) return null;
+
+  const host = segments[0]!.toLowerCase();
+  const provider = host === 'github.com' ? 'github' : host === 'gitlab.com' ? 'gitlab' : null;
+  if (!provider) return null;
+
+  const owner = segments[segments.length - 2]!;
+  const name = segments[segments.length - 1]!.replace(/\.git$/i, '');
+  return {
+    provider,
+    label: `${owner}/${name}`,
+    webUrl: repositoryWebUrl(provider, `https://${host}/${owner}/${name}`),
+  };
+}
+
+/**
+ * The repository the project points at.
+ *
+ * The connection row stays the source of truth whenever there is one — it is
+ * the only thing that knows the owner/name split the backend resolved. The
+ * project's own `repo_url` is read only in its absence, and "Not linked yet" is
+ * reserved for the one state where it is true: no connection AND no address.
+ */
+export function RepositoryValue({
+  connection,
+  repoUrl,
+}: {
+  connection: ProjectGitConnection | null | undefined;
+  repoUrl?: string | null;
+}) {
+  const fallback = connection ? null : projectRepoFallback(repoUrl);
   const name =
     connection?.repo_owner && connection.repo_name
       ? `${connection.repo_owner}/${connection.repo_name}`
-      : connection?.repo_url || 'Not linked yet';
+      : connection?.repo_url || fallback?.label || repoUrl?.trim() || 'Not linked yet';
   const webUrl = connection?.repo_url
     ? repositoryWebUrl(connection.provider, connection.repo_url)
-    : null;
-  const Glyph = connection?.provider === 'github' ? Github : GitFork;
+    : (fallback?.webUrl ?? null);
+  const provider = connection?.provider ?? fallback?.provider;
+  const Glyph = provider === 'github' ? Github : GitFork;
 
   if (webUrl?.startsWith('http')) {
     return (
       <Button variant="ghost" size="sm" className="-mr-2 max-w-[15rem] gap-1.5" asChild>
-        <a href={webUrl} target="_blank" rel="noreferrer">
+        <a href={webUrl} target="_blank" rel="noopener noreferrer">
           <Glyph className="size-4 shrink-0" />
           <span className="truncate font-normal">{name}</span>
           <ExternalLink className="size-3.5 shrink-0 opacity-60" />
@@ -290,6 +350,9 @@ function RepositoryGroup({
   ]);
 
   const saving = isDebouncingBranch || isDebouncingManifest || isPending;
+  const repositoryProvider =
+    connection?.provider ??
+    (connection ? undefined : projectRepoFallback(project.repo_url)?.provider);
 
   return (
     <section className="space-y-3">
@@ -300,8 +363,13 @@ function RepositoryGroup({
       ) : null}
 
       <SettingsRowGroup>
-        <SettingsRow label="Repository" description={providerSentence(connection?.provider)}>
-          <RepositoryValue connection={connection} />
+        {/* The description names the provider the row's value came from. With no
+            connection row that fact still exists — it is readable off the
+            project's own address — so this reads the same fallback the value
+            does rather than saying a flat "Hosted on Git." beside a GitHub
+            link. */}
+        <SettingsRow label="Repository" description={providerSentence(repositoryProvider)}>
+          <RepositoryValue connection={connection} repoUrl={project.repo_url} />
         </SettingsRow>
 
         <SettingsRow label="Status">

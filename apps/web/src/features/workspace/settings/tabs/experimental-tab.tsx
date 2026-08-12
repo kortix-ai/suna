@@ -154,11 +154,25 @@ function ExperimentalFeatureRow({
   onToggle: (key: string, next: boolean) => void;
 }) {
   const badge = STABILITY_BADGE[feature.stability] ?? STABILITY_BADGE.experimental;
+  // The switch's accessible name, pointed at the row's VISIBLE name rather
+  // than repeating the string in an `aria-label`. `main`'s
+  // `feature-flags-view.tsx` used `aria-label={flag.name}`; the port dropped
+  // it, leaving every toggle on this tab an unnamed `switch`. `aria-labelledby`
+  // restores the name and keeps the spoken label identical to the printed one
+  // — a rename cannot drift the two apart, and the visible text stays the
+  // click target for "toggle Voice" style voice control.
+  //
+  // `feature.key` is the catalog's own unique identifier, so no `useId` is
+  // needed and the row stays hook-free, which is what lets the view render
+  // under `renderToStaticMarkup`.
+  const nameId = `feature-flag-${feature.key}`;
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-foreground text-sm font-medium">{feature.name}</p>
+          <p id={nameId} className="text-foreground text-sm font-medium">
+            {feature.name}
+          </p>
           <Badge variant={badge.variant} size="sm">
             {badge.label}
           </Badge>
@@ -169,6 +183,7 @@ function ExperimentalFeatureRow({
       <div className="flex shrink-0 items-center gap-2">
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
         <Switch
+          aria-labelledby={nameId}
           checked={feature.enabled}
           disabled={!canManage || pending}
           onCheckedChange={(v) => onToggle(feature.key, v)}
