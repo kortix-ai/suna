@@ -32,6 +32,13 @@ export function shouldPollProjectSessions(sessions: ProjectSession[] | undefined
 
 /** Fast poll: a provisioning session changes status within seconds. */
 const PROVISIONING_POLL_MS = 5_000;
+/**
+ * Poll while a session has no name yet. Matched to the title generator's own
+ * budget: `DEFAULT_GENERATION_TIMEOUT_MS` is 15s for at most two bounded gateway
+ * calls, so a 3s poll converges the three surfaces within one tick of the write
+ * instead of leaving them to disagree for up to a minute.
+ */
+const PENDING_TITLE_POLL_MS = 3_000;
 /** Slow poll: fast enough that the relative-time column and the date sections
  *  follow the conversation you are having, slow enough to be one cheap request
  *  a minute. */
@@ -51,8 +58,24 @@ const OPEN_SESSION_POLL_MS = 60_000;
 export function projectSessionsRefetchInterval(params: {
   sessions: ProjectSession[] | undefined;
   hasOpenSession: boolean;
+  /** Injected so the title window below is asserted rather than raced. */
+  now?: number;
 }): number | false {
   if (shouldPollProjectSessions(params.sessions)) return PROVISIONING_POLL_MS;
+  // A title the server has not written yet. This is the ONLY case where the
+  // client knows something is coming and has no way to be told it arrived —
+  // see `sessionTitleHasLanded`. It outranks the open-session interval because
+  // that one is 60s, four times the title generator's own 15s timeout: the
+  // header sat on "New session" for most of a minute after the name existed.
+  //
+  // Bounded twice, because either bound alone leaks. By the CONDITION: the
+  // moment every session has a name this falls through to the intervals below,
+  // so a settled project page polls nothing. And by AGE
+  // (`TITLE_WAIT_WINDOW_MS`): a session that is never prompted is never named,
+  // and without the window one abandoned row would poll at 3s forever.
+  if (hasSessionAwaitingTitle(params.sessions, params.now ?? Date.now())) {
+    return PENDING_TITLE_POLL_MS;
+  }
   return params.hasOpenSession ? OPEN_SESSION_POLL_MS : false;
 }
 
@@ -130,23 +153,91 @@ export function sortSessionsByLastActivity(sessions: ProjectSession[]): ProjectS
   });
 }
 
+/** What a row shows before the server has written any name for the session. */
+export const UNTITLED_SESSION_LABEL = 'New session';
+
 /**
- * Display title for a session row. Precedence: user rename (custom_name) →
- * server name → legacy metadata.session_name → a slice of the branch name →
- * the literal "session" fallback when nothing else is available.
+ * The session's real name, or null while the server has not written one.
+ *
+ * The single resolver behind BOTH `getSessionDisplayTitle` (what the row
+ * renders) and `sessionTitleHasLanded` (whether to keep polling for it). They
+ * must not be two implementations: a predicate that reported "titled" while the
+ * row still showed the placeholder would stop the poll with the UI wrong, which
+ * is the failure mode being fixed here rather than a new one to introduce.
+ *
+ * Precedence: user rename (`custom_name`) → server name → legacy
+ * `metadata.session_name`.
  */
-export function getSessionDisplayTitle(session: ProjectSession): string {
+function resolveSessionTitle(session: ProjectSession): string | null {
   const legacyMetadataName =
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
-  const titleCandidate =
-    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim();
+  return (
+    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null
+  );
+}
 
-  if (titleCandidate) return titleCandidate;
+/**
+ * Has the server-generated title arrived for this session yet?
+ *
+ * `generateSessionTitleFromFirstPrompt` (apps/api) writes `metadata.name`
+ * fire-and-forget, 3–15s after the first prompt, and emits nothing — no SSE
+ * event, no invalidation. The browser's live event stream comes from opencode
+ * INSIDE the sandbox, so the API has no channel on which to announce it. This
+ * predicate is therefore the only signal a client has, and it is what bounds
+ * the fast poll in `projectSessionsRefetchInterval`.
+ */
+export function sessionTitleHasLanded(session: ProjectSession): boolean {
+  return resolveSessionTitle(session) !== null;
+}
+
+/**
+ * How long after creation a missing title is still worth waiting for.
+ *
+ * A session is named off its FIRST PROMPT. Create one and never prompt it and
+ * no name is ever written — so "untitled" on its own is not evidence that
+ * anything is coming, and treating it as such would put a project page holding
+ * one abandoned session into a permanent 3s poll.
+ *
+ * 2 minutes is deliberately loose against the generator's 15s budget: it has to
+ * cover the create → first-prompt gap for a user who types slowly, and the cost
+ * of being generous is a few extra requests on a page that was just opened.
+ */
+const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
+
+/**
+ * Is this session still plausibly waiting for a title the server will write?
+ *
+ * Fails CLOSED on an unknown age: an unparseable or missing `created_at` cannot
+ * be proven young, and guessing wrong in that direction is the unbounded poll
+ * this window exists to prevent.
+ */
+export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
+  if (sessionTitleHasLanded(session)) return false;
+  const createdAt = Date.parse(
+    (session as { created_at?: string | null }).created_at ?? '',
+  );
+  if (!Number.isFinite(createdAt)) return false;
+  return now - createdAt <= TITLE_WAIT_WINDOW_MS;
+}
+
+/** Is any session in the list still waiting for its title? */
+export function hasSessionAwaitingTitle(
+  sessions: ProjectSession[] | undefined,
+  now: number,
+): boolean {
+  return (sessions ?? []).some((session) => isAwaitingTitle(session, now));
+}
+
+/**
+ * Display title for a session row. Precedence: user rename (custom_name) →
+ * server name → legacy metadata.session_name → the untitled placeholder.
+ */
+export function getSessionDisplayTitle(session: ProjectSession): string {
   // Untitled (the real title lands seconds after the first prompt): a humane
   // static label beats a raw branch-hash slice in the sidebar.
-  return 'New session';
+  return resolveSessionTitle(session) ?? UNTITLED_SESSION_LABEL;
 }
 
 /** Compresses date-fns' `formatDistanceToNowStrict` output ("5 minutes") down

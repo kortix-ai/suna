@@ -19,8 +19,8 @@ import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/r
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
+  projectSessionsRefetchInterval,
   sessionLastActivityAt,
-  shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   groupSessions,
@@ -242,8 +242,17 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     // is the exact bug this file existed to fix.
     queryKey: qk.project.sessions(projectId, 'project'),
     queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
+    // The shared policy, not a local copy of the provisioning rule. This view
+    // stopped polling the moment every session settled, so a title written
+    // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
+    // was invisible here until the window regained focus, while the sidebar
+    // and header had already moved on. Three surfaces, three policies, one
+    // name: that divergence IS the bug.
     refetchInterval: (query) =>
-      shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
+      projectSessionsRefetchInterval({
+        sessions: query.state.data as ProjectSession[] | undefined,
+        hasOpenSession: false,
+      }),
     // The poll stops once every session settles, so without this a session
     // deleted from another surface would linger here indefinitely.
     refetchOnWindowFocus: true,
