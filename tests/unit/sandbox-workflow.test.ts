@@ -76,7 +76,16 @@ describe('sandbox test workflow', () => {
     expect(release).toContain('pnpm test -- --target-full');
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
-    expect(release).not.toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
+    // Staging sits behind Vercel SSO deployment protection, which Basic-auth
+    // httpCredentials cannot satisfy — every authenticated page 302s to
+    // vercel.com/sso-api. The release job must therefore export the automation
+    // bypass secret that playwright.config turns into
+    // `x-vercel-protection-bypass`. It was missing when tests-release replaced
+    // the old qa-release gate, so the browser lane never reached the app and
+    // the "proves every browser journey" claim was hollow. Restored in #6415.
+    expect(release).toContain(
+      'VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}',
+    );
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
   });
