@@ -289,7 +289,7 @@ export function ReasoningEffortSelector({
             if (pending) e.preventDefault();
           }}
           className={cn(
-            'text-foreground/70 gap-1.5 rounded-full',
+            'text-foreground/70 gap-1.5 rounded-lg',
             pending && 'cursor-not-allowed opacity-60',
           )}
         >

@@ -367,3 +367,36 @@ export function planDraftSubmission({
 
   return { kind: 'message', text: `/${commandName} ${trimmed}`.trim() };
 }
+
+/**
+ * Should a pointer press on the editor's padded wrapper put the caret in the
+ * editor?
+ *
+ * The wrapper carries the composer's inner padding (`px-2 pb-6`), and padding
+ * belongs to the wrapper's box, NOT to the contenteditable inside it. So the
+ * bottom 24px and an 8px strip down each side looked like the input and were
+ * dead: pressing there hit the `div`, the editor never took focus, and nothing
+ * happened. The band is directly under the last line — exactly where someone
+ * clicks to resume typing — so it reads as the input being broken.
+ *
+ * `onWrapperItself` is the whole guard, and it is load-bearing in the other
+ * direction. A press on a DESCENDANT is ProseMirror's: that is how the caret
+ * lands where you clicked, how a drag selects a range, and how a click on a
+ * mention chip reaches its own handler. Forwarding those would collapse every
+ * in-editor click to the document end and make text unselectable — trading one
+ * broken interaction for a worse one. Only a press that terminates on the
+ * wrapper is padding.
+ *
+ * Focus goes to the END rather than the nearest position, which is correct for
+ * the case this exists to fix: the dead band sits below the last line, and
+ * "click under the text to keep typing" means the end in every editor people
+ * already use. The side strips are 8px and inherit the same rule.
+ */
+export function shouldFocusEditorFromPadding(input: {
+  /** The press terminated on the padded wrapper, not on a descendant. */
+  onWrapperItself: boolean;
+  /** The editor cannot accept focus (disabled, or locked for approval). */
+  disabled: boolean;
+}): boolean {
+  return input.onWrapperItself && !input.disabled;
+}

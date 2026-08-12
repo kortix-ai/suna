@@ -20,7 +20,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // ─── Inline code ─────────────────────────────────────────────────────────────
 export const INLINE_CODE =
-  'rounded border border-[0.4px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
+  'rounded-[5px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
 
 /**
  * A path inside a message, rendered as a door to the file — but only while
@@ -128,7 +128,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
       }}
       className={cn(
         INLINE_CODE,
-        'hover:text-kortix-blue cursor-pointer transition-colors',
+        'hover:text-foreground cursor-pointer transition-colors',
         'focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none',
       )}
     >
@@ -145,7 +145,7 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
 
   if (isUrl) {
     const href = proxyUrl(text) ?? text;
-    const linkClass = cn(INLINE_CODE, 'hover:text-kortix-blue cursor-pointer transition-colors');
+    const linkClass = cn(INLINE_CODE, 'hover:text-foreground cursor-pointer transition-colors');
 
     // A malformed absolute URL (e.g. `http://:`) must not reach next/link —
     // its prefetch path throws `Cannot prefetch '...'` (see isLinkSafeHref).

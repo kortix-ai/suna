@@ -4,10 +4,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
 import { ResetAxisButton } from '@/features/session/scope/session-scope-control';
-import { SlidersHorizontalIcon as SlidersHorizontal } from '@phosphor-icons/react';
+import { cn } from '@/lib/utils';
 import type { Icon } from '@phosphor-icons/react';
+import { GearSixIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 
 /**
@@ -89,7 +89,7 @@ export function SessionOverridesControlContent({
       // Radix reports how much room it actually has; without this the panel is
       // taller than the gap above the composer on a short or narrow viewport and
       // its first row slides off the top of the screen.
-      className="flex max-h-[min(520px,var(--radix-popover-content-available-height))] flex-col"
+      className="flex h-96 max-h-96 flex-col overflow-hidden"
     >
       <div className="border-border flex min-h-0 flex-1 flex-col sm:flex-row">
         <ul
@@ -157,15 +157,15 @@ export function SessionOverridesControlContent({
         </div>
       </div>
 
-      <div className="border-border flex items-center justify-between gap-3 border-t px-4 py-3">
+      <div className="border-border flex items-center justify-between gap-3 border-t px-4 py-2">
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
           Changes apply to the next prompt.
         </p>
         <Button
           type="button"
-          className="h-9 px-4"
           disabled={controlsDisabled || saveDisabled}
           onClick={onSave}
+          size="sm"
         >
           {saving ? <Loading className="size-3.5 shrink-0" /> : null}
           Save
@@ -194,12 +194,12 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
         <Button
           type="button"
           variant="ghost"
-          size="toolbar"
+          size="icon"
           disabled={contentProps.disabled || contentProps.saving}
           aria-label="Session overrides"
           className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
         >
-          <SlidersHorizontal className="size-3.5 shrink-0" />
+          <GearSixIcon className="size-4 shrink-0" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -207,7 +207,7 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
         align="end"
         sideOffset={8}
         collisionPadding={12}
-        className="w-[min(620px,calc(100vw-2rem))] overflow-hidden p-0 shadow-md"
+        className="w-[min(620px,calc(100vw-2rem))] overflow-hidden rounded-lg p-0 shadow-none"
         // The model, agent and effort editors are themselves popovers rendered
         // into their own portal. Radix sees that portal as "outside", so an
         // unguarded interaction there closes THIS panel under the user's cursor.

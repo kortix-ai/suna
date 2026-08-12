@@ -8,6 +8,7 @@ import {
   planPrefillMerge,
   resolveEditorPlaceholder,
   shouldApplyPrefill,
+  shouldFocusEditorFromPadding,
   textToDocument,
 } from './composer-logic';
 import type { AttachedFile } from './types';
@@ -573,5 +574,34 @@ describe('planDraftSubmission', () => {
       kind: 'message',
       text: '/compact x',
     });
+  });
+});
+
+// ── Clicking the composer's padding ────────────────────────────────────────
+//
+// The editor's wrapper carries `px-2 pb-6`, and padding belongs to the
+// wrapper's box rather than to the contenteditable inside it. So a 24px band
+// under the last line — exactly where you click to resume typing — and an 8px
+// strip down each side swallowed the press and focused nothing. The input read
+// as broken.
+describe('shouldFocusEditorFromPadding', () => {
+  test('a press on the padding itself focuses the editor', () => {
+    expect(shouldFocusEditorFromPadding({ onWrapperItself: true, disabled: false })).toBe(true);
+  });
+
+  test('a press on a DESCENDANT is left alone — this is the load-bearing half', () => {
+    // Presses inside the editor belong to ProseMirror: that is how the caret
+    // lands where you clicked, how a drag selects a range, and how a mention
+    // chip reaches its own handler. Hijacking them would collapse every
+    // in-editor click to the document end and make text unselectable — a worse
+    // bug than the one this fixes.
+    expect(shouldFocusEditorFromPadding({ onWrapperItself: false, disabled: false })).toBe(false);
+  });
+
+  test('a disabled editor is never focused, padding or not', () => {
+    // `editorDisabled` is `disabled || lockForApproval`. Stealing focus into a
+    // dead editor would put the caret somewhere that cannot accept typing.
+    expect(shouldFocusEditorFromPadding({ onWrapperItself: true, disabled: true })).toBe(false);
+    expect(shouldFocusEditorFromPadding({ onWrapperItself: false, disabled: true })).toBe(false);
   });
 });

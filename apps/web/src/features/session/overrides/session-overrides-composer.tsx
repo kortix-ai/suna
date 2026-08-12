@@ -2,45 +2,23 @@
 
 import { useMemo } from 'react';
 
-import { AgentSelector } from '@/features/session/composer/agent-selector';
-import type { FlatModel } from '@/features/session/model-flatten';
-import { ModelSelector } from '@/features/session/model-selector';
-import {
-  ReasoningEffortSelector,
-  useReasoningEffortControl,
-} from '@/features/session/reasoning-effort-selector';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
-import type { Agent, ProviderListResponse } from '@kortix/sdk/react';
 import { useProjectSession } from '@kortix/sdk/react';
 
-import {
-  SessionOverridesToolbar,
-  type SessionOverrideSlot,
-} from './session-overrides-toolbar';
+import { SessionOverridesToolbar, type SessionOverrideSlot } from './session-overrides-toolbar';
 
 export interface SessionOverridesComposerProps {
   projectId: string;
   sessionId?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
 
-  agents: Agent[];
-  selectedAgent: string | null;
-  onAgentChange?: (agentName: string | null) => void;
-  agentLocked?: boolean;
-  /** The project's configured default agent — what "no override" resolves to. */
-  defaultAgentName?: string | null;
-
-  models: FlatModel[];
-  modelsLoading?: boolean;
-  selectedModel: { providerID: string; modelID: string } | null;
-  onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
-  providers?: ProviderListResponse;
   /**
-   * What the model resolves to with no session pick (agent → project → account
-   * → platform). The composer always HAS a selected model — it is seeded from
-   * this — so only a difference from it is an override worth badging.
+   * The agent this session runs as. NOT rendered as a row — it is the key the
+   * scope catalog is fetched under, because secrets and connectors are scoped
+   * to what that agent is granted. Drop this and the panel below shows the
+   * wrong grant.
    */
-  defaultModel?: { providerID: string; modelID: string } | null;
+  selectedAgent: string | null;
 
   /**
    * Pre-create only: a live sandbox-template chooser for the session about to
@@ -50,113 +28,35 @@ export interface SessionOverridesComposerProps {
 }
 
 /**
- * The composer's overrides control, wired to the SAME agent/model/effort
- * controls the toolbar row renders.
+ * The composer's overrides control — the axes that have NO other home.
  *
- * It exists so the two composers (the project-home one in
- * `composer-chat-input.tsx` and the in-session one in `session-chat.tsx`) build
- * the panel from one place. Each already owns this state for its toolbar; this
- * only re-uses it.
+ * Agent, model and reasoning effort are deliberately absent. Every one of them
+ * is already a first-class control on the composer itself: agent in the
+ * under-row (`composer-underbar.tsx`), model and effort in the toolbar inside
+ * the card (`composer-toolbar.tsx`). Rendering them here as well gave each axis
+ * two live controls one click apart, which is a worse problem than it looks —
+ * two surfaces showing the same value means two places to read, two places to
+ * mistrust when they appear to disagree mid-render, and a panel whose top half
+ * is a restatement of the row directly above it. The panel now carries only
+ * what the composer cannot: secrets, connectors, and the sandbox.
+ *
+ * `SessionOverridesToolbar` carried all three as optional slots; with this, its
+ * last caller, no longer passing them, the branches went too rather than
+ * sitting there unreachable. Re-adding one is a `SessionOverrideSlot` prop plus
+ * a `rows` entry there — `sandboxSlot` is the worked example.
+ *
+ * It still exists as a separate component so the two composers (the
+ * project-home one in `composer-chat-input.tsx` and the in-session one in
+ * `session-chat.tsx`) build the panel from one place.
  */
 export function SessionOverridesComposer({
   projectId,
   sessionId,
   onCommittedDraft,
-  agents,
   selectedAgent,
-  onAgentChange,
-  agentLocked = false,
-  defaultAgentName,
-  models,
-  modelsLoading,
-  selectedModel,
-  onModelChange,
-  providers,
-  defaultModel,
   sandboxSlot,
 }: SessionOverridesComposerProps) {
   const sessionRow = useProjectSession(projectId, sessionId, { enabled: Boolean(sessionId) });
-  const effort = useReasoningEffortControl(selectedModel, projectId);
-  const currentModel = models.find(
-    (candidate) =>
-      candidate.providerID === selectedModel?.providerID &&
-      candidate.modelID === selectedModel?.modelID,
-  );
-
-  const agentSlot = useMemo(
-    () => ({
-      summary: selectedAgent ?? 'Project default',
-      // The project's own default agent is not an override, even though it is
-      // the selected one.
-      overridden: Boolean(selectedAgent) && selectedAgent !== defaultAgentName,
-      description: agentLocked
-        ? 'This session is bound to its agent, so it cannot be changed here. The agent also sets the ceiling for every other axis: a session never reaches past what its agent is granted.'
-        : 'The agent that answers your next prompt. It also sets the ceiling for every other axis — a session never reaches past what its agent is granted.',
-      control: (
-        <AgentSelector
-          agents={agents}
-          selectedAgent={selectedAgent}
-          onSelect={onAgentChange ?? (() => {})}
-          disabled={agentLocked}
-        />
-      ),
-      onReset:
-        !agentLocked && onAgentChange && defaultAgentName
-          ? () => onAgentChange(defaultAgentName)
-          : undefined,
-      resetLabel: 'Reset to project default',
-    }),
-    [agentLocked, agents, defaultAgentName, onAgentChange, selectedAgent],
-  );
-
-  const modelSlot = useMemo(
-    () => ({
-      summary: currentModel?.modelName ?? 'Default',
-      overridden:
-        Boolean(selectedModel) &&
-        Boolean(defaultModel) &&
-        (selectedModel?.providerID !== defaultModel?.providerID ||
-          selectedModel?.modelID !== defaultModel?.modelID),
-      control: (
-        <ModelSelector
-          models={models}
-          modelsLoading={modelsLoading}
-          selectedModel={selectedModel}
-          onSelect={onModelChange ?? (() => {})}
-          providers={providers}
-          unsetLabel="Default"
-          disabled={!onModelChange}
-        />
-      ),
-      // Re-selecting the resolved default IS the reset: the store has no
-      // "unset" (set(undefined) re-persists its fallback), and selected ==
-      // default is what clears the override flag.
-      onReset:
-        onModelChange && defaultModel ? () => onModelChange(defaultModel) : undefined,
-      resetLabel: 'Reset to default',
-    }),
-    [
-      currentModel?.modelName,
-      defaultModel,
-      models,
-      modelsLoading,
-      onModelChange,
-      providers,
-      selectedModel,
-    ],
-  );
-
-  const effortSlot = useMemo(
-    () =>
-      effort.visible
-        ? {
-            summary: effort.current ?? 'Model default',
-            overridden: Boolean(effort.current),
-            control: <ReasoningEffortSelector model={selectedModel} projectId={projectId} />,
-          }
-        : undefined,
-    [effort.current, effort.visible, projectId, selectedModel],
-  );
 
   const sandbox = useMemo(
     () => ({
@@ -172,9 +72,6 @@ export function SessionOverridesComposer({
       sessionId={sessionId}
       agentName={selectedAgent ?? undefined}
       onCommittedDraft={onCommittedDraft}
-      agent={agentSlot}
-      model={modelSlot}
-      reasoningEffort={effortSlot}
       sandbox={sandbox}
       sandboxSlot={sandboxSlot}
     />

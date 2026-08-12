@@ -33,11 +33,11 @@ import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
 import { ExpandableOutput } from './turn/expandable-output';
-import { TurnViewport } from './turn/turn-viewport';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
+import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
 import { useMessageQueueDrain } from './use-message-queue-drain';
 
@@ -3161,9 +3161,7 @@ export function SessionChat({
             sessionId,
             messageId: messageID,
             parts: mappedParts,
-            ...(overrides?.clientMessageId
-              ? { clientMessageId: overrides.clientMessageId }
-              : {}),
+            ...(overrides?.clientMessageId ? { clientMessageId: overrides.clientMessageId } : {}),
             options: {
               // Pass the session's directory so opencode resolves project-scoped
               // agents (.opencode/agent/*.md under the project) and applies them
@@ -3744,34 +3742,10 @@ export function SessionChat({
         <SessionOverridesComposer
           projectId={projectId}
           sessionId={projectSessionId}
-          agents={local.agent.list}
           selectedAgent={sessionScopeAgentName ?? null}
-          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-          agentLocked={!!lockedAgentName}
-          defaultAgentName={projectConfig?.open_code_default_agent}
-          models={local.model.list}
-          modelsLoading={providersLoading}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={handleModelChange}
-          providers={providers}
-          defaultModel={local.model.defaults.resolveDefaultFor(sessionScopeAgentName)}
         />
       ) : undefined,
-    [
-      handleAgentChange,
-      handleModelChange,
-      local.agent.list,
-      local.model.currentKey,
-      local.model.defaults,
-      local.model.list,
-      lockedAgentName,
-      projectConfig?.open_code_default_agent,
-      projectId,
-      projectSessionId,
-      providers,
-      providersLoading,
-      sessionScopeAgentName,
-    ],
+    [projectId, projectSessionId, sessionScopeAgentName],
   );
 
   const chatInputSlot = useMemo(
@@ -4001,7 +3975,7 @@ export function SessionChat({
                 <div
                   ref={contentRef}
                   role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32 md:pr-1"
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Optimistic turn — the user's message plus the waiting row,

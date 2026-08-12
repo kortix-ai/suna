@@ -1,29 +1,30 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import type { ProviderListResponse } from '@kortix/sdk/react';
 
-import type { Agent, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
-import { PaperclipIcon as Paperclip } from '@phosphor-icons/react';
-
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';
-import { VoiceRecorder } from '../voice-recorder';
 import { SendStopControl } from './send-stop-control';
-import { TokenProgress } from './token-progress';
 
 /**
- * The composer's bottom toolbar — the familiar one.
+ * The composer's bottom toolbar — the familiar one, now scoped to the two
+ * controls that describe WHAT will answer.
  *
- *  - LEFT: attach, agent, model, reasoning effort — all inline, all showing
- *    their current value at rest. Variant (thinking mode) stays folded inside
- *    the model popover: it is a setting on top of the selected model, not a
- *    peer of it. Reasoning effort is NOT — it is a per-project setting, so it
- *    sits beside the model rather than two clicks inside it.
- *  - RIGHT: token progress (ambient, no label), voice, send/stop.
+ *  - LEFT: model, reasoning effort — inline, showing their current value at
+ *    rest. Variant (thinking mode) stays folded inside the model popover: it
+ *    is a setting on top of the selected model, not a peer of it. Reasoning
+ *    effort is NOT — it is a per-project setting, so it sits beside the model
+ *    rather than two clicks inside it.
+ *  - RIGHT: voice, send/stop.
+ *
+ * Attach, agent, and token progress used to sit here. They now live in the
+ * row BELOW the card (`composer.tsx`, directly after the card element) so the
+ * card holds the message and the controls that shape the reply, while the
+ * under-row holds what you bring to it (files, agent) and what it costs
+ * (context ring, hard right). Do not re-add them here — they would render
+ * twice.
  *
  * Reasoning effort's placement is contested and was resolved deliberately.
  * `main` removed it from this bar (PR #6381: "it lives inside the
@@ -48,15 +49,6 @@ import { TokenProgress } from './token-progress';
  *     model choice, moved behind a click.
  */
 export interface ComposerToolbarProps {
-  onAttachClick: () => void;
-
-  /** Already filtered to non-hidden, non-subagent agents (`primaryAgents` in
-   *  session-chat-input.tsx) — this component does no further filtering. */
-  agents: Agent[];
-  selectedAgent: string | null;
-  onAgentChange?: (agentName: string | null) => void;
-  agentSelectorLocked: boolean;
-
   models: FlatModel[];
   /** Threaded through to ModelSelector so it can show its loading state —
    *  added on main while this toolbar was being extracted. */
@@ -89,10 +81,9 @@ export interface ComposerToolbarProps {
 
   projectId: string | undefined;
 
-  messages: MessageWithParts[] | undefined;
-  onContextClick?: () => void;
-
   toolbarSlot?: React.ReactNode;
+  /** Rendered FIRST in the left cluster, before the model selector. */
+  leading?: React.ReactNode;
 
   onTranscription: (text: string) => void;
   voiceDisabled: boolean;
@@ -114,11 +105,6 @@ export interface ComposerToolbarProps {
 }
 
 export function ComposerToolbar({
-  onAttachClick,
-  agents,
-  selectedAgent,
-  onAgentChange,
-  agentSelectorLocked,
   models,
   modelsLoading,
   selectedModel,
@@ -134,9 +120,8 @@ export function ComposerToolbar({
   selectedVariant,
   onVariantChange,
   projectId,
-  messages,
-  onContextClick,
   toolbarSlot,
+  leading,
   onTranscription,
   voiceDisabled,
   isSending,
@@ -154,39 +139,12 @@ export function ComposerToolbar({
   modelUnavailable,
   onSubmit,
 }: ComposerToolbarProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  const showAgent = agents.length > 0 && !!(onAgentChange || agentSelectorLocked);
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
-    <div className="kortix-composer-toolbar flex items-center justify-between gap-1 overflow-visible px-1">
+    <div className="kortix-composer-toolbar flex items-center justify-between gap-1 overflow-visible">
       <div className="flex min-w-0 items-center gap-1 overflow-visible">
-        <Hint
-          side="top"
-          label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-base"
-            onClick={onAttachClick}
-            aria-label="Attach files"
-            className="text-muted-foreground rounded-full"
-          >
-            <Paperclip className="size-4 shrink-0" />
-          </Button>
-        </Hint>
-
-        {/* {showAgent && (
-          <AgentSelector
-            agents={agents}
-            selectedAgent={selectedAgent}
-            onSelect={onAgentChange ?? (() => {})}
-            disabled={agentSelectorLocked}
-            triggerLabelClassName="max-w-[7rem]"
-          />
-        )} */}
+        {leading}
 
         {showModel && (
           <ModelSelector
@@ -215,17 +173,6 @@ export function ComposerToolbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <TokenProgress
-          messages={messages}
-          models={models}
-          selectedModel={selectedModel}
-          onContextClick={onContextClick}
-        />
-
-        {/* {toolbarSlot} */}
-
-        <VoiceRecorder onTranscription={onTranscription} disabled={voiceDisabled} />
-
         <SendStopControl
           isSending={isSending}
           isBusy={isBusy}

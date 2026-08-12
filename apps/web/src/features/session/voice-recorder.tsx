@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import Loading from '@/components/ui/loading';
 import { useTranscription } from '@/hooks/transcription/use-transcription';
 import { cn } from '@/lib/utils';
 import { MicrophoneIcon as Mic, SquareIcon as Square } from '@phosphor-icons/react';
@@ -139,7 +139,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRe
       case 'recording':
         return <Square weight="fill" className="size-4 shrink-0 rounded-sm" />;
       case 'processing':
-        return <KortixLoader size="small" className="size-4 shrink-0" />;
+        return <Loading className="size-4 shrink-0" />;
       default:
         return <Mic className="size-4 shrink-0" />;
     }
@@ -154,7 +154,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRe
       onContextMenu={handleRightClick}
       disabled={disabled || state === 'processing'}
       className={cn(
-        'hit-area-1 shrink-0 rounded-full p-0 duration-300 ease-out active:scale-[0.96] active:duration-150',
+        'hit-area-1 shrink-0 p-0 duration-300 ease-out active:scale-[0.96] active:duration-150',
       )}
     >
       {getIcon()}

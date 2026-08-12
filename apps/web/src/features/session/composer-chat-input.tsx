@@ -51,6 +51,7 @@ export function ComposerChatInput({
   prefill,
   inputSlot,
   toolbarSlot,
+  underbarPlacement,
   cardClassName,
   boundAgentName,
   clearOnSend,
@@ -91,6 +92,7 @@ export function ComposerChatInput({
   } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  underbarPlacement?: SessionChatInputProps['underbarPlacement'];
   /** Extra classes for the input card (e.g. the project-home radius override). */
   cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
@@ -152,8 +154,10 @@ export function ComposerChatInput({
     },
     [selectedAgentName],
   );
-  // Every axis a session can override, in one popover — built from the SAME
-  // agent/model/effort controls this toolbar already renders.
+  // The axes a session can override that have no control of their own —
+  // secrets, connectors, sandbox. Agent, model and effort are NOT passed: this
+  // toolbar already renders each of them, and a second live control one click
+  // away is a duplicate, not a convenience. See SessionOverridesComposer.
   const sessionScopeToolbar = useMemo(
     () =>
       projectId ? (
@@ -161,33 +165,11 @@ export function ComposerChatInput({
           projectId={projectId}
           sessionId={sessionId}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
-          agents={local.agent.list}
           selectedAgent={selectedAgentName}
-          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
-          agentLocked={!!lockedAgentName}
-          defaultAgentName={projectConfig?.open_code_default_agent}
-          models={local.model.list}
-          modelsLoading={providersLoading}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-          providers={providers}
-          defaultModel={local.model.defaults.resolveDefaultFor(selectedAgentName ?? undefined)}
           sandboxSlot={sandboxSlot}
         />
       ) : null,
-    [
-      handleCommittedScope,
-      local.agent,
-      local.model,
-      lockedAgentName,
-      projectConfig?.open_code_default_agent,
-      projectId,
-      providers,
-      providersLoading,
-      sandboxSlot,
-      selectedAgentName,
-      sessionId,
-    ],
+    [handleCommittedScope, projectId, sandboxSlot, selectedAgentName, sessionId],
   );
 
   const combinedToolbarSlot = useMemo(
@@ -239,6 +221,7 @@ export function ComposerChatInput({
       prefill={prefill}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
+      underbarPlacement={underbarPlacement}
       cardClassName={cardClassName}
       sessionId={sessionId}
       projectId={projectId}

@@ -275,7 +275,7 @@ export function ModelSelector({
             type="button"
             variant="ghost"
             size="sm"
-            className="text-foreground/70 rounded-full"
+            className="text-foreground/70 rounded-lg"
           >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown className={cn('size-3', open && 'rotate-180')} />

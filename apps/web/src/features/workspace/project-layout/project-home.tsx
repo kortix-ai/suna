@@ -217,6 +217,11 @@ export function ProjectHome({
             clearOnSend={false}
             autoFocus
             cardClassName="rounded-xl"
+            // A hero composer floating mid-page has no column for a second
+            // rail to align to, so the attach/agent/context controls ride on
+            // the toolbar itself, ahead of the model selector. The session
+            // page keeps the default row beneath the card.
+            underbarPlacement="inline"
             placeholder={tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
             )}
@@ -299,7 +304,7 @@ export function ProjectHomeWelcomeBody({
           </h1>
 
           {composer || onPickSuggestion ? (
-            <div className="flex w-full flex-col items-center">
+            <div className="flex w-full flex-col items-center space-y-4">
               {composer}
               {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
             </div>

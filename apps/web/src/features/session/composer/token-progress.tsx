@@ -263,7 +263,7 @@ export function TokenProgress({
           >
             <ProgressRing
               value={Math.round(ratio * 100)}
-              className="size-[1.3rem]"
+              className="size-[1.1rem]"
               progressClassName={color}
             />
           </Button>

@@ -118,7 +118,7 @@ export function SlashMenu({
     // two read as one object split in two rather than a popover that happens
     // to be nearby. The list's `p-2` (8px) plus the rows' `rounded-lg` (8px)
     // makes that radius concentric: 8 + 8 = 16.
-    <MenuCard className={cn('mb-2 flex max-h-96 h-88 overflow-hidden w-full rounded-lg shadow-none')}>
+    <MenuCard className={cn('mb-2.5 flex max-h-96 h-88 overflow-hidden w-full rounded-lg shadow-none')}>
       <div
         role="listbox"
         aria-label="Commands and actions"

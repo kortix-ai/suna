@@ -56,9 +56,11 @@ import {
   planPrefillMerge,
   resolveEditorPlaceholder,
   shouldApplyPrefill,
+  shouldFocusEditorFromPadding,
   textToDocument,
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
+import { ComposerUnderbar } from './composer-underbar';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
@@ -160,6 +162,20 @@ export interface SessionChatInputProps {
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
+  /**
+   * Where the under-row's controls live — attach, the agent picker and the
+   * context ring.
+   *
+   * `'below'` (default) keeps them as their own row beneath the card, which is
+   * the session page: the card holds the message, the row beneath holds what
+   * you bring to it and what it costs.
+   *
+   * `'inline'` folds them into the toolbar instead, ahead of the model
+   * selector. Project Home is a HERO composer floating in the middle of an
+   * empty page — a second rail hanging under it has no column to align to and
+   * reads as a detached strip, so there the controls belong on the one bar.
+   */
+  underbarPlacement?: 'below' | 'inline';
 
   cardClassName?: string;
 
@@ -173,6 +189,57 @@ export interface SessionChatInputProps {
   onQuestionAction?: () => void;
   escCount?: number;
 }
+
+/**
+ * The composer's outer shell — max width, centering, and the horizontal gutter
+ * everything in the composer (notice bar, reply bar, card, under-row, model
+ * connection bar) is measured from.
+ *
+ * The BASE gutter is `px-4` and it carries no breakpoint, deliberately. This
+ * was `px-2 sm:px-0`, and `sm:` is a VIEWPORT query answering a CONTAINER
+ * question. This element's width is set by the session layout — sidebar,
+ * action-panel column, and the browser/terminal/files detail panel — never by
+ * the window:
+ *
+ *  - Action panel or a detail tab open on a 1512px screen: the viewport is
+ *    still ≥640px, so `sm:px-0` zeroed the gutter while the chat column was
+ *    only ~600px wide. The column is narrower than `max-w-210`, so `mx-auto`
+ *    has no slack to donate and the card sat flush against the panel divider.
+ *  - Everything closed: the column grows past `max-w-210`, `mx-auto` produces
+ *    slack on both sides, and the gutter appears to "work" again.
+ *
+ * Same class, opposite result, decided by a query that cannot see the panel —
+ * which is exactly the "sometimes there's padding, sometimes there isn't" bug.
+ * A constant gutter is correct in all of them: when the column is wide the
+ * 16px is invisible inside the centering slack, and when it is narrow it is
+ * the only thing keeping the card off the edge.
+ *
+ * 16px is not arbitrary — it is the transcript's own gutter (`session-chat.tsx`:
+ * `mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32`). Whenever the column is
+ * narrower than either max-width — every panel-open case — the card's edges
+ * land on exactly the same rails as the messages above it.
+ *
+ * `md:pr-1` is Jay's optical trim and is NOT the old bug returning — do not
+ * "clean it up". It trims the RIGHT gutter to 4px from `md` up because on
+ * desktop the chat column already ends in the action-panel column's chevron
+ * rail (`session-action-panel-column.tsx`: `gap-2` + a `size-7` button + `mr-1`
+ * when collapsed, ~40px), so a full 16px on top of that read as a composer
+ * pushed left. The distinction that matters: a breakpoint may TRIM this gutter,
+ * it may never ZERO it — zero is what let the card touch the panel divider, and
+ * `composer-underbar.test.tsx` guards exactly that line.
+ *
+ * Known limit of the trim, left as-is on purpose: the chevron rail it
+ * compensates for is not always there. The panel column is `hidden` while a
+ * detail panel (browser, terminal, files, preview) is up, and it never mounts
+ * on project-home / instant-session-shell. In those states the right gutter is
+ * 4px against a 16px left. Worth a look if the composer ever reads
+ * right-shifted with a browser tab open; harmless otherwise.
+ *
+ * Beyond that trim, do not add breakpoints. If this needs to respond to width,
+ * it has to be a container query on the chat column, not a media query — the
+ * media query cannot see the panel, which is the whole reason it broke before.
+ */
+export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
 const EMPTY_QUEUE: QueuedMessageView[] = [];
 
@@ -251,6 +318,7 @@ function ComposerImpl({
   onContextClick,
   inputSlot,
   toolbarSlot,
+  underbarPlacement = 'below',
   cardClassName,
   replyTo,
   onClearReply,
@@ -293,6 +361,7 @@ function ComposerImpl({
   );
 
   const editorDisabled = disabled || lockForApproval;
+  const inlineUnderbar = underbarPlacement === 'inline';
 
   const appendAttachedFiles = useCallback((files: Iterable<File>) => {
     const newFiles: AttachedFile[] = [];
@@ -938,7 +1007,7 @@ function ComposerImpl({
   });
 
   return (
-    <div className="relative z-10 mx-auto w-full max-w-210 shrink-0 px-2 pb-3 sm:px-0">
+    <div className={COMPOSER_SHELL_CLASS}>
       {/*
         The "still waking" notice. Above the card, in flow, so it pushes the
         composer down rather than covering anything — the same reasoning as the
@@ -1001,28 +1070,21 @@ function ComposerImpl({
         className={cn(
           'bg-sidebar shadow-card border-border relative isolate z-10 w-full rounded-xl border shadow-xl',
           'pt-3 shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
-          'transition-[background-color,border-color,box-shadow] duration-75',
+          'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+          'motion-reduce:transition-none',
           cardClassName,
-          isDragOver && 'border-primary',
+          isDragOver && 'border-kortix-blue/80 ring-primary/40 border opacity-30 ring',
           (replyTo || notice) && 'rounded-t-none',
         )}
       >
-        <div className="relative z-[1] flex w-full flex-col overflow-visible">
-          {isDragOver && (
-            <div
-              className={cn(
-                'border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl border-2 border-dashed',
-                cardClassName,
-              )}
-            >
-              <span className="bg-background/90 text-foreground rounded-md px-3 py-1 text-xs font-medium">
-                {tHardcodedUi.raw(
-                  'componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach',
-                )}
-              </span>
-            </div>
+        <div
+          className={cn(
+            'relative z-[1] flex w-full flex-col overflow-visible',
+            'transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+            'motion-reduce:transition-none',
+            isDragOver && 'opacity-30',
           )}
-
+        >
           {/* Inline chips: thread context, todos, queue — unified spacing */}
           {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
             <>
@@ -1095,7 +1157,35 @@ function ComposerImpl({
               attachedFiles.length > 0 && 'pt-3',
             )}
           >
-            <div className="relative min-w-0 px-2 pb-6">
+            {/*
+              This padding is part of the input, so it has to behave like it.
+              `px-2 pb-6` lives on THIS element, not on the contenteditable
+              inside it, so the 24px band under the last line and the 8px strip
+              down each side were dead: a press landed on the div, the editor
+              never took focus, and nothing happened. That band is exactly
+              where you click to resume typing, which made the composer read as
+              broken. `cursor-text` matches the affordance to the behaviour.
+
+              The guard is in `shouldFocusEditorFromPadding` — see it for why
+              only a press that TERMINATES here may be forwarded.
+            */}
+            <div
+              className="relative min-w-0 cursor-text px-2 pb-6"
+              onMouseDown={(e) => {
+                if (
+                  !shouldFocusEditorFromPadding({
+                    onWrapperItself: e.target === e.currentTarget,
+                    disabled: editorDisabled,
+                  })
+                ) {
+                  return;
+                }
+                // Before focusing, or the browser starts its own selection on
+                // the div and immediately fights the caret we are placing.
+                e.preventDefault();
+                editorRef.current?.focus();
+              }}
+            >
               <Suspense fallback={<ComposerEditorFallback />}>
                 <ComposerEditorLazy
                   ref={setEditorRef}
@@ -1126,12 +1216,23 @@ function ComposerImpl({
               onChange={handleFileSelect}
             />
             <ComposerToolbar
-              onAttachClick={handleAttachClick}
+              leading={
+                inlineUnderbar ? (
+                  <ComposerUnderbar
+                    variant="inline"
+                    onAttachClick={handleAttachClick}
+                    agents={primaryAgents}
+                    selectedAgent={selectedAgent}
+                    onAgentChange={onAgentChange}
+                    agentSelectorLocked={agentSelectorLocked}
+                    messages={messages}
+                    models={models}
+                    selectedModel={availableSelectedModel}
+                    onContextClick={onContextClick}
+                  />
+                ) : null
+              }
               modelsLoading={modelsLoading}
-              agents={primaryAgents}
-              selectedAgent={selectedAgent}
-              onAgentChange={onAgentChange}
-              agentSelectorLocked={agentSelectorLocked}
               models={models}
               selectedModel={availableSelectedModel}
               onModelChange={onModelChange}
@@ -1146,8 +1247,6 @@ function ComposerImpl({
               selectedVariant={selectedVariant}
               onVariantChange={onVariantChange}
               projectId={projectId}
-              messages={messages}
-              onContextClick={onContextClick}
               toolbarSlot={toolbarSlot}
               onTranscription={handleTranscription}
               voiceDisabled={submitDisabled || isBusy}
@@ -1169,6 +1268,28 @@ function ComposerImpl({
           </div>
         </div>
       </div>
+
+      {/*
+        Attach + agent + context ring, in a row UNDER the card — not in the
+        toolbar inside it. The card carries the message and the controls that
+        shape the reply; this row carries what you bring to the message and
+        what it costs. See `composer-underbar.tsx` for the layout rationale.
+      */}
+      {inlineUnderbar ? null : (
+        <ComposerUnderbar
+          onAttachClick={handleAttachClick}
+          agents={primaryAgents}
+          selectedAgent={selectedAgent}
+          onAgentChange={onAgentChange}
+          agentSelectorLocked={agentSelectorLocked}
+          messages={messages}
+          models={models}
+          selectedModel={availableSelectedModel}
+          onContextClick={onContextClick}
+          toolbarSlot={toolbarSlot}
+        />
+      )}
+
       <ModelConnectionBar show={noModelsConnected} />
     </div>
   );
