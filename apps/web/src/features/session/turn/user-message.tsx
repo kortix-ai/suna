@@ -724,7 +724,7 @@ export function UserMessageActions({
       {copyText && (
         <div className="flex shrink-0 items-center gap-0.5">
           {canRewind && (
-            <Hint label="Edit from here" side="bottom" align="center">
+            <Hint label="Edit from here" side="top" align="center">
               <Button
                 type="button"
                 variant="ghost"
@@ -736,7 +736,8 @@ export function UserMessageActions({
               </Button>
             </Hint>
           )}
-          <CopyButton code={copyText} size="sm" />
+
+          <CopyButton code={copyText} size="sm" hintSide="top" />
         </div>
       )}
     </div>

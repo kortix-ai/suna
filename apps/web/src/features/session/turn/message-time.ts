@@ -1,22 +1,19 @@
 /**
- * When a message was sent, as a string a person can read at a glance.
+ * When a message was sent, in the two registers a reader actually wants.
  *
- * A transcript is a log, and a log without timestamps can only be read
- * relatively — "this came after that". Scroll back an hour and there is nothing
- * on screen that says *when*. This module turns `info.time.created` into the
- * one line that answers it.
+ * **The label says how long ago. The hint says exactly when.** Recent messages
+ * are easiest to place by distance — "5 days ago" lands immediately, where a
+ * date makes you do arithmetic. Past a week that inverts: nobody counts to
+ * "23 days ago", so the label becomes the date itself. The precise instant,
+ * down to the second, lives one hover away and never clutters the thread.
  *
- * Two rules shape everything below:
- *
- * 1. **Absolute, not relative.** "5m ago" has to tick to stay true, and a
- *    transcript can hold hundreds of messages — that is hundreds of intervals
- *    re-rendering hundreds of rows to move a digit. A clock reading is correct
- *    the moment it is printed and stays correct forever.
- * 2. **`now` is injected, never read here.** Same reason the sibling
- *    `session-turn-meta-rows` does it: the "Yesterday" wording is a pure
- *    function of two instants, so it stays testable, and one render derives
- *    every label from a single clock read instead of each row racing its own.
+ * `now` is injected, never read here. Same reason the sibling
+ * `session-turn-meta-rows` does it: the wording is a pure function of two
+ * instants, so it stays testable, and one render derives every label from a
+ * single clock read instead of each row racing its own.
  */
+
+import { formatDistanceStrict } from 'date-fns';
 
 import type { MessageWithParts } from '@/ui';
 
@@ -67,116 +64,130 @@ export interface MessageTimeOptions {
   locale?: string;
 }
 
-const MS_PER_DAY = 86_400_000;
+const MINUTE = 60_000;
+const WEEK = 7 * 24 * 60 * MINUTE;
+
+/** A usable instant, or `null`. One guard, used by both formatters. */
+function instant(timestamp: number | null | undefined): Date | null {
+  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) return null;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 /**
- * The calendar date at an instant, *in a given zone*, as `YYYY-MM-DD`.
- *
- * The zone matters: "is this today?" has to be asked in the same zone the clock
- * face is printed in, or a message stamped 23:40 local reads as "Yesterday"
- * next to a 23:40 time. `en-CA` is used purely because it yields ISO order.
+ * `Intl.DateTimeFormat` construction is the expensive half of formatting — it
+ * resolves locale data every time — while the instances themselves are
+ * immutable and safe to reuse. A transcript re-renders every label on each
+ * clock tick, so building a fresh formatter per label per tick is the one cost
+ * here that scales with conversation length. There are only a handful of
+ * distinct (locale, options) pairs in this module, so they are all cached.
  */
-function civilDate(date: Date, timeZone?: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    ...(timeZone ? { timeZone } : {}),
-  }).format(date);
-}
+const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** `YYYY-MM-DD` → days since the epoch. Subtracting two of these gives a whole
- *  number of calendar days apart with no DST arithmetic to get wrong. */
-function civilDayIndex(civil: string): number {
-  const [year, month, day] = civil.split('-').map(Number);
-  return Math.round(Date.UTC(year, month - 1, day) / MS_PER_DAY);
+function formatter(options: Intl.DateTimeFormatOptions, opts: MessageTimeOptions) {
+  const resolved = { ...options, ...(opts.timeZone ? { timeZone: opts.timeZone } : {}) };
+  const key = `${opts.locale ?? ''}|${JSON.stringify(resolved)}`;
+  let cached = formatters.get(key);
+  if (!cached) {
+    cached = new Intl.DateTimeFormat(opts.locale, resolved);
+    formatters.set(key, cached);
+  }
+  return cached;
 }
-
-function part(date: Date, options: Intl.DateTimeFormatOptions, opts: MessageTimeOptions): string {
-  return new Intl.DateTimeFormat(opts.locale, {
-    ...options,
-    ...(opts.timeZone ? { timeZone: opts.timeZone } : {}),
-  }).format(date);
-}
-
-const TIME: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
 
 /**
- * How the timestamp reads, scoped to how far back it is.
+ * Format, with the day period forced to upper case.
  *
- * | When            | Reads as (`en-US`)       |
- * | --------------- | ------------------------ |
- * | today           | `2:34 PM`                |
- * | yesterday       | `Yesterday 2:34 PM`      |
- * | within the week | `Tue 2:34 PM`            |
- * | this year       | `Aug 12, 2:34 PM`        |
- * | any older       | `Aug 12, 2025, 2:34 PM`  |
+ * `Intl` does not agree with itself here: CLDR gives `en-US` an uppercase
+ * "PM" but hands `en-AU` a lowercase "pm" — so the same code renders
+ * "2:32 PM" for one reader and "2:32 pm" for another, with nothing in this
+ * file to explain the difference. Uppercasing the one token settles it without
+ * touching month names, weekday names, or the 24-hour locales that have no day
+ * period at all.
  *
- * Field *order* is the locale's, not ours — `Intl` puts the day first for
- * `en-GB` and the month first for `en-US`, and both are right for their reader.
- * Only the field *set* is chosen here.
+ * `formatToParts(...).join('')` reproduces `format()` exactly, so this is the
+ * same string with one token changed — not a reimplementation of formatting.
+ */
+function part(date: Date, options: Intl.DateTimeFormatOptions, opts: MessageTimeOptions): string {
+  return formatter(options, opts)
+    .formatToParts(date)
+    .map((token) =>
+      token.type === 'dayPeriod' ? token.value.toLocaleUpperCase(opts.locale) : token.value,
+    )
+    .join('');
+}
+
+/** The calendar year at an instant, in the render zone — so "same year" is
+ *  asked in the zone the date is printed in, not the runtime's. */
+function yearIn(date: Date, opts: MessageTimeOptions): string {
+  return part(date, { year: 'numeric' }, opts);
+}
+
+/**
+ * The label on screen.
  *
- * The ladder exists because precision is only worth the pixels it earns. Inside
- * today the date is noise — every message shares it. A week out the weekday is
- * the fastest way to place a message. Past that, only the date means anything.
+ * | When            | Reads as (`en-US`) |
+ * | --------------- | ------------------ |
+ * | under a minute  | `just now`         |
+ * | under a week    | `5 days ago`       |
+ * | this year       | `June 9`           |
+ * | any older       | `June 9, 2025`     |
  *
- * `now` is `null` for a server render, where "today" is unknowable: the server
- * cannot know the viewer's zone, and guessing produces text that changes on
- * hydration. `null` returns the unambiguous full form instead, so the string
- * shown before hydration is never *wrong* — only longer than it will be.
+ * `formatDistanceStrict` rather than the loose variant, matching
+ * `session-turn-meta-rows`: `Strict` never rounds up into a vague "about 1
+ * minute", and the point of the label is a real distance, not an impression.
+ *
+ * `now` is `null` for a server render, where distance is unknowable: the
+ * server cannot know the viewer's clock, and guessing produces text that
+ * changes on hydration. `null` returns the dated form instead, so the string
+ * shown before hydration is never *wrong* — only less immediate than it will be.
  *
  * Returns `''` for a timestamp that is absent or unparseable, so the caller can
- * render nothing rather than a `Invalid Date` placeholder.
+ * render nothing rather than an `Invalid Date` placeholder.
  */
-export function formatMessageTime(
+export function formatMessageDay(
   timestamp: number | null | undefined,
   now: number | null,
   opts: MessageTimeOptions = {},
 ): string {
-  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) return '';
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return '';
+  const date = instant(timestamp);
+  if (!date) return '';
 
-  const time = part(date, TIME, opts);
+  const dated = (withYear: boolean) =>
+    part(date, { month: 'long', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) }, opts);
 
-  if (now === null) {
-    return `${part(date, { day: 'numeric', month: 'short', year: 'numeric' }, opts)}, ${time}`;
-  }
-
-  const thenCivil = civilDate(date, opts.timeZone);
-  const nowCivil = civilDate(new Date(now), opts.timeZone);
-  const days = civilDayIndex(nowCivil) - civilDayIndex(thenCivil);
+  if (now === null) return dated(true);
 
   // A negative gap means the stamp is ahead of this clock — a few seconds of
-  // skew between the sandbox and the browser, not a message from tomorrow.
-  // Clamping to "today" keeps the skew invisible instead of printing a future.
-  if (days <= 0) return time;
-  if (days === 1) return `Yesterday ${time}`;
-  if (days < 7) return `${part(date, { weekday: 'short' }, opts)} ${time}`;
+  // skew between the sandbox and the browser, not a message from the future.
+  // Clamping keeps the skew invisible instead of printing "in 3 seconds".
+  const elapsed = Math.max(0, now - date.getTime());
 
-  const sameYear = thenCivil.slice(0, 4) === nowCivil.slice(0, 4);
-  const day = part(
-    date,
-    { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) },
-    opts,
-  );
-  return `${day}, ${time}`;
+  // Under a minute, `formatDistanceStrict` says "8 seconds ago" and then
+  // "9 seconds ago" — motion that carries nothing. One word covers it.
+  if (elapsed < MINUTE) return 'just now';
+  if (elapsed < WEEK) return formatDistanceStrict(date, new Date(now), { addSuffix: true });
+
+  return dated(yearIn(date, opts) !== yearIn(new Date(now), opts));
 }
 
 /**
- * The unabbreviated reading, for the `title` tooltip — the timestamp on screen
- * is deliberately short, and hovering is where "which Tuesday?" gets answered.
+ * The hover label: the full date and the time of day. `June 9, 2026 2:32 PM`.
+ *
+ * This is where the specifics belong. The label on screen is deliberately
+ * loose so the thread stays readable; hovering answers "when exactly" without
+ * that answer ever taking up room in the transcript.
+ *
+ * Minutes, not seconds. A second-level reading looks like it is worth reading
+ * and never is — nobody hovers a chat message to learn it landed at :05.
  */
-export function formatMessageTimeFull(
+export function formatMessageExact(
   timestamp: number | null | undefined,
   opts: MessageTimeOptions = {},
 ): string {
-  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) return '';
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return '';
-  return part(
-    date,
-    { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', ...TIME },
-    opts,
-  );
+  const date = instant(timestamp);
+  if (!date) return '';
+  const day = part(date, { month: 'long', day: 'numeric', year: 'numeric' }, opts);
+  const clock = part(date, { hour: 'numeric', minute: '2-digit' }, opts);
+  return `${day} ${clock}`;
 }

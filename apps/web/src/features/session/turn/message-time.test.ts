@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import type { MessageWithParts } from '@/ui';
 
 import {
-  formatMessageTime,
-  formatMessageTimeFull,
+  formatMessageDay,
+  formatMessageExact,
   messageCreatedAt,
   messageTime,
 } from './message-time';
@@ -17,78 +17,122 @@ import {
  */
 const norm = (value: string) => value.replace(/[\u202f\u00a0]/g, ' ');
 
-/** Wednesday 12 August 2026, 15:00 UTC. Every case below is relative to it. */
+/** Wednesday 12 August 2026, 15:00:00 UTC. Every case below is relative to it. */
 const NOW = Date.UTC(2026, 7, 12, 15, 0, 0);
 
 const utc = { timeZone: 'UTC', locale: 'en-US' };
 
-const fmt = (ts: number | null | undefined, now: number | null = NOW, opts = utc) =>
-  norm(formatMessageTime(ts, now, opts));
+const label = (ts: number | null | undefined, now: number | null = NOW, opts = utc) =>
+  formatMessageDay(ts, now, opts);
+const exact = (ts: number | null | undefined, opts = utc) => norm(formatMessageExact(ts, opts));
 
-describe('formatMessageTime — how far back it was decides how much is shown', () => {
-  test('a message from today is just a clock reading', () => {
-    expect(fmt(Date.UTC(2026, 7, 12, 9, 34))).toBe('9:34 AM');
+describe('formatMessageDay — recent reads as distance', () => {
+  test('under a minute is one word, not a second-by-second countdown', () => {
+    expect(label(Date.UTC(2026, 7, 12, 14, 59, 30))).toBe('just now');
+    expect(label(Date.UTC(2026, 7, 12, 15, 0, 0))).toBe('just now');
   });
 
-  test('midnight today is still today, not yesterday', () => {
-    expect(fmt(Date.UTC(2026, 7, 12, 0, 5))).toBe('12:05 AM');
+  test('minutes, hours, days', () => {
+    expect(label(Date.UTC(2026, 7, 12, 14, 59, 0))).toBe('1 minute ago');
+    expect(label(Date.UTC(2026, 7, 12, 14, 55, 0))).toBe('5 minutes ago');
+    expect(label(Date.UTC(2026, 7, 12, 12, 0, 0))).toBe('3 hours ago');
+    expect(label(Date.UTC(2026, 7, 7, 15, 0, 0))).toBe('5 days ago');
   });
 
-  test('yesterday is named, because "9:05 PM" alone would read as today', () => {
-    expect(fmt(Date.UTC(2026, 7, 11, 21, 5))).toBe('Yesterday 9:05 PM');
-  });
-
-  test('inside the last week the weekday places it fastest', () => {
-    // 9 Aug 2026 is a Sunday; 6 Aug is a Thursday.
-    expect(fmt(Date.UTC(2026, 7, 9, 14, 0))).toBe('Sun 2:00 PM');
-    expect(fmt(Date.UTC(2026, 7, 6, 8, 0))).toBe('Thu 8:00 AM');
-  });
-
-  test('at seven days the weekday stops being unambiguous and the date takes over', () => {
-    expect(fmt(Date.UTC(2026, 7, 5, 8, 0))).toBe('Aug 5, 8:00 AM');
-  });
-
-  test('a different year says so', () => {
-    expect(fmt(Date.UTC(2025, 7, 12, 10, 15))).toBe('Aug 12, 2025, 10:15 AM');
-  });
-
-  test('this year does not repeat the year', () => {
-    expect(fmt(Date.UTC(2026, 0, 3, 10, 15))).toBe('Jan 3, 10:15 AM');
+  test('a stamp ahead of the clock reads as just now, never as the future', () => {
+    // Sandbox/browser skew can push a stamp past the browser's clock.
+    // "in 30 seconds" would be a bug on screen; the clamp hides the skew.
+    expect(label(Date.UTC(2026, 7, 12, 15, 0, 30))).toBe('just now');
+    expect(label(Date.UTC(2026, 7, 13, 1, 0, 0))).toBe('just now');
   });
 });
 
-describe('formatMessageTime — the parts that are easy to get wrong', () => {
-  test('"today" is decided in the render zone, not the runtime zone', () => {
-    // 02:30 UTC on the 12th is 22:30 on the 11th in New York. Asking the
-    // question in UTC would print "2:30 AM" next to a clock face reading
-    // 10:30 PM — the day and the time would disagree on screen.
-    const ts = Date.UTC(2026, 7, 12, 2, 30);
-    expect(fmt(ts)).toBe('2:30 AM');
-    expect(fmt(ts, NOW, { timeZone: 'America/New_York', locale: 'en-US' })).toBe(
-      'Yesterday 10:30 PM',
+describe('formatMessageDay — past a week, distance stops helping', () => {
+  test('at exactly a week the date takes over', () => {
+    // Nobody counts to "23 days ago". The handover is the point of the ladder.
+    expect(label(Date.UTC(2026, 7, 5, 16, 0, 0))).toContain('ago');
+    expect(label(Date.UTC(2026, 7, 5, 15, 0, 0))).toBe('August 5');
+  });
+
+  test('this year omits the year; any other year states it', () => {
+    expect(label(Date.UTC(2026, 5, 9, 10, 15))).toBe('June 9');
+    expect(label(Date.UTC(2025, 5, 9, 10, 15))).toBe('June 9, 2025');
+  });
+
+  test('field order follows the locale, not this module', () => {
+    expect(label(Date.UTC(2026, 5, 9, 10, 15), NOW, { timeZone: 'UTC', locale: 'en-GB' })).toBe(
+      '9 June',
     );
   });
 
-  test('a stamp slightly ahead of the clock reads as today, never as the future', () => {
-    // Sandbox/browser skew can push a stamp past midnight. "Tomorrow 1:00 AM"
-    // would be a bug on screen; the clamp makes the skew invisible instead.
-    expect(fmt(Date.UTC(2026, 7, 13, 1, 0))).toBe('1:00 AM');
+  test('"same year" is asked in the render zone', () => {
+    // 1 Jan 2026 00:30 UTC is still 2025 in New York, so the year must show.
+    const ts = Date.UTC(2026, 0, 1, 0, 30);
+    expect(label(ts)).toBe('January 1');
+    expect(label(ts, NOW, { timeZone: 'America/New_York', locale: 'en-US' })).toBe(
+      'December 31, 2025',
+    );
   });
 
-  test('field order and 12/24-hour follow the locale, not this module', () => {
-    expect(fmt(Date.UTC(2026, 7, 5, 8, 0))).toBe('Aug 5, 8:00 AM');
-    const gb = fmt(Date.UTC(2026, 7, 5, 8, 0), NOW, { timeZone: 'UTC', locale: 'en-GB' });
-    expect(gb).toContain('5 Aug');
-    expect(gb).not.toContain('AM');
-  });
-
-  test('a null clock returns the unambiguous full form — the server-render case', () => {
-    // The server cannot know the viewer's day, so it must not guess one.
-    expect(fmt(Date.UTC(2026, 7, 12, 9, 34), null)).toBe('Aug 12, 2026, 9:34 AM');
+  test('a null clock returns the dated form — the server-render case', () => {
+    // The server cannot know the viewer's clock, so it must not guess a
+    // distance. A relative word here is the hydration bug this avoids.
+    expect(label(Date.UTC(2026, 7, 12, 9, 34), null)).toBe('August 12, 2026');
+    expect(label(Date.UTC(2026, 7, 12, 9, 34), null)).not.toContain('ago');
   });
 });
 
-describe('formatMessageTime — absent data renders nothing, not a placeholder', () => {
+describe('formatMessageExact — the hover label is the whole instant', () => {
+  test('spells out the full date and the time of day', () => {
+    expect(exact(Date.UTC(2026, 5, 9, 14, 32, 5))).toBe('June 9, 2026 2:32 PM');
+    expect(exact(Date.UTC(2026, 7, 12, 9, 34, 0))).toBe('August 12, 2026 9:34 AM');
+  });
+
+  test('stops at minutes — a seconds reading looks worth reading and never is', () => {
+    expect(exact(Date.UTC(2026, 5, 9, 14, 32, 5))).not.toMatch(/:\d{2}:\d{2}/);
+  });
+
+  test('12- vs 24-hour and field order follow the locale', () => {
+    const gb = exact(Date.UTC(2026, 5, 9, 14, 32, 5), { timeZone: 'UTC', locale: 'en-GB' });
+    expect(gb).toContain('9 June 2026');
+    expect(gb).toContain('14:32');
+    expect(gb).not.toContain('PM');
+  });
+
+  test('renders in the given zone', () => {
+    expect(
+      exact(Date.UTC(2026, 5, 9, 2, 30, 0), { timeZone: 'America/New_York', locale: 'en-US' }),
+    ).toBe('June 8, 2026 10:30 PM');
+  });
+
+  test('the day period is upper case in every locale that has one', () => {
+    // CLDR does not agree with itself: `en-US` gives "PM", while `en-AU`,
+    // `en-NZ` and `en-IN` give a lowercase "pm". Left alone, the same code
+    // renders differently for two readers for no reason they can see.
+    const afternoon = Date.UTC(2026, 5, 9, 14, 32, 0);
+    const morning = Date.UTC(2026, 5, 9, 9, 5, 0);
+
+    for (const locale of ['en-US', 'en-AU', 'en-NZ', 'en-IN', 'en-CA', 'en-PH']) {
+      const pm = exact(afternoon, { timeZone: 'UTC', locale });
+      const am = exact(morning, { timeZone: 'UTC', locale });
+      expect(pm).not.toContain('pm');
+      expect(am).not.toContain('am');
+      // …and it is actually present, so the assertions above are not passing
+      // simply because the locale renders a 24-hour clock.
+      expect(pm.toUpperCase()).toContain('PM');
+      expect(am.toUpperCase()).toContain('AM');
+    }
+  });
+
+  test('uppercasing the day period leaves the rest of the string alone', () => {
+    // Month names must not be shouted at the reader as a side effect.
+    expect(exact(Date.UTC(2026, 5, 9, 14, 32, 0), { timeZone: 'UTC', locale: 'en-US' })).toBe(
+      'June 9, 2026 2:32 PM',
+    );
+  });
+});
+
+describe('absent data renders nothing, not a placeholder', () => {
   const absent: Array<[string, number | null | undefined]> = [
     ['undefined', undefined],
     ['null', null],
@@ -98,23 +142,12 @@ describe('formatMessageTime — absent data renders nothing, not a placeholder',
     ['Infinity', Number.POSITIVE_INFINITY],
   ];
 
-  for (const [label, value] of absent) {
-    test(`${label} renders as an empty string`, () => {
-      expect(formatMessageTime(value, NOW, utc)).toBe('');
+  for (const [name, value] of absent) {
+    test(`${name} renders as an empty string in both formatters`, () => {
+      expect(formatMessageDay(value, NOW, utc)).toBe('');
+      expect(formatMessageExact(value, utc)).toBe('');
     });
   }
-});
-
-describe('formatMessageTimeFull', () => {
-  test('spells the instant out for the hover title', () => {
-    expect(norm(formatMessageTimeFull(Date.UTC(2026, 7, 12, 9, 34), utc))).toBe(
-      'Wednesday, August 12, 2026 at 9:34 AM',
-    );
-  });
-
-  test('is empty for a missing stamp', () => {
-    expect(formatMessageTimeFull(undefined, utc)).toBe('');
-  });
 });
 
 describe('messageCreatedAt', () => {
@@ -138,8 +171,8 @@ describe('messageCreatedAt', () => {
     ['a numeric string', '1760000000000'],
   ];
 
-  for (const [label, value] of rejected) {
-    test(`rejects ${label}`, () => {
+  for (const [name, value] of rejected) {
+    test(`rejects ${name}`, () => {
       expect(messageCreatedAt(withTime(value))).toBeNull();
     });
   }
