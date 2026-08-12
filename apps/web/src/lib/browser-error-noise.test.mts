@@ -16,6 +16,7 @@ import {
   isExpectedCompactionNoModelMessage,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
+  isFailedToSendMessageNoise,
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
   isInjectedAppSource,
@@ -24,12 +25,14 @@ import {
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
+  isLikelyDomMutationNoise,
   isModelNotServableNoise,
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
   isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
+  isOneTrustJsonParseNoise,
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
@@ -8645,4 +8648,703 @@ test('does NOT suppress a non-OOM RangeError (over-match guard on the RangeError
       `expected "${message}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// Firefox DOM-mutation "supplied node incorrect" noise — the Gecko/Firefox
+// sibling of the V8/JSC DOM-mutation class already covered by
+// `KNOWN_DOM_MUTATION_NOISE_MESSAGES` (Better Stack pattern
+// 9e6a70ffdb26ba2ab9f821fe8772f51b082d6a9b0e2c9f50b2130cde0c3e6438, Kortix
+// Frontend prod, application_id 2346967). `InvalidNodeTypeError`, message
+// `The supplied node is incorrect or has an incorrect ancestor for this
+// operation.`, 2 occurrences / 0 identified users, last 2026-08-11 16:37:15
+// UTC, release `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod),
+// call site function `te` in chunk
+// `app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_…`
+// (Next.js live feedback), request URL a co-worker session page, Firefox 153
+// on macOS, mechanism `auto.browser.global_handlers.onunhandledrejection`
+// (UNCAUGHT, `handled:false`). The existing V8/JSC patterns (covering only
+// the `insertBefore`/`removeChild` wording) did NOT match the Firefox
+// wording, so this sibling leaked to Better Stack. The fix just adds the
+// Gecko string to the existing `KNOWN_DOM_MUTATION_NOISE_MESSAGES` array.
+// ---------------------------------------------------------------------------
+
+test('classifies the Firefox "supplied node is incorrect" DOM mutation wording as noise', () => {
+  // The Gecko/Firefox wording for the same DOM-mutation class the V8/JSC
+  // `insertBefore`/`removeChild` entries cover. Anchored as an EXACT string
+  // in `KNOWN_DOM_MUTATION_NOISE_MESSAGES`, matched by `containsKnownPattern`
+  // the same way as the V8 entries.
+  const message =
+    'The supplied node is incorrect or has an incorrect ancestor for this operation.'
+  assert.equal(
+    isLikelyDomMutationNoise(message),
+    true,
+    `expected Firefox DOM-mutation wording to be noise`,
+  )
+  assert.equal(
+    isLikelyDomMutationNoise(`Error: ${message}`),
+    true,
+    `expected "Error: "-prefixed Firefox DOM-mutation wording to be noise`,
+  )
+})
+
+test('still classifies the existing V8 insertBefore/removeChild DOM mutation wording as noise (no regression)', () => {
+  // Regression guard: the Firefox entry must NOT shadow the existing V8
+  // entries — both wording families must continue to classify as noise.
+  for (const message of [
+    "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+    "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+  ]) {
+    assert.equal(
+      isLikelyDomMutationNoise(message),
+      true,
+      `expected V8 DOM-mutation wording "${message}" to still be noise`,
+    )
+  }
+})
+
+test('suppresses the Firefox DOM-mutation prod event via the Sentry beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern 9e6a70ff…, release
+  // v0.12.8, request URL a co-worker session page, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // handled:false), call site function `te` in the Next.js live feedback
+  // chunk, Firefox 153 on macOS.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/be079cac-091c-4857-8b3f-f7982027b27c/sessions/f3d44320-846b-4dd3-be26-18d9ca05c931',
+      },
+      exception: {
+        values: [
+          {
+            value:
+              'The supplied node is incorrect or has an incorrect ancestor for this operation.',
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: {
+              frames: [
+                {
+                  filename:
+                    'app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_zKXse3p1ftNZs62ELRA6sCjzQUJK',
+                  function: 'te',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Firefox DOM-mutation noise via the Sentry beforeSend gate (with capture-path wrappers)', () => {
+  // `isLikelyDomMutationNoise` is wired into `shouldIgnoreSentryBrowserNoise`
+  // (the Sentry `beforeSend` gate). It uses `containsKnownPattern` (a
+  // `.includes()` match), so the bare message AND the `Error: `-prefixed /
+  // `Unhandled promise rejection: `-wrapped forms all drop — the wrapper
+  // does not break the substring anchor. (NOTE: the matcher is intentionally
+  // NOT wired into `shouldIgnoreBrowserRuntimeNoise` — the runtime gate's
+  // other DOM-mutation-specific matchers handle their own classes; the
+  // hydration/DOM-mutation class is Sentry-gate-only, mirroring the existing
+  // V8 `insertBefore`/`removeChild` entries' wiring.)
+  for (const message of [
+    'The supplied node is incorrect or has an incorrect ancestor for this operation.',
+    `Error: The supplied node is incorrect or has an incorrect ancestor for this operation.`,
+    `Unhandled promise rejection: Error: The supplied node is incorrect or has an incorrect ancestor for this operation.`,
+  ]) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: [
+                  {
+                    filename:
+                      'app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_zKXse3p1ftNZs62ELRA6sCjzQUJK',
+                    function: 'te',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress Firefox DOM-mutation "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded Firefox DOM message (over-match guard)', () => {
+  // `isLikelyDomMutationNoise` uses `containsKnownPattern` (a `.includes()`
+  // match), the SAME contract as the existing V8 `insertBefore`/`removeChild`
+  // entries. So a DIFFERENT Gecko DOM message (a different DOMException
+  // wording that does NOT contain the canonical noise string as a
+  // substring) keeps reporting. (A message that merely EXTENDS the noise
+  // string — e.g. `<noise>. Please file a bug.` — is intentionally matched,
+  // matching the V8 entries' behavior; that is the documented contract, not
+  // an over-match bug.)
+  for (const message of [
+    // A different Gecko DOM message (a different DOMException) — does NOT
+    // contain the canonical noise string.
+    'The supplied node does not belong to this document.',
+    // A different Gecko `HierarchyRequestError` wording.
+    'The new child contains the parent.',
+    // A near-worded first-party throw without the canonical wrapper.
+    'supplied node is incorrect',
+    // A completely different DOMException type.
+    'NotFoundError: The node was not found.',
+  ]) {
+    assert.equal(
+      isLikelyDomMutationNoise(message),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// OneTrust cookie-consent SDK JSON-parse noise (Better Stack pattern
+// aa1efd3fb7a9f6840d4eb25b881d2b12ac2e6f3c8dfe3158fbd3e9fc753a0526, Kortix
+// Frontend prod, application_id 2346967). The OneTrust cookie-consent SDK's
+// `otSDKStub.js?did=undefined` bootstrap stub XHR-fetches the site's consent
+// config, and when the domain ID is `undefined` / the endpoint returns an
+// empty or truncated body (old iOS Safari, CORS preflight failure, 5xx,
+// network abort), the stub's `XMLHttpRequest.onload` handler calls
+// `JSON.parse()` on the bad body and throws the canonical
+// `SyntaxError: Unexpected end of JSON input`. The throw is in the OneTrust
+// SDK's own injected script (frame
+// `app:///scripttemplates/otSDKStub.js?did=undefined` function `r.onload`),
+// never first-party code. 1 occurrence / 0 identified users, last
+// 2026-08-11 23:03:30 UTC, release
+// `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), request URL
+// `https://kortix.com/auth` (auth page), Safari on iOS 13.2.3 (iPhone),
+// mechanism `auto.browser.browserapierrors.xhr.onload` (UNCAUGHT,
+// handled:false). Stack frames (3, all in_app:true):
+//   1. `app:///_next/static/immutable/chunks/1zqaq83quwhm5.js` fn
+//      `XMLHttpRequest.r` (the Next.js webpack runtime chunk that XHR was
+//      monkey-patched through — the SCHEDULING frame, NOT the throw site).
+//   2. `app:///scripttemplates/otSDKStub.js?did=undefined` fn `r.onload`
+//      (THROW SITE — the OneTrust SDK's `onload` handler where the
+//      `JSON.parse` runs; `did=undefined` is the SDK's own misconfiguration
+//      marker).
+//   3. `<anonymous>` fn `JSON.parse` (the actual `JSON.parse` call the
+//      OneTrust SDK makes on the empty body).
+// NO first-party `apps/web/src/…` frame. The new matcher anchors on BOTH
+// the EXACT `Unexpected end of JSON input` message AND a frame whose
+// filename contains `otSDKStub.js`, with a first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const ONETRUST_JSON_PARSE_MESSAGE = 'Unexpected end of JSON input'
+
+// The OneTrust SDK's canonical bootstrap filename (the `app:///scripttemplates/otSDKStub.js?did=…`
+// synthetic injected-script origin). `did=undefined` is the SDK's own
+// misconfiguration marker.
+const ONETRUST_SDK_FRAME =
+  'app:///scripttemplates/otSDKStub.js?did=undefined'
+
+// The three production stack frames (all in_app:true): the Next.js webpack
+// runtime chunk (XHR monkey-patch scheduling frame) → the OneTrust SDK
+// `onload` (throw site) → the `<anonymous>` `JSON.parse` call. NO first-party
+// `apps/web/src/…` frame, so the negative guard does not fire.
+const ONETRUST_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/1zqaq83quwhm5.js',
+    function: 'XMLHttpRequest.r',
+  },
+  { filename: ONETRUST_SDK_FRAME, function: 'r.onload' },
+  { filename: '<anonymous>', function: 'JSON.parse' },
+]
+
+test('classifies the OneTrust JSON-parse prod event as noise (exact message + otSDKStub.js frame)', () => {
+  // Exact production shape: the `Unexpected end of JSON input` message + the
+  // three prod frames. The OneTrust `otSDKStub.js` frame is the positive
+  // anchor; no first-party `apps/web/src/…` frame, so the negative guard
+  // does not fire.
+  assert.equal(
+    isOneTrustJsonParseNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      frames: ONETRUST_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the OneTrust JSON-parse Sentry event via the beforeSend gate', () => {
+  // Reproduces the exact production Sentry event: mechanism
+  // `auto.browser.browserapierrors.xhr.onload` (UNCAUGHT, handled:false),
+  // request URL `https://kortix.com/auth` (auth page), Safari on iOS 13.2.3.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: ONETRUST_JSON_PARSE_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.browserapierrors.xhr.onload',
+              handled: false,
+            },
+            stacktrace: { frames: ONETRUST_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the OneTrust JSON-parse noise through the SyntaxError wrapper', () => {
+  // `stripErrorWrappers` strips the `SyntaxError: ` prefix before matching
+  // the anchored message, so the `SyntaxError: Unexpected end of JSON input`
+  // form (the typical Sentry exception value) classifies as noise.
+  for (const message of [
+    ONETRUST_JSON_PARSE_MESSAGE,
+    `SyntaxError: ${ONETRUST_JSON_PARSE_MESSAGE}`,
+    `Unhandled promise rejection: SyntaxError: ${ONETRUST_JSON_PARSE_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message,
+        frames: ONETRUST_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be OneTrust JSON-parse noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: ONETRUST_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be suppressed`,
+    )
+  }
+})
+
+test('classifies the OneTrust JSON-parse noise from a filename alone (window.onerror)', () => {
+  // The runtime gate (window.onerror) sees the `filename` directly — the
+  // throw originates from the OneTrust SDK's injected script source.
+  assert.equal(
+    isOneTrustJsonParseNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      filename: ONETRUST_SDK_FRAME,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      filename: ONETRUST_SDK_FRAME,
+    }),
+    true,
+  )
+})
+
+test('classifies a OneTrust SDK frame with a different did query param as noise', () => {
+  // The matcher anchors on the `otSDKStub.js` filename token, NOT the
+  // `did=` value — a properly-configured OneTrust stub (`did=<real-id>`)
+  // whose consent endpoint still returns an empty body throws the same
+  // `Unexpected end of JSON input` and must also classify as noise. The
+  // `did=undefined` form is just the most-common misconfiguration shape.
+  const configuredOneTrustFrame =
+    'app:///scripttemplates/otSDKStub.js?did=abc123-real-domain-id'
+  assert.equal(
+    isOneTrustJsonParseNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      frames: [{ filename: configuredOneTrustFrame, function: 'r.onload' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the OneTrust JSON-parse event when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `JSON.parse` on a bad body while a OneTrust frame happened to be in the
+  // stack (e.g. a first-party fetch wrapper that runs alongside the consent
+  // banner) → still actionable; the negative guard MUST preserve it so the
+  // call site can be found + fixed.
+  for (const frames of [
+    [
+      { filename: ONETRUST_SDK_FRAME, function: 'r.onload' },
+      { filename: 'apps/web/src/lib/api/client.ts', function: 'parseResponse' },
+    ],
+    [
+      { filename: ONETRUST_SDK_FRAME, function: 'r.onload' },
+      { filename: 'app:///apps/web/src/features/auth/use-session.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message: ONETRUST_JSON_PARSE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party OneTrust-prefixed event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: ONETRUST_JSON_PARSE_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party OneTrust-prefixed event from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      filename: 'apps/web/src/lib/api/client.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the OneTrust JSON-parse event with NO otSDKStub.js frame (conservative — keep reporting)', () => {
+  // No `otSDKStub.js` frame → can't confirm the OneTrust origin; a real
+  // first-party `JSON.parse(truncatedApiResponse)` regression would throw
+  // the same `Unexpected end of JSON input` wording, so keep reporting.
+  for (const frames of [
+    [],
+    [{ filename: 'app:///_next/static/chunks/main.js', function: 'f' }],
+    [{ filename: 'apps/web/src/lib/foo.ts', function: 'bar' }],
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message: ONETRUST_JSON_PARSE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected "${ONETRUST_JSON_PARSE_MESSAGE}" event from ${JSON.stringify(frames)} (no otSDKStub.js frame) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-Unexpected-end-of-JSON-input message even with otSDKStub.js frames', () => {
+  // Only the EXACT `Unexpected end of JSON input` message is noise — a
+  // different `JSON.parse` SyntaxError (e.g. `Unexpected token < in JSON`,
+  // a different malformed-body wording) from the same OneTrust source is a
+  // different class and must keep reporting. (The OneTrust stub is known to
+  // throw only the empty-body `Unexpected end of JSON input` form; a
+  // different `JSON.parse` wording signals a different failure mode worth
+  // triaging.)
+  for (const message of [
+    'Unexpected token < in JSON at position 0',
+    'Unexpected token u in JSON at position 0',
+    'JSON.parse: unexpected end of data',
+    'Unexpected end of input',
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message,
+        frames: ONETRUST_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" with otSDKStub.js frames to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: message, stacktrace: { frames: ONETRUST_PROD_FRAMES } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" with otSDKStub.js frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a same-worded message from a near-miss otSDKStub filename', () => {
+  // The matcher anchors on the `otSDKStub.js` filename token — a
+  // near-identical filename (a typo, or a different consent SDK that
+  // happens to ship a similarly-named script) must NOT be swallowed by
+  // this guard. Only a frame whose filename literally contains
+  // `otSDKStub.js` is the OneTrust SDK.
+  for (const filename of [
+    'app:///scripttemplates/otOtherStub.js',
+    'app:///scripttemplates/ot-sdk-stub.js',
+    'app:///onetrust/otSDKStub.ts',
+    'app:///_next/static/chunks/otSDKStub.js.map',
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message: ONETRUST_JSON_PARSE_MESSAGE,
+        frames: [{ filename, function: 'r.onload' }],
+      }),
+      // `otSDKStub.js.map` is the only one that contains the `otSDKStub.js`
+      // substring; it classifies as noise (the anchor is a substring match,
+      // so a sourcemap file with the same basename is still the OneTrust
+      // SDK's own artifact). The other three must keep reporting.
+      filename.endsWith('.map') ? true : false,
+      `expected filename "${filename}" to be ${filename.endsWith('.map') ? 'noise' : 'kept'}`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Transient WebSocket `postMessage` "Failed to send message" transport noise
+// (Better Stack pattern
+// 824577dd315c08f227a1f31c74e2eb90be209b1ffd129e18923907aa3068afd2, Kortix
+// Frontend prod, application_id 2346967). A co-worker session page's WebSocket
+// `ws.send(...)` rejected with the canonical WebSocket `InvalidStateError`
+// message `Failed to send message` (the spec's wording for `ws.send` on a
+// closed socket) when the sandbox tore the connection down mid-flight
+// (deploy / restart / idle-timeout recycle / sandbox park / network blip /
+// tab close). 1 occurrence / 0 identified users, last 2026-08-11 14:47:00
+// UTC, release `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod),
+// call site function `Object.x [as mutationFn]` in chunk
+// `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` (minified — NO
+// resolved first-party source), request URL a co-worker session page,
+// browser Chrome on macOS, mechanism `generic` with `handled:true` (CAUGHT
+// by an error boundary — NOT an uncaught global rejection). Stack frames
+// (1, in_app:true): the minified react-query mutation chunk. NO first-party
+// `apps/web/src/…` frame. Sibling of `isConnectionClosedNoise` (the
+// `Connection closed.` transport-close class) but a different throw (a
+// `ws.send` rejection on a closed socket).
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const FAILED_TO_SEND_MESSAGE = 'Failed to send message'
+
+// The single production stack frame: the minified react-query mutation
+// chunk `3n0z0jtixhg6r.js` function `Object.x [as mutationFn]` (the
+// mutation that called `ws.send(...)` on the closed socket). No resolved
+// first-party `apps/web/src/…` source, so the negative guard does NOT fire.
+const FAILED_TO_SEND_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js',
+    function: 'Object.x [as mutationFn]',
+  },
+]
+
+test('classifies the production Failed to send message transport noise (exact prod frame)', () => {
+  // Exact production shape: the canonical WebSocket `InvalidStateError`
+  // message + the single minified mutation-chunk frame. The chunk frame is
+  // NOT a first-party `apps/web/src/…` frame, so the negative guard does
+  // not fire.
+  assert.equal(
+    isFailedToSendMessageNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      frames: FAILED_TO_SEND_PROD_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/834686a1-bf0c-4bd5-87ea-b2679288e191/sessions/54f7abe9-cad8-4b46-bd04-de8f1723dfd1',
+      },
+      exception: {
+        values: [
+          {
+            value: FAILED_TO_SEND_MESSAGE,
+            // The prod event is `handled:true` (caught by an error
+            // boundary — NOT an uncaught global rejection), mechanism
+            // `generic`. The matcher is message+frame-anchored and does NOT
+            // branch on `handled`; this test pins the prod shape exactly.
+            mechanism: { type: 'generic', handled: true },
+            stacktrace: { frames: FAILED_TO_SEND_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Failed to send message noise through the Error wrapper', () => {
+  // The matcher strips the leading `Error: ` prefix before anchoring, so
+  // the `Error: Failed to send message` form (an `onunhandledrejection` of
+  // an `Error` instance) and the stacked `Unhandled promise rejection:
+  // Error: Failed to send message` form both classify as noise regardless
+  // of which capture path delivered it.
+  for (const message of [
+    FAILED_TO_SEND_MESSAGE,
+    `Error: ${FAILED_TO_SEND_MESSAGE}`,
+    `Unhandled promise rejection: ${FAILED_TO_SEND_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${FAILED_TO_SEND_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isFailedToSendMessageNoise({
+        message,
+        frames: FAILED_TO_SEND_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be Failed-to-send-message noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: message, stacktrace: { frames: FAILED_TO_SEND_PROD_FRAMES } },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be suppressed`,
+    )
+  }
+})
+
+test('classifies the frameless Failed to send message variant as noise (message alone is specific)', () => {
+  // A frameless capture with this exact message still classifies as noise
+  // — the message is the WebSocket spec's canonical transport-failure
+  // wording and is specific enough (mirrors `isConnectionClosedNoise`'s
+  // frameless handling).
+  assert.equal(
+    isFailedToSendMessageNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/x/sessions/y',
+      },
+      exception: {
+        values: [{ value: FAILED_TO_SEND_MESSAGE, stacktrace: { frames: [] } }],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: FAILED_TO_SEND_MESSAGE }] },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Failed to send message noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate sees the `message` directly; a frameless window.onerror
+  // capture with the exact message drops.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: FAILED_TO_SEND_MESSAGE }),
+    true,
+  )
+  // A runtime capture with a minified chunk `filename` (no first-party
+  // source) also drops.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      filename: 'app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Failed to send message throw when a first-party frame is present (real regression)', () => {
+  // The prod event is `handled:true` (caught by an error boundary — the
+  // user saw a controlled error state, not a blank page). When our own code
+  // is the `ws.send` caller, the boundary's error state is showing the
+  // user a defect we should fix → actionable. The negative guard MUST
+  // preserve any resolved first-party `apps/web/src/…` frame so the call
+  // site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/session/websocket.ts', function: 'sendMessage' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/session/session-chat.tsx', function: 'pushMessage' },
+    ],
+  ]) {
+    assert.equal(
+      isFailedToSendMessageNoise({
+        message: FAILED_TO_SEND_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party Failed-to-send-message throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: FAILED_TO_SEND_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party Failed-to-send-message throw from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      filename: 'apps/web/src/features/session/websocket.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a near-worded message (over-match guard)', () => {
+  // Only the EXACT `Failed to send message` string is noise. A near-worded
+  // message (e.g. a different transport-failure wording, or a first-party
+  // throw with extra context) keeps reporting so the matcher does not
+  // over-match a real first-party transport regression.
+  for (const message of [
+    'Failed to send message.',
+    'Failed to send a message',
+    'Failed to send messages',
+    'failed to send message',
+    'Failed to send message: WebSocket is not open',
+    'Could not send message',
+    'Message failed to send',
+  ]) {
+    assert.equal(
+      isFailedToSendMessageNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for near-worded "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the Connection closed. message under the Failed-to-send-message matcher (and vice versa)', () => {
+  // The two sibling matchers are message-specific: a `Connection closed.`
+  // event must not be swallowed by the `Failed to send message` guard, and
+  // a `Failed to send message` event must not be swallowed by the
+  // `Connection closed.` guard (which would also keep reporting because it
+  // has no first-party frame but the wrong message).
+  assert.equal(
+    isFailedToSendMessageNoise({
+      message: 'Connection closed.',
+      frames: [],
+    }),
+    false,
+    'Failed-to-send-message matcher must not swallow the Connection closed. message',
+  )
+  assert.equal(
+    isConnectionClosedNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      frames: [],
+    }),
+    false,
+    'Connection-closed matcher must not swallow the Failed to send message',
+  )
 })
