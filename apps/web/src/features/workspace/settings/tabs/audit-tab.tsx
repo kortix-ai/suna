@@ -140,8 +140,12 @@ export function AuditTabView({
   auditSlot,
   webhooksSlot,
 }: AuditTabViewProps) {
+  // `max-w-4xl` is the TABLE tier. `auditSlot` is `components/iam/audit-tab.tsx`,
+  // which renders a 5-column audit log (Event / Scope / Principal / Result / Time)
+  // whose cells alone declare `max-w-[360px]` + 2 × `max-w-[220px]` = 800px of
+  // content — past what `max-w-2xl` (672px) can hold. See `tab-content-width.test.ts`.
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8">
+    <div className="mx-auto w-full max-w-4xl space-y-8">
       {/* `space-y-10` wrapper — matches `page.tsx:561`'s gap between the log
           block and the webhooks card exactly. Always rendered, independent
           of which branch below fires. Carries the pane heading as its first

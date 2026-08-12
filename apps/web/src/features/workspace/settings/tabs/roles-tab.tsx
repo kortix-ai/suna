@@ -95,8 +95,11 @@ export function RolesTabView({
   rbacEnabled = false,
   rolesSlot,
 }: RolesTabViewProps) {
+  // `max-w-4xl` is the TABLE tier. `rolesSlot` is `components/iam/roles-tab.tsx`,
+  // which renders a 5-column role table (Name / Type / Origin / Used by / actions).
+  // See `tab-content-width.test.ts`.
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8">
+    <div className="mx-auto w-full max-w-4xl space-y-8">
       <SettingsTabHeader tab="roles" />
       {isLoading ? (
         <Skeleton className="h-64 w-full rounded-md" />

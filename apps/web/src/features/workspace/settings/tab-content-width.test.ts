@@ -25,15 +25,19 @@
  *
  * The check that decides the tier reads the tab's SUBTREE, not just its own
  * file. Half these tabs are a container plus a slot, and the table lives in the
- * slot child: Audit's is in `components/iam/audit-tab.tsx` (13 elements),
- * Roles' in `components/iam/roles-tab.tsx` (11), Api-keys' in
- * `components/iam/api-keys-card.tsx` (rewritten 2026-08-12; the table used to
- * live in the deleted `service-accounts-card.tsx`), Usage's in
- * `features/billing/credit-transactions.tsx` (15). Grepping only
- * `settings/tabs/*.tsx` finds a table in `members-tab.tsx` alone and reads those
- * four as card lists, which is how a 7-column audit log nearly lost 224px of
- * column. `TAB_SUBTREE` below is that missing hop, and the test asserts each
- * mapped child is really mounted so the map cannot rot into a rubber stamp.
+ * slot child. Counts below are `TABLE_MARKUP` matches / `<TableHead>` columns,
+ * re-measured 2026-08-12: Audit's table is in `components/iam/audit-tab.tsx`
+ * (17 / 5 — Event, Scope, Principal, Result, Time), Roles' in
+ * `components/iam/roles-tab.tsx` (15 / 5), Api-keys' in
+ * `components/iam/api-keys-card.tsx` (17 / 6; rewritten 2026-08-12, the table
+ * used to live in the deleted `service-accounts-card.tsx`), Usage's in
+ * `features/billing/transactions-table.tsx` (17 / 6), which
+ * `features/billing/credit-transactions.tsx` mounts — see `CHILD_SUBTREE`.
+ * Grepping only `settings/tabs/*.tsx` finds a table in `members-tab.tsx` alone
+ * (12 / 4) and reads those four as card lists, which is how a 5-column audit log
+ * nearly lost 224px of column. `TAB_SUBTREE` below is that missing hop, and the
+ * test asserts each mapped child is really mounted so the map cannot rot into a
+ * rubber stamp.
  *
  * This test exists because the rule is otherwise unenforceable: a new tab that
  * picks its own width compiles, renders, and passes every other test. Adding a
@@ -106,16 +110,37 @@ const TAB_SUBTREE: Record<string, string[]> = {
   ],
 };
 
+/**
+ * A slot child that is itself a container plus a slot, so the walk needs one more
+ * hop. `usage-tab.tsx` mounts `CreditTransactions`, which in `fe41e4749c` moved
+ * its 6-column credit ledger out to `transactions-table.tsx` and now mounts it as
+ * `<CreditTransactionsTable>`. The tier did not change — the table did not go
+ * away, it moved one file further out — but a one-hop walk reads Usage as a card
+ * list. That is the same false negative the header describes, one level deeper,
+ * and it is why `TAB_SUBTREE` alone is not enough.
+ */
+const CHILD_SUBTREE: Record<string, string[]> = {
+  'features/billing/credit-transactions.tsx': ['features/billing/transactions-table.tsx'],
+};
+
 function tabSource(file: string): string {
   return readFileSync(join(TABS_DIR, file), 'utf8');
 }
 
-/** True when the tab renders a table itself OR through a slot child. */
+function srcFile(relative: string): string {
+  return readFileSync(join(SRC_DIR, relative), 'utf8');
+}
+
+/** True when the mapped child renders a table itself OR through its own slot child. */
+function childRendersTable(child: string): boolean {
+  if (TABLE_MARKUP.test(srcFile(child))) return true;
+  return (CHILD_SUBTREE[child] ?? []).some(childRendersTable);
+}
+
+/** True when the tab renders a table itself OR anywhere in its mapped subtree. */
 function rendersTable(file: string): boolean {
   if (TABLE_MARKUP.test(tabSource(file))) return true;
-  return (TAB_SUBTREE[file] ?? []).some((child) =>
-    TABLE_MARKUP.test(readFileSync(join(SRC_DIR, child), 'utf8')),
-  );
+  return (TAB_SUBTREE[file] ?? []).some(childRendersTable);
 }
 
 function firstContainerWidth(file: string): string | null {
@@ -186,6 +211,18 @@ describe('settings tab content width', () => {
       }
     }
   });
+
+  // Same guard, one hop deeper: `CHILD_SUBTREE` is what keeps Usage in the wide
+  // tier, so a pointer at a file `credit-transactions.tsx` no longer mounts would
+  // make that tier a matter of taste again.
+  test('every mapped grandchild is actually mounted by its slot child', () => {
+    for (const [parent, children] of Object.entries(CHILD_SUBTREE)) {
+      const source = srcFile(parent);
+      for (const child of children) {
+        expect(source).toContain(child.replace(/\.tsx$/, ''));
+      }
+    }
+  });
 });
 
 /**
@@ -234,10 +271,6 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
   'features/workspace/customize/sections/view/voice-view.tsx',
   'components/projects/schedule-view.tsx',
 ];
-
-function srcFile(relative: string): string {
-  return readFileSync(join(SRC_DIR, relative), 'utf8');
-}
 
 describe('customize sections mounted in the settings panel', () => {
   test('the shared wrapper defaults to the panel column, not a third width', () => {
