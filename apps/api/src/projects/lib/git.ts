@@ -763,6 +763,18 @@ export async function authorizeGitProxy(
         ))
         .limit(1);
       if (!sandbox) {
+        // Not a session box — a MONITOR box authenticates with the same token
+        // class but lives in `project_monitor_boxes` (it has no session row by
+        // design; docs/specs/2026-08-12-monitors.md §Security model). It clones
+        // the repo at default-branch HEAD through this proxy — the
+        // clone-credential route is session-shaped and cannot serve it.
+        const { loadMonitorBoxForToken } = await import('./monitor-ingest');
+        const monitorBox = await loadMonitorBoxForToken({
+          projectId,
+          accountId: result.accountId,
+          sandboxId: result.sandboxId,
+        });
+        if (monitorBox) return { ok: true, project };
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
