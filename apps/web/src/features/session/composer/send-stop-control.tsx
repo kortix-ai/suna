@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 
@@ -92,7 +91,7 @@ export function SendStopControl({
             size="sm"
             disabled={!questionCanAct || disabled}
             onClick={onSubmit}
-            className={cn(ICON_BUTTON)}
+            className="hit-area-1 shrink-0 rounded-lg duration-300 ease-out active:scale-[0.96] active:duration-150"
           >
             {questionButtonLabel}
           </Button>
