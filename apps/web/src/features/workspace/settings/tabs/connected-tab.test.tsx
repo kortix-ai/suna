@@ -16,8 +16,24 @@ const headings = (html: string): string[] =>
  * `headings()` matches only the pane's own `<h2>`. Reading the label slot is
  * the same assertion against the shape the component actually renders.
  */
-const rowLabels = (html: string): string[] =>
-  [...html.matchAll(/<div[^>]*data-slot="field-label"[^>]*>([^<]*)<\/div>/g)].map((m) => m[1]);
+const ROW_LABEL = /<div[^>]*data-slot="field-label"[^>]*>([^<]*)<\/div>/g;
+
+const rowLabels = (html: string): string[] => [...html.matchAll(ROW_LABEL)].map((m) => m[1]);
+
+/**
+ * Character offset of one provider row's label in the rendered markup.
+ *
+ * Reads the same `field-label` slot `rowLabels` does, so an ordering assertion
+ * and a presence assertion can never disagree about what "the GitHub row" is.
+ * Throws rather than returning `-1` for a missing label: a silently negative
+ * index would make every `toBeLessThan` below pass for the wrong reason.
+ */
+const rowLabelIndex = (html: string, label: string): number => {
+  for (const match of html.matchAll(ROW_LABEL)) {
+    if (match[1] === label) return match.index;
+  }
+  throw new Error(`no settings row is labelled "${label}"`);
+};
 
 /** `Skeleton` (`ui/skeleton.tsx`) carries no data-slot; `animate-pulse` is its
  *  stable marker and nothing else in this view animates. */
@@ -139,7 +155,26 @@ describe('ConnectedAccountsTabView', () => {
   // `renderToStaticMarkup` doesn't provide, so these tests stand a marker
   // `<div>` in for it — same pattern `api-keys-tab.test.tsx` uses for its
   // slots.
-  test('the GitHub App setup slot renders immediately after the GitHub section — matches page.tsx:579-583', () => {
+  //
+  // ORDERING, 2026-08-12. This test used to require the slot to sit BETWEEN
+  // the GitHub row and the ChatGPT row, copying `page.tsx:579-583` where the
+  // account-level `GitHubConnectionCard` was followed by this card. That order
+  // cannot be transplanted, because the surface it was ported onto is a
+  // different shape: the two provider rows are one `SettingsRowGroup` (a
+  // single bordered box whose rows share hairlines), and the setup card is a
+  // titled section owning its own bordered panel. Landing it between the rows
+  // means splitting the group in two — ChatGPT orphaned under a tall operator
+  // section, the provider list back to the stack of cards `settings-row.tsx`
+  // exists to prevent. See the ordering comment in `connected-tab.tsx`.
+  //
+  // The slot leads the pane instead, and what this test pins is the invariant
+  // that carries the meaning: the two GitHub surfaces stay CONTIGUOUS, ordered
+  // widest scope first — instance ("every project on this instance") →
+  // account ("shared by every project") → workspace ("for this workspace") —
+  // the same descending scope the row copy already states. Nothing may
+  // separate the setup section from the GitHub row it configures, and nothing
+  // may push it past ChatGPT.
+  test('the GitHub App setup slot leads the pane, contiguous with the GitHub row it configures', () => {
     const out = renderToStaticMarkup(
       <ConnectedAccountsTabView
         canManageAccount
@@ -148,9 +183,18 @@ describe('ConnectedAccountsTabView', () => {
         githubAppSetupSlot={<div>github-app-setup-marker</div>}
       />,
     );
-    expect(out).toContain('github-app-setup-marker');
-    expect(out.indexOf('GitHub')).toBeLessThan(out.indexOf('github-app-setup-marker'));
-    expect(out.indexOf('github-app-setup-marker')).toBeLessThan(out.indexOf('ChatGPT'));
+    const slot = out.indexOf('github-app-setup-marker');
+    expect(slot).toBeGreaterThan(-1);
+
+    // Descending scope: instance-level setup, then the account-level row, then
+    // the workspace-level one.
+    expect(slot).toBeLessThan(rowLabelIndex(out, 'GitHub'));
+    expect(rowLabelIndex(out, 'GitHub')).toBeLessThan(rowLabelIndex(out, 'ChatGPT'));
+
+    // Contiguous: the first provider row after the setup section is the GitHub
+    // one. Moving the slot below the group, between the two rows, or past
+    // ChatGPT each fails one of these.
+    expect(rowLabels(out.slice(slot))[0]).toBe('GitHub');
   });
 
   test('the GitHub App setup slot is absent without account.write, same as the GitHub row it pairs with', () => {

@@ -190,7 +190,26 @@ export function ConnectedAccountsTabView({
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="connected" />
 
-      {canManageAccount ? <>{githubAppSetupSlot}</> : null}
+      {/* Managed GitHub — the instance's git backend — leads the pane, and the
+          pane then descends by scope: instance → account (the GitHub row,
+          "shared by every project") → workspace (ChatGPT, "for this
+          workspace"). That is the same descending scope the row descriptions
+          already state, and it puts the prerequisite above the things it
+          unblocks: without a managed-git connection no project gets a
+          repository at all.
+
+          It does NOT sit between the GitHub and ChatGPT rows, which is where
+          `accounts/[id]/page.tsx:579-583` put it relative to the account-level
+          `GitHubConnectionCard` this row replaced. That order cannot be
+          transplanted. The card is a titled section with its own bordered
+          panel; the rows are one `SettingsRowGroup`, a single bordered box
+          whose rows share hairlines. Landing the card between them splits the
+          group in two, orphans ChatGPT under a tall operator section, and
+          turns the provider list back into the stack of cards
+          `settings-row.tsx` exists to prevent. Leading the pane keeps the two
+          GitHub surfaces adjacent — which the old order also achieved — without
+          paying that cost. */}
+      {canManageAccount ? githubAppSetupSlot : null}
 
       <SettingsRowGroup>
         {canManageAccount && (
