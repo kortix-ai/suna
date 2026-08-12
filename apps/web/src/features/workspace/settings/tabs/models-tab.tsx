@@ -65,7 +65,7 @@ export interface ModelsTabViewProps {
 export function ModelsTabView({ gatewaySlot }: ModelsTabViewProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-6 pt-8">
+      <div className="shrink-0 p-6 pb-0">
         <SettingsTabHeader tab="models" />
       </div>
       <div className="min-h-0 flex-1">{gatewaySlot}</div>

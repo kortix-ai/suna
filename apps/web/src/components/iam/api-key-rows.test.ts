@@ -5,7 +5,8 @@ import type { AccountToken, KortixProject } from '@kortix/sdk';
 import {
   RUNTIME_TOKEN_NAME_PREFIX,
   buildApiKeyRows,
-  countApiKeysByStatus,
+  apiKeyFilter,
+  countApiKeys,
   filterApiKeyRows,
   isRuntimeMintedKey,
   shortKeyHint,
@@ -288,8 +289,8 @@ describe('filterApiKeyRows', () => {
   });
 });
 
-describe('countApiKeysByStatus', () => {
-  test('counts each state and the total', () => {
+describe('countApiKeys', () => {
+  test('counts every option the one filter offers, plus the total', () => {
     const rows = buildApiKeyRows({
       now: NOW,
       tokens: [
@@ -298,11 +299,72 @@ describe('countApiKeysByStatus', () => {
         token({ token_id: 'c', expires_at: YESTERDAY }),
         token({ token_id: 'd', status: 'revoked' }),
       ],
+      serviceAccounts: [serviceAccount({ service_account_id: 'ci' })],
     });
-    expect(countApiKeysByStatus(rows)).toEqual({ all: 4, active: 2, expired: 1, revoked: 1 });
+    expect(countApiKeys(rows)).toEqual({
+      all: 5,
+      active: 3,
+      expired: 1,
+      revoked: 1,
+      personal: 4,
+      automation: 1,
+    });
   });
 
-  test('an empty list counts zeroes, so the filter bar still renders numbers', () => {
-    expect(countApiKeysByStatus([])).toEqual({ all: 0, active: 0, expired: 0, revoked: 0 });
+  test('an empty list counts zeroes rather than going undefined per option', () => {
+    expect(countApiKeys([])).toEqual({
+      all: 0,
+      active: 0,
+      expired: 0,
+      revoked: 0,
+      personal: 0,
+      automation: 0,
+    });
+  });
+});
+
+/**
+ * The single filter control replaced a status pill strip AND a type dropdown,
+ * so the one thing that can break is the axis a value lands on: pick
+ * "Automation" and get the expired keys, and the list is lying. These are the
+ * assertions that pin it.
+ */
+describe('apiKeyFilter', () => {
+  const rows = buildApiKeyRows({
+    now: NOW,
+    tokens: [
+      token({ token_id: 'live', name: 'My laptop' }),
+      token({ token_id: 'lapsed', name: 'Old key', expires_at: YESTERDAY }),
+      token({ token_id: 'dead', name: 'Leaked key', status: 'revoked' }),
+    ],
+    serviceAccounts: [serviceAccount({ service_account_id: 'ci' })],
+  });
+
+  test('"all" constrains neither axis', () => {
+    expect(apiKeyFilter('all')).toEqual({});
+    expect(filterApiKeyRows(rows, apiKeyFilter('all'))).toHaveLength(4);
+  });
+
+  test('a status value lands on the status axis, never on the type axis', () => {
+    expect(apiKeyFilter('expired')).toEqual({ status: 'expired' });
+    expect(filterApiKeyRows(rows, apiKeyFilter('expired')).map((r) => r.id)).toEqual(['lapsed']);
+    expect(filterApiKeyRows(rows, apiKeyFilter('revoked')).map((r) => r.id)).toEqual(['dead']);
+  });
+
+  test('a type value lands on the type axis, never on the status axis', () => {
+    expect(apiKeyFilter('automation')).toEqual({ kind: 'automation' });
+    expect(filterApiKeyRows(rows, apiKeyFilter('automation')).map((r) => r.id)).toEqual(['ci']);
+    expect(filterApiKeyRows(rows, apiKeyFilter('personal')).map((r) => r.id)).toEqual([
+      'live',
+      'lapsed',
+      'dead',
+    ]);
+  });
+
+  /** The search field is what covers the pairs a single axis cannot express. */
+  test('the search still composes with whichever axis is selected', () => {
+    const filter = { ...apiKeyFilter('revoked'), search: 'leaked' };
+    expect(filterApiKeyRows(rows, filter).map((r) => r.id)).toEqual(['dead']);
+    expect(filterApiKeyRows(rows, { ...apiKeyFilter('active'), search: 'leaked' })).toEqual([]);
   });
 });

@@ -1,79 +1,83 @@
 'use client';
 
 /**
- * The Snapshots tab — the sandbox image build log: status banner, per-build
- * rows with error categories, and the project-accelerator section. **No
- * template form.** Split off `sandbox-view.tsx`'s `SandboxView`, which used
- * to render this content AND the sandbox template CRUD list together on one
- * 858-line page (Task 20's brief). Template list, create, edit, and delete
- * move to `sandbox-tab.tsx` instead — see that file's header comment.
- * `settings-panel.tsx:997-1003` used to leave `snapshots` on a bare
- * placeholder specifically BECAUSE mounting the unsplit `SandboxView` on
- * both tabs would have rendered this build log twice; that constraint is
- * what this split removes. `snapshots` stays deliberately absent from
- * `ACCOUNT_SCOPED_SETTINGS_TABS` in `settings-panel.tsx` — this tab is
- * project-scoped only, same as `sandbox`, and takes no
- * `ACCOUNT_TAB_PERMISSION` entry.
+ * The Snapshots tab — what Kortix prepared for this project, and when.
  *
- * **What moved here, verbatim, from `sandbox-view.tsx`:** `BuildRow`,
- * `isProjectAcceleratorBuild`, `SandboxStatusBanner`, `CATEGORY_LABEL`,
- * `BUILD_SOURCE_LABEL`, `BUILD_STATUS_TILE` (+ its `CheckCircleFilled`/
- * `XCircleFilled` icons), `STALE_FAILURE_LABEL`/`STALE_FAILURE_HINT`,
- * `ProviderBadge`, and `formatBuildDuration` — all per JAY-508's mapping of
- * `ProjectSnapshotBuild`/`ProjectSnapshotStatus` to the Snapshots half.
- * `formatRelative` also moved here (and is separately duplicated, not
- * shared, in `sandbox-tab.tsx` — see that file's header comment).
+ * **The problem this layout solves.** The pane used to open on a bare "Build
+ * log" of `kortix-tpl-…` strings, provider names and raw stderr, with a
+ * second "Project accelerator" section below it carrying an `InfoBanner` that
+ * mentioned "the shared session runtime" and `/workspace`. Nothing on screen
+ * said what a snapshot was, whether the project was currently fine, or how the
+ * two sections related — so a reader who is not a platform engineer had no way
+ * in. Every fact below is still here; the difference is that the plain-language
+ * answer is on the surface and the jargon is one click down.
+ *
+ * The shape, top to bottom:
+ *
+ *  1. **The heading answers "what is this page".** The description lives in
+ *     `rail.ts` beside the label (see `type.ts`), as does `docsHref` — which is
+ *     why the Docs button in the heading is not built here.
+ *  2. **One status surface, always.** `SandboxStatusBanner` when a failure
+ *     still bites (`blocked` / `degraded`), `EnvironmentSummary` otherwise.
+ *     A healthy project used to get nothing at all, so "is my project OK?"
+ *     could only be answered by reading a log. `unknown` state and an absent
+ *     `status` still render nothing — the API could not observe the providers,
+ *     and inventing an answer is worse than none (see `SandboxRuntimeState`).
+ *  3. **Every build row is a disclosure**, not only failed ones. Collapsed: the
+ *     template name, a status badge, and one plain sentence saying what the row
+ *     means. Expanded: the facts — trigger, start, duration, provider, image id
+ *     (copyable), and for a failure the category, what it means in plain words,
+ *     and the raw log.
+ *  4. **"How this works"** — three questions that the pane provoked and never
+ *     answered, including the one that matters most: a red row is not
+ *     automatically a live outage.
+ *
+ * **Why the row body is `BuildDetails`, exported.** `DisclosureContent`
+ * unmounts its children while closed (`disclosure.tsx` — `AnimatePresence`
+ * with `{open && …}`), so a collapsed `BuildRow` renders none of them. A test
+ * asserting "the provider is never named on Automatic" against a collapsed row
+ * therefore passes no matter what the body does — it is structurally unable to
+ * fail. `BuildDetails` is a separate exported component so that contract has
+ * something real to assert against.
+ *
+ * **`describeBuildOutcome` is pure and exported** for the same reason
+ * `resolveDisclosureToggle` is: it is the whole vocabulary decision — which
+ * words a row uses for its state — and it should be testable without a DOM.
+ *
+ * **What the stale-failure badges became.** `superseded` / `resolved` /
+ * `retrying` were `Badge`s whose meaning sat behind a `Hint`, i.e. a jargon
+ * word with its explanation hidden on hover. They are now the row's summary
+ * sentence ("Didn't finish, but a newer setup replaced it"). The tile logic is
+ * unchanged and still load-bearing: a failure that no longer blocks anything
+ * does not get a red tile, which is how an 11-day-old error once passed for a
+ * live outage.
+ *
+ * **Provenance.** Split from `sandbox-view.tsx` per JAY-508; the template list,
+ * create, edit and delete live in `sandbox-tab.tsx`. `snapshots` stays
+ * deliberately absent from `ACCOUNT_SCOPED_SETTINGS_TABS` in
+ * `settings-panel.tsx` — this tab is project-scoped only, same as `sandbox`,
+ * and takes no `ACCOUNT_TAB_PERMISSION` entry.
  *
  * **Gate — preserved exactly.** `canManage` is
- * `projectQuery.data?.effective_project_role === 'manager'`, byte-identical
- * to `sandbox-view.tsx`'s own computation — not re-derived from
- * `useProjectCan` or any other permission source in scope. It gates only
- * the status banner's Rebuild button (`SandboxStatusBanner`'s own prop),
- * matching the original exactly; the "Fix with agent" action there gates
- * separately on `status.fix_with_agent_available`, also unchanged.
+ * `projectQuery.data?.effective_project_role === 'manager'`, byte-identical to
+ * `sandbox-view.tsx`'s own computation. It gates only the status banner's
+ * Rebuild button; "Fix with agent" gates separately on
+ * `status.fix_with_agent_available`, also unchanged.
  *
- * **`useTranslations('hardcodedUi')` removed** from `SandboxStatusBanner` —
- * same reasoning as `sandbox-tab.tsx`'s header comment: the one string it
- * routed through `next-intl` ("Fix with agent") is inlined as a literal,
- * checked against `translations/en.json`, matching the house pattern
- * (`general-tab.tsx`/`api-keys-tab.tsx`) and making this renderable under
- * `renderToStaticMarkup` with no `NextIntlClientProvider`.
+ * **`listProjectSnapshots` — shared endpoint, split rendering.** Both tabs call
+ * the identical `useQuery({ queryKey: qk.project.snapshots(projectId) })`
+ * against one backend endpoint; this tab reads only the builds/status-shaped
+ * fields, and its `refetchInterval` polls only while a BUILD is `building`.
  *
- * **`listProjectSnapshots` — shared endpoint, split rendering.** See
- * `sandbox-tab.tsx`'s header comment: both tabs call the identical
- * `useQuery({ queryKey: qk.project.snapshots(projectId), queryFn: () =>
- * listProjectSnapshots(projectId) })` against one backend endpoint; this
- * tab reads only the builds/status-shaped fields. This tab's own
- * `refetchInterval` polls only while a BUILD is `building` (the templates-
- * provider-state half of the original combined condition lives in
- * `sandbox-tab.tsx` instead).
- *
- * **The combined "fully empty" empty state is gone by construction** — see
- * `sandbox-tab.tsx`'s header comment for the general reasoning. This tab
- * keeps the per-section empty fallback `sandbox-view.tsx` already had for
- * an empty build log (`InlinePanelEmpty` inside the Build log section) and
- * simply omits the Project accelerator section when there are no
- * accelerator builds — no separate combined empty state is needed here
- * because both of those were already independent per-section checks in the
- * original, not part of the `isFullyEmpty` (templates-AND-builds) branch.
- *
- * **Test provenance.** `snapshots-tab.test.tsx` carries forward ALL of
- * `sandbox-view.test.tsx`'s coverage (`BuildRow`/`isProjectAcceleratorBuild`
- * — same assertions, import path updated) — see that test file's own header
- * comment.
- *
- * `SnapshotsTabView` is the pure, props-only half — `BuildRow` and
- * `SandboxStatusBanner` take only plain props/callbacks (no internal
- * `useMutation`/`useQueryClient` of their own — a design already true in
- * `sandbox-view.tsx`), so unlike `sandbox-tab.tsx`'s `templatesSlot`, no
- * slot is needed here: the whole build log renders directly from data
- * props. `SnapshotsTab` is the container: every hook only runs once this
- * tab is actually mounted, which `SettingsTabPane` in `settings-panel.tsx`
- * guarantees.
+ * `SnapshotsTabView` is the pure, props-only half — no slots are needed, since
+ * every component below takes plain props. `SnapshotsTab` is the container:
+ * every hook only runs once this tab is mounted, which `SettingsTabPane` in
+ * `settings-panel.tsx` guarantees.
  */
 
 import type { ComponentType } from 'react';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -82,10 +86,7 @@ import {
   DisclosureContent,
   DisclosureTrigger,
 } from '@/components/ui/disclosure';
-import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -94,6 +95,7 @@ import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/
 import {
   type FailedBuildRelevance,
   describeFailedBuild,
+  formatSandboxProvider,
   formatSandboxProviders,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { relativeTime } from '@/lib/relative-time';
@@ -108,11 +110,16 @@ import {
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
+  CalendarBlankIcon,
   CheckCircleIcon as CheckCircleSolid,
   CaretDownIcon as ChevronDown,
   WarningIcon as DangerTriangleSolid,
+  HardDrivesIcon,
+  LightningIcon,
   ArrowClockwiseIcon as RefreshCw,
   SparkleIcon as SparklesSolid,
+  StackIcon,
+  TimerIcon,
   XCircleIcon as XCircleSolid,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
@@ -138,6 +145,34 @@ export const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   timeout: 'Build timed out',
   runtime: 'Runtime artifact missing',
   unknown: 'Build failed',
+};
+
+/**
+ * What the category means, and what to do about it — one sentence each, no
+ * jargon, addressed to whoever is reading the pane rather than to the engineer
+ * who wrote the category.
+ *
+ * `CATEGORY_LABEL` alone names the failure without explaining it: "Kortix
+ * runtime layer failed" tells a reader nothing they can act on. Every place
+ * that shows a category now shows this line under it.
+ */
+export const CATEGORY_HELP: Record<SnapshotErrorCategory, string> = {
+  quota:
+    'This workspace has stored as many prepared machines as its plan allows. Delete a sandbox template you no longer use, or raise the limit, then build again.',
+  dockerfile:
+    'A command in this project’s Dockerfile returned an error. The log below ends on the command that failed.',
+  layer:
+    'The image built, but Kortix could not install its own tools on top of it. This is usually temporary — try building again.',
+  git: 'Kortix could not read this project’s repository. Check that the repository connection is still authorised, then build again.',
+  tunnel:
+    'The new machine could not call back to Kortix while it was being set up. This is usually temporary — try building again.',
+  provider:
+    'The company that runs the machine returned an error. Nothing is wrong with your project — try building again.',
+  timeout:
+    'Preparing the machine took longer than the time limit allows. Move slow steps out of the Dockerfile, or try again when the provider is less busy.',
+  runtime:
+    'The machine was prepared, but a file Kortix needs at start-up was missing from it. Build again; if it repeats, the template’s base image is the place to look.',
+  unknown: 'The build stopped on an error Kortix could not classify. The full log is below.',
 };
 
 export const BUILD_SOURCE_LABEL: Record<NonNullable<ProjectSnapshotBuild['source']>, string> = {
@@ -186,7 +221,7 @@ function ProviderBadge({ provider }: { provider: string | null | undefined }) {
   if (!provider) return null;
   return (
     <Badge variant="muted" size="sm">
-      {provider === 'e2b' ? 'E2B' : provider.charAt(0).toUpperCase() + provider.slice(1)}
+      {formatSandboxProvider(provider)}
     </Badge>
   );
 }
@@ -207,6 +242,21 @@ function formatRelative(input: string | null | undefined): string {
   return relativeTime(input) || '—';
 }
 
+/** The exact moment, for the detail grid — "how long ago" is already on the
+ *  collapsed row, and a reader comparing a build against something that
+ *  happened in their day needs the clock time, not an age. */
+function formatStartedAt(input: string | null | undefined): string {
+  if (!input) return '—';
+  const t = new Date(input).getTime();
+  if (!Number.isFinite(t)) return '—';
+  return new Date(t).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
   return build.snapshot_name.startsWith('kortix-ppwarm-');
 }
@@ -216,17 +266,164 @@ export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean 
  * not keep shouting in red — that is exactly how an 11-day-old error passed for
  * a live outage. Only a failure that still blocks a session keeps the red tile.
  */
-const STALE_FAILURE_LABEL: Record<Exclude<FailedBuildRelevance, 'blocking'>, string> = {
-  superseded: 'superseded',
-  recovered: 'resolved',
-  retrying: 'retrying',
+const STALE_FAILURE_SUMMARY: Record<Exclude<FailedBuildRelevance, 'blocking'>, string> = {
+  superseded: 'Didn’t finish, and a newer setup has replaced it',
+  recovered: 'Didn’t finish, but the environment is ready now',
+  retrying: 'Didn’t finish — a new attempt is running',
 };
 
-const STALE_FAILURE_HINT: Record<Exclude<FailedBuildRelevance, 'blocking'>, string> = {
-  superseded: 'Built an older definition of this template. The current image has moved on.',
-  recovered: 'This image is available now — nothing to fix.',
-  retrying: 'A newer build of this same image is running.',
-};
+export interface BuildOutcome {
+  /** Row title: what the reader named this thing, not what the platform calls it. */
+  title: string;
+  /** One sentence saying what this row means for the reader. No jargon. */
+  summary: string;
+  /** `null` unless this is a failure that no longer blocks anything. */
+  stale: Exclude<FailedBuildRelevance, 'blocking'> | null;
+}
+
+/**
+ * The whole vocabulary decision for one row, as data.
+ *
+ * Pure and exported so the wording — the part most likely to regress into
+ * jargon — can be asserted directly, the same reasoning `disclosure.tsx` gives
+ * for extracting `resolveDisclosureToggle`.
+ */
+export function describeBuildOutcome(
+  build: ProjectSnapshotBuild,
+  relevance?: FailedBuildRelevance | null,
+): BuildOutcome {
+  const accelerator = isProjectAcceleratorBuild(build);
+  const title = accelerator ? 'Repository accelerator' : build.slug;
+  const stale = relevance && relevance !== 'blocking' ? relevance : null;
+
+  if (build.status === 'ready') {
+    return {
+      title,
+      stale: null,
+      summary: accelerator ? 'Head start ready for the next session' : 'Ready for new sessions',
+    };
+  }
+  if (build.status === 'building') {
+    return { title, stale: null, summary: 'Being prepared now' };
+  }
+  if (stale) {
+    return { title, stale, summary: STALE_FAILURE_SUMMARY[stale] };
+  }
+  // An accelerator is a head start, never a dependency: its failure costs a few
+  // seconds at session start and nothing else. Saying so on the row stops it
+  // reading like an outage.
+  if (accelerator) {
+    return { title, stale: null, summary: 'Didn’t finish — sessions still start normally' };
+  }
+  return {
+    title,
+    stale: null,
+    summary: relevance === 'blocking' ? 'New sessions can’t start on this' : 'Didn’t finish',
+  };
+}
+
+/** One label/value cell in a build's detail grid. Shape-matched to
+ *  `TemplateFact` in `sandbox-tab.tsx` so the two halves of the split read as
+ *  one system; duplicated rather than imported, exactly like `formatRelative`,
+ *  to keep this tab's chunk free of that file's mutations and modals. */
+function BuildFact({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-1.5">
+        <Icon className="text-muted-foreground size-4 shrink-0" />
+        <span className="truncate text-sm" title={value}>
+          {value}
+        </span>
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Everything technical about one build — the half that used to be on the row
+ * itself, now one click down.
+ *
+ * Exported because `DisclosureContent` unmounts while closed, so this is the
+ * only way to assert its contract (see this file's header comment). The
+ * provider rule is the reason that matters: a project on Automatic must never
+ * be told which provider a build resolved to, and testing that through a
+ * collapsed row would assert nothing.
+ */
+export function BuildDetails({
+  build,
+  providerMode = 'automatic',
+}: {
+  build: ProjectSnapshotBuild;
+  providerMode?: SandboxProviderMode;
+}) {
+  const duration = formatBuildDuration(build.started_at, build.finished_at);
+  const category = build.error_category ?? 'unknown';
+  // Only a project that has explicitly pinned a provider gets told which one a
+  // build resolved to — on Automatic the answer is an implementation detail
+  // that changes under the reader.
+  const provider = providerMode === 'pinned' ? build.provider : null;
+
+  return (
+    <div className="space-y-4">
+      {/* `tabular-nums` on the grid: durations and clock times are the same
+          digits repeated down every open row, and proportional figures make
+          them wander. Matches `sandbox-tab.tsx`'s spec grid. */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-4 tabular-nums sm:grid-cols-3">
+        <BuildFact
+          icon={LightningIcon}
+          label="Triggered by"
+          value={build.source ? BUILD_SOURCE_LABEL[build.source] : 'Unknown'}
+        />
+        <BuildFact
+          icon={CalendarBlankIcon}
+          label="Started"
+          value={formatStartedAt(build.started_at)}
+        />
+        <BuildFact
+          icon={TimerIcon}
+          label="Took"
+          value={duration ?? (build.status === 'building' ? 'Still running' : '—')}
+        />
+        {provider ? (
+          <BuildFact
+            icon={HardDrivesIcon}
+            label="Runs on"
+            value={formatSandboxProvider(provider)}
+          />
+        ) : null}
+      </dl>
+
+      {/* The one string support will ask for, so it is copyable rather than
+          something to transcribe out of a log by hand. */}
+      <div className="bg-muted/40 flex items-center gap-2 rounded-sm py-1 pr-1 pl-2.5">
+        <span className="text-muted-foreground shrink-0 text-xs">Image ID</span>
+        <code className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
+          {build.snapshot_name}
+        </code>
+        <CopyButton code={build.snapshot_name} size="sm" />
+      </div>
+
+      {build.status === 'failed' && build.error ? (
+        <div className="space-y-2">
+          <p className="text-foreground text-sm font-medium">{CATEGORY_LABEL[category]}</p>
+          <p className="text-muted-foreground text-sm text-pretty">{CATEGORY_HELP[category]}</p>
+          <pre className="bg-muted/50 text-muted-foreground max-h-40 overflow-auto rounded-sm p-2.5 text-xs wrap-break-word whitespace-pre-wrap">
+            {build.error}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function BuildRow({
   build,
@@ -241,101 +438,63 @@ export function BuildRow({
 }) {
   const status = BUILD_STATUS_TILE[build.status];
   const { Icon } = status;
-  const stale = relevance && relevance !== 'blocking' ? relevance : null;
-  const duration = formatBuildDuration(build.started_at, build.finished_at);
-  const sourceLabel = build.source ? BUILD_SOURCE_LABEL[build.source] : null;
+  const outcome = describeBuildOutcome(build, relevance);
+  const stale = outcome.stale;
   const timestamp = formatRelative(build.finished_at ?? build.started_at);
-  const hasErrorDetails = build.status === 'failed' && !!build.error;
-  const accelerator = isProjectAcceleratorBuild(build);
-
-  const row = (
-    <>
-      <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-sm',
-          stale ? 'border-border text-muted-foreground border' : status.tileBg,
-        )}
-      >
-        <Icon className={cn('size-5 shrink-0', stale ? undefined : status.iconColor)} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              'truncate text-sm font-medium',
-              stale ? 'text-muted-foreground' : 'text-foreground',
-            )}
-          >
-            {accelerator ? 'Repository accelerator' : build.slug}
-          </span>
-          <Badge variant={stale ? 'muted' : status.badgeVariant} size="xs">
-            {status.label}
-          </Badge>
-          {stale ? (
-            <Hint label={STALE_FAILURE_HINT[stale]}>
-              <Badge variant="muted" size="xs">
-                {STALE_FAILURE_LABEL[stale]}
-              </Badge>
-            </Hint>
-          ) : null}
-          {providerMode === 'pinned' ? <ProviderBadge provider={build.provider} /> : null}
-        </div>
-        <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-          <span className="truncate font-mono">{build.snapshot_name}</span>
-          {sourceLabel ? (
-            <>
-              <span className="text-muted-foreground/40">&bull;</span>
-              <span className="shrink-0">{sourceLabel}</span>
-            </>
-          ) : null}
-          {timestamp ? (
-            <>
-              <span className="text-muted-foreground/40">&bull;</span>
-              <span className="shrink-0 tabular-nums">{timestamp}</span>
-            </>
-          ) : null}
-        </div>
-      </div>
-      {build.status === 'building' ? null : duration ? (
-        <span className="text-muted-foreground/70 shrink-0 font-mono text-xs tabular-nums">
-          {duration}
-        </span>
-      ) : null}
-      {hasErrorDetails ? (
-        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/build:rotate-180" />
-      ) : null}
-    </>
-  );
-
-  if (hasErrorDetails) {
-    return (
-      <li className="overflow-hidden transition-colors">
-        <Disclosure
-          className="group/build bg-popover overflow-hidden"
-          variant="outline"
-          transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-        >
-          <DisclosureTrigger>
-            <div className="flex w-full items-center gap-3 px-4 py-2">{row}</div>
-          </DisclosureTrigger>
-          <DisclosureContent className="overflow-hidden">
-            <DisclosureBody className="bg-secondary space-y-2 rounded-t-lg px-4 py-3">
-              {build.error_category ? (
-                <Label className="text-foreground">{CATEGORY_LABEL[build.error_category]}</Label>
-              ) : null}
-              <pre className="bg-muted/50 text-muted-foreground max-h-28 overflow-auto rounded-sm text-xs wrap-break-word whitespace-pre-wrap">
-                {build.error}
-              </pre>
-            </DisclosureBody>
-          </DisclosureContent>
-        </Disclosure>
-      </li>
-    );
-  }
 
   return (
-    <li className="group bg-popover rounded-md border transition-colors">
-      <div className="flex items-center gap-3 px-4 py-2">{row}</div>
+    <li>
+      {/* Every row opens, not only failed ones. A row that looked identical to
+          its neighbour but silently refused to expand taught readers that the
+          chevron meant nothing, so they stopped trying the rows that did hold
+          an answer. */}
+      <Disclosure
+        className="group/build bg-popover overflow-hidden"
+        variant="outline"
+        transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+      >
+        <DisclosureTrigger>
+          <div className="focus-visible:ring-kortix-base hover:bg-foreground/[0.03] flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors outline-none focus-visible:ring-[0.6px]">
+            <span
+              className={cn(
+                'flex size-9 shrink-0 items-center justify-center rounded-sm',
+                stale ? 'border-border text-muted-foreground border' : status.tileBg,
+              )}
+            >
+              <Icon className={cn('size-5 shrink-0', stale ? undefined : status.iconColor)} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    'truncate text-sm font-medium',
+                    stale ? 'text-muted-foreground' : 'text-foreground',
+                  )}
+                >
+                  {outcome.title}
+                </span>
+                <Badge variant={stale ? 'muted' : status.badgeVariant} size="xs">
+                  {status.label}
+                </Badge>
+                {providerMode === 'pinned' ? <ProviderBadge provider={build.provider} /> : null}
+              </div>
+              {/* Where `kortix-tpl-…` used to be. The snapshot name identifies
+                  nothing a reader recognises; the sentence does. */}
+              <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+                <span className="truncate">{outcome.summary}</span>
+                <span className="text-muted-foreground/40">&bull;</span>
+                <span className="shrink-0 tabular-nums">{timestamp}</span>
+              </div>
+            </div>
+            <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/build:rotate-180" />
+          </div>
+        </DisclosureTrigger>
+        <DisclosureContent className="overflow-hidden" contentClassName="border-border border-t">
+          <DisclosureBody className="px-4 py-4">
+            <BuildDetails build={build} providerMode={providerMode} />
+          </DisclosureBody>
+        </DisclosureContent>
+      </Disclosure>
     </li>
   );
 }
@@ -347,6 +506,84 @@ function InlinePanelEmpty({ message }: { message: string }) {
     </div>
   );
 }
+
+/**
+ * The calm half of the status pair: what a reader sees when nothing is wrong.
+ *
+ * The pane used to show a banner ONLY when a failure still bit, which meant a
+ * healthy project opened onto a log with no verdict anywhere on it — the one
+ * question a non-technical reader has ("is my project OK?") was answerable only
+ * by interpreting rows. `blocked` and `degraded` still belong to
+ * `SandboxStatusBanner`; `unknown` and an absent status render nothing, because
+ * the API is telling us it could not observe the providers and a confident
+ * "everything's fine" would be a fabrication.
+ */
+function EnvironmentSummary({ status }: { status: SandboxRuntimeStatus }) {
+  const summary = ENVIRONMENT_SUMMARY[status.state];
+  if (!summary) return null;
+  const { Icon } = summary;
+
+  return (
+    <div className="border-border bg-popover flex items-start gap-3 rounded-md border px-4 py-3">
+      <span
+        className={cn(
+          'flex size-9 shrink-0 items-center justify-center rounded-sm',
+          summary.tileBg,
+        )}
+      >
+        <Icon className={cn('size-5 shrink-0', summary.iconColor)} />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-foreground text-sm font-medium text-balance">{summary.title}</p>
+        <p className="text-muted-foreground text-sm text-pretty">{summary.body}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Keyed by `SandboxRuntimeStatus['state']` and deliberately PARTIAL: `blocked`
+ * and `degraded` belong to `SandboxStatusBanner`, and `unknown` gets no entry
+ * because the API is saying it could not observe the providers. A missing key
+ * renders nothing, which is the honest answer in all three cases.
+ */
+const ENVIRONMENT_SUMMARY: Partial<
+  Record<
+    SandboxRuntimeStatus['state'],
+    {
+      title: string;
+      body: string;
+      tileBg: string;
+      iconColor: string;
+      Icon: ComponentType<{ className?: string }>;
+    }
+  >
+> = {
+  ready: {
+    title: 'This project’s environment is ready',
+    body: 'New sessions start on the prepared machine right away. There is nothing to do on this page.',
+    tileBg: 'bg-kortix-green/15',
+    iconColor: 'text-kortix-green',
+    Icon: CheckCircleFilled,
+  },
+  building: {
+    title: 'Preparing this project’s environment',
+    body: 'A new machine is being prepared. Sessions started now wait for it to finish — they don’t fail.',
+    tileBg: 'bg-kortix-yellow/15',
+    iconColor: 'text-kortix-yellow',
+    Icon: Loading,
+  },
+  // Neutral, not tinted: nothing has happened yet, so the tile carries the
+  // same outlined treatment a stale build row gets rather than borrowing a
+  // status colour it has not earned.
+  not_built: {
+    title: 'Nothing prepared yet',
+    body: 'Kortix prepares a machine the first time you start a session here. Nothing needs to be set up in advance.',
+    tileBg: 'border-border border',
+    iconColor: 'text-muted-foreground',
+    Icon: StackIcon,
+  },
+};
 
 /**
  * Shown only when a failure still bites — i.e. the API's derived state is
@@ -401,9 +638,16 @@ function SandboxStatusBanner({
               </p>
               <p className="text-muted-foreground text-sm text-balance">
                 {blocked
-                  ? 'The image this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.'
-                  : `The image is ready on ${formatSandboxProviders(status.ready_providers)} but failing on ${formatSandboxProviders(status.failed_providers)}. Sessions routed there won’t start.`}
+                  ? 'The machine this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.'
+                  : `The machine is ready on ${formatSandboxProviders(status.ready_providers)} but failing on ${formatSandboxProviders(status.failed_providers)}. Sessions routed there won’t start.`}
               </p>
+              {/* The category names the failure; without this line it names it
+                  to a reader who cannot act on the name. */}
+              {failure?.error_category ? (
+                <p className="text-muted-foreground text-sm text-pretty">
+                  {CATEGORY_HELP[failure.error_category]}
+                </p>
+              ) : null}
               {failure ? (
                 <InlineMeta>
                   <code className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-xs">
@@ -438,7 +682,7 @@ function SandboxStatusBanner({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5"
+                  className="gap-1.5 transition-transform active:scale-[0.96]"
                   disabled={isRetryPending}
                   onClick={onRetry}
                 >
@@ -460,6 +704,68 @@ function SandboxStatusBanner({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The three questions this pane provokes and never answered.
+ *
+ * Same disclosure shape as a build row, deliberately: a reader who has just
+ * learned that rows open finds these open the same way. Last on the page —
+ * a returning reader wants the log, and a first-time reader has the heading's
+ * one-liner and the status panel before they get here.
+ */
+const HOW_IT_WORKS: readonly { question: string; answer: string }[] = [
+  {
+    question: 'What is a snapshot?',
+    answer:
+      'A snapshot is a machine that has already been set up: this project’s repository, its dependencies, and the Kortix tools, all installed ahead of time. Starting a session copies that prepared machine instead of installing everything from scratch, which is why a session is ready in seconds rather than minutes.',
+  },
+  {
+    question: 'Why do new rows keep appearing?',
+    answer:
+      'Kortix prepares a new machine whenever the recipe changes — a new sandbox template, an edited Dockerfile, or a merged change — and each attempt gets its own row. Older rows are kept as a record. They are history, not a list of things to deal with.',
+  },
+  {
+    question: 'One of them failed. Is that a problem?',
+    answer:
+      'Usually not. A failed attempt only matters while no working machine is left, and when that happens a banner appears at the top of this page with a Rebuild button. A failed row with no banner above it has already been replaced by one that worked.',
+  },
+];
+
+function HowItWorks() {
+  return (
+    <section className="space-y-4">
+      <SettingsSubsectionHeader title="How this works" />
+      <ul className="space-y-2">
+        {HOW_IT_WORKS.map(({ question, answer }) => (
+          <li key={question}>
+            <Disclosure
+              className="group/faq bg-popover overflow-hidden"
+              variant="outline"
+              transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+            >
+              <DisclosureTrigger>
+                <div className="focus-visible:ring-kortix-base hover:bg-foreground/[0.03] flex w-full cursor-pointer items-center gap-3 px-4 py-3 transition-colors outline-none focus-visible:ring-[0.6px]">
+                  <span className="text-foreground min-w-0 flex-1 text-sm font-medium text-pretty">
+                    {question}
+                  </span>
+                  <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/faq:rotate-180" />
+                </div>
+              </DisclosureTrigger>
+              <DisclosureContent
+                className="overflow-hidden"
+                contentClassName="border-border border-t"
+              >
+                <DisclosureBody className="px-4 py-3">
+                  <p className="text-muted-foreground text-sm text-pretty">{answer}</p>
+                </DisclosureBody>
+              </DisclosureContent>
+            </Disclosure>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -488,8 +794,7 @@ export interface SnapshotsTabViewProps {
  *  read. Kept separate from `SnapshotsTab` so this renders under
  *  `renderToStaticMarkup` with no `QueryClientProvider` — see
  *  `SandboxTabView` for the same split. Unlike that view, no slots are
- *  needed here — `BuildRow`/`SandboxStatusBanner` are already pure,
- *  props-only components (see this file's header comment). */
+ *  needed here: every component below takes plain props. */
 export function SnapshotsTabView({
   isLoading = false,
   isError = false,
@@ -516,7 +821,7 @@ export function SnapshotsTabView({
       <div className="space-y-8">
         <SettingsTabHeader tab="snapshots" />
         {isLoading ? (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {['snapshot-skeleton-1', 'snapshot-skeleton-2', 'snapshot-skeleton-3'].map((row) => (
               <Skeleton key={row} className="h-16 rounded-md" />
             ))}
@@ -543,10 +848,15 @@ export function SnapshotsTabView({
                 onFix={onFix}
                 onRetry={onRetryBuild}
               />
+            ) : status ? (
+              <EnvironmentSummary status={status} />
             ) : null}
 
             <section className="space-y-4">
-              <SettingsSubsectionHeader title="Build log" />
+              <SettingsSubsectionHeader
+                title="Build log"
+                description="One row for every time Kortix prepared a machine for this project. Open a row for the details."
+              />
               {templateBuilds.length === 0 ? (
                 <div className="border-border rounded-md border">
                   <InlinePanelEmpty message="No builds recorded yet. The platform default builds once globally; custom templates build on first use." />
@@ -567,16 +877,14 @@ export function SnapshotsTabView({
 
             {acceleratorBuilds.length > 0 ? (
               <section className="space-y-4">
-                <SettingsSubsectionHeader title="Project accelerator" />
-                <InfoBanner
-                  tone="neutral"
-                  icon={SparklesSolid}
-                  title="Optional repository acceleration"
-                >
-                  A project accelerator preloads this repository for a later session. A missing or
-                  failed accelerator never blocks a session. Kortix uses the shared session runtime
-                  and clones the repository into <code className="font-mono">/workspace</code>.
-                </InfoBanner>
+                {/* The `InfoBanner` that used to sit here said the same thing in
+                    three sentences, two of which named the shared session
+                    runtime and `/workspace`. One line, in the header the
+                    section already has, says it to the reader who needs it. */}
+                <SettingsSubsectionHeader
+                  title="Project accelerator"
+                  description="An optional head start: Kortix clones this repository in advance so a later session opens faster. A missing or failed accelerator never stops a session."
+                />
                 <ul className="space-y-2">
                   {acceleratorBuilds.slice(0, 5).map((b) => (
                     <BuildRow key={b.build_id} build={b} providerMode={providerMode} />
@@ -584,6 +892,8 @@ export function SnapshotsTabView({
                 </ul>
               </section>
             ) : null}
+
+            <HowItWorks />
           </>
         )}
       </div>

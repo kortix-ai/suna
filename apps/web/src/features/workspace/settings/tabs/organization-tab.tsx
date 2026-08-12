@@ -1,113 +1,68 @@
 'use client';
 
 /**
- * The Organization → General tab (JAY-546) — a NEW 27th tab, id
- * `organization`, label "General", placed first in the Organization group
- * (before Billing). This is deliberately a separate tab from Workspace →
- * General (`tabs/general-tab.tsx`): folding this content in there would put
- * two scopes and two danger zones (delete workspace AND delete organization)
- * on one page — Jay's call, 2026-08-10, settled, not reopened here.
+ * The Organization → General tab — the organization's name, its account-wide
+ * sign-in rules, the enterprise preview, and deletion. A separate tab from
+ * Workspace → General (`tabs/general-tab.tsx`) on purpose: folding them
+ * together would put two scopes and two danger zones (delete workspace AND
+ * delete organization) on one page — Jay's call, 2026-08-10, settled.
  *
- * **Source — mount, do not reimplement.** The live pane is
- * `app/(app)/accounts/[id]/page.tsx:621-685`, four `SettingsGroup`s under
- * `activeSection === 'settings' && canWriteAccount`:
+ * **Layout: Linear's settings shape**, the same as `profile-tab.tsx` and
+ * `general-tab.tsx`. Pane heading, then rows — label left, control right,
+ * consecutive rows sharing ONE bordered box separated by hairlines
+ * (`SettingsRowGroup` / `SettingsRow`, `components/ui/settings-row.tsx`).
+ * Sections between groups are a plain small heading
+ * (`SettingsSubsectionHeader`), not a card header.
  *
- * | Order | Group | Contents | Extra gate |
- * | --- | --- | --- | --- |
- * | 1 | General | `GeneralCard` | — |
- * | 2 | Security | `MfaRequiredCard`, then an `Advanced` `Disclosure` (closed) wrapping `SessionControlsCard` | — |
- * | 3 | Enterprise features | `EnterpriseDemoCard` | `!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available` |
- * | 4 | Danger zone | `DangerZoneCard` | `canDeleteAccount` |
+ * This pane used to be the odd one out in the panel. It stacked four
+ * separately bordered boxes, each in a different shape: a form with its own
+ * footer strip, a paragraph card, a hand-rolled `Disclosure` with a chevron,
+ * and a danger row. Five things changed, and each replaced something that was
+ * there before:
  *
- * **Whole-tab gate.** `account.write` (`page.tsx:621`,
- * `activeSection === 'settings' && canWriteAccount`) — same leaf
- * `billing`/`usage`/`identity`/`api-keys` gate on. `ACCOUNT_TAB_PERMISSION`
- * in `settings-panel.tsx` carries `organization: 'account.write'`.
+ * - **The three IAM cards are rows now.** `MfaRequiredCard`,
+ *   `SessionControlsCard`, and `EnterpriseDemoCard` each drew their own
+ *   `bg-popover rounded-md border` box. Each returns bare `SettingsRow`s and
+ *   is mounted inside a group here — see each file's own header comment.
+ *   `key-rules-card.tsx` made the same move first.
+ * - **The Advanced disclosure is gone.** It existed to hide session lifetime
+ *   and idle timeout, which as full cards were genuinely too much for a pane
+ *   most people open to rename something. As two rows they cost two lines, so
+ *   there is nothing left to hide and one fewer shape to read.
+ * - **No empty state.** `SessionControlsCard`'s "No sessions tracked yet"
+ *   block, and the `<details>` holding a faded duplicate table of revoked
+ *   sessions, are both gone. `AccountSessionsPanel` renders `null` when there
+ *   is nothing live to sign out.
+ * - **No dead "Coming soon" button.** There is still no `deleteAccount` in
+ *   `@kortix/sdk` (checked: `rg "export (async )?function deleteAccount\b"
+ *   packages/sdk/src` returns nothing), so the row says so in words and shows
+ *   muted "Unavailable" text on the right — exactly what `profile-tab.tsx`
+ *   does when a deployment cannot delete an account. A disabled destructive
+ *   button invites a click that can never do anything.
+ * - **The pane has a description.** It lives on the rail entry
+ *   (`rail.ts`, `tab: 'organization'`), which is where `SettingsTabHeader`
+ *   reads it from — the component cannot supply one.
  *
- * **Two of the four cards are NOT reusable components — they never were.**
- * `MfaRequiredCard` (`@/components/iam/mfa-required-card`) and
- * `SessionControlsCard` (`@/components/iam/session-controls-card`) are real,
- * exported, self-contained components (own `useQuery`/`useMutation`, take
- * only `{ accountId, canManage }`) — mounted here UNMODIFIED through
- * `mfaSlot`/`sessionControlsSlot`, same slot reasoning as
- * `api-keys-tab.tsx`'s `patPolicySlot`. `EnterpriseDemoCard`
- * (`@/components/iam/enterprise-demo-card`) is the same shape, mounted
- * through `enterpriseSlot`.
- *
- * `GeneralCard` and `DangerZoneCard`, by contrast, are `function GeneralCard`
- * / `function DangerZoneCard` declared directly inside `page.tsx` (lines 915
- * and 985) with NO `export` keyword — confirmed:
- * `grep -n "^export function GeneralCard\|^export function DangerZoneCard"
- * "src/app/(app)/accounts/[id]/page.tsx"` returns nothing. They cannot be
- * imported. `OrganizationGeneralCard` below reproduces `GeneralCard`'s
- * behavior (fetch the account, rename form, `updateAccountName` mutation,
- * "Created {date}" footer) as a new, self-contained component with the same
- * `{ accountId, canManage }` shape as the three real slots above — this is
- * new code, not a copy of unreachable source, so it is not one of the "do
- * not modify" cards. The danger-zone row is reproduced directly in
- * `OrganizationTabView` (no slot — it has no hooks, same as
- * `DangerZoneCard` itself): same "Delete account" copy, same disabled
- * "Coming soon" button — there is no `deleteAccount` REST function exported
- * anywhere in `@kortix/sdk` (checked: `grep -rn "export.*function
- * deleteAccount\b\|export const deleteAccount\b" packages/sdk/src` returns
- * nothing; the only `deleteAccount\b` hits in the whole repo are this
- * comment and unrelated i18n keys in `apps/web/src/features/accounts/
- * settings/general-tab.tsx`'s OWN "delete account" copy, a different,
- * user-scoped self-serve deletion surface, not this account/organization
- * one), so inventing a working delete here would be a button that silently
- * does nothing — the same principle `connected-tab.tsx`'s
- * Claude Code row and `profile-tab.tsx`'s original delete-account gate were
- * held to.
- *
- * **This task closes JAY-505's orphans for `MfaRequiredCard`,
- * `SessionControlsCard`, and `EnterpriseDemoCard`** — all three were mounted
- * only on the page JAY-505 deletes. Verified before wiring the slots below:
- * `grep -rn "MfaRequiredCard\b" src --include="*.tsx" | grep -v test`,
- * `grep -rn "SessionControlsCard\b" src --include="*.tsx" | grep -v test`,
- * and `grep -rn "EnterpriseDemoCard\b" src --include="*.tsx" | grep -v test`
- * each returned exactly two non-test hits at the time this file was written:
- * the import + JSX mount inside `app/(app)/accounts/[id]/page.tsx` (lines
- * 35/637, 42/652, and 30/674 respectively) and the component's own
- * `export function` line in `src/components/iam/*-card.tsx`. This file adds
- * a second live mount for each (`mfaSlot`/`sessionControlsSlot`/
- * `enterpriseSlot` below), so re-running the same three greps after this
- * change shows a third hit apiece, right here — none goes unreachable once
- * `app/(app)/accounts/[id]/page.tsx` is deleted (JAY-505). None of the three
- * card files themselves is modified.
- *
- * **The Advanced disclosure stays closed by default — do not promote it.**
- * `page.tsx:631-635`'s comment: MFA is the one control most accounts touch;
- * session lifetime and idle timeout are compliance-shop noise. `Disclosure`
- * (`@/components/ui/disclosure`) defaults `open` to `false` when no `open`
- * prop is passed (`disclosure.tsx:90`), so `sessionControlsSlot` renders
- * inside `DisclosureContent`, whose children are gated on `{open && …}`
- * (`disclosure.tsx:206`) — under `renderToStaticMarkup` with the trigger
- * label present and no slot content, exactly the state this file's test
- * pins.
- *
- * **The Enterprise group's gate is a NEGATIVE condition — reproduced as-is,
- * not simplified.** `page.tsx:669`:
- * `!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available`.
- * When a self-host operator's Enterprise licence already forces every
- * entitlement on, there is nothing left to demo-toggle, so the group hides
- * entirely — do not invert this to a positive "show when license
- * unavailable" branch written differently from the source; the two negations
- * stay two negations here (`enterpriseVisible` below is computed the exact
- * same way). `entitlementsLoading` follows `identity-tab.tsx`/
- * `audit-tab.tsx`'s established extension of the source's own
- * `!entitlements && accountStateQuery.isLoading`
- * (`page.tsx:310`) with the `authLoading`/`!resolvedAccountId` race guard
- * those two files already document — same reasoning, not re-derived.
+ * **Whole-tab gate.** `account.write`, the same leaf `billing`/`usage`/
+ * `identity`/`api-keys` gate on; `ACCOUNT_TAB_PERMISSION` in
+ * `settings-panel.tsx` carries `organization: 'account.write'`.
  *
  * **Danger zone gate — its own probe, never re-derived.** `canDeleteAccount`
- * is `account.delete` (`page.tsx:324`,`:681`), a DIFFERENT leaf from the
- * whole-tab `account.write` gate. `OrganizationTabInner` below probes it
- * with its own `usePermission(resolvedAccountId, 'account.delete')` call —
- * reusing `canWriteAccount` here (both are booleans in scope, both often
- * true for the same admin) would silently widen who can see the "Delete
- * account" row to every account.write holder instead of only
- * account.delete holders, the exact class of mistake this task's brief
- * calls out from an earlier task's review.
+ * is `account.delete`, a DIFFERENT leaf from the whole-tab `account.write`
+ * gate. `OrganizationTabInner` probes it with its own
+ * `usePermission(resolvedAccountId, 'account.delete')` call — reusing
+ * `canWriteAccount` (both booleans in scope, both often true for the same
+ * admin) would silently widen who sees the delete row to every `account.write`
+ * holder.
+ *
+ * **The Enterprise group's gate is a NEGATIVE condition — reproduced as-is.**
+ * `!entitlementsLoading && !accountState?.enterprise_license_available`. When
+ * a self-host operator's Enterprise licence already forces every entitlement
+ * on, there is nothing left to demo-toggle, so the group hides entirely. The
+ * two negations stay two negations. `entitlementsLoading` follows
+ * `identity-tab.tsx`/`audit-tab.tsx`'s established extension of the source's
+ * own `!entitlements && accountStateQuery.isLoading` with the
+ * `authLoading`/`!resolvedAccountId` race guard those two files document.
  *
  * **Account id.** `useSettingsAccountId(accountId)` — same shape as every
  * other Phase 3 tab; never `project?.account_id` alone.
@@ -117,31 +72,27 @@
  * slot's own fetch) only ever run while this tab is the active one.
  *
  * `OrganizationTabView` is the pure, props-only half — no hooks, no data
- * fetching, no store or Supabase read. It only ever exercises the
- * `enterpriseVisible`/`canDeleteAccount` axes and the disclosure's own
- * default-closed behavior — the `account.write` whole-tab gate lives in
- * `OrganizationTabInner` (the container), which can't render under
- * `renderToStaticMarkup` with no providers mounted — same split as every
- * other Phase 3 tab.
+ * fetching, no store or Supabase read, so it renders under
+ * `renderToStaticMarkup` with no providers mounted. The `account.write`
+ * whole-tab gate lives in `OrganizationTabInner` (the container) — same split
+ * as every other Phase 3 tab.
  *
- * **Untestable here, by design (see the task brief's constraints).** The
- * rename mutation, the MFA toggle, the session-policy save/revoke, and the
- * enterprise-demo toggle all need a live network and a real DOM. `bun test`
- * has no DOM. `organization-tab.test.tsx` covers what the pure view can
- * prove statically: group order, the closed-by-default disclosure, the
- * Enterprise negative gate, and the danger zone's own gate.
+ * **Untestable here, by design.** The rename mutation, the MFA toggle, the
+ * session-policy save, the force-logout, and the enterprise-demo toggle all
+ * need a live network and a real DOM. `bun test` has no DOM.
+ * `organization-tab.test.tsx` covers what the pure view can prove statically:
+ * section order, the Enterprise negative gate, and the danger zone's own gate.
  */
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { SessionControlsCard } from '@/components/iam/session-controls-card';
+import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -150,17 +101,14 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { accountStateKeys } from '@/hooks/billing';
 import { usePermission } from '@/lib/use-permission';
 import { getAccount, getAccountState, updateAccountName, type AccountState } from '@kortix/sdk';
-import { CaretDownIcon as ChevronDown } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 
-/** Byte-identical to `app/(app)/accounts/[id]/page.tsx`'s own local
- *  `formatDate` (lines 231-238), which is not exported — duplicated the same
- *  way `members-tab.tsx` and `profile-tab.tsx` each keep their own local copy
- *  rather than reaching for `lib/utils/date.ts`'s `formatDate` (different
- *  fallback string, different locale argument — not the same function). */
+/** Byte-identical to the local `formatDate` several other tabs keep — a
+ *  different fallback string and a different locale argument from
+ *  `lib/utils/date.ts`'s, so not the same function. */
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
   const d = new Date(input);
@@ -169,37 +117,42 @@ function formatDate(input: string | null | undefined) {
 }
 
 export interface OrganizationTabViewProps {
-  /** `OrganizationGeneralCard` below — owns its own `useQuery`/`useMutation`,
-   *  so it's a slot, same reasoning as every other real-data card here. Left
-   *  `undefined` by default so the bare view still renders under
-   *  `renderToStaticMarkup` with no providers. */
+  /** No account id resolved yet. Renders shape-matched skeletons rather than
+   *  three empty bordered boxes, which is what a group with an absent slot
+   *  would otherwise be. */
+  isLoading?: boolean;
+  /** `OrganizationGeneralCard` — owns its own `useQuery`/`useMutation`, so it
+   *  is a slot. It renders its OWN `SettingsRowGroup` (it is the whole
+   *  section, not rows inside a shared one). Left `undefined` by default so
+   *  the bare view still renders under `renderToStaticMarkup`. */
   generalSlot?: ReactNode;
-  /** `MfaRequiredCard`, mounted unmodified — see this file's header comment. */
+  /** `MfaRequiredCard` — bare rows, mounted inside the Security group. */
   mfaSlot?: ReactNode;
-  /** `SessionControlsCard`, mounted unmodified inside the closed-by-default
-   *  Advanced disclosure — see this file's header comment. */
+  /** `SessionControlsCard` — bare rows, mounted inside the Security group
+   *  directly under the MFA row. */
   sessionControlsSlot?: ReactNode;
-  /** `!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available`
-   *  — the Enterprise group's own negative gate, reproduced exactly. See this
-   *  file's header comment. */
+  /** `AccountSessionsPanel` — its own section under Security, because a table
+   *  cannot sit inside a row group. Renders nothing when no session is live. */
+  sessionsSlot?: ReactNode;
+  /** `!entitlementsLoading && !accountState?.enterprise_license_available` —
+   *  the Enterprise group's own negative gate, reproduced exactly. */
   enterpriseVisible?: boolean;
-  /** `EnterpriseDemoCard`, mounted unmodified — see this file's header comment. */
+  /** `EnterpriseDemoCard` — bare rows, mounted inside the Enterprise group. */
   enterpriseSlot?: ReactNode;
   /** `account.delete` — the Danger zone's OWN gate, a different leaf from the
-   *  whole-tab `account.write` gate. See this file's header comment. */
+   *  whole-tab `account.write` gate. */
   canDeleteAccount?: boolean;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
- *  read. Kept separate from `OrganizationTab` so this renders under
- *  `renderToStaticMarkup` with no `QueryClientProvider` — see
- *  `ApiKeysTabView`/`AuditTabView` for the same split. Does NOT encode the
- *  `account.write` whole-tab gate — that lives in `OrganizationTabInner`, see
- *  this file's header comment. */
+ *  read. Does NOT encode the `account.write` whole-tab gate; that lives in
+ *  `OrganizationTabInner`. */
 export function OrganizationTabView({
+  isLoading = false,
   generalSlot,
   mfaSlot,
   sessionControlsSlot,
+  sessionsSlot,
   enterpriseVisible = false,
   enterpriseSlot,
   canDeleteAccount = false,
@@ -207,92 +160,83 @@ export function OrganizationTabView({
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="organization" />
-      <div className="space-y-10">
-        {/* 1. General — page.tsx:623-629, no extra gate. No section heading:
-            the pane heading right above already reads "General" (this tab's
-            own rail label), and a second "General" directly under it would
-            repeat the same word — see `settings-tab-header.tsx`. */}
-        <section className="space-y-4">{generalSlot}</section>
 
-        {/* 2. Security — page.tsx:636-659, no extra gate. MFA is primary;
-            session lifetime/idle timeout hide under the closed-by-default
-            Advanced disclosure. */}
-        <section className="space-y-4">
-          <SettingsSubsectionHeader
-            title="Security"
-            description="Account-wide sign-in requirements."
-          />
-          <div className="space-y-3">
-            {mfaSlot}
-            <Disclosure variant="outline" className="group bg-popover overflow-hidden">
-              <DisclosureTrigger className="px-4 py-3">
-                <div className="flex w-full cursor-pointer items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-foreground text-sm font-medium">Advanced</p>
-                    <p className="text-muted-foreground mt-0.5 text-xs">
-                      Session lifetime and idle timeout.
-                    </p>
-                  </div>
-                  <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                </div>
-              </DisclosureTrigger>
-              <DisclosureContent contentClassName="border-border border-t">
-                <div className="px-4 py-5">{sessionControlsSlot}</div>
-              </DisclosureContent>
-            </Disclosure>
-          </div>
-        </section>
+      {isLoading ? (
+        <div className="space-y-8">
+          <Skeleton className="h-[124px] rounded-md" />
+          <Skeleton className="h-[186px] rounded-md" />
+        </div>
+      ) : (
+        <>
+          {/* 1. General — no section heading: the pane heading right above
+              already reads "General" (this tab's own rail label), and a second
+              "General" directly under it would repeat the same word. Same
+              reasoning as `general-tab.tsx`'s own first group. */}
+          {generalSlot}
 
-        {/* 3. Enterprise features — page.tsx:661-679. Negative gate,
-            reproduced exactly, see this file's header comment. */}
-        {enterpriseVisible ? (
-          <section className="space-y-4">
+          {/* 2. Security — MFA and the session policy in one group, because
+              they are one decision: how hard it is to hold a session here. */}
+          <section className="space-y-3">
             <SettingsSubsectionHeader
-              title="Enterprise features"
-              description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
+              title="Security"
+              description="Sign-in rules for everyone in this organization."
             />
-            {enterpriseSlot}
+            <SettingsRowGroup>
+              {mfaSlot}
+              {sessionControlsSlot}
+            </SettingsRowGroup>
           </section>
-        ) : null}
+          {sessionsSlot}
 
-        {/* 4. Danger zone — page.tsx:681-685, gated on account.delete
-            (canDeleteAccount), a different leaf from the whole-tab gate. No
-            slot: same as source's DangerZoneCard, this row has no hooks. */}
-        {canDeleteAccount ? (
-          <section className="space-y-4">
-            <SettingsSubsectionHeader title="Danger zone" />
-            <div className="bg-popover rounded-md border px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-foreground text-sm font-medium">Delete account</p>
-                  <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                    Permanently deletes this account and all its projects.
-                  </p>
-                </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled
-                  title="Coming soon"
-                  className="shrink-0"
+          {/* 3. Enterprise features — negative gate, reproduced exactly. */}
+          {enterpriseVisible ? (
+            <section className="space-y-3">
+              <SettingsSubsectionHeader
+                title="Enterprise features"
+                description="Try SSO, SCIM, advanced roles, and audit logs before you upgrade."
+              />
+              <SettingsRowGroup>{enterpriseSlot}</SettingsRowGroup>
+            </section>
+          ) : null}
+
+          {/* 4. Danger zone — gated on account.delete, a different leaf from
+              the whole-tab gate. */}
+          {canDeleteAccount ? (
+            <section className="space-y-3">
+              <SettingsSubsectionHeader title="Danger zone" />
+              <SettingsRowGroup>
+                <SettingsRow
+                  label="Delete organization"
+                  description="Deleting an organization is not self-serve yet. Contact Kortix support and we will close it for you."
                 >
-                  Coming soon
-                </Button>
-              </div>
-            </div>
-          </section>
-        ) : null}
-      </div>
+                  {/* Muted text, not a disabled destructive button: there is no
+                      delete endpoint to call, and a button that can never do
+                      anything is worse than saying so. `profile-tab.tsx` shows
+                      the same "Unavailable" for the same reason. */}
+                  <span className="text-muted-foreground text-sm">Unavailable</span>
+                </SettingsRow>
+              </SettingsRowGroup>
+            </section>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 
-/** Reproduces `page.tsx`'s local, non-exported `GeneralCard` (rename form +
- *  "Created {date}" footer, `updateAccountName` mutation) as a new,
- *  self-contained component — see this file's header comment for why it
- *  can't be imported. Owns its own account fetch, same `{ accountId,
- *  canManage }` shape as `MfaRequiredCard`/`SessionControlsCard`/
- *  `EnterpriseDemoCard` above, so it composes the same way through a slot. */
+/**
+ * The organization's name and creation date, as one group.
+ *
+ * Reproduces the rename form that `app/(app)/accounts/[id]/page.tsx` keeps as
+ * a local, non-exported `GeneralCard` — it cannot be imported, so this is new
+ * code with the same `{ accountId, canManage }` shape as the three IAM cards.
+ *
+ * Two changes from that source. The name field saves through a button that
+ * appears only once the value is dirty (`profile-tab.tsx`'s Name row), rather
+ * than a permanently-present Save in a card footer. And "Created {date}" is a
+ * row, not footer text — a fact with a label, in the same left/right column as
+ * everything else, instead of a caption glued to the bottom of a form.
+ */
 function OrganizationGeneralCard({
   accountId,
   canManage,
@@ -309,27 +253,38 @@ function OrganizationGeneralCard({
   });
   const account = accountQuery.data;
 
-  const [name, setName] = useState(account?.name ?? '');
-
-  useEffect(() => {
-    if (account) setName(account.name);
-  }, [account?.name]);
+  const [name, setName] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
+  // Sync the draft from the loaded name during render, not an effect — this is
+  // React's documented pattern for "adjust state when an input changes"
+  // (react.dev/learn/you-might-not-need-an-effect#adjusting-state-based-on-a-prop-or-state-change).
+  // Calling setState here bails out the in-progress render and re-runs
+  // immediately, before the browser paints, so it never flashes the stale
+  // draft. `nameTouched` guards it so a background refetch of the same query
+  // can never clobber an edit in progress. Lifted verbatim from
+  // `profile-tab.tsx`'s Name row, which hit this first.
+  const [loadedName, setLoadedName] = useState<string | null>(null);
+  if (account && !nameTouched && account.name !== loadedName) {
+    setLoadedName(account.name);
+    setName(account.name);
+  }
 
   const renameMutation = useMutation({
     mutationFn: (next: string) => updateAccountName(accountId, next),
     onSuccess: (updated) => {
-      successToast('Account updated');
+      setNameTouched(false);
+      successToast('Organization renamed');
       queryClient.setQueryData(['account', accountId], updated);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update account'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to rename the organization'),
   });
 
   if (accountQuery.isError) {
     return (
       <ErrorState
         size="sm"
-        title="Couldn't load account"
+        title="Couldn't load this organization"
         description={accountQuery.error instanceof Error ? accountQuery.error.message : undefined}
         action={
           <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
@@ -341,11 +296,12 @@ function OrganizationGeneralCard({
   }
 
   if (accountQuery.isLoading || !account) {
-    return <Skeleton className="h-[86px] w-full rounded-md" />;
+    return <Skeleton className="h-[124px] w-full rounded-md" />;
   }
 
   const trimmed = name.trim();
-  const canSubmit = canManage && trimmed.length > 0 && trimmed !== account.name;
+  const dirty = trimmed.length > 0 && trimmed !== account.name;
+  const canSubmit = canManage && dirty;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -354,37 +310,46 @@ function OrganizationGeneralCard({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-popover rounded-md border">
-      <div className="space-y-1.5 px-4 py-5">
-        <Label htmlFor="organization-account-name">Account name</Label>
-        <Input
-          id="organization-account-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!canManage || renameMutation.isPending}
-          maxLength={120}
-          className="max-w-md"
-          title={canManage ? undefined : 'You do not have permission to rename this account.'}
-        />
-        {!canManage ? (
-          <p className="text-muted-foreground text-xs">
-            You do not have permission to rename this account.
-          </p>
-        ) : null}
-      </div>
-
-      <div className="border-border flex items-center justify-between border-t px-4 py-3">
-        <p className="text-muted-foreground text-xs">Created {formatDate(account.created_at)}</p>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={!canSubmit || renameMutation.isPending}
-          className="gap-1.5"
+    <form onSubmit={handleSubmit}>
+      <SettingsRowGroup>
+        <SettingsRow
+          label="Organization name"
+          description={
+            canManage
+              ? 'Shown in the organization switcher and anywhere this organization is listed.'
+              : 'You do not have permission to rename this organization.'
+          }
         >
-          {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          Save
-        </Button>
-      </div>
+          <Input
+            id="organization-account-name"
+            // The row label is a heading, not a `<label htmlFor>` — the control
+            // carries its own accessible name. Same as `general-tab.tsx`.
+            aria-label="Organization name"
+            value={name}
+            onChange={(e) => {
+              setNameTouched(true);
+              setName(e.target.value);
+            }}
+            disabled={!canManage || renameMutation.isPending}
+            maxLength={120}
+            // Not `variant="popover"`: the group around it is itself
+            // `bg-popover`, so a popover-tinted input would vanish into it.
+            className="h-8 w-56"
+          />
+          {canSubmit ? (
+            <Button type="submit" size="sm" disabled={renameMutation.isPending}>
+              {renameMutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+              Save
+            </Button>
+          ) : null}
+        </SettingsRow>
+
+        <SettingsRow label="Created">
+          <span className="text-muted-foreground text-sm tabular-nums">
+            {formatDate(account.created_at)}
+          </span>
+        </SettingsRow>
+      </SettingsRowGroup>
     </form>
   );
 }
@@ -401,13 +366,12 @@ export function OrganizationTab({ accountId }: { accountId?: string }) {
 function OrganizationTabInner({ accountId: resolvedAccountId }: { accountId: string | undefined }) {
   const { session, isLoading: authLoading } = useAuth();
 
-  // account.write — the whole-tab gate (see this file's header comment),
-  // same leaf billing-tab.tsx/usage-tab.tsx/identity-tab.tsx/api-keys-tab.tsx
-  // probe for their own whole-tab gate.
+  // account.write — the whole-tab gate, the same leaf
+  // billing-tab.tsx/usage-tab.tsx/identity-tab.tsx/api-keys-tab.tsx probe for
+  // their own.
   const { allowed: canWriteAccount } = usePermission(resolvedAccountId, 'account.write');
   // account.delete — the Danger zone's OWN gate. A SEPARATE probe from
-  // canWriteAccount above — never re-derived from it. See this file's header
-  // comment.
+  // canWriteAccount above, never re-derived from it. See this file's header.
   const { allowed: canDeleteAccount } = usePermission(resolvedAccountId, 'account.delete');
 
   const { data: accountState, isLoading: isLoadingAccountState } = useQuery<AccountState>({
@@ -429,33 +393,28 @@ function OrganizationTabInner({ accountId: resolvedAccountId }: { accountId: str
   // simplified. See this file's header comment.
   const enterpriseVisible = !entitlementsLoading && !accountState?.enterprise_license_available;
 
-  // Whole-tab gate — account.write. Placed after every hook above so the
-  // hook count never changes render to render (same shape as
+  // Whole-tab gate — account.write. Placed after every hook above so the hook
+  // count never changes render to render (same shape as
   // BillingTabInner/UsageTabInner/AuditTabInner's own whole-tab gates).
   if (!canWriteAccount) return null;
+
+  if (!resolvedAccountId) return <OrganizationTabView isLoading />;
 
   return (
     <OrganizationTabView
       generalSlot={
-        resolvedAccountId ? (
-          <OrganizationGeneralCard accountId={resolvedAccountId} canManage={canWriteAccount} />
-        ) : undefined
+        <OrganizationGeneralCard accountId={resolvedAccountId} canManage={canWriteAccount} />
       }
-      mfaSlot={
-        resolvedAccountId ? (
-          <MfaRequiredCard accountId={resolvedAccountId} canManage={canWriteAccount} />
-        ) : undefined
-      }
+      mfaSlot={<MfaRequiredCard accountId={resolvedAccountId} canManage={canWriteAccount} />}
       sessionControlsSlot={
-        resolvedAccountId ? (
-          <SessionControlsCard accountId={resolvedAccountId} canManage={canWriteAccount} />
-        ) : undefined
+        <SessionControlsCard accountId={resolvedAccountId} canManage={canWriteAccount} />
+      }
+      sessionsSlot={
+        <AccountSessionsPanel accountId={resolvedAccountId} canManage={canWriteAccount} />
       }
       enterpriseVisible={enterpriseVisible}
       enterpriseSlot={
-        resolvedAccountId ? (
-          <EnterpriseDemoCard accountId={resolvedAccountId} canManage={canWriteAccount} />
-        ) : undefined
+        <EnterpriseDemoCard accountId={resolvedAccountId} canManage={canWriteAccount} />
       }
       canDeleteAccount={canDeleteAccount}
     />

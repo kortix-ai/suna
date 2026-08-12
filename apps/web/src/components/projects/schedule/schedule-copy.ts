@@ -286,11 +286,17 @@ export function describeConditions(filter: Record<string, string> | null | undef
 
 /* ─── Per-kind screen copy ──────────────────────────────────────────────── */
 
+/**
+ * Per-kind wording that appears INSIDE the pane.
+ *
+ * The pane's own title and description are NOT here. They used to be
+ * (`title`/`description`), which made this the one screen-copy table in the app
+ * that also owned a heading — and meant Schedules and Webhooks were the only
+ * two panes whose heading did not come from their rail entry. They live in
+ * `features/workspace/settings/rail.ts` now, next to every other pane's, and
+ * `schedule-view.tsx` reads them through `SettingsTabHeader`.
+ */
 export interface KindCopy {
-  /** Section title. */
-  title: string;
-  /** Section description. */
-  description: string;
   /** Singular noun, lowercase, for inline sentences. */
   noun: string;
   createLabel: string;
@@ -303,8 +309,6 @@ export interface KindCopy {
 
 export const KIND_COPY: Record<TriggerKind, KindCopy> = {
   cron: {
-    title: 'Schedules',
-    description: 'Have an agent do something on a repeating schedule, or once at a set time.',
     noun: 'schedule',
     createLabel: 'New schedule',
     searchPlaceholder: 'Search schedules',
@@ -313,8 +317,6 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     column: 'Runs',
   },
   webhook: {
-    title: 'Webhooks',
-    description: 'Give another app a private address that starts an agent when it sends a request.',
     noun: 'webhook',
     createLabel: 'New webhook',
     searchPlaceholder: 'Search webhooks',

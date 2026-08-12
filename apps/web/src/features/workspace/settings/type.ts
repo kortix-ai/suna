@@ -21,6 +21,20 @@ export interface RailItem {
    * description is doing real work, not decoration.
    */
   description?: string;
+  /**
+   * The docs page that explains this tab, rendered by `SettingsTabHeader` as a
+   * "Docs" button in the pane heading's action row.
+   *
+   * Here rather than in each tab file for the same reason as `description`: it
+   * is one fact about a tab, and a tab has exactly one canonical page. Keeping
+   * it beside the label means adding docs to a pane is one line of config, not
+   * a hand-rolled button per tab — twenty of which would drift in variant,
+   * icon, label and target within a release.
+   *
+   * Panes open as an overlay over live work, so the button opens in a new tab;
+   * `SettingsTabHeader` owns that decision, not the caller.
+   */
+  docsHref?: string;
   icon?: LucideIcon | IconMynauiType | IconType;
 }
 

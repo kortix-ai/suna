@@ -21,14 +21,23 @@
  *    the status badge and both dates floated above a two-line name cell, and
  *    the tab added its own `px-6 py-10` on top of the padding the pane already
  *    applies. It is still a table — Jay's call, and the right one for six
- *    columns of key metadata — but the Members pane's borderless dialect, with
- *    middle-aligned cells, in the `max-w-4xl` column the width rule gives a
- *    tab that renders a table.
+ *    columns of key metadata — with middle-aligned cells, in the `max-w-4xl`
+ *    column the width rule gives a tab that renders a table.
  *
- *    On top of the table: a search field over the name, the key hint and the
- *    scope, a status filter (All / Active / Expired / Revoked, each with a
- *    live count) and a type filter (All / Personal / Automation). "Expired" is
- *    derived rather than stored — see `ApiKeyStatus` in `api-key-rows.ts`.
+ *    *Which* table changed again on Jay's follow-up the same day: "use the same
+ *    layout that is used in this secret tab." It had been the Members pane's
+ *    borderless dialect — a hand-rolled `<table>` plus three local cell
+ *    constants, because `@/components/ui/table`'s `Table` hard-codes its own
+ *    bordered container with no escape hatch. It is now that shared `Table`,
+ *    primitive for primitive with `secrets-view.tsx`: bordered `bg-popover`
+ *    panel, `bg-accent` header, hover rows, `InputGroupSearch` above it, row
+ *    actions in a `DotsThree` menu, and the status as a `Badge` with a glyph.
+ *
+ *    Above the table: one search field over the name, the key hint and the
+ *    scope, and ONE filter where there were two — a four-pill status strip and
+ *    a type dropdown became a single menu carrying both axes, one at a time
+ *    (`ApiKeyFilterValue` in `api-key-rows.ts` argues why that costs nothing).
+ *    "Expired" is derived rather than stored — `ApiKeyStatus`, same file.
  * 4. *It read as machine documentation.* "Personal Access Tokens", "the mint
  *    endpoint refuses PATs without an `expires_at`", "attach policies… as the
  *    principal". The copy is rewritten end to end — see

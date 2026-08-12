@@ -214,18 +214,52 @@ export function filterApiKeyRows(rows: ApiKeyRow[], filter: ApiKeyFilter = {}): 
 }
 
 /**
- * Counts for the status filter, over the rows the OTHER filters leave in
- * scope. Passing the kind-filtered list keeps every count honest: "Revoked 2"
- * beside a Personal-only view must mean two personal keys, or clicking it
- * lands on an empty table.
+ * What the one filter control can be set to.
+ *
+ * The toolbar used to carry two controls: a four-pill status strip (All /
+ * Active / Expired / Revoked) and a separate type dropdown (All types /
+ * Personal / Automation) — six targets above a list that is usually under ten
+ * rows, and two of them named "All". Jay, 2026-08-12: "group the tabs into a
+ * single thing that is not overcomplicated for the non-technical user."
+ *
+ * So it is one dropdown, one axis at a time. `ApiKeyStatus` and `ApiKeyKind`
+ * are disjoint string literals, which is what lets a single value stand in for
+ * either axis with no discriminator; `apiKeyFilter` is the only code that has
+ * to know which axis a given value belongs to.
+ *
+ * Nothing is lost that the search field does not already cover: "the revoked
+ * automation keys" is Revoked plus typing part of the name. Composing two
+ * dropdowns buys that one case and charges every visit for it.
  */
-export function countApiKeysByStatus(rows: ApiKeyRow[]): Record<ApiKeyStatus | 'all', number> {
+export type ApiKeyFilterValue = 'all' | ApiKeyStatus | ApiKeyKind;
+
+function isKind(value: ApiKeyFilterValue): value is ApiKeyKind {
+  return value === 'personal' || value === 'automation';
+}
+
+/** Widen the one control's value back into the two-axis filter. */
+export function apiKeyFilter(value: ApiKeyFilterValue): ApiKeyFilter {
+  if (value === 'all') return {};
+  return isKind(value) ? { kind: value } : { status: value };
+}
+
+/**
+ * One count per option the filter offers, so each choice can say how many rows
+ * it leads to before it is picked — and so "Expired" can be left out of the
+ * menu entirely when nothing has expired.
+ *
+ * Counted over the whole list, not the current selection. With a single axis
+ * there is no second filter left to stay honest about, and a number that moved
+ * while the menu was open would be unreadable.
+ */
+export function countApiKeys(rows: ApiKeyRow[]): Record<ApiKeyFilterValue, number> {
   return rows.reduce(
     (counts, row) => {
       counts.all += 1;
       counts[row.status] += 1;
+      counts[row.kind] += 1;
       return counts;
     },
-    { all: 0, active: 0, expired: 0, revoked: 0 },
+    { all: 0, active: 0, expired: 0, revoked: 0, personal: 0, automation: 0 },
   );
 }

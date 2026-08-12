@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * The "Upgrades" customize section — one-off, agent-run project upgrades.
- * Two halves:
+ * The "Upgrades" settings pane — one-off, agent-run project upgrades. Two
+ * halves:
  *
  *  1. The registry (`upgrade-defs.ts`): known upgrades with a detection rule
  *     (today: the v1→v2 manifest migration). Rows appear only while
@@ -14,32 +14,79 @@
  * Every run is a session, not a form: the only way config lands is through
  * an agent editing the repo on a branch and opening a CR the user reviews.
  * Nothing here merges anything.
+ *
+ * **Layout: the settings pane shape**, the same as `profile-tab.tsx`,
+ * `general-tab.tsx`, and `organization-tab.tsx`. Pane heading, then rows —
+ * label left, control right, consecutive rows sharing ONE bordered box
+ * separated by hairlines (`SettingsRowGroup` / `SettingsRow`,
+ * `components/ui/settings-row.tsx`). Sections are a plain small heading
+ * (`SettingsSubsectionHeader`).
+ *
+ * This pane was the odd one out. Six things changed, and each replaced
+ * something that was there before:
+ *
+ * - **It reads its own heading from the rail now.** It used to render
+ *   `CustomizeSectionWrapper` with a hardcoded title and description, so the
+ *   pane's copy lived in three places at once — here, `rail.ts`'s
+ *   `UPGRADE_ITEM.description` (which never rendered), and a third wording in
+ *   a `<p>` inside the one-off panel. `SettingsTabHeader tab="upgrades"` makes
+ *   the rail entry the single source, exactly like every other pane.
+ *   `git-view.tsx` — also a `customize/` view the settings panel mounts — took
+ *   this shape first; `tab-content-width.test.ts` tracks both as sections that
+ *   declare the panel column themselves. Dropping the wrapper also drops a
+ *   nested scroll container: `settings-panel.tsx:524` already gives every pane
+ *   `overflow-y-auto`, and the wrapper added a second one inside it.
+ * - **The upgrade row is a row, not a glowing card.** It carried
+ *   `border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20
+ *   shadow-md` plus a `ring-1 ring-inset` icon tile. The design system is
+ *   explicit that in-flow surfaces get a border and no shadow — elevation
+ *   belongs to overlays — and that `kortix-*` accents carry state, not
+ *   emphasis. A brand-tinted, shadowed panel in a settings pane is the one
+ *   surface here that shouted.
+ * - **The "Recommended" badge is gone.** `ProjectUpgrade` has no field that
+ *   could ever make it false, so it rendered on every row unconditionally. A
+ *   badge that never varies is decoration, and it competed with the Run button
+ *   for the same job.
+ * - **No dashed empty-state box.** "You're up to date" is one fact; it is a
+ *   row in the same group the upgrades would occupy, with the state as a
+ *   `Badge`. `EmptyState` is `rounded-lg` and `p-6 md:p-12` — a centred box of
+ *   a different shape and radius from everything else in the pane.
+ * - **Section headings are headings.** `<Label>` renders a bare `<label>`, so
+ *   the pane's outline went `h2` → nothing → rows. `SettingsSubsectionHeader`
+ *   is the `h3` level that belongs between them (see that file's header).
+ * - **Read-only is one line, not an empty box.** With `canWrite` false the
+ *   one-off section used to render a bordered panel holding a sentence and no
+ *   control. The section is omitted instead — it is nothing but a composer —
+ *   and the reason moves to the first section's description, said once.
+ *
+ * `UpgradesViewContent` is presentational — no data fetching, so every state
+ * renders under `renderToStaticMarkup`. Local textarea and in-flight-row state
+ * is fine; the network side lives in the `UpgradesView` wrapper below.
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import {
-  ArrowCircleUpIcon as ArrowUpCircle,
-  CheckCircleIcon as CircleCheckBig,
-} from '@phosphor-icons/react';
 import { useState } from 'react';
 
-import CustomizeSectionWrapper from '../sections/component/section-wrapper';
 import type { ManifestVersion } from './manifest-version';
 import { useProjectManifestVersion } from './manifest-version';
 import { type ProjectUpgrade, applicableUpgrades, buildOneOffUpgradePrompt } from './upgrade-defs';
 import { useRunUpgrade } from './use-run-upgrade';
 
-/** Presentational only — no data fetching, so every state renders under
- *  renderToStaticMarkup. Local textarea state is fine; the network side
- *  lives in the `UpgradesView` wrapper below. */
+/** The one-off runner's id in `startedId` below — it shares the single
+ *  `pending` flag with every registry row, so it needs a name in the same
+ *  space. Not a `ProjectUpgrade.id`, and it cannot collide with one: registry
+ *  ids come from `PROJECT_UPGRADES`, which has no entry by this name. */
+const ONE_OFF_ID = 'one-off';
+
 export function UpgradesViewContent({
   version,
   onRun,
@@ -50,104 +97,117 @@ export function UpgradesViewContent({
   version: ManifestVersion | null;
   onRun: (prompt: string) => void;
   pending: boolean;
-  /** When false, the Run action buttons are hidden — the upgrade explanation
-   *  and one-off description stay visible as a read-only view. */
+  /** When false, the Run actions and the one-off composer are hidden and the
+   *  first section says why. The upgrade list itself stays visible — knowing
+   *  what is pending is a read, not a write. */
   canWrite?: boolean;
 }) {
   const [oneOff, setOneOff] = useState('');
+  // Which control the user actually pressed. `pending` is global — only one
+  // session can be minted at a time — so without this every Run button on the
+  // pane spins at once the moment any one of them is clicked. Latent today
+  // (the registry holds one entry) and wrong the day it holds two.
+  const [startedId, setStartedId] = useState<string | null>(null);
   const upgrades = version === null ? null : applicableUpgrades({ manifestVersion: version });
 
+  function run(id: string, prompt: string) {
+    setStartedId(id);
+    onRun(prompt);
+  }
+
   return (
-    <CustomizeSectionWrapper
-      title="Upgrades"
-      description="One-off, agent-run changes — each run starts a session that makes the change and opens a change request for you to review."
-    >
-      <section className="space-y-4">
-        <Label>Available upgrades</Label>
+    <div className="mx-auto w-full max-w-2xl space-y-8">
+      <SettingsTabHeader tab="upgrades" />
+
+      <section className="space-y-3">
+        <SettingsSubsectionHeader
+          title="Available upgrades"
+          // Only said when it is true — an explanation of a control you can
+          // see is noise; an explanation of a control that is missing is not.
+          description={
+            canWrite
+              ? undefined
+              : 'Read-only — running an upgrade needs write access to this workspace.'
+          }
+        />
         {upgrades === null ? (
-          <div className="space-y-2">
-            {['a', 'b'].map((k) => (
-              <Skeleton key={k} className="h-16 w-full rounded-md" />
-            ))}
-          </div>
-        ) : upgrades.length === 0 ? (
-          <EmptyState
-            icon={CircleCheckBig}
-            size="sm"
-            title="You're up to date"
-            description="No pending platform upgrades for this project."
-          />
+          // Shape-matched to one grouped row (px-4 py-3 around a title and a
+          // wrapped description), not to the two 64px cards this used to show
+          // for a registry that has one entry.
+          <Skeleton className="h-[76px] w-full rounded-md" />
         ) : (
-          <ul className="space-y-2">
-            {upgrades.map((upgrade: ProjectUpgrade) => (
-              <li
-                key={upgrade.id}
-                className="border-kortix-base/30 bg-kortix-base/[0.06] shadow-kortix-base/20 hover:border-kortix-base/45 hover:bg-kortix-base/[0.09] flex items-center gap-3 rounded-md border px-4 py-3 shadow-md transition-colors"
+          <SettingsRowGroup>
+            {upgrades.length === 0 ? (
+              <SettingsRow
+                label="No upgrades available"
+                description="This workspace is already up to date."
               >
-                <span className="bg-kortix-base/15 ring-kortix-base/25 flex size-9 shrink-0 items-center justify-center rounded-sm ring-1 ring-inset">
-                  <ArrowUpCircle className="text-kortix-base size-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-foreground text-sm font-medium text-balance">
-                      {upgrade.title}
-                    </p>
-                    <Badge variant="kortix" size="xs" className="shrink-0">
-                      Recommended
-                    </Badge>
-                  </div>
-                  <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                    {upgrade.description}
-                  </p>
-                </div>
-                {canWrite ? (
-                  <Button
-                    size="sm"
-                    className="shrink-0"
-                    disabled={pending}
-                    onClick={() => onRun(upgrade.prompt)}
-                  >
-                    {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-                    Run
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+                <Badge variant="success" size="sm">
+                  Up to date
+                </Badge>
+              </SettingsRow>
+            ) : (
+              upgrades.map((upgrade: ProjectUpgrade) => (
+                <SettingsRow
+                  key={upgrade.id}
+                  label={upgrade.title}
+                  description={upgrade.description}
+                >
+                  {canWrite ? (
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => run(upgrade.id, upgrade.prompt)}
+                    >
+                      {pending && startedId === upgrade.id ? (
+                        <Loading className="size-3.5 shrink-0" />
+                      ) : null}
+                      Run
+                    </Button>
+                  ) : null}
+                </SettingsRow>
+              ))
+            )}
+          </SettingsRowGroup>
         )}
       </section>
 
-      <section className="space-y-4">
-        <Label>One-off upgrade</Label>
-        <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
-          <p className="text-muted-foreground text-xs text-pretty">
-            Describe a single change to this project. An agent session makes it, validates, and
-            opens a change request — it never merges on its own.
-          </p>
-          {canWrite ? (
-            <>
-              <Textarea
-                value={oneOff}
-                onChange={(event) => setOneOff(event.target.value)}
-                placeholder="e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced"
-                minHeight={72}
-              />
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={pending || !oneOff.trim()}
-                  onClick={() => onRun(buildOneOffUpgradePrompt(oneOff))}
-                >
-                  {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Run upgrade
-                </Button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      </section>
-    </CustomizeSectionWrapper>
+      {/* Nothing but a composer, so it has nothing to show a reader who cannot
+          use it. The first section already said why it is not here. */}
+      {canWrite ? (
+        <section className="space-y-3">
+          <SettingsSubsectionHeader
+            title="One-off upgrade"
+            description="Describe a single change instead. It runs the same way — a session makes it, validates it, and opens a change request."
+          />
+          <div className="bg-popover space-y-3 rounded-md border px-4 py-5">
+            <Textarea
+              // The section heading is an `h3`, not a `<label htmlFor>`, so the
+              // control carries its own accessible name — same as the rows in
+              // `general-tab.tsx` and `organization-tab.tsx`.
+              aria-label="One-off upgrade"
+              value={oneOff}
+              onChange={(event) => setOneOff(event.target.value)}
+              placeholder="e.g. Rename the release-bot agent to deploy-bot everywhere it's referenced"
+              minHeight={72}
+            />
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={pending || !oneOff.trim()}
+                onClick={() => run(ONE_OFF_ID, buildOneOffUpgradePrompt(oneOff))}
+              >
+                {pending && startedId === ONE_OFF_ID ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : null}
+                Run upgrade
+              </Button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 }
 

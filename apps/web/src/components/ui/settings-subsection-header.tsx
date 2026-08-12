@@ -67,7 +67,7 @@ export function SettingsSubsectionHeader({
             sections as six sibling pages. */}
         <h3 className="text-foreground text-sm font-medium text-balance">{title}</h3>
         {description ? (
-          <p className="text-muted-foreground max-w-[410px] text-xs leading-relaxed text-pretty">
+          <p className="text-muted-foreground max-w-xl text-xs leading-normal text-pretty">
             {description}
           </p>
         ) : null}

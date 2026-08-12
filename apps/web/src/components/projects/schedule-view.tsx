@@ -29,7 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
@@ -255,23 +255,28 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
 
   return (
     <>
-      <CustomizeSectionWrapper
-        title={copy.title}
-        description={copy.description}
-        action={
-          showContent && canWrite ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1.5"
-              onClick={() => setCreateOpen(true)}
-            >
-              <PlusIcon className="size-4 shrink-0" />
-              {copy.createLabel}
-            </Button>
-          ) : null
-        }
-      >
+      <div className="mx-auto w-full max-w-2xl space-y-8">
+        {/* One component, two panes. The heading comes from whichever rail
+            entry this `type` is showing, so Schedules and Webhooks read their
+            title and description from the same place every other pane does —
+            `KIND_COPY` used to carry both, and was the only screen-copy table
+            in the app that also owned a pane heading. */}
+        <SettingsTabHeader
+          tab={type === 'cron' ? 'schedules' : 'webhooks'}
+          action={
+            showContent && canWrite ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={() => setCreateOpen(true)}
+              >
+                <PlusIcon className="size-4 shrink-0" />
+                {copy.createLabel}
+              </Button>
+            ) : null
+          }
+        />
         <div className="space-y-4">
           {/* Project-wide, not per-type — rendered on Schedules only so it has
               exactly one home. Visibility is its OWN manager-only probe, not
@@ -372,7 +377,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
             </InfoBanner>
           )}
         </div>
-      </CustomizeSectionWrapper>
+      </div>
 
       <ScheduleCreateModal
         projectId={projectId}

@@ -13,23 +13,78 @@
  * both tabs would have rendered the build log twice). Both cases are now
  * wired to their own tab; `SandboxView`/`sandbox-view.tsx` is deleted.
  *
- * **What moved here, verbatim, from `sandbox-view.tsx`:** `TemplateRow`
- * (the template list row — build/delete mutations, edit/rebuild actions),
- * `describeState`/`TEMPLATE_STATE_LABEL`/`TEMPLATE_TONE_ICON_TILE` (template
- * status-tile presentation), `TEMPLATE_SKELETON_ROWS`, and the
- * `SandboxTemplateForm` create/edit modal mount.
- * `SandboxTemplateProviderCoverage`/`SandboxTemplateProviderModeBadge`
- * (from `../../customize/sections/view/sandbox-provider-coverage.tsx`) are
- * Sandbox-half symbols per JAY-508 — that module is used only by
- * `TemplateRow`, so it stays in place (not part of the 858-line file being
- * split) and is imported here exactly as `sandbox-view.tsx` imported it.
+ * **What moved here, verbatim, from `sandbox-view.tsx`:** the template list
+ * row (now `TemplateCard` — build/delete mutations, edit/rebuild actions),
+ * `describeState`/`TEMPLATE_STATE_LABEL` (template status presentation),
+ * `TEMPLATE_SKELETON_ROWS`, and the `SandboxTemplateForm` create/edit modal
+ * mount. `sandbox-provider-coverage.tsx` (in
+ * `../../customize/sections/view/`) holds the Sandbox-half provider symbols
+ * per JAY-508 — that module is used only by this tab, so it stays in place
+ * (not part of the 858-line file being split).
+ *
+ * **Its two row components are gone; its pure functions are not.**
+ * `SandboxTemplateProviderCoverage` and `SandboxTemplateProviderModeBadge`
+ * each baked a whole `flex` row — label, badges and "Checked …" stamp — into
+ * one block, so a caller could only drop them in whole. That forced this card
+ * to nest a labelled row inside another labelled row: two labels ("Routing",
+ * "Session runtime") and a stamp welded to the last badge, none of it
+ * positionable. They are replaced by `SandboxProviderBadge` (one badge, no
+ * layout) and `latestObservedAt`, with the row composed here in
+ * `TemplateRuntimeFooter`. Every describe-* function, type and
+ * `availableProviderCoverage` is unchanged, and every assertion the two
+ * components carried is ported onto the components that now ship.
+ *
+ * ---
+ *
+ * **Why the row became a card (the readability pass).** The original
+ * `TemplateRow` was one dense line with two defects a non-technical reader
+ * could not work around:
+ *
+ * 1. **Status was colour-only.** `describeState()` returns `{ label, tone }`,
+ *    but only `tone` was ever consumed — as the lookup key for the icon
+ *    tile's background tint. The words "Ready" / "Building" / "Build failed"
+ *    were computed on every render and never rendered, so the sole signal for
+ *    "is this template usable?" was a 10%-opacity tint on a 44px square. That
+ *    is a WCAG 1.4.1 (Use of Color) failure and unreadable to anyone who does
+ *    not already know the colour code. `TemplateStateLine` now renders the
+ *    word next to a filled glyph; the tint is redundant reinforcement, not the
+ *    message.
+ * 2. **The specs were unlabelled and truncating.** `{cpu} vCPU &bull;
+ *    {memory_gb} GiB &bull; {disk_gb} GiB disk` asked the reader to know that
+ *    the first bare `GiB` means memory and the second means disk — and the
+ *    line carried `truncate`, so on a narrow panel the numbers silently
+ *    disappeared rather than wrapping.
+ *
+ * Both are fixed the way Vercel's deployment-settings panel fixes them: a
+ * **description list**. Every value gets a `<dt>` label directly above it
+ * (`TemplateFact`), enum/boolean state gets a filled glyph *plus* the word,
+ * and the grid reflows 3 → 2 columns instead of truncating. Long values
+ * (image refs, Dockerfile paths) still truncate, but only inside their own
+ * labelled cell and with a native `title` for the full string.
+ *
+ * 3. **The card had two left edges.** A `size-9` status tile led the header,
+ *    pushing the name and status to x=64px while the spec grid below started
+ *    at x=16px — nothing in the card shared a vertical line. The tile is gone:
+ *    `TemplateStateLine`'s glyph already carries its tone colour, and the
+ *    template kind is stated far more precisely by the "Base image" / "Built
+ *    from" cell than by a decorative container/package/file glyph. Header,
+ *    grid and footer now all start at the same `px-4` edge.
+ * 4. **The grid was ragged.** `col-span-2` on the base-image cell made row 1
+ *    three equal cells and row 2 one narrow beside one double-wide. The grid
+ *    is now SIX single-track cells — two complete rows of three, no spans, no
+ *    holes. The sixth is "Routing", promoted out of the footer, where it had
+ *    been a bare `Automatic` badge with a second label bolted on.
+ *
+ * The copy is de-jargoned to match: `source` renders as "Kortix platform" /
+ * "This dashboard" / `kortix.yaml`, not `platform` / `UI` / `kortix.yaml`;
+ * `is_default` is promoted out of the meta line into a `Default` badge.
  *
  * **Gate — preserved exactly.** `canManage` is
  * `projectQuery.data?.effective_project_role === 'manager'`, byte-identical
  * to `sandbox-view.tsx`'s own computation — not re-derived from
  * `useProjectCan` or any other permission source in scope. It gates the
  * header "New template" button, the empty-state action, and every
- * `TemplateRow` edit/delete/rebuild control, matching the original exactly.
+ * `TemplateCard` edit/delete/rebuild control, matching the original exactly.
  *
  * **`useTranslations('hardcodedUi')` removed.** `sandbox-view.tsx` routed
  * its static English copy through `next-intl`'s `useTranslations` with
@@ -40,10 +95,8 @@
  * `renderToStaticMarkup` doesn't provide. That is exactly why nothing in
  * `sandbox-view.tsx` that called it was ever covered by
  * `sandbox-view.test.tsx` — only the translation-free `BuildRow` and
- * `isProjectAcceleratorBuild` were testable. Copy here is the literal text
- * those keys resolved to (checked against `translations/en.json`), inlined
- * directly — matching the house pattern and making `SandboxTabView`
- * testable.
+ * `isProjectAcceleratorBuild` were testable. Copy here is written directly as
+ * literals — matching the house pattern and making `SandboxTabView` testable.
  *
  * **`listProjectSnapshots` — shared endpoint, split rendering.** Both this
  * tab and `snapshots-tab.tsx` call the identical
@@ -69,7 +122,7 @@
  * === 0`, independent of whatever `snapshots-tab.tsx` has to show.
  *
  * `SandboxTabView` is the pure, props-only half — `templatesSlot` is a slot
- * because each `TemplateRow` owns its own `useMutation`/`useQueryClient`
+ * because each `TemplateCard` owns its own `useMutation`/`useQueryClient`
  * (build, delete) and can't render under `renderToStaticMarkup` with no
  * `QueryClientProvider`, same reasoning as `general-tab.tsx`'s
  * `generalFieldsSlot`. `SandboxTemplateForm` (create/edit dialog) is NOT
@@ -86,11 +139,11 @@ import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
@@ -105,35 +158,47 @@ import {
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
-  ShippingContainerIcon as Container,
-  PencilSimpleIcon as Edit3,
-  FileCodeIcon as FileCode,
-  PackageIcon as Package,
-  PlusIcon as Plus,
-  ArrowClockwiseIcon as RefreshCw,
-  TrashIcon as Trash2,
+  ArrowClockwiseIcon,
+  CheckCircleIcon,
+  CircleDashedIcon,
+  CpuIcon,
+  CubeIcon,
+  FileCodeIcon,
+  HardDrivesIcon,
+  type Icon as PhosphorIcon,
+  MemoryIcon,
+  PackageIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  PushPinIcon,
+  ShippingContainerIcon,
+  ShuffleIcon,
+  SquaresFourIcon,
+  TrashIcon,
+  XCircleIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  SandboxProviderBadge,
   type SandboxProvider,
   type SandboxProviderMode,
-  SandboxTemplateProviderCoverage,
-  SandboxTemplateProviderModeBadge,
+  availableProviderCoverage,
+  describeProviderMode,
+  latestObservedAt,
 } from '../../customize/sections/view/sandbox-provider-coverage';
 import { SettingsTabHeader } from '../settings-tab-header';
 
+/** Three, not five: each skeleton is now a full card, so five of them
+ *  overflowed the panel and read as a wall of grey. */
 const TEMPLATE_SKELETON_ROWS = [
   'sandbox-template-skeleton-1',
   'sandbox-template-skeleton-2',
   'sandbox-template-skeleton-3',
-  'sandbox-template-skeleton-4',
-  'sandbox-template-skeleton-5',
 ] as const;
 
-const TEMPLATE_STATE_LABEL: Record<
-  string,
-  { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' }
-> = {
+type TemplateTone = 'ok' | 'busy' | 'fail' | 'idle';
+
+const TEMPLATE_STATE_LABEL: Record<string, { label: string; tone: TemplateTone }> = {
   active: { label: 'Ready', tone: 'ok' },
   pulling: { label: 'Pulling', tone: 'busy' },
   building: { label: 'Building', tone: 'busy' },
@@ -143,26 +208,204 @@ const TEMPLATE_STATE_LABEL: Record<
   missing: { label: 'Not built yet', tone: 'idle' },
 };
 
-const TEMPLATE_TONE_ICON_TILE: Record<'ok' | 'busy' | 'fail' | 'idle', string> = {
-  ok: 'bg-kortix-green/10 text-kortix-green',
-  busy: 'bg-kortix-yellow/10 text-kortix-yellow',
-  fail: 'bg-kortix-red/10 text-kortix-red',
-  idle: 'text-muted-foreground border-border',
+const TEMPLATE_TONE_TEXT: Record<TemplateTone, string> = {
+  ok: 'text-kortix-green',
+  busy: 'text-kortix-yellow',
+  fail: 'text-kortix-red',
+  idle: 'text-muted-foreground',
 };
 
-function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' } {
+/** Exported for test only — `TemplateCard` itself owns mutations and cannot
+ *  render under `renderToStaticMarkup`, so the presentation decisions are
+ *  pulled out as pure functions that can be asserted directly. */
+export function describeState(state: string): { label: string; tone: TemplateTone } {
   return TEMPLATE_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
 }
 
+/** Where the template is declared, in words a reader who has never opened the
+ *  repo can act on. Replaces the raw `platform` / `UI` / `kortix.yaml` tag
+ *  that used to sit last in the bullet-separated meta line. */
+export function describeSource(
+  template: SandboxTemplate,
+  manifestVersion: number | null,
+): { label: string; icon: PhosphorIcon; mono: boolean } {
+  if (template.source === 'platform')
+    return { label: 'Kortix platform', icon: ShippingContainerIcon, mono: false };
+  if (template.source === 'ui')
+    return { label: 'This dashboard', icon: SquaresFourIcon, mono: false };
+  return {
+    label: manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml',
+    icon: FileCodeIcon,
+    mono: true,
+  };
+}
+
+/** What the sandbox is built from. The old row folded this into a `sub` string
+ *  whose `is_default` branch hid the image entirely; the default's "shared by
+ *  every project" note is now a `Default` badge in the card header instead, so
+ *  this cell can always state the real base. */
+export function describeBase(template: SandboxTemplate): {
+  label: string;
+  value: string;
+  icon: PhosphorIcon;
+  mono: boolean;
+} {
+  if (template.has_image && template.image)
+    return { label: 'Base image', value: template.image, icon: PackageIcon, mono: true };
+  if (template.has_dockerfile && template.dockerfile_path)
+    return {
+      label: 'Built from',
+      value: template.dockerfile_path,
+      icon: FileCodeIcon,
+      mono: true,
+    };
+  return { label: 'Base image', value: 'Kortix default', icon: CubeIcon, mono: false };
+}
+
+/** Where sessions built from this template actually run. Static configuration,
+ *  not live status — which is why it belongs in the spec grid next to CPU and
+ *  memory, and NOT in the runtime footer where a bare `Automatic` badge used
+ *  to float with no label attached to it. */
+export function describeRouting(
+  providerMode: SandboxProviderMode,
+  selectedProvider: SandboxProvider | null,
+): { label: string; icon: PhosphorIcon } {
+  const mode = describeProviderMode(providerMode, selectedProvider);
+  if (providerMode === 'automatic') return { label: 'Automatic', icon: ShuffleIcon };
+  return {
+    label: mode.selectedProvider ? `Pinned · ${mode.selectedProvider}` : 'Pinned',
+    icon: PushPinIcon,
+  };
+}
+
 /** Matches `snapshots-tab.tsx`'s own `formatRelative` (both wrap
- *  `relativeTime`) — needed here for `SandboxTemplateProviderCoverage`'s
- *  `formatObservedAt`, which this tab uses independently of anything build-
- *  or snapshot-log related. */
+ *  `relativeTime`) — needed here for the runtime footer's "Checked …" stamp,
+ *  which this tab uses independently of anything build- or snapshot-log
+ *  related. */
 function formatRelative(input: string | null | undefined): string {
   return relativeTime(input) || '—';
 }
 
-function TemplateRow({
+/**
+ * The status word the old row computed and discarded. Glyph carries the same
+ * meaning as the colour so the state survives greyscale, colour-blindness, and
+ * a reader who has never seen this screen before.
+ *
+ * `busy` uses `Loading` rather than a glyph deliberately: a building template
+ * is a live async operation (the tab re-polls every 5s while any provider
+ * reports `building`), and motion is the only thing that says "this will
+ * change on its own — don't press Rebuild". `Loading` is the codebase's single
+ * spinner; no icon may be spun in its place.
+ */
+export function TemplateStateLine({ tone, label }: { tone: TemplateTone; label: string }) {
+  const toneClass = TEMPLATE_TONE_TEXT[tone];
+
+  return (
+    <span className={cn('flex items-center gap-1.5 text-xs font-medium', toneClass)}>
+      {tone === 'busy' ? (
+        <Loading variant="spokes" className={cn('size-3.5 shrink-0', toneClass)} />
+      ) : tone === 'ok' ? (
+        <CheckCircleIcon weight="fill" className="size-3.5 shrink-0" />
+      ) : tone === 'fail' ? (
+        <XCircleIcon weight="fill" className="size-3.5 shrink-0" />
+      ) : (
+        <CircleDashedIcon className="size-3.5 shrink-0" />
+      )}
+      {label}
+    </span>
+  );
+}
+
+/**
+ * One labelled cell of the spec grid — the unit of the readability fix. The
+ * `<dt>` sits above the value rather than beside it so the label column never
+ * competes with the value for the same 200px, and the value truncates inside
+ * its own cell (with a native `title` for the full string) instead of taking
+ * the whole meta line down with it.
+ */
+export function TemplateFact({
+  icon: Icon,
+  label,
+  value,
+  mono = false,
+  className,
+}: {
+  icon: PhosphorIcon;
+  label: string;
+  value: string;
+  mono?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn('min-w-0 space-y-1', className)}>
+      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-1.5">
+        <Icon className="text-muted-foreground size-4 shrink-0" />
+        <span className={cn('truncate text-sm', mono && 'font-mono text-xs')} title={value}>
+          {value}
+        </span>
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * The card's runtime strip: one line, three zones, one left edge.
+ *
+ * ```
+ * Session runtime   [Daytona · Ready] [Platinum · Building]   Checked 2 min ago
+ * └ label, fixed    └ badges, flex-1                          └ stamp, pushed right
+ * ```
+ *
+ * The previous footer nested `SandboxTemplateProviderCoverage` — a block that
+ * carried its OWN label, badges and timestamp — inside a row that carried a
+ * "Routing" label of its own. That produced two labels and a timestamp jammed
+ * against the last badge, with no way to align anything, because the inner
+ * block owned its own layout. Composing from `SandboxProviderBadge` puts the
+ * row back under this component's control: `ml-auto` on the stamp is only
+ * possible once the stamp is a direct child.
+ *
+ * Renders `null` when no provider reports coverage, so the card simply ends at
+ * the spec grid rather than showing an empty strip.
+ */
+export function TemplateRuntimeFooter({
+  coverage,
+  providerMode,
+  selectedProvider,
+  formatObservedAt = formatRelative,
+}: {
+  coverage: SandboxTemplate['provider_coverage'] | null | undefined;
+  providerMode: SandboxProviderMode;
+  selectedProvider: SandboxProvider | null;
+  formatObservedAt?: (observedAt: string) => string;
+}) {
+  const available = availableProviderCoverage(coverage);
+  if (available.length === 0) return null;
+
+  const observedAt = latestObservedAt(coverage);
+
+  return (
+    <div className="border-border/60 bg-muted/25 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t px-4 py-2.5">
+      <span className="text-muted-foreground shrink-0 text-xs">Session runtime</span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {available.map((item) => (
+          <SandboxProviderBadge
+            key={item.provider}
+            item={item}
+            selected={providerMode === 'pinned' && item.provider === selectedProvider}
+          />
+        ))}
+      </div>
+      {observedAt ? (
+        <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
+          Checked {formatObservedAt(observedAt)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function TemplateCard({
   projectId,
   template,
   canManage,
@@ -204,107 +447,125 @@ function TemplateRow({
     onError: (err: Error) => errorToast(err.message || 'Failed to delete template'),
   });
 
-  const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
-  const sub = template.is_default
-    ? 'Platform default · shared by every project'
-    : template.has_image
-      ? `Image: ${template.image}`
-      : `Dockerfile: ${template.dockerfile_path}`;
-  const sourceTag =
-    template.source === 'platform'
-      ? 'platform'
-      : template.source === 'ui'
-        ? 'UI'
-        : manifestVersion === 2
-          ? 'kortix.yaml'
-          : 'kortix.toml';
   const stateInfo = describeState(template.provider_state || template.daytona_state);
+  const source = describeSource(template, manifestVersion);
+  const base = describeBase(template);
+  const routing = describeRouting(providerMode, selectedProvider);
 
   return (
     <>
-      <li className="bg-popover flex flex-wrap items-center gap-4 overflow-hidden px-4 py-3 text-sm">
-        <div
-          className={cn(
-            'inline-flex size-11 shrink-0 items-center justify-center rounded-sm border',
-            TEMPLATE_TONE_ICON_TILE[stateInfo.tone],
-          )}
-        >
-          <Icon className="size-6 shrink-0" />
-        </div>
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{template.name}</span>
-            <Badge variant="secondary" size="sm">
-              {template.slug}
-            </Badge>
+      <li className="bg-popover overflow-hidden rounded-md border">
+        {/* One left edge for the whole card. The header used to lead with a
+            `size-9` tile, which pushed the name and status to x=64px while the
+            spec grid below started at x=16px — two competing left edges inside
+            one card. The status glyph in `TemplateStateLine` carries the tone
+            colour the tile used to, so nothing is lost by dropping it, and the
+            template kind is stated far more precisely by the "Base image" /
+            "Built from" cell than by a decorative glyph. */}
+        <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4 pb-3.5">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-foreground truncate text-sm font-medium">{template.name}</span>
+              <Badge variant="secondary" size="sm">
+                {template.slug}
+              </Badge>
+              {template.is_default ? (
+                <Badge variant="muted" size="sm">
+                  Default
+                </Badge>
+              ) : null}
+            </div>
+            <TemplateStateLine tone={stateInfo.tone} label={stateInfo.label} />
           </div>
-          {/* `tabular-nums`: vCPU / GiB / GiB-disk are three numbers repeated down
-              every template row, so proportional digits make the columns wander
-              between rows. Matches `snapshots-tab.tsx`, the other half of this
-              split, which already pins its timestamps the same way. */}
-          <div className="text-muted-foreground truncate text-xs tabular-nums">
-            {sub} &bull; {template.cpu} vCPU &bull; {template.memory_gb} GiB &bull;{' '}
-            {template.disk_gb} GiB disk &bull; {sourceTag}
-          </div>
-          <SandboxTemplateProviderCoverage
-            providerMode={providerMode}
-            coverage={template.provider_coverage}
-            selectedProvider={selectedProvider}
-            formatObservedAt={formatRelative}
-          />
-        </div>
-        <SandboxTemplateProviderModeBadge
-          providerMode={providerMode}
-          coverage={template.provider_coverage}
-          selectedProvider={selectedProvider}
-        />
-        {canManage && (
-          <div className="flex items-center gap-1">
-            {templateId && !template.is_default && (
-              <>
+          {canManage && (
+            <div className="flex items-center gap-1">
+              {templateId && !template.is_default && (
+                <>
+                  <Hint label="Edit template" side="top">
+                    <Button
+                      size="icon-base"
+                      variant="ghost"
+                      className="transition-transform active:scale-[0.96]"
+                      onClick={() => onEdit(template)}
+                      aria-label="Edit template"
+                    >
+                      <PencilSimpleIcon className="size-3.5 shrink-0" />
+                    </Button>
+                  </Hint>
+                  <Hint label="Delete template" side="top">
+                    <Button
+                      size="icon-base"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive transition-transform active:scale-[0.96]"
+                      disabled={deleteMut.isPending}
+                      onClick={() => setConfirmDelete(true)}
+                      aria-label="Delete template"
+                    >
+                      {deleteMut.isPending ? (
+                        <Loading className="size-3.5 shrink-0" />
+                      ) : (
+                        <TrashIcon className="size-3.5 shrink-0" />
+                      )}
+                    </Button>
+                  </Hint>
+                </>
+              )}
+              {templateId && (
                 <Button
                   size="sm"
-                  variant="ghost"
-                  className="size-7 p-0"
-                  onClick={() => onEdit(template)}
-                  aria-label="Edit template"
+                  variant="outline"
+                  className="gap-1.5 transition-transform active:scale-[0.96]"
+                  disabled={buildMut.isPending}
+                  onClick={() => buildMut.mutate()}
                 >
-                  <Edit3 className="size-3.5" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive size-7 p-0"
-                  disabled={deleteMut.isPending}
-                  onClick={() => setConfirmDelete(true)}
-                  aria-label="Delete template"
-                >
-                  {deleteMut.isPending ? (
+                  {buildMut.isPending ? (
                     <Loading className="size-3.5 shrink-0" />
                   ) : (
-                    <Trash2 className="size-3.5 shrink-0" />
+                    <ArrowClockwiseIcon className="size-3.5 shrink-0" />
                   )}
+                  Rebuild
                 </Button>
-              </>
-            )}
-            {templateId && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                disabled={buildMut.isPending}
-                onClick={() => buildMut.mutate()}
-              >
-                {buildMut.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <RefreshCw className="size-3.5 shrink-0" />
-                )}
-                Rebuild
-              </Button>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* SIX cells, every one exactly one track wide — the grid fills two
+            complete rows of three with no holes and no spans. The base-image
+            cell used to take `col-span-2`, which left row 1 as three equal
+            cells and row 2 as one narrow beside one double-wide: a uniform
+            track carrying ragged content. Long image refs now truncate inside
+            their own cell (full string on the native `title`) instead of
+            widening it.
+
+            `tabular-nums` on the whole list: vCPU / GiB / GiB-disk are the same
+            three numbers repeated down every card, so proportional digits make
+            the columns wander between cards. Matches `snapshots-tab.tsx`, the
+            other half of this split, which pins its timestamps the same way. */}
+        <dl className="border-border/60 grid grid-cols-2 gap-x-4 gap-y-4 border-t px-4 py-4 tabular-nums sm:grid-cols-3">
+          <TemplateFact icon={CpuIcon} label="Processor" value={`${template.cpu} vCPU`} />
+          <TemplateFact icon={MemoryIcon} label="Memory" value={`${template.memory_gb} GiB`} />
+          <TemplateFact icon={HardDrivesIcon} label="Storage" value={`${template.disk_gb} GiB`} />
+          <TemplateFact
+            icon={base.icon}
+            label={base.label}
+            value={base.value}
+            mono={base.mono}
+          />
+          <TemplateFact
+            icon={source.icon}
+            label="Defined in"
+            value={source.label}
+            mono={source.mono}
+          />
+          <TemplateFact icon={routing.icon} label="Routing" value={routing.label} />
+        </dl>
+
+        <TemplateRuntimeFooter
+          coverage={template.provider_coverage}
+          providerMode={providerMode}
+          selectedProvider={selectedProvider}
+        />
       </li>
       <ConfirmDialog
         open={confirmDelete}
@@ -319,6 +580,23 @@ function TemplateRow({
     </>
   );
 }
+
+/**
+ * One flat block per card — deliberately NOT a wireframe of the card's insides.
+ *
+ * The previous version drew a `bg-popover rounded-md border` panel and packed
+ * six `Skeleton` shapes into it: a tile, two text bars and a three-cell row.
+ * That reads as a skeleton nested inside a skeleton — the bordered panel is
+ * already surface chrome, so filling it with more grey blocks gives the eye
+ * structure to parse at exactly the moment there is nothing to read. It had
+ * also silently gone stale: it still drew the `size-9` status tile that the
+ * card itself no longer has.
+ *
+ * `h-60` (240px) is the settled height of a card with a runtime footer
+ * (72px header + 129px grid + 41px footer = 242px), so the list barely moves
+ * when real data lands.
+ */
+const TEMPLATE_SKELETON_HEIGHT = 'h-60';
 
 export interface SandboxTabViewProps {
   isLoading?: boolean;
@@ -342,7 +620,7 @@ export interface SandboxTabViewProps {
    *  comment. */
   isEmpty?: boolean;
   emptyAction?: ReactNode;
-  /** The `<ul>` of `TemplateRow`s, built by the container — see this file's
+  /** The `<ul>` of `TemplateCard`s, built by the container — see this file's
    *  header comment for why it's a slot. */
   templatesSlot?: ReactNode;
 }
@@ -368,9 +646,9 @@ export function SandboxTabView({
       <div className="space-y-8">
         <SettingsTabHeader tab="sandbox" action={headerAction} />
         {isLoading ? (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {TEMPLATE_SKELETON_ROWS.map((row) => (
-              <Skeleton key={row} className="h-10 rounded-md" />
+              <Skeleton key={row} className={cn(TEMPLATE_SKELETON_HEIGHT, 'rounded-md')} />
             ))}
           </div>
         ) : isError ? (
@@ -385,11 +663,11 @@ export function SandboxTabView({
             }
           />
         ) : (
-          <>
-            <p className="text-muted-foreground text-sm text-balance">
-              Sessions boot from a sandbox template. The platform default is shared by every project
-              and clones your repo into <code className="font-mono">/workspace</code> at boot. Add
-              your own templates here or via{' '}
+          <div className="space-y-4">
+            <p className="text-muted-foreground text-sm text-pretty">
+              Every session starts from a sandbox template — a prepared machine with your repository
+              already checked out at <code className="font-mono">/workspace</code>. The Kortix
+              default works for most projects. Add your own below, or declare them as{' '}
               {manifestVersion === 2 ? (
                 <>
                   <code className="font-mono">sandbox.templates</code> in{' '}
@@ -412,18 +690,16 @@ export function SandboxTabView({
 
             {isEmpty ? (
               <EmptyState
-                icon={Container}
+                icon={ShippingContainerIcon}
                 size="sm"
                 title="No templates resolved yet."
                 description="Create one, or add it to your project's manifest."
                 action={emptyAction}
               />
             ) : (
-              <div className="border-border divide-border divide-y overflow-hidden rounded-md border">
-                {templatesSlot}
-              </div>
+              templatesSlot
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -486,8 +762,13 @@ export function SandboxTab({ projectId }: { projectId: string }) {
   // `editingTemplate` (only `openNewForm`, used by the header action, does)
   // — preserved as-is, not in scope to fix.
   const newTemplateAction = canManage ? (
-    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setFormOpen(true)}>
-      <Plus className="size-3.5 shrink-0" />
+    <Button
+      size="sm"
+      variant="outline"
+      className="gap-1.5 transition-transform active:scale-[0.96]"
+      onClick={() => setFormOpen(true)}
+    >
+      <PlusIcon className="size-3.5 shrink-0" />
       New template
     </Button>
   ) : undefined;
@@ -501,7 +782,12 @@ export function SandboxTab({ projectId }: { projectId: string }) {
         onRetry={() => snapshotsQuery.refetch()}
         headerAction={
           canManage ? (
-            <Button size="sm" variant="secondary" className="gap-1.5" onClick={openNewForm}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1.5 transition-transform active:scale-[0.96]"
+              onClick={openNewForm}
+            >
               <PlusIcon className="size-4 shrink-0" />
               New template
             </Button>
@@ -513,9 +799,9 @@ export function SandboxTab({ projectId }: { projectId: string }) {
         emptyAction={newTemplateAction}
         templatesSlot={
           templates.length === 0 ? undefined : (
-            <ul>
+            <ul className="space-y-2">
               {templates.map((t) => (
-                <TemplateRow
+                <TemplateCard
                   key={t.template_id ?? `tpl-${t.slug}`}
                   projectId={projectId}
                   template={t}

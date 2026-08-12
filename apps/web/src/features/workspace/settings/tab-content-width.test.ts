@@ -49,6 +49,9 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { railItemForTab } from './rail';
+import type { SettingsTab } from './settings-tabs';
+
 const TABS_DIR = join(import.meta.dir, 'tabs');
 const SRC_DIR = join(import.meta.dir, '..', '..', '..');
 
@@ -194,17 +197,43 @@ describe('settings tab content width', () => {
  * stop (the wrapper carried `max-w-3xl` until 2026-08-12).
  */
 const PANEL_SECTIONS_VIA_WRAPPER = [
+  'features/workspace/customize/sections/view/gateway/gateway-routing.tsx',
+  'features/workspace/customize/sections/view/gateway/gateway-playground.tsx',
+];
+
+/**
+ * Panel sections that declare their own container instead of the wrapper's.
+ *
+ * Every one takes `SettingsTabHeader`, so the pane's title and description come
+ * from the tab's rail entry — the same single source every `tabs/*.tsx` pane
+ * reads. `CustomizeSectionWrapper` cannot: it takes `title`/`description` as
+ * props, so a section using it has to restate copy that already exists in
+ * `rail.ts`, and the two drift. Every pane that used it did drift:
+ *
+ * | Pane | What it had |
+ * | --- | --- |
+ * | Upgrades | THREE wordings of one sentence — the wrapper's, the rail's, and a `<p>` in its own body — and rendered the two that were not canonical |
+ * | Voice | Two: a three-sentence local one that rendered, and the rail's, which never did |
+ * | Secrets, Channels | A local description; their rail entries had none at all |
+ * | Schedules, Webhooks | Both in `KIND_COPY.title`/`.description` — a screen-copy table that also owned a pane heading |
+ *
+ * The wrapper also nests a second scroll container inside the one
+ * `settings-panel.tsx:524` already gives every pane, which this shape avoids.
+ *
+ * What is left in `PANEL_SECTIONS_VIA_WRAPPER` is not a pane at all: Routing
+ * and Playground are `TabsContent` panels inside `gateway-view.tsx`'s own
+ * sub-tab shell, under the Models pane, whose heading `models-tab.tsx` already
+ * renders. They have no rail entry and must not get one — the wrapper is the
+ * right shell for a sub-view, and the width rule still applies to them.
+ */
+const PANEL_SECTIONS_OWN_CONTAINER = [
+  'features/workspace/customize/sections/view/git-view.tsx',
+  'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
   'features/workspace/customize/sections/view/secrets-view.tsx',
   'features/workspace/customize/sections/view/channels-view.tsx',
   'features/workspace/customize/sections/view/voice-view.tsx',
-  'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
-  'features/workspace/customize/sections/view/gateway/gateway-routing.tsx',
-  'features/workspace/customize/sections/view/gateway/gateway-playground.tsx',
   'components/projects/schedule-view.tsx',
 ];
-
-/** Panel sections that declare their own container instead of the wrapper's. */
-const PANEL_SECTIONS_OWN_CONTAINER = ['features/workspace/customize/sections/view/git-view.tsx'];
 
 function srcFile(relative: string): string {
   return readFileSync(join(SRC_DIR, relative), 'utf8');
@@ -232,9 +261,48 @@ describe('customize sections mounted in the settings panel', () => {
     });
   }
 
+  /**
+   * The tabs the sections above render a heading for. `schedule-view.tsx` is
+   * one component serving two, switched by its `type` prop.
+   *
+   * `SettingsTabHeader` returns `null` when `railItemForTab` finds nothing, and
+   * renders no subtitle when the entry it finds has no `description`. Both
+   * failures are silent — the pane just loses its heading and nothing throws —
+   * which is exactly how the copy went missing on these panes in the first
+   * place. This is the guard.
+   */
+  const PANES_WITH_RAIL_HEADING: SettingsTab[] = [
+    'repositories',
+    'upgrades',
+    'secrets',
+    'channels',
+    'voice',
+    'schedules',
+    'webhooks',
+  ];
+
+  for (const tab of PANES_WITH_RAIL_HEADING) {
+    test(`the '${tab}' rail entry carries the heading its pane renders`, () => {
+      const item = railItemForTab(tab);
+      expect(item).toBeDefined();
+      expect(item?.label ?? '').not.toBe('');
+      expect(item?.description ?? '').not.toBe('');
+    });
+  }
+
   for (const relative of PANEL_SECTIONS_OWN_CONTAINER) {
     test(`${relative} declares the panel column itself`, () => {
       expect(srcFile(relative)).toContain('mx-auto w-full max-w-2xl');
+    });
+
+    // The width is only half of why these two left the wrapper. Without this,
+    // a section could keep the column and quietly go back to hardcoding a
+    // title and description the rail already owns — the exact drift that moved
+    // Upgrades here. See the list's comment above.
+    test(`${relative} takes its heading from the rail, not a hardcoded string`, () => {
+      const source = srcFile(relative);
+      expect(source).toContain('<SettingsTabHeader');
+      expect(source).not.toContain('<CustomizeSectionWrapper');
     });
   }
 });

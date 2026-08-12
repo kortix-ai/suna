@@ -78,7 +78,13 @@ const VOICE_ITEM: RailItem = {
   tab: 'voice',
   label: 'Voice',
   icon: AudioLines,
-  description: 'How Kortix sounds when it speaks and listens.',
+  // Merged from the two that existed: this one, which never rendered, and
+  // `voice-view.tsx`'s own three-sentence version, which did. The old line
+  // here ("How Kortix sounds when it speaks and listens") describes picking a
+  // voice; the pane is about sending the agent into a call. Say what the pane
+  // does, at the length every other entry uses.
+  description:
+    'Send the agent into a call. It listens, answers out loud, and keeps working while you talk.',
 };
 
 /**
@@ -90,7 +96,14 @@ const VOICE_ITEM: RailItem = {
 export const UPGRADE_ITEM: RailItem = {
   tab: 'upgrades',
   label: 'Upgrades',
-  description: 'One-off upgrades this workspace can run against its own data.',
+  // The pane's ONLY description. It used to be dead: `upgrade-view.tsx` drew
+  // its own header through `CustomizeSectionWrapper` with a second wording,
+  // and repeated a third inside the one-off panel — three copies of one
+  // sentence, none of them this one. That view reads this now, like every
+  // other pane. Say what runs and what it can't do: "agent" and "nothing
+  // merges" are the two facts a person needs before pressing Run.
+  description:
+    'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
   icon: ArrowUpCircle,
 };
 
@@ -132,11 +145,13 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'secrets',
         label: 'Secrets',
         icon: KeyRound,
+        description: 'Store encrypted values and control where each value can be used.',
       },
       {
         tab: 'channels',
         label: 'Channels',
         icon: ChatTeardropIcon,
+        description: 'Reach your agent from the tools your team already uses.',
       },
       {
         tab: 'repositories',
@@ -144,15 +159,24 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         icon: GitFork,
         description: "Where this workspace's code lives, and how to work on it from your computer.",
       },
+      // Both panes are one component, `components/projects/schedule-view.tsx`,
+      // switched by its `type` prop. Its own `KIND_COPY` used to carry these
+      // two sentences as `title`/`description` — the one screen-copy table in
+      // the app that also owned a pane heading. They live here now, like every
+      // other pane's, and `KIND_COPY` keeps the wording that is genuinely
+      // per-kind and appears INSIDE the pane (noun, empty state, column).
       {
         tab: 'schedules',
         label: 'Schedules',
         icon: AlarmClock,
+        description: 'Have an agent do something on a repeating schedule, or once at a set time.',
       },
       {
         tab: 'webhooks',
         label: 'Webhooks',
         icon: Webhook,
+        description:
+          'Give another app a private address that starts an agent when it sends a request.',
       },
     ],
   },
@@ -168,11 +192,19 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'sandbox',
         label: 'Sandbox templates',
         icon: Container,
+        description: 'The recipe for the machine a session runs on.',
+        docsHref: '/docs/work/runtime',
       },
       {
         tab: 'snapshots',
         label: 'Snapshots',
         icon: Stack,
+        // The pane opened on a log of `kortix-tpl-…` strings with nothing
+        // above it saying what any of them were. Say what a snapshot is, in
+        // the one line that is always on screen, before the log starts.
+        description:
+          'Every session starts on a machine Kortix prepared in advance. This is the record of each time it prepared one.',
+        docsHref: '/docs/work/runtime',
       },
     ],
   },
@@ -183,6 +215,11 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'organization',
         label: 'General',
         icon: Settings,
+        // The pane opened on a bare "General" with nothing under it, so the
+        // one thing always on screen said nothing about which scope you were
+        // looking at — and this panel has three Generals (workspace, profile,
+        // organization). Name the scope and what it holds, in one line.
+        description: "Your organization's name and the sign-in rules everyone on it has to follow.",
       },
       {
         tab: 'billing',

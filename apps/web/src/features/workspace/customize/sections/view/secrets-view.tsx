@@ -64,8 +64,8 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
@@ -242,18 +242,18 @@ export function SecretsView({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <CustomizeSectionWrapper
-        title="Secrets"
-        description="Store encrypted values and control where each value can be used."
-        action={
-          !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
-            <Button size="sm" variant="secondary" onClick={openCreate}>
-              <PlusIcon className="size-4 shrink-0" />
-              AddS
-            </Button>
-          ) : null
-        }
-      >
+      <div className="mx-auto w-full max-w-2xl space-y-8">
+        <SettingsTabHeader
+          tab="secrets"
+          action={
+            !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
+              <Button size="sm" variant="secondary" onClick={openCreate}>
+                <PlusIcon className="size-4 shrink-0" />
+                Add
+              </Button>
+            ) : null
+          }
+        />
         <div className="space-y-4">
           <InputGroupSearch>
             <InputGroupSearchIcon>
@@ -366,7 +366,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
             </>
           )}
         </div>
-      </CustomizeSectionWrapper>
+      </div>
       <ProjectProviderModal
         projectId={projectId}
         open={providerModalOpen}

@@ -29,16 +29,41 @@
  * icon, no headline, no second Create button. Jay, 2026-08-12: "If there is no
  * service account yet, don't show the empty state." The create action lives in
  * the pane header where the eye already lands.
+ *
+ * **One layout, borrowed whole.** Jay, later the same day: "for the API key
+ * table layout, I want you to use the same layout that is used in this secret
+ * tab." So every piece of chrome here is now `secrets-view.tsx`'s piece — the
+ * shared bordered `Table` instead of a hand-rolled `<table>` and three local
+ * cell constants, `InputGroupSearch` instead of a bare `Input type="search"`,
+ * a `DotsThree` row menu instead of inline ghost buttons, and the matching
+ * skeleton. Two surfaces that show a list of credentials should not have two
+ * dialects for it.
+ *
+ * Two things came with that pass. The toolbar's six filter targets collapsed
+ * into one menu (`ApiKeyFilterValue` in `api-key-rows.ts` holds the argument),
+ * and Status became a `Badge` with a glyph (`STATUS_BADGE` below).
  */
 
-import { useState } from 'react';
+import { type ComponentProps, useState } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
@@ -56,13 +81,20 @@ import {
   SelectGroup,
   SelectItem,
   SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -83,62 +115,70 @@ import {
   revokeAccountToken,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { CopyIcon, KeyIcon, PlusIcon } from '@phosphor-icons/react';
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  CopyIcon,
+  DotsThreeIcon,
+  type Icon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  ProhibitIcon,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from './api-key-expiry';
 import {
+  type ApiKeyFilterValue,
   type ApiKeyKind,
   type ApiKeyRow,
   type ApiKeyStatus,
+  apiKeyFilter,
   buildApiKeyRows,
-  countApiKeysByStatus,
+  countApiKeys,
   filterApiKeyRows,
 } from './api-key-rows';
-
-/**
- * The Linear-borderless table dialect, byte-identical to `members-tab.tsx`'s
- * own `TABLE_HEAD_CELL`/`TABLE_CELL`/`TABLE_DATE_CELL` (that file's comment
- * explains why the container is local markup while every cell primitive stays
- * shared: `@/components/ui/table`'s `Table` hard-codes `rounded-md border
- * bg-popover` with no escape hatch, and 20+ other surfaces depend on it).
- *
- * Duplicated rather than imported: those constants are module-private in a
- * file under active edit, and reaching into it would fight that work. Worth
- * lifting into `components/ui/table.tsx` as a `variant="plain"` once the
- * Members pane settles — two panes now share this dialect, which is the point
- * at which it stops being one screen's taste.
- */
-const TABLE_HEAD_CELL = 'text-muted-foreground px-3 py-1.5 text-xs first:pl-0 last:pr-0';
-const TABLE_CELL = 'px-3 py-2.5 first:pl-0 last:pr-0';
-const TABLE_DATE_CELL = 'text-muted-foreground tabular-nums';
 
 /** Sentinel Select value for "not scoped to one project". */
 const WHOLE_WORKSPACE = '__workspace__';
 
-/** Sentinel for the "don't filter on this axis" option in both filters. */
-const ANY = 'all';
+/**
+ * How each state reads in the Status column.
+ *
+ * Jay, 2026-08-12: "for the status, I want you to use the badge icon." The
+ * column used to be the bare word, with a small green dot in front of the live
+ * ones — so two of the three states were unbounded text floating in a cell,
+ * and the one mark on offer only ever appeared on the default state. A `Badge`
+ * gives all three the same edge, and the glyph lands before the word is read.
+ *
+ * `revoked` is `muted`, not `destructive`: someone chose to revoke it, and a
+ * column of red would put the alarm on the wrong thing. Only `expired` — the
+ * state nobody chose, and the one that silently stops a CI job — takes a
+ * warning colour.
+ */
+const STATUS_BADGE: Record<
+  ApiKeyStatus,
+  { label: string; variant: ComponentProps<typeof Badge>['variant']; icon: Icon }
+> = {
+  active: { label: 'Active', variant: 'success', icon: CheckCircleIcon },
+  expired: { label: 'Expired', variant: 'update', icon: ClockIcon },
+  revoked: { label: 'Revoked', variant: 'muted', icon: ProhibitIcon },
+};
 
-const STATUS_FILTERS: { value: ApiKeyStatus | typeof ANY; label: string }[] = [
-  { value: ANY, label: 'All' },
-  { value: 'active', label: 'Active' },
-  { value: 'expired', label: 'Expired' },
-  { value: 'revoked', label: 'Revoked' },
-];
-
-const KIND_FILTERS: { value: ApiKeyKind | typeof ANY; label: string }[] = [
-  { value: ANY, label: 'All types' },
+/** The type half of the one filter. The status half is `STATUS_BADGE`'s keys. */
+const KIND_OPTIONS: { value: ApiKeyKind; label: string }[] = [
   { value: 'personal', label: 'Personal' },
   { value: 'automation', label: 'Automation' },
 ];
 
-/** How each state reads in the Status column. Tonal, not decorative: only a
- *  key that still works gets full-strength text plus the brand green dot. */
-const STATUS_LABEL: Record<ApiKeyStatus, string> = {
-  active: 'Active',
-  expired: 'Expired',
-  revoked: 'Revoked',
-};
+const STATUS_OPTIONS: ApiKeyStatus[] = ['active', 'expired', 'revoked'];
+
+/** The line under each filter option: what picking it leads to, before it is picked. */
+function countLabel(count: number): string {
+  if (count === 0) return 'None';
+  return `${count} ${count === 1 ? 'key' : 'keys'}`;
+}
 
 const TOKENS_KEY = (accountId: string) => ['account-tokens', accountId];
 const SERVICE_ACCOUNTS_KEY = (accountId: string) => ['service-accounts', accountId];
@@ -177,8 +217,8 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
   const invalidate = useInvalidateKeys(accountId);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<ApiKeyStatus | typeof ANY>(ANY);
-  const [kind, setKind] = useState<ApiKeyKind | typeof ANY>(ANY);
+  /** One control, one axis — see `ApiKeyFilterValue` in `api-key-rows.ts`. */
+  const [view, setView] = useState<ApiKeyFilterValue>('all');
 
   const tokensQuery = useQuery({
     queryKey: TOKENS_KEY(accountId),
@@ -231,10 +271,16 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
   const error = tokensQuery.error ?? serviceAccountsQuery.error;
 
   if (isLoading) {
+    // Shape-matched to the toolbar plus a few table rows, the same placeholder
+    // `secrets-view.tsx` uses — so the block does not resize when data lands.
     return (
-      <div className="space-y-2">
-        <Skeleton className="h-14 w-full rounded-md" />
-        <Skeleton className="h-14 w-full rounded-md" />
+      <div className="space-y-4">
+        <Skeleton className="h-10 rounded-md" />
+        <div className="space-y-1">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton key={index} className="h-10 rounded-md" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -291,99 +337,134 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
   // them: a search field over nothing is furniture.
   if (rows.length === 0) return null;
 
-  // Counts are taken AFTER the kind filter and BEFORE the status filter, so
-  // every number on the status bar is a count of rows that filter would
-  // actually show.
-  const inKindScope = filterApiKeyRows(rows, { kind });
-  const counts = countApiKeysByStatus(inKindScope);
-  const visible = filterApiKeyRows(inKindScope, { status, search });
-
+  const counts = countApiKeys(rows);
+  const visible = filterApiKeyRows(rows, { ...apiKeyFilter(view), search });
   const busy = revokeMutation.isPending || deleteMutation.isPending;
+
+  // An option that leads to an empty table is not offered. The currently
+  // selected one always survives, or revoking the last active key would make
+  // the selection vanish out of the trigger while it was still in force.
+  const inMenu = (value: ApiKeyFilterValue) => counts[value] > 0 || view === value;
+  const statusOptions = STATUS_OPTIONS.filter(inMenu);
+  const kindOptions = KIND_OPTIONS.filter((option) => inMenu(option.value));
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search keys"
-          aria-label="Search keys"
-          className="h-8 w-full sm:max-w-64"
-        />
-        <div className="flex items-center gap-2">
-          {/* The design system's filter/status control: `TabsListCompact` +
-              `TabsTriggerCompact` under their own `Tabs` root, the same shape
-              `review-center.tsx` and `changes-view.tsx` use. Radix owns
-              `aria-selected` and roving focus, so the pills are keyboard
-              navigable with the arrow keys for free. */}
-          <Tabs
-            value={status}
-            onValueChange={(value) => setStatus(value as ApiKeyStatus | typeof ANY)}
-          >
-            <TabsListCompact>
-              {STATUS_FILTERS.map((option) => (
-                <TabsTriggerCompact key={option.value} value={option.value}>
-                  {option.label}
-                  {/* A count only when there is something to count — "Expired 0"
-                      beside "Revoked 0" is two numbers saying nothing. Same rule
-                      the Members tab bar and the review centre use. */}
-                  {counts[option.value] > 0 ? (
-                    <span className="ml-1 tabular-nums opacity-60">{counts[option.value]}</span>
-                  ) : null}
-                </TabsTriggerCompact>
-              ))}
-            </TabsListCompact>
-          </Tabs>
-          <Select value={kind} onValueChange={(value) => setKind(value as ApiKeyKind | typeof ANY)}>
-            <SelectTrigger size="sm" className="h-8 w-[136px]" aria-label="Filter by key type">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {KIND_FILTERS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        {/* The Secrets toolbar, primitive for primitive — `InputGroupSearch`
+            with the popover-variant input and its own clear button, rather
+            than the bare `Input type="search"` this had. */}
+        <InputGroupSearch className="min-w-0 sm:flex-1">
+          <InputGroupSearchIcon>
+            <MagnifyingGlassIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder="Search keys"
+            aria-label="Search keys"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            variant="popover"
+            size="sm"
+          />
+          <InputGroupSearchClear onClick={() => setSearch('')} />
+        </InputGroupSearch>
+
+        {/* ONE control where there were two: a four-pill status strip and a
+            type dropdown, six targets and two of them called "All". Both axes
+            now live in this menu, one at a time — see `ApiKeyFilterValue` in
+            `api-key-rows.ts` for why that costs nothing the search does not
+            already cover. Each option carries what it leads to as a
+            description, which `select.tsx` renders in the menu only, so the
+            collapsed trigger stays a plain label. */}
+        <Select value={view} onValueChange={(value) => setView(value as ApiKeyFilterValue)}>
+          <SelectTrigger className="w-full shrink-0 sm:w-44" aria-label="Filter keys">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem size="sm" value="all" description={countLabel(counts.all)}>
+              All keys
+            </SelectItem>
+            {statusOptions.length > 0 ? (
+              <>
+                <SelectSeparator />
+
+                <SelectGroup>
+                  <SelectLabel>Status</SelectLabel>
+                  {statusOptions.map((value) => (
+                    <SelectItem
+                      size="sm"
+                      key={value}
+                      value={value}
+                      description={countLabel(counts[value])}
+                    >
+                      {STATUS_BADGE[value].label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </>
+            ) : null}
+            {kindOptions.length > 0 ? (
+              <>
+                <SelectSeparator />
+                <SelectGroup>
+                  <SelectLabel>Type</SelectLabel>
+                  {kindOptions.map((option) => (
+                    <SelectItem
+                      size="sm"
+                      key={option.value}
+                      value={option.value}
+                      description={countLabel(counts[option.value])}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </>
+            ) : null}
+          </SelectContent>
+        </Select>
       </div>
 
       {visible.length === 0 ? (
         <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-          No keys match that. Try a different search, or set the filters back to All.
+          {search.trim() ? (
+            <>
+              No keys match <span className="text-foreground font-mono">{search.trim()}</span>.
+            </>
+          ) : (
+            // Only reachable when the selection goes stale mid-session — revoke
+            // the last active key while "Active" is showing. `inMenu` keeps that
+            // option in the menu, so this names the way back out of it.
+            'Nothing left under this filter. Choose “All keys” to see the rest.'
+          )}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          {/* Local container, shared cells — see `TABLE_HEAD_CELL` above. */}
-          <table className="w-full caption-bottom text-sm">
-            <TableHeader className="bg-transparent">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className={TABLE_HEAD_CELL}>Key</TableHead>
-                <TableHead className={TABLE_HEAD_CELL}>Type</TableHead>
-                <TableHead className={TABLE_HEAD_CELL}>Status</TableHead>
-                <TableHead className={TABLE_HEAD_CELL}>Created</TableHead>
-                <TableHead className={TABLE_HEAD_CELL}>Last used</TableHead>
-                <TableHead className={cn(TABLE_HEAD_CELL, 'text-right')}>
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((row) => (
-                <KeyTableRow
-                  key={`${row.kind}:${row.id}`}
-                  row={row}
-                  canManage={canManage}
-                  busy={busy && pending?.row.id === row.id}
-                  onRevoke={() => setPending({ row, action: 'revoke' })}
-                  onDelete={() => setPending({ row, action: 'delete' })}
-                />
-              ))}
-            </TableBody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Key</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead className="w-[52px]">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map((row) => (
+              <KeyTableRow
+                key={`${row.kind}:${row.id}`}
+                row={row}
+                canManage={canManage}
+                busy={busy && pending?.row.id === row.id}
+                onRevoke={() => setPending({ row, action: 'revoke' })}
+                onDelete={() => setPending({ row, action: 'delete' })}
+              />
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       <ConfirmDialog
@@ -426,75 +507,86 @@ function KeyTableRow({
   onDelete: () => void;
 }) {
   const live = row.status === 'active';
+  const status = STATUS_BADGE[row.status];
+  const canRevoke = live || row.status === 'expired';
+  // A revoked personal key has no delete endpoint — it stays as a record. Only
+  // an automation key can be cleared from the list.
+  const canDelete = !canRevoke && row.kind === 'automation';
+
   return (
-    <TableRow className="border-b-0 hover:bg-transparent">
-      {/* Every cell is middle-aligned (the primitive's default). The old
-          service-accounts table set `align-top`, so a two-line name cell left
-          the badge and both dates floating at the top of the row — the
-          "table is not aligned" report. The name cell is the only tall one;
-          centring keeps the other four on one reading line. */}
-      <TableCell className={cn(TABLE_CELL, 'max-w-[260px] whitespace-normal')}>
-        <div className="flex items-center gap-2.5">
-          <span
-            className={cn(
-              'inline-flex size-8 shrink-0 items-center justify-center rounded-sm border',
-              live ? 'bg-kortix-green/10 text-kortix-green' : 'text-muted-foreground',
-            )}
-          >
-            <KeyIcon className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <span
-                className={cn(
-                  'truncate font-medium',
-                  live ? 'text-foreground' : 'text-muted-foreground',
-                )}
-              >
-                {row.name}
-              </span>
-              {row.scopeLabel ? (
-                <Badge variant="muted" size="xs" className="max-w-[120px] shrink-0 truncate">
-                  {row.scopeLabel}
-                </Badge>
-              ) : null}
-            </div>
-            <p className="text-muted-foreground/70 truncate font-mono text-xs">{row.hint}</p>
+    <TableRow>
+      {/* The Secrets identifier cell: one line for the name, one muted mono
+          line under it, both middle-aligned. The `size-8` key tile that used to
+          lead this cell is gone — once Status carries a badge, a tile that
+          tinted green for the same bit was the second thing on the row saying
+          "this one works". */}
+      <TableCell className="max-w-[280px] align-middle">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span
+              className={cn(
+                'truncate text-sm font-medium',
+                live ? 'text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              {row.name}
+            </span>
+            {row.scopeLabel ? (
+              <Badge variant="muted" size="xs" className="max-w-[120px] shrink-0 truncate">
+                {row.scopeLabel}
+              </Badge>
+            ) : null}
           </div>
+          <code className="text-muted-foreground truncate font-mono text-xs">{row.hint}</code>
         </div>
       </TableCell>
-      <TableCell className={cn(TABLE_CELL, 'text-muted-foreground text-xs')}>
+      <TableCell className="text-muted-foreground align-middle text-xs">
         {row.kind === 'automation' ? 'Automation' : 'Personal'}
       </TableCell>
-      <TableCell className={cn(TABLE_CELL, 'text-xs')}>
-        <span className={cn('inline-flex items-center gap-1.5', !live && 'text-muted-foreground')}>
-          {live ? <span className="bg-kortix-green size-1.5 shrink-0 rounded-full" /> : null}
-          {STATUS_LABEL[row.status]}
-        </span>
+      <TableCell className="align-middle">
+        <Badge variant={status.variant} size="sm">
+          <status.icon weight="fill" />
+          {status.label}
+        </Badge>
       </TableCell>
-      <TableCell className={cn(TABLE_CELL, TABLE_DATE_CELL, 'text-xs')}>
+      {/* `tabular-nums` so the two date columns stay in their own gutters as
+          rows re-render — "3 days ago" over "13 days ago" otherwise shifts. */}
+      <TableCell className="text-muted-foreground align-middle text-xs tabular-nums">
         {relativeTime(row.createdAt)}
       </TableCell>
-      <TableCell className={cn(TABLE_CELL, TABLE_DATE_CELL, 'text-xs')}>
+      <TableCell className="text-muted-foreground align-middle text-xs tabular-nums">
         {row.lastUsedAt ? relativeTime(row.lastUsedAt) : 'Never'}
       </TableCell>
-      <TableCell className={cn(TABLE_CELL, 'text-right')}>
-        {busy ? (
-          <Loading className="text-muted-foreground ml-auto" />
-        ) : canManage ? (
-          <>
-            {live || row.status === 'expired' ? (
-              <Button type="button" size="sm" variant="ghost" onClick={onRevoke}>
-                Revoke
+      <TableCell className="align-middle">
+        {/* Revoke and Delete moved into the Secrets row menu. They were bare
+            ghost text buttons sitting in every row, so the table's most
+            destructive action was also its most repeated word. */}
+        {canManage && (canRevoke || canDelete) ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" aria-label={`Actions for ${row.name}`}>
+                {busy ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <DotsThreeIcon className="size-3.5 shrink-0" />
+                )}
               </Button>
-            ) : row.kind === 'automation' ? (
-              // A revoked personal key has no delete endpoint — it stays as a
-              // record. Only an automation key can be cleared from the list.
-              <Button type="button" size="sm" variant="ghost" onClick={onDelete}>
-                Delete
-              </Button>
-            ) : null}
-          </>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {canRevoke ? (
+                <DropdownMenuItem onClick={onRevoke}>
+                  <ProhibitIcon className="size-3.5 shrink-0" />
+                  Revoke key
+                </DropdownMenuItem>
+              ) : null}
+              {canDelete ? (
+                <DropdownMenuItem onClick={onDelete}>
+                  <TrashIcon className="size-3.5 shrink-0" />
+                  Delete key
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </TableCell>
     </TableRow>

@@ -48,6 +48,7 @@
  */
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import {
@@ -75,7 +76,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Button } from '@/components/ui/button';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { ModelSelector } from '@/features/session/model-selector';
@@ -84,10 +84,10 @@ import {
   ChannelDisconnectButton,
   ChannelRow,
 } from '@/features/workspace/customize/sections/component/channel-row';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -175,10 +175,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const showMoreLabel = !slackRow && hasRows;
 
   return (
-    <CustomizeSectionWrapper
-      title="Channels"
-      description="Reach your agent from the tools your team already uses."
-    >
+    <div className="mx-auto w-full max-w-2xl space-y-8">
+      <SettingsTabHeader tab="channels" />
       {!projectId ? (
         <InfoBanner tone="neutral">Open a project to manage its channels.</InfoBanner>
       ) : loading ? (
@@ -232,7 +230,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
           {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
         </div>
       )}
-    </CustomizeSectionWrapper>
+    </div>
   );
 }
 

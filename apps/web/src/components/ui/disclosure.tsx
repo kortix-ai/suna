@@ -214,6 +214,7 @@ export function DisclosureTrigger({
           },
           className: cn(
             className,
+            'select-none',
             childClassName,
             variant === 'outline' &&
               'group-data-[state=open]:rounded-b-none group-data-[state=open]:border-b-0',
