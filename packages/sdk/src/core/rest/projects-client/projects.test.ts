@@ -934,6 +934,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'llm_gateway',
     'marketplace',
     'meta_agent',
+    'monitors',
     'review_center',
     'teams',
     'voice',

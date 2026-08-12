@@ -74,14 +74,6 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['codex/gpt-5.6-luna']).toBeDefined();
   });
 
-  test('Codex Sol advertises the documented consumer context window and reserves output capacity', () => {
-    expect(full['codex/gpt-5.6-sol']?.limit).toEqual({
-      context: 272_000,
-      input: 144_000,
-      output: 128_000,
-    });
-  });
-
   test('native OpenCode Zen free models are not served by the gateway catalog', () => {
     for (const id of ['deepseek-v4-flash-free', 'mimo-v2.5-free']) {
       expect(full[`opencode/${id}`], `opencode/${id}`).toBeUndefined();

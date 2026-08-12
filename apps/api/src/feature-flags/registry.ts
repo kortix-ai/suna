@@ -217,6 +217,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
+  {
+    key: 'monitors',
+    name: 'Monitors',
+    description:
+      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental; see docs/specs/2026-08-12-monitors.md.',
+    stability: 'experimental',
+    // Monitors need a provider that can run a persistent (never auto-stopped)
+    // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
+    // ≥1 min and E2B caps runtime at 1 h — so the surface stays dark unless
+    // Platinum credentials are configured.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in: off by default even where Platinum is available.
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

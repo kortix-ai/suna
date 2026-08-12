@@ -47,6 +47,8 @@ export {
   projectSecretScopeEnum,
   projectTriggerRuntime,
   projectTriggerExecutions,
+  projectMonitorEvents,
+  projectMonitorBoxes,
   sessionLifecycleCommands,
   chatChannelBindings,
   chatInstalls,
