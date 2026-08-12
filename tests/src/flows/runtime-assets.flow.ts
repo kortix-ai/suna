@@ -127,8 +127,13 @@ flow(
       if (body.hash !== hash) {
         throw new Error(`payload hash ${body.hash} must equal the manifest hash ${hash}`);
       }
-      if (r.header('etag') !== `"${hash}"`) {
-        throw new Error(`ETag must be the content hash, got ${r.header('etag')}`);
+      // The edge (Cloudflare) may weaken a strong ETag to `W/"<hash>"` when it
+      // compresses the response — a weak validator carrying the SAME content
+      // hash. Strip an optional `W/` prefix before comparing; the hash is what
+      // this asserts, not the validator strength.
+      const etag = (r.header('etag') ?? '').replace(/^W\//, '');
+      if (etag !== `"${hash}"`) {
+        throw new Error(`ETag must be the content hash "${hash}", got ${r.header('etag')}`);
       }
       // The overlay is what teaches every agent the platform. If kortix-system
       // is missing, a sandbox that reconciles is worse off than one that did not.
