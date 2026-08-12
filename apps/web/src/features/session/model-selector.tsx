@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, modelKeyToWire, qk, type ProviderListResponse } from '@kortix/sdk/react';
+import { contract, qk, type ProviderListResponse } from '@kortix/sdk/react';
 import {
   RobotIcon as Bot,
   CheckIcon as Check,
@@ -33,7 +33,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAvailableSelectedModel } from './model-availability';
 import { pickerGroupId, pickerGroupLabel } from './model-grouping';
 import { computeModelExtrasRows } from './model-popover-extras';
@@ -68,7 +68,6 @@ export function ConnectProviderDialog({
   return null;
 }
 
-import Hint from '@/components/ui/hint';
 import { Tag } from '@/components/ui/tag';
 
 type ModelRef = { providerID: string; modelID: string };
@@ -271,24 +270,17 @@ export function ModelSelector({
         open={disabled ? false : open}
         onOpenChange={(next) => !disabled && setOpen(next)}
       >
-        <Hint
-          side="top"
-          label={tHardcodedUi.raw('componentsSessionModelSelector.line218JsxTextChooseModel')}
-        >
-          <CommandPopoverTrigger>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-foreground/70 rounded-full"
-            >
-              <span className={cn('max-w-30 truncate', triggerLabelClassName)}>
-                {displayName}
-              </span>
-              <ChevronDown className={cn('size-3', open && 'rotate-180')} />
-            </Button>
-          </CommandPopoverTrigger>
-        </Hint>
+        <CommandPopoverTrigger>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-foreground/70 rounded-full"
+          >
+            <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
+            <ChevronDown className={cn('size-3', open && 'rotate-180')} />
+          </Button>
+        </CommandPopoverTrigger>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
           <>
@@ -553,4 +545,3 @@ function ModelPopoverVariantRow({
     </div>
   );
 }
-

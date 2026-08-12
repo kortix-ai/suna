@@ -49,7 +49,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
 import { cn } from '@/lib/utils';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
@@ -280,27 +279,25 @@ export function ReasoningEffortSelector({
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <Hint side="top" label="Effort Level" delayDuration={700}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-disabled={pending || undefined}
-            onClick={(e) => {
-              if (pending) e.preventDefault();
-            }}
-            className={cn(
-              'text-foreground/70 gap-1.5 rounded-full',
-              pending && 'cursor-not-allowed opacity-60',
-            )}
-          >
-            <EffortIcon value={current} className="size-4 shrink-0" />
-            <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
-            <CaretDownIcon className={cn('size-3 opacity-50', open && 'rotate-180')} />
-          </Button>
-        </DropdownMenuTrigger>
-      </Hint>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-disabled={pending || undefined}
+          onClick={(e) => {
+            if (pending) e.preventDefault();
+          }}
+          className={cn(
+            'text-foreground/70 gap-1.5 rounded-full',
+            pending && 'cursor-not-allowed opacity-60',
+          )}
+        >
+          <EffortIcon value={current} className="size-4 shrink-0" />
+          <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
+          <CaretDownIcon className={cn('size-3 opacity-50', open && 'rotate-180')} />
+        </Button>
+      </DropdownMenuTrigger>
 
       <DropdownMenuContent side="top" align="start" className="min-w-[10rem]">
         <DropdownMenuRadioGroup value={current ?? AUTO} onValueChange={onValueChange}>

@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useTranscription } from '@/hooks/transcription/use-transcription';
 import { cn } from '@/lib/utils';
@@ -147,29 +146,18 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRe
   };
 
   return (
-    <Hint
-      side="top"
-      label={
-        state === 'recording'
-          ? 'Click to stop recording'
-          : state === 'processing'
-            ? 'Processing...'
-            : 'Record voice message'
-      }
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-base"
+      onClick={handleClick}
+      onContextMenu={handleRightClick}
+      disabled={disabled || state === 'processing'}
+      className={cn(
+        'hit-area-1 shrink-0 rounded-full p-0 duration-300 ease-out active:scale-[0.96] active:duration-150',
+      )}
     >
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-base"
-        onClick={handleClick}
-        onContextMenu={handleRightClick}
-        disabled={disabled || state === 'processing'}
-        className={cn(
-          'hit-area-1 shrink-0 rounded-full p-0 duration-300 ease-out active:scale-[0.96] active:duration-150',
-        )}
-      >
-        {getIcon()}
-      </Button>
-    </Hint>
+      {getIcon()}
+    </Button>
   );
 });
