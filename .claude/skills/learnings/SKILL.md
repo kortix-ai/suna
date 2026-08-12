@@ -21,6 +21,44 @@ linked, not inlined.
 
 ## Register
 
+### A deployed API is not a deployed daemon (2026-08-12)
+
+**When:** shipping any change to `apps/kortix-sandbox-agent-server`, or turning
+on something that depends on one. `/health` reporting your commit proves the API
+rolled; it says nothing about the sandbox. The daemon is gzipped into the
+snapshot build context (`apps/api/src/snapshots/build-context.ts:185`) and
+reaches a session only after that snapshot is rebuilt or agent-swapped
+(`snapshots/templates.ts:613`) AND the warm pool has cycled off the old one.
+Prove it in the guest, not from the API:
+`grep -aoE "<expected literal>" /usr/local/bin/kortix-agent` in a session
+created after the deploy — the Bun-compiled binary embeds its source strings.
+Sequence any dependent flag flip AFTER that probe passes.
+*Incident:* near-miss, same day as the MCP-argv fix below. Deploy Dev went green
+and `dev-api` reported `66b6148d`, but two sandboxes created ~15 min later both
+still had the pre-fix `"connector"` spelling. Merging the flag that enables the
+MCP face on that evidence would have given every session a server whose command
+exits 2 — a broken MCP entry where there had been none.
+
+### A cross-process command string needs a test that RUNS it (2026-08-12)
+
+**When:** one component spawns another by a hardcoded argv — the daemon's
+OpenCode MCP entry (`apps/kortix-sandbox-agent-server/src/opencode.ts`), an
+entrypoint script, a CronJob command. Asserting the literal proves only that
+the string is what you just typed. Spawn it and require a real response.
+Pinning both sides to the same literal is worse than no test: it makes the
+typo look deliberate and survives review. Where the two packages cannot share
+a constant (the daemon is standalone by design — hono + zod, no workspace
+deps), read the argv from the producer and execute it in the consumer's test
+(`apps/cli/src/__tests__/connectors-mcp-handshake.test.ts`).
+*Incident:* e868be1d6c renamed the CLI command `executor` → `connectors` but
+pointed the daemon at `connector`, singular. Every sandbox got `unknown
+command` + exit 2, so the `kortix-connectors` MCP server never started for six
+days. Both daemon unit tests were updated to assert the typo and stayed green;
+the e2e tests that really spawn the server used the plural and also stayed
+green, testing a path production never took. Blast radius was zero only because
+`KORTIX_CONNECTORS_MCP_ENABLED` is off everywhere — the flag, not the tests, is
+what contained it.
+
 ### A per-turn hot path must not contain an unbounded third-party round-trip (2026-08-11)
 
 **When:** adding an `await` to the prompt path — `syncSandboxEnvForPrompt`

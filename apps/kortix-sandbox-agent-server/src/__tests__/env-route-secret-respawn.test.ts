@@ -285,6 +285,69 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls[0]!.mustRespawn).toBe(true)
   })
 
+  it('enabling the connectors MCP face mid-session takes the dispose path', async () => {
+    // Pins CURRENT behaviour, which is not obviously the intended one.
+    // `KORTIX_CONNECTORS_MCP_ENABLED` shapes `out.mcp` inside the config file,
+    // so it follows the config-file rule and disposes rather than respawns —
+    // consistent with the invariant in dispose-reload.test.ts.
+    //
+    // But routes/env.ts:21 claims this variable "must restart OpenCode because
+    // MCP servers are registered only at spawn". If that claim is right, the
+    // email channel's mid-session enable (channels/email/session.ts:123, 208)
+    // silently does nothing and this expectation should flip to `true`. Nobody
+    // has measured which is true against the pinned opencode — see the note on
+    // RESPAWN_REQUIRED_ENV_NAMES in opencode.ts.
+    const { opencode, calls } = fakeOpencode()
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'v1',
+    } as NodeJS.ProcessEnv)
+    const app = buildTestApp(opencode, store)
+
+    const { status } = await postEnv(app, {
+      revision: 'rev-1',
+      env: { API_KEY: 'v1' },
+      names: ['API_KEY'],
+      refreshModels: true,
+      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+    })
+
+    expect(status).toBe(200)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.mustRespawn).toBe(false)
+  })
+
+  it('re-pushing the SAME connectors-MCP value does not reload at all', async () => {
+    // The fleet default now sets this at boot, so it is present on every box
+    // and gets re-sent by any caller that includes it. Respawning on an
+    // unchanged value would put an ~8s restart on a routine push — the route
+    // compares against process.env before marking the name changed, so an
+    // identical value produces no reload whatsoever, not merely a cheap one.
+    const { opencode, calls } = fakeOpencode()
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'v1',
+    } as NodeJS.ProcessEnv)
+    const app = buildTestApp(opencode, store)
+    process.env.KORTIX_CONNECTORS_MCP_ENABLED = '1'
+    try {
+      const { status } = await postEnv(app, {
+        revision: 'rev-1',
+        env: { API_KEY: 'v1' },
+        names: ['API_KEY'],
+        refreshModels: true,
+        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+      })
+
+      expect(status).toBe(200)
+      expect(calls).toHaveLength(0)
+    } finally {
+      delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+    }
+  })
+
   it('a byte-identical push (no change at all) does not reload opencode', async () => {
     // The boot-revision-matches guard is unchanged: nothing moved, nothing to
     // reload. This is the contract the proxy-auth "matches the boot revision"

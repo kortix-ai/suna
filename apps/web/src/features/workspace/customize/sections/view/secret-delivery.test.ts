@@ -10,6 +10,8 @@ import {
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
+  networkBoundaryEchoNotice,
+  parseBoundaryHosts,
   readSecretDeliverySync,
   secretDeliveryBlockedReason,
   secretDeliveryOptions,
@@ -551,5 +553,56 @@ describe('buildNetworkBoundaryPolicy', () => {
     expect(buildNetworkBoundaryPolicy({ ...base, hosts: 'https://api.example.com' })).toBeNull();
     expect(buildNetworkBoundaryPolicy({ ...base, injectionTarget: 'bad header' })).toBeNull();
     expect(buildNetworkBoundaryPolicy({ ...base, template: 'Bearer token' })).toBeNull();
+  });
+});
+
+describe('parseBoundaryHosts', () => {
+  test('lowercases, splits on commas and newlines, and drops duplicates', () => {
+    expect(parseBoundaryHosts('API.Example.com, api.example.com\nuploads.example.com  ')).toEqual([
+      'api.example.com',
+      'uploads.example.com',
+    ]);
+  });
+
+  test('reads an empty field as no hosts', () => {
+    expect(parseBoundaryHosts('   \n , ')).toEqual([]);
+  });
+});
+
+/**
+ * The incident this text exists for: an agent probed an echo endpoint, read the
+ * cut connection as a dead host, and invented a TLS explanation. Nothing in the
+ * product said the boundary was there.
+ */
+describe('networkBoundaryEchoNotice', () => {
+  test('names the symptom and denies the wrong conclusion', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    expect(notice.body).toContain('curl: (52) Empty reply from server');
+    expect(notice.body).toContain('the boundary working, not the host being down');
+  });
+
+  test('probes the first declared host with a credential-consuming request', () => {
+    const notice = networkBoundaryEchoNotice('API.Stripe.com\nuploads.stripe.com');
+    expect(notice.probe).toContain('https://api.stripe.com/');
+    expect(notice.probe).toContain('never one that echoes headers');
+    expect(notice.probe).toContain('200 = the header arrived. 401 = it did not.');
+  });
+
+  test('falls back to a placeholder host before anything is typed', () => {
+    expect(networkBoundaryEchoNotice('').probe).toContain('https://api.example.com/');
+  });
+
+  test('points at the two-probe procedure in the docs', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
+    expect(notice.docsLabel).toBe('Verify it with two probes');
+  });
+
+  test('never suggests looking for the value in the sandbox', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    const text = `${notice.title} ${notice.body} ${notice.probe}`;
+    expect(text).not.toContain('env ');
+    expect(text).not.toContain('{{secret}}');
+    expect(text.toLowerCase()).not.toContain('authorization:');
   });
 });

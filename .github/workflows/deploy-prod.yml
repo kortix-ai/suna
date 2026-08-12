@@ -1328,13 +1328,25 @@ jobs:
             echo "::error::VERCEL_PROJECT_ID resolves to '$linked', not the suna project — refusing to deploy the wrong project."
             exit 1
           fi
+      - name: Pin the RUNTIME frontend version env
+        run: |
+          set -euo pipefail
+          VER="${{ needs.version.outputs.version }}"
+          # The frontend resolves its VERSION at RUNTIME:
+          # apps/web/src/lib/public-env-server.ts reads NEXT_PUBLIC_KORTIX_VERSION
+          # via Reflect.get(process.env, ...), which Next.js does NOT inline at
+          # build time. So `--build-env` below never overrides a STALE Production
+          # runtime var — v0.12.8 shipped an FE stuck on the prior 0.12.7 until
+          # this runtime var was corrected by hand. Overwrite the Production
+          # runtime var to the release version so the deploy binds it correctly.
+          npx --yes vercel@latest env rm NEXT_PUBLIC_KORTIX_VERSION production --yes --token="$VERCEL_TOKEN" 2>/dev/null || true
+          printf '%s' "$VER" | npx --yes vercel@latest env add NEXT_PUBLIC_KORTIX_VERSION production --token="$VERCEL_TOKEN"
       - name: Deploy the release frontend to production
         run: |
           set -euo pipefail
-          # Stamp the release version explicitly: the Vercel build cannot always
-          # read the repo-root VERSION file from the apps/web root directory
-          # (v0.12.7 shipped a frontend reporting VERSION "dev" and failed
-          # frontend-auth-proof until redeployed with the env set).
+          # Keep --build-env too (belt-and-braces for any build-time read); the
+          # RUNTIME var pinned in the step above is what actually drives
+          # /api/runtime-config and the frontend-auth-proof version guard.
           npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" \
             --build-env "NEXT_PUBLIC_KORTIX_VERSION=${{ needs.version.outputs.version }}"
 

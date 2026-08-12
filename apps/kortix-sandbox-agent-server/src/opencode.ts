@@ -98,6 +98,28 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
+/**
+ * NOT in the list above, deliberately: `KORTIX_CONNECTORS_MCP_ENABLED`.
+ *
+ * It shapes `out.mcp` INSIDE the config file, and `tryDisposeReload` rewrites
+ * that file and makes opencode re-read it — so it belongs to the dispose fast
+ * path by the same rule as every other config-file key.
+ *
+ * Flagged because two comments in this repo disagree and one of them is wrong:
+ * `routes/env.ts` says enabling the face "must restart OpenCode because MCP
+ * servers are registered only at spawn", which would make dispose insufficient
+ * for the email channel's mid-session enable (channels/email/session.ts:123,
+ * 208). Whether `POST /global/dispose` re-registers a server that was not
+ * previously in the set is UNVERIFIED against the pinned opencode.
+ *
+ * Left alone rather than guessed at: adding it here breaks the tested
+ * invariant in dispose-reload.test.ts ("every name spawnChild consumes outside
+ * the config file is listed") and would buy an ~8s respawn for a case nobody
+ * has measured. Resolve it with a live sandbox — enable the face mid-session,
+ * then ask opencode whether the server is registered — and update whichever
+ * comment turns out to be false.
+ */
+
 /** Does this env delta need a full respawn rather than a dispose? */
 export function requiresRespawn(changedNames: readonly string[]): boolean {
   return changedNames.some((name) =>
@@ -277,7 +299,14 @@ export async function buildOpencodeConfigContent(
         type: 'local',
         // Use the absolute path so OpenCode's MCP launcher does not depend on
         // PATH propagation. The normal agent path is still `kortix connectors`.
-        command: ['/usr/local/bin/kortix', 'connector', 'mcp'],
+        //
+        // `connectors`, plural — it must match a real CLI command. Between
+        // 2026-08-06 (e868be1d6c) and this fix it read `connector`, which the
+        // CLI router rejects with "unknown command", so OpenCode's launcher
+        // got exit 2 and the MCP server never started. The CLI now also
+        // accepts the singular as an alias, which recovers snapshots baked
+        // with the old string.
+        command: ['/usr/local/bin/kortix', 'connectors', 'mcp'],
         enabled: true,
         environment: {
           // Proxy mode: the MCP talks to the localhost connector proxy with a
