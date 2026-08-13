@@ -341,18 +341,6 @@ const envSchema = z.object({
   // production). The shim terminates the guest's TLS and relays to the broker
   // route; the credential stays server-side either way.
   //
-  // OFF by default, deliberately, and this is the sequencing that matters:
-  // turning it on makes the API ADVERTISE network-boundary delivery to
-  // non-Platinum projects (save-time gate, delivery_status, the web control).
-  // If the sandbox image does not yet run the shim, a user could save a
-  // boundary secret that nothing in the guest can honour — a feature that
-  // looks available and silently does nothing, which is the exact failure
-  // this project has spent too long unpicking.
-  //
-  // Flip to `true` only once the guest half is in the image and a fresh
-  // sandbox has been observed running the shim. `optBoolFalse` accepts
-  // true/1/yes/on.
-  EGRESS_SHIM_ENABLED: optBoolFalse,
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -1026,7 +1014,6 @@ export const config = {
   ASTER_API_URL: env.ASTER_API_URL,
   ASTER_API_KEY: env.ASTER_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
-  EGRESS_SHIM_ENABLED: env.EGRESS_SHIM_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.

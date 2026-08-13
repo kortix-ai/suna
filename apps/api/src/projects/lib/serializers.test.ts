@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { config } from '../../config';
 import {
   type SecretAgentGrantConfig,
   buildSecretView,
@@ -266,6 +267,43 @@ describe('secretDeliveryBlockedReason', () => {
         declarative([['GOOGLE_MAPS_API_KEY']]),
       ),
     ).toBe('no_agent_grant');
+  });
+});
+
+/**
+ * `network_boundary_available` and `delivery_status` are what the web control
+ * and the CLI read to decide whether this mode can be offered at all. Both are
+ * computed from an OPTIONAL `projectMetadata` argument, so a caller that simply
+ * forgot to pass the project still typechecks and silently reports the old
+ * Platinum-only answer. That is exactly the regression these tests catch.
+ */
+describe('buildSecretView — the per-project boundary flag reaches the view', () => {
+  const boundaryView = (projectMetadata?: unknown) =>
+    buildSecretView({
+      identifier: 'BOUNDARY_TEST',
+      name: 'BOUNDARY_TEST',
+      shared: secretRow(),
+      canManageShared: true,
+      agentGrants: declarative([['BOUNDARY_TEST']]),
+      projectMetadata,
+    });
+
+  test('a project with the flag on reports boundary delivery available', () => {
+    const view = boundaryView({ experimental: { network_boundary_shim: true } });
+    expect(view.network_boundary_available).toBe(true);
+    expect(view.delivery_status).toBe('available');
+  });
+
+  test('an omitted project cannot widen the gate', () => {
+    // Without Platinum the answer must be the closed one — never a default-open
+    // guess made on a caller's behalf.
+    const view = boundaryView(undefined);
+    expect(view.network_boundary_available).toBe(config.isPlatinumEnabled());
+  });
+
+  test('an explicit off is not read as "unset"', () => {
+    const view = boundaryView({ experimental: { network_boundary_shim: false } });
+    expect(view.network_boundary_available).toBe(config.isPlatinumEnabled());
   });
 });
 

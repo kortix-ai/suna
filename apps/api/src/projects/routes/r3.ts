@@ -765,10 +765,11 @@ projectsApp.openapi(
           400,
         );
       }
-      if (!networkBoundaryDeliveryAvailable()) {
+      if (!networkBoundaryDeliveryAvailable(loaded.row.metadata)) {
         return c.json(
           {
-            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            error:
+              'Network-boundary delivery needs Platinum, or the "Network boundary without Platinum" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,
@@ -1040,10 +1041,11 @@ projectsApp.openapi(
       return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
     }
     if (parsed.data.strategy === 'egress') {
-      if (!networkBoundaryDeliveryAvailable()) {
+      if (!networkBoundaryDeliveryAvailable(loaded.row.metadata)) {
         return c.json(
           {
-            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            error:
+              'Network-boundary delivery needs Platinum, or the "Network boundary without Platinum" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,

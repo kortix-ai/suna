@@ -217,6 +217,30 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
+  {
+    key: 'network_boundary_shim',
+    name: 'Network boundary without Platinum',
+    description:
+      'Use network-boundary secrets on a project that does not run on Platinum. The credential is injected by Kortix at request time instead of by a provider edge, so the sandbox still never receives the value. Requires a sandbox image that runs the in-guest shim; without it a boundary secret saves but nothing in the sandbox can spend it.',
+    stability: 'experimental',
+    // No operator env gates it — the delivery path is ordinary API code that
+    // ships with the app. What it needs is a sandbox image new enough to run
+    // the shim, which is a per-deployment fact the API cannot introspect, so
+    // the decision is left to whoever turns it on for a project.
+    available: () => true,
+    // Explicit opt-in. Defaulting this on would advertise boundary delivery to
+    // every non-Platinum project, and on an older sandbox image the secret
+    // would save and then silently never reach anything — the failure mode this
+    // whole feature exists to remove.
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'On ⇒ networkBoundaryDeliveryAvailable() accepts this project without ' +
+      'Platinum, provisioning stops treating a missing provider edge as fatal, ' +
+      'and the broker route serves egress/network secrets (secrets/' +
+      'network-boundary-availability.ts, projects/lib/sandbox-env-sync.ts, ' +
+      'platform/services/session-sandbox.ts).',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

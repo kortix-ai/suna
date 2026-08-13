@@ -32,7 +32,8 @@ export type FeatureFlagKey =
   | 'llm_gateway'
   | 'review_center'
   | 'meta_agent'
-  | 'apps';
+  | 'apps'
+  | 'network_boundary_shim';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -50,6 +51,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'review_center',
   'meta_agent',
   'apps',
+  'network_boundary_shim',
 ] as const;
 
 /**

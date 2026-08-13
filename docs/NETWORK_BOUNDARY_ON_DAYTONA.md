@@ -521,7 +521,7 @@ Caveats, stated rather than implied:
 
 ### 7.5 Wiring — what is done, what is left
 
-#### Done: the server half (behind `EGRESS_SHIM_ENABLED`, default OFF)
+#### Done: the server half (behind the `network_boundary_shim` project flag, default OFF)
 
 Three gates stood between a non-Platinum project and this feature.
 
@@ -541,11 +541,20 @@ Three gates stood between a non-Platinum project and this feature.
    the pre-check guaranteed the method existed — with a shim-backed provider reaching it, that
    would have been a TypeError at provision time instead of a clean skip.
 
-**The flag defaults OFF deliberately.** Turning it on makes the API *advertise* boundary
-delivery to non-Platinum projects — the save gate, `delivery_status`, and the web control all
-read it. Until the guest actually runs the shim, that is a feature that looks available and
-silently does nothing, which is the failure this whole document exists to unpick. Flip it once
-a fresh sandbox has been *observed* running the shim, not merely once the code is merged.
+**It is a per-project experimental flag, not an operator env var.** The first version was
+`EGRESS_SHIM_ENABLED`, an env var, which was wrong twice over. It made the smallest testable
+unit the whole deployment, and it put the switch in the infrastructure repo — so verifying the
+feature on dev required a GitOps change before anyone could see whether it worked at all. The
+registry entry (`feature-flags/registry.ts`, `stability: 'experimental'`) is toggled through
+the existing Feature flags UI and `PATCH /projects/:id/experimental`, so one project can opt in
+and be proven before anything else is exposed to it.
+
+**It still defaults OFF deliberately.** Turning it on makes the API *advertise* boundary
+delivery — the save gate, `delivery_status`, and the web control all read it. Until the guest
+actually runs the shim, that is a feature that looks available and silently does nothing, which
+is the failure this whole document exists to unpick. What the flag really asserts is "this
+project's sandbox image runs the shim", a fact the API cannot introspect. Turn it on once a
+fresh sandbox has been *observed* running the shim, not merely once the code is merged.
 
 #### Left: the guest half
 
@@ -555,15 +564,21 @@ a fresh sandbox has been *observed* running the shim, not merely once the code i
 2. **Trust the CA.** Install the ephemeral CA into the system store *and* the per-runtime env
    vars. §7.6 measured which ones actually matter.
 3. **Point the clients.** `HTTPS_PROXY` plus `NODE_USE_ENV_PROXY=1` and `REQUESTS_CA_BUNDLE`.
-4. **The web gate.** `apps/web/.../secret-delivery.ts` requires the project to run Platinum and
-   does **not** read `network_boundary_available`. That is correct while the flag is off, and
-   wrong the moment it flips — the API has to expose which mode applies
-   (`provider-edge` vs `in-guest-shim`) and the web has to read it. Belongs with this half,
-   not before it.
-5. **Optional: the allow-list.** Not required for the security property — an agent that
+4. **Optional: the allow-list.** Not required for the security property — an agent that
    bypasses the shim gets an *unauthenticated* request, not a credential — so it is egress
    restriction, a separate feature. It also needs a stable Kortix egress address, which
    `dev-api` (Cloudflare-fronted) does not provide.
+
+The web gate moved into the *done* half along with the flag. `networkBoundaryAvailability`
+(`apps/web/.../secret-delivery.ts`) reads `project.experimental.network_boundary_shim` and
+short-circuits the provider question when it is on, because the shim runs nowhere near a
+provider edge. Both blocked-state messages now name the flag: neither state says "not available
+in this deployment" any more, because neither is true — both are one opt-in away.
+
+`buildSecretView` takes the project metadata through an OPTIONAL argument, which is a trap
+worth naming: a caller that omits it still typechecks and silently reports the pre-flag
+Platinum-only answer. `loadSecretViewsForUser` therefore looks the metadata up itself rather
+than making five routes remember to pass it — only two of them have the project row in scope.
 
 #### Blocked on infrastructure, not code
 

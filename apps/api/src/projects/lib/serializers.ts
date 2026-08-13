@@ -11,7 +11,7 @@ import {
   type projectGitCredentials,
   projectSecrets,
   type projectSessions,
-  type projects,
+  projects,
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -384,6 +384,10 @@ export function buildSecretView(input: {
   /** The project's loaded config, for the agent-grant axis. Omit it and every
    *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
   agentGrants?: SecretAgentGrantConfig | null;
+  /** The project's metadata row, for the per-project boundary flag. Omit it and
+   *  boundary delivery reports available only where Platinum covers it — the
+   *  pre-flag behaviour, so an un-updated caller cannot over-advertise. */
+  projectMetadata?: unknown;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -450,7 +454,9 @@ export function buildSecretView(input: {
       (strategy === 'broker' && consumer === 'llm_gateway') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' && consumer === 'network' && networkBoundaryDeliveryAvailable()) ||
+      (strategy === 'egress' &&
+        consumer === 'network' &&
+        networkBoundaryDeliveryAvailable(input.projectMetadata)) ||
       consumer === 'connector'
         ? 'available'
         : strategy === 'denied'
@@ -461,7 +467,7 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
-    network_boundary_available: networkBoundaryDeliveryAvailable(),
+    network_boundary_available: networkBoundaryDeliveryAvailable(input.projectMetadata),
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
@@ -481,7 +487,27 @@ export async function loadSecretViewsForUser(
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
   agentGrants?: SecretAgentGrantConfig | null,
+  /**
+   * Project metadata, for the per-project network-boundary flag. Resolved here
+   * when the caller does not supply it.
+   *
+   * Looked up rather than threaded through every call site on purpose: five
+   * routes call this, only two have the project row in scope, and a caller that
+   * silently omitted it would under-report `network_boundary_available` — the
+   * web control would then hide an option the project actually has. One extra
+   * row read on a list endpoint is cheaper than that class of bug.
+   */
+  projectMetadata?: unknown,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
+  const metadata =
+    projectMetadata ??
+    (
+      await db
+        .select({ metadata: projects.metadata })
+        .from(projects)
+        .where(eq(projects.projectId, projectId))
+        .limit(1)
+    )[0]?.metadata;
   const rows = await db
     .select()
     .from(projectSecrets)
@@ -509,6 +535,7 @@ export async function loadSecretViewsForUser(
       personal: slot.personal,
       canManageShared,
       agentGrants,
+      projectMetadata: metadata,
     }),
   );
 }

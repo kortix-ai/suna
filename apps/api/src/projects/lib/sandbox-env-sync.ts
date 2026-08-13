@@ -17,7 +17,7 @@ import {
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
-import { networkBoundaryShimAvailable } from '../../secrets/network-boundary-availability';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
@@ -143,6 +143,7 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
 }
 
 function startNetworkBoundaryArm(
+  projectId: string,
   providerName: ProviderName,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
@@ -166,7 +167,7 @@ function startNetworkBoundaryArm(
         //
         // Until the shim existed this threw, which is why creating a session on
         // Daytona with a boundary secret failed provisioning outright.
-        if (networkBoundaryShimAvailable()) {
+        if (await projectFeatureFlagEnabled(projectId, 'network_boundary_shim')) {
           rememberNetworkBoundaryArm(
             externalId,
             digest,
@@ -212,6 +213,7 @@ function startNetworkBoundaryArm(
  * the secret fan-out does — to wait for the real result and report a failure.
  */
 async function syncProviderNetworkBoundary(
+  projectId: string,
   providerName: ProviderName,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
@@ -224,7 +226,7 @@ async function syncProviderNetworkBoundary(
     return 'skipped';
   }
 
-  const attempt = startNetworkBoundaryArm(providerName, externalId, bindings, digest);
+  const attempt = startNetworkBoundaryArm(projectId, providerName, externalId, bindings, digest);
   const maxWaitMs = opts?.maxWaitMs;
   if (!maxWaitMs) {
     await attempt;
@@ -587,6 +589,7 @@ export async function syncSandboxEnvForPrompt(args: {
     // provision path in platform/services/session-sandbox.ts — a session that
     // cannot arm its boundary should still fail to provision, loudly.
     const armState = await syncProviderNetworkBoundary(
+      args.projectId,
       args.providerName,
       args.externalId,
       networkBoundary,
@@ -726,7 +729,7 @@ export async function propagateProjectSecretsToActiveSandboxes(
         // caller reports the per-sandbox outcome to the author who just saved the
         // secret. An arming failure has to be visible there, so it stays a
         // `status: 'failed'` row rather than a warning nobody reads.
-        await syncProviderNetworkBoundary(providerName, row.externalId, networkBoundary);
+        await syncProviderNetworkBoundary(projectId, providerName, row.externalId, networkBoundary);
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         const proof = await postEnvToDaemon({
           previewUrl: url,

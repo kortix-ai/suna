@@ -61,7 +61,7 @@ import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
-import { networkBoundaryShimAvailable } from '../../secrets/network-boundary-availability';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
 
 /**
@@ -548,7 +548,7 @@ export async function provisionSessionSandbox(opts: {
       if (
         networkBoundary.length > 0 &&
         !provider.syncNetworkBoundary &&
-        !networkBoundaryShimAvailable()
+        !(await projectFeatureFlagEnabled(projectId, 'network_boundary_shim'))
       ) {
         throw new Error(
           `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
