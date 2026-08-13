@@ -23,20 +23,20 @@ import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { hasOpenAssistantTurn } from './assistant-turn-open';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import { hasOpenAssistantTurn } from './assistant-turn-open';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
+import { mergeQueuedBatch } from './queued-batch';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { UserMessage } from './turn/user-message';
-import { mergeQueuedBatch } from './queued-batch';
 import { useMessageQueueDrain } from './use-message-queue-drain';
 
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
@@ -46,12 +46,12 @@ import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import {
   type AttachedFile,
@@ -77,6 +77,7 @@ import { errorToast, infoToast } from '@/components/ui/toast';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
@@ -636,6 +637,11 @@ function SessionTurnImpl({
   const [copied, setCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
+  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
+  // as every `panelMode` read site).
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -1314,6 +1320,7 @@ function SessionTurnImpl({
                   working={working}
                   isTrailing={index === segments.length - 1}
                   disableNavigation={disableToolNavigation}
+                  density={conversationDensity}
                 />
               );
             }

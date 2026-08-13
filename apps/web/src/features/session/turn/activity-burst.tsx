@@ -29,6 +29,7 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
+import type { ConversationDensity } from '@/stores/user-preferences-store';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
 import type { Step } from '../action-panel/shared/group-steps';
 import { normalizeActivityToolName } from '../session-activity-groups';
@@ -109,18 +110,26 @@ function ThoughtChainStepImpl({
   texts,
   running,
   bare,
+  autoOpen = true,
 }: {
   texts: ReadonlyArray<string>;
   running: boolean;
   bare?: boolean;
+  /**
+   * Whether live reasoning may unfurl its paragraph on its own. `false` under
+   * minimal density: the row still shimmers `Thinking`, but the streaming
+   * text stays behind the caret until the reader asks for it. Their click
+   * still wins permanently, exactly as under normal density.
+   */
+  autoOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(running);
+  const [open, setOpen] = useState(autoOpen && running);
   const userToggled = useRef(false);
 
   useEffect(() => {
     if (userToggled.current) return;
-    setOpen(running);
-  }, [running]);
+    setOpen(autoOpen && running);
+  }, [running, autoOpen]);
 
   return (
     <ChainOfThoughtStep
@@ -342,6 +351,7 @@ function ActivityBurstImpl({
   working,
   isTrailing = false,
   disableNavigation,
+  density = 'normal',
 }: {
   parts: Part[];
   sessionId: string;
@@ -349,17 +359,31 @@ function ActivityBurstImpl({
   /** Last segment in the turn — stay open across SSE gaps between tool calls. */
   isTrailing?: boolean;
   disableNavigation?: boolean;
+  /**
+   * User preference (`conversationDensity` in the user-preferences store),
+   * passed in by the chat surface rather than read here so this component
+   * stays pure and testable under `renderToStaticMarkup`.
+   *
+   * 'normal' — the burst opens itself while it runs: steps and streaming
+   * thinking appear live. 'minimal' — the live view is the one-line summary
+   * ("Working · N steps"); nothing auto-expands, including the thought rows
+   * a bare burst pins open. A finished turn renders identically in both
+   * modes (both auto-collapse to one row), and a click always wins.
+   */
+  density?: ConversationDensity;
 }) {
   const running = burstIsRunning(parts, working, isTrailing);
-  const [open, setOpen] = useState(running);
+  const autoExpand = density !== 'minimal';
+  const [open, setOpen] = useState(autoExpand && running);
   const userToggled = useRef(false);
 
   // Auto-collapse the moment the burst settles — unless the user has taken
-  // control, in which case their choice wins permanently.
+  // control, in which case their choice wins permanently. Under minimal
+  // density the burst never opens itself in the first place.
   useEffect(() => {
     if (userToggled.current) return;
-    setOpen(running);
-  }, [running]);
+    setOpen(autoExpand && running);
+  }, [running, autoExpand]);
 
   const steps = useMemo(() => mergeBurstSteps(parts, (p) => stepLabel(p).tier), [parts]);
   const summary = useMemo(() => burstSummary(parts), [parts]);
@@ -582,6 +606,7 @@ function ActivityBurstImpl({
                     texts={step.texts}
                     running={running && step.running}
                     bare={bare}
+                    autoOpen={autoExpand}
                   />
                 ) : (
                   <ChainOfThoughtStep key={step.key}>{stepBody(step, bare)}</ChainOfThoughtStep>
@@ -631,7 +656,11 @@ ActivityGroupStep.displayName = 'ActivityGroupStep';
 
 const ThoughtChainStep = memo(
   ThoughtChainStepImpl,
-  (a, b) => a.running === b.running && a.bare === b.bare && samePartsList(a.texts, b.texts),
+  (a, b) =>
+    a.running === b.running &&
+    a.bare === b.bare &&
+    a.autoOpen === b.autoOpen &&
+    samePartsList(a.texts, b.texts),
 );
 ThoughtChainStep.displayName = 'ThoughtChainStep';
 
@@ -642,6 +671,7 @@ export const ActivityBurst = memo(
     a.working === b.working &&
     a.isTrailing === b.isTrailing &&
     a.disableNavigation === b.disableNavigation &&
+    a.density === b.density &&
     samePartsList(a.parts, b.parts),
 );
 ActivityBurst.displayName = 'ActivityBurst';

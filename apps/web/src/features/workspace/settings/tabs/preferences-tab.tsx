@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * The Preferences tab — six sections, appearance leading because the product
+ * The Preferences tab — seven sections, appearance leading because the product
  * owner specified a full light/dark system as the centrepiece: theme,
- * wallpaper, sounds, notifications, keyboard shortcuts, language.
+ * wallpaper, conversation density, sounds, notifications, keyboard shortcuts,
+ * language.
  *
  * Theme values come from `THEME_OPTIONS` in `features/layout/user-menu.tsx`
  * (imported, not re-declared) so this panel's theme control and the user
@@ -71,6 +72,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -80,16 +82,116 @@ import { THEME_OPTIONS } from '@/features/layout/user-menu';
 import { useLanguage } from '@/hooks/use-language';
 import { locales, type Locale } from '@/i18n/config';
 import { previewSound } from '@/lib/sounds';
+import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
-import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
+import {
+  useUserPreferencesStore,
+  type ConversationDensity,
+  type TabSwitchModifier,
+} from '@/stores/user-preferences-store';
 import {
   useWebNotificationStore,
   type WebNotificationPermission,
   type WebNotificationPreferences,
 } from '@/stores/web-notification-store';
 import { SettingsTabHeader } from '../settings-tab-header';
+
+const DENSITY_OPTIONS: { id: ConversationDensity; label: string; description: string }[] = [
+  {
+    id: 'normal',
+    label: 'Normal',
+    description: 'Steps and thinking stream live while Kortix works.',
+  },
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    description: 'One status line until you expand it.',
+  },
+];
+
+/**
+ * Skeleton mock of the live activity burst at each density, drawn with the
+ * same bar-and-dot vocabulary as `Skeleton` surfaces. The two previews ARE the
+ * explanation — 'normal' shows the summary line over an open chain (rows +
+ * thinking paragraph), 'minimal' shows the one status line and the quiet that
+ * is the point of the mode. Decorative only, so `aria-hidden`; the card's
+ * label + description carry the accessible name.
+ */
+function DensityPreview({ density }: { density: ConversationDensity }) {
+  if (density === 'minimal') {
+    return (
+      <div aria-hidden>
+        <div className="bg-muted-foreground/35 h-1.5 w-16 rounded-full" />
+      </div>
+    );
+  }
+  return (
+    <div aria-hidden className="space-y-2">
+      {/* Summary line */}
+      <div className="bg-muted-foreground/35 h-1.5 w-16 rounded-full" />
+      {/* Thinking row + its streaming paragraph */}
+      <div className="flex items-center gap-2">
+        <div className="bg-muted-foreground/30 size-2.5 shrink-0 rounded-full" />
+        <div className="bg-muted-foreground/20 h-1.5 w-14 rounded-full" />
+      </div>
+      <div className="space-y-1.5 pl-[18px]">
+        <div className="bg-muted-foreground/15 h-1.5 w-full rounded-full" />
+        <div className="bg-muted-foreground/15 h-1.5 w-3/4 rounded-full" />
+      </div>
+      {/* A tool row */}
+      <div className="flex items-center gap-2">
+        <div className="bg-muted-foreground/30 size-2.5 shrink-0 rounded-full" />
+        <div className="bg-muted-foreground/20 h-1.5 w-20 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One selectable density card — the same shape as `WallpaperCard` (preview
+ * panel + caption below), because this section sits two sections under the
+ * wallpaper grid and the two pickers should read as one vocabulary. Radio
+ * semantics rather than `aria-pressed` buttons: the two options are exclusive.
+ */
+function DensityCard({
+  option,
+  isActive,
+  onSelect,
+}: {
+  option: (typeof DENSITY_OPTIONS)[number];
+  isActive: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={isActive}
+      data-density={option.id}
+      onClick={onSelect}
+      className="group relative cursor-pointer rounded-md text-left"
+    >
+      <div
+        className={cn(
+          'bg-popover relative h-24 w-full overflow-hidden rounded-md border p-3 transition-colors duration-200',
+          isActive ? 'border-primary/40' : 'border-border group-hover:border-border/80',
+        )}
+      >
+        <DensityPreview density={option.id} />
+        {isActive && (
+          <div className="absolute top-2.5 right-2.5">
+            <CheckCircleSolid weight="fill" className="size-4" />
+          </div>
+        )}
+      </div>
+      <div className="px-1.5 py-1">
+        <span className="text-foreground text-xs font-medium">{option.label}</span>
+      </div>
+    </button>
+  );
+}
 
 const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
   { id: 'off', label: 'Off', description: 'All sounds disabled' },
@@ -203,6 +305,10 @@ export interface PreferencesTabViewProps {
   isLightTheme?: boolean;
   onWallpaperSelect?: (id: Wallpaper['id']) => void;
 
+  // Conversation density
+  conversationDensity?: ConversationDensity;
+  onConversationDensityChange?: (density: ConversationDensity) => void;
+
   // Sounds
   soundPack?: SoundPack;
   onSoundPackChange?: (pack: SoundPack) => void;
@@ -256,6 +362,8 @@ export function PreferencesTabView({
   wallpaperId = DEFAULT_WALLPAPER_ID,
   isLightTheme = false,
   onWallpaperSelect = () => {},
+  conversationDensity = 'normal',
+  onConversationDensityChange = () => {},
   soundPack = 'off',
   onSoundPackChange = () => {},
   soundVolume = 0.5,
@@ -283,7 +391,7 @@ export function PreferencesTabView({
       <SettingsTabHeader tab="preferences" />
 
       {/* 1. Theme */}
-      <section className="flex items-center justify-between">
+      <section className="flex flex-col items-start justify-between gap-4 md:flex-row md:gap-10">
         <SettingsSubsectionHeader
           title="Theme"
           description="Choose how Kortix looks on this device."
@@ -306,6 +414,32 @@ export function PreferencesTabView({
         </div>
       </section>
 
+      <Separator />
+
+      {/* 3. Conversation density */}
+      <section className="flex flex-col items-start justify-between gap-4 space-y-3 md:flex-row md:gap-10">
+        <SettingsSubsectionHeader
+          title="Conversation density"
+          description="How much detail the agent shows in the conversation while it works."
+        />
+        <div
+          role="radiogroup"
+          aria-label="Conversation density"
+          className="grid w-full max-w-xs grid-cols-2 gap-2"
+        >
+          {DENSITY_OPTIONS.map((option) => (
+            <DensityCard
+              key={option.id}
+              option={option}
+              isActive={conversationDensity === option.id}
+              onSelect={() => onConversationDensityChange(option.id)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <Separator />
+
       {/* 2. Wallpaper */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
@@ -325,7 +459,9 @@ export function PreferencesTabView({
         </div>
       </section>
 
-      {/* 3. Sounds */}
+      <Separator />
+
+      {/* 4. Sounds */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
           title="Sounds"
@@ -402,7 +538,9 @@ export function PreferencesTabView({
         )}
       </section>
 
-      {/* 4. Notifications */}
+      <Separator />
+
+      {/* 5. Notifications */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
           title="Notifications"
@@ -480,7 +618,9 @@ export function PreferencesTabView({
         )}
       </section>
 
-      {/* 5. Keyboard shortcuts */}
+      <Separator />
+
+      {/* 6. Keyboard shortcuts */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
           title="Keyboard shortcuts"
@@ -516,7 +656,9 @@ export function PreferencesTabView({
         </div>
       </section>
 
-      {/* 6. Language */}
+      <Separator />
+
+      {/* 7. Language */}
       <section className="space-y-3">
         <SettingsSubsectionHeader title="Language" description="The language Kortix displays." />
         <Select value={locale} onValueChange={(value) => onLocaleChange(value as Locale)}>
@@ -551,6 +693,12 @@ export function PreferencesTab() {
   const keyboardModifier = useUserPreferencesStore((s) => s.preferences.keyboard.tabSwitchModifier);
   const setKeyboardPreferences = useUserPreferencesStore((s) => s.setKeyboardPreferences);
   const modifierLabel = useUserPreferencesStore((s) => s.getModifierLabel());
+  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
+  // as every `panelMode` read site).
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
+  const setConversationDensity = useUserPreferencesStore((s) => s.setConversationDensity);
 
   // Users may have a wallpaper persisted that no longer exists — reset it.
   // Mirrors the identical effect in `appearance-tab.tsx`; both surfaces read
@@ -601,6 +749,8 @@ export function PreferencesTab() {
       wallpaperId={wallpaperId}
       isLightTheme={resolvedTheme === 'light'}
       onWallpaperSelect={setWallpaperId}
+      conversationDensity={conversationDensity}
+      onConversationDensityChange={setConversationDensity}
       soundPack={soundPreferences.pack}
       onSoundPackChange={setSoundPack}
       soundVolume={soundPreferences.volume}

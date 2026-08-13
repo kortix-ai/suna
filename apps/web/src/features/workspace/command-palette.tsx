@@ -83,6 +83,8 @@ import {
   SidebarSimpleIcon as PanelLeftClose,
   SidebarSimpleIcon as PanelLeftIcon,
   MagnifyingGlassIcon as Search,
+  MinusIcon as Minus,
+  TextAlignLeftIcon as TextAlignLeft,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -115,7 +117,10 @@ import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import {
+  useUserPreferencesStore,
+  type ConversationDensity,
+} from '@/stores/user-preferences-store';
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import {
@@ -129,7 +134,15 @@ import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 
 type PalettePage =
-  'root' | 'agents' | 'models' | 'messages' | 'projects' | 'accounts' | 'sessions' | 'files';
+  | 'root'
+  | 'agents'
+  | 'models'
+  | 'messages'
+  | 'projects'
+  | 'accounts'
+  | 'sessions'
+  | 'files'
+  | 'density';
 
 function sanitizeCmdkValue(value: string): string {
   return value
@@ -206,7 +219,30 @@ const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   'nav-projects': 'projects',
   'nav-accounts': 'accounts',
   'proj-sessions': 'sessions',
+  'conversation-density': 'density',
 };
+
+/**
+ * The density page's two rows. Same shape and copy as `VERBOSITY_OPTIONS`
+ * in `tabs/preferences-tab.tsx` — the palette page and the Preferences cards
+ * are the same choice through two doors, so the words must not drift.
+ */
+const DENSITY_PAGE_OPTIONS: {
+  id: ConversationDensity;
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: 'normal',
+    label: 'Normal',
+    description: 'Steps and thinking stream live while Kortix works',
+  },
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    description: 'One status line until you expand it',
+  },
+];
 
 function FileSearchPage({
   query,
@@ -445,6 +481,9 @@ export function CommandPalette() {
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
   const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
   const billingEnabled = isBillingEnabled();
 
   const { data: agents } = useRuntimeAgents();
@@ -918,6 +957,14 @@ export function CommandPalette() {
     return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
   }, [accountsList, query]);
 
+  const filteredDensityOptions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return DENSITY_PAGE_OPTIONS;
+    return DENSITY_PAGE_OPTIONS.filter((option) =>
+      `${option.label} ${option.description}`.toLowerCase().includes(q),
+    );
+  }, [query]);
+
   const filteredProjectSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
@@ -1138,6 +1185,23 @@ export function CommandPalette() {
   }, [close, panelMode]);
 
   /**
+   * A row on the 'density' submenu page. Re-picking the current mode writes
+   * nothing and tracks nothing — it is a confirmation, not a switch. The toast
+   * is the only immediate feedback this preference has: unlike theme or
+   * wallpaper, nothing on screen changes until the next working turn.
+   */
+  const handleSelectDensity = useCallback(
+    (next: ConversationDensity) => {
+      close();
+      if (next === conversationDensity) return;
+      track('conversation_density_switched', { to: next });
+      useUserPreferencesStore.getState().setConversationDensity(next);
+      successToast(`Conversation density set to ${next === 'minimal' ? 'Minimal' : 'Normal'}`);
+    },
+    [close, conversationDensity],
+  );
+
+  /**
    * "Open Terminal" / "Open Audit" / "Open Browser" / "Open Files" (Easy: the
    * Easy panel's detail layer, Advanced: the panel's corresponding tab). The
    * id-space-sensitive branching lives in `openSessionQuickView` — shared
@@ -1332,6 +1396,10 @@ export function CommandPalette() {
       inviteMembers: handleInviteMembers,
       toggleSidebar: handleToggleSidebar,
       togglePanelMode: handleTogglePanelMode,
+      // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
+      // before the action branch runs. If that map entry is ever removed, the
+      // row still opens the picker instead of dead-ending.
+      conversationDensity: () => goToPage('density'),
       openSessionTerminal: handleOpenSessionTerminal,
       openSessionAudit: handleOpenSessionAudit,
       openSessionBrowser: handleOpenSessionBrowser,
@@ -1351,6 +1419,7 @@ export function CommandPalette() {
       handleInviteMembers,
       handleToggleSidebar,
       handleTogglePanelMode,
+      goToPage,
       handleOpenSessionTerminal,
       handleOpenSessionAudit,
       handleOpenSessionBrowser,
@@ -1468,6 +1537,7 @@ export function CommandPalette() {
     if (page === 'projects') return filteredProjectsList.length;
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
+    if (page === 'density') return filteredDensityOptions.length;
     if (page === 'messages') return 0;
     if (!hasQuery) return 0;
     return (
@@ -1490,6 +1560,7 @@ export function CommandPalette() {
     filteredProjectsList,
     filteredAccountsList,
     filteredProjectSessionsList,
+    filteredDensityOptions,
   ]);
 
   const placeholder = useMemo(() => {
@@ -1500,6 +1571,7 @@ export function CommandPalette() {
     if (page === 'projects') return 'Search projects...';
     if (page === 'accounts') return 'Search accounts...';
     if (page === 'sessions') return 'Search sessions...';
+    if (page === 'density') return 'Choose conversation density...';
     return 'Search commands, sessions...';
   }, [page]);
 
@@ -1511,6 +1583,7 @@ export function CommandPalette() {
     if (page === 'projects') return 'Switch Project';
     if (page === 'accounts') return 'Switch Account';
     if (page === 'sessions') return 'Open Session';
+    if (page === 'density') return 'Conversation Density';
     return null;
   }, [page]);
 
@@ -2171,6 +2244,39 @@ export function CommandPalette() {
                   <UsersSolid weight="fill" className="text-muted-foreground size-5" />
                   <span className="text-muted-foreground/60 text-sm">
                     {query ? `No accounts matching "${query}"` : 'No accounts'}
+                  </span>
+                </div>
+              ))}
+
+            {page === 'density' &&
+              (filteredDensityOptions.length > 0 ? (
+                <CommandGroup heading="Conversation Density" forceMount>
+                  {filteredDensityOptions.map((option) => {
+                    // Minimal is one line, Normal is many — let the glyphs say so.
+                    const OptionIcon = option.id === 'minimal' ? Minus : TextAlignLeft;
+                    return (
+                      <CommandItem
+                        key={option.id}
+                        value={sanitizeCmdkValue(`density ${option.label}`)}
+                        onSelect={() => handleSelectDensity(option.id)}
+                      >
+                        <OptionIcon className="text-muted-foreground size-4 shrink-0" />
+                        <span className="shrink-0">{option.label}</span>
+                        <span className="text-muted-foreground/60 flex-1 truncate text-xs">
+                          {option.description}
+                        </span>
+                        {option.id === conversationDensity && (
+                          <Check className="text-primary h-3.5 w-3.5 shrink-0" />
+                        )}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                  <TextAlignLeft className="text-muted-foreground/30 size-5" />
+                  <span className="text-muted-foreground/60 text-sm">
+                    {`No density option matching "${query}"`}
                   </span>
                 </div>
               ))}

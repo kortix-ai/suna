@@ -49,6 +49,7 @@ import {
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
+  TextAlignLeftIcon as TextAlignLeft,
   TerminalWindowIcon as Terminal,
   TerminalWindowIcon as TerminalSquare,
   UserPlusIcon as UserPlus,
@@ -869,6 +870,20 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'togglePanelMode',
     keywords: 'easy advanced simple panel session detail mode view',
     requiresSession: true,
+  },
+  {
+    // A door, not a toggle: the palette maps this id to its 'density'
+    // submenu page (SUBMENU_PAGE_BY_ID in command-palette.tsx), where the
+    // two modes are picked explicitly — same pattern as `nav-accounts`.
+    id: 'conversation-density',
+    label: 'Conversation Density',
+    icon: TextAlignLeft,
+    group: 'view',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'conversationDensity',
+    keywords:
+      'density conversation verbosity compact minimal normal quiet activity thinking text detail steps working burst',
   },
   {
     id: 'logout',

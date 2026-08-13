@@ -20,6 +20,7 @@ export const PANEL_EVENTS = [
   'app_link_copied',
   'image_copied',
   'panel_mode_switched',
+  'conversation_density_switched',
 ] as const;
 
 export type PanelEvent = (typeof PANEL_EVENTS)[number];
