@@ -12,8 +12,9 @@ import {
   stopService,
   uninstallService,
 } from './service';
+import { probeCredentials } from './credential-probe';
 import { hostname, platform, arch, release } from 'os';
-import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { spawn } from 'child_process';
@@ -390,6 +391,34 @@ function installBackgroundService(): void {
   console.log('');
 }
 
+/**
+ * Removes only the pairing fields, so user-tuned settings such as
+ * `allowedPaths` survive a re-pair. Returns true when a credential was present.
+ */
+function clearSavedCredentials(): boolean {
+  if (!existsSync(CONFIG_FILE)) return false;
+
+  let existing: Record<string, unknown> = {};
+  try {
+    existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
+  } catch {
+    rmSync(CONFIG_FILE, { force: true });
+    return true;
+  }
+
+  const hadCredentials = Boolean(existing.token || existing.tunnelId);
+  delete existing.token;
+  delete existing.tunnelId;
+  delete existing.enabledCapabilities;
+
+  const tmpFile = join(CONFIG_DIR, `config.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(tmpFile, JSON.stringify(existing, null, 2), { mode: 0o600, flag: 'wx' });
+  try { chmodSync(tmpFile, 0o600); } catch {}
+  renameSync(tmpFile, CONFIG_FILE);
+  try { chmodSync(CONFIG_FILE, 0o600); } catch {}
+  return hadCredentials;
+}
+
 function saveCredentials(
   tunnelId: string,
   token: string,
@@ -573,8 +602,46 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
     apiUrl: flags['api-url'],
   });
 
-  // If both token and tunnelId are provided, connect directly
+  // Credentials typed on the command line, as opposed to credentials restored
+  // from ~/.agent-tunnel/config.json by loadConfig().
+  const explicitCredentials = Boolean(flags.token && flags['tunnel-id']);
+
+  if (isTruthyFlag(flags.reauth) && !explicitCredentials) {
+    clearSavedCredentials();
+    await commandConnectDeviceAuth(loadConfig({ apiUrl: config.apiUrl }), flags);
+    return;
+  }
+
   if (config.token && config.tunnelId) {
+    // Never reuse a saved credential blind. A revoked token that reaches
+    // installBackgroundService() turns into a silent restart loop, because a
+    // background service has no terminal to report the rejection to.
+    console.log('');
+    console.log(`  ${c.cyan}◆${c.reset} ${c.dim}Checking saved credentials…${c.reset}`);
+    const probe = await probeCredentials(config, {
+      capabilities: createEnabledCapabilityRegistry(config).getCapabilityNames(),
+    });
+
+    if (probe === 'unreachable') {
+      console.error(
+        `  ${c.red}✗${c.reset} Cannot reach the relay at ${config.apiUrl}. Check your network, then run connect again.`,
+      );
+      process.exit(1);
+    }
+
+    if (probe === 'rejected') {
+      if (explicitCredentials) {
+        console.error(
+          `  ${c.red}✗${c.reset} The supplied --token was rejected for this tunnel.`,
+        );
+        process.exit(1);
+      }
+      console.log(`  ${c.yellow}!${c.reset} ${c.dim}Saved token rejected — re-authorizing${c.reset}`);
+      clearSavedCredentials();
+      await commandConnectDeviceAuth(loadConfig({ apiUrl: config.apiUrl }), flags);
+      return;
+    }
+
     const mode = await chooseConnectMode(flags);
     if (mode.background) {
       saveCredentials(config.tunnelId, config.token, config.apiUrl);
@@ -594,6 +661,28 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
   // Partial — error
   console.error(`${c.red}${c.bold} error${c.reset} Provide both --token and --tunnel-id, or neither (for device auth)`);
   process.exit(1);
+}
+
+function commandLogout(flags: Record<string, string>): void {
+  const removed = clearSavedCredentials();
+  const service = isTruthyFlag(flags['keep-service']) ? null : uninstallService();
+
+  console.log('');
+  console.log(
+    removed
+      ? `  ${c.green}●${c.reset} ${c.bold}Signed out${c.reset} ${c.dim}(credentials cleared from ${CONFIG_FILE})${c.reset}`
+      : `  ${c.gray}○${c.reset} ${c.dim}No saved credentials to clear${c.reset}`,
+  );
+  if (service) {
+    console.log(`  ${c.dim}Background service removed${c.reset}`);
+  } else {
+    console.log(
+      `  ${c.yellow}!${c.reset} ${c.dim}Background service kept — it cannot authenticate until you run connect again${c.reset}`,
+    );
+  }
+  console.log('');
+  console.log(`  ${c.dim}Pair again with:${c.reset} ${c.white}agent-tunnel connect --api-url <url>${c.reset}`);
+  console.log('');
 }
 
 async function commandRun(flags: Record<string, string>): Promise<void> {
@@ -729,6 +818,7 @@ function showHelp(): void {
   console.log(`  ${c.cyan}service-status${c.reset} Check persistent service status`);
   console.log(`  ${c.cyan}logs${c.reset}          Show recent service logs`);
   console.log(`  ${c.cyan}uninstall-service${c.reset} Stop/remove the persistent service`);
+  console.log(`  ${c.cyan}logout${c.reset}        Clear saved credentials and remove the service`);
   console.log(`  ${c.cyan}status${c.reset}        Check tunnel connection status`);
   console.log(`  ${c.cyan}help${c.reset}          Show this help message`);
   console.log('');
@@ -738,6 +828,8 @@ function showHelp(): void {
   console.log(`  ${c.white}--api-url${c.reset} ${c.dim}<url>${c.reset}       API URL ${c.dim}(default: http://localhost:8080)${c.reset}`);
   console.log(`  ${c.white}--daemon${c.reset}             With connect: skip the prompt and install the background service`);
   console.log(`  ${c.white}--foreground${c.reset}         With connect: skip prompts and run only in this terminal`);
+  console.log(`  ${c.white}--reauth${c.reset}             With connect: discard saved credentials and pair again`);
+  console.log(`  ${c.white}--keep-service${c.reset}       With logout: clear credentials but leave the service installed`);
   console.log('');
   console.log(`  ${c.dim}Config: ~/.agent-tunnel/config.json${c.reset}`);
   console.log(`  ${c.dim}powered by ${c.cyan}kortix${c.reset}`);
@@ -782,6 +874,11 @@ switch (command) {
     break;
   case 'uninstall-service':
     commandUninstallService();
+    break;
+  case 'logout':
+  case 'sign-out':
+  case 'unpair':
+    commandLogout(flags);
     break;
   case 'status':
     commandStatus(flags);

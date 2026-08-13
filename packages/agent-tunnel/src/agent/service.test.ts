@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
   SERVICE_LABEL,
   buildServiceShellCommand,
   getServicePaths,
+  isEphemeralRunnerPath,
   renderLaunchdPlist,
   renderSystemdUnit,
   renderWindowsPowerShellScript,
+  vendorRunner,
 } from './service';
 
 describe('agent tunnel service definitions', () => {
@@ -50,6 +55,49 @@ describe('agent tunnel service definitions', () => {
     expect(script).toContain('while ($true)');
     expect(script).toContain("& 'node' 'agent-tunnel.js' 'run' '--service'");
     expect(script).toContain('Start-Sleep -Seconds 5');
+  });
+
+  test('treats package-manager caches as ephemeral runner locations', () => {
+    expect(
+      isEphemeralRunnerPath(
+        '/Users/x/.npm/_npx/d2c324008dde6a9b/node_modules/@kortix/agent-tunnel/dist/agent-cli.js',
+      ),
+    ).toBe(true);
+    expect(isEphemeralRunnerPath('/Users/x/.npm/_cacache/content-v2/sha512/ab/cd')).toBe(true);
+    expect(isEphemeralRunnerPath('/usr/local/lib/node_modules/@kortix/agent-tunnel/dist/agent-cli.js')).toBe(false);
+    expect(isEphemeralRunnerPath('/opt/homebrew/bin/agent-tunnel')).toBe(false);
+  });
+
+  test('vendors an npx-cached runner into the config directory', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-vendor-'));
+    try {
+      const paths = {
+        ...getServicePaths(),
+        binDir: join(home, 'bin'),
+        vendoredRunner: join(home, 'bin', 'agent-cli.js'),
+      };
+
+      // A stable install location is used as-is.
+      const stable = join(home, 'agent-cli.js');
+      writeFileSync(stable, '// bundle\n');
+      expect(vendorRunner(stable, paths)).toBe(stable);
+
+      // An npx cache path is copied out to the stable location instead.
+      const cacheDir = join(home, '_npx', 'abc');
+      mkdirSync(cacheDir, { recursive: true });
+      const cached = join(cacheDir, 'agent-cli.js');
+      writeFileSync(cached, '// cached bundle\n');
+      const copied = vendorRunner(cached, paths);
+      expect(copied).toBe(paths.vendoredRunner);
+      expect(readFileSync(copied, 'utf8')).toBe('// cached bundle\n');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('resolves the interpreter at start instead of pinning one absolute path', () => {
+    const command = buildServiceShellCommand();
+    expect(command).toContain('command -v node');
   });
 
   test('service paths are under the user home', () => {

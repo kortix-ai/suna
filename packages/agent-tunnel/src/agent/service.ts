@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { homedir, platform, userInfo } from 'os';
 import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
@@ -9,6 +18,8 @@ export const DEFAULT_INSTALL_BACKGROUND_SERVICE = true;
 export interface ServicePaths {
   configDir: string;
   logDir: string;
+  binDir: string;
+  vendoredRunner: string;
   launchdPlist: string;
   systemdUnit: string;
   windowsScript: string;
@@ -25,13 +36,56 @@ export interface ServiceStatus {
 export function getServicePaths(): ServicePaths {
   const home = homedir();
   const configDir = join(home, '.agent-tunnel');
+  const binDir = join(configDir, 'bin');
   return {
     configDir,
     logDir: join(configDir, 'logs'),
+    binDir,
+    vendoredRunner: join(binDir, 'agent-cli.js'),
     launchdPlist: join(home, 'Library', 'LaunchAgents', `${SERVICE_LABEL}.plist`),
     systemdUnit: join(home, '.config', 'systemd', 'user', `${SERVICE_LABEL}.service`),
     windowsScript: join(configDir, 'agent-tunnel-service.ps1'),
   };
+}
+
+/**
+ * True for locations that the package manager may delete without warning.
+ *
+ * `npx` extracts the package into a content-addressed cache directory and
+ * garbage-collects it. A background service pointed at that path starts fine
+ * and then dies permanently the first time the cache is pruned, with only a
+ * MODULE_NOT_FOUND in a log file nobody reads.
+ */
+export function isEphemeralRunnerPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, '/');
+  return (
+    normalized.includes('/_npx/') ||
+    normalized.includes('/_cacache/') ||
+    normalized.includes('/.pnpm-store/') ||
+    normalized.includes('/.yarn/$$virtual/')
+  );
+}
+
+/**
+ * Copies the running CLI bundle into ~/.agent-tunnel/bin so the installed
+ * service owns its executable. The bundle is a single self-contained file that
+ * imports only Node builtins, so a plain copy is sufficient.
+ *
+ * Returns the path the service should execute.
+ */
+export function vendorRunner(scriptPath: string, paths: ServicePaths = getServicePaths()): string {
+  if (!isEphemeralRunnerPath(scriptPath)) return scriptPath;
+
+  mkdirSync(paths.binDir, { recursive: true, mode: 0o700 });
+  const source = realpathSync(scriptPath);
+  copyFileSync(source, paths.vendoredRunner);
+  try { chmodSync(paths.vendoredRunner, 0o700); } catch {}
+  writeFileSync(
+    join(paths.binDir, 'agent-cli.source.json'),
+    JSON.stringify({ source, vendoredFrom: scriptPath }, null, 2),
+    { mode: 0o600 },
+  );
+  return paths.vendoredRunner;
 }
 
 function shellQuote(value: string): string {
@@ -55,16 +109,27 @@ function currentRunnerParts(): { command: string; args: string[] } {
   const exec = process.execPath;
   const script = process.argv[1];
   if (script && existsSync(script)) {
-    return { command: exec, args: [script, 'run', '--service'] };
+    return { command: exec, args: [vendorRunner(script), 'run', '--service'] };
   }
   throw new Error(
     'Cannot install the background service because the current Agent Tunnel executable was not found',
   );
 }
 
+/**
+ * Resolves the interpreter at service start rather than baking one absolute
+ * path in. A version-managed Node (nvm, fnm, volta) moves when the user
+ * upgrades, which would otherwise strand the service the same way an evicted
+ * npx cache does.
+ */
+function resolveInterpreterExpression(execPath: string): string {
+  return `"$(command -v ${shellQuote(execPath)} 2>/dev/null || command -v node)"`;
+}
+
 function currentRunnerCommand(): string {
   const runner = currentRunnerParts();
-  return [runner.command, ...runner.args].map(shellQuote).join(' ');
+  const args = runner.args.map(shellQuote).join(' ');
+  return `${resolveInterpreterExpression(runner.command)} ${args}`;
 }
 
 export function buildServiceShellCommand(): string {
@@ -226,6 +291,9 @@ export function installService(): ServiceStatus {
 
 export function uninstallService(): ServiceStatus {
   const paths = getServicePaths();
+  // Remove the vendored executable too, so uninstall leaves no residue that a
+  // later install would silently reuse.
+  rmSync(paths.binDir, { recursive: true, force: true });
 
   if (platform() === 'darwin') {
     const existed = existsSync(paths.launchdPlist);

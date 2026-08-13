@@ -1,11 +1,17 @@
 import { hostname, platform, arch, release } from 'os';
-import { trustedCredential, trustedHttpUrl, type TunnelConfig } from './config';
+import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
 import { CapabilityRegistry } from './capabilities/index';
 import { PermissionGuard } from './security/permission-guard';
 import type { LocalPermission } from './security/permission-guard';
 import { signMessage, verifyMessageSignature } from '../shared/crypto';
 
-const AGENT_VERSION = '0.1.2';
+export const AGENT_VERSION = '0.1.2';
+
+/**
+ * Relay close codes that mean the credential itself is bad. They are terminal:
+ * reconnecting with the same token can never succeed.
+ */
+export const AUTH_REJECTED_CLOSE_CODES: readonly number[] = [4001, 4003];
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -400,15 +406,6 @@ export class TunnelAgent {
   }
 
   private buildWsUrl(): string {
-    const base = trustedHttpUrl(this.config.apiUrl)
-      .replace(/^http:/, 'ws:')
-      .replace(/^https:/, 'wss:');
-
-    const wsPath = this.config.wsPath || '/ws';
-    const params = new URLSearchParams({
-      tunnelId: trustedCredential(this.config.tunnelId, 'tunnelId'),
-    });
-
-    return `${base}${wsPath}?${params.toString()}`;
+    return buildTunnelWsUrl(this.config);
   }
 }
