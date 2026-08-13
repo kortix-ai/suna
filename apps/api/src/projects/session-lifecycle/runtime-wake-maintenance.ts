@@ -3,6 +3,7 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { preserveEstablishedRuntime } from '../runtime-identity';
 import {
   RUNTIME_WAKE_CLEANUP_LEASE_MS,
   RUNTIME_WAKE_LATE_START_GUARD_MS,
@@ -17,13 +18,26 @@ export async function reconcileRuntimeWakeCandidate(input: {
   stop: () => Promise<void>;
   markChecked: (status: string) => Promise<void>;
   markStopped: () => Promise<void>;
-}): Promise<'stopped' | 'checked' | 'skipped'> {
+  /** Provider proved the parked runtime is gone — preserve its identity now. */
+  markRemoved: () => Promise<void>;
+}): Promise<'stopped' | 'removed' | 'checked' | 'skipped'> {
   if (!(await input.claim())) return 'skipped';
+  // A throwing round-trip degrades to `unknown`, which is explicitly
+  // non-terminal — a network blip must never be read as proof of removal.
   const status = await input.getStatus().catch(() => 'unknown');
   if (status === 'running') {
     await input.stop();
     await input.markStopped();
     return 'stopped';
+  }
+  // `removed` is the provider's DEFINITIVE answer that the box no longer
+  // exists, and this pass is the only component that ever asks it about a
+  // parked row (the box reaper's candidate predicate is `status = 'active'`).
+  // Recording the observation and moving on left the session advertising a
+  // "Restart session" button that could only ever 409, until a human opened it.
+  if (status === 'removed') {
+    await input.markRemoved();
+    return 'removed';
   }
   await input.markChecked(status);
   return 'checked';
@@ -38,11 +52,13 @@ export async function reconcileRuntimeWakeCandidate(input: {
 export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
   checked: number;
   stopped: number;
+  removed: number;
   errors: number;
 }> {
   const rows = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
       externalId: sessionSandboxes.externalId,
       provider: sessionSandboxes.provider,
       metadata: sessionSandboxes.metadata,
@@ -79,6 +95,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
 
   let checked = 0;
   let stopped = 0;
+  let removed = 0;
   let errors = 0;
   for (const row of rows) {
     const externalId = row.externalId;
@@ -193,9 +210,50 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
               ),
             );
         },
+        markRemoved: async () => {
+          // Record the observation FIRST and release the cleanup lease, so the
+          // forensic trail survives even if the preserve below fails — this is
+          // the stamp that reconstructed the original incident.
+          await db
+            .update(sessionSandboxes)
+            .set({
+              metadata: sql`(
+                coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
+                  - 'runtimeWakeCleanupId'
+                  - 'runtimeWakeCleanupLeaseExpiresAt'
+                ) || ${JSON.stringify({
+                  runtimeWakeLateStartCheckedAt: new Date().toISOString(),
+                  runtimeWakeLateStartProviderStatus: 'removed',
+                })}::jsonb`,
+            })
+            .where(
+              and(
+                eq(sessionSandboxes.sandboxId, row.sandboxId),
+                eq(sessionSandboxes.status, 'stopped'),
+                sql`${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' = ${cleanupId}`,
+              ),
+            );
+          // Re-read before preserving. `preserveEstablishedRuntime` writes the
+          // WHOLE metadata object from the row it is handed, so passing the
+          // pre-claim snapshot would resurrect the `runtimeWakeId` /
+          // `runtimeWakeLeaseExpiresAt` keys the claim just deleted — and a
+          // resurrected wake id reads as `runtimeWakeInProgress` on the next
+          // open, which is the state this whole path exists to end.
+          const [fresh] = await db
+            .select()
+            .from(sessionSandboxes)
+            .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+            .limit(1);
+          if (!fresh?.externalId) return;
+          // Same classification the box reaper writes for the identical
+          // observation (reaping/box-reaper.ts `reconcile-removed`), so the
+          // stop-reason query cannot tell the two discovery paths apart.
+          await preserveEstablishedRuntime(fresh, 'runtime_removed', 'provider_removed');
+        },
       });
       if (result !== 'skipped') checked += 1;
       if (result === 'stopped') stopped += 1;
+      if (result === 'removed') removed += 1;
     } catch (error) {
       errors += 1;
       console.warn(
@@ -204,5 +262,5 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
       );
     }
   }
-  return { checked, stopped, errors };
+  return { checked, stopped, removed, errors };
 }

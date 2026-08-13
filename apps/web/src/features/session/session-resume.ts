@@ -13,14 +13,40 @@
 export interface ResumableSandboxLike {
   status?: string | null;
   external_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * The server has proven this runtime is gone and preserved its identity rather
+ * than silently handing the session a fresh, empty box.
+ *
+ * This is the ONE terminal identity state. `recovering` / `recovery_claimed` /
+ * `recovered` all describe a same-id restore that is still in flight, and those
+ * must keep resuming normally.
+ */
+export function isRuntimeIdentityUnavailable(
+  sandbox: ResumableSandboxLike | null | undefined,
+): boolean {
+  const metadata = sandbox?.metadata;
+  if (!metadata || typeof metadata !== 'object') return false;
+  return (metadata as Record<string, unknown>).runtimeIdentityState === 'unavailable';
 }
 
 /**
  * A hibernated box is still resumable when its row is `stopped` AND it kept an
  * `external_id` — a fresh `/start` wakes it in place (keeps its disk/workspace).
  * A stopped row with no `external_id` is genuinely gone and not resumable.
+ *
+ * A PRESERVED-UNAVAILABLE row is the trap those two fields cannot see. When the
+ * provider loses a box, `openSession` deliberately keeps the row `stopped` WITH
+ * its `external_id` — that is what "the identity was preserved, and no
+ * replacement sandbox was created" means. Reading only status + external_id
+ * therefore called a permanently dead runtime resumable, and the page spent its
+ * whole auto-resume budget re-issuing `/start` against it (prod session
+ * ad4b63ac, 2026-08-13) before landing on a Restart button that can only 409.
  */
 export function isSandboxResumable(sandbox: ResumableSandboxLike | null | undefined): boolean {
+  if (isRuntimeIdentityUnavailable(sandbox)) return false;
   return !!sandbox && sandbox.status === 'stopped' && !!sandbox.external_id;
 }
 

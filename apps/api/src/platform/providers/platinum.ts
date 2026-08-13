@@ -383,7 +383,22 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
     } catch (err) {
-      return isMissingSandboxError(err) ? 'unavailable' : 'recovering';
+      if (!isMissingSandboxError(err)) return 'recovering';
+      // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
+      // sandbox returns. Platinum's reconciler deletes a box whose disk it has
+      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
+      //
+      // Returning 'unavailable' here made the restore branch below DEAD CODE:
+      // it handles `state ∈ {failed-start, lost, deleted}` + a completed backup,
+      // but a `deleted` sandbox can never reach it, because this catch fires
+      // first. So the one path written to recover this exact case never ran.
+      //
+      // Ask for the restore directly instead. Platinum currently refuses a
+      // tombstoned row (`sbx.deletedAt` guard on the endpoint), so this is
+      // expected to fail TODAY — it succeeds the moment that guard is relaxed,
+      // and until then it costs one request and still answers 'unavailable'.
+      return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
     }
 
     const state = String(sandbox.state ?? '').toLowerCase();
@@ -401,15 +416,34 @@ export class PlatinumProvider implements SandboxProvider {
       ['failed-start', 'lost', 'deleted'].includes(state) &&
       String(sandbox.backupState ?? sandbox.backup_state ?? '').toLowerCase() === 'completed'
     ) {
-      await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(120_000),
-      });
-      return 'recovering';
+      return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
     }
 
     if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';
     return 'recovering';
+  }
+
+  /**
+   * Ask Platinum to re-spawn this sandbox from its S3 backup, keeping the id.
+   *
+   * Returns false rather than throwing: every caller is deciding "is this
+   * runtime recoverable", and a refusal is an answer, not a fault. Losing that
+   * distinction is what let a recoverable box be reported as permanently gone.
+   */
+  private async tryRestoreFromBackup(externalId: string): Promise<boolean> {
+    try {
+      await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      });
+      return true;
+    } catch (err) {
+      console.warn(
+        `[platinum] restore-from-backup refused for ${externalId}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return false;
+    }
   }
 
   async resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress> {

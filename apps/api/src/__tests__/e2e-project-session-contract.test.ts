@@ -2805,6 +2805,62 @@ describe('project session API contract', () => {
     expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
   });
 
+  // The wake cooldown is a "the provider did not confirm this wake, retry
+  // shortly" payload, and it is evaluated BEFORE any provider truth. For a row
+  // already preserved as `runtimeIdentityState: 'unavailable'` that answer is
+  // false twice over: the identity is gone, so there is nothing to retry, and
+  // `failure.retryable: true` invites exactly the click that can only 409.
+  //
+  // This window used to be unreachable in practice (a preserve happened long
+  // after the cooldown lapsed). The maintenance pass now preserves the identity
+  // the moment the provider proves removal — which lands INSIDE the 2-minute
+  // cooldown of the wake that just failed — so the cooldown must yield to it.
+  test('a preserved-unavailable identity is not reported as a retryable wake cooldown', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, status: 'stopped', opencodeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-gone-in-cooldown',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          runtimeIdentityState: 'unavailable',
+          preservedExternalId: 'box-gone-in-cooldown',
+          runtimeUnavailableReason: 'runtime_removed',
+          // Cooldown still ticking from the wake that failed moments ago.
+          runtimeWakeRetryAfterAt: new Date(Date.now() + 90_000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+    });
+    // The specific lie: a retryable cooldown offered for an identity that is gone.
+    expect(body.reason).not.toBe('runtime_wake_cooldown');
+    expect((body.failure as { retryable?: boolean } | null)?.retryable).not.toBe(true);
+    // No wake is issued against a runtime the provider has already disowned.
+    expect(providerStartCalls).toBe(0);
+  });
+
   test('dashboard start restores a provider-removed sandbox in place without provisioning', async () => {
     const app = createApp();
     sessionRow = {

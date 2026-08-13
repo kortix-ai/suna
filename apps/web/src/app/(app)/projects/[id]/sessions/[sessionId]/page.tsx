@@ -29,7 +29,11 @@ import {
   findInitialSessionPin,
   gatedRuntimeError,
 } from '@/features/session/session-load-state';
-import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
+import {
+  isAutoResuming,
+  isRuntimeIdentityUnavailable,
+  isSandboxResumable,
+} from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import {
@@ -329,6 +333,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
+  // so it satisfies `fatal` above and used to render the ordinary "restart it"
+  // card. It needs its own terminal branch — see the render below.
+  const runtimeIdentityUnavailable =
+    !authLoading && !!user && isRuntimeIdentityUnavailable(sandbox);
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
   // OpenCode REST error, so a still-provisioning session used to be classified
@@ -550,6 +559,27 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           message="Its computer was released. Restart the session to bring it back."
           detail={restart.errorMessage ?? undefined}
           action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
+        />
+      );
+    }
+
+    // The provider lost this session's computer. THIS MUST NEVER HAPPEN, and
+    // when it does the only honest UI is a hard stop: nothing here is
+    // restartable (`/start` answers `retriable: false`, `POST /restart` answers
+    // 409 forever), and this session cannot be reconstructed.
+    //
+    // It must NOT fall through to the generic stopped card below, which offers
+    // a Restart button whose only possible outcome is that 409 — the loop prod
+    // session ad4b63ac hit on 2026-08-13. It must also NEVER silently continue
+    // into a fresh session: the server deliberately preserved this identity
+    // instead of attaching a replacement box, and the UI must not undo that.
+    // Say what happened, name the id, and stop.
+    if (runtimeIdentityUnavailable) {
+      return (
+        <InlineSessionError
+          title="This session's computer was lost"
+          message="Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
+          detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
         />
       );
     }

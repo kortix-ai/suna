@@ -2,11 +2,15 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
+import { logger } from '../lib/logger';
+import { captureException } from '../lib/sentry';
 import type { ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 import type { StopReason } from './stop-reason';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
+/** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
+export const RUNTIME_LOST_EVENT = 'runtime.lost';
 export const RUNTIME_IDENTITY_ERROR =
   'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.';
 
@@ -248,14 +252,59 @@ export async function preserveEstablishedRuntime(
 
   if (!preserved) return null;
 
-  console.error('[runtime-identity] preserved unavailable sandbox identity', {
-    sessionId: row.sessionId,
-    sandboxId: row.sandboxId,
+  reportLostRuntime(preserved, reason, stopReason, now);
+  return preserved;
+}
+
+/**
+ * A session's computer disappeared. THIS MUST NEVER HAPPEN, so it is reported
+ * as a hard error rather than a log line — losing one is losing a user's
+ * uncommitted work, and it is unrecoverable by definition.
+ *
+ * Two sinks on purpose:
+ *   - `logger.error` with a STABLE `event` name, so Better Stack can alert on
+ *     `event:"runtime.lost"` instead of grepping a free-text message.
+ *   - `captureException`, so it lands in the error tracker as an exception with
+ *     a stack, not somewhere in a log firehose nobody reads.
+ *
+ * The payload carries what an investigation actually needs on the PROVIDER
+ * side: which provider and which of its ids, who lost work, and how long the
+ * box had been parked before it vanished. `parkedForMs` is the field that
+ * separates "died in service" from "died while parked", which are different
+ * bugs with different owners.
+ */
+function reportLostRuntime(
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+  stopReason: StopReason,
+  now: Date,
+): void {
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+  const parkedAtRaw = metadata.stretchParkedAt ?? metadata.stoppedAt;
+  const parkedAtMs = typeof parkedAtRaw === 'string' ? Date.parse(parkedAtRaw) : Number.NaN;
+  const detail = {
+    event: RUNTIME_LOST_EVENT,
+    provider: row.provider,
     externalId: row.externalId,
+    sandboxId: row.sandboxId,
+    sessionId: row.sessionId,
+    projectId: row.projectId,
+    accountId: row.accountId,
     reason,
     stopReason,
-  });
-  return preserved;
+    // Which code path proved it, so a spike can be attributed to a discovery
+    // change rather than to a real change in provider loss.
+    discoveredBy: reason,
+    parkedForMs: Number.isFinite(parkedAtMs) ? now.getTime() - parkedAtMs : null,
+    sandboxCreatedAt: row.createdAt?.toISOString() ?? null,
+    template: typeof metadata.template === 'string' ? metadata.template : null,
+  };
+
+  logger.error('Session runtime lost by the provider — user work is unrecoverable', detail);
+  captureException(
+    new Error(`runtime_lost: ${row.provider}/${row.externalId} (${reason})`),
+    detail,
+  );
 }
 
 /**

@@ -848,3 +848,69 @@ describe('makeRequest surfaces the body `code` on a 403 feature_disabled gate', 
     }
   });
 });
+
+// Regression for a prod session card + toast that read `runtime_identity_unavailable`
+// (session ad4b63ac, 2026-08-13): every Kortix error body pairs a machine slug
+// (`reason`) with the sentence written for the user (`error`), and `reason` used
+// to be read FIRST. Not one `reason` value in the API is a sentence — they are
+// all snake_case slugs — so any endpoint that sets one leaked the slug into the
+// UI as the user-facing message. `reason` is a last-resort fallback, never a
+// preference over a human-readable field.
+describe('makeRequest prefers the human-readable body field over the machine `reason` slug', () => {
+  function stubErrorBody(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('the real 409 restart body surfaces its sentence, not `runtime_identity_unavailable`', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const restore = stubErrorBody(409, {
+      error:
+        'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.',
+      code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+      session_id: 'ad4b63ac-c5f3-4eaa-a5ea-960dfece7af9',
+      external_id: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+      reason: 'runtime_identity_unavailable',
+    });
+    try {
+      const res = await backendApi.post('/projects/p1/sessions/s1/restart', {});
+      expect(res.success).toBe(false);
+      expect(res.error?.message).toBe(
+        'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.',
+      );
+      // The slug stays reachable as a code for branching — it just is not the message.
+      expect((res.error as ApiError).code).toBe('SESSION_RUNTIME_IDENTITY_UNAVAILABLE');
+    } finally {
+      restore();
+    }
+  });
+
+  test('a `message` sentence still outranks `reason`', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const restore = stubErrorBody(400, { message: 'Pick a smaller file.', reason: 'file_too_big' });
+    try {
+      const res = await backendApi.post('/projects/p1/files', {});
+      expect(res.error?.message).toBe('Pick a smaller file.');
+    } finally {
+      restore();
+    }
+  });
+
+  test('`reason` is still used when the body carries no human-readable field', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const restore = stubErrorBody(409, { reason: 'in_flight' });
+    try {
+      const res = await backendApi.post('/projects/p1/sessions/s1/restart', {});
+      expect(res.error?.message).toBe('in_flight');
+    } finally {
+      restore();
+    }
+  });
+});

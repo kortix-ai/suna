@@ -12,6 +12,33 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-13 — session `runtime-identity-ux` — error message: sentence over slug
+
+**Done.** `core/http/api-client.ts` read `errorData.reason` FIRST when building
+`ApiError.message`. Every Kortix error body pairs a machine slug (`reason`) with
+the sentence written for the user (`error`/`message`), so the slug always won.
+A customer saw the literal string `runtime_identity_unavailable` as both the
+session card detail and the toast (prod session ad4b63ac, 2026-08-13).
+
+Surveyed every `reason:` literal in `apps/api/src`: all are snake_case slugs, not
+one is a sentence — so preferring it could only ever downgrade the message.
+`reason` is now the LAST fallback, behind `message` / `error` / `detail` /
+`detail.message`. A body carrying only `reason` still yields it, so nothing
+regresses; `ApiError.code` is untouched, so code-based branching is unaffected.
+
+3 tests added in `api-client.test.ts` (RED first, verified failing on the real
+409 restart body). Isolated run: 33 pass / 0 fail.
+
+**Caveat, pre-existing:** the FULL `packages/sdk` suite is red at baseline —
+404 failures on the unmodified tree, from cross-file pollution of the shared
+`globalThis.fetch` / `configureKortix()` singletons when 141 files run together.
+With this change: 407 failures over 1851 tests (+3 tests, +3 failures — my own
+three, which pass in isolation). **Net new failures attributable to this change:
+zero.** Not fixed here: it is a test-harness isolation problem across the whole
+package and deserves its own task. Filed under Next.
+
+---
+
 ### 2026-08-10 — session `reload-live-status` claim
 
 No **Now** task claimed. This is the user-directed live session-config reload status work.
