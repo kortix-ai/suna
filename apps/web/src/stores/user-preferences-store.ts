@@ -15,6 +15,14 @@ export type TabSwitchModifier = 'meta' | 'ctrl';
 /** Session panel presentation: 'easy' = plain-language cards, 'advanced' = the tool stepper */
 export type PanelMode = 'easy' | 'advanced';
 
+/**
+ * How much live activity the session chat shows while Kortix works.
+ * 'normal' auto-expands the activity burst — steps and streaming thinking
+ * text appear as they happen. 'minimal' keeps the burst collapsed to its
+ * one-line summary until the user opens it.
+ */
+export type ConversationDensity = 'normal' | 'minimal';
+
 export interface KeyboardShortcutPreferences {
   /** Modifier used for tab switching shortcuts (1-9) — default: 'meta' on macOS, 'ctrl' elsewhere */
   tabSwitchModifier: TabSwitchModifier;
@@ -32,6 +40,12 @@ export interface UserPreferences {
   disableTabSelector: boolean;
   /** Session action panel mode — defaults to 'easy' for all users */
   panelMode: PanelMode;
+  /**
+   * Conversation density of the session chat — defaults to 'normal'.
+   * Legacy persisted preferences predate this key, so read sites must use
+   * `?? 'normal'` (same rule as `panelMode`).
+   */
+  conversationDensity: ConversationDensity;
 }
 
 // ============================================================================
@@ -72,6 +86,9 @@ interface UserPreferencesState {
   /** Flip between easy and advanced */
   togglePanelMode: () => void;
 
+  /** Set the conversation density */
+  setConversationDensity: (density: ConversationDensity) => void;
+
   /** Reset all preferences to defaults */
   resetPreferences: () => void;
 
@@ -88,6 +105,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         wallpaperId: DEFAULT_WALLPAPER_ID,
         disableTabSelector: false,
         panelMode: 'easy',
+        conversationDensity: 'normal',
       },
 
       setKeyboardPreferences: (prefs) => {
@@ -151,6 +169,11 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         });
       },
 
+      setConversationDensity: (density) => {
+        const current = get().preferences;
+        set({ preferences: { ...current, conversationDensity: density } });
+      },
+
       resetPreferences: () => {
         set({
           preferences: {
@@ -159,6 +182,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
             wallpaperId: DEFAULT_WALLPAPER_ID,
             disableTabSelector: false,
             panelMode: 'easy',
+            conversationDensity: 'normal',
           },
         });
       },

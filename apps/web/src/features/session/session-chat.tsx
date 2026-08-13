@@ -30,6 +30,7 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
+import { mergeQueuedBatch } from './queued-batch';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
 import { ExpandableOutput } from './turn/expandable-output';
@@ -39,7 +40,6 @@ import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
-import { mergeQueuedBatch } from './queued-batch';
 import { useMessageQueueDrain } from './use-message-queue-drain';
 
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
@@ -76,6 +76,7 @@ import Loading from '@/components/ui/loading';
 import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
@@ -635,6 +636,11 @@ function SessionTurnImpl({
   const [copied, setCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
+  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
+  // as every `panelMode` read site).
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -1313,6 +1319,7 @@ function SessionTurnImpl({
                   working={working}
                   isTrailing={index === segments.length - 1}
                   disableNavigation={disableToolNavigation}
+                  density={conversationDensity}
                 />
               );
             }
@@ -1466,6 +1473,7 @@ function SessionTurnImpl({
             />
           )}
           <SessionBusyIndicator
+            sessionId={sessionId}
             statusText={throttledStatus || undefined}
             retryLabel={
               retryInfo
@@ -3980,6 +3988,7 @@ export function SessionChat({
                         text={optimisticPrompt || ''}
                         agentNames={agentNames}
                         onFileClick={openFileInComputer}
+                        sessionId={sessionId}
                       />
                     )}
 
@@ -4145,7 +4154,9 @@ export function SessionChat({
                     {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                    {!showOptimistic && isBusy && turns.length === 0 && <SessionBusyIndicator />}
+                    {!showOptimistic && isBusy && turns.length === 0 && (
+                      <SessionBusyIndicator sessionId={sessionId} />
+                    )}
                   </div>
                   {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom

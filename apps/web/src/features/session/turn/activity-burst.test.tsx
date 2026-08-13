@@ -371,7 +371,14 @@ describe('ActivityBurst', () => {
   const done = (id: string, name: string, input: Record<string, unknown> = {}) =>
     tool(id, name, { status: 'completed', output: 'ok', input, time: { start: 1, end: 2 } });
 
-  const renderBurst = (parts: Part[], { working = false, isTrailing = false } = {}) =>
+  const renderBurst = (
+    parts: Part[],
+    {
+      working = false,
+      isTrailing = false,
+      density = 'normal' as 'normal' | 'minimal',
+    } = {},
+  ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
@@ -381,6 +388,7 @@ describe('ActivityBurst', () => {
             working={working}
             isTrailing={isTrailing}
             disableNavigation
+            density={density}
           />
         </NextIntlClientProvider>
       </QueryClientProvider>,
@@ -555,6 +563,61 @@ describe('ActivityBurst', () => {
     expect(markup).toContain('Thinking');
     expect(markup).not.toContain('Weighing two schemas');
     expect(shimmeringThoughts(markup)).toBe(0);
+  });
+
+  describe('minimal density', () => {
+    // The user preference this gates: "i hate seeing so much text on my screen
+    // while kortix is thinking". Minimal keeps the LIVE view to one line; a
+    // click still opens everything, and a settled turn renders identically.
+    const liveParts = (): Part[] => [
+      done('1', 'read', { filePath: '/workspace/a.ts' }),
+      tool('2', 'bash', { status: 'running', input: { command: 'pnpm build' } }),
+    ];
+
+    test('a running burst stays collapsed to its one summary line', () => {
+      const markup = renderBurst(liveParts(), {
+        working: true,
+        isTrailing: true,
+        density: 'minimal',
+      });
+      expect(markup).toContain('Working');
+      expect(markup).toContain('2 steps');
+      expect(markup).not.toContain('pnpm build');
+    });
+
+    test('…and the same running burst IS open under normal density', () => {
+      // The control: proves the assertion above can fail. Without it, a
+      // refactor that stopped rendering the command at all would keep the
+      // minimal test green for the wrong reason.
+      const markup = renderBurst(liveParts(), { working: true, isTrailing: true });
+      expect(markup).toContain('pnpm build');
+    });
+
+    test('a live bare thought keeps its text behind the caret', () => {
+      // Bare bursts are force-open (no trigger to close them), so the thought
+      // row itself must decline to unfurl — otherwise the streaming paragraph
+      // reappears through the one door minimal cannot shut.
+      const thought: Part[] = [
+        { id: 'r', type: 'reasoning', text: 'Weighing two schemas' } as unknown as Part,
+      ];
+      const minimal = renderBurst(thought, {
+        working: true,
+        isTrailing: true,
+        density: 'minimal',
+      });
+      expect(minimal).toContain('Thinking');
+      expect(minimal).not.toContain('Weighing two schemas');
+      // The control again: normal density DOES open the live thought.
+      const normal = renderBurst(thought, { working: true, isTrailing: true });
+      expect(normal).toContain('Weighing two schemas');
+    });
+
+    test('a settled burst renders identically in both modes', () => {
+      // Minimal governs only the live view. Once the turn settles, both modes
+      // auto-collapse to the same one-row summary — byte for byte.
+      const parts = [done('1', 'bash', { command: 'ls' }), done('2', 'bash', { command: 'pwd' })];
+      expect(renderBurst(parts, { density: 'minimal' })).toBe(renderBurst(parts));
+    });
   });
 
   /**

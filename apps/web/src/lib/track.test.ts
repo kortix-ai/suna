@@ -16,6 +16,7 @@ describe('track event registry (W5)', () => {
       'app_link_copied',
       'image_copied',
       'panel_mode_switched',
+      'conversation_density_switched',
     ];
     expect([...PANEL_EVENTS].sort()).toEqual([...expected].sort());
   });
