@@ -71,7 +71,7 @@ export function chipClass(kind: string): string {
     'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card font-medium whitespace-nowrap align-baseline text-[0.95em]';
   return kind === 'command'
     ? cn(base, 'bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]')
-    : cn(base, 'bg-muted text-foreground');
+    : cn(base, 'bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]');
 }
 
 /**

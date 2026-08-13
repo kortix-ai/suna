@@ -234,19 +234,30 @@ describe('computeStatusFromPart', () => {
 
   test('maps agent orchestration tools to delegation status', () => {
     for (const tool of ['task', 'session_spawn', 'session-start-background', 'agent_task']) {
-      expect(computeStatusFromPart(toolPart(tool))).toBe('Delegating to agent...');
+      expect(computeStatusFromPart(toolPart(tool))).toBe('Handing off to an agent...');
     }
   });
 
   test('maps task lifecycle tools', () => {
-    expect(computeStatusFromPart(toolPart('task_update'))).toBe('Updating task...');
-    expect(computeStatusFromPart(toolPart('task_done'))).toBe('Updating task...');
-    expect(computeStatusFromPart(toolPart('task_create'))).toBe('Creating task...');
-    expect(computeStatusFromPart(toolPart('agent_message'))).toBe('Messaging agent...');
+    expect(computeStatusFromPart(toolPart('task_update'))).toBe('Updating progress...');
+    expect(computeStatusFromPart(toolPart('task_done'))).toBe('Updating progress...');
+    expect(computeStatusFromPart(toolPart('task_create'))).toBe('Starting a new task...');
+    expect(computeStatusFromPart(toolPart('agent_message'))).toBe('Checking in with an agent...');
   });
 
-  test('falls back to a generic running label', () => {
-    expect(computeStatusFromPart(toolPart('unknown_tool'))).toBe('Running unknown_tool...');
+  test('maps file and command tools to plain-language labels', () => {
+    expect(computeStatusFromPart(toolPart('read'))).toBe('Reading files...');
+    expect(computeStatusFromPart(toolPart('grep'))).toBe('Searching files...');
+    expect(computeStatusFromPart(toolPart('edit'))).toBe('Making changes...');
+    expect(computeStatusFromPart(toolPart('apply_patch'))).toBe('Making changes...');
+    expect(computeStatusFromPart(toolPart('bash'))).toBe('Working on the computer...');
+    expect(computeStatusFromPart(toolPart('prune'))).toBe('Tidying up memory...');
+    expect(computeStatusFromPart(toolPart('compress'))).toBe('Tidying up memory...');
+  });
+
+  test('falls back to a generic working label without exposing the tool name', () => {
+    expect(computeStatusFromPart(toolPart('unknown_tool'))).toBe('Working on it...');
+    expect(computeStatusFromPart(toolPart('mcp__server__weird_tool'))).toBe('Working on it...');
   });
 });
 

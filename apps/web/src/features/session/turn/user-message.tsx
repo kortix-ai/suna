@@ -696,7 +696,7 @@ export function UserMessageBubble({
           to select and copy. */}
       {replyContext && (
         <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-          <p className="text-muted-foreground line-clamp-2 text-xs leading-5">{replyContext}</p>
+          <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{replyContext}</p>
         </blockquote>
       )}
 

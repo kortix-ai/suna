@@ -3,7 +3,6 @@
 import { useTranslations } from 'next-intl';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -33,6 +32,7 @@ import {
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
 import {
@@ -51,7 +51,6 @@ import {
   FileArrowDownIcon as FileDown,
   FolderOpenIcon as FolderOpen,
   GlobeIcon as Globe,
-  HouseIcon,
   StackIcon as Layers,
   SidebarSimpleIcon as PanelLeft,
   PencilSimpleIcon,
@@ -62,7 +61,6 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -289,7 +287,7 @@ export function SessionSiteHeader({
             instead. */}
         <div
           className={cn(
-            'flex items-center justify-between p-2',
+            'flex items-center justify-between p-2 px-4 pt-3',
             // Unconditional on the shell. The LEFT indent depends on the
             // sidebar (expanded, it covers the macOS lights itself) and is
             // gated by the data attribute — but the RIGHT one does not: this
@@ -319,14 +317,6 @@ export function SessionSiteHeader({
                 className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
               >
                 <PanelLeft className="cn-rtl-flip size-4" />
-              </Button>
-            )}
-
-            {isProjectSession && (
-              <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
-                <Link href={`/projects/${projectId}`}>
-                  <HouseIcon className="size-4.5" />
-                </Link>
               </Button>
             )}
 

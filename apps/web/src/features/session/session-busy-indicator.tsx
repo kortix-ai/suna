@@ -110,7 +110,9 @@ export function SessionBusyIndicator({
                 transition={swap.transition}
                 className="block min-w-0 whitespace-nowrap will-change-transform"
               >
-                <TextShimmer className="truncate text-sm leading-5">{label}</TextShimmer>
+                <TextShimmer className="truncate text-center align-middle text-sm leading-5">
+                  {label}
+                </TextShimmer>
               </m.span>
             </AnimatePresence>
           </span>

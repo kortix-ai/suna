@@ -82,10 +82,10 @@ function GlobalRulesControl({ projectId }: { projectId: string }) {
         size="sm"
         aria-label="Global rules"
         onClick={() => setOpen(true)}
-        className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5 active:scale-[0.96]"
+        // className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5 active:scale-[0.96]"
       >
-        <ShieldCheckIcon className="size-4" />
-        <span className='hidden md:block'>Global rules</span>
+        <ShieldCheckIcon className="block size-4 md:hidden" />
+        <span className="hidden md:block">Global rules</span>
       </Button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent

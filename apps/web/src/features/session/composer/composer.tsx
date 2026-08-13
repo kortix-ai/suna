@@ -1031,36 +1031,42 @@ function ComposerImpl({
       */}
       <div id={dockId} />
 
-      {notice && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="bg-sidebar border-border relative isolate flex items-center gap-2 overflow-hidden rounded-t-xl border border-b-0 px-3 py-1.5"
-        >
-          <Loading className="size-3.5 shrink-0" />
-          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{notice}</span>
-        </div>
-      )}
-
-      {replyTo && (
-        <div className="bg-sidebar border-border flex items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5">
-          <ArrowBendDoubleUpLeftIcon className="text-muted-foreground size-4 shrink-0" />
-          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-            {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
-          </span>
-          {onClearReply && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              type="button"
-              onClick={onClearReply}
-              className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
-              aria-label={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
-              )}
+      {(notice || replyTo) && (
+        <div className="relative isolate overflow-hidden rounded-t-xl">
+          {notice && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="bg-sidebar border-border flex items-center gap-2 border border-b-0 px-3 py-1.5"
             >
-              <Close className="size-3" />
-            </Button>
+              <Loading className="size-3.5 shrink-0" />
+              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                {notice}
+              </span>
+            </div>
+          )}
+
+          {replyTo && (
+            <div className="bg-sidebar border-border flex items-center gap-2 border border-b-0 px-3 py-1.5">
+              <ArrowBendDoubleUpLeftIcon className="text-muted-foreground size-4 shrink-0" />
+              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
+              </span>
+              {onClearReply && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  type="button"
+                  onClick={onClearReply}
+                  className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
+                  aria-label={tHardcodedUi.raw(
+                    'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
+                  )}
+                >
+                  <Close className="size-3" />
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}
