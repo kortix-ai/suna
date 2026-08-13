@@ -336,6 +336,11 @@ const envSchema = z.object({
   // Manager bundle. Self-host deployments leave it unset.
   ASTER_API_URL: optUrl('https://api.asterlab.ai/v1'),
   ASTER_API_KEY: optStr,
+  // Whether network-boundary secrets may be delivered by the IN-GUEST shim on
+  // providers that have no credential edge of their own (i.e. Daytona, which is
+  // production). The shim terminates the guest's TLS and relays to the broker
+  // route; the credential stays server-side either way.
+  //
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an

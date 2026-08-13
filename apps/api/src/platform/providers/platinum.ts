@@ -49,6 +49,16 @@ interface PlatinumSandbox {
   state?: string;
   backupState?: string | null;
   backup_state?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at?: string | null;
+  createdAt?: string | null;
+}
+
+/** `GET /v1/sandboxes?paginated=true` — Platinum's list envelope. */
+interface PlatinumSandboxPage {
+  rows?: PlatinumSandbox[];
+  total?: number;
+  has_more?: boolean;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
 type PlatinumExecResponse = {
@@ -200,6 +210,17 @@ export class PlatinumProvider implements SandboxProvider {
           envVars,
           type: autoStop === 0 ? 'persistent' : 'ephemeral',
           auto_stop_minutes: autoStop,
+          // OWNERSHIP MARKER, not decoration. The Platinum org is shared across
+          // prod/dev/local, and `listManagedRunningSandboxes` (the orphan-box
+          // reaper's input) filters on exactly these two keys. Without them the
+          // reaper would enumerate every environment's boxes and stop them.
+          // Boxes created before this landed carry no metadata and are
+          // therefore never reaped — the safe fail direction.
+          metadata: {
+            'kortix.managed': 'true',
+            'kortix.env': config.INTERNAL_KORTIX_ENV,
+            'kortix.workload': workloadType,
+          },
         }),
       },
     );
@@ -345,6 +366,49 @@ export class PlatinumProvider implements SandboxProvider {
 
   async stop(externalId: string): Promise<void> {
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
+  }
+
+  /**
+   * List THIS environment's running boxes, for the orphan-box reaper.
+   *
+   * Platinum had no implementation until Monitors needed one: every other
+   * workload is ephemeral and idle-stops natively, so nothing persistent ever
+   * accumulated here. A monitor box is `type: 'persistent'` and never
+   * idle-stops, which makes the orphan reaper the ONLY thing that can ever
+   * clean one up after its DB row is gone.
+   *
+   * Scoped to this control plane by the create-time metadata marker — the org
+   * is shared across prod/dev/local, and an unscoped sweep would stop other
+   * environments' boxes. A row without the marker is skipped, never reaped.
+   */
+  async listManagedRunningSandboxes(): Promise<Array<{ externalId: string; createdAt: Date | null }>> {
+    const out: Array<{ externalId: string; createdAt: Date | null }> = [];
+    const limit = 100;
+    // Bounded page count as well as page size: a paginator that never reports
+    // `has_more: false` must not spin this sweep forever.
+    for (let offset = 0, page = 0; page < 50; offset += limit, page++) {
+      const body = await platinumJson<PlatinumSandboxPage>(
+        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
+      );
+      const rows = body.rows ?? [];
+      for (const sandbox of rows) {
+        if (!sandbox.id) continue;
+        const metadata = sandbox.metadata ?? {};
+        if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
+        if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
+        if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
+        const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
+        const createdAt = rawCreatedAt ? new Date(rawCreatedAt) : null;
+        out.push({
+          externalId: sandbox.id,
+          // An unparseable timestamp reads as unknown, and the reaper skips a
+          // box whose age it cannot establish.
+          createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null,
+        });
+      }
+      if (!body.has_more || rows.length === 0) break;
+    }
+    return out;
   }
 
   async remove(externalId: string): Promise<void> {

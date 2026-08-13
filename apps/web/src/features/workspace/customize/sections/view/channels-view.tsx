@@ -1,14 +1,56 @@
 'use client';
 
+/**
+ * Channels — where a project's agent becomes reachable from Slack, Email, and
+ * Microsoft Teams.
+ *
+ * ## The redesign (this file's shape changed; the data layer did not)
+ *
+ * Every query, mutation, feature flag, and permission check below is the same
+ * one this view used before. What changed is the FORM the state is rendered
+ * in, because the old form had a specific failure: it presented a
+ * four-column `<Table>` (Platform / Status / Workspace / Actions) as the
+ * primary install surface. In the state every new workspace starts in —
+ * nothing connected — column two read "Not connected" on every row and column
+ * three was an em dash on every row. A table exists so you can compare values
+ * down a column; there were none. It was a grid drawn around three buttons.
+ *
+ * **The form now follows the state:**
+ *
+ * | State | Form | Why |
+ * | --- | --- | --- |
+ * | Slack not connected | Hero panel with a preview of the agent answering in a thread (`slack-connect-card.tsx`) | The decision needs the payoff in front of it, not after |
+ * | Slack connected | One compact entity row + the bindings table | Now there is real data, so the table earns its place |
+ * | Email / Teams | Compact entity rows (`channel-row.tsx`), always | Second line says what the channel DOES when off, what it's bound to when on — never an em dash |
+ *
+ * **Other fixes carried by this rewrite:**
+ *
+ * - **One primary CTA.** The section header used to render "Add to Slack"
+ *   while the Slack table row rendered "Install" — two buttons firing the same
+ *   OAuth redirect. The header action is gone; the hero owns the CTA.
+ * - **The payoff moved in front of the commitment.** "Invite the bot to any
+ *   channel and @mention it" used to render only when `install` was truthy, so
+ *   the explanation of the feature arrived strictly after you had authorised
+ *   it. It is now hero copy, and its post-connect form is a next-step hint
+ *   that retires itself once a channel is actually bound (`bindings.length`),
+ *   instead of a permanent banner restating what you already did.
+ * - **Bring-your-own-Slack is a wizard, not a JSON dump.** The old inline
+ *   `Disclosure` opened onto a raw manifest `<pre>`, a prose step counter, and
+ *   two fields named after Slack's API. It is now a three-step `Stepper` in a
+ *   Modal with the JSON opt-in — see `slack-byo-wizard.tsx` for the full
+ *   rationale.
+ * - **Self-hosted is a path, not an empty state.** No managed Slack app
+ *   (`mode.oauth_available === false`) used to render `EmptyState` — the
+ *   component for "there is nothing here" — framing a supported route as a
+ *   dead end. It gets the same hero, with the wizard behind its button.
+ * - **`ConnectedDetails` deleted.** It was defined and never referenced; the
+ *   identical JSX was inlined at the call site.
+ */
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -36,12 +78,16 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import {
+  ChannelDisconnectButton,
+  ChannelRow,
+} from '@/features/workspace/customize/sections/component/channel-row';
+import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -50,12 +96,10 @@ import {
 import {
   type EmailInstallation,
   type SlackInstallation,
-  useConnectSlack,
   useDisconnectEmail,
   useDisconnectSlack,
   useEmailInstall,
   useSlackInstall,
-  useSlackManifest,
   useSlackMode,
 } from '@/hooks/channels/use-channels-installations';
 import {
@@ -65,8 +109,7 @@ import {
 } from '@/hooks/channels/use-teams-installations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
-import { getProject, listProjectAccess } from '@kortix/sdk';
+import { listProjectAccess } from '@kortix/sdk';
 import {
   type Agent,
   contract,
@@ -77,31 +120,22 @@ import {
   useVisibleAgents,
   wireToModelKey,
 } from '@kortix/sdk/react';
-import {
-  CheckIcon as Check,
-  CheckCircleIcon as CheckCircleSolid,
-  CopyIcon as Copy,
-  ArrowSquareOutIcon as ExternalLinkSolid,
-  EnvelopeIcon as Mail,
-  ChatIcon as MessageSquare,
-  XIcon as X,
-} from '@phosphor-icons/react';
+import { AtIcon, EnvelopeIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
-const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2', 'channel-loading-3'];
-const SLACK_MANIFEST_STEPS = [
-  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-  'On the next screen, click Install to Workspace and approve.',
-  'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
-];
+
+/**
+ * Skeleton shapes match what replaces them: one tall hero panel, then two
+ * short rows. Matching the shape is the point — a placeholder that settles
+ * into a different geometry reads as a layout jump, not as loading.
+ */
+const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   // This view used to read the flags off the project SUMMARY query
   // (`qk.project.summary` / `getProject`, whose payload nests them one level
   // shallower). It now reads the one gating primitive, which is backed by
@@ -132,82 +166,51 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const canWrite =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
 
+  // Once Slack is connected it stops being the headline and becomes a peer of
+  // Email and Teams — same row, same list. So the "More channels" label only
+  // earns its place while the hero is above it; with Slack in the list, the
+  // rows ARE the channel list and the section header already says "Channels".
+  const slackRow = Boolean(install);
+  const hasRows = slackRow || emailChannelEnabled || teamsChannelEnabled;
+  const showMoreLabel = !slackRow && hasRows;
+
   return (
-    <CustomizeSectionWrapper
-      title="Channels"
-      description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
-      )}
-      action={
-        canWrite && projectId && !loading && !install && oauthInstallUrl ? (
-          <Button size="sm" variant="secondary" asChild>
-            <Link href={oauthInstallUrl} target="_blank" rel="noopener noreferrer">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddTo1729c1b6',
-              )}
-            </Link>
-          </Button>
-        ) : null
-      }
-    >
-      <div className="space-y-4">
-        {!projectId ? (
-          <InfoBanner tone="neutral">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
-            )}
-          </InfoBanner>
-        ) : loading ? (
-          <div className="space-y-1">
+    <div className="mx-auto w-full max-w-2xl space-y-8">
+      <SettingsTabHeader tab="channels" />
+      {!projectId ? (
+        <InfoBanner tone="neutral">Open a project to manage its channels.</InfoBanner>
+      ) : loading ? (
+        <div className="space-y-6">
+          <Skeleton className="h-64 rounded-md" />
+          <div className="space-y-2">
             {CHANNEL_LOADING_ROWS.map((key) => (
-              <Skeleton key={key} className="h-10 rounded-md" />
+              <Skeleton key={key} className="h-14 rounded-md" />
             ))}
           </div>
-        ) : !oauthInstallUrl && !install ? (
-          <div className="space-y-4">
-            <EmptyState
-              icon={MessageSquare}
-              size="sm"
-              title={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4',
-              )}
-              description={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb',
-              )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Slack, not connected: the hero. Connected, it drops into the row
+              list below and this branch renders nothing. */}
+          {install ? null : (
+            <SlackConnectCard
+              projectId={projectId}
+              oauthInstallUrl={oauthInstallUrl}
+              canWrite={canWrite}
             />
-            <BringYourOwnPanel projectId={projectId} inline />
-          </div>
-        ) : (
-          <>
-            {install ? (
-              <InfoBanner
-                tone="success"
-                icon={Check}
-                title={`Connected to ${install.workspaceName ?? install.workspaceId}`}
-              >
-                Bot <code className="font-mono text-xs">{install.botUserId ?? '—'}</code>
-                {' · '}Team <code className="font-mono text-xs">{install.workspaceId}</code>
-              </InfoBanner>
-            ) : null}
+          )}
 
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Platform</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Workspace</TableHead>
-                  <TableHead className="w-[1%] text-right whitespace-nowrap">
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <SlackChannelRow
-                  projectId={projectId}
-                  installation={install ?? null}
-                  oauthInstallUrl={oauthInstallUrl}
-                  canWrite={canWrite}
-                />
+          {hasRows ? (
+            <section className="space-y-2">
+              {showMoreLabel ? <Label>More channels</Label> : null}
+              <ul className="space-y-2">
+                {install ? (
+                  <SlackChannelRow
+                    projectId={projectId}
+                    installation={install}
+                    canWrite={canWrite}
+                  />
+                ) : null}
                 {emailChannelEnabled ? (
                   <EmailChannelRow
                     projectId={projectId}
@@ -218,41 +221,83 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                 {teamsChannelEnabled ? (
                   <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
                 ) : null}
-              </TableBody>
-            </Table>
+              </ul>
+            </section>
+          ) : null}
 
-            {install ? (
-              <InfoBanner tone="neutral" icon={<CheckCircleSolid weight="fill" />}>
-                <p className="text-sm">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextInviteThe94db1964',
-                  )}{' '}
-                  <span className="text-foreground font-medium">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextMention67ed74a7',
-                    )}
-                  </span>{' '}
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextItA7139ed4f',
-                  )}{' '}
-                  <span className="text-foreground font-medium">Slack CLI</span>.
-                </p>
-              </InfoBanner>
-            ) : oauthInstallUrl ? (
-              <BringYourOwnPanel projectId={projectId} />
-            ) : null}
+          {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
 
-            {teamsChannelEnabled ? (
-              <div className="border-border/60 border-t pt-6">
-                <TeamsChannelPanel projectId={projectId} />
-              </div>
-            ) : null}
+          {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
+        </div>
+      )}
+    </div>
+  );
+}
 
-            {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
-          </>
-        )}
-      </div>
-    </CustomizeSectionWrapper>
+/** Slack as a peer row, once it is connected. */
+function SlackChannelRow({
+  projectId,
+  installation,
+  canWrite,
+}: {
+  projectId: string;
+  installation: SlackInstallation;
+  canWrite: boolean;
+}) {
+  const disconnect = useDisconnectSlack();
+
+  return (
+    <ChannelRow
+      icon={<Slack className="size-5 shrink-0" />}
+      name="Slack"
+      connected
+      detail={installation.workspaceName ?? installation.workspaceId}
+      pitch="Mention your agent in any channel."
+      actions={
+        canWrite ? (
+          <ChannelDisconnectButton
+            pending={disconnect.isPending}
+            onConfirm={(done) =>
+              disconnect.mutate(projectId, {
+                onSuccess: () => {
+                  done();
+                  successToast('Slack disconnected');
+                },
+              })
+            }
+          />
+        ) : null
+      }
+    />
+  );
+}
+
+/**
+ * What follows a connected Slack: the one-time "now do this in Slack" nudge,
+ * then the per-channel bindings table.
+ *
+ * The nudge is the old permanent `InfoBanner` turned into a next step. It
+ * retires itself as soon as `bindings.length > 0` — a bound channel is proof
+ * the user already invited the bot and mentioned it, so restating the
+ * instruction forever is a banner they read past on every visit. The two
+ * blocks are mutually exclusive in practice: no bindings means the nudge and
+ * no table, and bindings mean the table and no nudge.
+ */
+function SlackFollowUp({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const bindingsQuery = useChannelBindings(projectId);
+  const bindings = bindingsQuery.data?.bindings ?? [];
+
+  return (
+    <div className="space-y-4">
+      {bindings.length === 0 && !bindingsQuery.isLoading ? (
+        <InfoBanner tone="neutral" icon={AtIcon} title="One more step, in Slack">
+          Invite <span className="text-foreground font-medium">@Kortix</span> to a channel, then
+          mention it. Each mention starts a fresh run and the agent answers in that thread.
+        </InfoBanner>
+      ) : null}
+
+      <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
+    </div>
   );
 }
 
@@ -411,7 +456,10 @@ function ChannelBindingTableRow({
         </div>
       </TableCell>
       <TableCell>
-        <div className="bg-card inline-flex rounded-2xl border px-2 py-1">
+        {/* rounded-full, not the rounded-2xl this used to carry: the selector
+            inside renders a fully-round h-8 pill trigger, so a 16px-radius
+            frame around it read as two mismatched curves. */}
+        <div className="bg-card inline-flex rounded-full border px-2 py-1">
           <AgentSelector
             agents={agentSelectorAgents}
             selectedAgent={selectedAgentValue}
@@ -435,7 +483,7 @@ function ChannelBindingTableRow({
       <TableCell>
         {canManage ? (
           <div className="flex flex-col gap-1">
-            <div className="bg-card inline-flex w-fit rounded-2xl border px-2 py-1">
+            <div className="bg-card inline-flex w-fit rounded-full border px-2 py-1">
               <ModelSelector
                 models={models}
                 providers={providers}
@@ -504,185 +552,53 @@ function errorToastFallback(error: unknown) {
   errorToast(error instanceof Error ? error.message : 'Failed to update channel binding');
 }
 
-function SlackChannelRow({
-  projectId,
-  installation,
-  oauthInstallUrl,
-  canWrite,
-}: {
-  projectId: string;
-  installation: SlackInstallation | null;
-  oauthInstallUrl: string | null;
-  canWrite: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const disconnect = useDisconnectSlack();
-  const [confirming, setConfirming] = useState(false);
-
-  const connected = Boolean(installation);
-
-  return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell>
-        <div className="flex items-center gap-2.5">
-          <Slack className="size-5 shrink-0" />
-          <span className="text-sm font-medium">Slack</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        {connected ? (
-          <Badge variant="success" size="sm">
-            Connected
-          </Badge>
-        ) : (
-          <Badge variant="outline" size="sm" className="text-muted-foreground">
-            Not connected
-          </Badge>
-        )}
-      </TableCell>
-      <TableCell className="text-muted-foreground text-sm">
-        <span
-          className="block max-w-[240px] truncate"
-          title={
-            connected
-              ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined)
-              : undefined
-          }
-        >
-          {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
-        </span>
-      </TableCell>
-      <TableCell>
-        {!canWrite ? null : connected ? (
-          confirming ? (
-            <div className="flex items-center justify-end gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={disconnect.isPending}
-                onClick={() =>
-                  disconnect.mutate(projectId, {
-                    onSuccess: () => setConfirming(false),
-                  })
-                }
-              >
-                {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                Disconnect
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setConfirming(true)}
-            >
-              <X className="size-3.5 shrink-0" />
-              Disconnect
-            </Button>
-          )
-        ) : oauthInstallUrl ? (
-          <Button size="sm" variant="secondary" asChild>
-            <Link href={oauthInstallUrl} target="_blank" rel="noopener noreferrer">
-              Install
-            </Link>
-          </Button>
-        ) : null}
-      </TableCell>
-    </TableRow>
-  );
-}
-
 function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const { data: install } = useTeamsInstall(projectId);
   const { data: mode } = useTeamsMode(projectId);
   const disconnect = useDisconnectTeams();
-  const [confirming, setConfirming] = useState(false);
 
   const connected = Boolean(install);
   const installUrl = mode?.orgConsentUrl ?? null;
   const deepLinkUrl = install?.orgInstalled ? (mode?.deepLinkUrl ?? null) : null;
 
   return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell>
-        <div className="flex items-center gap-2.5">
-          <MicrosoftTeams className="size-5 shrink-0" />
-          <span className="text-sm font-medium">Microsoft Teams</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        {connected ? (
-          <Badge variant="success" size="sm">
-            Connected
-          </Badge>
-        ) : (
-          <Badge variant="outline" size="sm" className="text-muted-foreground">
-            Not connected
-          </Badge>
-        )}
-      </TableCell>
-      <TableCell className="text-muted-foreground text-sm">
-        <span
-          className="block max-w-[240px] truncate"
-          title={connected ? (install?.teamName ?? install?.tenantId ?? undefined) : undefined}
-        >
-          {connected ? (install?.teamName ?? install?.tenantId ?? '—') : '—'}
-        </span>
-      </TableCell>
-      <TableCell>
-        {!canWrite ? null : connected ? (
-          confirming ? (
-            <div className="flex items-center justify-end gap-1">
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
+    <ChannelRow
+      icon={<MicrosoftTeams className="size-5 shrink-0" />}
+      name="Microsoft Teams"
+      connected={connected}
+      detail={install?.teamName ?? install?.tenantId ?? null}
+      pitch="Mention your agent in a Teams channel or chat."
+      actions={
+        !canWrite ? null : connected ? (
+          <>
+            {deepLinkUrl ? (
+              <Button size="sm" variant="secondary" asChild>
+                <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                  Add to Teams
+                </Link>
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={disconnect.isPending}
-                onClick={() =>
-                  disconnect.mutate(projectId, {
-                    onSuccess: () => setConfirming(false),
-                  })
-                }
-              >
-                {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                Disconnect
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-end gap-1">
-              {deepLinkUrl ? (
-                <Button size="sm" variant="secondary" asChild>
-                  <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
-                    Add to Teams
-                  </Link>
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setConfirming(true)}
-              >
-                <X className="size-3.5 shrink-0" />
-                Disconnect
-              </Button>
-            </div>
-          )
+            ) : null}
+            <ChannelDisconnectButton
+              pending={disconnect.isPending}
+              onConfirm={(done) =>
+                disconnect.mutate(projectId, {
+                  onSuccess: () => {
+                    done();
+                    successToast('Microsoft Teams disconnected');
+                  },
+                })
+              }
+            />
+          </>
         ) : installUrl ? (
           <Button size="sm" variant="secondary" asChild>
             <Link href={installUrl} target="_blank" rel="noopener noreferrer">
-              Install
+              Connect
             </Link>
           </Button>
-        ) : null}
-      </TableCell>
-    </TableRow>
+        ) : null
+      }
+    />
   );
 }
 
@@ -697,87 +613,40 @@ function EmailChannelRow({
 }) {
   const disconnect = useDisconnectEmail();
   const [connectOpen, setConnectOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
 
   const connected = Boolean(installation);
 
   return (
     <>
-      <TableRow className="hover:bg-transparent">
-        <TableCell>
-          <div className="flex items-center gap-2.5">
-            <Mail className="text-muted-foreground size-5 shrink-0" />
-            <span className="text-sm font-medium">Email</span>
-          </div>
-        </TableCell>
-        <TableCell>
-          {connected ? (
-            <Badge variant="success" size="sm">
-              Connected
-            </Badge>
-          ) : (
-            <Badge variant="outline" size="sm" className="text-muted-foreground">
-              Not connected
-            </Badge>
-          )}
-        </TableCell>
-        <TableCell className="text-muted-foreground text-sm">
-          {connected ? (
-            <code
-              className="text-foreground block max-w-[240px] truncate font-mono text-xs"
-              title={installation?.email ?? undefined}
-            >
-              {installation?.email ?? '—'}
-            </code>
-          ) : (
-            '—'
-          )}
-        </TableCell>
-        <TableCell>
-          {!canWrite ? null : connected ? (
-            confirming ? (
-              <div className="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={disconnect.isPending}
-                  onClick={() =>
-                    disconnect.mutate(
-                      { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
-                      {
-                        onSuccess: () => {
-                          setConfirming(false);
-                          successToast('Email disconnected');
-                        },
-                      },
-                    )
-                  }
-                >
-                  {disconnect.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  Disconnect
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setConfirming(true)}
-              >
-                <X className="size-3.5 shrink-0" />
-                Disconnect
-              </Button>
-            )
+      <ChannelRow
+        icon={<EnvelopeIcon className="text-muted-foreground size-5 shrink-0" />}
+        name="Email"
+        connected={connected}
+        detail={installation?.email ?? null}
+        pitch="Give your agent an inbox it can read and reply from."
+        actions={
+          !canWrite ? null : connected ? (
+            <ChannelDisconnectButton
+              pending={disconnect.isPending}
+              onConfirm={(done) =>
+                disconnect.mutate(
+                  { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
+                  {
+                    onSuccess: () => {
+                      done();
+                      successToast('Email disconnected');
+                    },
+                  },
+                )
+              }
+            />
           ) : (
             <Button size="sm" variant="secondary" onClick={() => setConnectOpen(true)}>
               Connect
             </Button>
-          )}
-        </TableCell>
-      </TableRow>
+          )
+        }
+      />
 
       <Modal open={connectOpen} onOpenChange={setConnectOpen}>
         <ModalContent className="lg:max-w-2xl">
@@ -800,244 +669,5 @@ function EmailChannelRow({
         </ModalContent>
       </Modal>
     </>
-  );
-}
-
-function ConnectedDetails() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-
-  return (
-    <InfoBanner tone="neutral" icon={<CheckCircleSolid weight="fill" />}>
-      <p className="text-sm">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextInviteThe94db1964',
-        )}{' '}
-        <code className="font-mono text-xs">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextMention67ed74a7',
-          )}
-        </code>{' '}
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextItA7139ed4f',
-        )}{' '}
-        <code className="font-mono text-xs">slack</code> CLI.
-      </p>
-    </InfoBanner>
-  );
-}
-
-function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; inline?: boolean }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1);
-  const [copied, setCopied] = useState(false);
-  const [botToken, setBotToken] = useState('');
-  const [signingSecret, setSigningSecret] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const connect = useConnectSlack();
-  const manifest = useSlackManifest(projectId);
-
-  const manifestText = manifest.data ?? '';
-
-  const copyManifest = async () => {
-    if (!manifestText) return;
-    await navigator.clipboard.writeText(manifestText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  const submit = () => {
-    setError(null);
-    connect.mutate(
-      {
-        projectId,
-        bot_token: botToken.trim(),
-        signing_secret: signingSecret.trim(),
-      },
-      { onError: (e) => setError((e as Error).message) },
-    );
-  };
-
-  const content =
-    step === 1 ? (
-      <div className="space-y-4">
-        <p className="text-muted-foreground text-sm">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextStep12c389f4e',
-          )}
-        </p>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAppManifest040b924e',
-              )}
-            </span>
-            <ButtonGroup>
-              <Hint label={copied ? 'Copied' : 'Copy'} side="bottom">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={copyManifest}
-                  disabled={!manifestText}
-                >
-                  {copied ? (
-                    <CheckCircleSolid weight="fill" className="size-3.5 shrink-0" />
-                  ) : (
-                    <Copy className="size-3.5 shrink-0" />
-                  )}
-                </Button>
-              </Hint>
-              <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                <Link
-                  href="https://api.slack.com/apps?new_app=1"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenSlacka088997c',
-                  )}
-                  <ExternalLinkSolid weight="fill" className="size-3.5 shrink-0" />
-                </Link>
-              </Button>
-            </ButtonGroup>
-          </div>
-          <pre className="border-border bg-muted max-h-80 overflow-auto rounded-lg border p-3 font-mono text-xs leading-relaxed">
-            {manifest.isLoading
-              ? 'Loading manifest...'
-              : manifest.error
-                ? `Failed to load manifest: ${(manifest.error as Error).message}`
-                : manifestText}
-          </pre>
-        </div>
-
-        <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5 text-sm">
-          {SLACK_MANIFEST_STEPS.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ol>
-
-        <div className="flex justify-end">
-          <Button size="sm" variant="secondary" onClick={() => setStep(2)}>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextNextPasted1384aaa',
-            )}
-          </Button>
-        </div>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        <p className="text-muted-foreground text-sm">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextStep22f8cae80',
-          )}{' '}
-          <code className="font-mono text-xs">project_secrets</code>{' '}
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAlongsideAny8e77bd03',
-          )}
-        </p>
-
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="bot-token">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBotUser193e4bfd',
-              )}
-            </Label>
-            <Input
-              id="bot-token"
-              placeholder={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrPlaceholderXoxb84fe69f4',
-              )}
-              value={botToken}
-              onChange={(e) => setBotToken(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSlackYouraeeca6ed',
-              )}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="signing-secret">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSigningSecret2762795e',
-              )}
-            </Label>
-            <Input
-              id="signing-secret"
-              placeholder="••••••••"
-              type="password"
-              value={signingSecret}
-              onChange={(e) => setSigningSecret(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSlackYour09fe8ce8',
-              )}
-            </p>
-          </div>
-        </div>
-
-        {error ? (
-          <InfoBanner tone="destructive" title="Could not connect">
-            {error}
-          </InfoBanner>
-        ) : null}
-
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
-            Back
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={submit}
-            disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
-          >
-            {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextConnectSlack5ad82c3b',
-            )}
-          </Button>
-        </div>
-      </div>
-    );
-
-  if (inline) return content;
-
-  return (
-    <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
-      <DisclosureTrigger variant="outline">
-        <Button
-          variant="ghost-input"
-          className={cn('flex h-fit w-full items-center justify-between rounded-none py-2.5')}
-        >
-          <div className="min-w-0 text-left">
-            <p className="text-sm font-medium">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBringYourc7326733',
-              )}
-            </p>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextForSelf3fbeca22',
-              )}
-            </p>
-          </div>
-        </Button>
-      </DisclosureTrigger>
-      <DisclosureContent
-        variant="outline"
-        contentClassName="border-border bg-popover border-t px-4 py-5"
-      >
-        {content}
-      </DisclosureContent>
-    </Disclosure>
   );
 }

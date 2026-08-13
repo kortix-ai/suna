@@ -19,6 +19,7 @@ import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import {
   PreviewImage,
@@ -55,6 +56,8 @@ import {
   SystemNotificationCard,
 } from '../message-parsing';
 
+import { messageCreatedAt } from './message-time';
+import { MessageTimeLabel } from './message-time-label';
 import { useHasPlan } from './plan-card';
 
 // ============================================================================
@@ -649,40 +652,94 @@ export function MessageAttachments({
 }
 
 // ============================================================================
-// User message actions — edit (rewind) + copy
+// User message meta — when it was sent, whether it was edited, what you can do
 // ============================================================================
 
-function UserMessageActions({
+/**
+ * The line under a user bubble: when it was sent, whether it was edited, and
+ * what you can do to it — one row, right-aligned against the same rail as the
+ * bubble.
+ *
+ * ONE row, deliberately, and the whole row reveals on hover. The transcript is
+ * the message thread — a timestamp on every turn, permanently, is chrome
+ * competing with the conversation. Putting it on the same reveal as the
+ * actions keeps the quiet reading intact and puts the "when" exactly where a
+ * reader already goes to act on a message.
+ *
+ * The reveal is `opacity`, never mount/unmount, so the row occupies its height
+ * either way and hovering a turn never reflows the thread.
+ *
+ * `focus-within` matches the assistant turn's action bar: anything that only
+ * appears on hover is unreachable by keyboard otherwise. The timestamp is a
+ * `<time datetime=…>` element, so its machine-readable value stays in the
+ * accessibility tree regardless of the visual reveal.
+ *
+ * Shared with `OptimisticTurn` so the pending turn and the server turn cannot
+ * drift — the same reason `MessageAttachments` is shared.
+ */
+export function UserMessageActions({
+  timestamp,
+  edited,
   copyText,
   messageId,
   rewindPromptText,
   onRewind,
   rewindDisabled,
 }: {
-  copyText: string;
-  messageId: string;
-  rewindPromptText: string;
-  onRewind: (messageId: string, text: string) => void;
-  rewindDisabled: boolean;
+  /** Epoch milliseconds, or `null` when the backend never stamped one. */
+  timestamp: number | null;
+  edited?: boolean;
+  /** Omitted when there is nothing to copy — the row then carries meta alone
+   *  rather than disappearing, so an attachment-only message keeps its time. */
+  copyText?: string;
+  messageId?: string;
+  rewindPromptText?: string;
+  onRewind?: (messageId: string, text: string) => void;
+  rewindDisabled?: boolean;
 }) {
   // Copy stays available while the agent is busy / rewind is locked.
   // Only edit-from-here is gated — hiding the whole bar was wrong.
+  const canRewind = Boolean(onRewind && messageId && !rewindDisabled);
+  const hasMeta = timestamp !== null || Boolean(edited);
+
+  // Nothing to say and nothing to do — don't leave an empty row behind.
+  if (!hasMeta && !copyText) return null;
+
   return (
-    <div className="flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-      {!rewindDisabled && (
-        <Hint label="Edit from here" side="bottom" align="center">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Edit message and rewind session"
-            onClick={() => onRewind(messageId, rewindPromptText)}
-          >
-            <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
-          </Button>
-        </Hint>
+    // The fade sits on the ROW, so the timestamp and the buttons reveal
+    // together as one object rather than a label with controls growing out of
+    // it. `opacity`, never mounting: the row holds its height whether or not
+    // the pointer is over the turn, so nothing in the transcript reflows.
+    <div className="flex w-full items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
+      {/* `InlineMeta` owns the `·` separator and drops absent children, so a
+          message with no stamp never renders a leading bullet. Skipped
+          entirely when there is no meta at all — the optimistic turn would
+          otherwise carry an empty node the real turn does not. */}
+      {hasMeta && (
+        <InlineMeta>
+          {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
+          {edited && 'edited'}
+        </InlineMeta>
       )}
-      <CopyButton code={copyText} size="sm" />
+      {copyText && (
+        <div className="flex shrink-0 items-center gap-0.5">
+          {canRewind && (
+            <Hint label="Edit from here" side="top" align="center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Edit message and rewind session"
+                onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
+              >
+                <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
+              </Button>
+            </Hint>
+          )}
+
+          <CopyButton code={copyText} size="sm" hintSide="top" />
+        </div>
+      )}
     </div>
   );
 }
@@ -805,17 +862,6 @@ export function UserMessage({
     return stripKortixSystemTags(withoutSessions).trim();
   }, [copyText, effectiveCommandInfo]);
 
-  const actions =
-    copyText && onRewind ? (
-      <UserMessageActions
-        copyText={copyText}
-        messageId={message.info.id}
-        rewindPromptText={rewindPromptText}
-        onRewind={onRewind}
-        rewindDisabled={rewindDisabled}
-      />
-    ) : null;
-
   // Detect channel message (Telegram/Slack) in user message
   const channelMessageInfo = useMemo(() => {
     if (!rawText) return undefined;
@@ -859,6 +905,24 @@ export function UserMessage({
 
   // Check if any text part was edited
   const isEdited = visibleTextParts.some((p) => (p as any).metadata?.edited);
+
+  // Built once and rendered by every branch below — channel card, trigger card,
+  // command card, bubble — so all four carry the same meta line.
+  //
+  // `copyText` is gated on `onRewind` to keep the buttons exactly as they were:
+  // a read-only turn shows no controls. The row itself still renders, because
+  // the timestamp is meta, not a control, and should not vanish with them.
+  const actions = (
+    <UserMessageActions
+      timestamp={messageCreatedAt(message)}
+      edited={isEdited}
+      copyText={copyText && onRewind ? copyText : undefined}
+      messageId={message.info.id}
+      rewindPromptText={rewindPromptText}
+      onRewind={onRewind}
+      rewindDisabled={rewindDisabled}
+    />
+  );
 
   // Inline file references
   const inlineFiles = stickyParts.filter(isFilePart) as FilePart[];
@@ -1266,7 +1330,10 @@ export function UserMessage({
           )}
         </div>
       )}
-      {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
+      {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
+          under the bubble they describe — notification cards below are separate
+          objects and must not come between a message and its own meta. */}
+      {actions}
 
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
       {dcpNotifications.length > 0 && (
@@ -1283,7 +1350,6 @@ export function UserMessage({
           ))}
         </div>
       )}
-      {actions}
     </div>
   );
 }

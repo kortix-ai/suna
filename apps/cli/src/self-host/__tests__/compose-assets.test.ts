@@ -592,6 +592,45 @@ describe('full self-host Docker distribution', () => {
     expect(migrateFailureBlock).toContain('return 1');
   });
 
+  test('updater.sh self-heals a migration that hit an unlogged-table storage-fork error (58P01), then retries once', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const runMigrate = script.slice(script.indexOf('run_migrate()'), script.indexOf('next_run_epoch()'));
+    // The reactive path fires only on the specific storage-fork error class,
+    // heals, and retries the migration exactly once before giving up.
+    expect(runMigrate).toContain('could not open file|58P01');
+    const detectIdx = runMigrate.indexOf('grep -qE "could not open file|58P01"');
+    const healIdx = runMigrate.indexOf('heal_supabase_unlogged', detectIdx);
+    const retryIdx = runMigrate.indexOf(`$COMPOSE run --rm --no-deps "$MIGRATE_SERVICE"`, healIdx);
+    expect(detectIdx).toBeGreaterThan(-1);
+    expect(healIdx).toBeGreaterThan(detectIdx);
+    expect(retryIdx).toBeGreaterThan(healIdx);
+    // A migration that fails for any OTHER reason must not trigger the heal.
+    expect(runMigrate).toContain('ERROR: migration failed; aborting');
+  });
+
+  test('updater.sh heal only ever resets UNLOGGED tables (never durable app data) and never fails the update', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const heal = script.slice(script.indexOf('heal_supabase_unlogged()'), script.indexOf('run_migrate()'));
+    // Targets are restricted to unlogged ordinary tables — the only relations
+    // safe to reset (no durability guarantee; app data is all LOGGED).
+    expect(heal).toContain("c.relpersistence = 'u'");
+    expect(heal).toContain("c.relkind = 'r'");
+    expect(heal).toContain('TRUNCATE');
+    // A table is reset ONLY when VACUUM fails with the storage-fork error class,
+    // never on a transient error (concurrent DROP, lock) — so a healthy
+    // disposable table (e.g. pg_net's request queue) is never truncated.
+    const truncateIdx = heal.indexOf('TRUNCATE');
+    const forkGateIdx = heal.indexOf('could not open file|58P01');
+    expect(forkGateIdx).toBeGreaterThan(-1);
+    expect(truncateIdx).toBeGreaterThan(forkGateIdx);
+    // Best-effort: it degrades gracefully (missing DB / not ready) and never
+    // returns nonzero, so the heal itself can never fail an update.
+    expect(heal).toContain('skipping unlogged-table heal');
+    expect(heal).not.toContain('return 1');
+    // Superuser + a bounded readiness wait, so it is safe to call mid-update.
+    expect(heal).toContain('pg_isready');
+  });
+
   test('updater.sh leaves the old version serving when the new replicas never become healthy', () => {
     const script = kortixRuntimeAssets['updater.sh'];
     expect(script).toContain('never became healthy; removing them and keeping the previous version serving');

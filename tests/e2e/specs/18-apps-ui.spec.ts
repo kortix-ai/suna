@@ -9,7 +9,12 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
+import {
+  dismissOnboarding,
+  featureFlagRow,
+  selectAccountForUi,
+  settingsPanel,
+} from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -114,15 +119,22 @@ test.describe('18 — Kortix Apps UI', () => {
       await dismissOnboarding(page);
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
-      // The gate screen never self-enables: it points at Customize → Feature
-      // flags and there is no Enable button on the feature's own page.
+      // The gate screen never self-enables: it points at Settings →
+      // Experimental and there is no Enable button on the feature's own page.
       await expect(page.getByText('is off for this project')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Enable Apps' })).toHaveCount(0);
       expect(disabledAppRequests).toEqual([]);
       page.off('request', recordDisabledRequest);
 
-      // Enable through the Feature flags section — the only activation path.
+      // Enable through the flag list — the only activation path. The gate
+      // screen's "Feature flags" button opens the settings panel straight on
+      // the Experimental tab (`feature-gate-screen.tsx:53`,
+      // `openSettings('experimental')`).
       await page.getByRole('button', { name: 'Feature flags' }).click();
+      const panel = settingsPanel(page);
+      await expect(panel.getByRole('tabpanel', { name: 'Experimental' })).toBeVisible({
+        timeout: 30_000,
+      });
       const enabledRequest = page.waitForRequest(
         (request) =>
           request.method() === 'PATCH' &&
@@ -133,7 +145,9 @@ test.describe('18 — Kortix Apps UI', () => {
           response.request().method() === 'PATCH' &&
           response.url().endsWith(`/v1/projects/${project.id}/features`),
       );
-      await page.getByRole('switch', { name: 'Apps' }).click();
+      // `Apps` is the registry's display name for the flag
+      // (apps/api/src/feature-flags/registry.ts:212).
+      await featureFlagRow(panel, page, 'Apps').getByRole('switch').click();
       expect((await enabledRequest).postDataJSON()).toEqual({
         feature: 'apps',
         enabled: true,

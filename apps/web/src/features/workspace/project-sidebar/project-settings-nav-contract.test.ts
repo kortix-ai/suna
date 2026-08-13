@@ -107,8 +107,8 @@ describe('project Customize sidebar entry (the routed one)', () => {
 
   test('does not open the overlay', () => {
     // The two rows are different surfaces. If this one starts calling
-    // openCustomize() the capability pages lose their only sidebar entry.
-    expect(fnSource('ProjectCustomizeNavItem')).not.toContain('openCustomize');
+    // openSettings() the capability pages lose their only sidebar entry.
+    expect(fnSource('ProjectCustomizeNavItem')).not.toContain('openSettings');
   });
 
   test('carries no keycap', () => {
@@ -119,12 +119,12 @@ describe('project Customize sidebar entry (the routed one)', () => {
 });
 
 describe('project Settings sidebar entry (the overlay one)', () => {
-  test('opens the Customize overlay, it does not navigate', () => {
-    // The overlay floats over the current page on purpose (customize-store):
+  test('opens the Settings overlay, it does not navigate', () => {
+    // The overlay floats over the current page on purpose (settings-panel-store):
     // routing there instead would drop you out of whatever session you were in.
     const navItem = fnSource('ProjectSettingsNavItem');
 
-    expect(navItem).toContain('openCustomize()');
+    expect(navItem).toContain('openSettings()');
     expect(navItem).not.toContain('<Link');
     expect(navItem).not.toContain('capabilityTabHref');
     expect(navItem).not.toContain('router.push');
@@ -141,7 +141,7 @@ describe('project Settings sidebar entry (the overlay one)', () => {
     expect(navItem).not.toContain('useCapabilityTab');
     expect(navItem).not.toContain('useProjectCan');
     expect(navItem).not.toContain('usePathname');
-    expect(navItem).toContain('useCustomizeStore((s) => s.open)');
+    expect(navItem).toContain('useSettingsPanelStore((s) => s.open)');
   });
 
   test('closes the mobile drawer on open', () => {
@@ -169,7 +169,7 @@ describe('the Mod+, shortcut', () => {
     const hook = fnSource('useSettingsKeyboardShortcut');
 
     expect(hook).toContain("event.key === ','");
-    expect(hook).toContain('openCustomize()');
+    expect(hook).toContain('openSettings()');
     expect(hook).not.toContain('capabilityTabHref');
     expect(hook).not.toContain('router.push');
   });

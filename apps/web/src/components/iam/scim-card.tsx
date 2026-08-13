@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type CreatedScimToken,
   type ScimToken,
@@ -283,6 +284,17 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         <div className="px-4 py-4">
           {tokensQuery.isLoading ? (
             <Skeleton className="h-12 w-full rounded-md" />
+          ) : tokensQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title="Couldn't load SCIM status"
+              description={tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined}
+              action={
+                <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : tokens.length > 0 ? (
             <ProvisioningHealthPanel accountId={accountId} lastSyncAt={lastSyncAt} />
           ) : (
@@ -451,7 +463,24 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 </div>
               )}
 
-              {!tokensQuery.isLoading && tokens.length === 0 && (
+              {!tokensQuery.isLoading && tokensQuery.isError && (
+                <div className="px-4 py-4">
+                  <ErrorState
+                    size="sm"
+                    title="Couldn't load SCIM tokens"
+                    description={
+                      tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
+                    }
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                        Retry
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length === 0 && (
                 <div className="px-4 py-4">
                   <EmptyState
                     icon={KeyRound}
@@ -462,7 +491,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 </div>
               )}
 
-              {!tokensQuery.isLoading && tokens.length > 0 && (
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length > 0 && (
                 <div className="divide-border divide-y">
                   {tokens.map((t) => (
                     <div key={t.token_id} className="flex items-center gap-3 px-4 py-3">

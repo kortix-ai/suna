@@ -20,13 +20,13 @@ export function buildInstallSuccessSummary(
   };
 }
 
-/** Deep-link destination for "View in project" — the customize overlay's
- *  Marketplace section (installed tab lives there), scoped to the project the
+/** Deep-link destination for "View in project" — the Settings overlay's
+ *  Marketplace tab (installed tab lives there), scoped to the project the
  *  item just landed in. Kept as a plain path builder (no router dependency)
  *  so it's testable and reusable from both in-app navigation and a toast
  *  action that has to work from any page, including the public marketplace. */
 export function projectMarketplaceHref(projectId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}/customize/marketplace`;
+  return `/projects/${encodeURIComponent(projectId)}/settings/marketplace`;
 }
 
 /** True when an item exposes any secrets/connectors/tools it needs — used to

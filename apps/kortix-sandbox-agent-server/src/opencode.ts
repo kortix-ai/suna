@@ -865,6 +865,21 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_048_576, output: 64_000 },
   },
+  'deepseek-v4-pro-0813': {
+    name: 'DeepSeek V4 Pro 0813',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [
+      { type: 'toggle' },
+      { type: 'effort', values: ['low', 'high', 'max'] },
+    ],
+    tool_call: true,
+    attachment: false,
+    structured_output: false,
+    temperature: true,
+    limit: { context: 1_048_575, output: 384_000 },
+    cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
+  },
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',
@@ -904,6 +919,23 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     attachment: true,
     temperature: false,
     limit: { context: 1_050_000, output: 128_000 },
+  },
+  'grok-4.6': {
+    name: 'Grok 4.6',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
+    tool_call: true,
+    attachment: true,
+    structured_output: true,
+    temperature: true,
+    limit: { context: 500_000, output: 500_000 },
+    cost: {
+      input: 2,
+      output: 6,
+      cache_read: 0.5,
+      context_over_200k: { input: 4, output: 12, cache_read: 1 },
+    },
   },
   // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
   // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.

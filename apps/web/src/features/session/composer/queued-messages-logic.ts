@@ -10,20 +10,24 @@
 /**
  * The screen-reader announcement for the queue.
  *
- * Sighted users get the same fact from the numbered rows — `1` sends when this
- * turn ends, then `2` — which is why there is no visible header saying it. This
- * string exists so the change is not silent for anyone reading by ear.
+ * "All send" is load-bearing, not filler: the queue drains as one batch, and a
+ * label that reads like a schedule ("sends when this turn ends", one row at a
+ * time) describes the behaviour this surface used to have. Sighted users get
+ * the same fact from the numbered rows all being live at once, which is why
+ * there is no visible header saying it.
  */
 export function queueSummaryLabel(count: number): string {
-  return `${count} queued · sends when this turn ends`;
+  return count === 1
+    ? '1 queued · sends when this turn ends'
+    : `${count} queued · all send when this turn ends`;
 }
 
 /**
  * The announcement for a queue held by a stop.
  *
- * Distinct from `queueSummaryLabel` on purpose: "2 queued · sends when this turn
- * ends" is a lie while the queue is paused, and it is exactly the lie that made
- * a stopped queue look like a broken one.
+ * Distinct from `queueSummaryLabel` on purpose: "2 queued · all send when this
+ * turn ends" is a lie while the queue is paused, and it is exactly the lie that
+ * made a stopped queue look like a broken one.
  */
 export function pausedSummaryLabel(count: number): string {
   return `${count} queued · paused, will not send until resumed`;
@@ -37,8 +41,8 @@ export function pausedSummaryLabel(count: number): string {
  * queue that is about to drain, that is the difference between "sends next" and
  * "sends last".
  *
- * @param minIndex the first movable slot — 1 while an item is in flight, since
- *   nothing may be reordered into or above a message already being sent.
+ * @param minIndex the first movable slot — the size of the in-flight batch,
+ *   since nothing may be reordered into or above a message already being sent.
  */
 export function reorderTargetIndex(
   index: number,

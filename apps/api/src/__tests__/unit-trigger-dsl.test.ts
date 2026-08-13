@@ -871,3 +871,161 @@ describe("[[triggers]] — spec/error `path` derives from the manifest's own fil
     expect(specs[0]?.path).toBe('kortix.toml#triggers.nightly');
   });
 });
+
+/**
+ * `type: monitor` — the third trigger type
+ * (docs/specs/2026-08-12-monitors.md). A monitor names a repo command the
+ * platform supervises 24/7; its stdout lines are the events. It carries none
+ * of the cron/webhook wiring, and it defaults to `session_mode: reuse`
+ * because it fires repeatedly by design.
+ */
+describe('[[triggers]] — type = "monitor"', () => {
+  const monitorManifest = (entryLines: string) =>
+    parseManifestString(
+      `kortix_version: 2\nproject:\n  name: test\ntriggers:\n  - slug: checkout-errors\n    type: monitor\n${entryLines}`,
+      'yaml',
+      'kortix.yaml',
+    );
+
+  test('a stream monitor parses its run + mode and defaults session_mode to reuse', () => {
+    const { specs, errors } = extractTriggers(
+      monitorManifest('    run: ./monitors/checkout-errors.ts\n    mode: stream\n    prompt: "{{ line }}"\n'),
+    );
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      type: 'monitor',
+      run: './monitors/checkout-errors.ts',
+      monitorMode: 'stream',
+      intervalSeconds: null,
+      expectEventWithinSeconds: null,
+      // Cron/webhook keep 'fresh'; a monitor that minted a session per line
+      // would spawn one per log entry.
+      sessionMode: 'reuse',
+      cron: null,
+      runAt: null,
+      secretEnv: null,
+    });
+  });
+
+  test('a poll monitor parses interval + expect_event_within into whole seconds', () => {
+    const { specs, errors } = extractTriggers(
+      monitorManifest(
+        '    run: ./monitors/queue.ts\n    mode: poll\n    interval: 60s\n    expect_event_within: 24h\n    prompt: go\n',
+      ),
+    );
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({
+      monitorMode: 'poll',
+      intervalSeconds: 60,
+      expectEventWithinSeconds: 86_400,
+    });
+  });
+
+  test('an explicit session_mode still wins over the monitor default', () => {
+    const { specs } = extractTriggers(
+      monitorManifest('    run: ./m.ts\n    mode: stream\n    session_mode: fresh\n    prompt: go\n'),
+    );
+    expect(specs[0]?.sessionMode).toBe('fresh');
+  });
+
+  test('a monitor without run or mode is a parse error', () => {
+    expect(extractTriggers(monitorManifest('    mode: stream\n    prompt: go\n')).errors[0]?.error).toMatch(
+      /must declare a `run` command/,
+    );
+    expect(extractTriggers(monitorManifest('    run: ./m.ts\n    prompt: go\n')).errors[0]?.error).toMatch(
+      /mode must be "poll" or "stream"/,
+    );
+  });
+
+  test('mode = poll requires an interval, and it must clear the 30s floor', () => {
+    expect(
+      extractTriggers(monitorManifest('    run: ./m.ts\n    mode: poll\n    prompt: go\n')).errors[0]?.error,
+    ).toMatch(/interval must be a duration string/);
+    expect(
+      extractTriggers(
+        monitorManifest('    run: ./m.ts\n    mode: poll\n    interval: 5s\n    prompt: go\n'),
+      ).errors[0]?.error,
+    ).toMatch(/interval must be at least 30s/);
+  });
+
+  test('expect_event_within must clear the 5m floor', () => {
+    expect(
+      extractTriggers(
+        monitorManifest('    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n'),
+      ).errors[0]?.error,
+    ).toMatch(/expect_event_within must be at least 300s/);
+  });
+
+  test('an interval on a stream monitor is a parse error', () => {
+    expect(
+      extractTriggers(
+        monitorManifest('    run: ./m.ts\n    mode: stream\n    interval: 60s\n    prompt: go\n'),
+      ).errors[0]?.error,
+    ).toMatch(/only valid on a `mode: poll` monitor/);
+  });
+
+  test('cron, run_at, timezone, and secret_env are rejected on a monitor', () => {
+    for (const wiring of [
+      '    cron: "0 9 * * *"\n',
+      '    run_at: "2026-06-01T09:00:00Z"\n',
+      '    timezone: UTC\n',
+      '    secret_env: HOOK_SECRET\n',
+    ]) {
+      const { errors } = extractTriggers(
+        monitorManifest(`    run: ./m.ts\n    mode: stream\n${wiring}    prompt: go\n`),
+      );
+      expect(errors[0]?.error).toMatch(/is not valid on a monitor trigger/);
+    }
+  });
+
+  test('triggerSpecToTomlEntry writes run/mode/interval and omits the reuse default', () => {
+    const { specs } = extractTriggers(
+      monitorManifest(
+        '    run: ./monitors/queue.ts\n    mode: poll\n    interval: 60s\n    expect_event_within: 24h\n    prompt: go\n',
+      ),
+    );
+    const entry = triggerSpecToTomlEntry(specs[0]!);
+    expect(entry).toMatchObject({
+      type: 'monitor',
+      run: './monitors/queue.ts',
+      mode: 'poll',
+      // Durations re-emit canonically (largest whole unit), the same
+      // normalization `run_at` gets.
+      interval: '1m',
+      expect_event_within: '1d',
+    });
+    // 'reuse' IS the monitor default, so it stays out of the file.
+    expect(entry.session_mode).toBeUndefined();
+    // …and none of the cron/webhook wiring leaks in.
+    expect(entry.cron).toBeUndefined();
+    expect(entry.timezone).toBeUndefined();
+    expect(entry.secret_env).toBeUndefined();
+  });
+
+  test('a monitor survives a full manifest round-trip unchanged', () => {
+    const manifest = monitorManifest(
+      '    run: ./monitors/queue.ts\n    mode: poll\n    interval: 90s\n    expect_event_within: 6h\n    session_mode: keyed\n    session_key: "{{ line.order_id }}"\n    prompt: "Queue: {{ line }}"\n',
+    );
+    const original = extractTriggers(manifest).specs[0]!;
+    const rewritten = serializeManifest({
+      ...manifest,
+      raw: { ...manifest.raw, triggers: [triggerSpecToTomlEntry(original)] },
+    });
+    const reparsed = extractTriggers(parseManifestString(rewritten, 'yaml', 'kortix.yaml')).specs[0]!;
+    expect(reparsed).toEqual(original);
+  });
+
+  test('a stream monitor with an explicit fresh mode round-trips that mode', () => {
+    const manifest = monitorManifest('    run: ./m.ts\n    mode: stream\n    session_mode: fresh\n    prompt: go\n');
+    const original = extractTriggers(manifest).specs[0]!;
+    const entry = triggerSpecToTomlEntry(original);
+    expect(entry.session_mode).toBe('fresh');
+    const rewritten = serializeManifest({
+      ...manifest,
+      raw: { ...manifest.raw, triggers: [entry] },
+    });
+    expect(extractTriggers(parseManifestString(rewritten, 'yaml', 'kortix.yaml')).specs[0]).toEqual(
+      original,
+    );
+  });
+});

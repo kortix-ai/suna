@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import type { TriggerList } from '@kortix/api-contract';
 import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
@@ -32,18 +33,23 @@ import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import {
   GIT_TRIGGER_SESSION_MODES,
+  type GitMonitorMode,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
+  type GitTriggerType,
   type LoadedTriggers,
   MANIFEST_FILENAME,
   type ParsedManifest,
+  defaultTriggerSessionMode,
   extractTriggers,
+  parseMonitorFields,
   readManifest,
   serializeManifest,
   synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
+import { drainMonitorEvents } from './monitor-observer';
 import {
   type ProjectRow,
   type RequestAuditContext,
@@ -52,6 +58,14 @@ import {
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+
+/**
+ * Who asked for this fire. `monitor` is the third trigger type's source
+ * (docs/specs/2026-08-12-monitors.md): the observer draining a monitor event
+ * off `project_monitor_events`. It rides the identical downstream path as
+ * `cron` — the session it mints is stamped `trigger:monitor`.
+ */
+export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -885,7 +899,7 @@ async function enqueueTriggerPrompt(input: {
   sessionId: string;
   actor: string;
   text: string;
-  source: 'cron' | 'webhook' | 'manual';
+  source: TriggerFireSource;
   triggerSlug: string;
   idempotencyKey?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
@@ -927,7 +941,7 @@ export async function fireGitTrigger(input: {
   project: ProjectRow;
   payload: Record<string, unknown>;
   renderedPrompt: string;
-  source: 'cron' | 'webhook' | 'manual';
+  source: TriggerFireSource;
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
 }): Promise<{
@@ -1294,6 +1308,19 @@ export function startProjectTriggerScheduler(): void {
         console.error('[project-triggers] scheduler tick failed:', error);
       });
 
+    // Monitor events land in their own append-only log, so they drain beside
+    // the execution queue rather than through it — one slow monitor fire must
+    // not stall a due cron slot, and vice versa.
+    drainMonitorEvents()
+      .then((result) => {
+        if (result.fired || result.failed || result.skipped) {
+          console.log('[project-monitors] event drain completed', result);
+        }
+      })
+      .catch((error) => {
+        console.error('[project-monitors] event drain failed:', error);
+      });
+
     // Connector reconcile backstop — slower cadence than the trigger sweep so
     // we don't re-read every manifest each tick. Catches out-of-band manifest
     // edits (raw git push / CLI) and heals any DB drift / retries error rows.
@@ -1392,6 +1419,10 @@ export async function loadTriggersForResponse(
       run_at: spec.runAt,
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
+      run: spec.run,
+      mode: spec.monitorMode,
+      interval_seconds: spec.intervalSeconds,
+      expect_event_within_seconds: spec.expectEventWithinSeconds,
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
       session_id: spec.pinnedSessionId,
@@ -1414,7 +1445,7 @@ export async function loadTriggersForResponse(
 export interface TriggerDraft {
   slug: string;
   name: string;
-  type: 'cron' | 'webhook';
+  type: GitTriggerType;
   agent: string;
   /** Wire-form model (`provider/model`) or null for "Default" (resolve at fire time). */
   model: string | null;
@@ -1424,6 +1455,14 @@ export interface TriggerDraft {
   runAt: string | null;
   timezone: string;
   secretEnv: string | null;
+  /** For type=monitor only — the repo-relative command the box supervises. */
+  run: string | null;
+  /** For type=monitor only — `poll` (run on interval) or `stream` (long-running). */
+  monitorMode: GitMonitorMode | null;
+  /** For `monitorMode === 'poll'` only — the poll period, in whole seconds. */
+  intervalSeconds: number | null;
+  /** For type=monitor only — the silence watchdog, in whole seconds. */
+  expectEventWithinSeconds: number | null;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
@@ -1446,9 +1485,10 @@ export function parseTriggerDraft(
     return { error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only` };
   }
 
-  const type =
-    (body as any).type === 'webhook' ? 'webhook' : (body as any).type === 'cron' ? 'cron' : null;
-  if (!type) return { error: 'type must be "cron" or "webhook"' };
+  const typeRaw = normalizeString((body as any).type);
+  const type: GitTriggerType | null =
+    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' ? typeRaw : null;
+  if (!type) return { error: 'type must be "cron", "webhook", or "monitor"' };
 
   const promptTemplate = normalizeString(
     (body as any).prompt_template ?? (body as any).promptTemplate,
@@ -1478,7 +1518,7 @@ export function parseTriggerDraft(
     ? (sessionModeRaw as GitTriggerSessionMode)
     : sessionKeyRaw
       ? 'keyed'
-      : 'fresh';
+      : defaultTriggerSessionMode(type);
   const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
@@ -1513,6 +1553,32 @@ export function parseTriggerDraft(
     if (Object.keys(entries).length > 0) filter = entries;
   }
 
+  if (type === 'monitor') {
+    const monitor = parseMonitorFields(body);
+    if ('error' in monitor) return { error: monitor.error };
+    return {
+      slug,
+      name,
+      type: 'monitor',
+      agent,
+      model,
+      enabled,
+      promptTemplate,
+      cron: null,
+      runAt: null,
+      timezone: 'UTC',
+      secretEnv: null,
+      run: monitor.run,
+      monitorMode: monitor.monitorMode,
+      intervalSeconds: monitor.intervalSeconds,
+      expectEventWithinSeconds: monitor.expectEventWithinSeconds,
+      sessionMode,
+      pinnedSessionId,
+      sessionKey,
+      filter,
+    };
+  }
+
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
     const timezoneError = validateTriggerTimezone(timezone);
@@ -1536,6 +1602,10 @@ export function parseTriggerDraft(
         runAt: new Date(parsed).toISOString(),
         timezone,
         secretEnv: null,
+        run: null,
+        monitorMode: null,
+        intervalSeconds: null,
+        expectEventWithinSeconds: null,
         sessionMode,
         pinnedSessionId,
         sessionKey,
@@ -1559,6 +1629,10 @@ export function parseTriggerDraft(
       runAt: null,
       timezone,
       secretEnv: null,
+      run: null,
+      monitorMode: null,
+      intervalSeconds: null,
+      expectEventWithinSeconds: null,
       sessionMode,
       pinnedSessionId,
       sessionKey,
@@ -1583,6 +1657,10 @@ export function parseTriggerDraft(
     runAt: null,
     timezone: 'UTC',
     secretEnv,
+    run: null,
+    monitorMode: null,
+    intervalSeconds: null,
+    expectEventWithinSeconds: null,
     sessionMode,
     pinnedSessionId,
     sessionKey,
@@ -1594,6 +1672,7 @@ export function parseTriggerDraft(
  * PATCH merge before re-parsing. */
 
 export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
+  const isMonitor = spec.type === 'monitor';
   return {
     slug: spec.slug,
     name: spec.name,
@@ -1607,8 +1686,19 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     // `run_at` trigger would drop its schedule and fail re-validation ("cron
     // triggers must declare a `cron` expression or a one-off `run_at`").
     run_at: spec.runAt,
-    timezone: spec.timezone,
+    // A monitor rejects cron wiring outright, so its merge body must carry the
+    // implicit 'UTC' as null — re-parsing the splat would otherwise fail on the
+    // timezone the spec only holds as a placeholder.
+    timezone: isMonitor ? null : spec.timezone,
     secret_env: spec.secretEnv,
+    run: spec.run,
+    mode: spec.monitorMode,
+    interval:
+      spec.intervalSeconds === null ? null : formatDurationSeconds(spec.intervalSeconds),
+    expect_event_within:
+      spec.expectEventWithinSeconds === null
+        ? null
+        : formatDurationSeconds(spec.expectEventWithinSeconds),
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
@@ -1646,6 +1736,10 @@ export function draftToSpec(
     runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
+    run: draft.run,
+    monitorMode: draft.monitorMode,
+    intervalSeconds: draft.intervalSeconds,
+    expectEventWithinSeconds: draft.expectEventWithinSeconds,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,

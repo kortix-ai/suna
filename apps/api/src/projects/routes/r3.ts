@@ -615,7 +615,13 @@ projectsApp.openapi(
   // standing agent grant remains the enumeration ceiling for agent tokens.
   const agentGrant = getAgentGrant(c);
 
-  const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared, agentGrants))
+  const items = (await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared,
+    projectMetadata: loaded.row.metadata,
+    agentGrants,
+  }))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
@@ -765,10 +771,11 @@ projectsApp.openapi(
           400,
         );
       }
-      if (!networkBoundaryDeliveryAvailable()) {
+      if (!networkBoundaryDeliveryAvailable(loaded.row.metadata)) {
         return c.json(
           {
-            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            error:
+              'Network-boundary delivery needs Platinum, or the "Network boundary without Platinum" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,
@@ -919,7 +926,12 @@ projectsApp.openapi(
     });
   }
 
-  const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+  const views = await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared: true,
+    projectMetadata: loaded.row.metadata,
+  });
   const view = views.find((v) => v.identifier === identifier);
   if (!view) {
     throw new Error(`Secret view not found after upsert: ${identifier}`);
@@ -1040,10 +1052,11 @@ projectsApp.openapi(
       return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
     }
     if (parsed.data.strategy === 'egress') {
-      if (!networkBoundaryDeliveryAvailable()) {
+      if (!networkBoundaryDeliveryAvailable(loaded.row.metadata)) {
         return c.json(
           {
-            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            error:
+              'Network-boundary delivery needs Platinum, or the "Network boundary without Platinum" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,
@@ -1197,7 +1210,12 @@ projectsApp.openapi(
       );
     }
 
-    const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+    const views = await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared: true,
+    projectMetadata: loaded.row.metadata,
+  });
     const view = views.find((item) => item.identifier === identifier);
     if (!view) return c.json({ error: 'Not found' }, 404);
 
@@ -1246,8 +1264,11 @@ async function writeCodexAuthSecret(input: {
   userId: string;
   value: string;
   sharing?: ReturnType<typeof parseSharingIntent>;
+  /** The loaded project's `metadata` column. This helper has no project row of
+   *  its own, so its caller supplies it — see `buildSecretView`. */
+  projectMetadata: unknown;
 }) {
-  const { projectId, accountId, userId, value, sharing } = input;
+  const { projectId, accountId, userId, value, sharing, projectMetadata } = input;
   const now = new Date();
   let secretId: string;
 
@@ -1338,7 +1359,12 @@ async function writeCodexAuthSecret(input: {
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
 
-  const views = await loadSecretViewsForUser(projectId, userId, true);
+  const views = await loadSecretViewsForUser({
+    projectId,
+    userId,
+    canManageShared: true,
+    projectMetadata,
+  });
   return views.find((v) => v.identifier === CODEX_AUTH_JSON_SECRET_NAME)
     ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
@@ -1504,6 +1530,7 @@ projectsApp.openapi(
     userId: loaded.userId,
     value: result.authJson,
     sharing,
+    projectMetadata: loaded.row.metadata,
   });
 
   return c.json({
@@ -1823,7 +1850,12 @@ projectsApp.openapi(
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
-  const views = await loadSecretViewsForUser(projectId, loaded.userId, roleAllows(loaded.effectiveRole, 'manage'));
+  const views = await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared: roleAllows(loaded.effectiveRole, 'manage'),
+    projectMetadata: loaded.row.metadata,
+  });
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
 },
 );

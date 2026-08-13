@@ -58,6 +58,8 @@ export type { ProviderListResponse };
 
 /** Stable empty list, so the memoized composer is not handed a fresh array. */
 const EMPTY_QUEUE: QueuedMessageView[] = [];
+/** Same, for the in-flight ids. */
+const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -92,8 +94,9 @@ export interface SessionChatInputProps {
   isBusy?: boolean;
   /**
    * Messages queued while `isBusy` was true — held client-side (mirrors
-   * Claude Code/Codex) and flushed one at a time by the parent at the next
-   * safe boundary instead of interleaving into the live turn. When present
+   * Claude Code/Codex) and flushed by the parent **all at once**, on one
+   * prompt, at the next safe boundary rather than interleaving into the live
+   * turn or trickling out one turn at a time. When present
    * alongside `onQueueMessage`, submitting while busy enqueues instead of
    * sending immediately.
    */
@@ -101,8 +104,9 @@ export interface SessionChatInputProps {
   /** Sends that failed for good. Rendered below the queue with a retry — they
    *  must never sit at the head holding up everything behind them. */
   failedQueuedMessages?: QueuedMessageView[];
-  /** The queued message currently on the wire. Cannot be edited, moved or removed. */
-  queueInFlightId?: string | null;
+  /** The queued messages currently on the wire. Cannot be edited, moved or removed.
+   *  Plural: the queue drains as one batch, so several rows are live at once. */
+  queueInFlightIds?: string[];
   /** The queue is held by a stop. Dims the list — never silent. */
   queuePaused?: boolean;
   /** The agent is mid-turn, so the per-row send must stop it first. */
@@ -231,7 +235,7 @@ function SessionChatInputImpl({
   isBusy = false,
   queuedMessages,
   failedQueuedMessages,
-  queueInFlightId = null,
+  queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
   queuePaused,
   queueIsRunning,
   onSendQueuedMessageNow,
@@ -835,7 +839,7 @@ function SessionChatInputImpl({
       shouldQueueInsteadOfSend({
         isBusy,
         pendingCount: queuedMessages?.length ?? 0,
-        hasInFlight: queueInFlightId != null,
+        hasInFlight: queueInFlightIds.length > 0,
       })
     ) {
       onQueueMessage(trimmed, filesToSend, mentionsToSend);
@@ -868,7 +872,7 @@ function SessionChatInputImpl({
     isBusy,
     onQueueMessage,
     queuedMessages,
-    queueInFlightId,
+    queueInFlightIds,
     queuePaused,
       queueIsRunning,
     onSendQueuedMessageNow,
@@ -1147,7 +1151,7 @@ function SessionChatInputImpl({
               <QueuedMessages
                 messages={queuedMessages ?? EMPTY_QUEUE}
                 failed={failedQueuedMessages}
-                inFlightId={queueInFlightId}
+                inFlightIds={queueInFlightIds}
                 paused={queuePaused}
                 isRunning={queueIsRunning}
                 onSendNow={onSendQueuedMessageNow}

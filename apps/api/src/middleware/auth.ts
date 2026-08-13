@@ -241,7 +241,12 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     path.endsWith('/boot-timeline') ||
     // The runtime relay sends redacted OpenCode lifecycle events for its own
     // session. The handler re-checks sandbox, account, project, and session.
-    path.endsWith('/audit/events');
+    path.endsWith('/audit/events') ||
+    // The monitor runner POSTs its own box's stdout lines here. The handler
+    // re-checks the token against `project_monitor_boxes` (sandbox id ∧
+    // project ∧ account ∧ live status) — a monitor box has no
+    // `session_sandboxes` row, so it authenticates against that table only.
+    path.endsWith('/monitors/ingest');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {

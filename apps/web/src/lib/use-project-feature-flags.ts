@@ -33,6 +33,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
+  const monitors = useFeatureFlag(projectId, 'monitors');
+  const networkBoundaryShim = useFeatureFlag(projectId, 'network_boundary_shim');
+  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
 
   return {
     flags: {
@@ -46,7 +49,11 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       review_center: reviewCenter.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
+      monitors: monitors.enabled,
+      network_boundary_shim: networkBoundaryShim.enabled,
+      warm_sessions: warmSessions.enabled,
     },
-    isLoading: apps.isLoading,
+    // The trailing hook's loading state — keep this on the LAST hook above.
+    isLoading: warmSessions.isLoading,
   };
 }

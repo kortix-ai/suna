@@ -14,7 +14,7 @@ import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -118,7 +118,7 @@ function OpenCrChooser({
 function NavItemInner({ projectId }: { projectId: string }) {
   const c = useOpenCrController();
   const isMobile = useIsMobile();
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   // When the Review Center is enabled for this project, this pill becomes the
   // single entry point into the unified inbox (Customize → Review) — change
   // requests, approvals and agent outputs all live in one place — instead of
@@ -143,7 +143,7 @@ function NavItemInner({ projectId }: { projectId: string }) {
       className="text-sm! font-medium [&_svg]:size-4!"
       onClick={
         reviewEnabled
-          ? () => openCustomize('review')
+          ? () => openSettings('review')
           : c.count === 1
             ? () => c.openCr(c.crs[0].cr_id)
             : undefined

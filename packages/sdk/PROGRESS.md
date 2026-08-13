@@ -12,6 +12,66 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-13 — session `warm-index` claim — DONE
+
+Additive only: registered the `warm_sessions` project feature flag key so the
+platform's warm-session endpoints can be gated. The SDK is the runtime witness
+of the flag key list, so a new platform flag cannot skip this package.
+
+Claimed SDK scope:
+
+- Add `warm_sessions` to the hand-written `FeatureFlagKey` union and to the
+  `FEATURE_FLAG_KEYS` runtime array in
+  `src/core/rest/projects-client/projects.ts`.
+- Change no existing exported name, no signature, no `version` field.
+
+RED:
+
+- `FEATURE_FLAG_KEYS lists every flag key exactly once` failed with the key
+  added to the expected list and absent from the runtime array
+  (`54 pass, 1 fail`).
+
+GREEN:
+
+- Union + runtime array updated together, keeping the two in the same order.
+- Cross-package drift holds: `@kortix/api-contract` `FeatureFlagMapSchema`, the
+  API registry, and this list all carry the key
+  (`apps/api` `unit-feature-flag-drift.test.ts` + `unit-feature-flags.test.ts`
+  green, `50 pass, 0 fail`).
+
+Gates:
+
+- `bun test --isolate src` — `1846 pass, 2 skip, 0 fail`.
+- `bun run typecheck` — clean, exit 0.
+- `bun run smoke:install` — `install smoke test passed`, exit 0.
+
+Shippable to production: YES.
+
+
+### 2026-08-13 — session `latest-managed-models`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding managed `deepseek-v4-pro-0813`. The
+package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1901 pass`, `2 skip`,
+`0 fail`, and `7244` assertions across `145` files; packed-install smoke passes.
+The managed model also passed the local catalog, inference, usage-log, and
+generation-record canary through the API.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
+### 2026-08-13 — session `grok-4-6-managed`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding `grok-4.6`. It also includes the
+three managed ids added on 2026-08-10. The package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1903 pass`, `0 fail`,
+and `7250` assertions across `145` files; packed-install smoke passes.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
 ### 2026-08-11 — session `billing-revamp-pr5-ui` claim
 
 No **Now** task claimed. User-directed work: the UI half of PR5 (the admin
@@ -8524,3 +8584,83 @@ while `subscription.tier_key` stayed `per_seat`.
 **Status:** COMPLETE on branch `billing-revamp-pr3`.
 
 **SDK package shippable to production: YES.**
+## Session `monitors` — `type: monitor` on the trigger client (2026-08-12)
+No **Now** task claimed. This is the SDK half of the Monitors feature
+(`docs/specs/2026-08-12-monitors.md`), the third trigger type. The server side
+(manifest, DB, ingest, observer, box runtime) already landed on branch
+`monitors`; this change makes the published trigger client able to read and
+write it.
+Claimed SDK scope, in `core/rest/projects-client/triggers.ts` only:
+- Widen `ProjectTriggerType` with `'monitor'`.
+- Add the four monitor read fields to `ProjectTrigger`, matching
+  `TriggerSchema` in `@kortix/api-contract` (`run`, `mode`, `interval_seconds`,
+  `expect_event_within_seconds` — all nullable, like `cron`/`secret_env`).
+- Add the monitor draft fields the server's `parseTriggerDraft` accepts to
+  `CreateProjectTriggerInput` / `UpdateProjectTriggerInput` (`run`, `mode`,
+  `interval`, `expect_event_within` — durations are literals, never numbers).
+- One new exported type, `ProjectMonitorMode` (`'poll' | 'stream'`).
+**Additive only.** No name was renamed or removed, no optional field became
+required, no subpath was added (the client rides the existing
+`projects-client` barrel), and the package `version` is untouched.
+RED — `pnpm --filter @kortix/sdk typecheck` before implementation, with the new
+`src/core/rest/projects-client/triggers.test.ts` in place: **exit 2**, 17
+errors, including `Module '"./triggers"' has no exported member
+'ProjectMonitorMode'`, `Type '"monitor"' is not assignable to type
+'ProjectTriggerType'`, `Property 'run' does not exist on type 'ProjectTrigger'`,
+and `'mode' does not exist in type 'UpdateProjectTriggerInput'`.
+- `bun test src/core/rest/projects-client/triggers.test.ts`: `6 pass`, `0 fail`,
+- `pnpm --filter @kortix/sdk test`: `1852 pass`, `2 skip`, `0 fail`,
+  `7109 expect()` calls across `142` files. Session baseline measured on the
+  branch before the change: `1846 pass`, `2 skip`, `0 fail`, `141` files.
+`public-type-surface.snapshot.json` was re-recorded: **2 insertions, 0
+deletions** — `ProjectMonitorMode` on `.` and `./projects-client`. Purely
+additive, so no consumer breaks. The runtime surface snapshot is unchanged (the
+addition is a type, not a value).
+
+## Session `queue-batch` — `claimBatch` on the message queue (2026-08-13)
+
+**Why.** Reported by Marko: the web session queue released one message per turn.
+Three queued messages meant three full agent runs, with the agent answering each
+in isolation. Claude Code and Codex flush the whole queue at the turn boundary.
+
+**Claimed SDK scope, in `core/session/message-queue.ts` only:**
+- New `claimBatch(state)` — claims the maximal leading run of `pending` that
+  shares the head's `agent`/`model`/`variant`, recording the claim in the same
+  transition. One prompt carries one set of dispatch options, so a batch ends
+  where they change.
+- New `inFlightIdsOf(state)` — the single read path for the lock, tolerating a
+  state persisted before `inFlightIds` existed.
+- `SessionQueue.inFlightIds?: string[]` — **optional on purpose.** Required
+  would stop a consumer's hand-built `SessionQueue` literal from compiling,
+  which the package's own rules class as breaking. `inFlightId` keeps its name
+  and meaning as the head of that array; every transition writes both.
+- `completeInFlight` / `failInFlight` / `removeQueued` / `editQueued` /
+  `reorderQueued` now act on the whole in-flight batch rather than one id. A
+  row the user can still edit while it is on the wire is a bug the single-id
+  lock could not prevent.
+
+**Additive only.** No name renamed or removed, no optional field made required,
+no subpath added, `version` untouched.
+
+**RED first.** `bun test src/core/session/message-queue.test.ts` before
+implementation: `SyntaxError: Export named 'claimBatch' not found in module
+'.../message-queue.ts'` — `0 pass`, `1 fail`, `1 error`.
+
+**Gates, real output:**
+- `pnpm --filter @kortix/sdk typecheck` — clean (`tsc --noEmit` + examples).
+- `pnpm --filter @kortix/sdk test` — `1901 pass`, `2 skip`, `0 fail`, `7244
+  expect()` calls across `145` files. Session baseline measured on this branch
+  before the change: `1883 pass`, `2 skip`, `0 fail`, `145` files.
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test passed`.
+
+**Snapshots re-recorded, both purely additive:**
+`public-surface.snapshot.json` +2 (`claimBatch`, `inFlightIdsOf` on
+`./message-queue`), `public-type-surface.snapshot.json` +2 (same names). The
+type-surface tool's own drift report labelled both `← added — additive, fine`.
+Nothing removed, nothing renamed.
+
+**Host side (not SDK, recorded for context):** `apps/web` gained
+`features/session/queued-batch.ts` (`mergeQueuedBatch`, pure) and now makes
+exactly ONE `handleSend` call per batch. A loop would reintroduce RC4 from
+`docs/superpowers/specs/2026-08-05-session-message-queue-design.md` —
+`handleSend` resolves on the server's 204 ACK, not on turn end.

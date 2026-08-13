@@ -72,6 +72,10 @@ export type SecretDeliveryPresentation = {
 
 const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> = {
   runtime: {
+    // The only mode where agent code can read the value, so the badge is a
+    // warning and not a neutral label. `secrets-view.tsx` says the same thing
+    // in longhand right below it (`InfoBanner tone="warning"`, "Readable inside
+    // the sandbox"); the two must agree.
     label: 'Sandbox',
     description: 'Available to agent code and commands as an environment variable.',
     tone: 'warning',
@@ -131,28 +135,46 @@ export function secretDeliveryPresentation(
 export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | 'unsupported';
 
 /**
- * Network-boundary delivery is injected by the Platinum provider itself, so the
- * PROJECT has to run on Platinum. A deployment that merely offers Platinum is
- * not enough: on any other provider nothing injects the header and the secret
- * is silently dead.
+ * Two independent mechanisms deliver a network-boundary secret, and a project
+ * needs only one.
+ *
+ * The original one is the **Platinum provider edge**, which is why this used to
+ * be a Platinum check. A deployment that merely offers Platinum was never
+ * enough: on any other provider nothing injects the header and the secret is
+ * silently dead.
+ *
+ * The second is the **in-guest shim**, a per-project experimental flag. It works
+ * on any provider, so it short-circuits the provider question entirely. It is a
+ * deliberate opt-in — it also needs a sandbox image new enough to run the shim,
+ * which nothing here can verify.
  */
 export function networkBoundaryAvailability(
   project?: {
     available_sandbox_providers?: readonly string[] | null;
     default_sandbox_provider?: string | null;
+    experimental?: Partial<Record<string, boolean>> | null;
   } | null,
 ): NetworkBoundaryAvailability {
+  if (project?.experimental?.network_boundary_shim) return 'available';
   if (!project?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
   return project.default_sandbox_provider === 'platinum' ? 'available' : 'project_not_pinned';
 }
 
-/** Why network-boundary delivery cannot run here, and how to fix it. */
+/** The flag's name in Feature flags → Experimental, quoted so the sentence below
+ *  points at something the user can actually find. */
+const SHIM_FLAG = 'Network boundary without Platinum';
+
+/** Why network-boundary delivery cannot run here, and how to fix it. Both
+ *  states are now fixable, so neither says "not available" — the shim flag is
+ *  an escape hatch from either one. */
 export function networkBoundaryBlockedReason(
   availability: NetworkBoundaryAvailability,
 ): string | null {
   if (availability === 'available') return null;
-  if (availability === 'unsupported') return 'Not available in this deployment.';
-  return 'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.';
+  if (availability === 'unsupported') {
+    return `Turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
+  }
+  return `This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider, or turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
 }
 
 export type SecretDeliveryOption = SecretDeliveryPresentation & {

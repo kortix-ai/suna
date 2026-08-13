@@ -36,9 +36,11 @@ import {
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
+  isSignalTimeoutNoise,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
@@ -9453,6 +9455,697 @@ test('does NOT suppress the Connection closed. message under the Failed-to-send-
   )
 })
 
+// ---------------------------------------------------------------------------
+// Bot / automation-framework `Cannot redefine property: webdriver` noise
+// (BS ee14e84d…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const REDEFINE_WEBDRIVER_MESSAGE = 'Cannot redefine property: webdriver'
+
+// The three production stack frames — ALL `<anonymous>` (functions `?`, `?`,
+// `Object.defineProperty`), with NO resolved first-party `apps/web/src/…`
+// source. The call_site_file Better Stack surfaces is `<anonymous>` and the
+// call_site_function is `Object.defineProperty`.
+const REDEFINE_WEBDRIVER_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: '<anonymous>', function: 'Object.defineProperty' },
+  { filename: '<anonymous>', function: '?' },
+  { filename: '<anonymous>', function: '?' },
+]
+
+// The canonical capture-path forms: raw, `TypeError:` prefix, and stacked
+// `Unhandled promise rejection: TypeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const REDEFINE_WEBDRIVER_CAPTURE_FORMS = [
+  REDEFINE_WEBDRIVER_MESSAGE,
+  `TypeError: ${REDEFINE_WEBDRIVER_MESSAGE}`,
+  `Unhandled promise rejection: ${REDEFINE_WEBDRIVER_MESSAGE}`,
+  `Unhandled promise rejection: TypeError: ${REDEFINE_WEBDRIVER_MESSAGE}`,
+]
+
+test('classifies the production Cannot redefine property: webdriver noise (exact prod frames, all <anonymous>)', () => {
+  // Exact production shape: the canonical message + the three `<anonymous>`
+  // frames (all unresolved — NO first-party `apps/web/src/…` source), so the
+  // negative guard does NOT fire.
+  assert.equal(
+    isRedefineWebdriverNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      frames: REDEFINE_WEBDRIVER_PROD_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WEBDRIVER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WEBDRIVER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Cannot redefine property: webdriver noise through all capture-path wrappers', () => {
+  // The matcher strips the canonical `TypeError: ` / `Unhandled promise
+  // rejection: ` (and stacked) wrappers before anchoring, so the SAME
+  // underlying message classifies as noise regardless of which capture path
+  // delivered it (window.onerror, onunhandledrejection, Sentry exception).
+  for (const message of REDEFINE_WEBDRIVER_CAPTURE_FORMS) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message,
+        frames: REDEFINE_WEBDRIVER_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: REDEFINE_WEBDRIVER_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the frameless Cannot redefine property: webdriver variant as noise (webdriver property name is the specific anchor)', () => {
+  // A frameless capture with this exact message still classifies as noise —
+  // the `webdriver` property name pins it to `navigator.webdriver` (never a
+  // first-party Kortix API surface), so a frameless capture is safe to drop.
+  assert.equal(
+    isRedefineWebdriverNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      exception: {
+        values: [{ value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames: [] } }],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      exception: {
+        values: [{ value: REDEFINE_WEBDRIVER_MESSAGE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Cannot redefine property: webdriver noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate (window.onerror) sees the message + the `<anonymous>`
+  // filename; both classify as noise because no first-party `apps/web/src/…`
+  // source is present.
+  for (const message of REDEFINE_WEBDRIVER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: '<anonymous>',
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" from an <anonymous> filename`,
+    )
+  }
+})
+
+test('does NOT suppress the Cannot redefine property: webdriver throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `Object.defineProperty` on a non-configurable property → a real first-party
+  // regression; the negative guard MUST preserve it so the call site can be
+  // found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/bot-detection.ts', function: 'hideWebdriver' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/navigator-guard.ts', function: 'patchNavigator' },
+    ],
+  ]) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message: REDEFINE_WEBDRIVER_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party defineProperty throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party defineProperty throw from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of REDEFINE_WEBDRIVER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/bot-detection.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the webdriver property name (over-match guard)', () => {
+  // The `webdriver` property name is part of the anchor — a different
+  // `Cannot redefine property: <X>` (a real first-party `defineProperty` on a
+  // different non-configurable property) must keep reporting so the matcher
+  // does not over-match a real app regression.
+  for (const message of [
+    'Cannot redefine property: foo',
+    'Cannot redefine property: __proto__',
+    'Cannot redefine property: constructor',
+    'Cannot redefine property: webdriver (configurable)',
+    'Cannot redefine webdriver',
+    'Cannot set property: webdriver',
+  ]) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-webdriver TypeError (over-match guard on the TypeError type)', () => {
+  // The matcher anchors on the EXACT `Cannot redefine property: webdriver`
+  // message, NOT on the `TypeError` type. A generic `TypeError` keeps
+  // reporting unless it matches the exact webdriver wording.
+  for (const message of [
+    'Cannot read properties of null (reading "webdriver")',
+    "TypeError: 'defineProperty' on proxy: trap returned falsish for property 'webdriver'",
+    'Cannot redefine property: webdriver_extra',
+  ]) {
+    assert.equal(
+      isRedefineWebdriverNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress Cannot redefine property: webdriver when a first-party frame is mixed with <anonymous> frames (negative guard is any-frame)', () => {
+  // The negative guard fires if ANY frame resolves to a first-party
+  // `apps/web/src/…` source — even when mixed with the production
+  // `<anonymous>` frames. A real first-party `defineProperty` regression
+  // surfaces with at least one resolved first-party frame in the stack, so the
+  // any-frame negative guard preserves it.
+  const mixedFrames: Array<{ filename: unknown; function?: unknown }> = [
+    { filename: '<anonymous>', function: 'Object.defineProperty' },
+    { filename: '<anonymous>', function: '?' },
+    { filename: 'app:///apps/web/src/lib/bot-detection.ts', function: 'hideWebdriver' },
+  ]
+  assert.equal(
+    isRedefineWebdriverNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      frames: mixedFrames,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames: mixedFrames } },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('classifies the Cannot redefine property: webdriver noise via the runtime gate with an empty <anonymous> filename', () => {
+  // The runtime gate (window.onerror) can deliver an empty-string filename
+  // (the `<anonymous>` call site has no resolvable source). An empty filename
+  // is never a first-party `apps/web/src/…` source, so the noise classifies.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      filename: '',
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      filename: '<anonymous>',
+    }),
+    true,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Transient fetch-abort `signal timed out` noise (BS 73e683c3…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const SIGNAL_TIMEOUT_MESSAGE = 'signal timed out'
+
+// The canonical capture-path forms: raw, `TimeoutError:` prefix, and stacked
+// `Unhandled promise rejection: TimeoutError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const SIGNAL_TIMEOUT_CAPTURE_FORMS = [
+  SIGNAL_TIMEOUT_MESSAGE,
+  `TimeoutError: ${SIGNAL_TIMEOUT_MESSAGE}`,
+  `Unhandled promise rejection: ${SIGNAL_TIMEOUT_MESSAGE}`,
+  `Unhandled promise rejection: TimeoutError: ${SIGNAL_TIMEOUT_MESSAGE}`,
+]
+
+test('classifies the production signal timed out noise (frameless, exact prod shape)', () => {
+  // Exact production shape: the canonical message with NO stacktrace frames
+  // (the production event's exception value has no `stacktrace` key at all —
+  // a frameless `TimeoutError` from `AbortSignal.timeout()`). The negative
+  // guard does NOT fire because there are no frames.
+  assert.equal(
+    isSignalTimeoutNoise({
+      message: SIGNAL_TIMEOUT_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+      },
+      exception: {
+        values: [
+          {
+            type: 'TimeoutError',
+            value: SIGNAL_TIMEOUT_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+      },
+      exception: {
+        values: [
+          {
+            type: 'TimeoutError',
+            value: SIGNAL_TIMEOUT_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the signal timed out noise through all capture-path wrappers', () => {
+  // The matcher strips the canonical `TimeoutError: ` / `Unhandled promise
+  // rejection: ` (and stacked) wrappers before anchoring, so the SAME
+  // underlying message classifies as noise regardless of which capture path
+  // delivered it (window.onerror, onunhandledrejection, Sentry exception).
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      isSignalTimeoutNoise({
+        message,
+        frames: [],
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: [] } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the signal timed out noise even when a minified SDK chunk frame is present (no first-party source)', () => {
+  // A minified SDK chunk frame (NOT a resolved first-party `apps/web/src/…`
+  // source) does NOT trip the negative guard — the production `signal timed
+  // out` throw originates from the SDK's `makeRequest` abort path, which
+  // de-minifies to a chunk frame, never to first-party `apps/web/src/…`.
+  const chunkFrames = [
+    {
+      filename:
+        'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+      function: 't',
+    },
+  ]
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      isSignalTimeoutNoise({ message, frames: chunkFrames }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: chunkFrames } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" from a chunk frame to be noise`,
+    )
+  }
+})
+
+test('suppresses the signal timed out noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate (window.onerror) sees the message; it classifies as
+  // noise because no first-party `apps/web/src/…` source is present.
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'app:///_next/static/chunks/66499-652b83425f671b38.js',
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress the signal timed out throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw
+  // `signal timed out` → a real first-party regression; the negative guard
+  // MUST preserve it so the call site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api-client.ts', function: 'fetchWithTimeout' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/request.ts', function: 'abortOnTimeout' },
+    ],
+  ]) {
+    assert.equal(
+      isSignalTimeoutNoise({
+        message: SIGNAL_TIMEOUT_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party signal timed out throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: SIGNAL_TIMEOUT_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party signal timed out throw from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/api-client.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message (over-match guard on the exact signal timed out message)', () => {
+  // Only the EXACT `signal timed out` message is matched by `isSignalTimeoutNoise`;
+  // a near-worded message (the SDK's typed `Request timed out after <N>s:` —
+  // handled by the separate `isClientRequestTimeoutMessage` matcher — or a
+  // different timeout wording) is NOT matched by THIS matcher. The matcher-level
+  // check is the over-match guard; the Sentry-gate check is only asserted for
+  // messages no OTHER matcher handles (so we don't conflate this matcher's
+  // selectivity with the SDK typed-timeout matcher's coverage).
+  for (const message of [
+    'signal timed out: fetch failed',
+    'Upload failed: signal timed out',
+    'AbortError: signal aborted',
+    'signal timeout',
+    'Signal timed out',
+    'signal timed out.',
+    'The operation timed out.',
+  ]) {
+    assert.equal(
+      isSignalTimeoutNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+  // The SDK's typed `Request timed out after <N>s:` wording is matched by the
+  // SEPARATE `isClientRequestTimeoutMessage` matcher (wired earlier in the
+  // gate), so the Sentry gate DOES suppress it — but `isSignalTimeoutNoise`
+  // itself must NOT match it (it's a different wording/surface). This is the
+  // disjointness assertion at the matcher level.
+  assert.equal(
+    isSignalTimeoutNoise(
+      { message: 'Request timed out after 30s: /v1/projects', frames: [] },
+    ),
+    false,
+  )
+})
+
+test('does NOT suppress signal timed out when a first-party frame is mixed with chunk frames (negative guard is any-frame)', () => {
+  // The negative guard fires if ANY frame resolves to a first-party
+  // `apps/web/src/…` source — even when mixed with minified SDK chunk frames.
+  // A real first-party `signal timed out` throw surfaces with at least one
+  // resolved first-party frame, so the any-frame negative guard preserves it.
+  const mixedFrames: Array<{ filename: unknown; function?: unknown }> = [
+    {
+      filename:
+        'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+      function: 't',
+    },
+    { filename: 'apps/web/src/lib/api-client.ts', function: 'fetchWithTimeout' },
+  ]
+  assert.equal(
+    isSignalTimeoutNoise({
+      message: SIGNAL_TIMEOUT_MESSAGE,
+      frames: mixedFrames,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: SIGNAL_TIMEOUT_MESSAGE, stacktrace: { frames: mixedFrames } },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('classifies the signal timed out noise via the runtime gate with an empty filename', () => {
+  // The runtime gate (window.onerror) can deliver an empty-string filename
+  // (the frameless `TimeoutError` has no resolvable source). An empty filename
+  // is never a first-party `apps/web/src/…` source, so the noise classifies.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: SIGNAL_TIMEOUT_MESSAGE,
+      filename: '',
+    }),
+    true,
+  )
+})
+
+test('the two new noise matchers do not shadow each other (disjoint message anchors)', () => {
+  // `isRedefineWebdriverNoise` (`Cannot redefine property: webdriver`) and
+  // `isSignalTimeoutNoise` (`signal timed out`) anchor on disjoint exact
+  // messages, so neither matcher matches the other's message.
+  assert.equal(
+    isRedefineWebdriverNoise({ message: 'signal timed out', frames: [] }),
+    false,
+  )
+  assert.equal(
+    isSignalTimeoutNoise({
+      message: 'Cannot redefine property: webdriver',
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('the new noise matchers handle non-string message values gracefully (no crash, no match)', () => {
+  // A non-string `message` (undefined / null / number / object) must not crash
+  // either matcher; `normalizeString` coerces to `''`, which never matches the
+  // anchored regex.
+  for (const message of [undefined, null, 42, {}, [], true]) {
+    assert.equal(
+      isRedefineWebdriverNoise({ message, frames: [] }),
+      false,
+    )
+    assert.equal(
+      isSignalTimeoutNoise({ message, frames: [] }),
+      false,
+    )
+  }
+})
+
+test('the new noise matchers handle non-string frame filenames gracefully (no crash, negative guard still works)', () => {
+  // A non-string `filename` (undefined / null / number / object) must not
+  // crash either matcher; `normalizeString` coerces to `''`, which is never a
+  // first-party `apps/web/src/…` source, so the negative guard does NOT fire
+  // and the message-only anchor classifies the noise.
+  for (const filename of [undefined, null, 42, {}, true]) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message: REDEFINE_WEBDRIVER_MESSAGE,
+        filename,
+      }),
+      true,
+    )
+    assert.equal(
+      isSignalTimeoutNoise({ message: SIGNAL_TIMEOUT_MESSAGE, filename }),
+      true,
+    )
+  }
+})
+
+test('the two new noise matchers are disjoint from the SDK typed-timeout matcher', () => {
+  // `isSignalTimeoutNoise` (bare `signal timed out`) and
+  // `isClientRequestTimeoutMessage` (`Request timed out after <N>s:`) cover
+  // DIFFERENT surfaces and must not shadow each other. The bare native
+  // `TimeoutError` wording is distinct from the SDK's wrapped `ApiError`
+  // message.
+  assert.equal(
+    isSignalTimeoutNoise({ message: 'signal timed out', frames: [] }),
+    true,
+  )
+  assert.equal(
+    isClientRequestTimeoutMessage('signal timed out'),
+    false,
+  )
+  assert.equal(
+    isSignalTimeoutNoise(
+      { message: 'Request timed out after 30s: /v1/projects', frames: [] },
+    ),
+    false,
+  )
+  assert.equal(
+    isClientRequestTimeoutMessage('Request timed out after 30s: /v1/projects'),
+    true,
+  )
+})
+
+test('both new matchers classify the production wrappers with a non-default mechanism (onunhandledrejection) as noise', () => {
+  // The production events both use `auto.browser.global_handlers.onerror` /
+  // `auto.browser.global_handlers.onunhandledrejection` mechanisms. Neither
+  // matcher gates on the mechanism — both are message + frame anchored — so
+  // the SAME noise classifies regardless of the capture mechanism.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WEBDRIVER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WEBDRIVER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            type: 'TimeoutError',
+            value: SIGNAL_TIMEOUT_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
 
 // ---------------------------------------------------------------------------
 // Safari third-party-script "undefined variable" ReferenceError noise (Better
@@ -9946,4 +10639,3 @@ test('a bare prefix with no variable name is NOT matched (over-match guard)', ()
     'expected the bare prefix (no variable name) to keep reporting',
   )
 })
-
