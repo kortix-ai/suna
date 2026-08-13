@@ -128,19 +128,12 @@ describe('selectSessionRowsForViewer', () => {
 });
 
 /**
- * The project index page pre-creates a warm session on mount so the sandbox is
- * already up when the user finishes typing. Until it is claimed it holds no
- * user work, so the sidebar must not show a session the user never started.
+ * The project shell pre-creates a warm session on mount so the sandbox is
+ * already up when the user finishes typing. Until its first prompt lands it
+ * holds no user work, so the sidebar must not show a session the user never
+ * started. ONE marker carries that — see projects/lib/warm-sessions.ts.
  */
-describe('selectSessionRowsForViewer — unclaimed warm sessions', () => {
-  const warmMarker = (state: string) => ({
-    warm_session: {
-      state,
-      sandbox_slug: 'base',
-      created_at: '2026-07-21T00:00:00.000Z',
-    },
-  });
-
+describe('selectSessionRowsForViewer — warm sessions', () => {
   function visible(rows: Array<typeof projectSessions.$inferSelect>) {
     return selectSessionRowsForViewer({
       rows,
@@ -153,34 +146,19 @@ describe('selectSessionRowsForViewer — unclaimed warm sessions', () => {
     }).items.map((item) => item.row.sessionId);
   }
 
-  test('visible scope hides an unclaimed warm session', () => {
-    expect(visible([row('own'), row('warm', { metadata: warmMarker('available') })])).toEqual([
-      'own',
-    ]);
+  test('visible scope hides a warm session', () => {
+    expect(visible([row('own'), row('warm', { metadata: { warm: true } })])).toEqual(['own']);
   });
 
-  test('a claimed warm session lists like any other session', () => {
-    expect(visible([row('claimed-warm', { metadata: warmMarker('claimed') })])).toEqual([
-      'claimed-warm',
-    ]);
-  });
-
-  // A discard only ever overwrites a row that is still `available`, so a
-  // discarded warm session is one a human never touched either. This is the
-  // steady state after the reaper stops an unused warm box and the next ensure
-  // finds the row incompatible.
-  test('visible scope hides a discarded warm session too', () => {
-    expect(visible([row('own'), row('discarded-warm', { metadata: warmMarker('discarded') })])).toEqual([
-      'own',
-    ]);
+  test('a used session lists like any other — the first prompt drops the marker', () => {
+    expect(visible([row('used-warm', { metadata: {} })])).toEqual(['used-warm']);
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
-  // at `available`. That row must not surface through the resumable-stopped
-  // branch below it.
+  // in place. That row must not surface through the resumable-stopped branch.
   test('a reaped warm session stays hidden even though it looks resumable', () => {
     const selected = selectSessionRowsForViewer({
-      rows: [row('reaped-warm', { status: 'stopped', metadata: warmMarker('available') })],
+      rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
       scope: 'visible',
       canManageProject: false,
       subject,
@@ -194,9 +172,9 @@ describe('selectSessionRowsForViewer — unclaimed warm sessions', () => {
 
   // A manager auditing the project must see every session, warm ones included:
   // they are real rows holding a real sandbox.
-  test('project scope keeps the unclaimed warm session', () => {
+  test('project scope keeps the warm session', () => {
     const selected = selectSessionRowsForViewer({
-      rows: [row('own'), row('warm', { metadata: warmMarker('available') })],
+      rows: [row('own'), row('warm', { metadata: { warm: true } })],
       scope: 'project',
       canManageProject: true,
       subject,
@@ -212,16 +190,18 @@ describe('selectSessionRowsForViewer — unclaimed warm sessions', () => {
     const rows = [
       row('no-metadata', { metadata: null }),
       row('empty', { metadata: {} }),
-      row('string-marker', { metadata: { warm_session: 'available' } }),
-      row('array-marker', { metadata: { warm_session: ['available'] } }),
-      row('no-state', { metadata: { warm_session: { sandbox_slug: 'base' } } }),
+      row('string-marker', { metadata: { warm: 'true' } }),
+      row('array-marker', { metadata: { warm: [true] } }),
+      row('object-marker', { metadata: { warm: { state: 'available' } } }),
+      row('legacy-marker', { metadata: { warm_session: { state: 'available' } } }),
     ];
     expect(visible(rows)).toEqual([
       'no-metadata',
       'empty',
       'string-marker',
       'array-marker',
-      'no-state',
+      'object-marker',
+      'legacy-marker',
     ]);
   });
 });
