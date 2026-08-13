@@ -9,7 +9,6 @@
 //   - The route layer + cache helper + iam/index.ts all pin their
 //     imports here; consolidating preserves that import path.
 
-import { HTTPException } from 'hono/http-exception';
 import type {
   AccessibleResources,
   AuthorizeResult,
@@ -18,6 +17,7 @@ import type {
 } from './engine';
 import type { ResourceType } from './actions';
 import { authorizeV2, filterAccessibleProjectResources, listAccessibleProjectsV2 } from './engine-v2';
+import { buildDenialError } from './denial-message';
 
 // Per-resource (agent/skill) list filter — see engine-v2. Re-exported here so the
 // route layer keeps a single iam import surface (the dispatcher), like authorize.
@@ -47,82 +47,6 @@ export async function assertAuthorized(
     throw buildDenialError(action, result.reason);
   }
 }
-
-/**
- * Turn a denial into the HTTPException the route layer surfaces. Exported for
- * unit tests.
- *
- * Most reason codes (account_role_insufficient, …) are diagnostic, not
- * actionable, so the body stays a plain humanized message. The ONE actionable
- * reason is `account_mfa_required` — the caller can fix it by completing an
- * MFA challenge and retrying — so that denial carries a machine-readable
- * `code` the web client keys its step-up dialog on (the SDK's ApiError
- * already lifts `code` from error bodies).
- */
-export function buildDenialError(action: string, reason?: string): HTTPException {
-  if (reason === 'account_mfa_required') {
-    const message =
-      'This account requires multi-factor authentication. Verify your second factor and retry.';
-    return new HTTPException(403, {
-      message,
-      res: new Response(JSON.stringify({ error: message, code: 'account_mfa_required' }), {
-        status: 403,
-        headers: { 'content-type': 'application/json' },
-      }),
-    });
-  }
-  return new HTTPException(403, {
-    message: humanizePermissionDenial(action),
-  });
-}
-
-/**
- * Map action codes (`project.create`, `member.invite`, …) to a sentence
- * the user can act on. Unknown codes get a generic phrase with the code
- * suffixed for support visibility. Keep this list short — only the
- * actions that actually show up in user-visible 403s.
- */
-function humanizePermissionDenial(action: string): string {
-  const verb = ACTION_VERBS[action];
-  if (verb) return `You don't have permission to ${verb}.`;
-  // Generic fallback. Suffix the code so support can still identify
-  // which gate fired without needing server logs.
-  return `You don't have permission to perform this action (${action}).`;
-}
-
-const ACTION_VERBS: Record<string, string> = {
-  // Projects
-  'project.create': 'create projects',
-  'project.write': 'change this project',
-  'project.delete': 'delete projects',
-  // Project members
-  'project.members.manage': 'manage project members',
-  // Account
-  'account.write': 'change account settings',
-  'account.delete': 'delete this account',
-  // Members
-  'member.invite': 'invite members',
-  'member.remove': 'remove members',
-  'member.update': 'change member roles',
-  'member.read': 'view members',
-  'member.super_admin.grant': 'grant super-admin',
-  'member.super_admin.revoke': 'revoke super-admin',
-  // Groups
-  'group.create': 'create groups',
-  'group.update': 'change groups',
-  'group.delete': 'delete groups',
-  'group.read': 'view groups',
-  'group.members.manage': 'manage group members',
-  // Audit
-  'audit.read': 'view the audit log',
-  'audit.export': 'export audit events',
-  // Tokens
-  'token.read': 'view personal access tokens',
-  'token.revoke': 'revoke personal access tokens',
-  // Billing
-  'billing.read': 'view billing',
-  'billing.write': 'change billing',
-};
 
 export async function listAccessibleResources(
   userId: string,
