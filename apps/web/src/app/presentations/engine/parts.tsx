@@ -293,6 +293,42 @@ export function Terminal({
   );
 }
 
+/* ── Spine: the deck's structure, visible on every chapter slide ───────── */
+
+/**
+ * A deck that promises "four things" and then runs seven chapters has no
+ * structure a viewer can hold. The spine puts the promise on screen and marks
+ * where you are in it, so the shape of the talk is never in doubt.
+ */
+export function Spine({
+  chapters,
+  active,
+  className,
+}: {
+  chapters: readonly string[];
+  /** 0-based index of the chapter this slide belongs to. */
+  active: number;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex flex-wrap items-center gap-x-3 gap-y-2', className)}>
+      {chapters.map((c, i) => (
+        <span key={c} className="flex items-center gap-3">
+          {i > 0 ? <span className="bg-border h-px w-4" aria-hidden /> : null}
+          <span
+            className={cn(
+              'font-mono text-xs tracking-wider uppercase transition-colors',
+              i === active ? 'text-foreground' : 'text-muted-foreground/35',
+            )}
+          >
+            <span className="tabular-nums">{`0${i + 1}`}</span> {c}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /* ── Key/value rows — the /security page's workhorse block ─────────────── */
 
 export function RowList({

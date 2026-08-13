@@ -25,7 +25,7 @@
 
 import { cn } from '@/lib/utils';
 import { AnimatePresence, m } from 'motion/react';
-import { Fragment, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 /* ── primitives ─────────────────────────────────────────────────────────── */
 
@@ -436,76 +436,7 @@ export function BrokerDiagram({ step }: { step: number }) {
   );
 }
 
-/* ── 3 · the approval gate ──────────────────────────────────────────────────
-   The beat people do not expect: the gate HOLDS the call, it does not fail it.
-   Steps: 0 running · 1 held with its arguments · 2 the person answers · 3 the
-   same call completes and the turn resumes. */
-
-export function GateDiagram({ step }: { step: number }) {
-  const captions = [
-    'The agent is mid-task. It drafts the reply and reaches a call the policy gates.',
-    'The call is held open — not failed. You see the action and the arguments it was about to use.',
-    'You answer once, for this call, with these arguments. There is no session-wide grant a later call can hide behind.',
-    'The same held call completes and the turn picks up where it stopped. A gate that errors out would just teach an agent to retry around it.',
-  ];
-
-  const states = [
-    { k: 'running', v: 'drafting the reply', tone: 'active' as Tone },
-    { k: 'waiting', v: 'held at send_email', tone: 'warn' as Tone },
-    { k: 'approved', v: 'released by a person', tone: 'ok' as Tone },
-    { k: 'running', v: 'turn resumes', tone: 'active' as Tone },
-  ];
-
-  return (
-    <Stage caption={captions[Math.min(step, captions.length - 1)]}>
-      <Row className="gap-0">
-        {states.map((s, i) => (
-          <Fragment key={s.k + i}>
-            {i > 0 ? <Link on={step >= i} fire={step === i} /> : null}
-            <Box
-              label={`0${i}`}
-              title={s.k}
-              mono={s.v}
-              tone={step >= i ? s.tone : 'idle'}
-              on={step >= i}
-            />
-          </Fragment>
-        ))}
-      </Row>
-
-      {/* the card the human actually sees */}
-      <Reveal on={step >= 1} className="mt-5">
-        <div
-          className={cn(
-            'border-border bg-background rounded-sm border p-5 transition-colors duration-300',
-            step === 1 && 'border-kortix-orange/50',
-            step >= 2 && 'border-kortix-green/50',
-          )}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-              approval requested
-            </span>
-            <Chip on={step >= 2} tone={step >= 2 ? 'ok' : 'idle'}>
-              approved · marko
-            </Chip>
-          </div>
-          <p className="text-foreground mt-4 font-mono text-sm">gmail.send_email</p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <Chip tone="idle">to: dana@northwind.com</Chip>
-            <Chip tone="idle">subject: Q3 launch note</Chip>
-          </div>
-          <p className="text-muted-foreground mt-4 text-[13px] leading-relaxed">
-            The rule matched the arguments, not just the tool name. A recipient outside the allowed
-            domain is what held this call — “may the agent send email” was never the question.
-          </p>
-        </div>
-      </Reveal>
-    </Stage>
-  );
-}
-
-/* ── 4 · how work lands ─────────────────────────────────────────────────────
+/* ── 3 · how work lands ─────────────────────────────────────────────────────
    The git graph. Steps: 0 main · 1 the session's branch · 2 the change request
    · 3 a person merges — and merging is a capability of its own, refused to
    every agent unless an admin grants `project.cr.merge` (landing.steps). */
@@ -605,7 +536,7 @@ export function ChangeRequestDiagram({ step }: { step: number }) {
   );
 }
 
-/* ── 5 · principals ─────────────────────────────────────────────────────────
+/* ── 4 · principals ─────────────────────────────────────────────────────────
    Why an agent is not a loophole. Steps: 0 the person's path · 1 the service
    account's own path · 2 the inheritance that does not exist · 3 the
    intersection a session actually gets (identity.agents, credentials.rows[1]). */
@@ -688,7 +619,7 @@ export function PrincipalDiagram({ step }: { step: number }) {
   );
 }
 
-/* ── 6 · the record ─────────────────────────────────────────────────────────
+/* ── 5 · the record ─────────────────────────────────────────────────────────
    The ledger writes itself as the earlier diagrams run: the gateway that
    resolves the credential is the same thing that writes the row, so there is
    no path to a connected tool that skips it (connectors/content.ts `audit`).
