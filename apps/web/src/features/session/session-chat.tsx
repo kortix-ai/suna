@@ -1457,6 +1457,7 @@ function SessionTurnImpl({
             />
           )}
           <SessionBusyIndicator
+            sessionId={sessionId}
             statusText={throttledStatus || undefined}
             retryLabel={
               retryInfo
@@ -3869,6 +3870,7 @@ export function SessionChat({
                         text={optimisticPrompt || ''}
                         agentNames={agentNames}
                         onFileClick={openFileInComputer}
+                        sessionId={sessionId}
                       />
                     )}
 
@@ -4037,7 +4039,9 @@ export function SessionChat({
                     {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                    {!showOptimistic && isBusy && turns.length === 0 && <SessionBusyIndicator />}
+                    {!showOptimistic && isBusy && turns.length === 0 && (
+                      <SessionBusyIndicator sessionId={sessionId} />
+                    )}
                   </div>
                   {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom
