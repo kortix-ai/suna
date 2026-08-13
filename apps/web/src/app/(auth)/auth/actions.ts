@@ -577,8 +577,10 @@ export async function verifyOtp(prevState: any, formData: FormData) {
         // First-project provisioning used to run on this path too and blocked
         // the OTP form for the length of a managed git repo create plus a full
         // starter push; PROJECT_LANDING_PATH now absorbs that behind the UI.
+        // Same destination, same reason as the OAuth/magic-link path in
+        // `auth/callback/route.ts` — see the comment there.
         if (accountState && !accountHasAppAccess(accountState)) {
-          finalDestination = '/accounts';
+          finalDestination = '/settings/billing';
         }
       }
     } catch {

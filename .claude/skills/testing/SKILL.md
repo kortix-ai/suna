@@ -42,6 +42,7 @@ pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
+pnpm test -- --browser-only --browser-shard=1/2 # One browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
@@ -53,6 +54,7 @@ Do not replace this package contract with a separate CI workflow.
 
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
+Local browser runs use two Playwright workers. CI browser shards use one worker.
 
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release
@@ -73,15 +75,18 @@ Each root run writes a benchmark to
 
 ## Run CI in a warm sandbox
 
-Keep the test commands unchanged. GitHub Actions starts three warm workers in
-parallel. They run `pnpm test`, `pnpm test -- --browser-only`, and
-`pnpm test -- --packages-only` at the exact requested SHA. PR QA selects
-Daytona to avoid Platinum restore latency. Manual runs can select `auto`,
-`platinum`, or `daytona` with `TEST_SANDBOX_PROVIDER`.
+Keep the test commands unchanged. GitHub Actions starts four warm workers in
+parallel. Core and package workers run `pnpm test` and
+`pnpm test -- --packages-only`. Two browser workers run shards `1/2` and `2/2`
+through `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
+requested SHA. PR QA selects Daytona to avoid Platinum restore latency. Manual
+runs can select `auto`, `platinum`, or `daytona` with
+`TEST_SANDBOX_PROVIDER`.
 
-Use one Playwright worker for the local-stack browser lane in CI. A Daytona
-worker has 12 GiB RAM, and concurrent cold Next.js route compilation can kill
-the web process. Keep two workers for deployed staging runs, which set
+Use one Playwright worker for each local-stack browser shard in CI. Two or more
+workers can exhaust the 12 GiB Daytona guest during cold Next.js compilation.
+Prestart Supabase in disposable browser workers so sandbox deletion replaces
+local Supabase teardown. Keep two workers for deployed staging runs, which set
 `E2E_BROWSER_WORKERS` explicitly.
 
 - Use Daytona for the required PR gate. Use `auto` for manual provider fallback.
@@ -147,3 +152,24 @@ For Daytona:
 
 Do not add CI-only test logic. Change `pnpm test` when local and CI behavior
 must change together.
+
+## Run a full-stack pull request preview
+
+- Add `preview` only after a writer reviews the exact same-repository PR SHA.
+- Build the API, gateway, and frontend without credentials in separate jobs.
+- Run the trusted preview controller from `main`.
+- Restore Platinum first. Use Daytona only for an infrastructure failure.
+- Generate the regular `kortix self-host` Compose distribution in the sandbox.
+- Give each preview a fresh PostgreSQL and Supabase data plane.
+- Run `pnpm test -- --target-full` against the sandbox HTTPS origin.
+- Post the preview URL and `/_tests/` report URL in one sticky PR comment.
+- Keep a failed product-test sandbox. Do not hide its failure with fallback.
+- Delete the sandbox on unlabel, close, or PR head change.
+- Remove the `preview` label after a PR head change.
+- Reconcile stale Platinum and Daytona previews each day.
+
+The preview warm image can contain dependencies and Docker layers. It must not
+contain a database or runtime secret. Keep the runtime secret allowlist in
+`tests/src/core/preview-stack.ts`. Use the dedicated preview GitHub App for the
+managed repository and CLI push flows. OAuth initiation remains an explicit
+preview exclusion until a stable callback broker exists.

@@ -67,6 +67,7 @@ type PinnedProps = {
   onGlyphChange: (glyph: GlyphSelection) => void;
   onClear?: () => void;
   disabled?: boolean;
+  align?: 'start' | 'center' | 'end';
 };
 const signaturePin: (props: PinnedProps) => unknown = ProjectIconField;
 
@@ -369,11 +370,13 @@ describe('ProjectIconField popover geometry', () => {
     expect(Number(declared?.[2])).toBe(2);
   });
 
-  test('the popover hangs off the trigger’s leading edge', () => {
-    // align="start" is a layout decision, not a default: the trigger is the
-    // leftmost control in the modal row, so `center` or `end` would push a
-    // 278px popover out past the modal's edge.
-    expect(code).toMatch(/<PopoverContent[\s\S]*?align="start"/);
+  test('the popover defaults to hanging off the trigger’s leading edge', () => {
+    // Default is `start` — `/new` and the create modal put the trigger on the
+    // leading edge of its row, so `center`/`end` would push a ~278px popover
+    // past the edge. Hosts that need the other side (Settings' trailing Icon
+    // row) pass `align` through; the prop is forwarded, not hardcoded.
+    expect(code).toMatch(/align\s*=\s*['"]start['"]/);
+    expect(code).toMatch(/<PopoverContent[\s\S]*?align=\{align\}/);
   });
 
   test('the popover dialog has an accessible name', () => {

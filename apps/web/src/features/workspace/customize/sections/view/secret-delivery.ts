@@ -72,6 +72,10 @@ export type SecretDeliveryPresentation = {
 
 const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> = {
   runtime: {
+    // The only mode where agent code can read the value, so the badge is a
+    // warning and not a neutral label. `secrets-view.tsx` says the same thing
+    // in longhand right below it (`InfoBanner tone="warning"`, "Readable inside
+    // the sandbox"); the two must agree.
     label: 'Sandbox',
     description: 'Available to agent code and commands as an environment variable.',
     tone: 'warning',
@@ -131,28 +135,46 @@ export function secretDeliveryPresentation(
 export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | 'unsupported';
 
 /**
- * Network-boundary delivery is injected by the Platinum provider itself, so the
- * PROJECT has to run on Platinum. A deployment that merely offers Platinum is
- * not enough: on any other provider nothing injects the header and the secret
- * is silently dead.
+ * Two independent mechanisms deliver a network-boundary secret, and a project
+ * needs only one.
+ *
+ * The original one is the **Platinum provider edge**, which is why this used to
+ * be a Platinum check. A deployment that merely offers Platinum was never
+ * enough: on any other provider nothing injects the header and the secret is
+ * silently dead.
+ *
+ * The second is the **in-guest shim**, a per-project experimental flag. It works
+ * on any provider, so it short-circuits the provider question entirely. It is a
+ * deliberate opt-in — it also needs a sandbox image new enough to run the shim,
+ * which nothing here can verify.
  */
 export function networkBoundaryAvailability(
   project?: {
     available_sandbox_providers?: readonly string[] | null;
     default_sandbox_provider?: string | null;
+    experimental?: Partial<Record<string, boolean>> | null;
   } | null,
 ): NetworkBoundaryAvailability {
+  if (project?.experimental?.network_boundary_shim) return 'available';
   if (!project?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
   return project.default_sandbox_provider === 'platinum' ? 'available' : 'project_not_pinned';
 }
 
-/** Why network-boundary delivery cannot run here, and how to fix it. */
+/** The flag's name in Feature flags → Experimental, quoted so the sentence below
+ *  points at something the user can actually find. */
+const SHIM_FLAG = 'Network boundary without Platinum';
+
+/** Why network-boundary delivery cannot run here, and how to fix it. Both
+ *  states are now fixable, so neither says "not available" — the shim flag is
+ *  an escape hatch from either one. */
 export function networkBoundaryBlockedReason(
   availability: NetworkBoundaryAvailability,
 ): string | null {
   if (availability === 'available') return null;
-  if (availability === 'unsupported') return 'Not available in this deployment.';
-  return 'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.';
+  if (availability === 'unsupported') {
+    return `Turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
+  }
+  return `This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider, or turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
 }
 
 export type SecretDeliveryOption = SecretDeliveryPresentation & {
@@ -220,8 +242,193 @@ export function missingAgentGrantNotice(identifier: string): MissingAgentGrantNo
   return {
     title: 'No agent can receive this secret',
     body: `List ${identifier} under an agent's secrets in kortix.yaml, then run the session with that agent. "secrets: all" does not grant this delivery mode — only an explicit list does.`,
-    manifest: `kortix_version: 2\nagents:\n  my-agent:\n    secrets: [${identifier}]`,
+    manifest: agentGrantSnippet(identifier, null),
   };
+}
+
+/** The slice of the project config the grant action reads. Structural, because
+ *  a capability-filtered response blanks `agent_discovery` that the SDK type
+ *  declares as always present. */
+export type AgentGrantConfig = {
+  agent_discovery?: string | null;
+  default_agent?: string | null;
+  /** @deprecated Server alias for `default_agent`. */
+  open_code_default_agent?: string | null;
+  agents?: readonly { name: string; scope?: { env?: string[] | 'all' } | null }[];
+};
+
+export type AgentGrantCandidate = {
+  name: string;
+  /** The agent's manifest list already names the identifier. */
+  alreadyGranted: boolean;
+  /** The agent's declared `secrets:` value. Null for an agent the manifest does
+   *  not declare — the endpoint upserts one. */
+  currentSecrets: string[] | 'all' | null;
+};
+
+export type AgentGrantPlan = {
+  /** Agents the action can name, in manifest order. Empty means no action. */
+  candidates: AgentGrantCandidate[];
+  /** The agent the action preselects, or null when there is nothing to grant to. */
+  preselected: string | null;
+  /**
+   * This edit writes the manifest's FIRST `agents:` block. The server reports
+   * the final verdict as `adopted_governance`; this is the client's estimate,
+   * and it only ever decides whether to ask for a confirmation.
+   */
+  adoptsGovernance: boolean;
+};
+
+function admitsIdentifier(list: readonly string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * Who can this secret be granted to, and does the grant change the project's
+ * governance posture?
+ *
+ * `agent_discovery` is the server's own verdict on whether the manifest
+ * declares any agent (apps/api/src/projects/git/config.ts `resolveConfigAgents`)
+ * — `declarative` means it does, `opencode` means it declares none. Anything
+ * else is a config we cannot read, and an unread config confirms rather than
+ * guesses: a missed confirmation silently revokes working runtime secrets.
+ */
+export function agentGrantPlan(
+  config: AgentGrantConfig | null | undefined,
+  identifier: string,
+): AgentGrantPlan {
+  const declared: AgentGrantCandidate[] = [];
+  for (const agent of config?.agents ?? []) {
+    const name = agent.name?.trim();
+    if (!name || declared.some((candidate) => candidate.name === name)) continue;
+    const env = agent.scope?.env;
+    declared.push({
+      name,
+      alreadyGranted: Array.isArray(env) && admitsIdentifier(env, identifier),
+      currentSecrets: env === 'all' ? 'all' : Array.isArray(env) ? env : null,
+    });
+  }
+
+  const defaultAgent = (config?.default_agent ?? config?.open_code_default_agent ?? '').trim();
+  // A project can carry a default agent that no manifest entry declares — the
+  // endpoint upserts the entry, so it is still a valid target.
+  const candidates =
+    declared.length > 0 || !defaultAgent
+      ? declared
+      : [{ name: defaultAgent, alreadyGranted: false, currentSecrets: null }];
+  const preselected =
+    candidates.find((candidate) => candidate.name === defaultAgent)?.name ??
+    candidates[0]?.name ??
+    null;
+
+  return {
+    candidates,
+    preselected,
+    adoptsGovernance: config?.agent_discovery !== 'declarative',
+  };
+}
+
+/**
+ * The `secrets:` list one agent ends up with, for the hand-edit snippet.
+ *
+ * `all` and an absent key both withhold broker/egress delivery, so neither can
+ * be appended to and the explicit list starts at this identifier. The grant
+ * endpoint is more generous with `all` — it expands the shorthand to every
+ * identifier the PROJECT holds (`grantSecretToAgentV2`). The client cannot
+ * reproduce that: its secrets list omits another member's private override, so
+ * enumerating here would print a list that silently revokes one.
+ */
+export function mergeAgentSecretGrant(
+  current: readonly string[] | 'all' | null | undefined,
+  identifier: string,
+): string[] {
+  if (!Array.isArray(current)) return [identifier];
+  return admitsIdentifier(current, identifier) ? [...current] : [...current, identifier];
+}
+
+/** The kortix.yaml edit that grants the secret, for anyone editing the repo by hand. */
+export function agentGrantSnippet(
+  identifier: string,
+  agent: string | null,
+  current?: readonly string[] | 'all' | null,
+): string {
+  const secrets = mergeAgentSecretGrant(current, identifier);
+  return `kortix_version: 2\nagents:\n  ${agent ?? 'my-agent'}:\n    secrets: [${secrets.join(', ')}]`;
+}
+
+/** One agent needs no picker, so the button carries the name instead. */
+export function agentGrantActionLabel(plan: AgentGrantPlan, selected: string | null): string {
+  return plan.candidates.length === 1 && selected ? `Grant to ${selected}` : 'Grant';
+}
+
+/** Why picking this agent is not a plain addition. Null when it is. */
+export function agentGrantCandidateHint(candidate: AgentGrantCandidate): string | null {
+  if (candidate.alreadyGranted) return 'Already lists this secret.';
+  if (candidate.currentSecrets === 'all') {
+    return 'Runs on "secrets: all". The grant expands that to an explicit list of the project secrets.';
+  }
+  return null;
+}
+
+export type AgentGrantConfirmation = { title: string; body: string; confirmLabel: string };
+
+/**
+ * The one destructive edge of this action. A project with no `agents:` block
+ * hands every project secret to every agent. The first block flips that to
+ * deny-by-default (apps/api/src/projects/agents.ts), so agents that are not
+ * listed lose the runtime secrets they use today.
+ */
+export function agentGrantConfirmation(identifier: string, agent: string): AgentGrantConfirmation {
+  return {
+    title: 'Start governing agents in kortix.yaml',
+    body: `This project declares no agents yet, so every agent receives every project secret. Granting ${identifier} to ${agent} writes the first agents: block. From then on an agent that is not listed receives no project secrets — including the sandbox secrets that work today. Add the other agents to kortix.yaml to keep their access.`,
+    confirmLabel: `Grant to ${agent}`,
+  };
+}
+
+export type AgentGrantOutcome = {
+  tone: 'success' | 'info';
+  message: string;
+  description?: string;
+};
+
+/** Report what the server actually did — an idempotent call changed nothing. */
+export function agentGrantOutcome(result: {
+  identifier: string;
+  agent: string;
+  already_granted: boolean;
+  adopted_governance: boolean;
+}): AgentGrantOutcome {
+  if (result.already_granted) {
+    return {
+      tone: 'info',
+      message: `${result.agent} already receives ${result.identifier}`,
+      description: 'kortix.yaml was not changed.',
+    };
+  }
+  return {
+    tone: 'success',
+    message: `Granted ${result.identifier} to ${result.agent}`,
+    description: result.adopted_governance
+      ? 'kortix.yaml now declares agents. An agent that is not listed receives no project secrets.'
+      : undefined,
+  };
+}
+
+/** Turn a grant failure into the next action the user can take. */
+export function agentGrantErrorMessage(error: unknown): string {
+  const fields =
+    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
+  if (fields.code === 'manifest_v1_unsupported') {
+    return 'This project uses a kortix_version 1 manifest. Edit kortix.toml directly, or upgrade the project to kortix_version 2.';
+  }
+  if (fields.code === 'secret_not_grantable') {
+    return 'This secret is disabled. Change its delivery policy before granting it.';
+  }
+  return typeof fields.message === 'string' && fields.message
+    ? fields.message
+    : 'Could not grant the secret.';
 }
 
 export type SecretDeliverySyncFailure = {
@@ -353,20 +560,31 @@ const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const EXACT_HOST =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
+/** The hosts the textarea declares: lowercased, deduplicated, first-seen order.
+ *  The policy and the verification probe both read the list from here, so the
+ *  host the user is told to probe is a host the boundary actually watches. */
+export function parseBoundaryHosts(hosts: string): string[] {
+  return [
+    ...new Set(
+      hosts
+        .split(/[\s,]+/)
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export function buildNetworkBoundaryPolicy(
   form: NetworkBoundaryPolicyForm,
 ): SecretEgressPolicy | null {
-  const hosts = form.hosts
-    .split(/[\s,]+/)
-    .map((host) => host.trim().toLowerCase())
-    .filter(Boolean);
+  const hosts = parseBoundaryHosts(form.hosts);
   const target = form.injectionTarget.trim();
   const template = form.template.trim();
   if (hosts.length === 0 || hosts.some((host) => !EXACT_HOST.test(host))) return null;
   if (!HEADER_NAME.test(target)) return null;
   if (template && !template.includes('{{secret}}')) return null;
   return {
-    rules: [...new Set(hosts)].map((host) => ({ host })),
+    rules: hosts.map((host) => ({ host })),
     inject: {
       kind: 'header',
       name: target,
@@ -374,6 +592,43 @@ export function buildNetworkBoundaryPolicy(
     },
     on_no_match: 'deny',
     tls: 'terminate',
+  };
+}
+
+export type NetworkBoundaryEchoNotice = {
+  title: string;
+  /** The symptom, then what it actually means. */
+  body: string;
+  /** The shell probe that separates a working boundary from a missing header. */
+  probe: string;
+  docsHref: string;
+  docsLabel: string;
+};
+
+/**
+ * The one thing about this mode nobody can deduce from inside the sandbox.
+ *
+ * The boundary cuts any response that would carry the value back into the
+ * guest, so an echo endpoint answers `curl: (52) Empty reply from server` —
+ * byte-identical to a dead host. A product owner lost days to exactly that
+ * reading, and their agent invented a TLS explanation for it. The panel that
+ * configures the mode is the last place to say so before someone tests it.
+ *
+ * The probe names the first declared host so it can be pasted as-is; with no
+ * host typed yet it falls back to a placeholder rather than an empty URL.
+ */
+export function networkBoundaryEchoNotice(hosts: string): NetworkBoundaryEchoNotice {
+  const host = parseBoundaryHosts(hosts)[0] ?? 'api.example.com';
+  return {
+    title: 'A blocked echo looks exactly like a dead host',
+    body: 'A response that would carry this value back into the sandbox is cut, so curl reports "curl: (52) Empty reply from server". On an allowed host that is the boundary working, not the host being down.',
+    probe: [
+      '# Probe an endpoint that USES the credential, never one that echoes headers.',
+      `curl -s -o /dev/null -w '%{http_code}\\n' https://${host}/<authenticated-path>`,
+      '# 200 = the header arrived. 401 = it did not.',
+    ].join('\n'),
+    docsHref: '/docs/project/secrets#verify-it-with-two-probes',
+    docsLabel: 'Verify it with two probes',
   };
 }
 

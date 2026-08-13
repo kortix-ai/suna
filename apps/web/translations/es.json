@@ -66,6 +66,11 @@
         "current": "Idioma Actual",
         "select": "Seleccionar Idioma"
       },
+      "accountSettings": {
+        "title": "Cuenta",
+        "description": "Administra facturación, miembros y configuración de la organización",
+        "button": "Configuración de la cuenta"
+      },
       "deleteAccount": {
         "title": "Eliminar Cuenta",
         "description": "Elimina permanentemente tu cuenta y todos los datos asociados",
@@ -320,7 +325,10 @@
         "¡Arriba! ¿Qué vamos a crear?",
         "¡Buen día! ¿Listos para la acción?"
       ],
-      "afternoon": ["¡Buenas tardes! ¿En qué te ayudo?", "¿Qué tal el día? ¿Qué necesitas?"],
+      "afternoon": [
+        "¡Buenas tardes! ¿En qué te ayudo?",
+        "¿Qué tal el día? ¿Qué necesitas?"
+      ],
       "evening": [
         "¡Buenas noches! ¿Trabajando hasta tarde?",
         "¡Hola! ¿En qué andamos esta noche?",
@@ -4361,24 +4369,6 @@
       "line63JsxAttrDescriptionSystemRolesShipWithThePlatformCreateCustom": "Los roles del sistema vienen con la plataforma. Crea roles personalizados para agrupar exactamente los permisos que necesita tu cuenta.",
       "line68JsxTextCreateARole": "Crear un rol",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "Buscar roles por nombre o clave..."
-    },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "Personas con acceso a esta instancia. Invita a compañeros por email — obtendrán acceso instantáneo si ya usan Kortix; de lo contrario, les enviaremos un enlace de registro.",
-      "line142JsxTextInviteTeammate": "Invitar compañero",
-      "line149JsxTextLoadingTeam": "Cargando equipo…",
-      "line152JsxAttrTitleFailedToLoadMembers": "No se pudieron cargar los miembros",
-      "line160JsxAttrTitleJustYouForNow": "Solo tú, por ahora",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "Invita a un compañero a colaborar en esta instancia. Verá los proyectos a los que le concedas acceso, y sus sesiones permanecerán privadas respecto a las tuyas.",
-      "line166JsxTextInviteTeammate": "Invitar compañero",
-      "line205JsxAttrTitleRemoveFromTeam": "¿Eliminar del equipo?",
-      "line221JsxAttrTitleRevokeInvite": "¿Revocar invitación?",
-      "line324JsxTextPending": "Pendiente ·",
-      "line332JsxTextExpires": "· vence",
-      "line345JsxAttrAriaLabelRevokeInvite": "Revocar invitación",
-      "line412JsxAttrAriaLabelMemberActions": "Acciones de miembro",
-      "line564JsxTextEmailAddress": "Dirección de correo electrónico",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "Si aún no tienen Kortix, les enviaremos un enlace de registro."
     },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "Cifrado con AES-256-GCM, limitado solo a este proyecto. Los agentes leen mediante",

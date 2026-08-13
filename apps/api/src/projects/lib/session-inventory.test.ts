@@ -127,6 +127,105 @@ describe('selectSessionRowsForViewer', () => {
   });
 });
 
+/**
+ * The project index page pre-creates a warm session on mount so the sandbox is
+ * already up when the user finishes typing. Until it is claimed it holds no
+ * user work, so the sidebar must not show a session the user never started.
+ */
+describe('selectSessionRowsForViewer — unclaimed warm sessions', () => {
+  const warmMarker = (state: string) => ({
+    warm_session: {
+      state,
+      sandbox_slug: 'base',
+      created_at: '2026-07-21T00:00:00.000Z',
+    },
+  });
+
+  function visible(rows: Array<typeof projectSessions.$inferSelect>) {
+    return selectSessionRowsForViewer({
+      rows,
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    }).items.map((item) => item.row.sessionId);
+  }
+
+  test('visible scope hides an unclaimed warm session', () => {
+    expect(visible([row('own'), row('warm', { metadata: warmMarker('available') })])).toEqual([
+      'own',
+    ]);
+  });
+
+  test('a claimed warm session lists like any other session', () => {
+    expect(visible([row('claimed-warm', { metadata: warmMarker('claimed') })])).toEqual([
+      'claimed-warm',
+    ]);
+  });
+
+  // A discard only ever overwrites a row that is still `available`, so a
+  // discarded warm session is one a human never touched either. This is the
+  // steady state after the reaper stops an unused warm box and the next ensure
+  // finds the row incompatible.
+  test('visible scope hides a discarded warm session too', () => {
+    expect(visible([row('own'), row('discarded-warm', { metadata: warmMarker('discarded') })])).toEqual([
+      'own',
+    ]);
+  });
+
+  // The reaper flips `project_sessions.status` to stopped and leaves the marker
+  // at `available`. That row must not surface through the resumable-stopped
+  // branch below it.
+  test('a reaped warm session stays hidden even though it looks resumable', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('reaped-warm', { status: 'stopped', metadata: warmMarker('available') })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map([['reaped-warm', 'stopped']]),
+    });
+
+    expect(selected.items).toEqual([]);
+  });
+
+  // A manager auditing the project must see every session, warm ones included:
+  // they are real rows holding a real sandbox.
+  test('project scope keeps the unclaimed warm session', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('own'), row('warm', { metadata: warmMarker('available') })],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['own', 'warm']);
+  });
+
+  test('a malformed warm marker never hides a real session', () => {
+    const rows = [
+      row('no-metadata', { metadata: null }),
+      row('empty', { metadata: {} }),
+      row('string-marker', { metadata: { warm_session: 'available' } }),
+      row('array-marker', { metadata: { warm_session: ['available'] } }),
+      row('no-state', { metadata: { warm_session: { sandbox_slug: 'base' } } }),
+    ];
+    expect(visible(rows)).toEqual([
+      'no-metadata',
+      'empty',
+      'string-marker',
+      'array-marker',
+      'no-state',
+    ]);
+  });
+});
+
 describe('mergeSessionOwnerIdentities', () => {
   test('resolves humans, agent service accounts, and stale principals distinctly', () => {
     const humanId = '33333333-3333-4333-8333-333333333333';

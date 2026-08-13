@@ -139,40 +139,77 @@ describe('web ECS migration', () => {
     }
   });
 
-  it('builds preview images without credentials and invalidates approval on new commits', () => {
+  it('builds preview images without credentials and deploys one full self-host sandbox', () => {
     const workflow = read('.github/workflows/deploy-preview.yml');
-    const previewScript = read('infra/scripts/ecs-preview.sh');
-    const previewTerraform = read('infra/terraform/environments/preview/main.tf');
+    const buildJobs = workflow.slice(
+      workflow.indexOf('  build-api:'),
+      workflow.indexOf('  deploy:'),
+    );
 
-    expect(workflow.match(/persist-credentials: false/g)).toHaveLength(3);
-    expect(workflow.match(/push: false/g)).toHaveLength(3);
+    expect(buildJobs.match(/persist-credentials: false/g)).toHaveLength(3);
+    expect(buildJobs.match(/push: false/g)).toHaveLength(3);
+    expect(buildJobs.match(/platforms: linux\/amd64/g)).toHaveLength(3);
     expect(workflow).toContain("github.event.action == 'labeled'");
     expect(workflow).toContain("github.event.action == 'synchronize'");
     expect(workflow).toContain('labels/preview');
-    expect(previewScript).toContain('WEB_SECRET_NAME="kortix-preview-web-env"');
-    expect(previewTerraform).toContain('name = "kortix-preview-web-env"');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');
+    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(3);
+    expect(workflow).toContain('pnpm test -- --target-full');
+    expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
+    expect(workflow).toContain('Test report:');
+    expect(workflow).toContain('deployments: write');
+    expect(workflow).toContain('type: choice');
+    expect(workflow).toContain('- platinum');
+    expect(workflow).toContain('- daytona');
+    expect(workflow).not.toContain('infra/scripts/ecs-preview.sh');
+    expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
-    expect(workflow).toContain('"- **Frontend:** https://${web}"');
+    expect(workflow).toContain('**Preview:**');
   });
 
-  it('disables Vercel for Dev and PR previews only', () => {
+  it('disables Vercel auto-deploys everywhere except staging', () => {
     const config = read('apps/web/vercel.json');
     const ignore = read('apps/web/scripts/vercel-ignore.sh');
 
     expect(config).toContain('"main": false');
     expect(config).toContain('"staging": true');
-    expect(config).toContain('"prod": true');
+    // prod must NOT auto-deploy on push: during the 2026-08-10 v0.12.7 rollout
+    // the auto-deployed new frontend called routes the still-old API lacked
+    // and every project load failed. kortix.com deploys only from
+    // deploy-prod.yml's deploy-web-vercel job, after verify-live-version.
+    expect(config).toContain('"prod": false');
+    expect(ignore).toContain('prod deploys only via deploy-prod.yml');
     expect(ignore).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
     expect(ignore).not.toContain('*:main');
-    expect(ignore).toContain('dev and PR previews deploy on ECS only');
+    expect(ignore).toContain('dev deploys on ECS; PR previews deploy in sandboxes');
   });
 
-  it('uses Basic auth credentials in QA instead of Vercel bypass headers', () => {
+  it('deploys the prod Vercel frontend only after the API serves the release', () => {
+    const workflow = read('.github/workflows/deploy-prod.yml');
+    expect(workflow).toContain('deploy-web-vercel:');
+    expect(workflow).toMatch(/deploy-web-vercel:\s*\n\s*name:[^\n]*\n\s*needs: \[version, verify-live-version\]/);
+    expect(workflow).toContain('prj_SoUUSNJPvOTDneE0E7faWHFuWMAY');
+    expect(workflow).toMatch(/frontend-auth-proof:\s*\n\s*name:[^\n]*\n\s*needs: \[[^\]]*deploy-web-vercel\]/);
+  });
+
+  it('carries both Basic auth credentials and the Vercel SSO bypass in QA', () => {
     const config = read('tests/playwright.config.ts');
     expect(config).toContain('WEB_PROTECTION_PASSWORD');
     expect(config).toContain("username: 'kortix'");
-    expect(config).not.toContain('x-vercel-protection-bypass');
+    // Two different protections guard two different deployed targets, so the
+    // config carries both. Basic auth covers password-protected environments.
+    // Staging/preview use Vercel SSO protection instead, which httpCredentials
+    // cannot satisfy — only `x-vercel-protection-bypass` gets past it, and
+    // `x-vercel-set-bypass-cookie` keeps the bypass alive across the app's
+    // client-side navigations and fetches. Both headers are no-ops locally.
+    // Dropping either one silently 302s the browser lane to vercel.com/sso-api.
+    expect(config).toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
+    expect(config).toContain("'x-vercel-protection-bypass': vercelBypass");
+    expect(config).toContain("'x-vercel-set-bypass-cookie': 'samesitenone'");
+    expect(config).toContain('extraHTTPHeaders: vercelBypassHeaders');
     expect(existsSync(resolve(root, 'tests/visual/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/accessibility/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/e2e/examples/playwright.config.ts'))).toBe(false);

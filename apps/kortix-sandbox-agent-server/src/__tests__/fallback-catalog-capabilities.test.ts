@@ -6,11 +6,11 @@ describe('MINIMAL_FALLBACK_MODELS capability metadata', () => {
     expect(MINIMAL_FALLBACK_MODELS['openai/gpt-5.5']?.temperature).toBe(false)
   })
 
-  // Kimi K3 (managed, aster transport) is temperature:false on models.dev —
-  // advertising support would make OpenCode send a `temperature` and 400 the
-  // turn, the same regression class as the OpenAI reasoning-model guard below.
-  test('kimi-k3 (managed aster) does not advertise temperature support', () => {
-    expect(MINIMAL_FALLBACK_MODELS['kimi-k3']?.temperature).toBe(false)
+  // 2026-08-10 managed slim-down: kimi-k3 is deactivated — the fallback
+  // catalog must not advertise it at all (a fallback entry for a model the
+  // gateway resolves as model_not_found would 400 every selection of it).
+  test('kimi-k3 (deactivated managed model) is absent from the fallback catalog', () => {
+    expect(MINIMAL_FALLBACK_MODELS['kimi-k3']).toBeUndefined()
   })
 
   test('no OpenAI reasoning model in the fallback catalog claims temperature support', () => {
@@ -25,9 +25,7 @@ describe('MINIMAL_FALLBACK_MODELS capability metadata', () => {
   // (managed models -> 'kortix', BYOK entries -> their real provider id), the
   // same field the served /v1/models catalog carries (catalog-models.ts).
   test('every fallback model carries an explicit `provider` field matching its wire id', () => {
-    expect(MINIMAL_FALLBACK_MODELS['claude-opus-4.8']?.provider).toBe('kortix')
     expect(MINIMAL_FALLBACK_MODELS['glm-5.2']?.provider).toBe('kortix')
-    expect(MINIMAL_FALLBACK_MODELS['kimi-k3']?.provider).toBe('kortix')
     expect(MINIMAL_FALLBACK_MODELS['openai/gpt-5.5']?.provider).toBe('openai')
     expect(MINIMAL_FALLBACK_MODELS['google/gemini-3.5-flash']?.provider).toBe('google')
     expect(MINIMAL_FALLBACK_MODELS['deepseek/deepseek-v4-flash']?.provider).toBe('deepseek')

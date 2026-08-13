@@ -101,6 +101,11 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     upsertCreditAccountCalls.push({ accountId, data });
   },
+  // The write-ownership chokepoint (account-write-owner.ts) imports this name;
+  // a partial mock without it fails the whole import chain at module load.
+  updateCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
+    upsertCreditAccountCalls.push({ accountId, data });
+  },
 }));
 
 mock.module('../billing/services/credits', () => ({
@@ -145,7 +150,9 @@ mock.module('../shared/stripe', () => ({
   }),
 }));
 
-const { resolveAccountId } = await import('../shared/resolve-account');
+const { resolveAccountId, resolveScopedAccountId } = await import('../shared/resolve-account');
+const { runWithContext } = await import('../lib/request-context');
+const { setImpersonationContext } = await import('../shared/impersonation');
 
 beforeEach(() => {
   state.membership = null;
@@ -227,5 +234,90 @@ describe('resolveAccountId legacy billing sync', () => {
     expect(stripeListCalls).toHaveLength(0);
     expect(upsertCreditAccountCalls).toHaveLength(0);
     expect(insertCalls).toHaveLength(0);
+  });
+});
+
+// ─── Act-as ──────────────────────────────────────────────────────────────────
+// Account resolution is the funnel every account-scoped route goes through, so
+// it is where the impersonated account has to win — a fall-through here would
+// silently scope a support operator's writes to their OWN account.
+
+const IMP_ADMIN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const IMP_TARGET = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const IMP_GRANT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+function actingAs<T>(fn: () => Promise<T>): Promise<T> {
+  return runWithContext('GET', '/v1/projects', async () => {
+    setImpersonationContext({
+      grantId: IMP_GRANT,
+      targetAccountId: IMP_TARGET,
+      impersonatorUserId: IMP_ADMIN,
+    });
+    return fn();
+  });
+}
+
+function fakeRequest(query?: string) {
+  return {
+    req: {
+      query: (_key: string) => query,
+      json: async () => ({}),
+    },
+    get: (key: string) => (key === 'userId' ? IMP_ADMIN : undefined),
+  } as never;
+}
+
+describe('resolveAccountId under impersonation', () => {
+  test('returns the target account and never the operator own membership', async () => {
+    // The operator HAS a membership of their own. Without the act-as branch
+    // this is exactly what would come back.
+    state.membership = { accountId: 'acct_operator_own' };
+    const accountId = await actingAs(() => resolveAccountId(IMP_ADMIN));
+    expect(accountId).toBe(IMP_TARGET);
+  });
+
+  test('does not run the legacy Stripe recovery sync against the customer', async () => {
+    state.membership = { accountId: 'acct_operator_own' };
+    state.creditAccount = { tier: 'free', stripeSubscriptionId: null };
+    state.legacyCustomer = { id: 'cus_x', email: 'x@example.com' };
+    await actingAs(() => resolveAccountId(IMP_ADMIN));
+    expect(stripeListCalls).toHaveLength(0);
+    expect(upsertCreditAccountCalls).toHaveLength(0);
+  });
+
+  test('another user id is unaffected by the operator grant', async () => {
+    state.membership = { accountId: 'acct_someone_else' };
+    const accountId = await actingAs(() => resolveAccountId('some-other-user'));
+    expect(accountId).toBe('acct_someone_else');
+  });
+});
+
+describe('resolveScopedAccountId under impersonation', () => {
+  test('no explicit account_id resolves to the target', async () => {
+    state.membership = { accountId: 'acct_operator_own' };
+    const accountId = await actingAs(() => resolveScopedAccountId(fakeRequest(), 'query'));
+    expect(accountId).toBe(IMP_TARGET);
+  });
+
+  test('an explicit account_id matching the target is accepted', async () => {
+    const accountId = await actingAs(() => resolveScopedAccountId(fakeRequest(IMP_TARGET), 'query'));
+    expect(accountId).toBe(IMP_TARGET);
+  });
+
+  test('an explicit account_id for ANOTHER account is refused, not silently retargeted', async () => {
+    state.membership = { accountId: 'acct_operator_own' };
+    let status: number | undefined;
+    let code: string | undefined;
+    await actingAs(async () => {
+      try {
+        await resolveScopedAccountId(fakeRequest('acct_operator_own'), 'query');
+      } catch (error) {
+        const httpError = error as { status?: number; res?: Response };
+        status = httpError.status;
+        code = (await httpError.res!.clone().json()).code;
+      }
+    });
+    expect(status).toBe(403);
+    expect(code).toBe('impersonation_invalid');
   });
 });

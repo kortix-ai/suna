@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
@@ -16,9 +16,13 @@ export function UpgradeButton({ accountId, className }: UpgradeButtonProps) {
 
   if (!isBillingEnabled() || !accountState) return null;
 
-  const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
   const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-  const isFreeOrNoPlan = tierKey === 'free' || tierKey === 'none';
+  // The RESOLVED plan family, not `subscription.tier_key`. `free` and `none`
+  // are the only two keys in the free family, so this is the same set of plans
+  // the tier-key compare covered — but it also stops pitching "Upgrade" at an
+  // account on an admin trial, whose stored tier_key is still `free` while
+  // every server gate treats it as Team.
+  const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
 
   if (!isFreeOrNoPlan || hasActiveSubscription) return null;
 

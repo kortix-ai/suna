@@ -225,7 +225,18 @@ function DeviceAuthorize() {
           </div>
 
           <div className="space-y-3">
-            <Button size="lg" className="w-full" onClick={handleApprove} disabled={busy}>
+            {selectedCaps.size === 0 ? (
+              <p className="text-muted-foreground text-center text-xs">
+                Select at least one access to approve. A connection with no access cannot do
+                anything, and changing it later needs a new request.
+              </p>
+            ) : null}
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={handleApprove}
+              disabled={busy || selectedCaps.size === 0}
+            >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
               Approve connection
             </Button>

@@ -6,6 +6,8 @@ import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
+import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
@@ -240,6 +242,8 @@ export async function runProjectMaintenance(): Promise<void> {
       connectorAttachments,
       runtimeWakes,
       parkedRuntimes,
+      monitorBoxes,
+      monitorEventsPurged,
     ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
@@ -362,6 +366,26 @@ export async function runProjectMaintenance(): Promise<void> {
         );
         return { examined: 0, lost: 0, healed: 0, errors: 1 };
       }),
+      // Monitors (docs/specs/2026-08-12-monitors.md D5). Converges the
+      // per-project monitor box: flag on + >=1 enabled monitor => a box exists
+      // running the current manifest revision; flag off, zero monitors, or an
+      // exceeded budget => no box. Also the ONLY place a persistent monitor box
+      // is observed alive, which is what keeps its billing window earning.
+      reconcileMonitorBoxes().catch((err) => {
+        console.warn(
+          '[project-maintenance] monitor-box reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { ...emptyMonitorReconcileResult(), errors: 1 };
+      }),
+      // 30-day retention on the append-only monitor event log.
+      purgeExpiredMonitorEvents().catch((err) => {
+        console.warn(
+          '[project-maintenance] monitor-event retention failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return 0;
+      }),
     ]);
     const hadAction = Boolean(
       idle.stopped ||
@@ -388,7 +412,14 @@ export async function runProjectMaintenance(): Promise<void> {
         runtimeWakes.errors ||
         parkedRuntimes.lost ||
         parkedRuntimes.healed ||
-        parkedRuntimes.errors,
+        parkedRuntimes.errors ||
+        monitorBoxes.created ||
+        monitorBoxes.restarted ||
+        monitorBoxes.stopped ||
+        monitorBoxes.disabledOverCap ||
+        monitorBoxes.deferred ||
+        monitorBoxes.errors ||
+        monitorEventsPurged,
     );
     if (hadAction) {
       console.log('[project-maintenance] completed', {
@@ -403,6 +434,8 @@ export async function runProjectMaintenance(): Promise<void> {
         snapshotGc,
         connectorAttachments,
         runtimeWakes,
+        monitorBoxes,
+        monitorEventsPurged,
       });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any
@@ -432,6 +465,13 @@ export async function runProjectMaintenance(): Promise<void> {
       `parked_verified=${parkedRuntimes.examined}`,
       `parked_lost=${parkedRuntimes.lost}`,
       `parked_healed=${parkedRuntimes.healed}`,
+      // A monitor box only stays billable while this sweep observes it, so
+      // `monitor_observed` going flat while boxes exist is the signal that
+      // monitor billing has silently stopped earning.
+      `monitor_projects=${monitorBoxes.projects}`,
+      `monitor_observed=${monitorBoxes.observed}`,
+      `monitor_created=${monitorBoxes.created}`,
+      `monitor_stopped=${monitorBoxes.stopped}`,
       `action=${hadAction}`,
     );
 

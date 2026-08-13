@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type CreatedScimToken,
   type ScimToken,
@@ -283,6 +284,17 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         <div className="px-4 py-4">
           {tokensQuery.isLoading ? (
             <Skeleton className="h-12 w-full rounded-md" />
+          ) : tokensQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title="Couldn't load SCIM status"
+              description={tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined}
+              action={
+                <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : tokens.length > 0 ? (
             <ProvisioningHealthPanel accountId={accountId} lastSyncAt={lastSyncAt} />
           ) : (
@@ -300,7 +312,17 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             is exactly when the admin is pasting these values into the IdP. It
             tucks itself away automatically on the first successful sync. */}
         <div className="border-border border-t">
-          <Disclosure className="group" open={tokens.length > 0 && freshness === 'never'}>
+          {/* `defaultOpen` + `key`, not `open`: this wants a derived STARTING
+              value the admin can then override, which a controlled `open` with
+              no `onOpenChange` cannot express — it would now freeze the trigger.
+              The key re-seeds it when the prompt condition actually flips, so it
+              still opens on a fresh token and tucks away after the first sync,
+              while a manual collapse in between sticks. */}
+          <Disclosure
+            key={tokens.length > 0 && freshness === 'never' ? 'awaiting-first-sync' : 'synced'}
+            className="group"
+            defaultOpen={tokens.length > 0 && freshness === 'never'}
+          >
             <DisclosureTrigger>
               <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -441,7 +463,24 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 </div>
               )}
 
-              {!tokensQuery.isLoading && tokens.length === 0 && (
+              {!tokensQuery.isLoading && tokensQuery.isError && (
+                <div className="px-4 py-4">
+                  <ErrorState
+                    size="sm"
+                    title="Couldn't load SCIM tokens"
+                    description={
+                      tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
+                    }
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                        Retry
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length === 0 && (
                 <div className="px-4 py-4">
                   <EmptyState
                     icon={KeyRound}
@@ -452,7 +491,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 </div>
               )}
 
-              {!tokensQuery.isLoading && tokens.length > 0 && (
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length > 0 && (
                 <div className="divide-border divide-y">
                   {tokens.map((t) => (
                     <div key={t.token_id} className="flex items-center gap-3 px-4 py-3">

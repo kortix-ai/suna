@@ -10,6 +10,8 @@ import {
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
+  networkBoundaryEchoNotice,
+  parseBoundaryHosts,
   readSecretDeliverySync,
   secretDeliveryBlockedReason,
   secretDeliveryOptions,
@@ -77,6 +79,13 @@ describe('secretDeliveryPresentation', () => {
   });
 });
 
+/** The two fix sentences, pinned once. They are user-facing copy, so the exact
+ *  wording is the assertion — a helper that stopped naming the flag would still
+ *  return a non-empty string. */
+const SHIM_FIX = 'Turn on "Network boundary without Platinum" in Feature flags → Experimental.';
+const PIN_FIX =
+  'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider, or turn on "Network boundary without Platinum" in Feature flags → Experimental.';
+
 describe('networkBoundaryAvailability', () => {
   test('requires the project itself to run on Platinum', () => {
     expect(
@@ -114,17 +123,55 @@ describe('networkBoundaryAvailability', () => {
     expect(networkBoundaryAvailability(undefined)).toBe('unsupported');
     expect(networkBoundaryAvailability(null)).toBe('unsupported');
   });
+
+  test('the shim flag makes it available on a project with no Platinum at all', () => {
+    // The second mechanism does not run at a provider edge, so the provider the
+    // project is pinned to stops mattering.
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona'],
+        default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('available');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('available');
+  });
+
+  test('an off or absent flag leaves the provider verdict untouched', () => {
+    // The flag is opt-in only: it can grant availability, never remove it.
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona'],
+        default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: false },
+      }),
+    ).toBe('unsupported');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+        experimental: { network_boundary_shim: false },
+      }),
+    ).toBe('available');
+  });
 });
 
 describe('networkBoundaryBlockedReason', () => {
-  test('names the exact fix for an unpinned project', () => {
-    expect(networkBoundaryBlockedReason('project_not_pinned')).toBe(
-      'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
-    );
+  test('names both fixes for an unpinned project', () => {
+    expect(networkBoundaryBlockedReason('project_not_pinned')).toBe(PIN_FIX);
   });
 
-  test('keeps the deployment wording, and says nothing when delivery works', () => {
-    expect(networkBoundaryBlockedReason('unsupported')).toBe('Not available in this deployment.');
+  test('a deployment without Platinum is now fixable, so it says how', () => {
+    // It used to read "Not available in this deployment.", which is no longer
+    // true — the shim needs no Platinum, so the state is an opt-in away.
+    expect(networkBoundaryBlockedReason('unsupported')).toBe(SHIM_FIX);
+    expect(networkBoundaryBlockedReason('unsupported')).not.toContain('Not available');
     expect(networkBoundaryBlockedReason('available')).toBeNull();
   });
 });
@@ -145,15 +192,14 @@ describe('secretDeliveryOptions', () => {
     expect(secretDeliveryOptions('broker', 'available', 'unsupported')[1]?.disabled).toBe(false);
     expect(secretDeliveryOptions('egress', 'available', 'unsupported')[2]).toMatchObject({
       disabled: true,
-      disabledReason: 'Not available in this deployment.',
+      disabledReason: SHIM_FIX,
     });
   });
 
   test('disables network delivery on an unpinned project and states the fix', () => {
     expect(secretDeliveryOptions('runtime', 'available', 'project_not_pinned')[2]).toMatchObject({
       disabled: true,
-      disabledReason:
-        'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
+      disabledReason: PIN_FIX,
     });
   });
 
@@ -551,5 +597,56 @@ describe('buildNetworkBoundaryPolicy', () => {
     expect(buildNetworkBoundaryPolicy({ ...base, hosts: 'https://api.example.com' })).toBeNull();
     expect(buildNetworkBoundaryPolicy({ ...base, injectionTarget: 'bad header' })).toBeNull();
     expect(buildNetworkBoundaryPolicy({ ...base, template: 'Bearer token' })).toBeNull();
+  });
+});
+
+describe('parseBoundaryHosts', () => {
+  test('lowercases, splits on commas and newlines, and drops duplicates', () => {
+    expect(parseBoundaryHosts('API.Example.com, api.example.com\nuploads.example.com  ')).toEqual([
+      'api.example.com',
+      'uploads.example.com',
+    ]);
+  });
+
+  test('reads an empty field as no hosts', () => {
+    expect(parseBoundaryHosts('   \n , ')).toEqual([]);
+  });
+});
+
+/**
+ * The incident this text exists for: an agent probed an echo endpoint, read the
+ * cut connection as a dead host, and invented a TLS explanation. Nothing in the
+ * product said the boundary was there.
+ */
+describe('networkBoundaryEchoNotice', () => {
+  test('names the symptom and denies the wrong conclusion', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    expect(notice.body).toContain('curl: (52) Empty reply from server');
+    expect(notice.body).toContain('the boundary working, not the host being down');
+  });
+
+  test('probes the first declared host with a credential-consuming request', () => {
+    const notice = networkBoundaryEchoNotice('API.Stripe.com\nuploads.stripe.com');
+    expect(notice.probe).toContain('https://api.stripe.com/');
+    expect(notice.probe).toContain('never one that echoes headers');
+    expect(notice.probe).toContain('200 = the header arrived. 401 = it did not.');
+  });
+
+  test('falls back to a placeholder host before anything is typed', () => {
+    expect(networkBoundaryEchoNotice('').probe).toContain('https://api.example.com/');
+  });
+
+  test('points at the two-probe procedure in the docs', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
+    expect(notice.docsLabel).toBe('Verify it with two probes');
+  });
+
+  test('never suggests looking for the value in the sandbox', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    const text = `${notice.title} ${notice.body} ${notice.probe}`;
+    expect(text).not.toContain('env ');
+    expect(text).not.toContain('{{secret}}');
+    expect(text.toLowerCase()).not.toContain('authorization:');
   });
 });

@@ -1,4 +1,19 @@
-export type PricingPlanId = 'free' | 'team' | 'enterprise';
+/**
+ * Ids for the MARKETING plan cards. DISPLAY-ONLY.
+ *
+ * These are React keys and copy lookups for the three cards on /pricing and the
+ * two in the upgrade modal. They are NOT billing identifiers and must never be
+ * compared against an API tier key, `subscription.tier_key`, `billing_model`, a
+ * Stripe price/product id, or an entitlement key.
+ *
+ * `'team_seat'` is spelled out for exactly that reason: the card it names is the
+ * live $40/seat per-seat offer (`billing_model === 'per_seat'`), while the API
+ * key `team` is the RETIRED $200 flat plan. The id used to be `'team'`, so the
+ * same six letters meant two different products depending on which file you
+ * were reading. To branch on what an account is actually on, use
+ * `resolvedPlan(accountState)` from `@kortix/sdk` — not one of these ids.
+ */
+export type PricingPlanId = 'free' | 'team_seat' | 'enterprise';
 
 export type UpgradeModalPlanId = Exclude<PricingPlanId, 'enterprise'>;
 
@@ -28,7 +43,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     ],
   },
   {
-    id: 'team',
+    id: 'team_seat',
     name: 'Team',
     price: '$40',
     unit: '/ seat / mo',

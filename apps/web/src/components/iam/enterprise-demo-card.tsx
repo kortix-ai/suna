@@ -11,17 +11,28 @@
 // sees the state read-only plus a "contact Kortix" hint instead of a switch
 // that would only ever fail. Platform admins keep the working switch here; the
 // operator console (/admin/accounts → Entitlements) is the other write path.
+//
+// **Renders bare `SettingsRow`s — mount it inside a `SettingsRowGroup`.** It
+// used to draw its own bordered box with a `border-t` footer strip; both are
+// rows now, in the Linear shape the rest of the settings panel uses (see
+// `components/ui/settings-row.tsx`). The second row appears only while the
+// preview is on, which is exactly when its CTA is reachable.
+//
+// The row no longer repeats the words "Enterprise features": the section
+// heading directly above it already says that, and a heading whose only child
+// restates it is a line the reader has to skip.
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SettingsRow } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { accountStateKeys } from '@/hooks/billing/use-account-state';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { accountStateKeys } from '@/hooks/billing/use-account-state';
 import { getEnterpriseDemo, setEnterpriseDemo } from '@/lib/iam-client';
 
 interface EnterpriseDemoCardProps {
@@ -62,25 +73,22 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
   const isLoading = stateQuery.isLoading || adminRoleQuery.isLoading;
 
   return (
-    <div className="bg-popover rounded-md border">
-      <div className="flex items-center justify-between gap-4 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-foreground flex items-center gap-2 text-sm font-medium">
-            Enterprise features
+    <>
+      <SettingsRow
+        label={
+          <>
+            Turn on the preview
             <Badge variant="beta" size="sm">
               Demo
             </Badge>
-          </p>
-          <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">
-            Turn on an interactive preview of SSO, SCIM, advanced RBAC, and audit logs for this
-            account. Evaluation only, not a production plan.
-          </p>
-          {!isLoading && !isPlatformAdmin ? (
-            <p className="text-muted-foreground/70 mt-1.5 max-w-prose text-xs">
-              Contact Kortix to enable this preview.
-            </p>
-          ) : null}
-        </div>
+          </>
+        }
+        description={
+          !isLoading && !isPlatformAdmin
+            ? 'Evaluation only, not a production plan. Contact Kortix to switch it on.'
+            : 'Evaluation only, not a production plan.'
+        }
+      >
         {isLoading ? (
           <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
         ) : isPlatformAdmin ? (
@@ -93,28 +101,28 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
           />
         ) : (
           <Badge variant={enabled ? 'success' : 'muted'} size="sm" className="shrink-0">
-            {enabled ? 'Enabled' : 'Not enabled'}
+            {enabled ? 'On' : 'Off'}
           </Badge>
         )}
-      </div>
+      </SettingsRow>
       {/* The request-enterprise CTA lives on the EnterpriseUpsell panel below —
           one CTA per intent on the page. `openDemo` stays wired for the
           entitled state, where the upsell is hidden. */}
       {enabled ? (
-        <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-          <p className="text-muted-foreground text-xs">
-            For production use (SLA, DPA, support) upgrade to the Enterprise plan.
-          </p>
+        <SettingsRow
+          label="Production access"
+          description="An SLA, a DPA, and support come with the Enterprise plan."
+        >
           <Button
             variant="outline"
             size="sm"
             className="shrink-0"
             onClick={() => openDemo({ source: 'accounts-enterprise-access' })}
           >
-            Request enterprise access
+            Request access
           </Button>
-        </div>
+        </SettingsRow>
       ) : null}
-    </div>
+    </>
   );
 }

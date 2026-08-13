@@ -42,11 +42,11 @@ import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
-import type { CustomizeSection } from '@/lib/customize-sections';
+import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type SandboxTemplate,
   listProjectAccessRequests,
@@ -106,7 +106,7 @@ export function ProjectHome({
   }, [metaSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   const accessRequests = useQuery({
     queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
@@ -181,7 +181,7 @@ export function ProjectHome({
               variant="ghost"
               size="icon"
               className="bg-background/80 relative backdrop-blur-sm"
-              onClick={() => openCustomize('members')}
+              onClick={() => openSettings('members')}
               aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
             >
               <Bell className="size-4" />
@@ -222,17 +222,28 @@ export function ProjectHome({
             )}
             prefill={prefill}
             onAgentSelectionChange={setSelectedAgent}
-            toolbarSlot={
-              metaSelected ? (
-                <MetaRuntimeIndicator />
-              ) : showSandboxPicker ? (
-                <SandboxPicker
-                  items={sandboxItems}
-                  activeSlug={activeSlug}
-                  selectedSlug={selectedSlug}
-                  onSelect={setSelectedSlug}
-                />
-              ) : null
+            toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
+            // The template chooser lives inside the overrides panel, not on the
+            // bar — the bar keeps only agent + model.
+            sandboxSlot={
+              !metaSelected && showSandboxPicker
+                ? {
+                    summary: selectedSlug
+                      ? (sandboxItems.find((t) => t.slug === selectedSlug)?.name ?? selectedSlug)
+                      : 'Agent default',
+                    overridden: selectedSlug !== null,
+                    control: (
+                      <SandboxPicker
+                        items={sandboxItems}
+                        activeSlug={activeSlug}
+                        selectedSlug={selectedSlug}
+                        onSelect={setSelectedSlug}
+                      />
+                    ),
+                    onReset: () => setSelectedSlug(null),
+                    resetLabel: 'Reset to agent default',
+                  }
+                : undefined
             }
           />
         }
@@ -454,11 +465,11 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  // Agents, Connectors and Skills graduated out of Customize into their own
+  // Agents, Connectors and Skills graduated out of Settings into their own
   // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
-  // carry a capability tab key instead of a CustomizeSection and navigate
+  // carry a capability tab key instead of a SettingsTab and navigate
   // there directly.
-  section: CustomizeSection | CapabilityTab['key'];
+  section: SettingsTab | CapabilityTab['key'];
 };
 
 const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
@@ -502,13 +513,13 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     desc: 'Shape how your agent thinks and acts.',
     // 'agent' (the route segment), not the old 'agents' overlay section —
     // `isCapabilityTabKey` matches on the key, so the wrong spelling would
-    // silently fall through to `openCustomize('agents')` and open nothing.
+    // silently fall through to `openSettings('agents')` and open nothing.
     section: 'agent',
   },
 ];
 
 function ProjectHomeSections({ projectId }: { projectId: string }) {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   const router = useRouter();
   const tiles = PROJECT_SETUP_TILES;
 
@@ -525,7 +536,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
               onClick={() =>
                 isCapabilityTabKey(section)
                   ? router.push(capabilityTabHref(projectId, section))
-                  : openCustomize(section)
+                  : openSettings(section)
               }
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >

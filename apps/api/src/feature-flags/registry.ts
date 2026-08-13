@@ -17,12 +17,31 @@
  * Per-project state is DB-only (projects.metadata) — never in kortix.yaml.
  * The `experimental` metadata key is a stable storage detail; do not rename it.
  *
- * To add a flag:
- *   1. Add the key to FeatureFlagMapSchema in @kortix/api-contract (typecheck
- *      forces this) and to the SDK's runtime key list.
- *   2. Append an entry below, DECLARING its enforcement mode.
- *   3. Gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
- *      its runtime behavior on `resolveFeatureFlag` (enforcement: 'behavioral').
+ * To add a flag, the key goes in SIX places. Typecheck forces only one of them
+ * (the SDK union), so do not rely on a clean build:
+ *
+ *   1. `FeatureFlagMapSchema` — packages/api-contract/src/index.ts
+ *   2. TWO sites in packages/api-contract/src/__tests__/schemas.test.ts: a
+ *      project fixture, and a hand-written copy of the key list
+ *   3. The `FeatureFlagKey` union AND the `FEATURE_FLAG_KEYS` array —
+ *      packages/sdk/.../projects-client/projects.ts. Only the union is
+ *      typechecked; a missing array entry compiles fine.
+ *   4. Another hand-written copy in that package's projects.test.ts
+ *   5. An entry below, DECLARING its enforcement mode
+ *   6. One `useFeatureFlag` call + one map entry in
+ *      apps/web/src/lib/use-project-feature-flags.ts (and move the trailing
+ *      `isLoading:` to the newly-last hook)
+ *
+ * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
+ * its runtime behavior on `resolveFeatureFlag` (enforcement: 'behavioral').
+ *
+ * FOUR separate tests guard those six sites, each in its own package, so each
+ * one fails only when that package's suite runs — they surface one CI round at
+ * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
+ * registry and catches 1/3/5 only. List every holder before you start:
+ *
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "review_center"
+ *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
  * catalog to the contract key list and requires every entry to declare its
@@ -215,6 +234,70 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'monitors',
+    name: 'Monitors',
+    description:
+      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental; see docs/specs/2026-08-12-monitors.md.',
+    stability: 'experimental',
+    // Monitors need a provider that can run a persistent (never auto-stopped)
+    // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
+    // ≥1 min and E2B caps runtime at 1 h — so the surface stays dark unless
+    // Platinum credentials are configured.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in: off by default even where Platinum is available.
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'network_boundary_shim',
+    name: 'Network boundary without Platinum',
+    description:
+      'Use network-boundary secrets on a project that does not run on Platinum. The credential is injected by Kortix at request time instead of by a provider edge, so the sandbox still never receives the value. Requires a sandbox image that runs the in-guest shim; without it a boundary secret saves but nothing in the sandbox can spend it.',
+    stability: 'experimental',
+    // No operator env gates it — the delivery path is ordinary API code that
+    // ships with the app. What it needs is a sandbox image new enough to run
+    // the shim, which is a per-deployment fact the API cannot introspect, so
+    // the decision is left to whoever turns it on for a project.
+    available: () => true,
+    // Explicit opt-in. Defaulting this on would advertise boundary delivery to
+    // every non-Platinum project, and on an older sandbox image the secret
+    // would save and then silently never reach anything — the failure mode this
+    // whole feature exists to remove.
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    // Exactly two effects. An earlier version of this note also claimed the
+    // flag governs whether the broker route serves egress/network secrets — it
+    // does not. That route accepts them unconditionally and holds no reference
+    // to any flag; it was widened separately. Overstating what a flag governs
+    // is how someone later flips it expecting the wrong thing to change.
+    enforcementNote:
+      'On ⇒ networkBoundaryDeliveryAvailable() accepts this project without ' +
+      'Platinum, and provisioning stops treating a missing provider edge as ' +
+      'fatal (secrets/network-boundary-availability.ts, projects/lib/' +
+      'sandbox-env-sync.ts, platform/services/session-sandbox.ts). ' +
+      'OFF again with a boundary secret still saved ⇒ new sessions fail to ' +
+      'provision until the secret changes delivery.',
+  },
+  {
+    key: 'warm_sessions',
+    name: 'Warm Sessions',
+    description:
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, and it uses one of your concurrent-session slots until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+    // The surface is small and server-owned, but the cost tradeoff is real and
+    // the presence model is new. `beta` says "we intend this on for everyone,
+    // and we expect to tune the grant".
+    stability: 'beta',
+    available: () => true,
+    // On by default: an instant session start is the point of the product, and
+    // the cost is bounded per project by the partial unique index (one warm
+    // session per user per project) and by the sandbox deadline.
+    platformDefault: () => true,
+    // NOT 'ui-only'. A flag that only hid client surface would let any other
+    // caller keep booting billed sandboxes, which defeats the reason someone
+    // turns this off.
     enforcement: 'routes',
   },
 ];

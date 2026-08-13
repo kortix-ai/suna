@@ -32,8 +32,15 @@ mock.module('../shared/db', () => ({
             limit: async () => [],
           }),
         }),
+        // The monitor-event retention sweep selects straight off one table
+        // (no join) before deleting the batch it found.
+        where: () => ({
+          orderBy: () => ({ limit: async () => [] }),
+          limit: async () => [],
+        }),
       }),
     }),
+    selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
   },
 }));
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));

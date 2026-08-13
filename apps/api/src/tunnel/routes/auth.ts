@@ -1,6 +1,10 @@
 import { HTTPException } from 'hono/http-exception';
 import { and, eq, or } from 'drizzle-orm';
 import { accountMembers, tunnelConnections } from '@kortix/db';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../../shared/impersonation';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { db } from '../../shared/db';
 
@@ -55,7 +59,22 @@ export async function getTunnelReadContext(c: any) {
     });
   }
 
-  if (userId && userId !== accountId) {
+  // ACT-AS: this resolver reads `account_members` DIRECTLY rather than through
+  // `getAccountMembership`, so it does not see the impersonation branch — the
+  // operator has no membership row in the customer's account, the probe below
+  // finds nothing, and the fall-back silently re-points the request at
+  // `accountId: userId`, the OPERATOR's own fleet. That is the one thing this
+  // feature refuses to do: a delete or a token rotation would hit the
+  // operator's own machines while the banner, the audit `accountId` and the
+  // `admin.impersonate.action` row all name the customer. Fail closed instead.
+  if (isImpersonationBlockedAccount(userId, accountId)) {
+    throw new HTTPException(403, {
+      message: 'Impersonated requests cannot target another account',
+    });
+  }
+  const impersonatingThisAccount = isImpersonatingAccount(userId, accountId);
+
+  if (userId && userId !== accountId && !impersonatingThisAccount) {
     const [membership] = await db
       .select({ accountRole: accountMembers.accountRole })
       .from(accountMembers)
@@ -77,12 +96,18 @@ export async function getTunnelReadContext(c: any) {
 
   // Owners and admins can access the organization fleet and their personal
   // machines. Account API keys have no userId and access only their account.
-  const ownerClause =
-    userId && userId !== accountId
-      ? or(eq(tunnelConnections.accountId, accountId), eq(tunnelConnections.accountId, userId))
-      : eq(tunnelConnections.accountId, accountId);
+  //
+  // The personal-machines half is dropped while acting as an account: the
+  // operator's own `userId` is their own personal account id, so ORing it in
+  // would put THEIR machines in a fleet listing the banner says belongs to the
+  // customer — and, worse, inside `authorizedAccountIds`, which the RPC relay
+  // authorizes against.
+  const includePersonal = Boolean(userId) && userId !== accountId && !impersonatingThisAccount;
+  const ownerClause = includePersonal
+    ? or(eq(tunnelConnections.accountId, accountId), eq(tunnelConnections.accountId, userId!))
+    : eq(tunnelConnections.accountId, accountId);
 
-  const authorizedAccountIds = userId && userId !== accountId ? [accountId, userId] : [accountId];
+  const authorizedAccountIds = includePersonal ? [accountId, userId!] : [accountId];
 
   return { userId, accountId, authorizedAccountIds, ownerClause };
 }

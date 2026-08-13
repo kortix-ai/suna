@@ -1,4 +1,5 @@
 import type {
+  GatewayAttemptFailure,
   GatewayConfig,
   GatewayLogger,
   ModelFallbackCondition,
@@ -8,13 +9,17 @@ import type {
 import {
   CircuitOpenError,
   ClientAbortError,
+  NetworkError,
+  TimeoutError,
   UpstreamHttpError,
+  UpstreamMisconfiguredError,
   looksLikeTerminalAuthFailure,
 } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
+import { appendAttemptFailure, failureChainMessage } from './failure-chain';
 import { applyGenerationDefaults } from './generation-defaults';
 import type { TraceEmitter, TraceFields } from './trace';
 
@@ -83,6 +88,8 @@ export interface FailoverContext {
    *  fields the client didn't already set get filled). Omitted entirely
    *  when the host configured no generation defaults at all. */
   generationDefaultsForModel?: (model: string) => ModelGenerationDefaults | undefined;
+  /** Candidate failures already observed by an earlier validation pass. */
+  attemptFailures?: GatewayAttemptFailure[];
 }
 
 export interface RoutedUpstreamCandidate {
@@ -102,6 +109,7 @@ export interface FailoverSuccess {
    *  reached the wire (tracing/capture) should use this instead of
    *  `ctx.payload`. */
   dispatchedPayload: Record<string, unknown>;
+  attemptFailures: GatewayAttemptFailure[];
 }
 
 export type FailoverResult =
@@ -123,7 +131,9 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     fallbackOn,
     signal,
     generationDefaultsForModel,
+    attemptFailures: priorAttemptFailures,
   } = ctx;
+  const attemptFailures = [...(priorAttemptFailures ?? [])];
   const tried: string[] = [];
   const modelsTried: string[] = [];
   let attempts = 0;
@@ -201,6 +211,31 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       break;
     } catch (err) {
       lastError = err;
+      const upstreamError =
+        err instanceof UpstreamHttpError
+          ? parseUpstreamBody(err.body)
+          : { message: errorMessage(err) };
+      const errorKind =
+        err instanceof ClientAbortError
+          ? 'client_disconnected'
+          : err instanceof TimeoutError
+            ? 'upstream_timeout'
+            : err instanceof CircuitOpenError
+              ? 'circuit_open'
+              : err instanceof UpstreamMisconfiguredError
+                ? 'upstream_misconfigured'
+                : err instanceof NetworkError
+                  ? 'upstream_network_error'
+                  : 'upstream_dispatch_error';
+      appendAttemptFailure(attemptFailures, {
+        provider: descriptor.provider,
+        routeModel,
+        resolvedModel: descriptor.resolvedModel,
+        stage: 'dispatch',
+        ...(err instanceof UpstreamHttpError ? { status: err.status } : {}),
+        code: upstreamError.code ?? errorKind,
+        message: upstreamError.message,
+      });
       debug('upstream_attempt_failed', {
         provider: descriptor.provider,
         ms: Date.now() - attemptStart,
@@ -224,6 +259,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           errorMessage: 'Client disconnected before a response was ready',
           attempts,
           candidatesTried: tried,
+          attemptFailures,
           request: capturedRequest,
         });
         return {
@@ -240,13 +276,13 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
               resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
               requestId,
               suggestion: 'No action needed — the client already disconnected.',
+              attemptFailures,
             }),
             499,
           ),
         };
       }
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
-        const upstreamError = parseUpstreamBody(err.body);
         const credentialFailure =
           hasCredentialFallback &&
           (err.status === 401 ||
@@ -284,6 +320,10 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           provider: descriptor.provider,
           status: err.status,
         });
+        const clientErrorCode =
+          upstreamError.code === 'context_length_exceeded'
+            ? 'context_length_exceeded'
+            : 'upstream_client_error';
         emit({
           ...trace,
           resolvedModel: descriptor.resolvedModel,
@@ -291,10 +331,11 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           billingMode: descriptor.billingMode,
           status: err.status,
           ok: false,
-          errorCode: 'upstream_client_error',
+          errorCode: clientErrorCode,
           errorMessage: upstreamError.message,
           attempts,
           candidatesTried: tried,
+          attemptFailures,
           request: capturedRequest,
         });
         return {
@@ -302,14 +343,21 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           response: json(
             gatewayErrorBody({
               message: upstreamError.message,
-              code: 'upstream_client_error',
-              upstreamCode: upstreamError.code,
+              code: clientErrorCode,
+              upstreamCode:
+                clientErrorCode === 'context_length_exceeded'
+                  ? clientErrorCode
+                  : upstreamError.code,
               upstreamStatus: err.status,
               provider: descriptor.provider,
               requestedModel: trace.requestedModel ?? '',
               resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
               requestId,
-              suggestion: suggestionFor(err.status),
+              suggestion:
+                clientErrorCode === 'context_length_exceeded'
+                  ? 'Compact the conversation or reduce the input, then retry.'
+                  : suggestionFor(err.status),
+              attemptFailures,
             }),
             err.status,
           ),
@@ -330,12 +378,17 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       lastError instanceof UpstreamHttpError
         ? parseUpstreamBody(lastError.body)
         : { message: errorMessage(lastError) };
+    const message = failureChainMessage(
+      attemptFailures,
+      upstreamError.message || 'All upstreams unavailable',
+      requestId,
+    );
     debug('all_upstreams_exhausted', {
       circuitOpen: open,
       status,
       tried,
       attempts,
-      error: upstreamError.message,
+      error: message,
     });
     emit({
       ...trace,
@@ -344,16 +397,17 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       ok: false,
       resolvedModel: lastDescriptor?.resolvedModel,
       errorCode,
-      errorMessage: upstreamError.message,
+      errorMessage: message,
       attempts,
       candidatesTried: tried,
+      attemptFailures,
       request: capturedRequest,
     });
     return {
       kind: 'response',
       response: json(
         gatewayErrorBody({
-          message: upstreamError.message || 'All upstreams unavailable',
+          message,
           code: errorCode,
           upstreamCode: upstreamError.code,
           upstreamStatus: lastError instanceof UpstreamHttpError ? lastError.status : undefined,
@@ -364,6 +418,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           suggestion: suggestionFor(
             lastError instanceof UpstreamHttpError ? lastError.status : status,
           ),
+          attemptFailures,
         }),
         status,
       ),
@@ -372,6 +427,14 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
 
   return {
     kind: 'success',
-    value: { upstream, chosen, tried, modelsTried, attempts, dispatchedPayload },
+    value: {
+      upstream,
+      chosen,
+      tried,
+      modelsTried,
+      attempts,
+      dispatchedPayload,
+      attemptFailures,
+    },
   };
 }

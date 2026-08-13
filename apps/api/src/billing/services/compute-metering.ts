@@ -29,7 +29,11 @@ import {
 } from '@kortix/db';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { config } from '../../config';
-import { type ProviderName, getProvider } from '../../platform/providers';
+import {
+  type ProviderName,
+  type SandboxWorkloadType,
+  getProvider,
+} from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
 import {
@@ -42,12 +46,17 @@ import {
   releaseComputeWindow,
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
+import { resolveAccountBilling } from './billing-cache';
 import {
   billableWindowEnd,
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
 import { deductCredits } from './credits';
+import {
+  DEFAULT_COMPUTE_RATE_MULTIPLIER,
+  clampComputeRateMultiplier,
+} from './entitlement-overrides';
 import { accountMetersCompute } from './tiers';
 
 /** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
@@ -68,25 +77,63 @@ export interface StartComputeOpts {
   provider?: ProviderName;
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
-  workloadType?: 'session' | 'app';
+  /**
+   * `monitor` is the per-project monitor box. It has no `session_sandboxes` and
+   * no `app_runtimes` row — its `sandbox_id` IS `project_monitor_boxes.box_id`,
+   * which is what every monitor-aware billing join keys on. No extra column is
+   * needed for it (unlike `app_runtime_id`, which exists because an App runtime
+   * id and its compute row's sandbox id were allowed to diverge).
+   */
+  workloadType?: SandboxWorkloadType;
   appRuntimeId?: string | null;
 }
 
 /**
  * Compute the cost (in USD, pre-balance-deduction) for a window.
  * All supported providers use one public customer rate.
+ *
+ * `rateMultiplier` is the account's custom compute price
+ * (`ResolvedBilling.compute.rateMultiplier`). It defaults to 1 — list price,
+ * which is what every account bills at unless an operator set an override — and
+ * is clamped into `[0, MAX_COMPUTE_RATE_MULTIPLIER]` here as well as at the
+ * resolver, because this function is also called directly (pricing pages,
+ * tests) with a number that never passed through the resolver. 0 is a
+ * deliberate value: free compute.
  */
 export function calculateComputeCost(
   spec: SandboxSpec,
   durationSeconds: number,
   provider: ProviderName = 'daytona',
+  rateMultiplier: number = DEFAULT_COMPUTE_RATE_MULTIPLIER,
 ): number {
   if (durationSeconds <= 0) return 0;
   const rate = getProviderComputeRateCard(provider);
   const cpuCost = spec.cpuCores * rate.cpuPerCoreSecond * durationSeconds;
   const memCost = spec.memoryGb * rate.memoryPerGbSecond * durationSeconds;
   const diskCost = spec.diskGb * rate.diskPerGbSecond * durationSeconds;
-  return cpuCost + memCost + diskCost;
+  return (cpuCost + memCost + diskCost) * clampComputeRateMultiplier(rateMultiplier);
+}
+
+/**
+ * The account's compute rate multiplier, resolved through the 30s billing
+ * cache (one cached row read per account, not a query per settle).
+ *
+ * FAILS OPEN TO LIST PRICE. A resolver or database hiccup must never stop a
+ * window from being billed, and 1.0 is what the account would have paid before
+ * custom pricing existed — the safe direction is "bill normally", not "bill
+ * nothing" and not "throw away the window".
+ */
+async function computeRateMultiplierFor(accountId: string): Promise<number> {
+  try {
+    const resolved = await resolveAccountBilling(accountId);
+    return clampComputeRateMultiplier(resolved.compute.rateMultiplier);
+  } catch (err) {
+    console.warn(
+      `[compute-metering] could not resolve the compute rate multiplier for ${accountId}; billing at list price:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return DEFAULT_COMPUTE_RATE_MULTIPLIER;
+  }
 }
 
 /**
@@ -177,7 +224,17 @@ async function settleComputeWindow(
     diskGb: row.diskGb,
     gpuCount: row.gpuCount,
   };
-  const windowCost = calculateComputeCost(spec, durationSeconds, row.provider as ProviderName);
+  // Resolved BEFORE the CAS claim so the amount that is claimed, debited, and
+  // (on a failed debit) released is one number. Reading it after the claim
+  // would let a mid-settle override change make the release arithmetic differ
+  // from the claim.
+  const rateMultiplier = await computeRateMultiplierFor(row.accountId);
+  const windowCost = calculateComputeCost(
+    spec,
+    durationSeconds,
+    row.provider as ProviderName,
+    rateMultiplier,
+  );
   // CLAIM BEFORE DEBITING. The order is the whole fix.
   //
   // This used to debit first and move the cursor afterwards, with the update
@@ -206,7 +263,12 @@ async function settleComputeWindow(
     await deductCredits(
       row.accountId,
       windowCost,
-      `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s`,
+      // The multiplier is named in the description only when it is not list
+      // price, so a custom-priced debit is self-explaining in the ledger and an
+      // ordinary one reads exactly as it always has.
+      `Sandbox compute · ${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
+        rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
+      }`,
       'compute_debit',
       // Derived from WHAT is billed — this session and this window end — so a
       // retry after a lost response produces the same key and replays instead

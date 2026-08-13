@@ -142,6 +142,8 @@ import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-re
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 import { missingWarmSessionConnections } from '../lib/warm-session-connections';
+import { requireFeatureFlag } from '../../feature-flags/gate';
+import { GitOperationError } from '../git/mirror';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -328,6 +330,10 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    // After membership authz, so a non-member learns nothing. A warm session is
+    // billed compute, so the switch has to stop the SPEND, not just the UI.
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
+    if (gate) return gate;
 
     const scope = {
       accountId: loaded.row.accountId,
@@ -428,6 +434,29 @@ projectsApp.openapi(
       if (error instanceof WarmSessionCreateFailure) {
         return sendSessionCreateError(c, error.detail);
       }
+      // A project whose repo cannot be read (no credentials, deleted remote,
+      // bad ref) simply cannot be warmed. That is a fact about the project, not
+      // a server fault, and warming is SPECULATIVE — the browser fires it on
+      // every project view and silently ignores any failure. Reporting it as
+      // 5xx made every such page view emit a server error, which is both wrong
+      // and noisy enough that `08-accounts-project-access.spec.ts` (which
+      // asserts no 5xx on /v1/projects) failed on it.
+      //
+      // Deliberately narrow: only this classified git failure is downgraded.
+      // Anything else still throws, so a genuine bug in this path still pages.
+      if (error instanceof GitOperationError) {
+        console.warn('[warm-session] project repo unreadable; skipping warm session', {
+          projectId,
+          kind: error.kind,
+        });
+        return c.json(
+          {
+            error: 'This project cannot prepare a warm session right now.',
+            code: 'WARM_SESSION_UNAVAILABLE',
+          },
+          409,
+        );
+      }
       throw error;
     }
   },
@@ -466,6 +495,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
+    if (gate) return gate;
 
     const scope = {
       accountId: loaded.row.accountId,
@@ -2644,6 +2675,13 @@ projectsApp.openapi(
       added_secrets: [],
       dropped_bindings: [],
       retroactive: true,
+      // `connector_bindings` above is the RESOLVED map, so an inherited session
+      // and an overridden one look identical in it. Clients read this flag to
+      // tell them apart — without it the browser rendered "None selected" for a
+      // session that was simply inheriting, then wrote an explicit
+      // zero-connector override on the next untouched save.
+      connector_bindings_configured: visible.row.connectorBindingsConfigured === true,
+      connector_bindings_inherit_unbound: visible.row.connectorBindingsInheritUnbound === true,
       detail: 'Current session scope.',
     });
   },
@@ -2965,6 +3003,11 @@ projectsApp.openapi(
     const body = parsedBody.data;
     const wantsSecrets = Object.hasOwn(body, 'secrets');
     const wantsBindings = Object.hasOwn(body, 'connector_bindings');
+    // `null` CLEARS the override: drop the stored rows AND the configured flag,
+    // so every granted alias resolves to the project default again. `{}` is the
+    // opposite — an explicit "no connectors at all". Before this existed an
+    // override was one-way: nothing in the API could undo one.
+    const clearsBindings = wantsBindings && body.connector_bindings === null;
     const wantsRequired = Object.hasOwn(body, 'require_connectors');
 
     // The agent grant is the ceiling for both axes. Resolved from the agent this
@@ -3097,7 +3140,12 @@ projectsApp.openapi(
 
     let nextBindings = currentDurableBindings;
     let droppedBindings: string[] = [];
-    if (wantsBindings) {
+    if (clearsBindings) {
+      // No grant check and no binding validation: removing every stored binding
+      // cannot widen what this session may reach beyond the project default,
+      // which is what an un-overridden session already resolves to.
+      nextBindings = {};
+    } else if (wantsBindings) {
       const requested = Object.fromEntries(
         Object.entries(body.connector_bindings ?? {}).map(([alias, value]) => [
           alias,
@@ -3152,7 +3200,7 @@ projectsApp.openapi(
       source: 'request';
       createdBy: string;
     }> = [];
-    if (wantsBindings) {
+    if (wantsBindings && !clearsBindings) {
       const [ownerServiceAccount] = visible.row.createdBy
         ? await db
             .select({ id: serviceAccounts.serviceAccountId })
@@ -3216,7 +3264,9 @@ projectsApp.openapi(
       if (wantsSecrets) sessionUpdates.secretsAllowlist = nextAllowlist;
       if (wantsRequired) sessionUpdates.requiredConnectors = nextRequired;
       if (wantsBindings) {
-        sessionUpdates.connectorBindingsConfigured = true;
+        // `null` reverts the session to inheriting project defaults; anything
+        // else is an explicit override.
+        sessionUpdates.connectorBindingsConfigured = !clearsBindings;
         // Deliberately NOT touching connectorBindingsInheritUnbound. Forcing it
         // false here meant a single scope save silently cut off project-default
         // fallback for every alias the caller did not re-bind — a session that had
@@ -3311,6 +3361,12 @@ projectsApp.openapi(
       dropped_secrets: canReadSecretNames ? droppedSecrets : [],
       added_secrets: addedSecrets,
       dropped_bindings: droppedBindings,
+      // Echoed so the caller can re-render from THIS response instead of
+      // re-fetching the scope to learn whether an override now exists.
+      connector_bindings_configured: wantsBindings
+        ? !clearsBindings
+        : visible.row.connectorBindingsConfigured === true,
+      connector_bindings_inherit_unbound: visible.row.connectorBindingsInheritUnbound === true,
       // Connector bindings ARE retroactive (resolved at call time). Secrets are
       // not: a dropped one stops being delivered from the next prompt, but the
       // agent's context and any shell it already spawned still hold what it read.
@@ -3331,7 +3387,9 @@ projectsApp.openapi(
           : scopeAppliedLive
             ? 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.'
             : 'Applies from the next prompt.'
-        : 'No change to the secrets scope.',
+        : clearsBindings
+          ? 'Connector access is back to the project defaults.'
+          : 'No change to the secrets scope.',
     });
   },
 );

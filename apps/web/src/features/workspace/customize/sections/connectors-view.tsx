@@ -345,7 +345,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   if (query.isLoading) return <MasterDetailSkeleton />;
   if (isForbidden) {
     return (
-      <div className="mx-auto w-full max-w-2xl px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl space-y-8">
         <InfoBanner
           tone="warning"
           icon={ShieldAlert}
@@ -362,7 +362,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   }
   if (query.isError) {
     return (
-      <div className="mx-auto w-full max-w-2xl px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl space-y-8">
         <InfoBanner
           tone="destructive"
           title={tI18nHardcoded.raw(
@@ -3520,7 +3520,7 @@ export function AddAppPanel({
   });
   if (!canWrite) {
     return (
-      <div className="mx-auto w-full max-w-2xl px-6 py-10">
+      <div className="mx-auto w-full max-w-2xl space-y-8">
         <EmptyState
           icon={Plug}
           title="No connectors yet"

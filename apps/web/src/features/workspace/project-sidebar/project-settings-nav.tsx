@@ -16,7 +16,7 @@ import { useDevice } from '@/hooks/use-device';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
  * The two project-configuration entries in the sidebar. They are different
@@ -71,11 +71,11 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
 
 /**
  * Mod+, — printed on the Settings row, so it does what that row does: open the
- * Customize overlay. A keycap that opens something other than the row it sits
+ * Settings overlay. A keycap that opens something other than the row it sits
  * on is worse than no keycap.
  */
 export function useSettingsKeyboardShortcut() {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
 
@@ -88,13 +88,13 @@ export function useSettingsKeyboardShortcut() {
         event.key === ','
       ) {
         event.preventDefault();
-        openCustomize();
+        openSettings();
         if (isMobile) setOpenMobile(false);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [openCustomize, isMobile, setOpenMobile]);
+  }, [openSettings, isMobile, setOpenMobile]);
 }
 
 /**
@@ -168,10 +168,10 @@ export function ProjectCustomizeNavItem() {
  * Settings — the bottom-of-footer entry, on the line the old Customize row
  * held, and the one that keeps its gear and its Mod+, keycap.
  *
- * Opens the Customize overlay, which is not a route: it floats over whatever
- * project page is active so you keep your place (see customize-store). That
- * rules out a `<Link prefetch>` — there is no href to prefetch — and it is why
- * active state reads the store's `open` flag rather than the pathname.
+ * Opens the Settings overlay, which is not a route: it floats over whatever
+ * project page is active so you keep your place (see settings-panel-store).
+ * That rules out a `<Link prefetch>` — there is no href to prefetch — and it
+ * is why active state reads the store's `open` flag rather than the pathname.
  *
  * Ungated on purpose. The Customize row gates on the two capability leaves
  * because that is where it navigates; the overlay also holds Agents, LLM
@@ -182,17 +182,17 @@ export function ProjectCustomizeNavItem() {
 export function ProjectSettingsNavItem() {
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const isActive = useCustomizeStore((s) => s.open);
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
+  const isActive = useSettingsPanelStore((s) => s.open);
   // useDevice() returns an OS string, never a boolean. `isMac ? … : …` on its
   // raw return is always truthy — that is how the old Customize row showed ⌘
   // to Windows users.
   const isMac = useDevice() === 'mac';
 
   const handleClick = useCallback(() => {
-    openCustomize();
+    openSettings();
     if (isMobile) setOpenMobile(false);
-  }, [openCustomize, isMobile, setOpenMobile]);
+  }, [openSettings, isMobile, setOpenMobile]);
 
   return (
     <SidebarMenuItem>

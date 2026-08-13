@@ -1,35 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  QUEUE_AUTO_EXPAND_AT,
   nextFocusAfterRemove,
   queueSummaryLabel,
   reorderTargetIndex,
-  shouldExpandQueue,
 } from './queued-messages-logic';
-
-describe('shouldExpandQueue', () => {
-  test('stays collapsed for a short queue', () => {
-    expect(shouldExpandQueue(0, null)).toBe(false);
-    expect(shouldExpandQueue(1, null)).toBe(false);
-    expect(shouldExpandQueue(QUEUE_AUTO_EXPAND_AT - 1, null)).toBe(false);
-  });
-
-  test('expands on its own once the queue is long enough to need scanning', () => {
-    expect(shouldExpandQueue(QUEUE_AUTO_EXPAND_AT, null)).toBe(true);
-    expect(shouldExpandQueue(9, null)).toBe(true);
-  });
-
-  test('an explicit choice beats the count, in both directions', () => {
-    expect(shouldExpandQueue(9, false)).toBe(false);
-    expect(shouldExpandQueue(1, true)).toBe(true);
-  });
-});
 
 describe('queueSummaryLabel', () => {
   test('says what will happen, not just how many', () => {
     expect(queueSummaryLabel(1)).toBe('1 queued · sends when this turn ends');
-    expect(queueSummaryLabel(4)).toBe('4 queued · sends when this turn ends');
+  });
+
+  test('says all of them send, because all of them do', () => {
+    // The queue drains as one batch. "4 queued · sends when this turn ends"
+    // reads as a schedule — one now, three later — which is the behaviour this
+    // surface used to have and no longer does.
+    expect(queueSummaryLabel(4)).toBe('4 queued · all send when this turn ends');
   });
 });
 

@@ -148,7 +148,8 @@ describe('draftToSpec — new trigger spec path uses the real manifest file', ()
   const draft = {
     slug: 'nightly', name: 'Nightly', type: 'cron' as const, agent: 'kortix', model: null,
     enabled: true, promptTemplate: 'do it', cron: '0 0 3 * * *', runAt: null,
-    timezone: 'UTC', secretEnv: null, sessionMode: 'fresh' as const, pinnedSessionId: null,
+    timezone: 'UTC', secretEnv: null, run: null, monitorMode: null, intervalSeconds: null,
+    expectEventWithinSeconds: null, sessionMode: 'fresh' as const, pinnedSessionId: null,
         sessionKey: null,
         filter: null,
   };

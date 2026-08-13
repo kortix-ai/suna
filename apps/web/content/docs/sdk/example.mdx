@@ -62,7 +62,7 @@ async function main() {
   //    prompt only (ids come from projects.modelPicker() and
   //    projects.detail().config.agents).
   await session.send('What files are in this repo?', {
-    model: { providerID: 'kortix', modelID: 'claude-sonnet-4.6' },
+    model: { providerID: 'kortix', modelID: 'glm-5.2' },
   });
 
   // 7. Wait for the turn to finish — the session.idle event, not a sleep.

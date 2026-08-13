@@ -22,6 +22,11 @@ const databaseStore: TriggerRuntimeCatalogStore = {
 
   async upsert(projectId, spec, scheduleRevision) {
     const now = new Date();
+    // A monitor is cataloged like any other trigger (its full spec lands in
+    // `schedule_spec`, which the observer reads), but it has no schedule:
+    // `initialTriggerScheduleSlot` returns null for every non-cron type, so
+    // `next_fire_at` stays NULL and `claimDueScheduleSlots` — which filters
+    // `trigger_type = 'cron'` — can never claim it.
     const nextFireAt = initialTriggerScheduleSlot(spec, now);
     await db
       .insert(projectTriggerRuntime)

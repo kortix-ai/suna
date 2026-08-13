@@ -66,6 +66,11 @@
         "current": "Langue Actuelle",
         "select": "Sélectionner la Langue"
       },
+      "accountSettings": {
+        "title": "Compte",
+        "description": "Gérer la facturation, les membres et les paramètres de l'organisation",
+        "button": "Paramètres du compte"
+      },
       "deleteAccount": {
         "title": "Supprimer le Compte",
         "description": "Supprime définitivement ton compte et toutes les données associées",
@@ -4364,24 +4369,6 @@
       "line63JsxAttrDescriptionSystemRolesShipWithThePlatformCreateCustom": "Les rôles système sont fournis avec la plateforme. Créez des rôles personnalisés pour regrouper exactement les autorisations dont votre compte a besoin.",
       "line68JsxTextCreateARole": "Créer un rôle",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "Rechercher des rôles par nom ou clé..."
-    },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "Personnes ayant accès à cette instance. Invitez des coéquipiers par e-mail — ils obtiennent un accès instantané s’ils utilisent déjà Kortix, sinon nous leur envoyons un lien d’inscription.",
-      "line142JsxTextInviteTeammate": "Inviter un coéquipier",
-      "line149JsxTextLoadingTeam": "Chargement de l’équipe…",
-      "line152JsxAttrTitleFailedToLoadMembers": "Échec du chargement des membres",
-      "line160JsxAttrTitleJustYouForNow": "Juste vous, pour l’instant",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "Invitez un coéquipier à collaborer sur cette instance. Il verra les projets auxquels vous lui accordez l’accès, et ses sessions resteront privées par rapport aux vôtres.",
-      "line166JsxTextInviteTeammate": "Inviter un coéquipier",
-      "line205JsxAttrTitleRemoveFromTeam": "Retirer de l’équipe ?",
-      "line221JsxAttrTitleRevokeInvite": "Révoquer l’invitation ?",
-      "line324JsxTextPending": "En attente ·",
-      "line332JsxTextExpires": "· expire",
-      "line345JsxAttrAriaLabelRevokeInvite": "Révoquer l’invitation",
-      "line412JsxAttrAriaLabelMemberActions": "Actions du membre",
-      "line564JsxTextEmailAddress": "Adresse e-mail",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "S’ils n’ont pas encore Kortix, nous leur enverrons un lien d’inscription."
     },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "Chiffré avec AES-256-GCM, limité à ce projet uniquement. Les agents lisent via",

@@ -2,6 +2,7 @@ import { normalizeClientSource } from '../../platform/auth-core';
 import { getSupabaseAccessTokenWithRetry } from './auth';
 import { ApiError, AuthError, parseBillingError, RequestTooLargeError } from './api/errors';
 import { platformConfig } from './config';
+import { impersonationHeaders } from './impersonation';
 
 const getApiUrl = () => platformConfig().backendUrl || '';
 
@@ -211,6 +212,12 @@ async function makeRequest<T = any>(
     if (adminBypassEnabled) {
       headers['x-kortix-admin-bypass'] = '1';
     }
+
+    // Act-as: while a platform admin holds a live grant, EVERY platform request
+    // from this tab carries it, exactly as the banner claims. Attached after the
+    // caller's own headers so a call site cannot accidentally drop it, and
+    // before `Authorization` because the server validates the pair together.
+    Object.assign(headers, impersonationHeaders(url));
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -586,6 +593,10 @@ async function postStream(
   const clientSource = normalizeClientSource(platformConfig().clientSource);
   if (clientSource) headers['X-Kortix-Client'] = clientSource;
   if (adminBypassEnabled) headers['x-kortix-admin-bypass'] = '1';
+  // Same act-as rule as makeRequest — a streamed POST is still a platform
+  // request, and an SSE stream opened without the header would silently read
+  // the OPERATOR's account while the banner named the customer's.
+  Object.assign(headers, impersonationHeaders(endpoint));
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const controller = new AbortController();

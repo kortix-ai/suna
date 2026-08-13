@@ -29,6 +29,10 @@ import {
   GRANTABLE_KORTIX_CLI_ACTIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  MONITOR_MIN_INTERVAL_SECONDS,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -36,6 +40,7 @@ import {
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
   TRIGGER_TYPES,
+  parseDurationSeconds,
 } from './constants';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
@@ -96,6 +101,13 @@ export {
   PERMISSION_ACTIONS_V2,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
+  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  MONITOR_MIN_INTERVAL_SECONDS,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
+  DURATION_RE,
+  formatDurationSeconds,
+  parseDurationSeconds,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
@@ -851,6 +863,131 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
   }
 }
 
+/**
+ * A duration-literal field on a monitor (`interval`, `expect_event_within`).
+ * Returns the parsed seconds, or null when the value is absent/rejected.
+ */
+function validateMonitorDuration(
+  value: unknown,
+  where: string,
+  floorSeconds: number,
+  issues: ManifestIssue[],
+): number | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    issues.push({
+      path: where,
+      message: 'must be a duration string like "30s", "5m", "24h", or "7d".',
+      severity: 'error',
+    });
+    return null;
+  }
+  const seconds = parseDurationSeconds(value);
+  if (seconds === null) {
+    issues.push({
+      path: where,
+      message: `"${value}" is not a duration — write a positive integer plus s/m/h/d (e.g. "30s", "5m", "24h").`,
+      severity: 'error',
+    });
+    return null;
+  }
+  if (seconds < floorSeconds) {
+    issues.push({
+      path: where,
+      message: `must be at least ${floorSeconds}s (got "${value}"); the platform enforces this floor.`,
+      severity: 'error',
+    });
+    return null;
+  }
+  return seconds;
+}
+
+/**
+ * `type: monitor` — the third trigger type (docs/specs/2026-08-12-monitors.md).
+ * A monitor names a repo command (`run`) that the platform supervises 24/7 in
+ * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
+ * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
+ * silently ignoring them would let a manifest claim a schedule the monitor
+ * runner never reads.
+ *
+ * MUST stay in sync with the runtime parser (apps/api/.../triggers.ts
+ * `parseTriggerEntry`'s monitor branch) and with `triggerSchema` in
+ * ./json-schema.ts — the conformance suite fails CI if the two validators
+ * disagree on a fixture.
+ */
+function validateMonitorTrigger(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  const run = typeof entry.run === 'string' ? entry.run.trim() : '';
+  if (!run) {
+    issues.push({
+      path: `${where}.run`,
+      message: 'monitor triggers must declare a `run` command (repo-relative).',
+      severity: 'error',
+    });
+  } else if (run.length > MONITOR_RUN_MAX_LENGTH) {
+    issues.push({
+      path: `${where}.run`,
+      message: `must be at most ${MONITOR_RUN_MAX_LENGTH} characters.`,
+      severity: 'error',
+    });
+  } else if (/[\r\n]/.test(run)) {
+    issues.push({
+      path: `${where}.run`,
+      message: 'must be a single command line — no newlines.',
+      severity: 'error',
+    });
+  }
+
+  const mode = typeof entry.mode === 'string' ? entry.mode.trim() : '';
+  if (!(MONITOR_MODES as readonly string[]).includes(mode)) {
+    issues.push({
+      path: `${where}.mode`,
+      message: `mode must be one of: ${MONITOR_MODES.join(', ')} (got "${mode || 'unset'}").`,
+      severity: 'error',
+    });
+  }
+
+  // `interval` is the poll period, so it is required iff mode=poll and
+  // meaningless on a long-running stream.
+  if (mode === 'poll') {
+    validateMonitorDuration(
+      entry.interval,
+      `${where}.interval`,
+      MONITOR_MIN_INTERVAL_SECONDS,
+      issues,
+    );
+  } else if (entry.interval !== undefined) {
+    issues.push({
+      path: `${where}.interval`,
+      message: 'is only valid on a `mode: poll` monitor — a stream runs continuously.',
+      severity: 'error',
+    });
+  }
+
+  // Optional silence watchdog: no event within this window synthesizes a
+  // `silent` lifecycle event so a wedged monitor can never fail silently.
+  if (entry.expect_event_within !== undefined) {
+    validateMonitorDuration(
+      entry.expect_event_within,
+      `${where}.expect_event_within`,
+      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+      issues,
+    );
+  }
+
+  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
+    if (entry[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: 'is not valid on a monitor trigger — monitors are driven by their `run` process.',
+        severity: 'error',
+      });
+    }
+  }
+}
+
 function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
@@ -997,6 +1134,8 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
           severity: 'error',
         });
       }
+    } else if (type === 'monitor') {
+      validateMonitorTrigger(entry, where, issues);
     }
     if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({

@@ -1160,12 +1160,136 @@ export const projectTriggerRuntime = kortixSchema.table(
     scheduleSpec: jsonb('schedule_spec').$type<Record<string, unknown>>(),
     nextFireAt: timestamp('next_fire_at', { withTimezone: true }),
     lastScheduledFor: timestamp('last_scheduled_for', { withTimezone: true }),
+    // Monitor state (trigger_type = 'monitor'). Nullable/defaulted so a
+    // mixed-version deploy reads them safely on rows written by older code.
+    // `last_event_at` advances on every observed monitor event, fired or not.
+    lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+    // Set to now()+10m when the monitor breaches its event-rate bound; events
+    // arriving inside the window are stored `suppressed` instead of firing.
+    suppressedUntil: timestamp('suppressed_until', { withTimezone: true }),
+    // Suppression episodes in the trailing 24 h. Three ⇒ the monitor is
+    // auto-disabled with a `last_error` (spec bounds table).
+    suppressionCount: integer('suppression_count').default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/**
+ * Append-only monitor event log — the contract AND the fire queue
+ * (docs/specs/2026-08-12-monitors.md D2).
+ *
+ * The monitor runner in the project's monitor box POSTs stdout lines here
+ * through the sandbox-token-only ingest route; the leader-elected observer
+ * drains `pending` rows into `fireGitTrigger`. One table, because
+ * `fireGitTrigger` already lands in the durable session-lifecycle queue —
+ * a second execution table would only duplicate that durability.
+ *
+ * `(project_id, slug, box_epoch, seq)` is unique: the runner assigns `seq`
+ * per epoch, so an at-least-once POST retry deduplicates on insert instead of
+ * firing the agent twice.
+ */
+export const projectMonitorEvents = kortixSchema.table(
+  'project_monitor_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    /** Identifies one boot of the monitor box; `seq` restarts per epoch. */
+    boxEpoch: varchar('box_epoch', { length: 64 }).notNull(),
+    seq: bigint('seq', { mode: 'number' }).notNull(),
+    /** `event` = a monitor stdout line. `lifecycle` = platform-synthesized
+     *  (exited / restart_budget_exhausted / silent / suppressed), which
+     *  bypasses the user filter and uses a platform-rendered prompt. */
+    kind: varchar('kind', { length: 16 }).notNull(),
+    /** The parsed line (or `{ raw: "…" }`), truncated at 8 KiB with a marker. */
+    line: jsonb('line').notNull().$type<Record<string, unknown>>(),
+    emittedAt: timestamp('emitted_at', { withTimezone: true }).notNull(),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true }).defaultNow().notNull(),
+    status: varchar('status', { length: 16 }).default('pending').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    sessionId: text('session_id'),
+    lastError: text('last_error'),
+    firedAt: timestamp('fired_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'project_monitor_events_kind_check',
+      sql`${table.kind} IN ('event', 'lifecycle')`,
+    ),
+    check(
+      'project_monitor_events_status_check',
+      sql`${table.status} IN ('pending', 'fired', 'skipped', 'suppressed', 'failed')`,
+    ),
+    // Ingest dedup — an at-least-once POST retry lands on the same key.
+    uniqueIndex('project_monitor_events_dedup_idx').on(
+      table.projectId,
+      table.slug,
+      table.boxEpoch,
+      table.seq,
+    ),
+    // Observer drain: the pending queue, oldest first.
+    index('project_monitor_events_drain_idx').on(table.status, table.ingestedAt),
+    // Per-monitor reads (rate-limit window, log view) and retention sweeps.
+    index('project_monitor_events_monitor_idx').on(
+      table.projectId,
+      table.slug,
+      table.ingestedAt.desc(),
+    ),
+  ],
+);
+
+/**
+ * The persistent per-project monitor box (spec D3) — one microVM that runs
+ * every enabled monitor, modeled on `app_runtimes`: provider + external id,
+ * a status CHECK, a wake lease, and a partial unique index that admits only
+ * one live box per project.
+ *
+ * The reconciler that provisions and converges these rows ships in a later
+ * stage; the ingest route already authenticates the box's sandbox token
+ * against this table, so a project with no live box cannot ingest.
+ */
+export const projectMonitorBoxes = kortixSchema.table(
+  'project_monitor_boxes',
+  {
+    boxId: uuid('box_id').defaultRandom().primaryKey().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** The provider's sandbox id. Null until the create call returns. */
+    externalId: text('external_id'),
+    status: varchar('status', { length: 20 }).default('provisioning').notNull(),
+    /** Stamped on every (re)boot; the runner echoes it on ingest so events
+     *  from a superseded boot are rejected instead of firing. */
+    boxEpoch: varchar('box_epoch', { length: 64 }).notNull(),
+    /** Manifest revision the box is running. Drift ⇒ the reconciler restarts it. */
+    manifestRevision: text('manifest_revision'),
+    wakeLeaseOwner: text('wake_lease_owner'),
+    wakeLeaseUntil: timestamp('wake_lease_until', { withTimezone: true }),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    metadata: jsonb('metadata').default({}).notNull().$type<Record<string, unknown>>(),
+  },
+  (table) => [
+    check(
+      'project_monitor_boxes_status_check',
+      sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping', 'stopped', 'error', 'deleted')`,
+    ),
+    index('project_monitor_boxes_external_idx').on(table.provider, table.externalId),
+    uniqueIndex('project_monitor_boxes_one_live_per_project')
+      .on(table.projectId)
+      .where(sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping')`),
   ],
 );
 
@@ -2865,6 +2989,29 @@ export const creditAccounts = kortixSchema.table(
     // even on a tier that normally grants managed models. Resolved in
     // billing/services/entitlements alongside the tier cache.
     managedModelsOverride: boolean('managed_models_override'),
+    // Per-account entitlement overrides, each with an OPTIONAL EXPIRY. One
+    // column instead of one column per override: the four legacy override
+    // columns above (enterprise_entitled, demo_enterprise,
+    // managed_models_override, max_concurrent_sessions) each needed a
+    // migration, a repository accessor, an admin route, and a resolver branch,
+    // and none of them can expire — every temporary grant had to be swept by
+    // hand or left on forever.
+    //
+    // Shape (billing/services/entitlement-overrides.ts is the parser):
+    //   { "<key>": { "value": <boolean|number>, "expires_at"?: "<ISO 8601>" } }
+    // Keys: enterpriseEntitled, demoEnterprise, managedModelsOverride,
+    // maxConcurrentSessions, computeRateMultiplier, and the per-entitlement
+    // booleans sso / scim / rbac / auditAccess / managedModels.
+    //
+    // Read by resolveBillingFromRow, which takes a key here over the matching
+    // legacy column and ignores an entry whose expires_at has passed. The
+    // legacy columns are still written (one-release compatibility) — this
+    // column is additive, and an API version that has never heard of it simply
+    // ignores it. Defaults to '{}' so every row parses without a null check.
+    entitlementOverrides: jsonb('entitlement_overrides')
+      .$type<Record<string, { value: boolean | number; expires_at?: string }>>()
+      .default({})
+      .notNull(),
   },
   (table) => [
     index('kortix_credit_accounts_account_id_idx').on(table.accountId),
@@ -2964,7 +3111,9 @@ export const sandboxComputeSessions = kortixSchema.table(
   (table) => [
     check(
       'sandbox_compute_sessions_workload_type_check',
-      sql`${table.workloadType} IN ('session', 'app')`,
+      // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
+      // `project_monitor_boxes.box_id`; it needs no dedicated join column.
+      sql`${table.workloadType} IN ('session', 'app', 'monitor')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
@@ -3626,6 +3775,41 @@ export const platformUserRoles = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_platform_user_roles_account_id').on(table.accountId),
     index('idx_platform_user_roles_role').on(table.role),
+  ],
+);
+
+// ─── Impersonation Grants ───────────────────────────────────────────────────
+// A platform admin acting as an account ("open as account") holds a row here.
+// The row IS the capability: the request header carries only the grant id, and
+// every check (owner, expiry, revocation, platform role) is re-read server-side
+// on every request. Nothing about the grant is stateless or self-asserted, so
+// revoking it takes effect immediately and a leaked id is useless to anyone but
+// the admin it was minted for — who already has the platform role.
+//
+// `expires_at` is written by the API and capped at one hour. There is no
+// deletion path: a stopped grant keeps its row with `revoked_at` set, because
+// the audit trail of who acted as whom must outlive the session.
+export const impersonationGrants = kortixSchema.table(
+  'impersonation_grants',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** The REAL platform admin. Never the target account's user. */
+    adminUserId: uuid('admin_user_id').notNull(),
+    /** The account whose context the admin acts in. */
+    targetAccountId: uuid('target_account_id').notNull(),
+    /** Operator-supplied justification, surfaced in the audit trail. */
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    // The one list query: "which grants does this admin still hold?" —
+    // GET /admin/api/impersonate/active, and the console's exit affordance.
+    index('idx_impersonation_grants_admin_expires').on(table.adminUserId, table.expiresAt),
+    // The other read direction: "who has been inside this account?", for an
+    // incident review that starts from the customer, not from the operator.
+    index('idx_impersonation_grants_target').on(table.targetAccountId),
   ],
 );
 

@@ -1,19 +1,21 @@
 'use client';
 
 /**
- * /projects/[id]/customize — deep-link entry into the Customize overlay.
- *
- * Customize is now a full-screen overlay (see customize-store), not a route.
- * This page only exists so old links / bookmarks keep working: it opens the
- * overlay on the requested section (legacy `?section=` still honored) and drops
- * you on the project home behind it.
+ * /projects/[id]/customize — legacy deep-link entry into what is now the
+ * Settings overlay. The Customize overlay itself no longer exists — it was
+ * merged into Settings (see `features/workspace/settings/settings-panel.tsx`)
+ * and this route is kept ONLY so old links / bookmarks keep working: it
+ * resolves the legacy `?section=` query (if any) through
+ * `legacySectionRedirect` — which folds every renamed/graduated legacy id
+ * onto its current home — and replaces straight there. A bare `/customize`
+ * (no section) or an unresolvable one falls back to the bare `/settings`
+ * route, which opens on the default tab.
  */
 
 import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
 
 export default function ProjectCustomizeRedirect() {
   const params = useParams<{ id: string }>();
@@ -23,16 +25,10 @@ export default function ProjectCustomizeRedirect() {
 
   useEffect(() => {
     if (!projectId) return;
-    // Files, Changes, Connectors, Skills, and Commands graduated out of
-    // Customize into their own standalone pages. Preserve old bookmarks.
-    const redirect = legacyCustomizeRedirect(projectId, searchParams.get('section'));
-    if (redirect) {
-      router.replace(redirect);
-      return;
-    }
-    const section = parseCustomizeSection(searchParams.get('section')) ?? undefined;
-    useCustomizeStore.getState().openCustomize(section);
-    router.replace(`/projects/${projectId}`);
+    const redirect =
+      legacySectionRedirect(projectId, searchParams.get('section')) ??
+      `/projects/${projectId}/settings`;
+    router.replace(redirect);
   }, [projectId, searchParams, router]);
 
   return null;

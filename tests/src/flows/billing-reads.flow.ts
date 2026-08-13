@@ -173,7 +173,7 @@ flow(
         .post("/v1/billing/deduct", {
           prompt_tokens: 0,
           completion_tokens: 0,
-          model: "claude-sonnet-4.6",
+          model: "glm-5.2",
         });
       r.status(401);
     });
@@ -183,7 +183,7 @@ flow(
         .post("/v1/billing/deduct", {
           prompt_tokens: 0,
           completion_tokens: 0,
-          model: "claude-sonnet-4.6",
+          model: "glm-5.2",
         });
       r.status([200, 404]);
       if (r.statusCode === 200) {

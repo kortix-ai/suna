@@ -66,6 +66,11 @@
         "current": "Current Language",
         "select": "Select Language"
       },
+      "accountSettings": {
+        "title": "Account",
+        "description": "Manage billing, members, and organization settings",
+        "button": "Account Settings"
+      },
       "deleteAccount": {
         "title": "Delete Account",
         "description": "Permanently remove your account and all associated data",
@@ -4428,24 +4433,6 @@
       "line63JsxAttrDescriptionSystemRolesShipWithThePlatformCreateCustom": "System roles ship with the platform. Create custom roles to bundle exactly the permissions your account needs.",
       "line68JsxTextCreateARole": "Create a role",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "Search roles by name or key..."
-    },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "People with access to this instance. Invite teammates by email — they get instant access if they already use Kortix, otherwise we send them a signup link.",
-      "line142JsxTextInviteTeammate": "Invite teammate",
-      "line149JsxTextLoadingTeam": "Loading team…",
-      "line152JsxAttrTitleFailedToLoadMembers": "Failed to load members",
-      "line160JsxAttrTitleJustYouForNow": "Just you, for now",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "Invite a teammate to collaborate on this instance. They'll see projects you grant them access to, and their sessions stay private from yours.",
-      "line166JsxTextInviteTeammate": "Invite teammate",
-      "line205JsxAttrTitleRemoveFromTeam": "Remove from team?",
-      "line221JsxAttrTitleRevokeInvite": "Revoke invite?",
-      "line324JsxTextPending": "Pending ·",
-      "line332JsxTextExpires": "· expires",
-      "line345JsxAttrAriaLabelRevokeInvite": "Revoke invite",
-      "line412JsxAttrAriaLabelMemberActions": "Member actions",
-      "line564JsxTextEmailAddress": "Email address",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "If they don't have Kortix yet, we'll send a signup link."
     },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "AES-256-GCM encrypted, scoped to this project only. Agents read via",

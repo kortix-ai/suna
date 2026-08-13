@@ -39,7 +39,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [core, browser, packages]
+        include:
+          - lane: core
+            mode: core
+          - lane: browser-1
+            mode: browser
+          - lane: browser-2
+            mode: browser
+          - lane: packages
+            mode: packages
     env:
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL || 'https://api.platinum.dev' }}
       PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
@@ -61,29 +69,35 @@ jobs:
             *) echo "::error::Invalid test mode: $TEST_MODE"; exit 2 ;;
           esac
       - uses: actions/checkout@v7
-        if: inputs.mode == 'full' || inputs.mode == matrix.lane
+        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           ref: ${{ env.SANDBOX_TEST_SHA }}
           fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
-        if: inputs.mode == 'full' || inputs.mode == matrix.lane
+        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           bun-version: 1.3.14
       - name: Run the root test lane in a sandbox
-        if: inputs.mode == 'full' || inputs.mode == matrix.lane
+        if: inputs.mode == 'full' || inputs.mode == matrix.mode
         run: |
           set -euo pipefail
           case "$TEST_LANE" in
             core) bun tests/bin/sandbox-ci.ts ;;
-            browser) bun tests/bin/sandbox-ci.ts --browser-only ;;
-            packages) bun tests/bin/sandbox-ci.ts --packages-only ;;
+            browser-1) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2 ;;
+            browser-2) bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2 ;;
+            packages)
+              if [[ "$TEST_MODE" == "full" ]]; then
+                export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
+              fi
+              bun tests/bin/sandbox-ci.ts --packages-only
+              ;;
             *) echo "::error::Invalid test lane: $TEST_LANE"; exit 2 ;;
           esac
       - name: Delete the sandbox worker
-        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.lane)
+        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
         run: bun tests/bin/sandbox-ci-cleanup.ts
       - name: Guard test artifacts against secrets
-        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.lane)
+        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
         run: |
           set -euo pipefail
           if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
@@ -92,7 +106,7 @@ jobs:
           fi
           echo "No secret-shaped values found."
       - uses: actions/upload-artifact@v7
-        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.lane)
+        if: always() && (inputs.mode == 'full' || inputs.mode == matrix.mode)
         with:
           name: ${{ inputs.artifact-name }}-${{ matrix.lane }}
           path: tests/test-results/**

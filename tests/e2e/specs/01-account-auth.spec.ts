@@ -4,6 +4,7 @@ import { queryDatabaseRows, runDatabaseSql } from "../helpers/database";
 import {
   type AuthEmailAction,
   createDisposableInbox,
+  emailProviderStatus,
 } from "../helpers/inbox";
 import { deleteAuthUser } from "../helpers/session-auth";
 
@@ -37,6 +38,7 @@ async function requestEmailAuthentication(page: Page, email: string) {
     name: "Continue",
     exact: true,
   });
+  await expect(continueButton).toBeEnabled();
   let submitted = false;
   for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
     const formRequest = page
@@ -47,7 +49,7 @@ async function requestEmailAuthentication(page: Page, email: string) {
       )
       .then(() => true)
       .catch(() => false);
-    await continueButton.click();
+    await page.getByLabel("Email").press("Enter");
     submitted = await formRequest;
     if (!submitted) {
       await expect(continueButton).toBeEnabled();
@@ -71,6 +73,11 @@ async function completeEmailAuthentication(page: Page, action: AuthEmailAction) 
 
 test.describe("01 - Account authentication", () => {
   test.setTimeout(180_000);
+
+  test.beforeEach(async () => {
+    const { available, reason } = await emailProviderStatus();
+    test.skip(!available, `email provider unavailable: ${reason}`);
+  });
 
   test("a new user creates an account from the delivered email, clears the session, and logs in again", async ({
     page,

@@ -1,28 +1,12 @@
 'use client';
 
 import { ReferralModal } from '@/components/referrals/referral-modal';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -32,47 +16,28 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import {
   HelpSubmenu,
   THEME_OPTIONS,
   ThemeSubmenu,
   useLogoutFlow,
 } from '@/features/layout/user-menu-shared';
-import { Monitor } from '@/features/icon/icons/monitor';
-import { Moon } from '@/features/icon/icons/moon';
-import { Sun } from '@/features/icon/icons/sun';
+import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { isBillingEnabled } from '@/lib/config';
-import { openExternalRoute } from '@/lib/desktop';
-import { type SettingsTabId } from '@/lib/menu-registry';
-import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { resetClientState } from '@/lib/utils/reset-client-state';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { listAccounts } from '@kortix/sdk';
 import {
-  ArrowsLeftRightIcon,
-  ArticleIcon,
-  BookOpenIcon,
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
-  HeadsetIcon,
-  LifebuoyIcon,
   SignOutIcon as LogOut,
-  PaperPlaneTiltIcon,
-  PlusIcon,
-  QuestionIcon,
-  ScrollIcon,
-  ShieldCheckIcon,
-  StorefrontIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
@@ -82,7 +47,6 @@ export type UserMenuVariant = 'header' | 'sidebar';
 // Re-exported: `THEME_OPTIONS` moved to `user-menu-shared.tsx` when the sidebar
 // grew its own menu, and this stayed its public entry point.
 export { THEME_OPTIONS };
-
 
 export interface UserMenuUser {
   name: string;
@@ -102,26 +66,22 @@ export function UserMenu({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId } = useCurrentAccountStore();
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
     staleTime: 60_000,
   });
-  useEffect(() => {
-    const accounts = accountsQuery.data;
-    if (!accounts?.length) return;
-    if (!selectedAccountId || !accounts.find((a) => a.account_id === selectedAccountId)) {
-      setSelectedAccountId(accounts[0].account_id);
-    }
-  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+  // Extracted verbatim to `hooks/account/use-ensure-selected-account.ts` so the
+  // standalone `/settings` route — which mounts `SettingsPanel` with no sidebar
+  // and therefore no `UserMenu` — can run the same seeding instead of copying
+  // it. Same `['accounts']` key and `staleTime` as the query above, so the two
+  // callers share one fetch.
+  useEnsureSelectedAccount();
 
   // In the collapsed sidebar's hover flyout, the menu content portals outside
   // the panel — hovering it fires the panel's pointer-leave and would collapse
@@ -142,11 +102,31 @@ export function UserMenu({
     requestAnimationFrame(() => fn());
   };
 
-  const openUserSettings = (tab: SettingsTabId) =>
-    deferAfterClose(() => {
-      setSettingsTab(tab);
-      setSettingsOpen(true);
-    });
+  /**
+   * NAVIGATE, do not poke the store.
+   *
+   * `useSettingsPanelStore.openSettings(tab)` only opens something when a
+   * `SettingsPanel` is mounted to observe it. There are exactly two such mounts
+   * — `project-layout/project-shell.tsx:195` and
+   * `workspace/settings/standalone-settings-route.tsx:113` — and `UserMenu` is
+   * inside NEITHER. Its only mount is the app header
+   * (`features/layout/app-header.tsx:108`, `variant="header"`), and the only
+   * layout rendering that header is `app/(app)/accounts/layout.tsx:26`. So a
+   * store write here set `open: true` with no subscriber and the rows did
+   * nothing at all — the click was silently swallowed.
+   *
+   * `/settings/<tab>` is the account-scoped door into the same overlay
+   * (`app/(app)/settings/[tab]/page.tsx` -> `StandaloneSettingsRoute`, which
+   * mounts the panel itself and validates the segment through
+   * `parseSettingsTab`). `SettingsTab` is the segment vocabulary, so the
+   * template needs no mapping table.
+   *
+   * `deferAfterClose` stays: the dropdown closes on the current frame and the
+   * navigation runs on the next, so the menu is not left mounted over a
+   * route transition.
+   */
+  const openUserSettings = (tab: SettingsTab) =>
+    deferAfterClose(() => router.push(`/settings/${tab}`));
 
   const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
@@ -186,7 +166,7 @@ export function UserMenu({
       <SidebarMenuButton
         size="sm"
         className={cn(
-          'group/user relative gap-2  p-1',
+          'group/user relative gap-2 p-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
           'relative flex cursor-pointer items-center gap-2 rounded-md transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
@@ -246,7 +226,15 @@ export function UserMenu({
         {/* Personal settings sits high: it is the item people come here for. The
             account row above goes to the account page — a different
             destination, which is why this one is not also called "settings". */}
-        <DropdownMenuItem onClick={() => openUserSettings('general')} size="sm">
+        {/* `profile`, NOT `general`. In the merged settings vocabulary
+            (`settings-tabs.ts`) `general` is Workspace → General, a
+            PROJECT-scoped tab; the user's own name/email/avatar/delete-account
+            surface — what the pre-merge `SidePanelUserSettings` called
+            `general` — is the `profile` tab. `general` is also absent from
+            `ACCOUNT_SCOPED_SETTINGS_TABS`, so with no project open the rail
+            filters it out and the panel falls back anyway. Same tab
+            `/settings` opens on (`STANDALONE_DEFAULT_SETTINGS_TAB`). */}
+        <DropdownMenuItem onClick={() => openUserSettings('profile')} size="sm">
           <CogOne />
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
         </DropdownMenuItem>
@@ -256,15 +244,13 @@ export function UserMenu({
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
+        {/* Same store-vs-navigate reasoning as the row above — see
+            `openUserSettings`. The `isBillingEnabled() && canManageBilling`
+            gate is unchanged: the route renders the Billing tab for anyone who
+            reaches it, so the row staying hidden is what keeps a member without
+            `billing.write` from being handed the link. */}
         {isBillingEnabled() && canManageBilling && (
-          <DropdownMenuItem
-            onClick={() =>
-              deferAfterClose(() =>
-                useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
-              )
-            }
-            size="sm"
-          >
+          <DropdownMenuItem onClick={() => openUserSettings('billing')} size="sm">
             <CreditCard />
             Billing
           </DropdownMenuItem>
@@ -299,11 +285,6 @@ export function UserMenu({
         dropdown
       )}
 
-      <SidePanelUserSettings
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultTab={settingsTab}
-      />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
       {logoutDialog}
     </>

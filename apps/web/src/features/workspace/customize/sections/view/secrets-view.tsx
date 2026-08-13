@@ -3,12 +3,14 @@
 import { useTranslations } from 'next-intl';
 
 import {
+  AsteriskIcon as Asterisk,
   KeyIcon as KeyRound,
+  LockSimpleIcon as Lock,
   DotsThreeIcon as MoreHorizontal,
-  PlugIcon as Plug,
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
@@ -57,15 +60,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSecret,
   type ProjectSecretsResponse,
@@ -75,13 +78,14 @@ import {
   type SecretEgressPolicy,
   deleteProjectSecret,
   getProjectDetail,
+  grantSecretToAgent,
   listConnectors,
   listProjectSecrets,
   setConnectorSecretBinding,
   setProjectSecretStrategy,
   upsertProjectSecret,
 } from '@kortix/sdk';
-import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, qk, refreshProjectProviderState, useProjectConfig } from '@kortix/sdk/react';
 import {
   WarningIcon as DangerTriangleSolid,
   PencilSimpleIcon,
@@ -91,6 +95,13 @@ import {
 import {
   type NetworkBoundaryAvailability,
   type SecretDeliveryBlockedReason,
+  agentGrantActionLabel,
+  agentGrantCandidateHint,
+  agentGrantConfirmation,
+  agentGrantErrorMessage,
+  agentGrantOutcome,
+  agentGrantPlan,
+  agentGrantSnippet,
   brokerConsumerForSecret,
   buildBrokerPolicy,
   buildNetworkBoundaryPolicy,
@@ -100,6 +111,7 @@ import {
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
+  networkBoundaryEchoNotice,
   secretDeliveryBlockedReason,
   secretDeliveryOptions,
   secretDeliveryPresentation,
@@ -161,7 +173,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -222,7 +234,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   };
   const openProviderManagement = () => {
     if (llmGatewayEnabled) {
-      openCustomize('llm-providers');
+      navigate('llm-providers');
     } else {
       setProviderModalOpen(true);
     }
@@ -230,26 +242,18 @@ export function SecretsView({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <CustomizeSectionWrapper
-        title="Secrets"
-        description="Store encrypted values and control where each value can be used."
-        action={
-          !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" onClick={openProviderManagement}>
-                <Plug className="size-4 shrink-0" />
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextConnectLLMd75427c8',
-                )}
-              </Button>
+      <div className="mx-auto w-full max-w-2xl space-y-8">
+        <SettingsTabHeader
+          tab="secrets"
+          action={
+            !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
               <Button size="sm" variant="secondary" onClick={openCreate}>
                 <PlusIcon className="size-4 shrink-0" />
                 Add
               </Button>
-            </div>
-          ) : null
-        }
-      >
+            ) : null
+          }
+        />
         <div className="space-y-4">
           <InputGroupSearch>
             <InputGroupSearchIcon>
@@ -362,7 +366,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
             </>
           )}
         </div>
-      </CustomizeSectionWrapper>
+      </div>
       <ProjectProviderModal
         projectId={projectId}
         open={providerModalOpen}
@@ -488,6 +492,52 @@ function statusLabel(row: SecretRow): string {
   return row.configured ? 'Set' : 'Not set';
 }
 
+/**
+ * The two marks that can sit beside a secret's identifier.
+ *
+ * This replaced three word-badges — `Managed`, `Required`, `Optional` — that
+ * sat on their own line under the identifier. Each carried one bit and cost a
+ * word, and because `Optional` rendered on every optional row, *every* row had
+ * a badge. `Required` therefore marked nothing: the one state worth spotting
+ * looked exactly as busy as the default.
+ *
+ * So `Optional` is gone rather than shortened. It is the default — a row with
+ * no mark is optional, and dropping it leaves `Required` as the only thing in
+ * the column, which is the entire job of the column.
+ *
+ * The other two become icons with a `Hint`, so they read at a glance and still
+ * announce themselves to a screen reader:
+ *   lock      — managed by Kortix, you cannot edit it
+ *   asterisk  — required; orange while unset, muted once set, the same
+ *               "required field" convention every form uses
+ */
+function SecretMarks({ row }: { row: SecretRow }) {
+  if (!row.system && row.requirement !== 'required') return null;
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {row.system ? (
+        <Hint label="Managed by Kortix" side="top">
+          <Lock
+            className="text-muted-foreground size-3.5 shrink-0"
+            aria-label="Managed by Kortix"
+          />
+        </Hint>
+      ) : null}
+      {row.requirement === 'required' ? (
+        <Hint label={row.configured ? 'Required' : 'Required — not set'} side="top">
+          <Asterisk
+            className={cn(
+              'size-3.5 shrink-0',
+              row.configured ? 'text-muted-foreground' : 'text-kortix-orange',
+            )}
+            aria-label={row.configured ? 'Required' : 'Required, not set'}
+          />
+        </Hint>
+      ) : null}
+    </span>
+  );
+}
+
 function SecretTableRow({
   row,
   canManage,
@@ -510,37 +560,27 @@ function SecretTableRow({
     <TableRow
       className={cn(row.requirement === 'required' && !row.configured && 'bg-kortix-orange/[0.04]')}
     >
-      <TableCell className="max-w-[220px]">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <code className="text-foreground truncate font-mono text-xs">{row.identifier}</code>
+      {/* The identifier and its marks share one line — the cell used to stack
+          three blocks (identifier, → key, a badge row), so a five-row table
+          read as fifteen. `→ key` still gets its own muted line, but only on
+          the rows where the key actually differs from the identifier. */}
+      <TableCell className="max-w-[260px] align-middle">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <code className="text-foreground truncate font-mono text-xs">{row.identifier}</code>
+            <SecretMarks row={row} />
+          </div>
           {distinctKey && (
             <code className="text-muted-foreground truncate font-mono text-xs">→ {row.key}</code>
           )}
-          <div className="flex flex-wrap gap-1">
-            {row.system && (
-              <Badge variant="outline" size="xs">
-                Managed
-              </Badge>
-            )}
-            {row.requirement === 'required' && (
-              <Badge variant="warning" size="xs">
-                Required
-              </Badge>
-            )}
-            {row.requirement === 'optional' && (
-              <Badge variant="outline" size="xs">
-                Optional
-              </Badge>
-            )}
-          </div>
         </div>
       </TableCell>
-      <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
+      <TableCell className="text-muted-foreground max-w-[160px] align-middle text-xs whitespace-nowrap">
         {statusLabel(row)}
       </TableCell>
-      <TableCell className="max-w-[220px] whitespace-normal">
+      <TableCell className="max-w-[220px] align-middle whitespace-normal">
         <div className="flex flex-col items-start gap-1">
-          <Badge variant={delivery.tone} size="xs">
+          <Badge variant={delivery.tone} size="sm">
             {delivery.label}
           </Badge>
           {row.requiresRotation && (
@@ -610,6 +650,7 @@ function SecretDialog({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
+  const projectConfig = useProjectConfig(projectId);
   const isEdit = row !== null;
   const [identifier, setIdentifier] = useState(row?.identifier ?? '');
   const [key, setKey] = useState(row?.key ?? '');
@@ -861,6 +902,38 @@ function SecretDialog({
     },
   });
 
+  const grantIdentifier = row?.identifier ?? '';
+  const grantPlan = agentGrantPlan(projectConfig, grantIdentifier);
+  const [grantAgent, setGrantAgent] = useState<string | null>(null);
+  const selectedGrantAgent = grantAgent ?? grantPlan.preselected;
+  const selectedGrantCandidate =
+    grantPlan.candidates.find((candidate) => candidate.name === selectedGrantAgent) ?? null;
+  const [grantConfirmOpen, setGrantConfirmOpen] = useState(false);
+
+  const grant = useMutation({
+    mutationFn: (agent: string) => grantSecretToAgent(projectId, grantIdentifier, agent),
+    onSuccess: (result) => {
+      setGrantConfirmOpen(false);
+      const outcome = agentGrantOutcome(result);
+      const options = outcome.description ? { description: outcome.description } : undefined;
+      if (outcome.tone === 'info') infoToast(outcome.message, options);
+      else successToast(outcome.message, options);
+      // The block verdict is derived from the manifest the project detail
+      // carries, so refreshing the secrets list alone leaves the warning up.
+      queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      onSaved();
+    },
+  });
+
+  const startGrant = () => {
+    if (!selectedGrantAgent || grant.isPending) return;
+    if (grantPlan.adoptsGovernance) {
+      setGrantConfirmOpen(true);
+      return;
+    }
+    grant.mutate(selectedGrantAgent);
+  };
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (save.isPending) return;
@@ -889,10 +962,22 @@ function SecretDialog({
     networkBoundary,
   );
   const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);
+  const echoNotice = networkBoundaryEchoNotice(brokerHosts);
+  // The dialog keeps the row it opened with, so a completed grant clears its own
+  // warning — the refetch only reaches the table behind it.
   const grantNotice =
-    row && shouldWarnMissingAgentGrant(row.deliveryBlockedReason, strategy)
+    row && shouldWarnMissingAgentGrant(row.deliveryBlockedReason, strategy) && !grant.isSuccess
       ? missingAgentGrantNotice(row.identifier)
       : null;
+  const grantManifest = agentGrantSnippet(
+    grantIdentifier,
+    selectedGrantAgent,
+    selectedGrantCandidate?.currentSecrets,
+  );
+  const grantConfirmation = agentGrantConfirmation(grantIdentifier, selectedGrantAgent ?? '');
+  const selectedGrantHint = selectedGrantCandidate
+    ? agentGrantCandidateHint(selectedGrantCandidate)
+    : null;
   const canSave = canSaveSecretDelivery({
     isEdit,
     key,
@@ -915,479 +1000,567 @@ function SecretDialog({
   });
 
   return (
-    <Modal
-      open={open}
-      onOpenChange={(next) => {
-        if (save.isPending) return;
-        if (!next) resetForm();
-        onOpenChange(next);
-      }}
-    >
-      <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-xl">
-        <ModalHeader>
-          <ModalTitle>{title}</ModalTitle>
-          <ModalDescription>
-            The identifier selects this credential. The delivery policy controls where its value can
-            be used.
-          </ModalDescription>
-        </ModalHeader>
-        <form onSubmit={handleSubmit} autoComplete="off">
-          <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-            <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
-              <div className="flex flex-col gap-1 border-b px-3 py-2">
-                <label
-                  className="text-muted-foreground text-xs font-medium"
-                  htmlFor="secret-dialog-identifier"
-                >
-                  Identifier
-                </label>
+    <>
+      <Modal
+        open={open}
+        onOpenChange={(next) => {
+          if (save.isPending) return;
+          if (!next) resetForm();
+          onOpenChange(next);
+        }}
+      >
+        <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-xl">
+          <ModalHeader>
+            <ModalTitle>{title}</ModalTitle>
+            <ModalDescription>
+              The identifier selects this credential. The delivery policy controls where its value
+              can be used.
+            </ModalDescription>
+          </ModalHeader>
+          <form onSubmit={handleSubmit} autoComplete="off">
+            <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+              <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
+                <div className="flex flex-col gap-1 border-b px-3 py-2">
+                  <label
+                    className="text-muted-foreground text-xs font-medium"
+                    htmlFor="secret-dialog-identifier"
+                  >
+                    Identifier
+                  </label>
+                  <Input
+                    id="secret-dialog-identifier"
+                    name="kortix-secret-identifier"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder={key ? key : 'e.g. GMAPS-primary'}
+                    className="bg-sidebar disabled:bg-sidebar h-8 rounded-none border-none px-0 font-mono"
+                    autoFocus={!isEdit}
+                    autoComplete="off"
+                    data-1p-ignore="true"
+                    data-lpignore="true"
+                    data-form-type="other"
+                    disabled={isEdit || save.isPending}
+                  />
+                </div>
                 <Input
-                  id="secret-dialog-identifier"
-                  name="kortix-secret-identifier"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder={key ? key : 'e.g. GMAPS-primary'}
-                  className="bg-sidebar disabled:bg-sidebar h-8 rounded-none border-none px-0 font-mono"
-                  autoFocus={!isEdit}
+                  id="secret-dialog-key"
+                  name="kortix-secret-key"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                  placeholder="KEY_NAME"
+                  className="bg-sidebar disabled:bg-sidebar rounded-none border-none font-mono"
                   autoComplete="off"
                   data-1p-ignore="true"
                   data-lpignore="true"
                   data-form-type="other"
                   disabled={isEdit || save.isPending}
+                  required
+                />
+                <Input
+                  id="secret-dialog-value"
+                  name="kortix-secret-value"
+                  type="password"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-secondary rounded-none rounded-t-sm border-none font-mono"
+                  autoComplete="new-password"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-form-type="other"
+                  autoFocus={isEdit}
+                  disabled={save.isPending}
                 />
               </div>
-              <Input
-                id="secret-dialog-key"
-                name="kortix-secret-key"
-                value={key}
-                onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
-                placeholder="KEY_NAME"
-                className="bg-sidebar disabled:bg-sidebar rounded-none border-none font-mono"
-                autoComplete="off"
-                data-1p-ignore="true"
-                data-lpignore="true"
-                data-form-type="other"
-                disabled={isEdit || save.isPending}
-                required
-              />
-              <Input
-                id="secret-dialog-value"
-                name="kortix-secret-value"
-                type="password"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder="••••••••"
-                className="bg-secondary rounded-none rounded-t-sm border-none font-mono"
-                autoComplete="new-password"
-                data-1p-ignore="true"
-                data-lpignore="true"
-                data-form-type="other"
-                autoFocus={isEdit}
-                disabled={save.isPending}
-              />
-            </div>
 
-            {!isEdit && (
-              <p className="text-muted-foreground text-xs">
-                Leave the identifier blank to use the key as its own identifier — the common case.
-                Set it explicitly to keep a second value under the same key (e.g. a backup key).
-              </p>
-            )}
-            {row?.configured && (
-              <p className="text-muted-foreground text-xs">
-                Leave the value blank to leave it unchanged.
-              </p>
-            )}
+              {!isEdit && (
+                <p className="text-muted-foreground text-xs">
+                  Leave the identifier blank to use the key as its own identifier — the common case.
+                  Set it explicitly to keep a second value under the same key (e.g. a backup key).
+                </p>
+              )}
+              {row?.configured && (
+                <p className="text-muted-foreground text-xs">
+                  Leave the value blank to leave it unchanged.
+                </p>
+              )}
 
-            <Field>
-              <FieldLabel htmlFor="secret-dialog-delivery">Delivery</FieldLabel>
-              <Select
-                value={strategy}
-                onValueChange={(next) => setStrategy(next as SecretDeliveryStrategy)}
-                disabled={save.isPending}
-              >
-                <SelectTrigger id="secret-dialog-delivery" className="min-h-10 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {deliveryOptions.map((option) => (
-                    <SelectItem
-                      key={option.strategy}
-                      value={option.strategy}
-                      disabled={option.disabled}
-                      description={
-                        option.disabledReason
-                          ? `${option.description} ${option.disabledReason}`
-                          : option.description
-                      }
-                    >
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>{selectedDelivery.description}</FieldDescription>
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="secret-dialog-delivery">Delivery</FieldLabel>
+                <Select
+                  value={strategy}
+                  onValueChange={(next) => setStrategy(next as SecretDeliveryStrategy)}
+                  disabled={save.isPending}
+                >
+                  <SelectTrigger id="secret-dialog-delivery" className="min-h-10 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {deliveryOptions.map((option) => (
+                      <SelectItem
+                        key={option.strategy}
+                        value={option.strategy}
+                        disabled={option.disabled}
+                        description={
+                          option.disabledReason
+                            ? `${option.description} ${option.disabledReason}`
+                            : option.description
+                        }
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>{selectedDelivery.description}</FieldDescription>
+              </Field>
 
-            {strategy === 'runtime' && (
-              <InfoBanner tone="warning" title="Readable inside the sandbox">
-                Agent code and commands can read this value. Use this option only when the secret
-                must be available to a local process.
-              </InfoBanner>
-            )}
-
-            {grantNotice && (
-              <InfoBanner
-                tone="warning"
-                icon={<DangerTriangleSolid weight="fill" />}
-                title={grantNotice.title}
-              >
-                <span className="block text-pretty">{grantNotice.body}</span>
-                <pre className="border-border bg-muted mt-2 overflow-x-auto rounded-sm border p-2 font-mono text-xs leading-relaxed">
-                  {grantNotice.manifest}
-                </pre>
-              </InfoBanner>
-            )}
-
-            {strategy === 'egress' && (
-              <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Network boundary</p>
-                  <p className="text-muted-foreground text-xs text-pretty">
-                    Platinum adds this value to matching HTTPS requests outside the sandbox.
-                  </p>
-                </div>
-
-                {networkBoundaryNotice && (
-                  <InfoBanner
-                    tone="warning"
-                    icon={<DangerTriangleSolid weight="fill" />}
-                    title="Nothing injects this header today"
-                  >
-                    {networkBoundaryNotice}
-                  </InfoBanner>
-                )}
-
-                <InfoBanner tone="neutral" title="Not readable inside the sandbox">
-                  The sandbox receives no value, alias, or placeholder. Secret values echoed by an
-                  upstream response are blocked at the boundary.
+              {strategy === 'runtime' && (
+                <InfoBanner tone="warning" title="Readable inside the sandbox">
+                  Agent code and commands can read this value. Use this option only when the secret
+                  must be available to a local process.
                 </InfoBanner>
+              )}
 
-                <Field>
-                  <FieldLabel htmlFor="secret-dialog-boundary-hosts">Allowed hosts</FieldLabel>
-                  <Textarea
-                    id="secret-dialog-boundary-hosts"
-                    value={brokerHosts}
-                    onChange={(event) => setBrokerHosts(event.target.value)}
-                    placeholder={'api.example.com\nuploads.example.com'}
-                    minHeight={56}
-                    maxHeight={112}
-                    variant="outline"
-                    className="font-mono text-xs"
-                    disabled={save.isPending}
-                  />
-                  <FieldDescription>
-                    One exact HTTPS host per line. Wildcards, paths, and ports are not accepted.
-                  </FieldDescription>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="secret-dialog-boundary-header">Header name</FieldLabel>
-                  <Input
-                    id="secret-dialog-boundary-header"
-                    value={injectionTarget}
-                    onChange={(event) => setInjectionTarget(event.target.value)}
-                    placeholder="authorization"
-                    className="font-mono text-xs"
-                    disabled={save.isPending}
-                  />
-                  <FieldDescription>
-                    Platinum replaces this header only for the allowed hosts.
-                  </FieldDescription>
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="secret-dialog-boundary-template">
-                    Header value template
-                  </FieldLabel>
-                  <Input
-                    id="secret-dialog-boundary-template"
-                    value={injectionTemplate}
-                    onChange={(event) => setInjectionTemplate(event.target.value)}
-                    placeholder="Bearer {{secret}}"
-                    className="font-mono text-xs"
-                    disabled={save.isPending}
-                  />
-                  <FieldDescription>
-                    Optional. Include {'{{secret}}'} where Platinum inserts the value. Leave it
-                    blank and the header carries the bare value with no scheme, which most APIs
-                    reject with 401.
-                  </FieldDescription>
-                </Field>
-              </div>
-            )}
-
-            {strategy === 'broker' && (
-              <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Kortix service</p>
-                  <p className="text-muted-foreground text-xs">
-                    The selected service uses the value outside the sandbox.
-                  </p>
-                </div>
-
-                <Field>
-                  <FieldLabel htmlFor="secret-dialog-broker-consumer">Used by</FieldLabel>
-                  <Select
-                    value={brokerConsumer}
-                    onValueChange={(next) =>
-                      setBrokerConsumer(next as 'llm_gateway' | 'connector' | 'http_broker')
-                    }
-                    disabled={save.isPending}
-                  >
-                    <SelectTrigger id="secret-dialog-broker-consumer" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem
-                        value="llm_gateway"
-                        description="Kortix sends model requests. The sandbox receives no key."
-                      >
-                        LLM gateway
-                      </SelectItem>
-                      <SelectItem
-                        value="http_broker"
-                        description="Kortix adds the value to one approved HTTPS destination."
-                      >
-                        HTTPS broker
-                      </SelectItem>
-                      <SelectItem
-                        value="connector"
-                        description="An authorized connector uses the value. The sandbox receives no key."
-                      >
-                        Connector
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                {brokerConsumer === 'connector' && (
-                  <Field>
-                    <FieldLabel>Connectors</FieldLabel>
-                    {connectorsLoading ? (
-                      <div className="space-y-2">
-                        <Skeleton className="h-12 rounded-md" />
-                        <Skeleton className="h-12 rounded-md" />
-                      </div>
-                    ) : connectorOptions.length === 0 ? (
-                      <InfoBanner tone="neutral" title="No connectors available">
-                        Add a connector that requires project-owned authentication first.
-                      </InfoBanner>
-                    ) : (
-                      <div className="bg-popover overflow-hidden rounded-md border">
-                        {connectorOptions.map((option, index) => (
-                          <label
-                            key={option.slug}
-                            className={cn(
-                              'flex min-h-12 items-center gap-3 px-3 py-2',
-                              index > 0 && 'border-t',
-                              option.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-                            )}
-                          >
-                            <Checkbox
-                              checked={effectiveSelectedConnectorSlugs.includes(option.slug)}
-                              disabled={option.disabled || save.isPending}
-                              onCheckedChange={(checked) => {
-                                setSelectedConnectorSlugs((current) =>
-                                  checked
-                                    ? [
-                                        ...new Set([
-                                          ...(current ?? effectiveSelectedConnectorSlugs),
-                                          option.slug,
-                                        ]),
-                                      ]
-                                    : (current ?? effectiveSelectedConnectorSlugs).filter(
-                                        (slug) => slug !== option.slug,
-                                      ),
-                                );
-                              }}
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">
-                                {option.name}
-                              </span>
-                              <span className="text-muted-foreground block text-xs text-pretty">
-                                {option.description}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                    <FieldDescription>
-                      Selected connectors resolve this secret on the server. The sandbox receives no
-                      value.
-                    </FieldDescription>
-                  </Field>
-                )}
-
-                {brokerConsumer === 'http_broker' && (
-                  <>
-                    <InfoBanner tone="neutral" title="Opaque sandbox handle">
-                      The sandbox receives a session handle. Kortix adds the real value only to a
-                      matching HTTPS request.
-                    </InfoBanner>
-
-                    <Field>
-                      <FieldLabel htmlFor="secret-dialog-broker-hosts">Allowed hosts</FieldLabel>
-                      <Textarea
-                        id="secret-dialog-broker-hosts"
-                        value={brokerHosts}
-                        onChange={(event) => setBrokerHosts(event.target.value)}
-                        placeholder={'api.example.com\n*.service.example.com'}
-                        minHeight={56}
-                        maxHeight={112}
-                        variant="outline"
-                        className="font-mono text-xs"
-                        disabled={save.isPending}
-                      />
-                      <FieldDescription>
-                        One exact host or leading wildcard per line. Kortix denies every other host.
-                      </FieldDescription>
-                    </Field>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field>
-                        <FieldLabel htmlFor="secret-dialog-broker-methods">Methods</FieldLabel>
-                        <Input
-                          id="secret-dialog-broker-methods"
-                          value={brokerMethods}
-                          onChange={(event) => setBrokerMethods(event.target.value.toUpperCase())}
-                          placeholder="POST"
-                          className="font-mono text-xs"
-                          disabled={save.isPending}
-                        />
-                        <FieldDescription>
-                          Comma-separated. Blank allows any method.
-                        </FieldDescription>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="secret-dialog-broker-path">Path</FieldLabel>
-                        <Input
-                          id="secret-dialog-broker-path"
-                          value={brokerPath}
-                          onChange={(event) => setBrokerPath(event.target.value)}
-                          placeholder="/v1/*"
-                          className="font-mono text-xs"
-                          disabled={save.isPending}
-                        />
-                        <FieldDescription>Exact path or one trailing /* wildcard.</FieldDescription>
-                      </Field>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field>
-                        <FieldLabel htmlFor="secret-dialog-injection-kind">
-                          Credential location
-                        </FieldLabel>
+              {grantNotice && (
+                <InfoBanner
+                  tone="warning"
+                  icon={<DangerTriangleSolid weight="fill" />}
+                  title={grantNotice.title}
+                >
+                  <span className="block text-pretty">{grantNotice.body}</span>
+                  {grantPlan.candidates.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {grantPlan.candidates.length > 1 && (
                         <Select
-                          value={injectionKind}
-                          onValueChange={(next) =>
-                            setInjectionKind(next as 'header' | 'query' | 'json_body_field')
-                          }
-                          disabled={save.isPending}
+                          value={selectedGrantAgent ?? ''}
+                          onValueChange={setGrantAgent}
+                          disabled={grant.isPending}
                         >
-                          <SelectTrigger id="secret-dialog-injection-kind" className="w-full">
-                            <SelectValue />
+                          <SelectTrigger
+                            aria-label="Agent to grant this secret to"
+                            className="h-8 w-48"
+                          >
+                            <SelectValue placeholder="Choose an agent" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="header">Header</SelectItem>
-                            <SelectItem value="query">Query parameter</SelectItem>
-                            <SelectItem value="json_body_field">JSON body field</SelectItem>
+                            {grantPlan.candidates.map((candidate) => (
+                              <SelectItem
+                                key={candidate.name}
+                                value={candidate.name}
+                                description={agentGrantCandidateHint(candidate) ?? undefined}
+                              >
+                                {candidate.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
-                      </Field>
-                      <Field>
-                        <FieldLabel htmlFor="secret-dialog-injection-target">
-                          {injectionKind === 'header'
-                            ? 'Header name'
-                            : injectionKind === 'query'
-                              ? 'Parameter name'
-                              : 'JSON field path'}
-                        </FieldLabel>
-                        <Input
-                          id="secret-dialog-injection-target"
-                          value={injectionTarget}
-                          onChange={(event) => setInjectionTarget(event.target.value)}
-                          placeholder={
-                            injectionKind === 'header'
-                              ? 'authorization'
-                              : injectionKind === 'query'
-                                ? 'api_key'
-                                : 'auth.api_key'
-                          }
-                          className="font-mono text-xs"
-                          disabled={save.isPending}
-                        />
-                      </Field>
+                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={startGrant}
+                        disabled={!selectedGrantAgent || grant.isPending}
+                      >
+                        {grant.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                        {agentGrantActionLabel(grantPlan, selectedGrantAgent)}
+                      </Button>
                     </div>
+                  )}
+                  {grantPlan.candidates.length === 0 && (
+                    <span className="text-muted-foreground mt-2 block text-xs text-pretty">
+                      This project declares no agent. Add one to kortix.yaml first.
+                    </span>
+                  )}
+                  {selectedGrantHint && (
+                    <span className="text-muted-foreground mt-2 block text-xs text-pretty">
+                      {selectedGrantHint}
+                    </span>
+                  )}
+                  {grant.error && (
+                    <span className="text-kortix-red mt-2 block text-xs text-pretty">
+                      {agentGrantErrorMessage(grant.error)}
+                    </span>
+                  )}
+                  <pre className="border-border bg-muted mt-2 overflow-x-auto rounded-sm border p-2 font-mono text-xs leading-relaxed">
+                    {grantManifest}
+                  </pre>
+                </InfoBanner>
+              )}
 
-                    {injectionKind === 'header' && (
+              {strategy === 'egress' && (
+                <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Network boundary</p>
+                    <p className="text-muted-foreground text-xs text-pretty">
+                      Kortix adds this value to matching HTTPS requests outside the sandbox.
+                    </p>
+                  </div>
+
+                  {networkBoundaryNotice && (
+                    <InfoBanner
+                      tone="warning"
+                      icon={<DangerTriangleSolid weight="fill" />}
+                      title="Nothing injects this header today"
+                    >
+                      {networkBoundaryNotice}
+                    </InfoBanner>
+                  )}
+
+                  <InfoBanner tone="neutral" title="Not readable inside the sandbox">
+                    The sandbox receives no value, alias, or placeholder. The agent sends an
+                    ordinary request and the header appears in flight.
+                  </InfoBanner>
+
+                  <InfoBanner tone="neutral" title={echoNotice.title}>
+                    <span className="block text-pretty">{echoNotice.body}</span>
+                    <pre className="border-border bg-muted mt-2 overflow-x-auto rounded-sm border p-2 font-mono text-xs leading-relaxed">
+                      {echoNotice.probe}
+                    </pre>
+                    <Link
+                      href={echoNotice.docsHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-foreground mt-2 inline-block text-xs underline underline-offset-2"
+                    >
+                      {echoNotice.docsLabel}
+                    </Link>
+                  </InfoBanner>
+
+                  <Field>
+                    <FieldLabel htmlFor="secret-dialog-boundary-hosts">Allowed hosts</FieldLabel>
+                    <Textarea
+                      id="secret-dialog-boundary-hosts"
+                      value={brokerHosts}
+                      onChange={(event) => setBrokerHosts(event.target.value)}
+                      placeholder={'api.example.com\nuploads.example.com'}
+                      minHeight={56}
+                      maxHeight={112}
+                      variant="outline"
+                      className="font-mono text-xs"
+                      disabled={save.isPending}
+                    />
+                    <FieldDescription>
+                      One exact HTTPS host per line. Wildcards, paths, and ports are not accepted.
+                    </FieldDescription>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="secret-dialog-boundary-header">Header name</FieldLabel>
+                    <Input
+                      id="secret-dialog-boundary-header"
+                      value={injectionTarget}
+                      onChange={(event) => setInjectionTarget(event.target.value)}
+                      placeholder="authorization"
+                      className="font-mono text-xs"
+                      disabled={save.isPending}
+                    />
+                    <FieldDescription>
+                      Kortix replaces this header only for the allowed hosts.
+                    </FieldDescription>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="secret-dialog-boundary-template">
+                      Header value template
+                    </FieldLabel>
+                    <Input
+                      id="secret-dialog-boundary-template"
+                      value={injectionTemplate}
+                      onChange={(event) => setInjectionTemplate(event.target.value)}
+                      placeholder="Bearer {{secret}}"
+                      className="font-mono text-xs"
+                      disabled={save.isPending}
+                    />
+                    <FieldDescription>
+                      Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave it
+                      blank and the header carries the bare value with no scheme, which most APIs
+                      reject with 401.
+                    </FieldDescription>
+                  </Field>
+                </div>
+              )}
+
+              {strategy === 'broker' && (
+                <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Kortix service</p>
+                    <p className="text-muted-foreground text-xs">
+                      The selected service uses the value outside the sandbox.
+                    </p>
+                  </div>
+
+                  <Field>
+                    <FieldLabel htmlFor="secret-dialog-broker-consumer">Used by</FieldLabel>
+                    <Select
+                      value={brokerConsumer}
+                      onValueChange={(next) =>
+                        setBrokerConsumer(next as 'llm_gateway' | 'connector' | 'http_broker')
+                      }
+                      disabled={save.isPending}
+                    >
+                      <SelectTrigger id="secret-dialog-broker-consumer" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          value="llm_gateway"
+                          description="Kortix sends model requests. The sandbox receives no key."
+                        >
+                          LLM gateway
+                        </SelectItem>
+                        <SelectItem
+                          value="http_broker"
+                          description="Kortix adds the value to one approved HTTPS destination."
+                        >
+                          HTTPS broker
+                        </SelectItem>
+                        <SelectItem
+                          value="connector"
+                          description="An authorized connector uses the value. The sandbox receives no key."
+                        >
+                          Connector
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  {brokerConsumer === 'connector' && (
+                    <Field>
+                      <FieldLabel>Connectors</FieldLabel>
+                      {connectorsLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-12 rounded-md" />
+                          <Skeleton className="h-12 rounded-md" />
+                        </div>
+                      ) : connectorOptions.length === 0 ? (
+                        <InfoBanner tone="neutral" title="No connectors available">
+                          Add a connector that requires project-owned authentication first.
+                        </InfoBanner>
+                      ) : (
+                        <div className="bg-popover overflow-hidden rounded-md border">
+                          {connectorOptions.map((option, index) => (
+                            <label
+                              key={option.slug}
+                              className={cn(
+                                'flex min-h-12 items-center gap-3 px-3 py-2',
+                                index > 0 && 'border-t',
+                                option.disabled
+                                  ? 'cursor-not-allowed opacity-60'
+                                  : 'cursor-pointer',
+                              )}
+                            >
+                              <Checkbox
+                                checked={effectiveSelectedConnectorSlugs.includes(option.slug)}
+                                disabled={option.disabled || save.isPending}
+                                onCheckedChange={(checked) => {
+                                  setSelectedConnectorSlugs((current) =>
+                                    checked
+                                      ? [
+                                          ...new Set([
+                                            ...(current ?? effectiveSelectedConnectorSlugs),
+                                            option.slug,
+                                          ]),
+                                        ]
+                                      : (current ?? effectiveSelectedConnectorSlugs).filter(
+                                          (slug) => slug !== option.slug,
+                                        ),
+                                  );
+                                }}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium">
+                                  {option.name}
+                                </span>
+                                <span className="text-muted-foreground block text-xs text-pretty">
+                                  {option.description}
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <FieldDescription>
+                        Selected connectors resolve this secret on the server. The sandbox receives
+                        no value.
+                      </FieldDescription>
+                    </Field>
+                  )}
+
+                  {brokerConsumer === 'http_broker' && (
+                    <>
+                      <InfoBanner tone="neutral" title="Opaque sandbox handle">
+                        The sandbox receives a session handle. Kortix adds the real value only to a
+                        matching HTTPS request.
+                      </InfoBanner>
+
                       <Field>
-                        <FieldLabel htmlFor="secret-dialog-injection-template">
-                          Header value template
-                        </FieldLabel>
-                        <Input
-                          id="secret-dialog-injection-template"
-                          value={injectionTemplate}
-                          onChange={(event) => setInjectionTemplate(event.target.value)}
-                          placeholder="Bearer {{secret}}"
+                        <FieldLabel htmlFor="secret-dialog-broker-hosts">Allowed hosts</FieldLabel>
+                        <Textarea
+                          id="secret-dialog-broker-hosts"
+                          value={brokerHosts}
+                          onChange={(event) => setBrokerHosts(event.target.value)}
+                          placeholder={'api.example.com\n*.service.example.com'}
+                          minHeight={56}
+                          maxHeight={112}
+                          variant="outline"
                           className="font-mono text-xs"
                           disabled={save.isPending}
                         />
                         <FieldDescription>
-                          Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave it
-                          blank and the header carries the bare value with no scheme, which most
-                          APIs reject with 401.
+                          One exact host or leading wildcard per line. Kortix denies every other
+                          host.
                         </FieldDescription>
                       </Field>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
 
-            {row?.requiresRotation && (
-              <InfoBanner tone="warning" title="Replace the previous value">
-                An earlier sandbox may retain the previous value. Rotate it at the provider, then
-                save the replacement here.
-              </InfoBanner>
-            )}
-          </ModalBody>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field>
+                          <FieldLabel htmlFor="secret-dialog-broker-methods">Methods</FieldLabel>
+                          <Input
+                            id="secret-dialog-broker-methods"
+                            value={brokerMethods}
+                            onChange={(event) => setBrokerMethods(event.target.value.toUpperCase())}
+                            placeholder="POST"
+                            className="font-mono text-xs"
+                            disabled={save.isPending}
+                          />
+                          <FieldDescription>
+                            Comma-separated. Blank allows any method.
+                          </FieldDescription>
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor="secret-dialog-broker-path">Path</FieldLabel>
+                          <Input
+                            id="secret-dialog-broker-path"
+                            value={brokerPath}
+                            onChange={(event) => setBrokerPath(event.target.value)}
+                            placeholder="/v1/*"
+                            className="font-mono text-xs"
+                            disabled={save.isPending}
+                          />
+                          <FieldDescription>
+                            Exact path or one trailing /* wildcard.
+                          </FieldDescription>
+                        </Field>
+                      </div>
 
-          <ModalFooter className="sm:justify-between">
-            <Button
-              type="button"
-              variant="outline-ghost"
-              size="sm"
-              className="w-full sm:w-auto"
-              onClick={() => onOpenChange(false)}
-              disabled={save.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              className="w-full sm:w-auto"
-              disabled={save.isPending || !canSave}
-            >
-              {save.isPending && <Loading className="size-4 shrink-0" />}
-              Save
-            </Button>
-          </ModalFooter>
-        </form>
-      </ModalContent>
-    </Modal>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field>
+                          <FieldLabel htmlFor="secret-dialog-injection-kind">
+                            Credential location
+                          </FieldLabel>
+                          <Select
+                            value={injectionKind}
+                            onValueChange={(next) =>
+                              setInjectionKind(next as 'header' | 'query' | 'json_body_field')
+                            }
+                            disabled={save.isPending}
+                          >
+                            <SelectTrigger id="secret-dialog-injection-kind" className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="header">Header</SelectItem>
+                              <SelectItem value="query">Query parameter</SelectItem>
+                              <SelectItem value="json_body_field">JSON body field</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor="secret-dialog-injection-target">
+                            {injectionKind === 'header'
+                              ? 'Header name'
+                              : injectionKind === 'query'
+                                ? 'Parameter name'
+                                : 'JSON field path'}
+                          </FieldLabel>
+                          <Input
+                            id="secret-dialog-injection-target"
+                            value={injectionTarget}
+                            onChange={(event) => setInjectionTarget(event.target.value)}
+                            placeholder={
+                              injectionKind === 'header'
+                                ? 'authorization'
+                                : injectionKind === 'query'
+                                  ? 'api_key'
+                                  : 'auth.api_key'
+                            }
+                            className="font-mono text-xs"
+                            disabled={save.isPending}
+                          />
+                        </Field>
+                      </div>
+
+                      {injectionKind === 'header' && (
+                        <Field>
+                          <FieldLabel htmlFor="secret-dialog-injection-template">
+                            Header value template
+                          </FieldLabel>
+                          <Input
+                            id="secret-dialog-injection-template"
+                            value={injectionTemplate}
+                            onChange={(event) => setInjectionTemplate(event.target.value)}
+                            placeholder="Bearer {{secret}}"
+                            className="font-mono text-xs"
+                            disabled={save.isPending}
+                          />
+                          <FieldDescription>
+                            Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave
+                            it blank and the header carries the bare value with no scheme, which
+                            most APIs reject with 401.
+                          </FieldDescription>
+                        </Field>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {row?.requiresRotation && (
+                <InfoBanner tone="warning" title="Replace the previous value">
+                  An earlier sandbox may retain the previous value. Rotate it at the provider, then
+                  save the replacement here.
+                </InfoBanner>
+              )}
+            </ModalBody>
+
+            <ModalFooter className="sm:justify-between">
+              <Button
+                type="button"
+                variant="outline-ghost"
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={() => onOpenChange(false)}
+                disabled={save.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="w-full sm:w-auto"
+                disabled={save.isPending || !canSave}
+              >
+                {save.isPending && <Loading className="size-4 shrink-0" />}
+                Save
+              </Button>
+            </ModalFooter>
+          </form>
+        </ModalContent>
+      </Modal>
+      <ConfirmDialog
+        open={grantConfirmOpen}
+        onOpenChange={(next) => {
+          if (!next && !grant.isPending) setGrantConfirmOpen(false);
+        }}
+        title={grantConfirmation.title}
+        description={grantConfirmation.body}
+        confirmLabel={grantConfirmation.confirmLabel}
+        onConfirm={() => {
+          if (selectedGrantAgent) grant.mutate(selectedGrantAgent);
+        }}
+        isPending={grant.isPending}
+      />
+    </>
   );
 }

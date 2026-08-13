@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+  CI_DOCKER_COMPOSE_AMD64_SHA256,
+  CI_DOCKER_COMPOSE_VERSION,
   PLATINUM_CI_BUN_VERSION,
   PLATINUM_CI_NODE_IMAGE,
   PLATINUM_CI_PNPM_VERSION,
+  PLATINUM_CI_TEMPLATE_VERSION,
   PLATINUM_CI_WARM_TIMEOUT_MS,
   PlatinumHttpError,
   buildPlatinumTemplateSpec,
@@ -10,6 +13,7 @@ import {
   buildPlatinumWarmTemplateRequest,
   buildWorkerScript,
   cleanupPlatinumCiSandboxes,
+  dockerComposeInstallCommand,
   selectOutstandingPlatinumSandboxIds,
   isRetryablePlatinumError,
   observePlatinumSandboxStart,
@@ -19,6 +23,7 @@ import {
   retryPlatinumOperation,
   selectReusablePlatinumTemplate,
   platinumTemplateName,
+  platinumWarmReadinessTimeoutMs,
   validatePlatinumCiInput,
 } from '../src/core/platinum-ci';
 
@@ -32,11 +37,15 @@ afterEach(() => {
 describe('Platinum CI worker plan', () => {
   test('bounds warm restore readiness so auto mode can fail over quickly', () => {
     expect(PLATINUM_CI_WARM_TIMEOUT_MS).toBe(120_000);
+    expect(platinumWarmReadinessTimeoutMs('restore')).toBe(120_000);
+    expect(platinumWarmReadinessTimeoutMs('cold-boot')).toBe(2_700_000);
+    expect(platinumWarmReadinessTimeoutMs(undefined)).toBe(120_000);
   });
 
   test('uses one content-addressed template for one lockfile', () => {
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v10-bbbbbbbbbbbbbbbb-base');
+    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v14');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v14-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v11-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -51,11 +60,15 @@ describe('Platinum CI worker plan', () => {
     expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
     expect(JSON.stringify(spec.steps)).toContain(`pnpm@${PLATINUM_CI_PNPM_VERSION}`);
+    expect(JSON.stringify(spec.steps)).toContain('docker-compose-linux-x86_64');
+    expect(JSON.stringify(spec.steps)).toContain(CI_DOCKER_COMPOSE_AMD64_SHA256);
     expect(JSON.stringify(spec.steps)).not.toContain('postgresql-client');
     expect(JSON.stringify(spec.steps)).toContain(`fetch --depth=1 origin ${sha}`);
     expect(JSON.stringify(spec.steps)).toContain('playwright install --with-deps chromium');
     expect(JSON.stringify(spec.steps)).toContain('git init /workspace/suna');
-    expect(spec.entrypoint).toContain('supabase start --ignore-health-check');
+    expect(spec.entrypoint).toContain(
+      "timeout 2400 sh -c 'until pnpm exec supabase start --ignore-health-check; do sleep 30; done'",
+    );
     expect(spec.entrypoint).not.toContain('docker pull postgres:16-alpine');
     expect(spec.entrypoint).toContain('supabase stop --no-backup');
     expect(spec.entrypoint).toContain('.kortix-ci-warm-ready');
@@ -77,6 +90,16 @@ describe('Platinum CI worker plan', () => {
     for (const step of spec.steps) {
       if (step.op === 'run') expect(step.cmd).not.toContain('\n');
     }
+  });
+
+  test('installs a pinned Docker Compose plugin in every base template', () => {
+    const command = dockerComposeInstallCommand();
+    expect(CI_DOCKER_COMPOSE_VERSION).toBe('v2.40.3');
+    expect(CI_DOCKER_COMPOSE_AMD64_SHA256).toHaveLength(64);
+    expect(command).toContain(`/download/${CI_DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64`);
+    expect(command).toContain(CI_DOCKER_COMPOSE_AMD64_SHA256);
+    expect(command).toContain('sha256sum -c -');
+    expect(command).toContain('docker compose version');
   });
 
   test('post cleanup selects only the exact CI run sandbox', () => {
@@ -203,16 +226,45 @@ describe('Platinum CI worker plan', () => {
     expect(script).toContain('tests/test-results/platinum');
   });
 
-  test('lets the root runner own the local stack for every mode', () => {
+  test('prestarts only the disposable browser database and leaves product processes to the root runner', () => {
     const script = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: ['--browser-only'],
+    });
+
+    expect(script).toContain('pnpm exec supabase start --ignore-health-check');
+    expect(script).toContain('supabase_prestarted=1');
+    expect(script).toContain("'pnpm' 'test' '--' '--browser-only'");
+    expect(script).not.toContain('nohup pnpm dev');
+
+    const coreScript = buildWorkerScript({
       repository: 'kortix-ai/suna',
       ref: sha,
       sha,
       testArgs: [],
     });
+    expect(coreScript).not.toContain('supabase_prestarted=1');
+  });
 
-    expect(script).toContain("'pnpm' 'test'");
-    expect(script).not.toContain('nohup pnpm dev');
+  test('propagates the full-run SDK de-duplication flag into the package worker', () => {
+    const fullPackageScript = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: ['--packages-only'],
+      skipSdkPackageTests: true,
+    });
+    expect(fullPackageScript).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
+
+    const standalonePackageScript = buildWorkerScript({
+      repository: 'kortix-ai/suna',
+      ref: sha,
+      sha,
+      testArgs: ['--packages-only'],
+    });
+    expect(standalonePackageScript).not.toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
   });
 
   test('detaches the worker with the Platinum-supported setsid contract', () => {

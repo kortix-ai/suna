@@ -55,6 +55,16 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'X-Request-Id',
       'Last-Event-ID',
       'X-Kortix-Client',
+      // Act-as impersonation. A header absent from this list is stripped by the
+      // browser's preflight, so the request arrives WITHOUT the grant and runs
+      // as the operator's own account — the exact silent mis-scoping the
+      // server-side design refuses to allow. It has to be declared here for the
+      // banner to ever be true in a browser.
+      'X-Kortix-Impersonate',
+      // Same reason for the platform-admin read-only bypass the SDK already
+      // attaches (setAdminBypass → `x-kortix-admin-bypass: 1`): without it, the
+      // header never survives a cross-origin preflight.
+      'X-Kortix-Admin-Bypass',
     ],
     exposeHeaders: [
       'X-Next-Cursor',

@@ -23,12 +23,14 @@ import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { hasOpenAssistantTurn } from './assistant-turn-open';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
 import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
+import { mergeQueuedBatch } from './queued-batch';
 import { ActivityBurst } from './turn/activity-burst';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
@@ -44,12 +46,12 @@ import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
 import {
   type AttachedFile,
@@ -75,6 +77,7 @@ import { errorToast, infoToast } from '@/components/ui/toast';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/runtime-files';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
@@ -108,6 +111,7 @@ import { useMessageJumpStore } from '@/stores/message-jump-store';
 import {
   type WebQueuedMessage,
   type WebSessionQueue,
+  inFlightIdsOf,
   useMessageQueueStore,
 } from '@/stores/message-queue-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
@@ -416,6 +420,7 @@ const EMPTY_SESSION_QUEUE: WebSessionQueue = Object.freeze({
   pending: [],
   failed: [],
   inFlightId: null,
+  inFlightIds: [],
 });
 
 /** How long "Stop & send" will wait for the server to confirm the abort before
@@ -632,6 +637,11 @@ function SessionTurnImpl({
   const [copied, setCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
+  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
+  // as every `panelMode` read site).
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -1310,6 +1320,7 @@ function SessionTurnImpl({
                   working={working}
                   isTrailing={index === segments.length - 1}
                   disableNavigation={disableToolNavigation}
+                  density={conversationDensity}
                 />
               );
             }
@@ -1449,9 +1460,11 @@ function SessionTurnImpl({
               message={retryMessage}
               attempt={retryInfo.attempt}
               secondsLeft={retrySecondsLeft}
+              details={retryInfo.details}
             />
           )}
           <SessionBusyIndicator
+            sessionId={sessionId}
             statusText={throttledStatus || undefined}
             retryLabel={
               retryInfo
@@ -2048,19 +2061,16 @@ export function SessionChat({
   const sessionStatus = sessionState?.status ?? syncStatus;
   const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // Pending: last assistant message has no time.completed.
-  // Used as a SECONDARY signal — only contributes to busy when the
-  // server also says busy. Prevents the event-ordering race where
-  // session.idle arrives before message.updated sets time.completed.
-  const hasIncompleteAssistant = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'assistant') {
-        return !(messages[i].info as any).time?.completed;
-      }
-    }
-    return false;
-  }, [messages]);
+  // Pending: last assistant message is neither completed nor errored.
+  // Used as a SECONDARY signal for busy — only contributes when the server
+  // also says busy. Prevents the event-ordering race where session.idle
+  // arrives before message.updated sets time.completed.
+  //
+  // It is ALSO a queue drain gate, which is why "errored counts as ended"
+  // matters: an aborted turn keeps `time.completed` unset, so reading only
+  // that field left this true forever after the stop button and closed the
+  // gate permanently. See `assistant-turn-open.ts`.
+  const hasIncompleteAssistant = useMemo(() => hasOpenAssistantTurn(messages), [messages]);
 
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
@@ -2210,6 +2220,9 @@ export function SessionChat({
   const sessionQueue = useMessageQueueStore((s) => s.queues[sessionId]) ?? EMPTY_SESSION_QUEUE;
   const queuedMessages = sessionQueue.pending;
   const failedQueuedMessages = sessionQueue.failed;
+  // Plural: the queue drains as one batch, so several rows are on the wire at
+  // once and every one of them has to be locked against edit/remove/reorder.
+  const queueInFlightIds = inFlightIdsOf(sessionQueue);
 
   // Anything queued in the instant shell while the computer was still booting
   // is already here — the shell writes into this same store under this same
@@ -3166,7 +3179,7 @@ export function SessionChat({
           isBusy:
             isBusy || hasActiveQuestion || hasPendingApproval || pendingPermissions.length > 0,
           pendingCount: sessionQueue.pending.length,
-          hasInFlight: !!sessionQueue.inFlightId,
+          hasInFlight: queueInFlightIds.length > 0,
         });
         if (shouldQueue) {
           handleQueueMessage(text);
@@ -3186,14 +3199,14 @@ export function SessionChat({
     hasPendingApproval,
     pendingPermissions.length,
     sessionQueue.pending.length,
-    sessionQueue.inFlightId,
+    queueInFlightIds.length,
     handleSend,
     handleQueueMessage,
     registerSender,
     unregisterSender,
   ]);
 
-  // Release queued messages, one per turn, only when the turn actually ended.
+  // Release the whole queue on one prompt, only when the turn actually ended.
   //
   // What used to be here drained the WHOLE queue whenever any tool part flipped
   // to 'completed' or 'error', or whenever the debounced `isBusy` fell. Both
@@ -3226,17 +3239,16 @@ export function SessionChat({
     ],
   );
 
-  const sendQueuedMessage = useCallback(
-    async (message: WebQueuedMessage) => {
-      // Files that did not survive being stored carry no data — send the text
-      // rather than a broken attachment. The composer shows the user that the
-      // attachments were dropped.
-      const files = message.files?.filter((f): f is AttachedFile => f.kind !== 'lost');
-      await handleSend(message.text, files?.length ? files : undefined, message.mentions, {
-        agent: message.agent,
-        model: message.model,
-        variant: message.variant,
-      });
+  const sendQueuedBatch = useCallback(
+    async (batch: WebQueuedMessage[]) => {
+      // ONE `handleSend` for the whole batch, never a loop over it. `handleSend`
+      // resolves when the server ACKs the prompt (204), not when the turn ends,
+      // so a second call would land its message inside the first one's live
+      // turn — RC4 in the design doc, and the reason this queue exists.
+      // `mergeQueuedBatch` decides what the single prompt contains.
+      const merged = mergeQueuedBatch(batch);
+      if (!merged) return;
+      await handleSend(merged.text, merged.files, merged.mentions, merged.overrides);
     },
     [handleSend],
   );
@@ -3244,7 +3256,7 @@ export function SessionChat({
   const queueDrain = useMessageQueueDrain({
     sessionId,
     gates: queueGates,
-    send: sendQueuedMessage,
+    send: sendQueuedBatch,
   });
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
@@ -3277,12 +3289,12 @@ export function SessionChat({
   }, [sessionId, sessionState, abortSession, queueDrain]);
 
   /**
-   * "Stop & send" on a queued message: end the current turn, then send that one.
+   * The per-row action: end the current turn if one is running, then send that
+   * message. The only path that interrupts a running turn — automatic draining
+   * never does — which is why it is a deliberate click and says what it does.
    *
-   * The only path that interrupts a running turn, and it is labelled as such in
-   * the composer — automatic draining never does. Waits for the server to
-   * actually report idle rather than guessing with a fixed delay, so the prompt
-   * cannot race the abort it just issued.
+   * Waits for the server to actually report idle rather than guessing with a
+   * fixed delay, so the prompt cannot race the abort it just issued.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
@@ -3594,13 +3606,37 @@ export function SessionChat({
   const chatToolbarSlot = useMemo(
     () =>
       projectId && projectSessionId ? (
-        <SessionScopeToolbar
+        <SessionOverridesComposer
           projectId={projectId}
           sessionId={projectSessionId}
-          agentName={sessionScopeAgentName}
+          agents={local.agent.list}
+          selectedAgent={sessionScopeAgentName ?? null}
+          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
+          agentLocked={!!lockedAgentName}
+          defaultAgentName={projectConfig?.open_code_default_agent}
+          models={local.model.list}
+          modelsLoading={providersLoading}
+          selectedModel={local.model.currentKey ?? null}
+          onModelChange={handleModelChange}
+          providers={providers}
+          defaultModel={local.model.defaults.resolveDefaultFor(sessionScopeAgentName)}
         />
       ) : undefined,
-    [projectId, projectSessionId, sessionScopeAgentName],
+    [
+      handleAgentChange,
+      handleModelChange,
+      local.agent.list,
+      local.model.currentKey,
+      local.model.defaults,
+      local.model.list,
+      lockedAgentName,
+      projectConfig?.open_code_default_agent,
+      projectId,
+      projectSessionId,
+      providers,
+      providersLoading,
+      sessionScopeAgentName,
+    ],
   );
 
   const chatInputSlot = useMemo(
@@ -3841,6 +3877,7 @@ export function SessionChat({
                         text={optimisticPrompt || ''}
                         agentNames={agentNames}
                         onFileClick={openFileInComputer}
+                        sessionId={sessionId}
                       />
                     )}
 
@@ -4009,7 +4046,9 @@ export function SessionChat({
                     {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                    {!showOptimistic && isBusy && turns.length === 0 && <SessionBusyIndicator />}
+                    {!showOptimistic && isBusy && turns.length === 0 && (
+                      <SessionBusyIndicator sessionId={sessionId} />
+                    )}
                   </div>
                   {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom
@@ -4109,12 +4148,14 @@ export function SessionChat({
                 isBusy={isBusy}
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
-                queueInFlightId={sessionQueue.inFlightId}
+                queueInFlightIds={queueInFlightIds}
+                queuePaused={queueDrain.paused}
+                queueIsRunning={isBusy}
+                onSendQueuedMessageNow={handleQueueSendNow}
                 onQueueMessage={handleQueueMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
                 onEditQueuedMessage={handleEditQueuedMessage}
                 onReorderQueuedMessage={handleReorderQueuedMessage}
-                onSendQueuedMessageNow={handleQueueSendNow}
                 onRetryQueuedMessage={handleRetryQueuedMessage}
                 onStop={handleStop}
                 escCount={escCount}

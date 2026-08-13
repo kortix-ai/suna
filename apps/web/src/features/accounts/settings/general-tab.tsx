@@ -42,9 +42,17 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import { ClockIcon as Clock, WarningIcon as DangerTriangleSolid } from '@phosphor-icons/react';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts } from '@kortix/sdk';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  ClockIcon as Clock,
+  WarningIcon as DangerTriangleSolid,
+} from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { LanguageSwitcher } from './language-switcher';
@@ -53,6 +61,26 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('settings.general');
   const tCommon = useTranslations('common');
+  const router = useRouter();
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+  });
+  const accountId =
+    selectedAccountId ??
+    accountsQuery.data?.[0]?.account_id ??
+    null;
+
+  useEffect(() => {
+    const accounts = accountsQuery.data;
+    if (!accounts?.length) return;
+    if (!selectedAccountId || !accounts.find((a) => a.account_id === selectedAccountId)) {
+      setSelectedAccountId(accounts[0]!.account_id);
+    }
+  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -332,6 +360,32 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
 
           <LanguageSwitcher />
         </div>
+
+        {accountId ? (
+          <div className="space-y-2">
+            <h2 className="text-foreground text-base font-semibold">
+              {t('accountSettings.title')}
+            </h2>
+            <Item variant="outline" className="items-start">
+              <ItemContent>
+                <ItemDescription>{t('accountSettings.description')}</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onClose();
+                    router.push(`/accounts/${accountId}`);
+                  }}
+                >
+                  {t('accountSettings.button')}
+                  <ArrowUpRight className="size-3.5" />
+                </Button>
+              </ItemActions>
+            </Item>
+          </div>
+        ) : null}
 
         {isBillingEnabled() && accountDeletionSupported ? (
           <div className="space-y-2">

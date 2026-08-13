@@ -149,6 +149,10 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/connectors/projects/:projectId/catalog': 'Viewed connector catalog',
   'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding':
     'Updated connector secret binding',
+  'GET /v1/runtime-assets/manifest': 'Checked sandbox runtime-asset versions',
+  'GET /v1/runtime-assets/cli': 'Downloaded the sandbox CLI',
+  'HEAD /v1/runtime-assets/cli': 'Checked the sandbox CLI',
+  'GET /v1/runtime-assets/managed-skills': 'Downloaded managed skills',
   'POST /v1/router/web-search': 'Searched the web',
   'POST /v1/router/image-search': 'Searched images',
   'POST /v1/router/chat/completions': 'Generated chat completion',
@@ -188,9 +192,14 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   // ("Ran trial", "Created managed model"); they are operator decisions.
   'POST /v1/admin/api/accounts/:id/trial': 'Granted account trial',
   'DELETE /v1/admin/api/accounts/:id/trial': 'Revoked account trial',
+  'POST /v1/admin/api/accounts/:id/members/:userId/role': 'Changed account member role',
   'POST /v1/admin/api/accounts/:id/managed-models': 'Set managed-models override',
   'POST /v1/admin/api/accounts/:id/enterprise-demo': 'Set enterprise demo flag',
   'POST /v1/admin/api/accounts/:id/enterprise-entitlement': 'Set enterprise entitlement flag',
+  'PUT /v1/admin/api/accounts/:id/overrides': 'Set account entitlement overrides',
+  'POST /v1/admin/api/impersonate': 'Started account impersonation',
+  'DELETE /v1/admin/api/impersonate/:grantId': 'Stopped account impersonation',
+  'GET /v1/admin/api/impersonate/active': 'Listed active impersonation grants',
   'POST /v1/billing/cron/free-tier-rotation': 'Ran free-tier billing rotation',
   'POST /v1/billing/cron/trial-expiry': 'Ran trial expiry sweep',
   'POST /v1/billing/cron/yearly-rotation': 'Ran yearly billing rotation',
@@ -464,6 +473,11 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (m === 'POST' && raw.endsWith(':rotate')) {
         return { title: 'Rotated secret', detail: name ?? undefined, kind: 'update' };
       }
+      if (m === 'POST' && s[4] === 'grant') {
+        // Writes the agent's `secrets:` list in kortix.yaml, so it widens what a
+        // session can reach — an access change, not a value change.
+        return { title: 'Granted secret to an agent', detail: name ?? undefined, kind: 'update' };
+      }
       // POST /v1/projects/:id/secrets with name in body (not in path).
       // The name isn't recoverable from the URL so we just label the
       // action and rely on the before/after diff for the detail.
@@ -514,6 +528,11 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (m === 'PATCH' && s.length === 4) return { title: 'Updated trigger', kind: 'update' };
       if (m === 'DELETE' && s.length === 4) return { title: 'Deleted trigger', kind: 'delete' };
       if (m === 'POST' && s[4] === 'fire') return { title: 'Fired trigger', kind: 'create' };
+    }
+    // Monitor event intake — the project monitor box appending to its event
+    // log (sandbox-token-only; see docs/specs/2026-08-12-monitors.md).
+    if (s[0] === 'projects' && s[2] === 'monitors' && s[3] === 'ingest' && m === 'POST') {
+      return { title: 'Ingested monitor events', kind: 'create' };
     }
     return null;
   },
