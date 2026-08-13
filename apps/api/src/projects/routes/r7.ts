@@ -106,6 +106,10 @@ import {
   withWarmProjectSessionLock,
 } from '../lib/warm-session-store';
 import { prepareReusedWarmSession } from '../lib/warm-session-refresh';
+import {
+  assertWarmSessionCapacity,
+  WarmProjectSessionUnavailableError,
+} from '../lib/warm-session-capacity';
 import { createWarmProjectSessionCoordinator, WarmProjectSessionError } from '../lib/warm-sessions';
 import {
   createSession,
@@ -348,6 +352,11 @@ projectsApp.openapi(
         discardAvailableWarmProjectSession(scope, sessionId, metadata),
       claim: (sessionId, metadata) => claimAvailableWarmProjectSession(scope, sessionId, metadata),
       create: async (metadata) => {
+        // CREATE only — the coordinator calls this after find-available has
+        // already failed, so a reusable warm session never reaches it. A warm
+        // box is billed compute holding a concurrent-session slot; it must
+        // never take the LAST one and 429 the next genuine session start.
+        await assertWarmSessionCapacity(loaded.row.accountId);
         const result = await createProjectSession({
           project: loaded.row,
           userId: loaded.userId,
@@ -433,6 +442,22 @@ projectsApp.openapi(
       }
       if (error instanceof WarmSessionCreateFailure) {
         return sendSessionCreateError(c, error.detail);
+      }
+      // Warming is possible in principle but not right now. Same 409
+      // WARM_SESSION_UNAVAILABLE as the unreadable-repo skip below: the client
+      // treats every warm failure identically (no warm session, fall through to
+      // the normal create path), so this is silent and correct at the UI.
+      // `reason` distinguishes the causes for debugging without changing the
+      // status, the code, or the response schema.
+      if (error instanceof WarmProjectSessionUnavailableError) {
+        return c.json(
+          {
+            error: 'This project cannot prepare a warm session right now.',
+            code: 'WARM_SESSION_UNAVAILABLE',
+            reason: error.reason,
+          },
+          409,
+        );
       }
       // A project whose repo cannot be read (no credentials, deleted remote,
       // bad ref) simply cannot be warmed. That is a fact about the project, not
