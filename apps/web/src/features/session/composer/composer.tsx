@@ -101,6 +101,13 @@ export interface SessionChatInputProps {
   ) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
+  /**
+   * Accepted but no longer wired to anything. The queue drains as ONE batch,
+   * so moving row 3 above row 2 changes nothing a user can observe — the
+   * reorder UI was chrome for a distinction without a difference and was
+   * removed with the ChatGPT-style queue rows. Kept in the type so existing
+   * callers keep compiling; delete it here and at those call sites together.
+   */
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
   onSendQueuedMessageNow?: (id: string) => void;
   onRetryQueuedMessage?: (id: string) => void;
@@ -278,15 +285,14 @@ function setDocumentWithoutStealingFocus(
 function ComposerImpl({
   onSend,
   isBusy = false,
-  queuedMessages,
   failedQueuedMessages,
+  queuedMessages,
   queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
   queuePaused = false,
   queueIsRunning = false,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
-  onReorderQueuedMessage,
   onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onStop,
@@ -1010,6 +1016,16 @@ function ComposerImpl({
     placeholder,
   });
 
+  /**
+   * Whether the inset strip above the card has anything to show. Gated on
+   * actual CONTENT, never on `sessionId`: that was truthy in every session, so
+   * the strip's padded, bordered shell rendered as an empty rounded sliver
+   * floating above the notice bar whenever the queue was empty.
+   */
+  const queueHasRows =
+    (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
+  const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
+
   return (
     <div className={COMPOSER_SHELL_CLASS}>
       {/*
@@ -1031,13 +1047,68 @@ function ComposerImpl({
       */}
       <div id={dockId} />
 
-      {(notice || replyTo) && (
-        <div className="relative isolate overflow-hidden rounded-t-xl">
+      {/*
+        The stack above the card. Each layer owns its OWN top rounding rather
+        than leaning on a wrapper clip: the old `overflow-hidden rounded-t-xl`
+        on this wrapper only rounded whichever child happened to be topmost,
+        so a full-width notice under the 96%-wide queue strip kept square
+        corners — the "sometimes it breaks" bug. The rule now is width-based
+        and unconditional: a layer wider than the one above it rounds its top
+        (queue strip at 96%, first full-width bar, the card itself); a layer
+        the SAME width as the one above stays square and shares the divider.
+      */}
+      {(notice || replyTo || showQueueStrip) && (
+        <div className="relative isolate flex w-full flex-col items-center justify-center">
+          {/*
+            ONE element carries both the strip's chrome (bg, border, padding)
+            AND `empty:hidden`. `inputSlot` is a fragment whose children all
+            self-hide, so it is ALWAYS a truthy ReactNode — no JS condition can
+            know whether it rendered anything. Only CSS `:empty` can, and it
+            only works on the element that owns the visible chrome: the old
+            two-div version hid an inner wrapper while the padded, bordered
+            shell around it kept painting as an empty sliver.
+          */}
+          {showQueueStrip && (
+            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 px-2 py-1.5 empty:hidden">
+              <QueuedMessages
+                  messages={queuedMessages ?? EMPTY_QUEUE}
+                  failed={failedQueuedMessages}
+                  inFlightIds={queueInFlightIds}
+                  paused={queuePaused}
+                  isRunning={queueIsRunning}
+                  onRemove={onRemoveQueuedMessage}
+                  onEdit={onEditQueuedMessage}
+                  onSendNow={onSendQueuedMessageNow}
+                  onRetry={onRetryQueuedMessage}
+                />
+
+              {threadContext && (
+                <button
+                  onClick={threadContext.onBackToParent}
+                  className={cn(
+                    'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                  )}
+                >
+                  <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {'Sub-session of'}{' '}
+                    <span className="text-foreground/80 font-medium">
+                      {threadContext.parentTitle}
+                    </span>
+                  </span>
+                </button>
+              )}
+              {inputSlot}
+            </div>
+          )}
+
           {notice && (
             <div
               role="status"
               aria-live="polite"
-              className="bg-sidebar border-border flex items-center gap-2 border border-b-0 px-3 py-1.5"
+              // Always rounded: it is either the topmost layer or sits under
+              // the NARROWER queue strip — both cases expose its top corners.
+              className="bg-sidebar border-border flex w-full items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5"
             >
               <Loading className="size-3.5 shrink-0" />
               <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
@@ -1047,7 +1118,16 @@ function ComposerImpl({
           )}
 
           {replyTo && (
-            <div className="bg-sidebar border-border flex items-center gap-2 border border-b-0 px-3 py-1.5">
+            // `w-full`, or the `items-center` column shrinks this bar to its
+            // content width. Rounded only when no notice sits above it — the
+            // notice is the same width, so under one this bar is a flush
+            // continuation, not a new edge.
+            <div
+              className={cn(
+                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1.5',
+                !notice && 'rounded-t-xl',
+              )}
+            >
               <ArrowBendDoubleUpLeftIcon className="text-muted-foreground size-4 shrink-0" />
               <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                 {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
@@ -1096,42 +1176,6 @@ function ComposerImpl({
           )}
         >
           {/* Inline chips: thread context, todos, queue — unified spacing */}
-          {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
-            <>
-              <div className="mb-3 flex flex-col gap-1.5 px-3 empty:hidden">
-                <QueuedMessages
-                  messages={queuedMessages ?? EMPTY_QUEUE}
-                  failed={failedQueuedMessages}
-                  inFlightIds={queueInFlightIds}
-                  paused={queuePaused}
-                  isRunning={queueIsRunning}
-                  onRemove={onRemoveQueuedMessage}
-                  onEdit={onEditQueuedMessage}
-                  onReorder={onReorderQueuedMessage}
-                  onSendNow={onSendQueuedMessageNow}
-                  onRetry={onRetryQueuedMessage}
-                />
-
-                {threadContext && (
-                  <button
-                    onClick={threadContext.onBackToParent}
-                    className={cn(
-                      'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
-                    )}
-                  >
-                    <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
-                    <span className="min-w-0 flex-1 truncate text-left">
-                      {'Sub-session of'}{' '}
-                      <span className="text-foreground/80 font-medium">
-                        {threadContext.parentTitle}
-                      </span>
-                    </span>
-                  </button>
-                )}
-                {inputSlot}
-              </div>
-            </>
-          )}
 
           <AttachmentTiles files={attachedFiles} onRemove={removeAttachedFile} />
 

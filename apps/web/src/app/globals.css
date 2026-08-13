@@ -1535,8 +1535,7 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
    the top of the window with nothing above it, so it shares the title-bar row
    with the OS window controls. No extra vertical space, indent only.
 
-   Below md the header already drops the title under the chrome (`pt-14`), so
-   both indents are scoped to md+ where the title shares the traffic-light row. */
+   Both indents are scoped to md+ where the title shares the traffic-light row. */
 @media (min-width: 768px) {
   /* macOS: indent past the lights AND the shell's floating sidebar toggle —
      --kx-titlebar-content-left is exactly "after both". Only while collapsed;

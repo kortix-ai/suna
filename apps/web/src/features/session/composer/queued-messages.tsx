@@ -1,56 +1,58 @@
 'use client';
 
 /**
- * The queue, shown as what it is: a numbered list of what goes next.
+ * The queue, shown as a flat list of what goes next — one borderless row per
+ * message, queue glyph on the left, actions on the right.
  *
- * All of it sends when this turn ends, as one message, in this order. The
- * numbers are the order, not a schedule of separate turns — nothing here waits
- * for anything else in the list. That is why there is no header explaining it
- * and no summary line to collapse.
+ * All of it sends when this turn ends, as one message, top to bottom. That is
+ * why there is no number column and no reorder control: the order is the list,
+ * and nothing in it waits for anything else.
  *
- * ## What was here before, and why it went
+ * ## The row anatomy
  *
- *   - **Two collapse controls for one list.** A caret header ("3 queued · sends
- *     when this turn ends") that hid rows past the second, *and* a separate
- *     "Show 2 more" button underneath. Two affordances, same job, and neither
- *     was doing anything a five-row list needed. A long queue now scrolls inside
- *     itself instead of hiding behind a toggle.
- *   - **A second list.** Failed sends rendered in their own `<ul>` below the
- *     queue, which read as two queues. There is one queue; a failure is a row in
- *     it that needs attention.
- *   - **Four hover-revealed reorder carets.** Two rows' worth of chrome to move
- *     one row. `ArrowUp`/`ArrowDown` still reorder from a focused row; the
- *     buttons are gone.
- *   - **A "Paused — stopped before these sent" bar with its own Resume button.**
- *     A second way to do what a row's own send button already does, since that
- *     resumes the queue as it sends. The pause still shows — the list dims —
- *     but it no longer gets a control of its own.
- *   - **Motion on every row.** `layout` + a spring on enter, exit, and reorder.
- *     A queue changes because the user removed something or the agent consumed
- *     something; both are already visible. Animating them adds a wait to a fact.
- *     Rows now appear and leave instantly. The only motion left is the press
- *     feedback on a button, which is interaction, not decoration.
+ *   - **Leading queue glyph**, not a number. A batch that sends at once does
+ *     not need per-row arithmetic; the glyph says "queued" and the position
+ *     says the order.
+ *   - **Actions are always visible, muted.** The previous design hid them
+ *     until hover, which made a row at rest read as inert text. They now sit
+ *     at `text-muted-foreground` and brighten on hover — present without
+ *     shouting, and reachable without a hover hunt.
+ *   - **Pencil** edits the row (clicking the text edits too); **trash**
+ *     removes it. Two direct controls, no overflow menu — two actions do not
+ *     need a third click to reach them.
  *
- * Presentation only. Every mutation goes out through a prop; the store owns the
- * state and the drain owns the timing.
+ * ## What is deliberately NOT here
+ *
+ *   - **Reorder.** The batch sends as one message, so moving row 3 above
+ *     row 2 changes nothing a user can observe.
+ *   - **In-flight rows.** A message on the wire is no longer "queued next" —
+ *     it renders as nothing here rather than as a locked row.
+ *   - **Per-row borders.** Seven bordered cards stacked in the composer strip
+ *     read as seven separate surfaces; a queue is one thing.
+ *   - **Motion on enter/exit.** A queue changes because the user removed
+ *     something or the agent consumed something; both are already visible.
+ *     The only motion is press feedback, which is interaction, not decoration.
+ *
+ * Presentation only. Every mutation goes out through a prop; the store owns
+ * the state and the drain owns the timing.
  */
 
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import {
   ArrowClockwiseIcon,
-  PaperPlaneTiltIcon,
   PaperclipIcon,
-  StopIcon,
+  PencilSimpleIcon,
+  QueueIcon,
+  TrashIcon,
   WarningIcon,
-  XIcon,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   nextFocusAfterRemove,
   pausedSummaryLabel,
   queueSummaryLabel,
-  reorderTargetIndex,
 } from './queued-messages-logic';
 
 /** Structural, so callers do not have to import the store's types. */
@@ -70,32 +72,24 @@ export interface QueuedMessagesProps {
    * The messages currently on the wire, oldest first.
    *
    * Plural because the queue drains as a batch: one prompt carries every
-   * message that was waiting. None of them can be edited, moved or removed.
+   * message that was waiting. A row on the wire is not rendered — it has left
+   * the queue in every way a user can act on.
    */
   inFlightIds?: string[];
   onRemove?: (id: string) => void;
   onEdit?: (id: string, text: string) => void;
-  onReorder?: (id: string, toIndex: number) => void;
   onRetry?: (id: string) => void;
   /**
    * The queue is held by a stop and will not drain on its own.
    *
    * Dims the list, and switches what the live region announces — "sends when
    * this turn ends" is a lie while paused, and that lie is what made a stopped
-   * queue look like a broken one.
-   *
-   * The way out is a row's own send button, which resumes the queue as it
-   * sends. That is why there is no separate Resume control: two affordances for
-   * one recovery is exactly the redundancy the rest of this component shed.
-   * The dim is the whole signal, so do not remove it without replacing it —
-   * a paused queue with no indication at all is indistinguishable from a broken
-   * one, which is the bug this prop exists to prevent.
+   * queue look like a broken one. The dim is the whole signal, so do not
+   * remove it without replacing it — a paused queue with no indication at all
+   * is indistinguishable from a broken one.
    */
   paused?: boolean;
-  /**
-   * The agent is mid-turn. Only changes what the per-row send button *is*:
-   * an interrupt while a turn runs, a plain send while nothing does.
-   */
+  /** The agent is mid-turn. Kept for callers; the rows render the same either way. */
   isRunning?: boolean;
   /** Send this message now — stopping the current turn first if one is running. */
   onSendNow?: (id: string) => void;
@@ -104,17 +98,14 @@ export interface QueuedMessagesProps {
 /**
  * One icon control in a row's trailing action strip.
  *
- * The strip is revealed on hover and on focus-within, so a queue at rest is
- * just text and numbers. Focus matters as much as hover here: these are real
- * tab stops, and a control you can reach but cannot see is worse than one that
- * is simply absent.
+ * Always visible at muted strength — a control you can see is a control you
+ * can find, and the strip is what makes a queued row more than dead text.
  *
- * The visible box is 20px for the composer's chip density; `before:` extends the
- * *hit* area without changing the layout. It lands at 36×40 rather than the
- * usual 40×40 minimum, and that is deliberate: rows sit on a ~37px pitch, so a
- * 40px-tall target would overlap its neighbour's — and two overlapping targets
- * is a worse failure than a 36px one, because it makes the wrong row's button
- * the thing you hit. Width is free, so it takes the full 40 there.
+ * The visible box is 24px for the composer's row density; `before:` extends
+ * the *hit* area without changing the layout. Rows sit on a ~28px pitch, so
+ * the hit area caps at 28px tall — two overlapping targets is a worse failure
+ * than a slightly short one, because it makes the wrong row's button the
+ * thing you hit. Width is free, so it takes a full 32 there.
  */
 function RowAction({
   label,
@@ -132,10 +123,10 @@ function RowAction({
         aria-label={label}
         onClick={onClick}
         className={cn(
-          'relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm',
+          'relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm',
           'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
           'transition-[color,background-color,scale] active:scale-[0.96]',
-          'before:absolute before:top-1/2 before:left-1/2 before:h-9 before:w-10',
+          'before:absolute before:top-1/2 before:left-1/2 before:h-7 before:w-8',
           'before:-translate-x-1/2 before:-translate-y-1/2 before:content-[""]',
         )}
       >
@@ -145,90 +136,15 @@ function RowAction({
   );
 }
 
-/**
- * Send this row now.
- *
- * One control with two meanings, because the consequence genuinely differs:
- * while a turn is running this ENDS it first, which is the only thing in the
- * queue that interrupts the agent; while nothing is running it is an ordinary
- * send that just jumps the order. Showing the same paper plane for both would
- * hide an interrupt behind a send.
- *
- * Both icons stay mounted and cross-fade, per the icon-swap rule — a hard swap
- * on a state the user did not trigger at this element reads as a flicker. It is
- * a CSS transition, not a spring: interruptible, and no layout to thrash.
- */
-function SendNowAction({
-  isRunning,
-  onClick,
-}: {
-  isRunning: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <RowAction label={isRunning ? 'Stop agent & send this' : 'Send now'} onClick={onClick}>
-      <span className="relative inline-flex size-3 items-center justify-center">
-        <StopIcon
-          weight="fill"
-          className={cn(
-            'absolute inset-0 size-3 transition-opacity duration-200 ease-[cubic-bezier(0.2,0,0,1)]',
-            isRunning ? 'opacity-100' : 'opacity-0',
-          )}
-        />
-        <PaperPlaneTiltIcon
-          className={cn(
-            'absolute inset-0 size-3 transition-opacity duration-200 ease-[cubic-bezier(0.2,0,0,1)]',
-            isRunning ? 'opacity-0' : 'opacity-100',
-          )}
-        />
-      </span>
-    </RowAction>
-  );
-}
-
-/**
- * The send-order marker.
- *
- * `tabular-nums` because the column must not reflow when the queue crosses from
- * 9 to 10 — a number that shifts the text beside it is worse than no number.
- */
-function Position({ children, tone }: { children: React.ReactNode; tone?: 'failed' }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'flex size-4 shrink-0 items-center justify-center text-[11px] tabular-nums',
-        tone === 'failed' ? 'text-kortix-red' : 'text-muted-foreground/60',
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 function QueuedRow({
   message,
-  index,
-  total,
-  minIndex,
-  isInFlight,
-  isRunning,
   onRemove,
   onEdit,
-  onReorder,
-  onSendNow,
   onFocusSibling,
 }: {
   message: QueuedMessageView;
-  index: number;
-  total: number;
-  minIndex: number;
-  isInFlight: boolean;
-  isRunning: boolean;
   onRemove?: (id: string) => void;
   onEdit?: (id: string, text: string) => void;
-  onReorder?: (id: string, toIndex: number) => void;
-  onSendNow?: (id: string) => void;
   onFocusSibling: (id: string | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -236,7 +152,10 @@ function QueuedRow({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (editing) inputRef.current?.select();
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
   }, [editing]);
 
   const commit = useCallback(() => {
@@ -253,32 +172,17 @@ function QueuedRow({
     setEditing(false);
   }, [message.text]);
 
-  const canReorder = !!onReorder && !isInFlight;
-
   return (
     <li
       tabIndex={-1}
       data-queued-id={message.id}
-      onKeyDown={(event) => {
-        if (editing) return;
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-          // Reorder has no buttons of its own. Four hover-revealed carets to
-          // move two rows was more chrome than the action was worth, and the
-          // keys work from the row you already focused to remove or edit.
-          if (!canReorder) return;
-          const target = reorderTargetIndex(index, event.key === 'ArrowUp' ? 'up' : 'down', total, minIndex);
-          if (target === null) return;
-          event.preventDefault();
-          onReorder?.(message.id, target);
-        }
-      }}
       className={cn(
-        'group bg-popover flex items-center gap-2 rounded-md border px-2.5 py-1.5',
+        'group flex items-center gap-2 rounded-md px-1.5 py-1',
+        'hover:bg-muted-foreground/[0.06]',
         'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
-        isInFlight && 'opacity-70',
       )}
     >
-      <Position>{index + 1}</Position>
+      <QueueIcon aria-hidden className="text-muted-foreground/60 size-3.5 shrink-0" />
 
       {editing ? (
         <input
@@ -301,9 +205,9 @@ function QueuedRow({
       ) : (
         <button
           type="button"
-          disabled={isInFlight || !onEdit}
+          disabled={!onEdit}
           onClick={() => setEditing(true)}
-          className="text-muted-foreground min-w-0 flex-1 cursor-text truncate text-left text-xs disabled:cursor-default"
+          className="text-foreground/90 min-w-0 flex-1 cursor-text truncate text-left text-xs disabled:cursor-default"
         >
           {message.text}
         </button>
@@ -321,52 +225,26 @@ function QueuedRow({
         </Hint>
       ) : null}
 
-      {isInFlight ? (
-        <span className="text-muted-foreground/70 shrink-0 text-xs">Sending…</span>
-      ) : (
-        // Hidden until the row is hovered, and until it is focused — a control
-        // you can tab to but cannot see is worse than no control at all.
-        <span className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-          {onSendNow && (
-            <SendNowAction isRunning={isRunning} onClick={() => onSendNow(message.id)} />
-          )}
-          {onRemove && (
-            <RowAction
-              label="Remove from queue"
-              onClick={() => {
-                onFocusSibling(message.id);
-                onRemove(message.id);
-              }}
-            >
-              <XIcon className="size-3" />
-            </RowAction>
-          )}
-        </span>
-      )}
+      <span className="flex shrink-0 items-center gap-0.5">
+        {onEdit && (
+          <RowAction label="Edit message" onClick={() => setEditing(true)}>
+            <PencilSimpleIcon className="size-3.5" />
+          </RowAction>
+        )}
+        {onRemove && (
+          <RowAction
+            label="Remove from queue"
+            onClick={() => {
+              onFocusSibling(message.id);
+              onRemove(message.id);
+            }}
+          >
+            <TrashIcon className="size-3.5" />
+          </RowAction>
+        )}
+      </span>
     </li>
   );
-}
-
-/**
- * Whether the list is taller than its cap, so the bottom edge can be faded.
- *
- * Without this the cap clips the next row mid-height and the queue looks
- * broken rather than scrollable — the one honest job the removed "Show 2 more"
- * button was doing. A fade says "this continues" without costing a control, and
- * it only appears when there is actually something below.
- */
-function useOverflowing(ref: React.RefObject<HTMLElement | null>, deps: number) {
-  const [overflowing, setOverflowing] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref, deps]);
-  return overflowing;
 }
 
 /** Stable identity, so the default does not look like a change every render. */
@@ -378,24 +256,26 @@ export function QueuedMessages({
   inFlightIds = EMPTY_IN_FLIGHT,
   onRemove,
   onEdit,
-  onReorder,
   onRetry,
   paused = false,
-  isRunning = false,
-  onSendNow,
 }: QueuedMessagesProps) {
   const listRef = useRef<HTMLUListElement>(null);
-  const overflowing = useOverflowing(listRef, messages.length + failed.length);
-  // Nothing may be reordered into or above a message already being sent. A
-  // batch is several such rows, so the floor is the batch size, not 1.
-  const minIndex = inFlightIds.length;
+
+  /**
+   * In-flight rows are filtered HERE, before any render decision — not hidden
+   * row-by-row. A message on the wire is no longer queued in any way the user
+   * can act on, and a component that renders its shell around zero visible
+   * rows defeats the `:empty` check the composer's strip relies on to
+   * disappear: the shell itself was the "phantom sliver above the composer".
+   */
+  const visibleMessages = messages.filter((m) => !inFlightIds.includes(m.id));
 
   /** Keep the keyboard in the list when a row is removed from under it. */
   const focusAfterRemove = useCallback(
     (removedId: string) => {
-      const index = messages.findIndex((m) => m.id === removedId);
+      const index = visibleMessages.findIndex((m) => m.id === removedId);
       const nextId = nextFocusAfterRemove(
-        messages.map((m) => m.id),
+        visibleMessages.map((m) => m.id),
         index,
       );
       if (!nextId) return;
@@ -405,85 +285,64 @@ export function QueuedMessages({
           ?.focus();
       });
     },
-    [messages],
+    [visibleMessages],
   );
 
-  if (messages.length === 0 && failed.length === 0) return null;
+  if (visibleMessages.length === 0 && failed.length === 0) return null;
 
   return (
     <>
       {/* Announced politely: a queue that grows or drains while you are typing
-          is a change screen-reader users otherwise have no way to notice. The
-          sighted equivalent is the numbers, not a header. */}
+          is a change screen-reader users otherwise have no way to notice. */}
       <p className="sr-only" aria-live="polite">
-        {paused ? pausedSummaryLabel(messages.length) : queueSummaryLabel(messages.length)}
+        {paused
+          ? pausedSummaryLabel(visibleMessages.length)
+          : queueSummaryLabel(visibleMessages.length)}
       </p>
 
       {/* ONE list. Failures are rows in the queue that need attention, not a
           second queue below it. The cap keeps a long queue from pushing the
-          textarea off screen — it scrolls inside itself rather than hiding
-          rows behind a toggle nobody asked for. */}
-      <ul
-        ref={listRef}
-        // The mask fades the last 24px so a clipped row reads as "scroll", not
-        // as a rendering fault. It masks rather than paints, so it needs no
-        // colour and is correct in both themes by construction.
-        style={
-          overflowing
-            ? {
-                maskImage: 'linear-gradient(to bottom, #000 calc(100% - 24px), transparent)',
-                WebkitMaskImage: 'linear-gradient(to bottom, #000 calc(100% - 24px), transparent)',
-              }
-            : undefined
-        }
-        className={cn('max-h-40 space-y-1.5 overflow-y-auto', paused && 'opacity-60')}
-      >
-        {messages.map((message, index) => (
-          <QueuedRow
-            key={message.id}
-            message={message}
-            index={index}
-            total={messages.length}
-            minIndex={minIndex}
-            isInFlight={inFlightIds.includes(message.id)}
-            isRunning={isRunning}
-            onRemove={onRemove}
-            onEdit={onEdit}
-            onReorder={onReorder}
-            onSendNow={onSendNow}
-            onFocusSibling={(id) => id && focusAfterRemove(id)}
-          />
-        ))}
+          textarea off screen — it scrolls inside itself, and FadedScrollArea
+          fades whichever edge has more rows beyond it, so a clipped row reads
+          as "scroll", not as a rendering fault. The strip is `bg-sidebar`, so
+          the default `from-sidebar` fade matches by construction. */}
+      <FadedScrollArea rootClassName="w-full" className="max-h-40">
+        <ul ref={listRef} className={cn('w-full', paused && 'opacity-60')}>
+          {visibleMessages.map((message) => (
+            <QueuedRow
+              key={message.id}
+              message={message}
+              onRemove={onRemove}
+              onEdit={onEdit}
+              onFocusSibling={(id) => id && focusAfterRemove(id)}
+            />
+          ))}
 
-        {failed.map((message) => (
-          <li
-            key={message.id}
-            className="group border-kortix-red/25 bg-kortix-red/[0.06] flex items-center gap-2 rounded-md border px-2.5 py-1.5"
-          >
-            <Position tone="failed">
-              <WarningIcon className="size-3" weight="fill" />
-            </Position>
-            <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-              {message.text}
-            </span>
-            {message.lastError && (
-              <Hint label={message.lastError} side="top">
-                <span className="text-kortix-red shrink-0 text-xs">Failed</span>
-              </Hint>
-            )}
-            {onRetry && (
-              <RowAction label="Retry" onClick={() => onRetry(message.id)}>
-                <ArrowClockwiseIcon className="size-3" />
-              </RowAction>
-            )}
-            {onRemove && (
-              <RowAction label="Dismiss" onClick={() => onRemove(message.id)}>
-                <XIcon className="size-3" />
-              </RowAction>
-            )}
-          </li>
-        ))}
-      </ul>
+          {failed.map((message) => (
+            <li key={message.id} className="group flex items-center gap-2 rounded-md px-1.5 py-1">
+              <WarningIcon weight="fill" className="text-kortix-red size-3.5 shrink-0" />
+              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                {message.text}
+              </span>
+              {message.lastError && (
+                <Hint label={message.lastError} side="top">
+                  <span className="text-kortix-red shrink-0 text-xs">Failed</span>
+                </Hint>
+              )}
+              {onRetry && (
+                <RowAction label="Retry" onClick={() => onRetry(message.id)}>
+                  <ArrowClockwiseIcon className="size-3.5" />
+                </RowAction>
+              )}
+              {onRemove && (
+                <RowAction label="Dismiss" onClick={() => onRemove(message.id)}>
+                  <TrashIcon className="size-3.5" />
+                </RowAction>
+              )}
+            </li>
+          ))}
+        </ul>
+      </FadedScrollArea>
     </>
   );
 }
