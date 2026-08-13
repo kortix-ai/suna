@@ -111,10 +111,20 @@ function formatter(options: Intl.DateTimeFormatOptions, opts: MessageTimeOptions
 function part(date: Date, options: Intl.DateTimeFormatOptions, opts: MessageTimeOptions): string {
   return formatter(options, opts)
     .formatToParts(date)
-    .map((token) =>
-      token.type === 'dayPeriod' ? token.value.toLocaleUpperCase(opts.locale) : token.value,
-    )
+    .map((token) => (token.type === 'dayPeriod' ? dayPeriod(token.value, opts) : token.value))
     .join('');
+}
+
+/**
+ * CLDR also drifts on punctuation, not just case: depending on the ICU
+ * version, `en-CA` hands out "p.m." where `en-US` gives "PM" — dots included.
+ * Every Latin a.m./p.m. variant collapses to the same two letters; day
+ * periods in other scripts keep their own convention, uppercased as before.
+ */
+function dayPeriod(value: string, opts: MessageTimeOptions): string {
+  const latin = /^([ap])\.?\s?m\.?$/i.exec(value.trim());
+  if (latin) return `${latin[1]!.toUpperCase()}M`;
+  return value.toLocaleUpperCase(opts.locale);
 }
 
 /** The calendar year at an instant, in the render zone — so "same year" is
