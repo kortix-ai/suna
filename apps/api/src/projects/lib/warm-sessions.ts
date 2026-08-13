@@ -14,7 +14,7 @@
  *
  *   `metadata.warm === true`  ⇒  created speculatively, never used.
  *
- * `POST /projects/:id/sessions/warm` writes it (projects/routes/r7.ts). The
+ * `POST /projects/:id/sessions/warm` writes it (projects/routes/warm-sessions.ts). The
  * `visible` list scope hides marked rows (projects/lib/session-inventory.ts).
  * `recordSessionActivity` DELETES it in the same statement that stamps the first
  * accepted turn (projects/session-activity.ts), so "used" and "last active" are

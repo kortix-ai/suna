@@ -301,7 +301,7 @@ describe('rescopeSessionSecrets — narrowing away from an unrestricted session'
  * populates: right logic, wrong plumbing, confident wrong output.
  */
 const ROUTE = readFileSync(
-  join(import.meta.dir, '..', 'routes', 'r7.ts'),
+  join(import.meta.dir, '..', 'routes', 'session-scope.ts'),
   'utf8',
 );
 

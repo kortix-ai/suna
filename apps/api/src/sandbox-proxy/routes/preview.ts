@@ -502,7 +502,7 @@ async function agentSwitchRefusal(
  * The refusal body, or null to let the turn through.
  *
  * The shape is byte-identical to what session CREATE returns for the same two
- * codes (projects/routes/r7.ts). That is a contract, not a coincidence: one
+ * codes (projects/routes/project-sessions.ts). That is a contract, not a coincidence: one
  * client classifier has to read both, and a renamed field here degrades to a
  * card that says "a connector is missing" without naming which.
  */

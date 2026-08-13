@@ -505,7 +505,7 @@ flow(
 /**
  * SESS-15 — per-session agent action audit log. Same visibility gate as
  * session detail (project read + the session must be visible to the caller —
- * projects/routes/r7.ts). Non-Enterprise accounts degrade to pending-only
+ * projects/routes/project-audit.ts). Non-Enterprise accounts degrade to pending-only
  * (never a 402 here: this is the always-on approval control plane the
  * launcher polls from every open session).
  */

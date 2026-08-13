@@ -661,7 +661,7 @@ export async function createProjectSession(input: {
   // connectors keeps the project-default fallback for the rest unless the caller
   // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
   // composer's "I picked these specific connections, turn the others off"
-  // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
+  // signal). Defaulting absent→true matches the re-scope path (routes/session-scope.ts), which
   // deliberately never flips this flag on a scope save. Before this, a caller
   // sending `connector_bindings: {...}` without `inherit_unbound` left it
   // `false`, hiding EVERY unbound connector from `kortix connectors ls`

@@ -2,7 +2,7 @@
  * Refusing a PROMPT whose connectors cannot serve it — before the sandbox sees it.
  *
  * The pre-flight that already exists runs at session CREATE and at warm-claim
- * (projects/lib/sessions.ts, routes/r7.ts). A mid-session prompt passed through
+ * (projects/lib/sessions.ts, routes/project-sessions.ts). A mid-session prompt passed through
  * ungated, so the founder's session answered "Still no active connectors. The
  * Gmail connector is gone from the connector catalog." — the agent improvising an
  * apology, mid-turn, about something the platform knew before the first byte.

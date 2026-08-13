@@ -3393,7 +3393,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // The question text is session CONTENT, so it sits behind the same leaf the
-    // other session-content reads use (r7.ts). `loadProjectForUser(…, 'read')`
+    // other session-content reads use (projects/routes/project-sessions.ts). `loadProjectForUser(…, 'read')`
     // is only the coarse project floor: a caller whose custom role or scoped
     // token has `project.session.read` revoked still clears it.
     await assertProjectCapability(

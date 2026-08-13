@@ -428,7 +428,7 @@ projectsApp.openapi(
 
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
   // deleteSession() is the only legitimate writer; they are consumed by
-  // isSessionVisibleTo (r7.ts:488 — hides the session from every member's
+  // isSessionVisibleTo (session-inventory.ts — hides the session from every member's
   // list), the continue-session guard (session-lifecycle/engine.ts:236 —
   // returns 'no-session' so queued Slack/trigger follow-ups 404), and the
   // sandbox reaper (sandbox-reaper.ts:477 — tombstones the live box).
