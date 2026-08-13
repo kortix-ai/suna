@@ -265,6 +265,17 @@ describe('queries return the rows they name', () => {
     ]);
   });
 
+  test('the density submenu door answers the words a user would actually type', () => {
+    // "i hate seeing so much text while kortix is thinking" — the row must be
+    // reachable from the complaint's own vocabulary, not just its name. The row
+    // is a door onto the palette's 'density' page (SUBMENU_PAGE_BY_ID), where
+    // Normal and Minimal are picked explicitly. 'verbosity' stays a keyword:
+    // it is the word the feature was asked for in, even though no UI says it.
+    for (const query of ['density', 'verbosity', 'minimal', 'thinking', 'quiet']) {
+      expect(hits(query)).toContain('nav:conversation-density');
+    }
+  });
+
   test('"view" matches the View group only where the word is really on screen', () => {
     const result = hits('view');
     expect(result).toContain('nav:view-changes'); // label "View Changes"

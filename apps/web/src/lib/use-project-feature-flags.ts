@@ -34,6 +34,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
+  const networkBoundaryShim = useFeatureFlag(projectId, 'network_boundary_shim');
 
   return {
     flags: {
@@ -48,7 +49,8 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
       monitors: monitors.enabled,
+      network_boundary_shim: networkBoundaryShim.enabled,
     },
-    isLoading: monitors.isLoading,
+    isLoading: networkBoundaryShim.isLoading,
   };
 }

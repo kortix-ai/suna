@@ -62,12 +62,15 @@ export function OptimisticTurn({
   /** Paint every tile as still-uploading while there is no sandbox yet
    *  (instant shell). Same `pending` flag MessageAttachments uses on send. */
   deferPreview,
+  /** Keys the busy indicator's dot-matrix glyph — see `SessionDotMatrix`. */
+  sessionId,
   className,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
   deferPreview?: boolean;
+  sessionId?: string;
   className?: string;
 }) {
   return (
@@ -80,7 +83,7 @@ export function OptimisticTurn({
           deferPreview={deferPreview}
         />
       </div>
-      <SessionBusyIndicator className="mt-6" />
+      <SessionBusyIndicator sessionId={sessionId} className="mt-6" />
     </div>
   );
 }

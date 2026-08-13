@@ -1320,6 +1320,116 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
   return metaRuntimeFingerprint;
 }
 
+/**
+ * How long a superseded meta image is protected from the reap.
+ *
+ * A deploy rolls replicas one at a time, so for a few minutes the previous
+ * image is still the current one for whoever has not restarted yet. Deleting it
+ * underneath them would break meta sandbox creation mid-rollout.
+ */
+const META_REAP_PROTECT_MS = 60 * 60 * 1000;
+
+/** Names are `kortix-meta-<env>-<hash16>`; see `metaSnapshotName`. */
+const META_SNAPSHOT_PREFIX = 'kortix-meta';
+
+/**
+ * Which of `names` were built recently — same query as
+ * `recentlyBuiltSnapshotNames`, but it lets a failure propagate.
+ *
+ * The difference is the whole point: that function returns an empty set when
+ * the lookup fails, which a caller cannot distinguish from "none were recent".
+ * For a reaper those two mean opposite things.
+ *
+ * Exported for the reap test, which needs to inject a failing lookup.
+ */
+export async function recentlyBuiltStrict(
+  snapshotNames: string[],
+  withinMs: number,
+): Promise<Set<string>> {
+  if (snapshotNames.length === 0) return new Set();
+  const cutoff = new Date(Date.now() - withinMs);
+  const rows = await db
+    .select({ snapshotName: projectSnapshotBuilds.snapshotName })
+    .from(projectSnapshotBuilds)
+    .where(
+      and(
+        inArray(projectSnapshotBuilds.snapshotName, snapshotNames),
+        or(
+          and(eq(projectSnapshotBuilds.status, 'ready'), gt(projectSnapshotBuilds.finishedAt, cutoff)),
+          and(eq(projectSnapshotBuilds.status, 'building'), gt(projectSnapshotBuilds.startedAt, cutoff)),
+        ),
+      ),
+    );
+  return new Set(rows.map((row) => row.snapshotName));
+}
+
+/**
+ * The meta image name, namespaced by environment.
+ *
+ * The namespace is not cosmetic — it is what makes the reap safe. dev,
+ * staging and prod share one Daytona organisation (same API key), so an
+ * un-namespaced reap running on dev would happily delete the image prod is
+ * booting meta sandboxes from. Each environment can only ever see, and
+ * therefore only ever delete, its own.
+ *
+ * Older builds used `kortix-meta-<hash16>` with no namespace. Those names do
+ * not match this prefix pattern and are left alone by the reap; they need one
+ * deliberate cleanup.
+ */
+export function metaSnapshotName(contentHash: string): string {
+  return `${META_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
+}
+
+/**
+ * Delete this environment's superseded meta images.
+ *
+ * The meta fingerprint hashes the source trees of the agent, CLI, SDK, shared,
+ * starter and friends, so it changes on essentially every commit that touches
+ * them — roughly every deploy. Nothing reaped the old ones: `ensureMetaSandboxImage`
+ * deleted a snapshot only when its own build had FAILED, never when a newer one
+ * superseded it. Measured 2026-08-12: 118 `kortix-meta-*` snapshots, all under
+ * 14 days old, ~8 per day, against a 200-snapshot organisation quota that was
+ * already exceeded (226) — which fails every CI run and every new-project
+ * build, because those cannot fall back to a last-known-good image.
+ *
+ * Best-effort by construction: a reap failure must never fail the build that
+ * triggered it. The image is already there; tidying is not on the critical path.
+ */
+export async function reapSupersededMetaSnapshots(
+  provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
+  keepName: string,
+  /** Test seam for the protection lookup; production uses the strict query. */
+  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = recentlyBuiltStrict,
+): Promise<void> {
+  try {
+    const mine = `${META_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-`;
+    const candidates = (await provider.listSnapshots())
+      .map((snapshot: { name: string }) => snapshot.name)
+      .filter((name: string) => name.startsWith(mine) && name !== keepName);
+    if (candidates.length === 0) return;
+    // Fail CLOSED on the protection lookup. `recentlyBuiltSnapshotNames`
+    // swallows a DB error and returns an empty set — "nothing is protected" —
+    // which for a reap means "delete everything". During a rolling deploy that
+    // would take out the image the not-yet-restarted replicas are booting. A
+    // throw here lands in the outer catch and skips the reap entirely, which is
+    // the right trade: an extra stale image costs one snapshot slot, deleting a
+    // live one breaks meta sandbox creation for the whole environment.
+    const recent = await recentLookup(candidates, META_REAP_PROTECT_MS);
+    for (const name of candidates) {
+      if (recent.has(name)) {
+        console.log(`[snapshots] meta: keeping ${name} (built recently — a replica may still boot it)`);
+        continue;
+      }
+      await provider.deleteSnapshot(name);
+      console.log(`[snapshots] meta: reaped superseded ${name}`);
+    }
+  } catch (err) {
+    console.warn(
+      `[snapshots] meta: reap skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 export async function ensureMetaSandboxImage(opts: {
   source?: SnapshotBuildSource;
   provider: string;
@@ -1330,7 +1440,7 @@ export async function ensureMetaSandboxImage(opts: {
   }
   const fingerprint = await currentMetaRuntimeFingerprint();
   const contentHash = createHash('sha256').update(`meta-runtime-v1\0${fingerprint}`).digest('hex');
-  const snapshotName = `kortix-meta-${contentHash.slice(0, 16)}`;
+  const snapshotName = metaSnapshotName(contentHash);
   const buildKey = `${opts.provider}:${snapshotName}`;
   const existing = metaImageBuilds.get(buildKey);
   if (existing) return existing;
@@ -1350,6 +1460,9 @@ export async function ensureMetaSandboxImage(opts: {
       isShared: true,
       runtimeProfile: 'meta',
     });
+    // Tidy only after the replacement is actually active, so a failed build
+    // can never leave the environment with nothing to boot.
+    await reapSupersededMetaSnapshots(provider, snapshotName);
     return { snapshotName, slug: 'meta', contentHash, built: true, isDefault: false };
   })().finally(() => metaImageBuilds.delete(buildKey));
   metaImageBuilds.set(buildKey, build);

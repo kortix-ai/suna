@@ -46,6 +46,43 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['glm-5.2']?.temperature).toBe(true);
   });
 
+  test('serves Grok 4.6 capabilities and context-tier pricing from models.dev', () => {
+    expect(full['grok-4.6']).toMatchObject({
+      name: 'Grok 4.6',
+      provider: 'kortix',
+      reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
+      tool_call: true,
+      attachment: true,
+      structured_output: true,
+      temperature: true,
+      limit: { context: 500_000, output: 500_000 },
+      cost: {
+        input: 2,
+        output: 6,
+        cache_read: 0.5,
+        context_over_200k: { input: 4, output: 12, cache_read: 1 },
+      },
+    });
+  });
+
+  test('serves DeepSeek V4 Pro 0813 with its real capabilities and prices', () => {
+    expect(full['deepseek-v4-pro-0813']).toMatchObject({
+      name: 'DeepSeek V4 Pro 0813',
+      provider: 'kortix',
+      reasoning: true,
+      reasoning_options: [
+        { type: 'toggle' },
+        { type: 'effort', values: ['low', 'high', 'max'] },
+      ],
+      tool_call: true,
+      attachment: false,
+      temperature: true,
+      limit: { context: 1_048_575, output: 384_000 },
+      cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
+    });
+  });
+
   test('every served model carries a positive context limit', () => {
     const missing = Object.entries(full)
       .filter(([, m]) => !(typeof m.limit?.context === 'number' && m.limit.context > 0))

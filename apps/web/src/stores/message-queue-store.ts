@@ -31,12 +31,14 @@
 
 import type { AttachedFile, TrackedMention } from '@/features/session/composer/types';
 import {
+  claimBatch as claimBatchIn,
   claimNext as claimNextIn,
   completeInFlight,
   createSessionQueue,
   editQueued,
   enqueue as enqueueIn,
   failInFlight,
+  inFlightIdsOf,
   removeQueued,
   reorderQueued,
   retryFailed,
@@ -46,6 +48,12 @@ import {
 import { create } from 'zustand';
 
 export const QUEUE_STORAGE_KEY = 'kortix_message_queue_v3';
+
+/**
+ * Re-exported so feature code reads the in-flight batch through the store it
+ * already imports, rather than reaching past it into the SDK subpath.
+ */
+export { inFlightIdsOf } from '@kortix/sdk/message-queue';
 
 /**
  * An attachment on a queued message. `lost` is what a `local`/`remote` file
@@ -79,6 +87,8 @@ interface MessageQueueState {
 
   hydrate: () => void;
   getSessionQueue: (sessionId: string) => WebSessionQueue;
+  /** The messages on the wire for this session, oldest first. */
+  getInFlightIds: (sessionId: string) => string[];
 
   enqueue: (sessionId: string, input: EnqueueInput) => void;
   remove: (sessionId: string, id: string) => void;
@@ -88,6 +98,11 @@ interface MessageQueueState {
 
   /** Take the head for dispatch. Returns nothing if one is already in flight. */
   claimNext: (sessionId: string) => WebQueuedMessage | undefined;
+  /**
+   * Take everything waiting, for dispatch as ONE prompt. Returns `[]` if a
+   * send is already in flight. This is what the drain uses.
+   */
+  claimBatch: (sessionId: string) => WebQueuedMessage[];
   complete: (sessionId: string) => void;
   fail: (sessionId: string, error: string) => void;
   retry: (sessionId: string, id: string) => void;
@@ -199,6 +214,7 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
                 .filter((m): m is WebQueuedMessage => m !== null),
               // Never restored — the lock belonged to a tab that is gone.
               inFlightId: null,
+              inFlightIds: [],
             };
           }
         }
@@ -209,6 +225,7 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
     },
 
     getSessionQueue: (sessionId) => get().queues[sessionId] ?? EMPTY,
+    getInFlightIds: (sessionId) => inFlightIdsOf(get().queues[sessionId] ?? EMPTY),
 
     enqueue: (sessionId, input) =>
       mutate(sessionId, (queue) =>
@@ -243,6 +260,17 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
       if (!claimed) return undefined;
       // Written synchronously with the claim so a second caller in the same
       // tick sees the lock. This is the whole point of the store owning it.
+      set((prev) => ({ queues: { ...prev.queues, [sessionId]: state } }));
+      return claimed;
+    },
+
+    claimBatch: (sessionId) => {
+      const { state, claimed } = claimBatchIn(get().queues[sessionId] ?? EMPTY);
+      if (claimed.length === 0) return [];
+      // Same synchronous claim as `claimNext`, over several messages instead
+      // of one. Two mounted views of a session share this store, so the whole
+      // batch is locked in the tick that takes it — not one message at a time
+      // with a window in between for the other view to claim the rest.
       set((prev) => ({ queues: { ...prev.queues, [sessionId]: state } }));
       return claimed;
     },

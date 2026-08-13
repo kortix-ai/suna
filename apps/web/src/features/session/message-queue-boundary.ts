@@ -1,12 +1,16 @@
 /**
- * When it is safe to release the head of the queue.
+ * When it is safe to release the queue.
  *
- * The queue is first come, first served. The agent finishes the task it is on,
- * `queue[0]` goes out **alone**, and everything behind it waits for the turn
- * that message starts. One message per completed task, in the order they were
- * typed — nothing is merged, nothing overtakes.
+ * The agent finishes the task it is on, and then **everything waiting goes out
+ * together**, on one prompt, in the order it was typed. Nothing overtakes;
+ * nothing is held back for a later turn.
  *
- * This module answers only *when*, and the previous answer was wrong in three
+ * This module answers only *when* — how much is released is `claimBatch`'s in
+ * `@kortix/sdk/message-queue`, and what the single prompt contains is
+ * `queued-batch.ts`. Keeping those separate is why the batching change did not
+ * have to touch a single gate below.
+ *
+ * The previous answer to *when* was wrong in three
  * separate ways, all of them invisible from the code that used them:
  *
  *   1. **A finished tool call counted as a boundary.** Any tool part reaching

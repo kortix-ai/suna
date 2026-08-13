@@ -1193,7 +1193,7 @@ function SecretDialog({
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Network boundary</p>
                     <p className="text-muted-foreground text-xs text-pretty">
-                      Platinum adds this value to matching HTTPS requests outside the sandbox.
+                      Kortix adds this value to matching HTTPS requests outside the sandbox.
                     </p>
                   </div>
 
@@ -1256,7 +1256,7 @@ function SecretDialog({
                       disabled={save.isPending}
                     />
                     <FieldDescription>
-                      Platinum replaces this header only for the allowed hosts.
+                      Kortix replaces this header only for the allowed hosts.
                     </FieldDescription>
                   </Field>
 
@@ -1273,7 +1273,7 @@ function SecretDialog({
                       disabled={save.isPending}
                     />
                     <FieldDescription>
-                      Optional. Include {'{{secret}}'} where Platinum inserts the value. Leave it
+                      Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave it
                       blank and the header carries the bare value with no scheme, which most APIs
                       reject with 401.
                     </FieldDescription>

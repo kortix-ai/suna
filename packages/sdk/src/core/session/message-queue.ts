@@ -5,13 +5,24 @@
  * much is easy. What is not easy — and what three previous implementations got
  * wrong — is *when* it is released and *how many times*.
  *
+ * Everything waiting is released **together**, on one prompt, at the next real
+ * turn boundary — `claimBatch`. That is what a queue means to the person
+ * typing into it, and it is what Claude Code and Codex do. Releasing one
+ * message per turn instead is the behaviour this module used to have, and it
+ * made three quick follow-ups take three full agent runs to land.
+ *
  * The failures this module exists to make impossible:
  *
- *   - **Two drains, one message sent twice.** `claimNext` records the claim in
- *     the same transition that returns the item. A second claim against the
- *     returned state gets nothing. There is no ref to read stale, no effect
- *     ordering to reason about, no window between deciding to send and having
- *     said so.
+ *   - **Two drains, one message sent twice.** `claimNext` and `claimBatch`
+ *     record the claim in the same transition that returns the items. A second
+ *     claim against the returned state gets nothing. There is no ref to read
+ *     stale, no effect ordering to reason about, no window between deciding to
+ *     send and having said so.
+ *   - **A batch that interleaves with the turn it started.** The claim is a
+ *     unit of *dispatch*, not a loop over sends: the host puts every claimed
+ *     message on ONE prompt. An earlier implementation looped `handleSend`
+ *     instead, which resolves on the server's ACK rather than on turn end, so
+ *     messages 2..N landed mid-turn.
  *   - **A failed head locking out every later send.** `failInFlight` moves the
  *     item to `failed` and leaves `pending` immediately drainable. This is the
  *     exact lockout that caused the client queue to be deleted wholesale in
@@ -19,11 +30,11 @@
  *   - **A queued message sending under the wrong model.** `agent`, `model`, and
  *     `variant` are captured at enqueue and carried verbatim.
  *
- * The claimed item stays at `pending[0]` while it is in flight rather than
- * being spliced out. That makes `inFlightId` a real lock (one field to check),
- * makes "reorder cannot cross the in-flight slot" an index clamp rather than a
- * special case, and means a crash between claim and dispatch leaves the message
- * visible in the queue instead of silently gone.
+ * Claimed items stay at the head of `pending` while they are in flight rather
+ * than being spliced out. That makes `inFlightIds` a real lock (one field to
+ * check), makes "reorder cannot cross what is sending" an index clamp rather
+ * than a special case, and means a crash between claim and dispatch leaves the
+ * messages visible in the queue instead of silently gone.
  *
  * Framework-free, storage-free, and timer-free by construction. There is no
  * `Date.now()` and no `crypto` here: ids and timestamps are inputs, so every
@@ -61,19 +72,80 @@ export interface QueuedMessage<TFile = unknown, TMention = unknown>
 
 /** One session's queue. */
 export interface SessionQueue<TFile = unknown, TMention = unknown> {
-  /** Waiting to send, oldest first. `pending[0]` is in flight when claimed. */
+  /** Waiting to send, oldest first. The leading run is in flight when claimed. */
   pending: QueuedMessage<TFile, TMention>[];
   /** Gave up. Never blocks `pending`; a host offers these a retry. */
   failed: QueuedMessage<TFile, TMention>[];
-  /** The id of the item currently on the wire, or null. This is the lock. */
+  /**
+   * The head of what is on the wire, or null.
+   *
+   * Kept because it is published API and because most readers only ever want
+   * "is something sending, and which row is it". `inFlightIds[0]` and this
+   * field are the same value by construction — every transition writes both.
+   */
   inFlightId: string | null;
+  /**
+   * Every id on the wire right now, oldest first. Empty when idle.
+   *
+   * A batch claim puts more than one message on a single prompt, so the lock
+   * has to name all of them: a row the user can still edit, remove or reorder
+   * is a row that is not being sent, and `inFlightId` alone could only ever
+   * protect the first.
+   *
+   * Optional because it was added after this type shipped, and requiring it
+   * would stop a consumer's hand-built `SessionQueue` literal from compiling.
+   * Every transition in this module writes it, and `createSessionQueue()`
+   * returns it, so it is absent only on a state that predates it. Read it with
+   * `inFlightIdsOf` rather than reaching for `?? []` at each call site.
+   */
+  inFlightIds?: string[];
 }
 
 export function createSessionQueue<TFile = unknown, TMention = unknown>(): SessionQueue<
   TFile,
   TMention
 > {
-  return { pending: [], failed: [], inFlightId: null };
+  return { pending: [], failed: [], inFlightId: null, inFlightIds: [] };
+}
+
+/**
+ * Everything on the wire, oldest first. Empty when the queue is idle.
+ *
+ * Tolerates a state that predates `inFlightIds` — a queue rehydrated from a
+ * host that persisted the older shape has only `inFlightId`, and reading
+ * through here means no call site has to know that.
+ */
+export function inFlightIdsOf<TFile, TMention>(
+  state: SessionQueue<TFile, TMention>,
+): string[] {
+  if (state.inFlightIds?.length) return state.inFlightIds;
+  return state.inFlightId ? [state.inFlightId] : [];
+}
+
+/** Internal shorthand for the reader above. */
+const inFlight = inFlightIdsOf;
+
+/**
+ * Whether two messages can ride on one prompt.
+ *
+ * `agent`, `model` and `variant` are captured at enqueue and sent verbatim,
+ * and a prompt carries exactly one of each. So a batch ends where they change
+ * rather than sending a message under settings its author never chose.
+ * `undefined` ("resolve at send time") and `null` ("send none") are distinct
+ * downstream, so they are distinct here too.
+ */
+function sameDispatchOptions(
+  a: Pick<QueuedMessageInput, 'agent' | 'model' | 'variant'>,
+  b: Pick<QueuedMessageInput, 'agent' | 'model' | 'variant'>,
+): boolean {
+  return (
+    a.agent === b.agent &&
+    a.variant === b.variant &&
+    a.model?.providerID === b.model?.providerID &&
+    a.model?.modelID === b.model?.modelID &&
+    (a.model === null) === (b.model === null) &&
+    (a.model === undefined) === (b.model === undefined)
+  );
 }
 
 /**
@@ -100,7 +172,7 @@ export function enqueue<TFile, TMention>(
 export function claimNext<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
 ): { state: SessionQueue<TFile, TMention>; claimed?: QueuedMessage<TFile, TMention> } {
-  if (state.inFlightId !== null) return { state };
+  if (inFlight(state).length > 0) return { state };
   const head = state.pending[0];
   if (!head) return { state };
 
@@ -110,20 +182,71 @@ export function claimNext<TFile, TMention>(
       ...state,
       pending: [claimed, ...state.pending.slice(1)],
       inFlightId: claimed.id,
+      inFlightIds: [claimed.id],
     },
     claimed,
   };
 }
 
-/** The send landed. Drop the item and free the queue. */
+/**
+ * Take everything waiting, for dispatch as ONE prompt.
+ *
+ * This is what a user means by a queue. Three messages typed while the agent
+ * works are three parts of one thought, and they should reach the agent
+ * together on the next turn — not one per turn, with the agent replying to
+ * each in isolation and the third arriving minutes later. Claude Code and
+ * Codex both flush the whole queue at the turn boundary; this matches them.
+ *
+ * It is emphatically NOT the old `a9fc74d9d3` batch, which looped `handleSend`
+ * over the queue. That resolved on the server's ACK rather than on turn end,
+ * so messages 2..N landed *inside* message 1's live turn — the reported bug
+ * that got one-at-a-time introduced in the first place. The unit of "at once"
+ * here is one prompt, so there is no second turn to interleave with.
+ *
+ * The batch is the maximal leading run that shares the head's `agent`, `model`
+ * and `variant` (see `sameDispatchOptions`). In practice that is the whole
+ * queue; it is short only when the user changed model mid-queue, and then the
+ * remainder goes out on the turn after under its own settings.
+ *
+ * Returns `claimed: []` when the queue is empty or something is already in
+ * flight, so a caller that races itself sends once.
+ */
+export function claimBatch<TFile, TMention>(
+  state: SessionQueue<TFile, TMention>,
+): { state: SessionQueue<TFile, TMention>; claimed: QueuedMessage<TFile, TMention>[] } {
+  if (inFlight(state).length > 0) return { state, claimed: [] };
+  const head = state.pending[0];
+  if (!head) return { state, claimed: [] };
+
+  let size = 1;
+  while (size < state.pending.length && sameDispatchOptions(head, state.pending[size])) size += 1;
+
+  const claimed = state.pending
+    .slice(0, size)
+    .map((message) => ({ ...message, attempts: message.attempts + 1 }));
+
+  return {
+    state: {
+      ...state,
+      pending: [...claimed, ...state.pending.slice(size)],
+      inFlightId: claimed[0].id,
+      inFlightIds: claimed.map((m) => m.id),
+    },
+    claimed,
+  };
+}
+
+/** The send landed. Drop everything it carried and free the queue. */
 export function completeInFlight<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
 ): SessionQueue<TFile, TMention> {
-  if (state.inFlightId === null) return state;
+  const sending = inFlight(state);
+  if (sending.length === 0) return state;
   return {
     ...state,
-    pending: state.pending.filter((m) => m.id !== state.inFlightId),
+    pending: state.pending.filter((m) => !sending.includes(m.id)),
     inFlightId: null,
+    inFlightIds: [],
   };
 }
 
@@ -138,14 +261,19 @@ export function failInFlight<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   error: string,
 ): SessionQueue<TFile, TMention> {
-  if (state.inFlightId === null) return state;
-  const item = state.pending.find((m) => m.id === state.inFlightId);
-  if (!item) return { ...state, inFlightId: null };
+  const sending = inFlight(state);
+  if (sending.length === 0) return state;
+  // One prompt carried the batch, so one failure is all of their failure. They
+  // land as separate rows rather than one merged row so the user can retry the
+  // message that matters instead of re-sending three.
+  const items = state.pending.filter((m) => sending.includes(m.id));
+  if (items.length === 0) return { ...state, inFlightId: null, inFlightIds: [] };
 
   return {
-    pending: state.pending.filter((m) => m.id !== state.inFlightId),
-    failed: [...state.failed, { ...item, lastError: error }],
+    pending: state.pending.filter((m) => !sending.includes(m.id)),
+    failed: [...state.failed, ...items.map((item) => ({ ...item, lastError: error }))],
     inFlightId: null,
+    inFlightIds: [],
   };
 }
 
@@ -165,12 +293,12 @@ export function retryFailed<TFile, TMention>(
   };
 }
 
-/** Drop a message. Refuses the in-flight item — it is already on the wire. */
+/** Drop a message. Refuses anything in flight — it is already on the wire. */
 export function removeQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
 ): SessionQueue<TFile, TMention> {
-  if (id === state.inFlightId) return state;
+  if (inFlight(state).includes(id)) return state;
   if (state.pending.some((m) => m.id === id)) {
     return { ...state, pending: state.pending.filter((m) => m.id !== id) };
   }
@@ -180,13 +308,13 @@ export function removeQueued<TFile, TMention>(
   return state;
 }
 
-/** Rewrite a queued message. Refuses the in-flight item. */
+/** Rewrite a queued message. Refuses anything in flight. */
 export function editQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
   text: string,
 ): SessionQueue<TFile, TMention> {
-  if (id === state.inFlightId) return state;
+  if (inFlight(state).includes(id)) return state;
   if (!state.pending.some((m) => m.id === id)) return state;
 
   return {
@@ -198,20 +326,22 @@ export function editQueued<TFile, TMention>(
 /**
  * Move a pending message to `toIndex`.
  *
- * `toIndex` is clamped to the movable range. While something is in flight that
- * range starts at 1, so nothing can be reordered into or past the slot that is
- * already sending — and the in-flight item itself cannot move at all.
+ * `toIndex` is clamped to the movable range. That range starts after whatever
+ * is in flight, so nothing can be reordered into or past a message already on
+ * the wire — and an in-flight message cannot move at all. With a batch claim
+ * that is several slots, not one.
  */
 export function reorderQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
   toIndex: number,
 ): SessionQueue<TFile, TMention> {
-  if (id === state.inFlightId) return state;
+  const sending = inFlight(state);
+  if (sending.includes(id)) return state;
   const from = state.pending.findIndex((m) => m.id === id);
   if (from === -1) return state;
 
-  const first = state.inFlightId === null ? 0 : 1;
+  const first = sending.length;
   const to = Math.min(Math.max(toIndex, first), state.pending.length - 1);
   if (to === from) return state;
 

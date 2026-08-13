@@ -233,16 +233,24 @@ All three must hold. Each one used to fail silently.
 
 | # | Requirement | Where it is set | Result when wrong |
 | --- | --- | --- | --- |
-| 1 | The session runs on Platinum | Customize -> Feature flags -> Sandbox provider | No binding is attached. The request leaves without the header. |
+| 1 | The session runs on Platinum, OR the project has the `network_boundary_shim` flag | Customize -> Feature flags (Sandbox provider, or Experimental -> "Network boundary without Platinum") | No binding is attached. The request leaves without the header. |
 | 2 | An agent `secrets:` list NAMES the identifier | `kortix.yaml`, by hand or through the grant route below | `resolveSecretDelivery` withholds the row. No binding. |
 | 3 | The header value template renders what the API expects | Secret editor -> Header value template | The header carries the bare value with no scheme. Upstream returns `401`. |
 
-Requirement 1 is project scope, not deployment scope.
-`networkBoundaryDeliveryAvailable()` reports only that the deployment enables
-Platinum. The web editor therefore gates the option on
+Requirement 1 is project scope, not deployment scope, and it is satisfied two
+independent ways. `networkBoundaryDeliveryAvailable(projectMetadata)` returns
+true when the DEPLOYMENT enables Platinum, or when the PROJECT has the
+`network_boundary_shim` experimental flag — the in-guest shim path, which needs
+no provider edge and so no particular provider. The web editor mirrors that in
 `networkBoundaryAvailability(project)`
-(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`),
-which requires `default_sandbox_provider === 'platinum'`.
+(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`):
+the flag short-circuits the provider question, and without it the old rule still
+applies (`default_sandbox_provider === 'platinum'`).
+
+This paragraph previously said the availability check "reports only that the
+deployment enables Platinum" and that the web editor "requires
+`default_sandbox_provider === 'platinum'`". Both were true before the flag
+existed. See docs/NETWORK_BOUNDARY_ON_DAYTONA.md §7.5.
 
 Requirement 2 is stricter than every other strategy. `resolveSecretDelivery`
 (`apps/api/src/secrets/strategy.ts`) delivers a non-`runtime` row only when

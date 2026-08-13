@@ -269,6 +269,7 @@ export function InstantSessionShell({
                   agentNames={agentNames}
                   onFileClick={openFileInComputer}
                   deferPreview
+                  sessionId={sessionId}
                 />
               </div>
             )}

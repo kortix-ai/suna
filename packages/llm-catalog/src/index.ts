@@ -457,6 +457,13 @@ export interface ManagedModel {
     outputPerMillion: number;
     cachedInputPerMillion?: number;
     cacheWritePerMillion?: number;
+    contextOver200k?: {
+      inputPerMillion: number;
+      outputPerMillion: number;
+      cachedInputPerMillion?: number;
+      cacheWritePerMillion?: number;
+      contextThreshold: number;
+    };
   };
   tier: 'flagship' | 'balanced' | 'fast';
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
@@ -523,6 +530,35 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // credible agentic coder; beats GLM 5.2 on every published agentic
 // benchmark while costing ~10x less per unit of work).
 export const MANAGED_MODELS: ManagedModel[] = [
+  {
+    // Grok 4.6 through OpenRouter's first-party xAI endpoint. The explicit
+    // xAI preference keeps routing on the model owner while fallbacks preserve
+    // availability. The pricingRef supplies its context tier: $2/$6 per
+    // million input/output tokens, doubled above a 200k-token prompt.
+    id: 'grok-4.6',
+    name: 'Grok 4.6',
+    upstreamModelId: 'x-ai/grok-4.6',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/x-ai/grok-4.6',
+    pricing: {
+      inputPerMillion: 2,
+      cachedInputPerMillion: 0.5,
+      outputPerMillion: 6,
+      contextOver200k: {
+        inputPerMillion: 4,
+        cachedInputPerMillion: 1,
+        outputPerMillion: 12,
+        contextThreshold: 200_000,
+      },
+    },
+    tier: 'flagship',
+    vision: true,
+    limit: { context: 500_000, output: 500_000 },
+    openrouterProvider: {
+      order: ['xai'],
+      allow_fallbacks: true,
+    },
+  },
   // {
   //   id: 'claude-opus-4.8',
   //   name: 'Claude Opus 4.8',
@@ -567,9 +603,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
       cacheWritePerMillion: 1,
       outputPerMillion: 4,
     },
-    // Flagship since the Bedrock Claude deactivation: MANAGED_FLAGSHIP_MODEL_ID
-    // and resolvePlatformDefaultModelId's degrade order both key off this tier.
-    tier: 'flagship',
+    tier: 'balanced',
     vision: false,
     limit: { context: 1_000_000, output: 131_072 },
   },
@@ -649,6 +683,34 @@ export const MANAGED_MODELS: ManagedModel[] = [
     // the platform's fallback model outright.
     openrouterProvider: {
       order: ['deepseek', 'alibaba', 'baidu', 'novita'],
+      allow_fallbacks: true,
+    },
+  },
+  {
+    // DeepSeek V4 Pro's 2026-08-13 GA snapshot through OpenRouter. The
+    // immutable upstream slug prevents a future `latest` alias from changing
+    // behavior without a catalog review. OpenRouter currently exposes two
+    // endpoints: first-party DeepSeek at $0.435/$0.87 per million tokens, and
+    // GMICloud at exactly 4x that price. The Kortix OpenRouter account cannot
+    // use the first-party endpoint under its current data policy (live canary:
+    // HTTP 404 `No endpoints available matching your guardrail restrictions
+    // and data policy`). Pin GMICloud and bill its actual price. Do not add the
+    // first-party endpoint without changing both the account policy and price.
+    id: 'deepseek-v4-pro-0813',
+    name: 'DeepSeek V4 Pro 0813',
+    upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+    pricing: {
+      inputPerMillion: 1.74,
+      cachedInputPerMillion: 0.145,
+      outputPerMillion: 3.48,
+    },
+    tier: 'balanced',
+    vision: false,
+    limit: { context: 1_048_575, output: 384_000 },
+    openrouterProvider: {
+      order: ['gmicloud'],
       allow_fallbacks: true,
     },
   },

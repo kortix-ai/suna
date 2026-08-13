@@ -175,6 +175,71 @@ describe('materializeSecretDelivery', () => {
     expect(minted).toEqual(['secret-provider']);
   });
 
+  test('mints a handle ROW for a network-boundary secret but exports nothing', async () => {
+    // The broker route needs an active handle row (it looks the secret up by
+    // secretId and executes against the row's policy snapshot). Boundary
+    // secrets never got one, so a boundary relay died on
+    // `session_secret_handle_required` even once the strategy gate allowed it.
+    //
+    // The row is required; the export is forbidden. "The guest receives
+    // nothing — no value, no alias, no placeholder" is the property that makes
+    // a boundary secret a boundary secret, so the handle must NOT be assigned
+    // to env the way the broker branch does.
+    const boundary = row('gh', 'GITHUB_TEST', {
+      strategy: 'egress',
+      consumer: 'network',
+      egressPolicy: {
+        inject: { kind: 'header', name: 'authorization' },
+        rules: [{ host: 'api.github.com' }],
+      },
+    });
+    const env = envFor([boundary]);
+    const minted: string[] = [];
+
+    await materializeSecretDelivery([boundary], env, {
+      sessionId: 'session-1',
+      grantEnv: ['gh'],
+      mintHandleFor: async (selected) => {
+        minted.push(selected.secretId);
+        return 'kortix-handle';
+      },
+    });
+
+    // The row was minted...
+    expect(minted).toEqual(['secret-gh']);
+    // ...and the guest got nothing: not the value, not the handle, not the key.
+    expect(env).toEqual({});
+    expect(JSON.stringify(env)).not.toContain('kortix-handle');
+    expect(JSON.stringify(env)).not.toContain('value-of-gh');
+  });
+
+  test('mints no handle for a boundary secret the agent is not granted', async () => {
+    // No grant means no delivery at all — minting a row would create a
+    // spendable reference for a secret this session may not use.
+    const boundary = row('gh', 'GITHUB_TEST', {
+      strategy: 'egress',
+      consumer: 'network',
+      egressPolicy: {
+        inject: { kind: 'header', name: 'authorization' },
+        rules: [{ host: 'api.github.com' }],
+      },
+    });
+    const env = envFor([boundary]);
+    const minted: string[] = [];
+
+    await materializeSecretDelivery([boundary], env, {
+      sessionId: 'session-1',
+      grantEnv: ['something-else'],
+      mintHandleFor: async (selected) => {
+        minted.push(selected.secretId);
+        return 'kortix-handle';
+      },
+    });
+
+    expect(minted).toEqual([]);
+    expect(env).toEqual({});
+  });
+
   test.each([undefined, 'all'] as const)(
     'withholds a broker value from an unscoped %s grant',
     async (grantEnv) => {

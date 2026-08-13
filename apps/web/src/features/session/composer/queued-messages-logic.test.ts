@@ -9,7 +9,13 @@ import {
 describe('queueSummaryLabel', () => {
   test('says what will happen, not just how many', () => {
     expect(queueSummaryLabel(1)).toBe('1 queued · sends when this turn ends');
-    expect(queueSummaryLabel(4)).toBe('4 queued · sends when this turn ends');
+  });
+
+  test('says all of them send, because all of them do', () => {
+    // The queue drains as one batch. "4 queued · sends when this turn ends"
+    // reads as a schedule — one now, three later — which is the behaviour this
+    // surface used to have and no longer does.
+    expect(queueSummaryLabel(4)).toBe('4 queued · all send when this turn ends');
   });
 });
 

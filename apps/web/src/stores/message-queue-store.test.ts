@@ -59,6 +59,7 @@ describe('per-session isolation', () => {
       pending: [],
       failed: [],
       inFlightId: null,
+      inFlightIds: [],
     });
   });
 
@@ -122,7 +123,24 @@ describe('persistence', () => {
     // The tab that owned the send is gone. Nothing is on the wire, so the
     // queue must be claimable again rather than wedged forever.
     expect(useMessageQueueStore.getState().getSessionQueue(A).inFlightId).toBeNull();
+    expect(useMessageQueueStore.getState().getSessionQueue(A).inFlightIds).toEqual([]);
     expect(useMessageQueueStore.getState().claimNext(A)?.text).toBe('mid-flight');
+  });
+
+  test('a batch claim is not persisted either — every row is claimable again', () => {
+    const s = useMessageQueueStore.getState();
+    s.enqueue(A, { text: 'one' });
+    s.enqueue(A, { text: 'two' });
+    useMessageQueueStore.getState().claimBatch(A);
+
+    useMessageQueueStore.setState({ queues: {}, hydrated: false });
+    useMessageQueueStore.getState().hydrate();
+
+    expect(useMessageQueueStore.getState().getSessionQueue(A).inFlightIds).toEqual([]);
+    expect(useMessageQueueStore.getState().claimBatch(A).map((m) => m.text)).toEqual([
+      'one',
+      'two',
+    ]);
   });
 
   test('attachments do not survive, and the item says so instead of pretending', () => {
@@ -209,6 +227,70 @@ describe('transitions are delegated to the SDK reducer', () => {
 
     expect(useMessageQueueStore.getState().claimNext(A)?.text).toBe('one');
     expect(useMessageQueueStore.getState().claimNext(A)).toBeUndefined();
+  });
+
+  test('claimBatch hands back everything waiting, in order, once', () => {
+    const s = useMessageQueueStore.getState();
+    s.enqueue(A, { text: 'one' });
+    s.enqueue(A, { text: 'two' });
+    s.enqueue(A, { text: 'three' });
+
+    expect(useMessageQueueStore.getState().claimBatch(A).map((m) => m.text)).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+    expect(useMessageQueueStore.getState().claimBatch(A)).toEqual([]);
+  });
+
+  test('a batch claimed under one model stops where the model changes', () => {
+    const opus = { providerID: 'anthropic', modelID: 'claude-opus-5' };
+    const s = useMessageQueueStore.getState();
+    s.enqueue(A, { text: 'one', model: opus });
+    s.enqueue(A, { text: 'two', model: opus });
+    s.enqueue(A, { text: 'three', model: { providerID: 'anthropic', modelID: 'claude-sonnet-5' } });
+
+    expect(useMessageQueueStore.getState().claimBatch(A).map((m) => m.text)).toEqual([
+      'one',
+      'two',
+    ]);
+  });
+
+  test('complete drops every message the batch carried', () => {
+    const s = useMessageQueueStore.getState();
+    s.enqueue(A, { text: 'one' });
+    s.enqueue(A, { text: 'two' });
+    useMessageQueueStore.getState().claimBatch(A);
+    useMessageQueueStore.getState().complete(A);
+
+    expect(useMessageQueueStore.getState().getSessionQueue(A).pending).toEqual([]);
+  });
+
+  test('a message queued during a batch send waits for the next turn', () => {
+    // The batch is already on the wire. Anything typed after it must not join
+    // it — it goes out on the turn this one starts.
+    const s = useMessageQueueStore.getState();
+    s.enqueue(A, { text: 'one' });
+    useMessageQueueStore.getState().claimBatch(A);
+    useMessageQueueStore.getState().enqueue(A, { text: 'late' });
+    useMessageQueueStore.getState().complete(A);
+
+    expect(useMessageQueueStore.getState().getSessionQueue(A).pending.map((m) => m.text)).toEqual([
+      'late',
+    ]);
+  });
+
+  test('a failed batch leaves every message retryable on its own', () => {
+    const s = useMessageQueueStore.getState();
+    s.enqueue(A, { text: 'one' });
+    s.enqueue(A, { text: 'two' });
+    useMessageQueueStore.getState().claimBatch(A);
+    useMessageQueueStore.getState().fail(A, 'network down');
+
+    const queue = useMessageQueueStore.getState().getSessionQueue(A);
+    expect(queue.pending).toEqual([]);
+    expect(queue.failed.map((m) => m.text)).toEqual(['one', 'two']);
+    expect(queue.failed.every((m) => m.lastError === 'network down')).toBe(true);
   });
 
   test('a failed item does not block the next one', () => {

@@ -14,6 +14,13 @@ const managedModelSchema = z.object({
     outputPerMillion: z.number().nonnegative(),
     cachedInputPerMillion: z.number().nonnegative().optional(),
     cacheWritePerMillion: z.number().nonnegative().optional(),
+    contextOver200k: z.object({
+      inputPerMillion: z.number().nonnegative(),
+      outputPerMillion: z.number().nonnegative(),
+      cachedInputPerMillion: z.number().nonnegative().optional(),
+      cacheWritePerMillion: z.number().nonnegative().optional(),
+      contextThreshold: z.number().int().positive(),
+    }).optional(),
   }).optional(),
   tier: z.enum(['flagship', 'balanced', 'fast']),
   vision: z.boolean(),

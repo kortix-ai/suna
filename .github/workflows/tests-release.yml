@@ -26,7 +26,7 @@ jobs:
     # (the flow lane alone is ~60m), so the cap is 90m. Staging's JWT lifetime
     # was raised to 2h (was 1h) so a >60m run no longer expires its tokens.
     # Follow-up: shard the runner (flow + browser as parallel jobs) to cut this.
-    timeout-minutes: 120
+    timeout-minutes: 90
     env:
       KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
       E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}

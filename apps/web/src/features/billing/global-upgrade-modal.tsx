@@ -325,10 +325,10 @@ function CreditTopUpModal({
           </div>
         </ModalHeader>
 
-        <ModalBody className="space-y-6 pt-4">
-          {/* Wallet balance — the concrete "why" behind the block. */}
+        <ModalBody className="space-y-4 pt-4">
+          {/* Available balance — the concrete "why" behind the block. */}
           <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
-            <span className="text-muted-foreground text-sm">Wallet balance</span>
+            <span className="text-muted-foreground text-sm">Available balance</span>
             {showBalanceSkeleton ? (
               <Skeleton className="h-6 w-24 rounded-md" />
             ) : (
@@ -350,18 +350,19 @@ function CreditTopUpModal({
             )}
           </div>
 
-          <section className="space-y-3">
-            <Label>Buy credits</Label>
-            <CreditTopupSection />
-          </section>
-
-          {/* Auto top-up underneath — configure it here so it never happens again. */}
-          <section className="space-y-3">
-            <Label>Auto top-up</Label>
-            <div className="bg-popover rounded-md border px-4 py-4">
+          {/* One card, two seams — the same shape the Billing tab uses, so the
+              modal and the pane are not two dialects of one control. Both
+              components render their own heading and no chrome, so the card
+              supplies the border and the hairline and nothing repeats. */}
+          <div className="bg-popover rounded-md border">
+            <section className="space-y-3 px-4 py-4">
+              <h3 className="text-foreground text-sm font-medium">Add credits</h3>
+              <CreditTopupSection />
+            </section>
+            <div className="border-t px-4 py-4">
               <AutoTopupCard fetchSettings showSaveButton />
             </div>
-          </section>
+          </div>
         </ModalBody>
 
         <ModalFooter className="pt-4 pb-5 sm:justify-start">

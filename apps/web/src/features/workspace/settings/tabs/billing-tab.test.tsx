@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { BillingTabView } from './billing-tab';
 
-/** Section titles in document order, read from the h2s SettingsSectionHeader emits. */
+/** Section titles in document order, read from the h2/h3s the pane emits. */
 const headings = (html: string): string[] =>
   [...html.matchAll(/<h([23])[^>]*>([^<]*)<\/h\1>/g)].map((m) => m[2]);
 
 describe('BillingTabView', () => {
-  test('plan, wallet, and spend render before Auto top-up, Buy credits, and Billing portal', () => {
+  test('balance renders first, then the credits card — two headings for the whole pane', () => {
     const out = renderToStaticMarkup(
       <BillingTabView
         canPurchaseCredits
@@ -18,29 +18,60 @@ describe('BillingTabView', () => {
         creditTopupSlot={<div>credit-topup</div>}
       />,
     );
-    expect(headings(out)).toEqual([
-      'Billing',
-      'Plan, wallet and spend',
-      'Auto top-up',
-      'Buy credits',
-      'Billing portal',
-    ]);
+    expect(headings(out)).toEqual(['Billing', 'Add credits']);
+    expect(out.indexOf('account-overview')).toBeLessThan(out.indexOf('Add credits'));
   });
 
-  test('the team-checkout branch shows only the Kortix Team section, nothing from the main branch', () => {
+  // The old pane put Auto top-up and Buy credits behind two headings, each
+  // wrapping a padded SettingsRowGroup around a component that repeated the
+  // heading inside it. One card, one heading, one hairline now.
+  test('add credits and auto top-up share one bordered card — no settings-row-group nesting', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView
+        canPurchaseCredits
+        billingEnabled
+        accountOverviewSlot={<div>account-overview</div>}
+        autoTopupSlot={<div>auto-topup</div>}
+        creditTopupSlot={<div>credit-topup</div>}
+      />,
+    );
+    expect(out).not.toContain('data-slot="settings-row-group"');
+    expect(headings(out)).not.toContain('Auto top-up');
+    expect(headings(out)).not.toContain('Buy credits');
+    // Both slots land inside the same card, top-up first, in that order.
+    expect(out.indexOf('credit-topup')).toBeLessThan(out.indexOf('auto-topup'));
+  });
+
+  // The portal is one link out to Stripe, so it lives in the pane header's
+  // action slot rather than owning a section and a row group of its own.
+  test('the billing portal is a header action, not a section', () => {
+    const out = renderToStaticMarkup(
+      <BillingTabView billingEnabled accountOverviewSlot={<div>account-overview</div>} />,
+    );
+    expect(out).toContain('>Manage billing<');
+    expect(headings(out)).not.toContain('Billing portal');
+    expect(out).not.toContain('Invoices and payment methods');
+    // It is in the header: it precedes the pane's first content block.
+    expect(out.indexOf('Manage billing')).toBeLessThan(out.indexOf('account-overview'));
+  });
+
+  // Behaviour change, called out in the file's header comment: showTeamCheckout
+  // is true for every account without an active subscription, so hiding the
+  // whole pane behind it hid a free user's own balance from them.
+  test('the team-checkout branch keeps the balance card and adds the upgrade card under it', () => {
     const out = renderToStaticMarkup(
       <BillingTabView
         showTeamCheckout
-        canPurchaseCredits
         billingEnabled
         accountOverviewSlot={<div>account-overview</div>}
       />,
     );
     expect(headings(out)).toEqual(['Billing', 'Kortix Team']);
-    expect(out).not.toContain('account-overview');
+    expect(out).toContain('account-overview');
+    expect(out.indexOf('account-overview')).toBeLessThan(out.indexOf('Kortix Team'));
   });
 
-  test('the team-checkout section carries a Subscribe and a Manage billing action', () => {
+  test('the team-checkout card carries the Subscribe action, and the header still carries the portal', () => {
     const out = renderToStaticMarkup(<BillingTabView showTeamCheckout />);
     expect(out).toContain('Subscribe to Team');
     expect(out).toContain('Manage billing');
@@ -56,26 +87,22 @@ describe('BillingTabView', () => {
 
   test('an error renders the pane heading and a banner with the message, no section headings', () => {
     const out = renderToStaticMarkup(
-      <BillingTabView
-        error="Failed to load subscription data"
-        accountOverviewSlot={<div>x</div>}
-      />,
+      <BillingTabView error="Failed to load subscription data" accountOverviewSlot={<div>x</div>} />,
     );
     expect(headings(out)).toEqual(['Billing']);
     expect(out).toContain('Failed to load subscription data');
     expect(out).toContain('role="alert"');
   });
 
-  test('the credits-ran-out banner renders above Plan, wallet & spend when flagged', () => {
+  test('the credits-ran-out banner renders above the balance card when flagged', () => {
     const out = renderToStaticMarkup(
       <BillingTabView showCreditsRanOutBanner accountOverviewSlot={<div>account-overview</div>} />,
     );
-    expect(out).toContain('You ran out of credits');
     const bannerIndex = out.indexOf('You ran out of credits');
-    const planIndex = out.indexOf('Plan, wallet and spend');
+    const overviewIndex = out.indexOf('account-overview');
     expect(bannerIndex).toBeGreaterThan(-1);
-    expect(planIndex).toBeGreaterThan(-1);
-    expect(bannerIndex).toBeLessThan(planIndex);
+    expect(overviewIndex).toBeGreaterThan(-1);
+    expect(bannerIndex).toBeLessThan(overviewIndex);
   });
 
   test('the credits-ran-out banner is absent by default', () => {
@@ -83,7 +110,7 @@ describe('BillingTabView', () => {
     expect(out).not.toContain('You ran out of credits');
   });
 
-  test('Auto top-up and Buy credits are absent without canPurchaseCredits', () => {
+  test('the credits card is absent without canPurchaseCredits', () => {
     const out = renderToStaticMarkup(
       <BillingTabView
         billingEnabled
@@ -92,17 +119,15 @@ describe('BillingTabView', () => {
         creditTopupSlot={<div>credit-topup</div>}
       />,
     );
-    expect(headings(out)).not.toContain('Auto top-up');
-    expect(headings(out)).not.toContain('Buy credits');
+    expect(headings(out)).not.toContain('Add credits');
     expect(out).not.toContain('auto-topup');
     expect(out).not.toContain('credit-topup');
   });
 
-  test('Billing portal is entirely absent when billing is disabled — no broken Stripe control on self-host', () => {
+  test('the portal action is entirely absent when billing is disabled — no broken Stripe control on self-host', () => {
     const out = renderToStaticMarkup(
       <BillingTabView billingEnabled={false} accountOverviewSlot={<div>x</div>} />,
     );
-    expect(headings(out)).not.toContain('Billing portal');
     expect(out).not.toContain('Manage billing');
   });
 
@@ -117,9 +142,7 @@ describe('BillingTabView', () => {
     expect(withSlots).toContain('claim-per-seat');
     expect(withSlots).toContain('seat-management');
 
-    const withoutSlots = renderToStaticMarkup(
-      <BillingTabView accountOverviewSlot={<div>x</div>} />,
-    );
+    const withoutSlots = renderToStaticMarkup(<BillingTabView accountOverviewSlot={<div>x</div>} />);
     expect(withoutSlots).not.toContain('claim-per-seat');
     expect(withoutSlots).not.toContain('seat-management');
   });
@@ -143,20 +166,17 @@ describe('BillingTabView', () => {
     // Read-only content stays fully visible.
     expect(out).toContain('account-overview');
     expect(out).toContain('seat-management');
-    expect(headings(out)).toContain('Plan, wallet and spend');
-    // Mutating sections/controls disappear.
-    expect(headings(out)).not.toContain('Auto top-up');
-    expect(headings(out)).not.toContain('Buy credits');
+    // Mutating controls disappear.
+    expect(headings(out)).not.toContain('Add credits');
     expect(out).not.toContain('auto-topup');
     expect(out).not.toContain('credit-topup');
-    // Billing portal section stays visible (an admin can see it exists) but
-    // its action button is replaced by the owner-only note.
-    expect(headings(out)).toContain('Billing portal');
-    expect(out).not.toContain('>Manage billing<');
+    expect(out).not.toContain('Manage billing');
+    // Said once, at the foot of the pane.
     expect(out).toContain('Only account owners can manage billing.');
+    expect(out.match(/Only account owners can manage billing\./g)).toHaveLength(1);
   });
 
-  test('billing.write renders every mutating control — auto top-up, buy credits, and the billing portal button', () => {
+  test('billing.write renders every mutating control — add credits, auto top-up, and the portal action', () => {
     const out = renderToStaticMarkup(
       <BillingTabView
         canManageBilling
@@ -167,59 +187,14 @@ describe('BillingTabView', () => {
         creditTopupSlot={<div>credit-topup</div>}
       />,
     );
-    expect(headings(out)).toEqual([
-      'Billing',
-      'Plan, wallet and spend',
-      'Auto top-up',
-      'Buy credits',
-      'Billing portal',
-    ]);
+    expect(headings(out)).toEqual(['Billing', 'Add credits']);
     expect(out).toContain('auto-topup');
     expect(out).toContain('credit-topup');
     expect(out).toContain('>Manage billing<');
     expect(out).not.toContain('Only account owners can manage billing.');
   });
 
-  // ── Linear card shape (2026-08-11 restyle). Linear's billing pane is a plan
-  // card, then labelled sections whose content sits in one bordered box. These
-  // pin that shape, since heading order alone would not catch a regression back
-  // to a stack of loose headers and boxes. ──
-
-  test('the Billing portal section renders its action inside a settings-row group, not a loose header', () => {
-    const out = renderToStaticMarkup(
-      <BillingTabView billingEnabled accountOverviewSlot={<div>x</div>} />,
-    );
-    expect(out).toContain('data-slot="settings-row-group"');
-    expect(out).toContain('Invoices and payment methods');
-    expect(out).toContain('>Manage billing<');
-  });
-
-  test('without billing.write the portal row keeps its label and swaps the button for the owner-only note', () => {
-    const out = renderToStaticMarkup(
-      <BillingTabView billingEnabled canManageBilling={false} accountOverviewSlot={<div>x</div>} />,
-    );
-    expect(out).toContain('Invoices and payment methods');
-    expect(out).not.toContain('>Manage billing<');
-    expect(out).toContain('Only account owners can manage billing.');
-  });
-
-  test('the team-checkout branch is one bordered card — its heading and its actions share a box', () => {
-    const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling />);
-    const cardIndex = out.indexOf('rounded-md border');
-    expect(cardIndex).toBeGreaterThan(-1);
-    // Both the h2 and the primary action fall inside the card that opens first.
-    expect(out.indexOf('Kortix Team')).toBeGreaterThan(cardIndex);
-    expect(out.indexOf('Subscribe to Team')).toBeGreaterThan(cardIndex);
-  });
-
-  test('team-checkout: billing.write shows the Subscribe and Manage billing actions', () => {
-    const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling />);
-    expect(out).toContain('Subscribe to Team');
-    expect(out).toContain('Manage billing');
-    expect(out).not.toContain('Only account owners can manage billing.');
-  });
-
-  test('team-checkout: without billing.write, the actions are replaced by the owner-only note', () => {
+  test('team-checkout: without billing.write the upgrade card is replaced by the owner-only note', () => {
     const out = renderToStaticMarkup(<BillingTabView showTeamCheckout canManageBilling={false} />);
     expect(out).not.toContain('Subscribe to Team');
     expect(out).not.toContain('Manage billing');
