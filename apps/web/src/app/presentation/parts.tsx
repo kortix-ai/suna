@@ -11,7 +11,37 @@
 
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { cn } from '@/lib/utils';
+import { m } from 'motion/react';
 import type { ReactNode } from 'react';
+
+/* ── Rise: the deck's stagger ───────────────────────────────────────────────
+   The engine cross-fades the slide as a whole; `Rise` gives the blocks inside
+   it their own entrance so a slide assembles instead of appearing. Index-based
+   delay rather than an IntersectionObserver (`components/home/reveal`), because
+   every block on a slide is already in view the moment the slide mounts — an
+   observer would fire them all at once and there would be no stagger at all. */
+
+export function Rise({
+  children,
+  /** Position in the slide's reading order. One step ≈ 90 ms. */
+  i = 0,
+  className,
+}: {
+  children: ReactNode;
+  i?: number;
+  className?: string;
+}) {
+  return (
+    <m.div
+      initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.7, delay: 0.1 + i * 0.09, ease: [0.16, 1, 0.3, 1] }}
+      className={className}
+    >
+      {children}
+    </m.div>
+  );
+}
 
 /* ── Slide frame: one full-viewport homepage-style section ─────────────── */
 
@@ -180,12 +210,20 @@ export function Shot({
   url = 'kortix.com',
   chrome = true,
   className,
+  /**
+   * Sizing for the image itself. A slide is one viewport with no scroll, so a
+   * full-resolution screenshot has to be capped in `vh` — `max-h-[54vh]
+   * object-cover object-top` keeps the top of the screen (where the product is)
+   * and crops the empty bottom rather than letterboxing it.
+   */
+  imgClassName,
 }: {
   src: string;
   alt: string;
   url?: string;
   chrome?: boolean;
   className?: string;
+  imgClassName?: string;
 }) {
   return (
     <div className={cn('border-border bg-card overflow-hidden rounded-sm border', className)}>
@@ -200,7 +238,12 @@ export function Shot({
         </div>
       ) : null}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} className="block w-full select-none" draggable={false} />
+      <img
+        src={src}
+        alt={alt}
+        className={cn('block w-full select-none', imgClassName)}
+        draggable={false}
+      />
     </div>
   );
 }
@@ -247,6 +290,107 @@ export function Terminal({
         })}
       </div>
     </div>
+  );
+}
+
+/* ── Key/value rows — the /security page's workhorse block ─────────────── */
+
+export function RowList({
+  rows,
+  className,
+}: {
+  rows: readonly { readonly id: string; readonly k: string; readonly v: ReactNode }[];
+  className?: string;
+}) {
+  return (
+    <dl className={cn('border-border bg-card overflow-hidden rounded-sm border', className)}>
+      {rows.map((row, i) => (
+        <div
+          key={row.id}
+          className={cn(
+            'border-border grid gap-1.5 px-5 py-4 sm:grid-cols-12 sm:gap-8 sm:px-7 sm:py-5',
+            i > 0 && 'border-t',
+          )}
+        >
+          <dt className="text-foreground font-mono text-[11px] tracking-widest uppercase sm:col-span-4">
+            {row.k}
+          </dt>
+          <dd className="text-muted-foreground text-sm leading-relaxed sm:col-span-8">{row.v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/* ── Spec strip — the four mono facts under a /security-style hero ─────── */
+
+/**
+ * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns, written per index:
+ * the divider a cell needs changes with the breakpoint. Cell 3 starts a new row
+ * at `sm` (top rule) and a new column at `lg` (left rule).
+ */
+const GRID_4_RULES = [
+  '',
+  'border-t sm:border-t-0 sm:border-l',
+  'border-t lg:border-t-0 lg:border-l',
+  'border-t sm:border-l lg:border-t-0',
+] as const;
+
+export function SpecStrip({
+  specs,
+  className,
+}: {
+  specs: readonly { readonly k: string; readonly v: string }[];
+  className?: string;
+}) {
+  return (
+    <dl
+      className={cn(
+        'border-border bg-card grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4',
+        className,
+      )}
+    >
+      {specs.map((spec, i) => (
+        <div key={spec.k} className={cn('border-border px-5 py-5', GRID_4_RULES[i])}>
+          <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
+            {spec.k}
+          </dt>
+          <dd className="text-foreground mt-2 text-sm leading-snug">{spec.v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/* ── Numbered steps — the "how work lands" 4-up ────────────────────────── */
+
+export function Steps({
+  steps,
+  className,
+}: {
+  steps: readonly { readonly n: string; readonly title: string; readonly body: string }[];
+  className?: string;
+}) {
+  return (
+    <ol
+      className={cn(
+        'border-border grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4',
+        className,
+      )}
+    >
+      {steps.map((step, i) => (
+        <li
+          key={step.n}
+          className={cn('border-border bg-card flex flex-col p-5 sm:p-6', GRID_4_RULES[i])}
+        >
+          <span className="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">
+            {step.n}
+          </span>
+          <h3 className="text-foreground mt-5 text-base leading-tight font-medium">{step.title}</h3>
+          <p className="text-muted-foreground mt-2.5 text-sm leading-relaxed">{step.body}</p>
+        </li>
+      ))}
+    </ol>
   );
 }
 

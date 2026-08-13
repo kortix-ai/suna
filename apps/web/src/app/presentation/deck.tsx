@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
  * pass the slide set in via `slides`.
  *
  * → / Space / PageDown / J — next · ← / PageUp / K — prev · Home/End — first/last
- * G or Esc — overview · F — fullscreen · 1–9 — jump.
+ * G or Esc — overview · F — fullscreen · 1–9 — jump · N — presenter notes.
  */
 
 import { ThemeToggle } from '@/components/home/theme-toggle';
@@ -22,13 +22,19 @@ import {
   CaretRightIcon as ChevronRight,
   GridFourIcon as Grid2x2,
   CornersOutIcon as Maximize,
+  NotepadIcon as Notepad,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-export type SlideDef = { id: string; label: string; node: ReactNode };
+/**
+ * `notes` is the spoken script for the slide — what the presenter says while it
+ * is on screen. It is never rendered on the stage itself, only in the presenter
+ * drawer (`N`), so a screen recording of the deck stays clean.
+ */
+export type SlideDef = { id: string; label: string; node: ReactNode; notes?: string };
 
 export function Deck({
   slides,
@@ -42,8 +48,13 @@ export function Deck({
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
   const [overview, setOverview] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  /** The drawer shows one slide's script, or the whole deck's for a rehearsal. */
+  const [notesAll, setNotesAll] = useState(false);
   const [mounted, setMounted] = useState(false);
   const touchX = useRef<number | null>(null);
+
+  const hasNotes = slides.some((s) => s.notes);
 
   const total = slides.length;
 
@@ -109,8 +120,15 @@ export function Deck({
           e.preventDefault();
           setOverview((o) => !o);
           break;
+        case 'n':
+        case 'N':
+          e.preventDefault();
+          setNotesOpen((o) => !o);
+          break;
         case 'Escape':
-          setOverview((o) => !o);
+          // The drawer is the innermost layer, so it closes first.
+          if (notesOpen) setNotesOpen(false);
+          else setOverview((o) => !o);
           break;
         case 'f':
         case 'F':
@@ -127,7 +145,7 @@ export function Deck({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [next, prev, go, total, overview]);
+  }, [next, prev, go, total, overview, notesOpen]);
 
   const slide = slides[index];
 
@@ -221,7 +239,74 @@ export function Deck({
         >
           <Maximize className="size-3.5" />
         </Ctrl>
+        {hasNotes ? (
+          <Ctrl onClick={() => setNotesOpen((o) => !o)} label="Presenter notes (N)">
+            <Notepad className={cn('size-3.5', notesOpen && 'text-foreground')} />
+          </Ctrl>
+        ) : null}
       </div>
+
+      {/* ── Presenter notes ────────────────────────────────────────────────
+          Never on the stage. The deck is screen-recorded, so the script lives
+          behind `N` and the recording stays clean. */}
+      <AnimatePresence>
+        {notesOpen ? (
+          <m.aside
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            className="border-border bg-card/95 absolute inset-x-0 bottom-0 z-40 max-h-[46vh] overflow-y-auto border-t shadow-lg backdrop-blur-md"
+          >
+            <div className="mx-auto w-full max-w-4xl px-6 py-6 sm:px-8">
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
+                  {notesAll ? 'Full script' : `Script · ${slide.label}`}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setNotesAll((a) => !a)}
+                    className="text-muted-foreground hover:text-foreground border-border rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors"
+                  >
+                    {notesAll ? 'This slide' : 'Full script'}
+                  </button>
+                  <button
+                    onClick={() => setNotesOpen(false)}
+                    aria-label="Close presenter notes"
+                    className="text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded-sm transition-colors"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              </div>
+
+              {notesAll ? (
+                <ol className="space-y-6">
+                  {slides.map((s, i) => (
+                    <li key={s.id} className="flex gap-4">
+                      <span className="text-muted-foreground/50 w-6 shrink-0 pt-0.5 font-mono text-xs tabular-nums">
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-muted-foreground/70 font-mono text-[10px] tracking-widest uppercase">
+                          {s.label}
+                        </p>
+                        <p className="text-foreground mt-1.5 text-[15px] leading-relaxed whitespace-pre-line">
+                          {s.notes ?? '—'}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-foreground text-base leading-relaxed whitespace-pre-line">
+                  {slide.notes ?? 'No script for this slide.'}
+                </p>
+              )}
+            </div>
+          </m.aside>
+        ) : null}
+      </AnimatePresence>
 
       {/* ── Overview grid ──────────────────────────────────────────────── */}
       <AnimatePresence>
