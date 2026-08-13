@@ -4,8 +4,10 @@ import { TunnelAgent } from './agent';
 import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
 import {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
+  TERMINAL_SERVICE_EXIT_CODE,
   getServicePaths,
   getServiceStatus,
+  serviceLogFiles,
   installService,
   restartService,
   startService,
@@ -13,6 +15,8 @@ import {
   uninstallService,
 } from './service';
 import { probeCredentials } from './credential-probe';
+import { agentTunnelVersion } from './version';
+import { collapseRepeatedLines, isShellStartupNoise, stripAnsi } from './log-format';
 import { hostname, platform, arch, release } from 'os';
 import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -259,12 +263,20 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
   if (!options.service) {
     clearScreen();
-    printStartup(config, registry.getCapabilityNames(), '0.1.2');
+    printStartup(config, registry.getCapabilityNames(), agentTunnelVersion());
   } else {
     console.log(`[agent-tunnel] service starting: ${config.tunnelId} -> ${config.apiUrl}`);
   }
 
-  const agent = new TunnelAgent(config, registry);
+  const agent = new TunnelAgent(config, registry, {
+    onTerminalClose: ({ reason }) => {
+      if (!options.service) return;
+      // Staying alive here would leave a supervised process that is connected
+      // to nothing and never restarts. Exit cleanly so the supervisor stops.
+      console.log(`[agent-tunnel] stopping service: ${reason}`);
+      process.exit(TERMINAL_SERVICE_EXIT_CODE);
+    },
+  });
   agent.connect();
 
   const shutdown = () => {
@@ -534,6 +546,21 @@ async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<stri
               )
             : [];
 
+          // The approved set is a local ceiling that only re-pairing can widen.
+          // Saving an empty one produces a tunnel that connects, reports
+          // success, and can do nothing — with no in-product way back.
+          if (enabledCapabilities.length === 0) {
+            console.log(`  ${c.red}✗${c.reset} ${c.bold}No capabilities were approved${c.reset}`);
+            console.log('');
+            console.log(`  ${c.dim}A tunnel with no capabilities connects but cannot do anything,${c.reset}`);
+            console.log(`  ${c.dim}and the approved set can only be changed by pairing again.${c.reset}`);
+            console.log(`  ${c.dim}Nothing was saved.${c.reset}`);
+            console.log('');
+            console.log(`  ${c.dim}Run connect again and approve at least one of${c.reset} ${c.white}filesystem${c.reset}${c.dim},${c.reset} ${c.white}shell${c.reset}${c.dim}, or${c.reset} ${c.white}desktop${c.reset}${c.dim}.${c.reset}`);
+            console.log('');
+            process.exit(1);
+          }
+
           // Persist the browser-approved capabilities as a local ceiling. A
           // later server grant cannot silently enable another capability.
           saveCredentials(
@@ -613,16 +640,35 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
   }
 
   if (config.token && config.tunnelId) {
+    // Only one process may hold a tunnel: the relay closes the older socket
+    // with 4004 and the displaced agent treats that as terminal. Probing while
+    // the service runs would therefore leave a live-but-disconnected service
+    // that the supervisor never restarts. Yield the credential first.
+    const serviceWasActive = getServiceStatus().active === true;
+    if (serviceWasActive) {
+      console.log('');
+      console.log(`  ${c.dim}Pausing the background service so it keeps its connection…${c.reset}`);
+      stopService();
+    }
+
     // Never reuse a saved credential blind. A revoked token that reaches
     // installBackgroundService() turns into a silent restart loop, because a
     // background service has no terminal to report the rejection to.
     console.log('');
     console.log(`  ${c.cyan}◆${c.reset} ${c.dim}Checking saved credentials…${c.reset}`);
-    const probe = await probeCredentials(config, {
-      capabilities: createEnabledCapabilityRegistry(config).getCapabilityNames(),
-    });
+    let probe: Awaited<ReturnType<typeof probeCredentials>>;
+    try {
+      probe = await probeCredentials(config, {
+        capabilities: createEnabledCapabilityRegistry(config).getCapabilityNames(),
+      });
+    } catch (error) {
+      if (serviceWasActive) startService();
+      throw error;
+    }
 
     if (probe === 'unreachable') {
+      // The credential is unproven, so restore exactly what was running before.
+      if (serviceWasActive) startService();
       console.error(
         `  ${c.red}✗${c.reset} Cannot reach the relay at ${config.apiUrl}. Check your network, then run connect again.`,
       );
@@ -647,6 +693,14 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
       saveCredentials(config.tunnelId, config.token, config.apiUrl);
       installBackgroundService();
       return;
+    }
+    if (serviceWasActive) {
+      console.log(
+        `  ${c.dim}Background service stays paused while this terminal holds the tunnel.${c.reset}`,
+      );
+      console.log(
+        `  ${c.dim}Resume it with${c.reset} ${c.white}agent-tunnel start${c.reset}${c.dim}, or leave it — it starts again at login.${c.reset}`,
+      );
     }
     startAgent(config);
     return;
@@ -692,12 +746,48 @@ async function commandRun(flags: Record<string, string>): Promise<void> {
     apiUrl: flags['api-url'],
   });
 
+  const asService = flags.service === 'true';
+
   if (!config.token || !config.tunnelId) {
     console.error(`${c.red}${c.bold} error${c.reset} No saved tunnel credentials found. Run \`agent-tunnel connect\` first.`);
-    process.exit(1);
+    // Restarting cannot conjure a credential. Under a supervisor this exits
+    // cleanly so the service stops instead of respawning forever.
+    process.exit(asService ? TERMINAL_SERVICE_EXIT_CODE : 1);
   }
 
-  startAgent(config, { service: flags.service === 'true' });
+  startAgent(config, { service: asService });
+}
+
+const ALL_CAPABILITIES = ['filesystem', 'shell', 'desktop'] as const;
+
+function shortenHomePath(path: string): string {
+  const home = homedir();
+  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+}
+
+function statusField(label: string, value: string): void {
+  console.log(`  ${c.dim}${label.padEnd(14)}${c.reset}${value}`);
+}
+
+/** Last agent line written to the service log, so status reports evidence. */
+function lastServiceActivity(): string | null {
+  const outLog = join(getServicePaths().logDir, 'agent-tunnel.out.log');
+  try {
+    if (!existsSync(outLog)) return null;
+    const lines = readFileSync(outLog, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => stripAnsi(line).trim())
+      .filter((line) => line.length > 0);
+    return lines.length > 0 ? lines[lines.length - 1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function describeService(service: ReturnType<typeof getServiceStatus>): string {
+  if (!service.installed) return `${c.gray}○${c.reset} not installed`;
+  if (service.active) return `${c.green}●${c.reset} running ${c.dim}· starts at login${c.reset}`;
+  return `${c.yellow}○${c.reset} installed ${c.dim}· stopped${c.reset}`;
 }
 
 async function commandStatus(flags: Record<string, string>): Promise<void> {
@@ -706,39 +796,75 @@ async function commandStatus(flags: Record<string, string>): Promise<void> {
     tunnelId: flags['tunnel-id'],
     apiUrl: flags['api-url'],
   });
+  const service = getServiceStatus();
+  const paired = Boolean(config.token && config.tunnelId);
 
-  if (!config.token || !config.tunnelId) {
-    console.error('Error: --token and --tunnel-id are required');
-    process.exit(1);
-  }
-
-  if (isSetupTunnelToken(config.token)) {
-    console.log(JSON.stringify({
-      tunnelId: config.tunnelId,
-      apiUrl: config.apiUrl,
-      credential: 'device-setup-token',
-      note: 'Saved device credentials authenticate the local WebSocket agent. HTTP live status requires a user or sandbox API key.',
-      service: getServiceStatus(),
-    }, null, 2));
+  if (isTruthyFlag(flags.json)) {
+    console.log(
+      JSON.stringify(
+        {
+          paired,
+          tunnelId: paired ? config.tunnelId : null,
+          apiUrl: config.apiUrl,
+          capabilities: config.enabledCapabilities ?? [],
+          version: agentTunnelVersion(),
+          service,
+          lastActivity: lastServiceActivity(),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
-  try {
-    const res = await fetch(`${config.apiUrl}/connections/${config.tunnelId}`, {
-      headers: { Authorization: `Bearer ${config.token}` },
-    });
+  console.log('');
+  console.log(
+    `  ${c.cyan}◆${c.reset}  ${c.bold}${c.white}Agent Tunnel${c.reset} ${c.dim}v${agentTunnelVersion()}${c.reset}   ${c.dim}${hostname()}${c.reset}`,
+  );
+  console.log('');
 
-    if (!res.ok) {
-      console.error(`Error: ${res.status} ${await res.text()}`);
-      process.exit(1);
-    }
-
-    const data = await res.json();
-    console.log(JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error('Error:', err);
-    process.exit(1);
+  if (!paired) {
+    console.log(`  ${c.gray}○${c.reset} ${c.bold}Not paired${c.reset}`);
+    console.log('');
+    console.log(
+      `  ${c.dim}Pair this machine:${c.reset} ${c.white}agent-tunnel connect --api-url <url>${c.reset}`,
+    );
+    console.log('');
+    return;
   }
+
+  const approved = new Set(config.enabledCapabilities ?? []);
+  const capabilityRow = ALL_CAPABILITIES.map((name) =>
+    approved.has(name)
+      ? `${c.green}●${c.reset} ${c.white}${name}${c.reset}`
+      : `${c.gray}○ ${name}${c.reset}`,
+  ).join('   ');
+
+  statusField('tunnel', `${c.white}${config.tunnelId}${c.reset}`);
+  statusField('relay', `${c.white}${config.apiUrl}${c.reset}`);
+  statusField('capabilities', capabilityRow);
+  console.log('');
+  statusField('service', describeService(service));
+  if (service.installed && service.path) {
+    statusField('', `${c.dim}${shortenHomePath(service.path)}${c.reset}`);
+  }
+
+  const activity = lastServiceActivity();
+  if (activity) statusField('last log', `${c.dim}${activity}${c.reset}`);
+
+  console.log('');
+  if (approved.size === 0) {
+    console.log(
+      `  ${c.yellow}!${c.reset} ${c.dim}No capabilities approved — this tunnel cannot do anything.${c.reset}`,
+    );
+    console.log(
+      `  ${c.dim}Pair again with${c.reset} ${c.white}agent-tunnel connect --reauth --api-url ${config.apiUrl}${c.reset}`,
+    );
+    console.log('');
+  }
+  console.log(`  ${c.dim}Recent logs:${c.reset} ${c.white}agent-tunnel logs${c.reset}`);
+  console.log('');
 }
 
 function commandInstallService(flags: Record<string, string>): void {
@@ -781,22 +907,52 @@ function commandServiceStatus(): void {
   console.log(JSON.stringify(getServiceStatus(), null, 2));
 }
 
-function commandLogs(): void {
+function commandLogs(flags: Record<string, string>): void {
   const paths = getServicePaths();
-  const files = [
-    join(paths.logDir, 'agent-tunnel.out.log'),
-    join(paths.logDir, 'agent-tunnel.err.log'),
-  ];
-  for (const file of files) {
-    console.log(`\n${c.bold}${file}${c.reset}`);
+  const requested = Number.parseInt(flags.lines ?? '', 10);
+  const limit = Number.isSafeInteger(requested) && requested > 0 ? requested : 60;
+  const showAll = isTruthyFlag(flags.all);
+
+  if (isTruthyFlag(flags.clear)) {
+    for (const file of serviceLogFiles(paths)) {
+      try { writeFileSync(file, '', { mode: 0o600 }); } catch {}
+    }
+    console.log('');
+    console.log(`  ${c.green}●${c.reset} ${c.dim}Service logs cleared${c.reset}`);
+    console.log('');
+    return;
+  }
+
+  for (const [label, file] of [
+    ['output', join(paths.logDir, 'agent-tunnel.out.log')],
+    ['errors', join(paths.logDir, 'agent-tunnel.err.log')],
+  ] as const) {
+    console.log('');
+    console.log(`  ${c.bold}${c.white}${label}${c.reset}  ${c.dim}${shortenHomePath(file)}${c.reset}`);
+
     if (!existsSync(file)) {
-      console.log(`${c.dim}not created yet${c.reset}`);
+      console.log(`  ${c.dim}not created yet${c.reset}`);
       continue;
     }
-    const body = readFileSync(file, 'utf8');
-    const lines = body.split(/\r?\n/).slice(-120).join('\n').trim();
-    console.log(lines || `${c.dim}empty${c.reset}`);
+
+    const raw = readFileSync(file, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter((line) => line.trim().length > 0)
+      .filter((line) => showAll || !isShellStartupNoise(line));
+
+    const lines = collapseRepeatedLines(raw).slice(-limit);
+    if (lines.length === 0) {
+      console.log(`  ${c.dim}empty${c.reset}`);
+      continue;
+    }
+    for (const line of lines) console.log(`  ${line}`);
   }
+  console.log('');
+  console.log(
+    `  ${c.dim}--lines <n> to show more, --all to keep shell noise, --clear to empty them.${c.reset}`,
+  );
+  console.log('');
 }
 
 function showHelp(): void {
@@ -816,10 +972,10 @@ function showHelp(): void {
   console.log(`  ${c.cyan}stop${c.reset}          Stop the installed background service ${c.dim}(keeps it installed)${c.reset}`);
   console.log(`  ${c.cyan}restart${c.reset}       Restart the installed background service`);
   console.log(`  ${c.cyan}service-status${c.reset} Check persistent service status`);
-  console.log(`  ${c.cyan}logs${c.reset}          Show recent service logs`);
+  console.log(`  ${c.cyan}logs${c.reset}          Show recent service logs ${c.dim}(--lines <n>, --all, --clear)${c.reset}`);
   console.log(`  ${c.cyan}uninstall-service${c.reset} Stop/remove the persistent service`);
   console.log(`  ${c.cyan}logout${c.reset}        Clear saved credentials and remove the service`);
-  console.log(`  ${c.cyan}status${c.reset}        Check tunnel connection status`);
+  console.log(`  ${c.cyan}status${c.reset}        Show pairing, capabilities, and service state ${c.dim}(--json)${c.reset}`);
   console.log(`  ${c.cyan}help${c.reset}          Show this help message`);
   console.log('');
   console.log(`${c.gray}  ── Options ─────────────────────────────────────────${c.reset}`);
@@ -870,7 +1026,7 @@ switch (command) {
     commandServiceStatus();
     break;
   case 'logs':
-    commandLogs();
+    commandLogs(flags);
     break;
   case 'uninstall-service':
     commandUninstallService();

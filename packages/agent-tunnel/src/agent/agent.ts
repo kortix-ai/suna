@@ -1,17 +1,25 @@
 import { hostname, platform, arch, release } from 'os';
 import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
+import { agentTunnelVersion } from './version';
 import { CapabilityRegistry } from './capabilities/index';
 import { PermissionGuard } from './security/permission-guard';
 import type { LocalPermission } from './security/permission-guard';
 import { signMessage, verifyMessageSignature } from '../shared/crypto';
 
-export const AGENT_VERSION = '0.1.2';
+export const AGENT_VERSION = agentTunnelVersion();
 
 /**
  * Relay close codes that mean the credential itself is bad. They are terminal:
  * reconnecting with the same token can never succeed.
  */
 export const AUTH_REJECTED_CLOSE_CODES: readonly number[] = [4001, 4003];
+
+/**
+ * The relay closes an already-registered socket with this code when a second
+ * process authenticates with the same credential. Only one agent may hold a
+ * tunnel, so this is terminal for the displaced process.
+ */
+export const AGENT_REPLACED_CLOSE_CODE = 4004;
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -51,7 +59,18 @@ function log(icon: string, msg: string) {
   process.stdout.write(`  ${safeIcon} ${c.dim}${safeMsg}${c.reset}\n`);
 }
 
+export interface TunnelAgentHooks {
+  /**
+   * Fires when the relay closes the connection for a reason reconnecting cannot
+   * fix. The agent has already stopped retrying by this point.
+   */
+  onTerminalClose?: (info: { code: number; reason: TerminalCloseReason }) => void;
+}
+
+export type TerminalCloseReason = 'credential-rejected' | 'replaced';
+
 export class TunnelAgent {
+  private hooks: TunnelAgentHooks;
   private ws: WebSocket | null = null;
   private registry: CapabilityRegistry;
   private permissionGuard: PermissionGuard;
@@ -70,10 +89,11 @@ export class TunnelAgent {
   private lastNonce = 0;
   private responseNonce = 0;
 
-  constructor(config: TunnelConfig, registry: CapabilityRegistry) {
+  constructor(config: TunnelConfig, registry: CapabilityRegistry, hooks: TunnelAgentHooks = {}) {
     this.config = config;
     this.registry = registry;
     this.permissionGuard = new PermissionGuard();
+    this.hooks = hooks;
   }
 
   connect(): void {
@@ -155,19 +175,24 @@ export class TunnelAgent {
 
       if (!this.isShuttingDown) {
         if (event.code === 4001) {
-          log(`${c.red}✗${c.reset}`, `Authentication failed — check your token`);
+          this.isShuttingDown = true;
+          log(`${c.red}✗${c.reset}`, `Credential rejected — run \`agent-tunnel connect --reauth\` to pair again`);
+          this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
           return; // Don't reconnect on auth failure
         }
         if (event.code === 4003) {
-          log(`${c.red}✗${c.reset}`, `Device credential was revoked — run connect again`);
+          this.isShuttingDown = true;
+          log(`${c.red}✗${c.reset}`, `Device credential was revoked — run \`agent-tunnel connect --reauth\` to pair again`);
+          this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
           return;
         }
-        if (event.code === 4004) {
+        if (event.code === AGENT_REPLACED_CLOSE_CODE) {
           this.isShuttingDown = true;
           log(
             `${c.yellow}○${c.reset}`,
             `Another Agent Tunnel process connected with these credentials — stopping this process`,
           );
+          this.hooks.onTerminalClose?.({ code: event.code, reason: 'replaced' });
           return;
         }
         log(`${c.yellow}○${c.reset}`, `Disconnected ${c.gray}(code: ${event.code})${c.reset}`);
@@ -197,7 +222,16 @@ export class TunnelAgent {
     // Handle auth_ok — server sends signing key after successful auth
     if (msg.type === 'auth_ok' && msg.signingKey) {
       this.signingKey = msg.signingKey;
-      log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${this.registry.getCapabilityNames().join(', ')})${c.reset}`);
+      const capabilityNames = this.registry.getCapabilityNames();
+      if (capabilityNames.length === 0) {
+        // Reporting a bare "Connected ()" hides that this tunnel is inert.
+        log(
+          `${c.yellow}!${c.reset}`,
+          `Connected, but no capabilities are enabled — this tunnel cannot do anything. Run \`agent-tunnel connect --reauth\` to pair again.`,
+        );
+      } else {
+        log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${capabilityNames.join(', ')})${c.reset}`);
+      }
       if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
       this.stableConnectionTimer = setTimeout(() => {
         this.reconnectAttempts = 0;

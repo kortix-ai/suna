@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'fs';
 import { homedir, platform, userInfo } from 'os';
@@ -14,6 +15,15 @@ import { spawnSync } from 'child_process';
 
 export const SERVICE_LABEL = 'ai.kortix.agent-tunnel';
 export const DEFAULT_INSTALL_BACKGROUND_SERVICE = true;
+
+/**
+ * Exit code for conditions that restarting cannot fix: no saved credential, or
+ * a credential the relay refuses. Every supervisor below is configured to stop
+ * on a clean exit and restart only on a failure exit, so a terminal condition
+ * ends the service instead of spinning. Without this, a revoked token produces
+ * an endless respawn loop whose only trace is a log file nobody reads.
+ */
+export const TERMINAL_SERVICE_EXIT_CODE = 0;
 
 export interface ServicePaths {
   configDir: string;
@@ -145,6 +155,9 @@ export function renderWindowsPowerShellScript(
   return `$ErrorActionPreference = 'Continue'
 while ($true) {
   & ${command}${args ? ` ${args}` : ''}
+  # A clean exit means the agent stopped for a reason restarting cannot fix,
+  # such as a missing or revoked credential. Anything else is a crash worth retrying.
+  if ($LASTEXITCODE -eq ${TERMINAL_SERVICE_EXIT_CODE}) { break }
   Start-Sleep -Seconds 5
 }
 `;
@@ -172,7 +185,10 @@ export function renderLaunchdPlist(command: string, paths: ServicePaths = getSer
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>Umask</key>
   <integer>63</integer>
   <key>StandardOutPath</key>
@@ -203,7 +219,7 @@ Wants=network-online.target
 Type=simple
 UMask=0077
 ExecStart=/bin/sh -lc ${shellQuote(command)}
-Restart=always
+Restart=on-failure
 RestartSec=5
 WorkingDirectory=${homedir()}
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
@@ -213,6 +229,42 @@ StandardError=append:${stderr}
 [Install]
 WantedBy=default.target
 `;
+}
+
+/** Keep supervised logs bounded. launchd and systemd append without rotating. */
+export const MAX_SERVICE_LOG_BYTES = 5 * 1024 * 1024;
+const RETAINED_LOG_LINES = 500;
+
+export function serviceLogFiles(paths: ServicePaths = getServicePaths()): string[] {
+  return [
+    join(paths.logDir, 'agent-tunnel.out.log'),
+    join(paths.logDir, 'agent-tunnel.err.log'),
+  ];
+}
+
+/**
+ * Trims oversized log files in place, keeping the most recent lines.
+ *
+ * A restart loop can produce megabytes of identical lines — 23 MB was observed
+ * on a real machine. Supervisors hold these files open in append mode, so
+ * rewriting the contents is safe while the service runs.
+ */
+export function rotateServiceLogs(
+  paths: ServicePaths = getServicePaths(),
+  maxBytes = MAX_SERVICE_LOG_BYTES,
+): string[] {
+  const rotated: string[] = [];
+  for (const file of serviceLogFiles(paths)) {
+    try {
+      if (!existsSync(file) || statSync(file).size <= maxBytes) continue;
+      const kept = readFileSync(file, 'utf8').split(/\r?\n/).slice(-RETAINED_LOG_LINES).join('\n');
+      writeFileSync(file, `[agent-tunnel] earlier entries trimmed\n${kept}`, { mode: 0o600 });
+      rotated.push(file);
+    } catch {
+      // A log we cannot rewrite must never stop the service from starting.
+    }
+  }
+  return rotated;
 }
 
 function run(command: string, args: string[]): { ok: boolean; detail: string } {
@@ -230,6 +282,7 @@ export function installService(): ServiceStatus {
   const paths = getServicePaths();
   mkdirSync(paths.configDir, { recursive: true, mode: 0o700 });
   mkdirSync(paths.logDir, { recursive: true, mode: 0o700 });
+  rotateServiceLogs(paths);
 
   const command = buildServiceShellCommand();
 
