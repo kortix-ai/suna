@@ -22,7 +22,3 @@ export function isShellStartupNoise(line: string): boolean {
     line,
   );
 }
-
-export function stripAnsi(value: string): string {
-  return value.replace(/\x1b\[[0-9;]*m/g, '');
-}

@@ -3,10 +3,10 @@ import { AGENT_REPLACED_CLOSE_CODE, AGENT_VERSION, AUTH_REJECTED_CLOSE_CODES } f
 import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
 
 /**
- * - `valid`       the relay accepted the saved credential.
- * - `rejected`    the relay refused the credential. Re-pairing is the only fix.
- * - `unreachable` the relay could not be reached, or it answered too slowly.
- *                 The credential is NOT proven bad, so callers must keep it.
+ * - `valid`       the relay accepted the credential.
+ * - `rejected`    the relay refused it. Re-pairing is the only fix.
+ * - `unreachable` no verdict was reached. The credential is NOT proven bad, so
+ *                 callers must keep it.
  */
 export type CredentialProbeResult = 'valid' | 'rejected' | 'unreachable';
 
@@ -17,27 +17,22 @@ export interface ProbeCredentialsOptions {
 }
 
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
-/** Cap on how long the probe waits for its own socket to finish closing. */
-const CLOSE_GRACE_MS = 1_000;
 
 /**
- * Opens one short-lived relay connection and runs only the auth handshake.
+ * Runs one relay handshake and reports whether the credential still works.
  *
- * `connect` calls this before it reuses a saved credential. Without it, a
- * revoked token is discovered only after the background service is already
- * installed, which produces a silent restart loop instead of a re-pair prompt.
+ * `connect` calls this before reusing a saved credential. Without it, a revoked
+ * token is only discovered after the background service is installed, which
+ * produces a silent restart loop instead of a re-pair prompt.
  *
- * The probe always closes its socket before resolving. A lingering probe
- * socket would otherwise be evicted by the real agent connection and log a
- * misleading "another Agent Tunnel process connected" line.
+ * Callers must already hold the tunnel lease — see acquireTunnelLease(). The
+ * relay allows a single agent per tunnel, so probing while the service is live
+ * would evict it.
  */
 export function probeCredentials(
   config: TunnelConfig,
   options: ProbeCredentialsOptions = {},
 ): Promise<CredentialProbeResult> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
-  const capabilities = options.capabilities ?? [];
-
   return new Promise<CredentialProbeResult>((resolve) => {
     let socket: WebSocket;
     try {
@@ -47,88 +42,54 @@ export function probeCredentials(
       return;
     }
 
-    let outcome: CredentialProbeResult = 'unreachable';
-    let settled = false;
-
+    // resolve() is idempotent, so the first verdict wins and later events are
+    // harmless no-ops. That removes any need to track settled state by hand.
     const settle = (result: CredentialProbeResult): void => {
-      if (settled) return;
-      settled = true;
       clearTimeout(timer);
-      clearTimeout(closeTimer);
+      try { socket.close(1000, 'probe complete'); } catch {}
       resolve(result);
     };
 
-    const timer = setTimeout(() => {
-      try { socket.close(1000, 'probe timeout'); } catch {}
-      settle('unreachable');
-    }, timeoutMs);
-
-    // The socket normally settles the promise from its own `close` handler.
-    // This guards the case where `close` never fires after we requested it.
-    let closeTimer: ReturnType<typeof setTimeout> = setTimeout(() => {}, 0);
-
-    const finishVia = (result: CredentialProbeResult): void => {
-      outcome = result;
-      clearTimeout(closeTimer);
-      closeTimer = setTimeout(() => settle(result), CLOSE_GRACE_MS);
-      try { socket.close(1000, 'probe complete'); } catch { settle(result); }
-    };
+    const timer = setTimeout(() => settle('unreachable'), options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
 
     socket.addEventListener('open', () => {
       try {
-        // Sending the saved credential to the relay is the entire purpose of
-        // the handshake. The token is read from the private, user-owned config
-        // file that loadConfig() validates, and trustedCredential() rejects any
-        // value containing control characters.
-        // lgtm[js/file-access-to-http]
-        socket.send(
-          JSON.stringify({
-            type: 'auth',
-            token: trustedCredential(config.token, 'token'),
-            capabilities,
-            agentVersion: AGENT_VERSION,
-          }),
-        );
+        // Handing the saved credential to the relay is the whole point of the
+        // handshake. loadConfig() has already validated that the file is
+        // private and user-owned; trustedCredential() rejects control characters.
+        socket.send(JSON.stringify({
+          type: 'auth',
+          token: trustedCredential(config.token, 'token'),
+          capabilities: options.capabilities ?? [],
+          agentVersion: AGENT_VERSION,
+        }));
       } catch {
-        finishVia('unreachable');
+        settle('unreachable');
       }
     });
 
     socket.addEventListener('message', (event) => {
-      let message: unknown;
       try {
-        message = JSON.parse(String((event as MessageEvent).data));
+        const message: unknown = JSON.parse(String((event as MessageEvent).data));
+        if (isJsonRecord(message) && message.type === 'auth_ok') settle('valid');
       } catch {
-        return;
-      }
-      if (
-        message !== null &&
-        typeof message === 'object' &&
-        (message as { type?: unknown }).type === 'auth_ok'
-      ) {
-        finishVia('valid');
+        // Not the message we are waiting for.
       }
     });
 
     socket.addEventListener('close', (event) => {
-      const code = (event as CloseEvent).code;
-      if (AUTH_REJECTED_CLOSE_CODES.includes(code)) {
-        settle('rejected');
-        return;
-      }
-      if (code === AGENT_REPLACED_CLOSE_CODE) {
-        // The relay only replaces a socket it already registered, and it only
-        // registers a socket that authenticated. Being replaced therefore
-        // proves the credential is good.
-        settle('valid');
-        return;
-      }
-      settle(outcome);
+      const { code } = event as CloseEvent;
+      if (AUTH_REJECTED_CLOSE_CODES.includes(code)) return settle('rejected');
+      // The relay only replaces a socket it registered, and it only registers
+      // one that authenticated. Being replaced proves the credential is good.
+      if (code === AGENT_REPLACED_CLOSE_CODE) return settle('valid');
+      settle('unreachable');
     });
 
-    socket.addEventListener('error', () => {
-      // `close` fires next and settles with the accumulated outcome.
-      outcome = settled ? outcome : 'unreachable';
-    });
+    socket.addEventListener('error', () => settle('unreachable'));
   });
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
