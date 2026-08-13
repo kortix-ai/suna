@@ -587,7 +587,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
+        /** Pre-create the session a present user is about to start. Ordinary session; ignore failures. */
         ensureWarm: () => P.ensureWarmProjectSession(projectId),
+        /** @deprecated Navigate to `ensureWarm()`'s session and prompt it. Removed in the next major. */
         claimWarm: (input: Parameters<typeof P.claimWarmProjectSession>[1]) =>
           P.claimWarmProjectSession(projectId, input),
       },

@@ -4,6 +4,7 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isWarmProjectSession } from './warm-sessions';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -118,42 +119,16 @@ export function selectSessionRowsForViewer(input: {
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
-      if (isUnclaimedWarmSession(item.row.metadata)) return false;
+      // A warm session the user never prompted holds no work of theirs, so
+      // listing it is noise: they would see a session in the sidebar they never
+      // started. The marker is dropped by the first prompt, and from that moment
+      // the row lists like any other session. See lib/warm-sessions.ts.
+      //
+      // `visible` scope only. The `project` scope is the manager's full
+      // inventory — somebody auditing every session in the project must still
+      // see warm rows, because they are real rows that held a real sandbox.
+      if (isWarmProjectSession(item.row.metadata)) return false;
       return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
     }),
   };
-}
-
-/**
- * An UNCLAIMED warm session — one the project index page pre-created
- * speculatively and nobody ever used
- * (`apps/web/src/hooks/projects/use-warm-project-session.ts`,
- * `POST /projects/:id/sessions/warm`).
- *
- * It holds no user work, so listing it is noise: the user sees a session in the
- * sidebar that they never started. Claiming it flips the marker to `claimed`,
- * and from that moment it lists like any other session.
- *
- * Anything that is NOT `claimed` is unclaimed — `available` AND `discarded`.
- * `discarded` matters as much as `available` and is easy to miss:
- * `discardAvailableWarmProjectSession` only ever writes over a row that is
- * still `available` (see its WHERE clause in `warm-session-store.ts`), so a
- * discarded row is by construction one a human never touched. It is also the
- * STEADY STATE, not a rare edge: the reaper stops an unclaimed warm box after
- * `warmPoolGrantMs()` (60 min) and leaves the row at `available` with
- * `status = 'stopped'`; the next warm ensure finds it incompatible and marks it
- * `discarded`. Matching only `available` would therefore put an empty session
- * in the sidebar of every user who opens a project, leaves for an hour, and
- * comes back.
- *
- * `visible` scope only. The `project` scope is the manager's full inventory —
- * somebody auditing every session in the project must still see the warm rows,
- * because they are real rows that held a real sandbox.
- */
-function isUnclaimedWarmSession(metadata: unknown): boolean {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
-  const warm = (metadata as Record<string, unknown>).warm_session;
-  if (!warm || typeof warm !== 'object' || Array.isArray(warm)) return false;
-  const state = (warm as Record<string, unknown>).state;
-  return state === 'available' || state === 'discarded';
 }

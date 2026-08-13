@@ -16,7 +16,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
-  pendingSessionPromptFromMetadata,
+  pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
   startStashFromPendingSessionPrompt,
 } from '@/features/session/provisioning-failure';
@@ -172,7 +172,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
-  const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
+  const pendingPrompt = pendingSessionPromptForRecovery(
+    sessionId,
+    currentProjectSession?.metadata,
+  );
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the

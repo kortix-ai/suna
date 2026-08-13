@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
-import { loadRequiredConnectorsForWarmSession } from '../lib/warm-session-connections';
 import { refreshMirror } from './mirror';
 import type { GitBackedProject } from './types';
 
@@ -104,16 +103,5 @@ describe('manifest refresh', () => {
 
     const refreshed = await loadProjectAgents(project);
     expect(requiredConnectorsForAgent('support', refreshed)).toEqual(['required-check']);
-  });
-
-  test('warm session governance observes a remote update during the cache interval', async () => {
-    await loadProjectAgents(project);
-    await pushRequiredManifest();
-
-    const required = await loadRequiredConnectorsForWarmSession(project, {
-      agentName: 'support',
-    });
-
-    expect(required).toEqual(['required-check']);
   });
 });

@@ -164,14 +164,24 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
   return Number(row?.provisioningCount ?? 0);
 }
 
+/**
+ * @param reserveSlots How many concurrent-session slots this create must LEAVE
+ *   FREE. `0` (the default) is the ordinary cap: a create may take the last
+ *   slot. `1` is speculative creation — a pre-created session is real, booted,
+ *   billed compute holding a slot exactly like a working session, so it must
+ *   never take the LAST one and 429 the next genuine session start. On Starter
+ *   (`concurrentSessionLimit: 3`, billing/services/tiers.ts) three project page
+ *   views with zero real work were enough.
+ */
 export async function enforceConcurrentSessionCap(
   accountId: string,
   userId: string,
   request?: RequestAuditContext,
+  reserveSlots = 0,
 ): Promise<SessionCreateError | null> {
   const { tier, limit, source } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
-  if (activeSessions < limit) return null;
+  if (activeSessions < limit - reserveSlots) return null;
 
   recordAuditEvent({
     accountId,
@@ -187,6 +197,7 @@ export async function enforceConcurrentSessionCap(
       limit,
       limit_source: source,
       active_sessions: activeSessions,
+      reserve_slots: reserveSlots,
     },
   }).catch((error) => {
     console.error('[projects] Failed to record session cap audit event:', error);
@@ -205,6 +216,7 @@ export async function enforceConcurrentSessionCap(
       code: 'concurrent_session_limit',
       limit,
       active_sessions: activeSessions,
+      reserve_slots: reserveSlots,
     },
   };
 }
@@ -213,6 +225,7 @@ export async function checkConcurrentSessionCap(
   accountId: string,
   userId: string,
   request?: RequestAuditContext,
+  reserveSlots = 0,
 ): Promise<{
   error?: SessionCreateError;
   headers: Record<string, string>;
@@ -225,9 +238,9 @@ export async function checkConcurrentSessionCap(
     'X-RateLimit-Remaining': String(remainingAfterCreate),
   };
 
-  if (activeSessions < limit) return { headers };
+  if (activeSessions < limit - reserveSlots) return { headers };
 
-  const error = await enforceConcurrentSessionCap(accountId, userId, request);
+  const error = await enforceConcurrentSessionCap(accountId, userId, request, reserveSlots);
   return {
     headers: error?.headers ?? headers,
     ...(error ? { error } : {}),
@@ -570,6 +583,12 @@ export async function createProjectSession(input: {
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
+  /**
+   * Concurrent-session slots this create must LEAVE FREE. Defaults to 0 — an
+   * ordinary create may take the last slot. Speculative creation passes 1; see
+   * `enforceConcurrentSessionCap`.
+   */
+  reserveConcurrentSlots?: number;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -1088,7 +1107,12 @@ export async function createProjectSession(input: {
   // still evaluated/returned before billing (402).
   const [capResult, billingCheck] = await Promise.all([
     input.enforceAccountCap !== false
-      ? checkConcurrentSessionCap(accountId, userId, input.request)
+      ? checkConcurrentSessionCap(
+          accountId,
+          userId,
+          input.request,
+          input.reserveConcurrentSlots ?? 0,
+        )
       : Promise.resolve(null),
     checkBillingActive(accountId),
   ]);

@@ -43,7 +43,7 @@ import {
   projectSessionConnectorBindings,
   serviceAccounts,
 } from '@kortix/db';
-import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { config } from '../../config';
@@ -99,18 +99,9 @@ import {
   validateSessionConnectorBindings,
 } from '../lib/session-connector-bindings';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
-import {
-  claimAvailableWarmProjectSession,
-  discardAvailableWarmProjectSession,
-  findAvailableWarmProjectSession,
-  withWarmProjectSessionLock,
-} from '../lib/warm-session-store';
-import { prepareReusedWarmSession } from '../lib/warm-session-refresh';
-import {
-  assertWarmSessionCapacity,
-  WarmProjectSessionUnavailableError,
-} from '../lib/warm-session-capacity';
-import { createWarmProjectSessionCoordinator, WarmProjectSessionError } from '../lib/warm-sessions';
+import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
+import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
+import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import {
   createSession,
   buildContinueSessionCommandValues,
@@ -145,7 +136,6 @@ import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-rescope';
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
-import { missingWarmSessionConnections } from '../lib/warm-session-connections';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { GitOperationError } from '../git/mirror';
 
@@ -260,58 +250,79 @@ projectsApp.openapi(
 },
 );
 
-class WarmSessionCreateFailure extends Error {
-  constructor(readonly detail: SessionCreateError) {
-    super(
-      typeof detail.body.error === 'string' ? detail.body.error : 'Warm session creation failed',
-    );
-    this.name = 'WarmSessionCreateFailure';
-  }
-}
+/**
+ * Warming is SPECULATIVE. The browser fires it on every project view and
+ * ignores every failure, falling through to the ordinary create path, which
+ * re-evaluates every gate and surfaces the real error to the user. So there is
+ * exactly one failure response here, whatever went wrong: billing, the
+ * concurrent-session cap, a missing connector connection, an unreadable repo.
+ *
+ * 409 rather than 5xx because none of those are server faults, and a 5xx on
+ * every page view of a repo-less project is both wrong and noisy enough to fail
+ * `08-accounts-project-access.spec.ts` (which asserts no 5xx on /v1/projects).
+ */
+/**
+ * `workspace_refresh` is a required field of the published
+ * `WarmProjectSessionResult` (npm since v0.11.0), so it cannot be dropped
+ * without breaking external consumers. It is now always `skipped`, which is the
+ * literal truth: nothing refreshes a warm workspace any more. A warm session's
+ * checkout is as old as the session, exactly like any other session's.
+ */
+const NO_REFRESH = { status: 'skipped' as const };
 
-function resolvedWarmSessionConfiguration(project: {
-  defaultBranch: string;
-  metadata: Record<string, unknown> | null;
+const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
+
+/**
+ * The caller's live, still-unused warm session for this project, or null.
+ *
+ * ACTIVE statuses only, so a box the idle reaper already stopped is never handed
+ * back as "ready". Deliberately does NOT match on agent or sandbox slug: the
+ * client compares what comes back against what the user actually selected and
+ * falls back to an ordinary create when they differ, which is why the server
+ * needs no notion of compatibility at all.
+ */
+async function findWarmProjectSession(scope: {
+  accountId: string;
+  projectId: string;
+  userId: string;
 }) {
-  const metadata = project.metadata ?? {};
-  return {
-    baseRef: project.defaultBranch,
-    agentName: normalizeString(metadata.default_agent) ?? 'default',
-    sandboxSlug: normalizeString(metadata.default_sandbox_slug) ?? DEFAULT_SANDBOX_SLUG,
-  };
+  const [row] = await db
+    .select()
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.accountId, scope.accountId),
+        eq(projectSessions.projectId, scope.projectId),
+        eq(projectSessions.createdBy, scope.userId),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        WARM_SESSION_MARKER,
+        sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+      ),
+    )
+    .orderBy(desc(projectSessions.createdAt))
+    .limit(1);
+  return row ?? null;
 }
 
-function requiredConnectionError(
-  connectorConnections: Awaited<ReturnType<typeof missingWarmSessionConnections>>,
-): SessionCreateError {
-  return {
-    status: 409,
-    body: {
-      code: 'CONNECTOR_CONNECTION_REQUIRED',
-      message: 'Create the required connections before starting this session.',
-      connector_connections: connectorConnections,
+function warmSessionUnavailable(c: any) {
+  return c.json(
+    {
+      error: 'This project cannot prepare a warm session right now.',
+      code: 'WARM_SESSION_UNAVAILABLE',
     },
-  };
-}
-
-function unavailableRequiredConnectorError(
-  error: RequiredConnectorConnectionUnavailableError,
-): SessionCreateError {
-  return {
-    status: 409,
-    body: {
-      error: error.message,
-      code: error.code,
-      // The docs tell clients to read `connectors` and never to parse `error`.
-      // This site emitted only the prose, so a caller obeying that instruction
-      // got `undefined` here while the create path worked. The shape has to be
-      // the same wherever the code appears, or the contract is a lie on one path.
-      connectors: error.aliases.map(publicConnectorAlias),
-    },
-  };
+    409,
+  );
 }
 
 // POST /v1/projects/:projectId/sessions/warm
+//
+// Pre-create the session the user is about to start.
+//
+// This is the SAME create `POST /{projectId}/sessions` runs, with the project's
+// own defaults and nothing else — an ordinary session, owned by this user, that
+// they have not typed into yet. It carries one marker, `metadata.warm`, so the
+// `visible` session list can hide it until the first prompt lands. See
+// lib/warm-sessions.ts.
 
 projectsApp.openapi(
   createRoute({
@@ -339,148 +350,57 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
     if (gate) return gate;
 
-    const scope = {
+    const view = {
+      viewerId: loaded.userId,
+      canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+    };
+    const existing = await findWarmProjectSession({
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
-    };
-    const configuration = resolvedWarmSessionConfiguration(loaded.row);
-    const coordinator = createWarmProjectSessionCoordinator({
-      exclusive: (operation) => withWarmProjectSessionLock(scope, operation),
-      findAvailable: () => findAvailableWarmProjectSession(scope),
-      discard: (sessionId, metadata) =>
-        discardAvailableWarmProjectSession(scope, sessionId, metadata),
-      claim: (sessionId, metadata) => claimAvailableWarmProjectSession(scope, sessionId, metadata),
-      create: async (metadata) => {
-        // CREATE only — the coordinator calls this after find-available has
-        // already failed, so a reusable warm session never reaches it. A warm
-        // box is billed compute holding a concurrent-session slot; it must
-        // never take the LAST one and 429 the next genuine session start.
-        await assertWarmSessionCapacity(loaded.row.accountId);
-        const result = await createProjectSession({
-          project: loaded.row,
-          userId: loaded.userId,
-          requestingPrincipalType:
-            c.get('authType') === 'service_account' ? 'service_account' : 'human',
-          body: {
-            base_ref: configuration.baseRef,
-            agent_name: configuration.agentName,
-            sandbox_slug: configuration.sandboxSlug,
-          },
-          metadata: { source: 'ui', ...metadata },
-          authType: c.get('authType') as string | undefined,
-          apiKeyType: c.get('apiKeyType') as string | undefined,
-          inSession: isProjectSessionPrincipal(c),
-          callerSessionId: callerKortixSessionId(c),
-          request: requestAuditContext(c),
-        });
-        if (result.error) throw new WarmSessionCreateFailure(result.error);
-        if (!result.row) {
-          throw new WarmSessionCreateFailure({
-            status: 500,
-            body: { error: 'Warm session creation returned no row', retry: true },
-          });
-        }
-        return result.row;
-      },
     });
+    if (existing) {
+      return c.json(
+        { session: serializeSession(existing, view), reused: true, workspace_refresh: NO_REFRESH },
+        200,
+      );
+    }
 
     try {
-      const ensured = await coordinator.ensure(configuration);
-      if (ensured.reused) {
-        const missing = await missingWarmSessionConnections(loaded.row, ensured.session);
-        if (missing.length > 0) {
-          const currentMarker =
-            ensured.session.metadata?.warm_session &&
-            typeof ensured.session.metadata.warm_session === 'object' &&
-            !Array.isArray(ensured.session.metadata.warm_session)
-              ? ensured.session.metadata.warm_session
-              : {};
-          await discardAvailableWarmProjectSession(scope, ensured.session.sessionId, {
-            ...(ensured.session.metadata ?? {}),
-            warm_session: {
-              ...currentMarker,
-              state: 'discarded',
-              discarded_at: new Date().toISOString(),
-              discard_reason: 'connector_authorization_invalid',
-            },
-          });
-          return sendSessionCreateError(c, requiredConnectionError(missing));
-        }
-      }
-      const warmRefresh = ensured.reused
-        ? await prepareReusedWarmSession({
-            project: loaded.row,
-            accountId: loaded.row.accountId,
-            sessionId: ensured.session.sessionId,
-          })
-        : {
-            workspace: { status: 'skipped' as const },
-            config: { status: 'current' as const },
-          };
-      if (warmRefresh.config.status === 'failed') {
-        console.warn('[warm-session] failed to update compiled agent config', {
-          projectId,
-          sessionId: ensured.session.sessionId,
-          reason: warmRefresh.config.reason,
-        });
-      }
+      const result = await createProjectSession({
+        project: loaded.row,
+        userId: loaded.userId,
+        requestingPrincipalType:
+          c.get('authType') === 'service_account' ? 'service_account' : 'human',
+        // Empty: `createProjectSession` resolves the project's default branch,
+        // default agent and default sandbox slug exactly as it does for a "New
+        // session" click with no overrides. Nothing to keep in sync.
+        body: {},
+        metadata: { source: 'ui', [WARM_SESSION_METADATA_KEY]: true },
+        // A warm box is real, billed compute holding a concurrent-session slot.
+        // It must never take the LAST one and 429 the next genuine start.
+        reserveConcurrentSlots: 1,
+        authType: c.get('authType') as string | undefined,
+        apiKeyType: c.get('apiKeyType') as string | undefined,
+        inSession: isProjectSessionPrincipal(c),
+        callerSessionId: callerKortixSessionId(c),
+        request: requestAuditContext(c),
+      });
+      if (result.error || !result.row) return warmSessionUnavailable(c);
       return c.json(
-        {
-          session: serializeSession(ensured.session, {
-            viewerId: loaded.userId,
-            canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
-          }),
-          reused: ensured.reused,
-          workspace_refresh: warmRefresh.workspace,
-        },
+        { session: serializeSession(result.row, view), reused: false, workspace_refresh: NO_REFRESH },
         200,
       );
     } catch (error) {
-      if (error instanceof RequiredConnectorConnectionUnavailableError) {
-        return sendSessionCreateError(c, unavailableRequiredConnectorError(error));
-      }
-      if (error instanceof WarmSessionCreateFailure) {
-        return sendSessionCreateError(c, error.detail);
-      }
-      // Warming is possible in principle but not right now. Same 409
-      // WARM_SESSION_UNAVAILABLE as the unreadable-repo skip below: the client
-      // treats every warm failure identically (no warm session, fall through to
-      // the normal create path), so this is silent and correct at the UI.
-      // `reason` distinguishes the causes for debugging without changing the
-      // status, the code, or the response schema.
-      if (error instanceof WarmProjectSessionUnavailableError) {
-        return c.json(
-          {
-            error: 'This project cannot prepare a warm session right now.',
-            code: 'WARM_SESSION_UNAVAILABLE',
-            reason: error.reason,
-          },
-          409,
-        );
-      }
-      // A project whose repo cannot be read (no credentials, deleted remote,
-      // bad ref) simply cannot be warmed. That is a fact about the project, not
-      // a server fault, and warming is SPECULATIVE — the browser fires it on
-      // every project view and silently ignores any failure. Reporting it as
-      // 5xx made every such page view emit a server error, which is both wrong
-      // and noisy enough that `08-accounts-project-access.spec.ts` (which
-      // asserts no 5xx on /v1/projects) failed on it.
-      //
-      // Deliberately narrow: only this classified git failure is downgraded.
-      // Anything else still throws, so a genuine bug in this path still pages.
+      // A project whose repo cannot be read (no credentials, deleted remote, bad
+      // ref) simply cannot be warmed. Deliberately narrow: only this classified
+      // git failure is swallowed, so a genuine bug in this path still pages.
       if (error instanceof GitOperationError) {
         console.warn('[warm-session] project repo unreadable; skipping warm session', {
           projectId,
           kind: error.kind,
         });
-        return c.json(
-          {
-            error: 'This project cannot prepare a warm session right now.',
-            code: 'WARM_SESSION_UNAVAILABLE',
-          },
-          409,
-        );
+        return warmSessionUnavailable(c);
       }
       throw error;
     }
@@ -488,13 +408,23 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/sessions/warm/claim
+//
+// DEPRECATED. Kept because `claimWarmProjectSession` has shipped in every
+// published `@kortix/sdk` since v0.11.0 and removing it would 404 an external
+// consumer at runtime. The browser no longer calls it: a warm session is an
+// ordinary session, so the send path navigates to it and prompts it, and the
+// first prompt drops the marker on its own (projects/session-activity.ts).
+//
+// It now does exactly what that prompt does — drop `metadata.warm` — plus the
+// two things its published input can carry.
 
 projectsApp.openapi(
   createRoute({
     method: 'post',
     path: '/{projectId}/sessions/warm/claim',
     tags: ['sessions'],
-    summary: 'Claim the current user warm project session',
+    summary: 'Claim the current user warm project session (deprecated)',
+    deprecated: true,
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -523,58 +453,64 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
     if (gate) return gate;
 
-    const scope = {
+    const candidate = await findWarmProjectSession({
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
-    };
-    const coordinator = createWarmProjectSessionCoordinator({
-      findAvailable: () => findAvailableWarmProjectSession(scope),
-      discard: (candidateSessionId, metadata) =>
-        discardAvailableWarmProjectSession(scope, candidateSessionId, metadata),
-      claim: (candidateSessionId, metadata) =>
-        claimAvailableWarmProjectSession(scope, candidateSessionId, metadata),
-      create: async () => {
-        throw new Error('Claim cannot create a warm session');
-      },
     });
-
-    try {
-      const candidate = await findAvailableWarmProjectSession(scope);
-      if (candidate?.sessionId === sessionId) {
-        const missing = await missingWarmSessionConnections(loaded.row, candidate);
-        if (missing.length > 0) {
-          return sendSessionCreateError(c, requiredConnectionError(missing));
-        }
-      }
-
-      const claimed = await coordinator.claim({
-        sessionId,
-        agentName: normalizeString(body.agent_name) ?? undefined,
-        sandboxSlug: normalizeString(body.sandbox_slug) ?? undefined,
-        pendingPrompt:
-          body.pending_prompt &&
-          typeof body.pending_prompt === 'object' &&
-          !Array.isArray(body.pending_prompt)
-            ? (body.pending_prompt as Record<string, unknown>)
-            : undefined,
-      });
+    if (!candidate || candidate.sessionId !== sessionId) {
       return c.json(
-        serializeSession(claimed, {
-          viewerId: loaded.userId,
-          canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
-        }),
-        200,
+        {
+          error: 'The warm session is no longer available',
+          code: 'WARM_SESSION_ALREADY_CLAIMED',
+        },
+        409,
       );
-    } catch (error) {
-      if (error instanceof RequiredConnectorConnectionUnavailableError) {
-        return sendSessionCreateError(c, unavailableRequiredConnectorError(error));
-      }
-      if (error instanceof WarmProjectSessionError) {
-        return c.json({ error: error.message, code: error.code }, error.status as 409);
-      }
-      throw error;
     }
+
+    const requestedAgent = normalizeString(body.agent_name);
+    if (requestedAgent && requestedAgent !== candidate.agentName) {
+      return c.json(
+        {
+          error: 'The warm session does not match the selected agent',
+          code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+        },
+        409,
+      );
+    }
+
+    const pendingPrompt =
+      body.pending_prompt && typeof body.pending_prompt === 'object'
+        ? { pending_prompt: body.pending_prompt as Record<string, unknown> }
+        : {};
+    const [claimed] = await db
+      .update(projectSessions)
+      .set({
+        metadata: sql`(${projectSessionMetadataMerge(
+          pendingPrompt,
+        )}) - ${WARM_SESSION_METADATA_KEY}::text`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER),
+      )
+      .returning();
+    if (!claimed) {
+      return c.json(
+        {
+          error: 'The warm session is no longer available',
+          code: 'WARM_SESSION_ALREADY_CLAIMED',
+        },
+        409,
+      );
+    }
+    return c.json(
+      serializeSession(claimed, {
+        viewerId: loaded.userId,
+        canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
+      }),
+      200,
+    );
   },
 );
 

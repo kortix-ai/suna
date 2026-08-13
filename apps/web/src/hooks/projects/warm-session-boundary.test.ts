@@ -10,12 +10,18 @@ import { resolve } from 'node:path';
  * entirely. The rule it protected is real: the browser must never hand-roll
  * speculative session creation, scattered across whatever component needs it.
  *
- * The index page now DOES warm a session, through the server-owned, idempotent
+ * The project shell now DOES warm a session, through the server-owned
  * `POST /projects/:id/sessions/warm`. So the rule moves rather than vanishes:
- * the SDK's two governed warm calls live in exactly ONE module, and everything
- * else in the app goes through that module's `useWarmIndexSession` /
- * `claimWarmIndexSession`. A second file reaching for the SDK surface directly
- * is the regression this test exists to catch.
+ * the SDK's speculative-create call lives in exactly ONE module, and everything
+ * else in the app goes through that module's `useWarmProjectSession` /
+ * `takeWarmSession`. A second file reaching for the SDK surface directly is the
+ * regression this test exists to catch.
+ *
+ * `claimWarmProjectSession` is no longer part of the rule, and no longer part of
+ * the app: a warm session is an ordinary session, so the send path navigates to
+ * it and prompts it rather than claiming it. The SDK still exports the call
+ * (published since v0.11.0) and the API still serves the route, both deprecated
+ * — but no `apps/web` module may reach for either, which the ban below enforces.
  *
  * `WARM_PROJECT_SESSIONS_ENABLED` stays banned outright — it is a dead flag
  * from the removed client implementation and there is no correct use of it.
@@ -28,13 +34,13 @@ const THIS_FILE = resolve(import.meta.path);
 const WARM_SESSION_MODULES = ['hooks/projects/use-warm-project-session.ts'] as const;
 
 /** Allowed in `WARM_SESSION_MODULES`, banned everywhere else. */
-const GOVERNED_WARM_SESSION_CALLS = [
-  'ensureWarmProjectSession',
-  'claimWarmProjectSession',
-] as const;
+const GOVERNED_WARM_SESSION_CALLS = ['ensureWarmProjectSession'] as const;
 
 /** Banned everywhere, with no exception. */
-const FORBIDDEN_WARM_SESSION_REFERENCES = ['WARM_PROJECT_SESSIONS_ENABLED'] as const;
+const FORBIDDEN_WARM_SESSION_REFERENCES = [
+  'WARM_PROJECT_SESSIONS_ENABLED',
+  'claimWarmProjectSession',
+] as const;
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -82,7 +88,7 @@ describe('client warm-session architecture', () => {
     }
   });
 
-  test('the dead warm-session feature flag is referenced nowhere', () => {
+  test('the deprecated warm-claim call and dead flag are referenced nowhere', () => {
     const violations = scan(FORBIDDEN_WARM_SESSION_REFERENCES, () => false);
 
     expect(violations).toEqual([]);

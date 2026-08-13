@@ -12,7 +12,7 @@ import {
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { claimWarmSession } from '@/hooks/projects/use-warm-project-session';
+import { takeWarmSession } from '@/hooks/projects/use-warm-project-session';
 import {
   NEW_SESSION_GUARD_MAX_MS,
   hasLandedOnNewSession,
@@ -38,12 +38,12 @@ import { prefetchSessionStart, qk } from '@kortix/sdk/react';
  * A session is persisted only after an explicit user action. The route bundle
  * and `/start` are prefetched before navigation.
  *
- * The session id comes from one of two places. When the project index page has
- * a warm session ready (`use-warm-project-session.ts`) this claims it and the
- * SERVER owns the id. Otherwise the id is minted client-side and created as
- * before. `claimWarmSession` returns null on every failure, so the create
- * path below remains the authority on billing, the session cap and connector
- * requirements — the user sees the same outcome either way.
+ * The session id comes from one of two places. When the project shell has a warm
+ * session ready that fits this send (`use-warm-project-session.ts`) this takes
+ * it and the SERVER owns the id. Otherwise the id is minted client-side and
+ * created as before. `takeWarmSession` returns null whenever nothing suitable is
+ * held, so the create path below remains the authority on billing, the session
+ * cap and connector requirements — the user sees the same outcome either way.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it
  * for entry-point-specific side effects (open a tab, close a drawer, timing
@@ -149,21 +149,19 @@ export function useNewProjectSession(projectId: string | undefined) {
       }
       releaseTimerRef.current = setTimeout(release, NEW_SESSION_GUARD_MAX_MS);
 
-      // Claim the index page's warm session when there is one, else create a
-      // session exactly as before. The warm path skips the sandbox boot the
-      // user would otherwise watch after pressing Enter; `claimWarmSession`
-      // returns null for every failure, so the create path below stays the
+      // Use the project's warm session when there is one that fits, else create
+      // one exactly as before. The warm session already exists — it is an
+      // ordinary session created a few seconds ago — so this is a synchronous,
+      // network-free hand-off that skips the sandbox boot the user would
+      // otherwise watch after pressing Enter. `takeWarmSession` returns null
+      // whenever there is nothing suitable, so the create path below stays the
       // authority on billing, the session cap and connector requirements.
-      const claimOrCreateSession = async () => {
-        const claimed = await claimWarmSession(projectId, {
-          create: opts?.create,
-          onClaiming: (warmSessionId) =>
-            router.prefetch(`/projects/${projectId}/sessions/${warmSessionId}`),
-        });
-        // The warm path takes its id from the SERVER (the row already exists);
-        // the create path mints it client-side. Either way this is the id the
-        // navigation, `onNavigate` and the guard's landing check all use.
-        if (claimed) return claimed;
+      const takeOrCreateSession = async () => {
+        const warmSessionId = takeWarmSession(projectId, { create: opts?.create });
+        if (warmSessionId) {
+          router.prefetch(`/projects/${projectId}/sessions/${warmSessionId}`);
+          return warmSessionId;
+        }
 
         const sessionId = crypto.randomUUID();
         markSessionFresh(sessionId);
@@ -176,7 +174,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       };
 
       const createSession = () =>
-        loadingToast('Starting session…', claimOrCreateSession(), { success: 'Session started' });
+        loadingToast('Starting session…', takeOrCreateSession(), { success: 'Session started' });
 
       createScopedSession({
         create: createSession,

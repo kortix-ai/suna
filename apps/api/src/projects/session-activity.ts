@@ -1,9 +1,10 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
+import { WARM_SESSION_METADATA_KEY } from './lib/warm-sessions';
 
 /**
  * `metadata.last_activity_at` — when a user or agent turn was last accepted for
@@ -36,6 +37,12 @@ export const SESSION_LAST_ACTIVITY_KEY = 'last_activity_at';
  * title CAS and the snapshot sync, which write other keys of the same jsonb
  * column — see session-metadata-merge.ts.
  *
+ * The SAME statement drops `metadata.warm`. A session that accepted a turn is by
+ * definition no longer an unused, pre-created one, so "this session is used" and
+ * "this session was last active at T" are one fact written once and can never
+ * drift apart. Deleting an absent key is a no-op, so every session that was
+ * never warm pays nothing. See projects/lib/warm-sessions.ts.
+ *
  * Best-effort and never awaited by the prompt path: a failed stamp degrades the
  * sidebar's ordering, and must never degrade the prompt.
  */
@@ -51,7 +58,9 @@ export async function recordSessionActivity(input: {
     await db
       .update(projectSessions)
       .set({
-        metadata: projectSessionMetadataMerge({ [SESSION_LAST_ACTIVITY_KEY]: at }),
+        metadata: sql`(${projectSessionMetadataMerge({
+          [SESSION_LAST_ACTIVITY_KEY]: at,
+        })}) - ${WARM_SESSION_METADATA_KEY}::text`,
         updatedAt: new Date(at),
       })
       .where(

@@ -12,6 +12,58 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-13 — session `warm-index` — warm-session decline must not toast
+
+**Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
+recoverable `409 WARM_SESSION_UNAVAILABLE` reached `platformConfig().onError` and
+became an error toast on an ordinary project page view. The browser fires that
+call on every project visit and ignores every failure by contract, so the toast
+was pure noise — and an account sitting at its concurrent-session cap saw it
+every time. `claimWarmProjectSession` already had the flag for exactly this
+reason (B26); this brings its sibling in line.
+
+Also marked `claimWarmProjectSession` and `sessions.claimWarm` `@deprecated`. A
+warm session is an ordinary session, so the API's send path no longer claims
+anything — it navigates to the session and prompts it, and the first prompt makes
+it visible. The export STAYS: it has shipped in every published version since
+v0.11.0 (verified against the 0.11.0 and 0.12.8 tarballs), so removing it would
+404 an external consumer at runtime. Removal belongs to the next major.
+
+RED first:
+
+```
+$ bun test packages/sdk/src/core/rest/projects-client/sessions.test.ts
+(fail) ensureWarmProjectSession keeps a declined warm session out of the global error sink
+error: expect(received).not.toHaveBeenCalled()
+Expected number of calls: 0
+Received number of calls: 1
+ 40 pass
+ 1 fail
+```
+
+GREEN after the fix:
+
+```
+$ bun test packages/sdk/src/core/rest/projects-client/sessions.test.ts
+ 41 pass
+ 0 fail
+Ran 41 tests across 1 file. [35.00ms]
+```
+
+No exported name, signature or type changed. Public-surface snapshots unchanged.
+The `version` field was not touched.
+
+**Housekeeping:** removed two committed diff3 conflict markers (`||||||| b55497c392`
+from #6437, `||||||| f398f755c2` from #6244). Neither had matching `<<<<<<<` /
+`>>>>>>>` lines, so nothing ever flagged them.
+
+**Claim note:** the claim was recorded with the work rather than before it — this
+change was a one-file bug fix discovered mid-refactor, not a scheduled task.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-13 — session `runtime-identity-ux` — error message: sentence over slug
 
 **Done.** `core/http/api-client.ts` read `errorData.reason` FIRST when building
@@ -39,7 +91,6 @@ package and deserves its own task. Filed under Next.
 
 ---
 
-||||||| b55497c392
 ### 2026-08-13 — session `warm-index` claim — DONE
 
 Additive only: registered the `warm_sessions` project feature flag key so the
@@ -8364,7 +8415,6 @@ would now fail to compile. Flagging rather than burying it.
 made; this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
-||||||| f398f755c2
 
 ### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
 
