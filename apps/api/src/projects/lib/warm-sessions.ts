@@ -22,6 +22,29 @@ export interface ClaimWarmProjectSessionConfiguration {
 interface WarmProjectSessionMarker {
   state: 'available' | 'claimed' | 'discarded';
   sandbox_slug: string;
+  /**
+   * The agent this warm session was ENSURED for — the REQUESTED name (the
+   * project default, usually the `default` sentinel), not the resolved one.
+   *
+   * It has to be the request, and it has to live on the marker, because
+   * `createProjectSession` RESOLVES the sentinel against the project manifest
+   * before storing it: ensuring with `agent_name: 'default'` writes
+   * `project_sessions.agent_name = 'kortix'` (or whatever the manifest default
+   * is). `compatible()` used to compare that resolved column against the
+   * unresolved request, so the two could only ever be equal for a project whose
+   * default agent is literally named "default" — every ensure therefore
+   * discarded the warm session and booted a NEW sandbox instead of reusing one.
+   *
+   * Recording the request and comparing requests is exactly the intended check:
+   * it fires when the project's `default_agent` changes. A manifest-side change
+   * to the default agent is handled by `prepareReusedWarmSession`, which pushes
+   * the latest compiled agent config on the reuse path.
+   *
+   * Optional so a marker written before this field existed still parses. Such a
+   * marker fails `compatible()` once, gets discarded, and is replaced by a
+   * complete one — a single self-healing extra box per (project, user).
+   */
+  agent_name?: string;
   created_at: string;
   claimed_at?: string;
   discarded_at?: string;
@@ -59,13 +82,14 @@ function markerOf(metadata: Record<string, unknown> | null): WarmProjectSessionM
 }
 
 function availableMetadata(
-  sandboxSlug: string,
+  configuration: WarmProjectSessionConfiguration,
   now: Date,
 ): Record<string, unknown> {
   return {
     warm_session: {
       state: 'available',
-      sandbox_slug: sandboxSlug,
+      sandbox_slug: configuration.sandboxSlug,
+      agent_name: configuration.agentName,
       created_at: now.toISOString(),
     },
   };
@@ -90,7 +114,11 @@ function compatible(
     marker?.state === 'available' &&
     REUSABLE_STATUSES.has(session.status) &&
     session.baseRef === configuration.baseRef &&
-    session.agentName === configuration.agentName &&
+    // The MARKER, never `session.agentName` — see `agent_name` on
+    // `WarmProjectSessionMarker`. The column holds the RESOLVED agent, the
+    // configuration holds the REQUEST, and comparing them made reuse
+    // impossible.
+    marker.agent_name === configuration.agentName &&
     marker.sandbox_slug === configuration.sandboxSlug
   );
 }
@@ -124,6 +152,7 @@ export function createWarmProjectSessionCoordinator<T extends WarmProjectSession
         withMarker(available, {
           state: 'discarded',
           sandbox_slug: marker?.sandbox_slug ?? configuration.sandboxSlug,
+          agent_name: marker?.agent_name ?? configuration.agentName,
           created_at: marker?.created_at ?? now().toISOString(),
           discarded_at: now().toISOString(),
           discard_reason: REUSABLE_STATUSES.has(available.status)
@@ -135,7 +164,7 @@ export function createWarmProjectSessionCoordinator<T extends WarmProjectSession
 
     try {
       const session = await dependencies.create(
-        availableMetadata(configuration.sandboxSlug, now()),
+        availableMetadata(configuration, now()),
       );
       return { session, reused: false };
     } catch (error) {

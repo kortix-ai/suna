@@ -8,12 +8,16 @@ function record(overrides: Partial<WarmProjectSessionRecord> = {}): WarmProjectS
   return {
     sessionId: 'session-1',
     status: 'running',
-    baseRef: 'main',
+    // The RESOLVED agent, as `createProjectSession` stores it. The marker below
+    // carries the REQUEST. In production these two differ — see the regression
+    // test at the bottom of this file.
     agentName: 'kortix',
+    baseRef: 'main',
     metadata: {
       warm_session: {
         state: 'available',
         sandbox_slug: 'default',
+        agent_name: 'kortix',
         created_at: '2026-07-26T12:00:00.000Z',
       },
     },
@@ -74,6 +78,7 @@ describe('warm project session coordinator', () => {
       warm_session: {
         state: 'available',
         sandbox_slug: 'default',
+        agent_name: 'kortix',
         created_at: '2026-07-26T13:00:00.000Z',
       },
     });
@@ -104,6 +109,7 @@ describe('warm project session coordinator', () => {
         warm_session: {
           state: 'discarded',
           sandbox_slug: 'default',
+          agent_name: 'kortix',
           created_at: '2026-07-26T12:00:00.000Z',
           discarded_at: '2026-07-26T13:00:00.000Z',
           discard_reason: 'terminal_status',
@@ -227,6 +233,7 @@ describe('warm project session coordinator', () => {
         warm_session: {
           state: 'claimed',
           sandbox_slug: 'default',
+          agent_name: 'kortix',
           created_at: '2026-07-26T12:00:00.000Z',
           claimed_at: '2026-07-26T13:00:00.000Z',
         },
@@ -272,5 +279,118 @@ describe('warm project session coordinator', () => {
       code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
       status: 409,
     });
+  });
+});
+
+/**
+ * The defect this suite could not see.
+ *
+ * Every test above used a self-consistent fake where the session row's
+ * `agentName` equalled `configuration.agentName`. The route never produces
+ * that: `resolvedWarmSessionConfiguration` asks for the project default
+ * (`metadata.default_agent ?? 'default'`) and `createProjectSession` RESOLVES
+ * that sentinel against the project manifest before storing it, so the row
+ * comes back as `kortix`.
+ *
+ * `compatible()` compared the resolved column to the unresolved request, so it
+ * was false for every real project. Measured on the local stack before the fix:
+ * three consecutive `POST /sessions/warm` calls returned `reused: false` with
+ * three different session ids and three `discard_reason:
+ * "configuration_changed"` rows — one new billed sandbox per index-page visit.
+ */
+describe('warm session reuse across the resolved/requested agent-name gap', () => {
+  const REAL_WORLD_CONFIGURATION = {
+    baseRef: 'main',
+    // What the route asks for: the sentinel, because the project pins no
+    // `default_agent` in its metadata.
+    agentName: 'default',
+    sandboxSlug: 'default',
+  };
+
+  /** A warm row exactly as the API writes it: resolved column, requested marker. */
+  const warmRow = record({
+    // `createProjectSession` resolved 'default' to the manifest default.
+    agentName: 'kortix',
+    metadata: {
+      warm_session: {
+        state: 'available',
+        sandbox_slug: 'default',
+        agent_name: 'default',
+        created_at: '2026-07-26T12:00:00.000Z',
+      },
+    },
+  });
+
+  test('reuses the warm session instead of booting a second sandbox', async () => {
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: async () => warmRow,
+      create: async () => {
+        throw new Error('create must not run — this is the cost bug');
+      },
+      discard: async () => {
+        throw new Error('discard must not run — this is the cost bug');
+      },
+      claim: async () => null,
+    });
+
+    expect(await coordinator.ensure(REAL_WORLD_CONFIGURATION)).toEqual({
+      session: warmRow,
+      reused: true,
+    });
+  });
+
+  test('a changed project default agent still invalidates the warm session', async () => {
+    const discarded: string[] = [];
+    const replacement = record({ sessionId: 'session-2' });
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: async () => warmRow,
+      create: async () => replacement,
+      discard: async (sessionId) => {
+        discarded.push(sessionId);
+      },
+      claim: async () => null,
+    });
+
+    const result = await coordinator.ensure({
+      ...REAL_WORLD_CONFIGURATION,
+      agentName: 'researcher',
+    });
+
+    expect(discarded).toEqual([warmRow.sessionId]);
+    expect(result).toEqual({ session: replacement, reused: false });
+  });
+
+  // Rows written before the marker carried `agent_name`. They must not be
+  // reused blindly; one discard each, then the replacement carries the field.
+  test('a pre-existing marker without agent_name is replaced exactly once', async () => {
+    const legacy = record({
+      metadata: {
+        warm_session: {
+          state: 'available',
+          sandbox_slug: 'default',
+          created_at: '2026-07-26T12:00:00.000Z',
+        },
+      },
+    });
+    const replacement = record({ sessionId: 'session-2' });
+    let createMetadata: Record<string, unknown> | undefined;
+    const discarded: string[] = [];
+    const coordinator = createWarmProjectSessionCoordinator({
+      findAvailable: async () => legacy,
+      create: async (metadata) => {
+        createMetadata = metadata;
+        return replacement;
+      },
+      discard: async (sessionId) => {
+        discarded.push(sessionId);
+      },
+      claim: async () => null,
+    });
+
+    const result = await coordinator.ensure(REAL_WORLD_CONFIGURATION);
+
+    expect(discarded).toEqual([legacy.sessionId]);
+    expect(result.reused).toBe(false);
+    expect((createMetadata?.warm_session as Record<string, unknown>).agent_name).toBe('default');
   });
 });
