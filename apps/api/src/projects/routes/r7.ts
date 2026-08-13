@@ -143,6 +143,7 @@ import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../se
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 import { missingWarmSessionConnections } from '../lib/warm-session-connections';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { GitOperationError } from '../git/mirror';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -432,6 +433,29 @@ projectsApp.openapi(
       }
       if (error instanceof WarmSessionCreateFailure) {
         return sendSessionCreateError(c, error.detail);
+      }
+      // A project whose repo cannot be read (no credentials, deleted remote,
+      // bad ref) simply cannot be warmed. That is a fact about the project, not
+      // a server fault, and warming is SPECULATIVE — the browser fires it on
+      // every project view and silently ignores any failure. Reporting it as
+      // 5xx made every such page view emit a server error, which is both wrong
+      // and noisy enough that `08-accounts-project-access.spec.ts` (which
+      // asserts no 5xx on /v1/projects) failed on it.
+      //
+      // Deliberately narrow: only this classified git failure is downgraded.
+      // Anything else still throws, so a genuine bug in this path still pages.
+      if (error instanceof GitOperationError) {
+        console.warn('[warm-session] project repo unreadable; skipping warm session', {
+          projectId,
+          kind: error.kind,
+        });
+        return c.json(
+          {
+            error: 'This project cannot prepare a warm session right now.',
+            code: 'WARM_SESSION_UNAVAILABLE',
+          },
+          409,
+        );
       }
       throw error;
     }
