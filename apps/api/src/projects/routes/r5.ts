@@ -38,7 +38,8 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
-import { addPlatformMetaAgent, projectMetaAgentEnabled } from '../lib/platform-meta-agent';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -136,7 +137,7 @@ projectsApp.openapi(
   // The platform coordinator appears in the agent list (and becomes the
   // default) only for projects that opted into the `meta_agent` experimental
   // feature. Flag off: the config is exactly the repo-declared surface.
-  const config = projectMetaAgentEnabled(loaded.row.metadata)
+  const config = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
     ? addPlatformMetaAgent(filteredConfig)
     : filteredConfig;
   // …and hide the raw FILES of those resources from the file list (visibility

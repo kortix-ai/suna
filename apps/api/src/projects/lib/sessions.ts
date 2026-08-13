@@ -96,10 +96,10 @@ import {
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
-  projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 
@@ -737,7 +737,7 @@ export async function createProjectSession(input: {
   // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
   // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
   // agent name.
-  const metaAgentEnabled = projectMetaAgentEnabled(project.metadata);
+  const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
