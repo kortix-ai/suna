@@ -6,7 +6,6 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'fs';
 import { homedir, platform, userInfo } from 'os';
@@ -256,12 +255,16 @@ export function rotateServiceLogs(
   const rotated: string[] = [];
   for (const file of serviceLogFiles(paths)) {
     try {
-      if (!existsSync(file) || statSync(file).size <= maxBytes) continue;
-      const kept = readFileSync(file, 'utf8').split(/\r?\n/).slice(-RETAINED_LOG_LINES).join('\n');
+      // Read once and decide from the bytes in hand. Checking existence or size
+      // first and then reading is a race: the supervisor appends to these files
+      // continuously, so the file examined need not be the file read.
+      const contents = readFileSync(file, 'utf8');
+      if (Buffer.byteLength(contents, 'utf8') <= maxBytes) continue;
+      const kept = contents.split(/\r?\n/).slice(-RETAINED_LOG_LINES).join('\n');
       writeFileSync(file, `[agent-tunnel] earlier entries trimmed\n${kept}`, { mode: 0o600 });
       rotated.push(file);
     } catch {
-      // A log we cannot rewrite must never stop the service from starting.
+      // A missing or unreadable log must never stop the service from starting.
     }
   }
   return rotated;

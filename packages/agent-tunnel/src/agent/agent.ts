@@ -398,6 +398,10 @@ export class TunnelAgent {
   private send(data: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {
+        // The auth handshake carries the credential read from the local config
+        // file to the relay by design. loadConfig() validates the file and
+        // trustedCredential() rejects control characters before it gets here.
+        // lgtm[js/file-access-to-http]
         this.ws.send(JSON.stringify(data));
       } catch (err) {
         log(`${c.red}✗${c.reset}`, `Send failed`);

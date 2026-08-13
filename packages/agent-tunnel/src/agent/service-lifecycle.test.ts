@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -81,8 +81,9 @@ describe('service log hygiene', () => {
       const paths = { ...getServicePaths(), logDir };
       const outLog = join(logDir, 'agent-tunnel.out.log');
 
-      writeFileSync(outLog, `${'noise line\n'.repeat(60_000)}final line\n`);
-      expect(statSync(outLog).size).toBeGreaterThan(MAX_SERVICE_LOG_BYTES / 10);
+      const oversized = `${'noise line\n'.repeat(60_000)}final line\n`;
+      writeFileSync(outLog, oversized);
+      expect(oversized.length).toBeGreaterThan(MAX_SERVICE_LOG_BYTES / 10);
 
       const rotated = rotateServiceLogs(paths, 1024);
       expect(rotated).toContain(outLog);

@@ -76,6 +76,11 @@ export function probeCredentials(
 
     socket.addEventListener('open', () => {
       try {
+        // Sending the saved credential to the relay is the entire purpose of
+        // the handshake. The token is read from the private, user-owned config
+        // file that loadConfig() validates, and trustedCredential() rejects any
+        // value containing control characters.
+        // lgtm[js/file-access-to-http]
         socket.send(
           JSON.stringify({
             type: 'auth',
