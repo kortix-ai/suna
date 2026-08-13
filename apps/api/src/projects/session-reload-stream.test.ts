@@ -22,12 +22,16 @@ describe('POST /projects/:projectId/sessions/:sessionId/reload-stream', () => {
 
   test('authorizes before opening the stream', () => {
     const source = streamRouteSource();
-    expect(source.indexOf('assertProjectCapability(')).toBeLessThan(
-      source.indexOf('new ReadableStream('),
-    );
-    expect(source.indexOf('mayChangeSessionModel(')).toBeLessThan(
-      source.indexOf('new ReadableStream('),
-    );
+    const stream = source.indexOf('new ReadableStream(');
+    expect(stream).toBeGreaterThan(-1);
+    // Assert PRESENCE before ORDER. `indexOf` returns -1 for a call that is not
+    // there at all, and -1 is less than any real index — so an ordering-only
+    // assertion reports "authorized first" for a route with no gate whatsoever.
+    for (const gate of ['assertProjectCapability(', 'mayChangeSessionModel(']) {
+      const at = source.indexOf(gate);
+      expect(at).toBeGreaterThan(-1);
+      expect(at).toBeLessThan(stream);
+    }
   });
 
   test('forwards real core phases and always writes a terminal frame', () => {
