@@ -28,8 +28,8 @@ const html = () => renderToStaticMarkup(<PreferencesTabView />);
 const EXPECTED_HEADINGS = [
   'h2:Preferences',
   'h3:Theme',
-  'h3:Wallpaper',
   'h3:Conversation density',
+  'h3:Wallpaper',
   'h3:Sounds',
   'h3:Notifications',
   'h3:Keyboard shortcuts',
@@ -62,8 +62,8 @@ describe('PreferencesTabView', () => {
     expect(h2s).toEqual(['Preferences']);
     expect(h3s).toEqual([
       'Theme',
-      'Wallpaper',
       'Conversation density',
+      'Wallpaper',
       'Sounds',
       'Notifications',
       'Keyboard shortcuts',
@@ -115,8 +115,9 @@ describe('PreferencesTabView', () => {
   test('conversation density offers both modes as an exclusive radio pair, Normal selected by default', () => {
     const out = html();
     expect(densityChecks(out)).toEqual({ normal: 'true', minimal: 'false' });
-    expect(out).toContain('Steps and thinking stream live while Kortix works.');
-    expect(out).toContain('One status line until you expand it.');
+    // The cards are preview tiles — the visible copy is just the mode label.
+    expect(out).toContain('>Normal</span>');
+    expect(out).toContain('>Minimal</span>');
   });
 
   test('conversation density marks the selected card', () => {
