@@ -12,31 +12,49 @@ import {
 } from '@kortix/sdk';
 
 /**
- * The project index page's warm session.
+ * Warm sessions — presence-driven.
  *
- * The problem: a session started from the index page pays the whole sandbox
- * boot AFTER the user presses Enter. The prompt sits there while a cold box
- * comes up.
+ * The problem: a session started from a project pays the whole sandbox boot
+ * AFTER the user presses Enter. The prompt sits there while a cold box comes
+ * up.
  *
- * So the index page ensures a warm session the moment it mounts — while the
- * user is still typing — and the send path CLAIMS that session instead of
- * creating a cold one. `POST /projects/:id/sessions/warm` is idempotent per
- * (account, project, creator): it is serialized by a pg advisory transaction
- * lock and backed by a partial unique index, so it yields AT MOST one extra
- * session per project per user. Reuse also refreshes the warm workspace to the
- * latest base ref and pushes the latest compiled agent config, so a warm
- * session cannot go stale.
+ * The rule: **while a logged-in user is actively present on a project, keep
+ * exactly one warm session ready for them.** Present means a project route is
+ * mounted AND the tab is visible. The send path then CLAIMS that session
+ * instead of creating a cold one.
+ *
+ * `POST /projects/:id/sessions/warm` is idempotent per (project, creator): it
+ * is serialized by a pg advisory transaction lock and backed by the partial
+ * unique index at `packages/db/src/schema/kortix.ts:791`, which permits at most
+ * one `available` row. So repeated ensures are naturally cheap — the second one
+ * reuses. That index is the bookkeeping; this module deliberately keeps almost
+ * none of its own. Reuse also refreshes the warm workspace to the latest base
+ * ref and pushes the latest compiled agent config, so a warm session cannot go
+ * stale.
+ *
+ * WHEN IT ENSURES — exactly three moments, no timers:
+ *   1. a project route mounts (or the project changes),
+ *   2. the tab becomes visible again (Page Visibility API),
+ *   3. after a claim, to replenish — but only while still present.
+ * Never on an interval, never on in-project navigation, never for a hidden
+ * tab. A background tab must not hold billed compute.
  *
  * The warm row carries `metadata.warm_session.state = 'available'` until it is
- * claimed. The API hides `available` rows from the `visible` session list
- * (`apps/api/src/projects/lib/session-inventory.ts`), so an unused warm session
- * never shows up in the sidebar.
+ * claimed. The API hides unclaimed rows from the `visible` session list
+ * (`apps/api/src/projects/lib/session-inventory.ts`), so a warm session the
+ * user never used never shows up in the sidebar.
+ *
+ * COST. A warm sandbox is billed compute even when idle, so this is gated by
+ * the `warm_sessions` project feature flag (default ON, enforcement `routes`).
+ * The server is the guarantee — the endpoints 403 `feature_disabled` when it is
+ * off. `enabled` below is the client-side short-circuit that avoids a pointless
+ * 403 on every visit.
  *
  * ARCHITECTURE RULE — enforced by `warm-session-boundary.test.ts`:
  * the browser must never hand-roll speculative session creation. The SDK's
  * `ensureWarmProjectSession` / `claimWarmProjectSession` may be referenced from
  * THIS FILE ONLY. Every other module in `apps/web/src` goes through
- * `useWarmIndexSession` and `claimWarmIndexSession`.
+ * `useWarmProjectSession` and `claimWarmSession`.
  */
 
 /**
@@ -162,7 +180,7 @@ const defaultClient: WarmIndexSessionClient = {
  * contract: nothing about the composer waits on it, and a failure leaves the
  * user on the ordinary create path with no visible difference.
  */
-export async function ensureWarmIndexSession(
+export async function ensureWarmSession(
   projectId: string,
   client: WarmIndexSessionClient = defaultClient,
 ): Promise<void> {
@@ -177,7 +195,7 @@ export async function ensureWarmIndexSession(
   }
 }
 
-export interface ClaimWarmIndexSessionOptions {
+export interface ClaimWarmSessionOptions {
   create?: WarmClaimCreateInput;
   /**
    * Runs with the warm session id the moment the claim POST goes out. The
@@ -185,6 +203,18 @@ export interface ClaimWarmIndexSessionOptions {
    * as the create path prefetches before its own POST.
    */
   onClaiming?: (sessionId: string) => void;
+  /**
+   * Warm a replacement after a successful claim, so a second "New session" is
+   * instant too. Defaults to true; still subject to the tab being visible.
+   */
+  replenish?: boolean;
+  /**
+   * The presence check for the replenish above. Injectable so tests never have
+   * to install a process-wide `document` — bun runs one process for the whole
+   * suite, and a fake global there breaks unrelated files that expect a real
+   * DOM.
+   */
+  isPresent?: () => boolean;
   client?: WarmIndexSessionClient;
 }
 
@@ -199,35 +229,63 @@ export interface ClaimWarmIndexSessionOptions {
  * session cap, connector requirements) and surfaces the same outcome the user
  * would have seen without a warm session.
  */
-export async function claimWarmIndexSession(
+export async function claimWarmSession(
   projectId: string,
-  options: ClaimWarmIndexSessionOptions = {},
+  options: ClaimWarmSessionOptions = {},
 ): Promise<string | null> {
   if (!warmClaimIsPossible(options.create)) return null;
   const sessionId = useWarmIndexSessionStore.getState().takeReady(projectId);
   if (!sessionId) return null;
 
   options.onClaiming?.(sessionId);
+  const client = options.client ?? defaultClient;
+  let claimed: string;
   try {
-    return await (options.client ?? defaultClient).claim(
-      projectId,
-      warmClaimInput(sessionId, options.create),
-    );
+    claimed = await client.claim(projectId, warmClaimInput(sessionId, options.create));
   } catch {
     return null;
   }
+
+  // Replenish, so "New session" right after this one is instant too. Only while
+  // the user is still present: a claim made in a tab the user then hides must
+  // not leave a fresh billed box behind. The navigation this claim triggers
+  // stays on a project route, so tab visibility is the live signal here.
+  // Fire-and-forget — the caller is mid-navigation and must not wait on it.
+  if (options.replenish !== false && (options.isPresent ?? tabIsVisible)()) {
+    void ensureWarmSession(projectId, client);
+  }
+  return claimed;
+}
+
+/** Is the user actually looking at this tab right now? */
+export function tabIsVisible(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.visibilityState === 'visible';
 }
 
 /**
- * Ensure a warm session for the project index page.
+ * Keep one warm session ready while the user is present on this project.
  *
- * Fires once per project on mount and again on a project change. `enabled`
- * carries the billing gate: an account that cannot run must not spend a warm
- * box it can never use.
+ * Presence = this hook is mounted (a project route is on screen) AND the tab is
+ * visible AND `enabled`. `enabled` carries the two reasons never to spend a box:
+ * the `warm_sessions` feature flag is off for the project, or the account
+ * cannot run at all.
+ *
+ * Mount and visibility-regain both ensure. Nothing else does — no interval, no
+ * per-navigation refire. A hidden tab holds no warm box beyond the sandbox
+ * deadline already ticking on it.
  */
-export function useWarmIndexSession(projectId: string | undefined, enabled: boolean): void {
+export function useWarmProjectSession(projectId: string | undefined, enabled: boolean): void {
   useEffect(() => {
     if (!projectId || !enabled) return;
-    void ensureWarmIndexSession(projectId);
+
+    const ensureIfPresent = () => {
+      if (!tabIsVisible()) return;
+      void ensureWarmSession(projectId);
+    };
+
+    ensureIfPresent();
+    document.addEventListener('visibilitychange', ensureIfPresent);
+    return () => document.removeEventListener('visibilitychange', ensureIfPresent);
   }, [projectId, enabled]);
 }

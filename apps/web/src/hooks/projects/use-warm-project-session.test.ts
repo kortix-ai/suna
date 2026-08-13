@@ -2,13 +2,21 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   canBeginWarmEnsure,
-  claimWarmIndexSession,
-  ensureWarmIndexSession,
+  claimWarmSession,
+  ensureWarmSession,
+  tabIsVisible,
   useWarmIndexSessionStore,
   warmClaimInput,
   warmClaimIsPossible,
   type WarmIndexSessionClient,
-} from './use-warm-index-session';
+} from './use-warm-project-session';
+
+// Presence is INJECTED, never faked through a global `document`. This package
+// has no jsdom/happy-dom, and bun runs the whole suite in one process — a fake
+// `document` global here broke unrelated files that expect a real DOM (vaul's
+// stylesheet injection). See `isPresent` on ClaimWarmSessionOptions.
+const PRESENT = () => true;
+const AWAY = () => false;
 
 const P = 'proj-1';
 const WARM = 'warm-session-1';
@@ -85,9 +93,9 @@ describe('canBeginWarmEnsure', () => {
   });
 });
 
-describe('ensureWarmIndexSession', () => {
+describe('ensureWarmSession', () => {
   test('records the warm session id the server returned', async () => {
-    await ensureWarmIndexSession(P, client());
+    await ensureWarmSession(P, client());
     expect(useWarmIndexSessionStore.getState().ready[P]).toBe(WARM);
     expect(useWarmIndexSessionStore.getState().ensuring[P]).toBeUndefined();
   });
@@ -105,9 +113,9 @@ describe('ensureWarmIndexSession', () => {
     });
 
     const inFlight = [
-      ensureWarmIndexSession(P, fake),
-      ensureWarmIndexSession(P, fake),
-      ensureWarmIndexSession(P, fake),
+      ensureWarmSession(P, fake),
+      ensureWarmSession(P, fake),
+      ensureWarmSession(P, fake),
     ];
     gate.resolve(WARM);
     await Promise.all(inFlight);
@@ -117,7 +125,7 @@ describe('ensureWarmIndexSession', () => {
   });
 
   test('a failure is swallowed and leaves nothing to claim', async () => {
-    await ensureWarmIndexSession(
+    await ensureWarmSession(
       P,
       client({
         ensure: async () => {
@@ -135,14 +143,14 @@ describe('ensureWarmIndexSession', () => {
         throw new Error('offline');
       },
     });
-    await ensureWarmIndexSession(P, fake);
-    await ensureWarmIndexSession(P, client());
+    await ensureWarmSession(P, fake);
+    await ensureWarmSession(P, client());
     expect(useWarmIndexSessionStore.getState().ready[P]).toBe(WARM);
   });
 
   test('separate projects warm independently', async () => {
-    await ensureWarmIndexSession(P, client({ ensure: async () => 'warm-a' }));
-    await ensureWarmIndexSession('proj-2', client({ ensure: async () => 'warm-b' }));
+    await ensureWarmSession(P, client({ ensure: async () => 'warm-a' }));
+    await ensureWarmSession('proj-2', client({ ensure: async () => 'warm-b' }));
     expect(useWarmIndexSessionStore.getState().ready).toEqual({
       [P]: 'warm-a',
       'proj-2': 'warm-b',
@@ -150,17 +158,17 @@ describe('ensureWarmIndexSession', () => {
   });
 });
 
-describe('claimWarmIndexSession', () => {
+describe('claimWarmSession', () => {
   test('claims the warm session and returns the SERVER id', async () => {
-    await ensureWarmIndexSession(P, client());
-    const claimed = await claimWarmIndexSession(P, { client: client() });
+    await ensureWarmSession(P, client());
+    const claimed = await claimWarmSession(P, { client: client() });
     expect(claimed).toBe(WARM);
   });
 
   test('forwards the send options the claim route accepts', async () => {
-    await ensureWarmIndexSession(P, client());
+    await ensureWarmSession(P, client());
     let seen: unknown;
-    await claimWarmIndexSession(P, {
+    await claimWarmSession(P, {
       create: { agent_name: 'researcher', pending_prompt: { text: 'hi' } },
       client: client({
         claim: async (_projectId, input) => {
@@ -177,9 +185,9 @@ describe('claimWarmIndexSession', () => {
   });
 
   test('prefetch runs with the warm id BEFORE the claim resolves', async () => {
-    await ensureWarmIndexSession(P, client());
+    await ensureWarmSession(P, client());
     const order: string[] = [];
-    await claimWarmIndexSession(P, {
+    await claimWarmSession(P, {
       onClaiming: (sessionId) => order.push(`claiming:${sessionId}`),
       client: client({
         claim: async (_projectId, input) => {
@@ -192,14 +200,14 @@ describe('claimWarmIndexSession', () => {
   });
 
   test('returns null when nothing is warm yet, so the caller creates', async () => {
-    expect(await claimWarmIndexSession(P, { client: client() })).toBeNull();
+    expect(await claimWarmSession(P, { client: client() })).toBeNull();
   });
 
   // Another tab claimed it first: the server answers 409. The user must still
   // get a session, so the caller falls back to the ordinary create path.
   test('a 409 falls back to create', async () => {
-    await ensureWarmIndexSession(P, client());
-    const claimed = await claimWarmIndexSession(P, {
+    await ensureWarmSession(P, client());
+    const claimed = await claimWarmSession(P, {
       client: client({
         claim: async () => {
           throw Object.assign(new Error('already claimed'), {
@@ -213,8 +221,8 @@ describe('claimWarmIndexSession', () => {
   });
 
   test('any transport error falls back to create', async () => {
-    await ensureWarmIndexSession(P, client());
-    const claimed = await claimWarmIndexSession(P, {
+    await ensureWarmSession(P, client());
+    const claimed = await claimWarmSession(P, {
       client: client({
         claim: async () => {
           throw new Error('network down');
@@ -225,9 +233,9 @@ describe('claimWarmIndexSession', () => {
   });
 
   test('a send carrying connector wiring never touches the warm session', async () => {
-    await ensureWarmIndexSession(P, client());
+    await ensureWarmSession(P, client());
     let called = false;
-    const claimed = await claimWarmIndexSession(P, {
+    const claimed = await claimWarmSession(P, {
       create: { require_connectors: ['slack'] },
       client: client({
         claim: async () => {
@@ -243,9 +251,10 @@ describe('claimWarmIndexSession', () => {
   });
 
   // The id is consumed on the first attempt, so a lost race cannot make the
-  // app claim the same dead session over and over.
+  // app claim the same dead session over and over. Replenish is off here so the
+  // assertion is about consumption alone (the replenish path has its own tests).
   test('one ensure yields exactly one claim attempt', async () => {
-    await ensureWarmIndexSession(P, client());
+    await ensureWarmSession(P, client());
     let attempts = 0;
     const counting = client({
       claim: async (_projectId, input) => {
@@ -253,15 +262,89 @@ describe('claimWarmIndexSession', () => {
         return input.session_id;
       },
     });
-    expect(await claimWarmIndexSession(P, { client: counting })).toBe(WARM);
-    expect(await claimWarmIndexSession(P, { client: counting })).toBeNull();
+    expect(await claimWarmSession(P, { replenish: false, client: counting })).toBe(WARM);
+    expect(await claimWarmSession(P, { replenish: false, client: counting })).toBeNull();
     expect(attempts).toBe(1);
   });
 
   test('claiming one project does not consume another project warm session', async () => {
-    await ensureWarmIndexSession(P, client({ ensure: async () => 'warm-a' }));
-    await ensureWarmIndexSession('proj-2', client({ ensure: async () => 'warm-b' }));
-    expect(await claimWarmIndexSession(P, { client: client() })).toBe('warm-a');
+    await ensureWarmSession(P, client({ ensure: async () => 'warm-a' }));
+    await ensureWarmSession('proj-2', client({ ensure: async () => 'warm-b' }));
+    expect(await claimWarmSession(P, { client: client() })).toBe('warm-a');
     expect(useWarmIndexSessionStore.getState().ready['proj-2']).toBe('warm-b');
+  });
+});
+
+/**
+ * Presence is the whole cost model: a warm sandbox is billed compute, so it may
+ * only exist while a real user is actually looking at a project.
+ */
+describe('presence', () => {
+  // Without a DOM there is no user looking at anything, so presence is false.
+  // That is the fail-closed direction: no DOM ⇒ never spend a warm box.
+  test('tabIsVisible is false when there is no document at all', () => {
+    expect(tabIsVisible()).toBe(false);
+  });
+
+  test('a claim replenishes while the user is present', async () => {
+    await ensureWarmSession(P, client({ ensure: async () => 'warm-1' }));
+    let ensures = 0;
+    const counting = client({
+      ensure: async () => {
+        ensures += 1;
+        return 'warm-2';
+      },
+    });
+
+    expect(await claimWarmSession(P, { isPresent: PRESENT, client: counting })).toBe('warm-1');
+    expect(ensures).toBe(1);
+    expect(useWarmIndexSessionStore.getState().ready[P]).toBe('warm-2');
+  });
+
+  // A tab the user hid mid-send must not leave a fresh billed box behind.
+  test('a claim in a hidden tab does NOT replenish', async () => {
+    await ensureWarmSession(P, client({ ensure: async () => 'warm-1' }));
+    let ensures = 0;
+    const counting = client({
+      ensure: async () => {
+        ensures += 1;
+        return 'warm-2';
+      },
+    });
+
+    expect(await claimWarmSession(P, { isPresent: AWAY, client: counting })).toBe('warm-1');
+    expect(ensures).toBe(0);
+    expect(useWarmIndexSessionStore.getState().ready[P]).toBeUndefined();
+  });
+
+  test('a failed claim replenishes nothing', async () => {
+    await ensureWarmSession(P, client({ ensure: async () => 'warm-1' }));
+    let ensures = 0;
+    const failing = client({
+      ensure: async () => {
+        ensures += 1;
+        return 'warm-2';
+      },
+      claim: async () => {
+        throw new Error('409');
+      },
+    });
+
+    expect(await claimWarmSession(P, { isPresent: PRESENT, client: failing })).toBeNull();
+    expect(ensures).toBe(0);
+  });
+
+  test('replenish can be turned off explicitly', async () => {
+    await ensureWarmSession(P, client({ ensure: async () => 'warm-1' }));
+    let ensures = 0;
+    const counting = client({
+      ensure: async () => {
+        ensures += 1;
+        return 'warm-2';
+      },
+    });
+
+    expect(await claimWarmSession(P, { replenish: false, isPresent: PRESENT, client: counting })).toBe('warm-1');
+    expect(ensures).toBe(0);
   });
 });

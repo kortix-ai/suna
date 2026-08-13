@@ -17,6 +17,8 @@ import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sid
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
+import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
 import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
@@ -29,7 +31,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useGatewayCatalogSync } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 
 const CommandPalette = lazy(() =>
@@ -75,6 +77,16 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   });
 
   useGatewayCatalogSync(projectId);
+
+  // Presence: this shell is mounted for EVERY /projects/[id] route and survives
+  // in-project navigation, so mounting the warm hook here means "one ensure
+  // while the user is on this project", not one per page they click through.
+  // Gated on the `warm_sessions` flag (a warm sandbox is billed compute) and on
+  // the account being able to run at all. The server enforces the flag too —
+  // this is the client short-circuit that avoids a 403 on every project visit.
+  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
+  const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
+  useWarmProjectSession(projectId, warmSessions.enabled && !billingLoading && canRun);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');

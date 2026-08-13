@@ -127,7 +127,7 @@ export function selectSessionRowsForViewer(input: {
 /**
  * An UNCLAIMED warm session — one the project index page pre-created
  * speculatively and nobody ever used
- * (`apps/web/src/hooks/projects/use-warm-index-session.ts`,
+ * (`apps/web/src/hooks/projects/use-warm-project-session.ts`,
  * `POST /projects/:id/sessions/warm`).
  *
  * It holds no user work, so listing it is noise: the user sees a session in the

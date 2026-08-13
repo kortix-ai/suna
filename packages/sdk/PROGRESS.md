@@ -12,6 +12,41 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-13 — session `warm-index` claim — DONE
+
+Additive only: registered the `warm_sessions` project feature flag key so the
+platform's warm-session endpoints can be gated. The SDK is the runtime witness
+of the flag key list, so a new platform flag cannot skip this package.
+
+Claimed SDK scope:
+
+- Add `warm_sessions` to the hand-written `FeatureFlagKey` union and to the
+  `FEATURE_FLAG_KEYS` runtime array in
+  `src/core/rest/projects-client/projects.ts`.
+- Change no existing exported name, no signature, no `version` field.
+
+RED:
+
+- `FEATURE_FLAG_KEYS lists every flag key exactly once` failed with the key
+  added to the expected list and absent from the runtime array
+  (`54 pass, 1 fail`).
+
+GREEN:
+
+- Union + runtime array updated together, keeping the two in the same order.
+- Cross-package drift holds: `@kortix/api-contract` `FeatureFlagMapSchema`, the
+  API registry, and this list all carry the key
+  (`apps/api` `unit-feature-flag-drift.test.ts` + `unit-feature-flags.test.ts`
+  green, `50 pass, 0 fail`).
+
+Gates:
+
+- `bun test --isolate src` — `1846 pass, 2 skip, 0 fail`.
+- `bun run typecheck` — clean, exit 0.
+- `bun run smoke:install` — `install smoke test passed`, exit 0.
+
+Shippable to production: YES.
+
 ### 2026-08-10 — session `reload-live-status` claim
 
 No **Now** task claimed. This is the user-directed live session-config reload status work.

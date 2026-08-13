@@ -142,6 +142,7 @@ import { rescopeSessionBindings, rescopeSessionSecrets } from '../lib/session-re
 import { listResolvedProjectSecrets, secretKeyCollisionInAllowlist } from '../secrets';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
 import { missingWarmSessionConnections } from '../lib/warm-session-connections';
+import { requireFeatureFlag } from '../../feature-flags/gate';
 
 function parseBoundedPositiveInt(
   raw: string | undefined,
@@ -328,6 +329,10 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    // After membership authz, so a non-member learns nothing. A warm session is
+    // billed compute, so the switch has to stop the SPEND, not just the UI.
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
+    if (gate) return gate;
 
     const scope = {
       accountId: loaded.row.accountId,
@@ -466,6 +471,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
+    if (gate) return gate;
 
     const scope = {
       accountId: loaded.row.accountId,

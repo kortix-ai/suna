@@ -60,6 +60,7 @@ export const FeatureFlagMapSchema = z.object({
   review_center: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
+  warm_sessions: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

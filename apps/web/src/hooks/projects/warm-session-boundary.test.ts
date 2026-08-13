@@ -25,7 +25,7 @@ const WEB_SOURCE_ROOT = resolve(import.meta.dir, '../..');
 const THIS_FILE = resolve(import.meta.path);
 
 /** The ONE module allowed to call the SDK's warm-session surface. */
-const WARM_SESSION_MODULES = ['hooks/projects/use-warm-index-session.ts'] as const;
+const WARM_SESSION_MODULES = ['hooks/projects/use-warm-project-session.ts'] as const;
 
 /** Allowed in `WARM_SESSION_MODULES`, banned everywhere else. */
 const GOVERNED_WARM_SESSION_CALLS = [

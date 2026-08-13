@@ -10,7 +10,6 @@ import {
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { useWarmIndexSession } from '@/hooks/projects/use-warm-index-session';
 import {
   billingDialogArgs,
   billingStateAllowsRun,
@@ -48,13 +47,6 @@ export default function ProjectIndexPage() {
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const newSession = useNewProjectSession(projectId);
-
-  // Warm a session the moment this page is on screen, so the box is already up
-  // by the time the user finishes typing. Non-blocking and failure-silent: it
-  // never gates the composer below, and `handleSend` claims it only if it is
-  // ready. Held back while billing is still resolving, and for an account that
-  // cannot run at all, so a page visit never spends a box it can never use.
-  useWarmIndexSession(projectId, !billingLoading && canRun);
   // Composer sending state: spans Enter → create confirmed → navigation. Reset
   // only on create failure (success navigates this page away).
   const [sending, setSending] = useState(false);

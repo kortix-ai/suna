@@ -33,6 +33,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
+  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
 
   return {
     flags: {
@@ -46,6 +47,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       review_center: reviewCenter.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
+      warm_sessions: warmSessions.enabled,
     },
     isLoading: apps.isLoading,
   };
