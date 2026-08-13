@@ -17,6 +17,7 @@ import {
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
+import { networkBoundaryShimAvailable } from '../../secrets/network-boundary-availability';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
@@ -157,6 +158,22 @@ function startNetworkBoundaryArm(
     .then(async () => {
       const provider = getProvider(providerName);
       if (!provider.syncNetworkBoundary) {
+        // No provider edge to arm. That is not a failure when the shim path is
+        // available: on those providers the credential is injected by the
+        // broker route at request time, so there is nothing to register ahead
+        // of time and nothing to wait for. The binding still reaches the guest
+        // — as host->identifier rules in the sandbox env, carrying no value.
+        //
+        // Until the shim existed this threw, which is why creating a session on
+        // Daytona with a boundary secret failed provisioning outright.
+        if (networkBoundaryShimAvailable()) {
+          rememberNetworkBoundaryArm(
+            externalId,
+            digest,
+            bindings.map((binding) => binding.secretId),
+          );
+          return;
+        }
         throw new Error(
           `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
         );
