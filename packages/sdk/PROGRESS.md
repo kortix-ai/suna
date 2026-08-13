@@ -12,6 +12,19 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-13 — session `latest-managed-models`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding managed `deepseek-v4-pro-0813`. The
+package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1901 pass`, `2 skip`,
+`0 fail`, and `7244` assertions across `145` files; packed-install smoke passes.
+The managed model also passed the local catalog, inference, usage-log, and
+generation-record canary through the API.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
 ### 2026-08-13 — session `grok-4-6-managed`
 
 No public SDK API changes. The playground's compile-time `MODEL_IDS` union now

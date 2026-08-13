@@ -29,6 +29,7 @@ const MODEL_IDS = [
   "grok-4.6",
   "glm-5.2",
   "deepseek-v4-flash",
+  "deepseek-v4-pro-0813",
   "muse-spark-1.2",
   "minimax-m3",
   "gpt-5.6-luna",

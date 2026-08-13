@@ -66,6 +66,23 @@ describe('gatewayModelCatalog — served catalog', () => {
     });
   });
 
+  test('serves DeepSeek V4 Pro 0813 with its real capabilities and prices', () => {
+    expect(full['deepseek-v4-pro-0813']).toMatchObject({
+      name: 'DeepSeek V4 Pro 0813',
+      provider: 'kortix',
+      reasoning: true,
+      reasoning_options: [
+        { type: 'toggle' },
+        { type: 'effort', values: ['low', 'high', 'max'] },
+      ],
+      tool_call: true,
+      attachment: false,
+      temperature: true,
+      limit: { context: 1_048_575, output: 384_000 },
+      cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
+    });
+  });
+
   test('every served model carries a positive context limit', () => {
     const missing = Object.entries(full)
       .filter(([, m]) => !(typeof m.limit?.context === 'number' && m.limit.context > 0))

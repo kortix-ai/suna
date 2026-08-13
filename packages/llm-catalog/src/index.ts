@@ -687,6 +687,34 @@ export const MANAGED_MODELS: ManagedModel[] = [
     },
   },
   {
+    // DeepSeek V4 Pro's 2026-08-13 GA snapshot through OpenRouter. The
+    // immutable upstream slug prevents a future `latest` alias from changing
+    // behavior without a catalog review. OpenRouter currently exposes two
+    // endpoints: first-party DeepSeek at $0.435/$0.87 per million tokens, and
+    // GMICloud at exactly 4x that price. The Kortix OpenRouter account cannot
+    // use the first-party endpoint under its current data policy (live canary:
+    // HTTP 404 `No endpoints available matching your guardrail restrictions
+    // and data policy`). Pin GMICloud and bill its actual price. Do not add the
+    // first-party endpoint without changing both the account policy and price.
+    id: 'deepseek-v4-pro-0813',
+    name: 'DeepSeek V4 Pro 0813',
+    upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+    pricing: {
+      inputPerMillion: 1.74,
+      cachedInputPerMillion: 0.145,
+      outputPerMillion: 3.48,
+    },
+    tier: 'balanced',
+    vision: false,
+    limit: { context: 1_048_575, output: 384_000 },
+    openrouterProvider: {
+      order: ['gmicloud'],
+      allow_fallbacks: true,
+    },
+  },
+  {
     // Meta's Muse Spark 1.2 via OpenRouter. Exactly ONE endpoint serves the
     // standard slug (Meta first-party: 1_048_576 ctx, tools, 100% 30m uptime
     // measured 2026-08-10), so the pin is trivial. NEVER switch this to the

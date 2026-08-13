@@ -18,6 +18,7 @@ describe('managed catalog', () => {
       'grok-4.6',
       'glm-5.2',
       'deepseek-v4-flash',
+      'deepseek-v4-pro-0813',
       'muse-spark-1.2',
       'minimax-m3',
       'gpt-5.6-luna',
@@ -160,6 +161,24 @@ describe('managed resolution + back-compat aliases', () => {
         cachedInputPerMillion: 1,
         outputPerMillion: 12,
         contextThreshold: 200_000,
+      },
+    });
+    expect(getManagedModel('deepseek-v4-pro-0813')).toMatchObject({
+      name: 'DeepSeek V4 Pro 0813',
+      upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+      pricing: {
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      },
+      tier: 'balanced',
+      vision: false,
+      limit: { context: 1_048_575, output: 384_000 },
+      openrouterProvider: {
+        order: ['gmicloud'],
+        allow_fallbacks: true,
       },
     });
   });

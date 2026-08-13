@@ -265,3 +265,41 @@ describe('managed Grok 4.6 descriptor', () => {
     })]);
   });
 });
+
+describe('managed DeepSeek V4 Pro 0813 descriptor', () => {
+  test('routes DeepSeek V4 Pro 0813 through the reachable GMICloud endpoint', () => {
+    expect(managedCandidates({
+      id: 'deepseek-v4-pro-0813',
+      name: 'DeepSeek V4 Pro 0813',
+      upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+      pricing: {
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      },
+      tier: 'balanced',
+      vision: false,
+      limit: { context: 1_048_575, output: 384_000 },
+      openrouterProvider: {
+        order: ['gmicloud'],
+        allow_fallbacks: true,
+      },
+    })).toEqual([expect.objectContaining({
+      provider: 'openrouter',
+      resolvedModel: 'deepseek/deepseek-v4-pro-0813',
+      pricing: expect.objectContaining({
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      }),
+      bodyExtras: {
+        provider: {
+          order: ['gmicloud'],
+          allow_fallbacks: true,
+        },
+      },
+    })]);
+  });
+});

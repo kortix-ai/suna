@@ -865,6 +865,21 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_048_576, output: 64_000 },
   },
+  'deepseek-v4-pro-0813': {
+    name: 'DeepSeek V4 Pro 0813',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [
+      { type: 'toggle' },
+      { type: 'effort', values: ['low', 'high', 'max'] },
+    ],
+    tool_call: true,
+    attachment: false,
+    structured_output: false,
+    temperature: true,
+    limit: { context: 1_048_575, output: 384_000 },
+    cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
+  },
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',

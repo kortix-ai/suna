@@ -145681,6 +145681,50 @@
           }
         },
         {
+          "id": "deepseek/deepseek-v4-pro-0813",
+          "name": "DeepSeek V4 Pro 0813",
+          "description": "DeepSeek V4 Pro snapshot with million-token context and support for thinking and non-thinking modes",
+          "released": "2026-08-12",
+          "attachment": false,
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "toggle"
+            },
+            {
+              "type": "effort",
+              "values": [
+                "low",
+                "high",
+                "max"
+              ]
+            }
+          ],
+          "tool_call": true,
+          "structured_output": false,
+          "open_weights": false,
+          "temperature": true,
+          "last_updated": "2026-08-12",
+          "family": "deepseek-thinking",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 384000
+          },
+          "cost": {
+            "input": 0.435,
+            "output": 0.87,
+            "cache_read": 0.003625
+          }
+        },
+        {
           "id": "inclusionai/ling-2.6-1t",
           "name": "Ling-2.6-1T",
           "description": "Tool-capable chat model for instruction following and agentic application workflows",
