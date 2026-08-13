@@ -115,6 +115,9 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       review_center: false,
       meta_agent: false,
       apps: false,
+      monitors: false,
+      network_boundary_shim: false,
+      warm_sessions: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -187,6 +190,10 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     run_at: null,
     timezone: 'UTC',
     secret_env: null,
+    run: null,
+    mode: null,
+    interval_seconds: null,
+    expect_event_within_seconds: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
     session_id: null,
@@ -492,6 +499,24 @@ describe('TriggerSchema', () => {
     ).not.toThrow();
   });
 
+  // `monitor` is the third trigger type (docs/specs/2026-08-12-monitors.md):
+  // no cron/secret_env wiring, a `run` command plus a `mode` instead.
+  test('accepts a monitor trigger', () => {
+    expect(() =>
+      TriggerSchema.strict().parse(
+        triggerFixture({
+          type: 'monitor',
+          cron: null,
+          run: './monitors/checkout-errors.ts',
+          mode: 'poll',
+          interval_seconds: 60,
+          expect_event_within_seconds: 86400,
+          session_mode: 'reuse',
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   test('list response is an envelope, not a bare array', () => {
     expect(() =>
       TriggerListSchema.strict().parse({
@@ -638,6 +663,9 @@ describe('envelopes', () => {
       'review_center',
       'meta_agent',
       'apps',
+      'monitors',
+      'network_boundary_shim',
+      'warm_sessions',
     ]);
   });
 
@@ -862,6 +890,17 @@ describe('session scope contracts', () => {
     expect(SessionScopeInputSchema.safeParse({ secret_values: [] }).success).toBe(false);
   });
 
+  test('accepts a null connector_bindings clear', () => {
+    // `null` is the REVERT verb: drop the stored override and go back to the
+    // project defaults. `{}` is its opposite — an explicit "zero connectors".
+    expect(SessionScopeInputSchema.parse({ connector_bindings: null })).toEqual({
+      connector_bindings: null,
+    });
+    expect(SessionScopeInputSchema.parse({ connector_bindings: {} })).toEqual({
+      connector_bindings: {},
+    });
+  });
+
   test('emits only connection_id in authoritative scope output', () => {
     const value = {
       secrets_allowlist: ['GMAIL_TOKEN'],
@@ -873,6 +912,11 @@ describe('session scope contracts', () => {
       added_secrets: ['GMAIL_TOKEN'],
       dropped_bindings: [],
       retroactive: true,
+      // Whether the session HOLDS a connector override at all. Without it a
+      // client cannot tell an inherited project default from a saved
+      // zero-connector override, and every save writes one by accident.
+      connector_bindings_configured: true,
+      connector_bindings_inherit_unbound: false,
       detail: 'Applies from the next prompt.',
     };
     expect(SessionScopeSchema.parse(value)).toEqual(value);
@@ -896,6 +940,8 @@ describe('session scope contracts', () => {
       added_secrets: ['STRIPE_KEY'],
       dropped_bindings: [],
       retroactive: true,
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: true,
       applied_live: true,
       detail: 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
     };
@@ -916,6 +962,8 @@ describe('session scope contracts', () => {
       added_secrets: ['STRIPE_KEY'],
       dropped_bindings: [],
       retroactive: true,
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: true,
       applied_live: false,
       push_failed: true as const,
       push_reason: 'daemon unreachable',
@@ -935,6 +983,8 @@ describe('session scope contracts', () => {
       added_secrets: [],
       dropped_bindings: [],
       retroactive: true,
+      connector_bindings_configured: false,
+      connector_bindings_inherit_unbound: true,
       applied_live: false,
       detail: 'No change to the secrets scope.',
       surprise: true,

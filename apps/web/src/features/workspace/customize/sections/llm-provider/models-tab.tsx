@@ -16,13 +16,32 @@ import { StarIcon as Star } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
+import { useState } from 'react';
+
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { ModelIdCopyButton } from './model-id-copy-button';
 import { buildModelGroups } from './model-rows';
 import { formatPricePerMillion, formatTokenCount } from './utils';
 
-export function ModelsTab({ projectId, search }: { projectId: string; search: string }) {
+/**
+ * `search` used to be driven by the provider modal's always-on search bar,
+ * which JAY-510 deleted (it sat above the tabs and filtered whichever tab
+ * happened to be open). Passing `''` would have silently dropped model search,
+ * so this tab owns its own input when no host drives one — one search box per
+ * thing being searched, instead of one box for three different lists.
+ */
+export function ModelsTab({ projectId, search: hostSearch }: { projectId: string; search?: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const [ownSearch, setOwnSearch] = useState('');
+  const search = hostSearch ?? ownSearch;
+  const ownsSearch = hostSearch === undefined;
 
   // The SAME server list the session picker renders (`GET /model-picker`), so
   // the two views can never show different models — and each model's `enabled`
@@ -62,6 +81,21 @@ export function ModelsTab({ projectId, search }: { projectId: string; search: st
 
   return (
     <div className="px-5 pt-3 pb-4">
+      {ownsSearch && (
+        <InputGroupSearch className="mb-3">
+          <InputGroupSearchIcon>
+            <Search />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            type="text"
+            placeholder="Search models…"
+            autoComplete="off"
+            value={ownSearch}
+            onChange={(event) => setOwnSearch(event.target.value)}
+          />
+          <InputGroupSearchClear onClick={() => setOwnSearch('')} />
+        </InputGroupSearch>
+      )}
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
           <p className="text-muted-foreground/60 text-xs">

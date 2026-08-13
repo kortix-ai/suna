@@ -6,14 +6,23 @@ const root = resolve(import.meta.dirname, '../..');
 const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
 
 describe('sandbox test workflow', () => {
-  test('runs three root lanes at the pull request head SHA', () => {
+  test('runs four root workers at the pull request head SHA', () => {
     expect(testWorkflow).toContain(
       'SANDBOX_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
     );
-    expect(testWorkflow).toContain('lane: [core, browser, packages]');
+    expect(testWorkflow).toContain('- lane: core');
+    expect(testWorkflow).toContain('- lane: browser-1');
+    expect(testWorkflow).toContain('- lane: browser-2');
+    expect(testWorkflow).toContain('- lane: packages');
     expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts ;;');
-    expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts --browser-only');
+    expect(testWorkflow).toContain(
+      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2',
+    );
+    expect(testWorkflow).toContain(
+      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2',
+    );
     expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts --packages-only');
+    expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
     expect(testWorkflow).toContain('timeout-minutes: 90');
     expect(testWorkflow).toContain('SANDBOX_TEST_RUN_ID: ${{ github.run_id }}-${{ matrix.lane }}');
   });
@@ -67,7 +76,16 @@ describe('sandbox test workflow', () => {
     expect(release).toContain('pnpm test -- --target-full');
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
-    expect(release).not.toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
+    // Staging sits behind Vercel SSO deployment protection, which Basic-auth
+    // httpCredentials cannot satisfy — every authenticated page 302s to
+    // vercel.com/sso-api. The release job must therefore export the automation
+    // bypass secret that playwright.config turns into
+    // `x-vercel-protection-bypass`. It was missing when tests-release replaced
+    // the old qa-release gate, so the browser lane never reached the app and
+    // the "proves every browser journey" claim was hollow. Restored in #6415.
+    expect(release).toContain(
+      'VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}',
+    );
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
   });
@@ -92,19 +110,23 @@ describe('sandbox test workflow', () => {
     expect(release).not.toContain('mode: full');
   });
 
-  test('has one automatic local-suite caller and one deployed release caller', () => {
+  test('has one automatic local-suite caller and two intentional deployed targets', () => {
     const workflowRoot = resolve(root, '.github/workflows');
     const workflows = readdirSync(workflowRoot)
       .filter((name) => /\.ya?ml$/.test(name))
-      .map((name) => readFileSync(resolve(workflowRoot, name), 'utf8'));
+      .map((name) => ({ name, source: readFileSync(resolve(workflowRoot, name), 'utf8') }));
 
     expect(
-      workflows.filter((workflow) =>
-        workflow.includes('uses: ./.github/workflows/tests.yml'),
+      workflows.filter(({ source }) =>
+        source.includes('uses: ./.github/workflows/tests.yml'),
       ),
     ).toHaveLength(1);
-    expect(
-      workflows.filter((workflow) => workflow.includes('pnpm test -- --target-full')),
-    ).toHaveLength(1);
+    const targetFullCallers = workflows.filter(({ source }) =>
+      source.includes('pnpm test -- --target-full'),
+    );
+    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual([
+      'deploy-preview.yml',
+      'tests-release.yml',
+    ]);
   });
 });

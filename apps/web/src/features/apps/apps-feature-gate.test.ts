@@ -36,8 +36,12 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(view).not.toContain('updateFeatureFlag');
   expect(view).not.toContain('Enable Apps');
 
-  // The shared screen opens the one place a flag can be flipped.
-  expect(gate).toContain("openCustomize('feature-flags')");
+  // The shared screen opens the one place a flag can be flipped. `main`
+  // authored this against the Customize overlay (`openCustomize('feature-
+  // flags')`); this branch deleted that overlay, so the same single control
+  // is the settings panel's Experimental tab.
+  expect(gate).toContain("openSettings('experimental')");
+  expect(gate).not.toContain('useCustomizeStore');
   expect(gate).toContain('Feature flags');
   expect(gate).not.toContain('updateFeatureFlag');
   expect(gate).not.toContain('useMutation');

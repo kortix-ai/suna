@@ -448,6 +448,17 @@ export async function buildSessionSandboxEnvVars(input: {
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   return {
     ...runtimeSecrets.env,
+    // Fleet default for the `kortix-connectors` OpenCode MCP server. Set here
+    // rather than in the daemon so it is one operator switch
+    // (CONNECTORS_MCP_ENABLED) instead of a rebuilt sandbox image.
+    //
+    // Written BEFORE channelEnv on purpose: the email channel sets this same
+    // variable from durable session metadata (session-channel-env.ts), and it
+    // must stay authoritative. Spreading it after means switching the fleet
+    // default OFF cannot strip the MCP face from an email session that depends
+    // on it — the operator switch withdraws the default, never a channel's
+    // explicit contract.
+    ...(config.CONNECTORS_MCP_ENABLED ? { KORTIX_CONNECTORS_MCP_ENABLED: '1' } : {}),
     ...channelEnv,
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),

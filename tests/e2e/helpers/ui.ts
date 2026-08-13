@@ -1,4 +1,72 @@
-import { type Page, expect } from "@playwright/test";
+import { type Locator, type Page, expect } from "@playwright/test";
+
+/**
+ * The settings panel — ONE full-screen modal that replaced the Customize
+ * overlay, the `/accounts/[id]` page and the user-settings modal.
+ *
+ * Its accessible name comes from `ModalTitle` in
+ * `apps/web/src/features/workspace/settings/settings-panel.tsx:369-371`:
+ * `Settings — <project name>` when a project is in scope, plain `Settings`
+ * otherwise. Matching the prefix pins the panel without pinning the project
+ * name a spec would have to spell out.
+ */
+export function settingsPanel(page: Page): Locator {
+  return page.getByRole("dialog", { name: /^Settings\b/ });
+}
+
+/**
+ * Opens the settings panel from the sidebar's Settings row and returns it.
+ *
+ * The sidebar button's accessible name is "Settings" plus its `Ctrl ,` hint,
+ * so the name is matched as a prefix.
+ */
+export async function openSettingsPanel(page: Page): Promise<Locator> {
+  const trigger = page
+    .locator('[data-slot="sidebar"]')
+    .getByRole("button", { name: /^Settings/ })
+    .first();
+  await expect(trigger).toBeVisible({ timeout: 60_000 });
+  await trigger.click();
+  const panel = settingsPanel(page);
+  await expect(panel).toBeVisible({ timeout: 30_000 });
+  return panel;
+}
+
+/**
+ * Opens the panel and selects one rail row, returning the panel.
+ *
+ * The rail rows are Radix `TabsTrigger`s (`settings-panel.tsx:526`), so their
+ * ARIA role is `tab` — NOT `button`, which is what the pre-unification specs
+ * clicked. Their labels are single-sourced in
+ * `apps/web/src/features/workspace/settings/rail.ts`.
+ *
+ * `label` must be unique across the rail. "General" is not: the Workspace
+ * group and the Organization group each have one.
+ */
+export async function openSettingsTab(page: Page, label: string): Promise<Locator> {
+  const panel = await openSettingsPanel(page);
+  await panel.getByRole("tab", { name: label, exact: true }).click();
+  await expect(panel.getByRole("tabpanel", { name: label })).toBeVisible({
+    timeout: 30_000,
+  });
+  return panel;
+}
+
+/**
+ * One feature-flag row of the Experimental tab.
+ *
+ * `ExperimentalFeatureRow` (`tabs/experimental-tab.tsx`) renders a plain `div`
+ * per flag inside the `divide-y` list container, and — unlike the
+ * `feature-flags-view.tsx` it replaced — puts NO `aria-label` on the row's
+ * `Switch`. So the row is pinned by the flag name it displays and the switch
+ * is read out of that row. Restore `aria-label={feature.name}` on that Switch
+ * and `row.getByRole("switch")` keeps working unchanged.
+ */
+export function featureFlagRow(panel: Locator, page: Page, name: string): Locator {
+  return panel
+    .locator("div.divide-y > div")
+    .filter({ has: page.getByText(name, { exact: true }) });
+}
 
 export async function selectAccountForUi(
   page: Page,

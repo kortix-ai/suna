@@ -1,5 +1,3 @@
-import { effectiveTierForLimits } from '../../shared/account-limits';
-import * as realUsageBreakdown from './usage-breakdown';
 // buildMinimalAccountState used to fetch the identical credit_accounts row 4
 // separate times (directly, then again inside getCreditSummary /
 // getAccountEntitlements / getAutoTopupSettings) across ~10 fully sequential
@@ -10,6 +8,9 @@ import * as realUsageBreakdown from './usage-breakdown';
 // pattern in ./billing-gate.test.ts.
 import { describe, expect, mock, test } from 'bun:test';
 import { sandboxes } from '@kortix/db';
+import { effectiveTierForLimits } from '../../shared/account-limits';
+import { getTier } from './tiers';
+import * as realUsageBreakdown from './usage-breakdown';
 
 let getCreditAccountCalls = 0;
 let account: Record<string, unknown> | null = null;
@@ -233,6 +234,119 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     await buildMinimalAccountState('acct-1');
 
     expect(getCreditAccountCalls).toBe(2);
+  });
+});
+
+/**
+ * STORED vs RESOLVED plan in one response.
+ *
+ * A trial is an entitlement OVERLAY: it never writes `credit_accounts.tier`
+ * (the Stripe webhook reconciliation owns that column and would clobber it), so
+ * a trialing account's stored tier stays 'free' while every gate in the product
+ * enforces the trial plan. account-state used to describe the stored tier only,
+ * which meant the dashboard told a trialing account it was on Free while the
+ * server let it do everything the trial plan allows.
+ *
+ * The response now carries both, and each name says which it is:
+ *   subscription.tier_key  → STORED. What Stripe sold. Wire-compatible.
+ *   plan.* / tier.*        → RESOLVED. What the account behaves as.
+ */
+describe('buildMinimalAccountState — trialing account reports the trial plan', () => {
+  const TRIAL_TIER = 'tier_25_200';
+
+  function trialing(overrides: Record<string, unknown> = {}) {
+    return creditAccount({
+      tier: 'free',
+      trialStatus: 'active',
+      trialTier: TRIAL_TIER,
+      trialEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      ...overrides,
+    });
+  }
+
+  test('tier.* and plan.* describe the TRIAL plan while subscription.tier_key keeps the stored one', async () => {
+    account = trialing();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    // Stored — unchanged wire value.
+    expect(state.subscription.tier_key).toBe('free');
+    expect(state.subscription.tier_display_name).toBe('Free');
+
+    // Resolved — what the gates enforce.
+    expect(state.tier.name).toBe(TRIAL_TIER);
+    expect(state.tier.display_name).toBe('Ultra (Legacy)');
+    expect(state.plan?.key).toBe(TRIAL_TIER);
+    expect(state.plan?.family).toBe('team');
+    expect(state.plan?.label).toBe('Team');
+    expect(state.plan?.status).toBe('grandfathered');
+    expect(state.plan?.is_grandfathered).toBe(true);
+    expect(state.plan?.shape).toBe('flat');
+    expect(state.plan?.sublabel).toBe('$200/mo · grandfathered');
+  });
+
+  test('the concurrent-session ceiling shown is the trial plan’s, not free’s', async () => {
+    account = trialing();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.limits?.concurrent_sessions.limit).toBe(
+      getTier(TRIAL_TIER).concurrentSessionLimit,
+    );
+    expect(state.limits?.concurrent_sessions.limit).not.toBe(
+      getTier('free').concurrentSessionLimit,
+    );
+  });
+
+  test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
+    account = trialing();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.tier.can_purchase_credits).toBe(true);
+    expect(state.subscription.can_purchase_credits).toBe(true);
+  });
+
+  test('monthly_credits stays on the STORED plan — a trial grants no credits', async () => {
+    account = trialing();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
+  });
+
+  test('an expired trial falls back to the stored plan with no cron involved', async () => {
+    account = trialing({ trialEndsAt: new Date(Date.now() - 1_000).toISOString() });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.tier.name).toBe('free');
+    expect(state.plan?.key).toBe('free');
+    expect(state.plan?.family).toBe('free');
+    expect(state.plan?.is_grandfathered).toBe(false);
+    expect(state.tier.can_purchase_credits).toBe(false);
+  });
+
+  test('a per-account session override still wins over the resolved plan cap', async () => {
+    account = trialing({ maxConcurrentSessions: 7 });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.limits?.concurrent_sessions.limit).toBe(7);
+  });
+
+  test('an ordinary free account is unchanged — plan block reports Free', async () => {
+    account = creditAccount();
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.subscription.tier_key).toBe('free');
+    expect(state.tier.name).toBe('free');
+    expect(state.plan?.key).toBe('free');
+    expect(state.plan?.family).toBe('free');
+    expect(state.plan?.status).toBe('current');
+    expect(state.plan?.sublabel).toBeNull();
+    expect(state.plan?.rank).toBe(1);
   });
 });
 

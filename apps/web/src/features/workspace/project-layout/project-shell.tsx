@@ -11,15 +11,15 @@ import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
-import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
+import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
+import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
-import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   clearLastProjectId,
@@ -28,7 +28,6 @@ import {
 } from '@/lib/onboarding/last-project-cookie';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
@@ -116,17 +115,20 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   }, [projectDetailError, projectId, router, user?.id]);
 
   useEffect(() => {
-    // Files, Connectors, Skills, and Commands graduated out of Customize into
-    // their own pages — send legacy ?customize=<section> links there instead
-    // of opening the overlay.
-    const redirect = legacyCustomizeRedirect(projectId, searchParams.get('customize'));
+    // Old bookmarks/links carry `?customize=<legacy-section-id>`. Files,
+    // Connectors, Skills, and Commands graduated out of the overlay into
+    // their own pages; every other legacy id resolves through
+    // `legacySectionRedirect` to its `/settings/<tab>` route, which itself
+    // opens the Settings overlay via the store and bounces back here — see
+    // that route's header comment. An unrecognized id just drops the stale
+    // query param.
+    const raw = searchParams.get('customize');
+    if (!raw) return;
+    const redirect = legacySectionRedirect(projectId, raw);
     if (redirect) {
       router.replace(redirect);
       return;
     }
-    const section = parseCustomizeSection(searchParams.get('customize'));
-    if (!section) return;
-    useCustomizeStore.getState().openCustomize(section);
 
     const next = new URLSearchParams(searchParams.toString());
     next.delete('customize');
@@ -202,7 +204,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           <ProjectSheelLayout>{children}</ProjectSheelLayout>
         </div>
 
-        <CustomizPanel projectId={projectId} />
+        <SettingsPanel projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />

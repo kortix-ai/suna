@@ -22,7 +22,7 @@ import {
   useMergeChangeRequest,
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,7 +52,7 @@ export function ReviewCenterConnected({
   const projectId = ctx?.projectId ?? '';
   const qc = useQueryClient();
   const router = useRouter();
-  const closeCustomize = useCustomizeStore((s) => s.close);
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const { data, isLoading, isFetching, isError, refetch } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();

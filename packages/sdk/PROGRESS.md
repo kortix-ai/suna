@@ -47,6 +47,168 @@ Gates:
 
 Shippable to production: YES.
 
+
+### 2026-08-13 — session `latest-managed-models`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding managed `deepseek-v4-pro-0813`. The
+package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1901 pass`, `2 skip`,
+`0 fail`, and `7244` assertions across `145` files; packed-install smoke passes.
+The managed model also passed the local catalog, inference, usage-log, and
+generation-record canary through the API.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
+### 2026-08-13 — session `grok-4-6-managed`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding `grok-4.6`. It also includes the
+three managed ids added on 2026-08-10. The package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1903 pass`, `0 fail`,
+and `7250` assertions across `145` files; packed-install smoke passes.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
+### 2026-08-11 — session `billing-revamp-pr5-ui` claim
+
+No **Now** task claimed. User-directed work: the UI half of PR5 (the admin
+entitlement-override console) needs the SDK to expose the route the API half
+shipped in `52576c4849`.
+
+Claimed SDK scope — `src/react/use-admin-accounts.ts`, additive only:
+
+- `useAdminSetOverrides()` — `PUT /admin/api/accounts/{id}/overrides`, body is a
+  partial merge patch (RFC 7386: an entry sets, `null` deletes, an absent key is
+  untouched). Invalidates the same `['admin','accounts', id]` subtree as every
+  other admin mutation.
+- `adminAccountOverridesPath()`, `ADMIN_OVERRIDE_KEYS`, `AdminOverrideKey`,
+  `AdminEntitlementOverrideEntry`, `AdminEntitlementOverrides`,
+  `AdminEntitlementOverridePatch`.
+- `AdminAccount` gains OPTIONAL `entitlementOverrides` (the stored map, expiry
+  NOT applied) and `computeRateMultiplier` (the resolved multiplier the meter
+  bills at). Optional for the same reason `plan` is: a console pointed at an
+  older API still type-checks.
+
+No published name renamed, no field made required, `version` untouched.
+
+RED — `bun test src/react/use-admin-accounts.test.ts`:
+
+```
+# Unhandled error between tests
+SyntaxError: Export named 'adminAccountOverridesPath' not found in module '…/src/react/use-admin-accounts.ts'.
+ 0 pass
+ 1 fail
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and
+  `examples/tsconfig.json`.
+- `pnpm --filter @kortix/sdk test`: `1862 pass`, `2 skip`, `0 fail`, `7131
+  expect()` across `142` files (baseline this session: `1855 pass / 2 skip / 0
+  fail`, `1857` tests).
+- `pnpm test -- --sdk-only` (worktree root): `1864 pass`, `0 fail`, `7137
+  expect()` across `142` files — `[test] PASS sdk 22.9s`.
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+
+Both surface snapshots re-recorded. The diff is **10 insertions, 0 deletions** —
+runtime: `ADMIN_OVERRIDE_KEYS`, `adminAccountOverridesPath`,
+`useAdminSetOverrides`; type-level: those three plus
+`AdminEntitlementOverrideEntry`, `AdminEntitlementOverridePatch`,
+`AdminEntitlementOverrides`, `AdminOverrideKey`. Purely additive, so no alias
+and no major is needed. No subpath added, so the three-synchronized-edits rule
+does not apply.
+
+Verified against the live worktree stack (web `:15400`, API `:15408`) through
+the admin console: saving the Overrides card put exactly the changed keys on the
+wire — `{"managedModels":{"value":false},"computeRateMultiplier":{"value":0.5}}`
+→ `200`, and the untouched `sso`/`scim` entries kept their `expires_at`. A second
+save sent only `{"maxConcurrentSessions":{"value":12}}`.
+
+**Status:** COMPLETE on branch `billing-revamp-pr5`.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-10 — session `session-overrides-ux` claim
+
+No **Now** task claimed. This is user-directed session-scope correctness work.
+
+Claimed SDK scope:
+
+- `SessionScope` gains `connector_bindings_configured` and
+  `connector_bindings_inherit_unbound`. Both are always emitted by the API.
+- `SessionScopeInput.connector_bindings` widens to accept `null`, the verb that
+  CLEARS a connector override.
+- Additive only. No published name changes. The `version` field is untouched.
+
+The `tdd` skill is unavailable in this session. The required RED → GREEN →
+REFACTOR sequence was followed directly.
+
+RED — `pnpm --filter @kortix/sdk typecheck`:
+
+```
+src/core/rest/projects-client/sessions.test.ts(577,17): error TS2339: Property 'connector_bindings_configured' does not exist on type 'SessionScope'.
+src/core/rest/projects-client/sessions.test.ts(578,17): error TS2339: Property 'connector_bindings_inherit_unbound' does not exist on type 'SessionScope'.
+src/core/rest/projects-client/sessions.test.ts(597,61): error TS2322: Type 'null' is not assignable to type 'SessionConnectorBindingsInput | undefined'.
+src/core/rest/projects-client/sessions.test.ts(602,17): error TS2339: Property 'connector_bindings_configured' does not exist on type 'SessionScope'.
+```
+
+GREEN:
+
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk test`: `1847 pass`, `2 skip`, `0 fail`, 141 files.
+- `pnpm --filter @kortix/sdk smoke:install`: packed-install import + construction passed.
+- Public-surface snapshot unchanged — the change adds fields to existing types,
+  not new export names.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
+### 2026-08-10 — session `gateway-error-chain` claim
+
+No **Now** task claimed. This is the user-directed LLM gateway failure-handling refactor.
+
+Claimed SDK scope:
+
+- Preserve structured retry details from the OpenCode status payload.
+- Keep the existing retry message and every published name backward compatible.
+- Add failing retry-detail normalization coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work uses the required
+RED, GREEN, and REFACTOR sequence directly.
+
+RED:
+
+- Retry normalization tests failed because gateway details and ordered attempt
+  failures were absent from `RetryInfo` and `TurnError`.
+
+GREEN:
+
+- The SDK normalizes direct, nested, OpenCode `responseBody`, wrapped-cause,
+  JSON-string, and embedded-JSON gateway failure envelopes.
+- The SDK keeps legacy retry messages and adds optional typed gateway details.
+- Focused turns suite: `55 pass`, `0 fail`, `113 expect()` calls.
+
+REFACTOR:
+
+- Shared normalization owns status, code, request, model, provider, and ordered
+  attempt-failure parsing.
+- Malformed status and code values are rejected instead of exposed as trusted data.
+- Public-surface snapshots contain two additive type names and zero removals.
+- `pnpm --filter @kortix/sdk test`: `1855 pass`, `0 fail`, `7112 expect()` calls.
+- `pnpm --filter @kortix/sdk typecheck`: exit `0` for the package and examples.
+- `pnpm --filter @kortix/sdk smoke:install`: packed-install import and construction passed.
+- Root `pnpm test`: all five core lanes passed in `33.1s`.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**
+
 ### 2026-08-10 — session `reload-live-status` claim
 
 No **Now** task claimed. This is the user-directed live session-config reload status work.
@@ -2107,6 +2269,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B46 | **Expose session agent-config freshness and reload.** A session's agent behaviour is compiled from git once, at provision, and frozen into the sandbox env — so merging an agent change never reaches an open session. The API grew `GET /v1/projects/:id/sessions/:sid/config` and `POST .../reload` (`apps/api/src/projects/routes/r7.ts:2170,2223`) and the CLI grew `kortix sessions reload` (`apps/cli/src/commands/sessions.ts:213`), but the SDK had neither, so `apps/web` could not offer it at all — and `apps/web/src/sdk-boundary-baseline.json` forbids reaching past `@kortix/sdk`. | `grep -rn "sessions/.*/reload" packages/sdk/src` → nothing but the unrelated sandbox-runtime `/kortix/services/system/reload`. Additive: `getProjectSessionConfigState`, `reloadProjectSessionConfig`, `SessionConfigState`, `SessionReloadResult`, plus `session().configState()` / `session().reloadConfig()` on the facade. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1416 pass / 1 fail across 117 files (the single failure, `fetchCostExportCsv`, is PRE-EXISTING — it passes in isolation and fails identically at 1410/1 on a clean tree, a cross-file `configureKortix` token leak); packed-install smoke pass; surface snapshots re-recorded and reviewed as **purely additive, 0 removals** |
 | B47 | **A reload reported success while the agent kept running the old prompt.** `SessionReloadResult` exposed `applied` (the compiled config was pushed) but nothing about whether the agent files opencode actually READS were updated — and those came apart in production. Verified on dev: marker present in `~/.config/kortix-opencode.json`, absent from opencode's `/config` and `/agent`, because `OPENCODE_CONFIG_DIR` points into the session's working tree and its `.md` files win. | Additive: `config_dir_synced?: boolean | null` and `config_dir_reason?: string` on `SessionReloadResult`. Tri-state on purpose — `false` is a deliberate refusal (the session edited its own agent files), `null` is an older daemon that could not say. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1419 pass / 1 fail across 117 files (the failure, `fetchCostExportCsv`, is PRE-EXISTING — passes in isolation, fails identically on a clean tree); packed-install smoke pass; type snapshot re-recorded and reviewed as **purely additive, 0 removals** |
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
+| B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -8342,3 +8505,162 @@ activity, and the account cell's `/admin/accounts?search=<ownerEmail>` href).
 this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
+
+---
+
+## 2026-08-11 — admin member-role mutation + exact-id account lookup (branch `billing-revamp-pr1`)
+
+Part of the billing-revamp PR1 (enterprise-entitlement primitive fix, expiring
+trial grants, admin role control). SDK surface additions in
+`src/react/use-admin-accounts.ts`, TDD (`use-admin-accounts.test.ts`, RED→GREEN):
+
+- `useAdminSetMemberRole` + `adminMemberRolePath` + type `AdminAccountMemberRole`
+  — POST `/admin/api/accounts/{id}/members/{userId}/role` (platform-admin
+  override; server refuses demoting the last owner).
+- `useAdminAccount` + `adminAccountLookupPath` — live single-account row via the
+  list route's new exact-id `accountId` filter; fixes the admin sheet's stale
+  pre-mutation snapshot when list filters no longer match the row.
+
+Both surface snapshots re-recorded — additive only (5 names runtime, 5 type),
+no rename, no removal.
+
+**Status:** COMPLETE on branch `billing-revamp-pr1`, commit `0c295a7652`.
+
+---
+
+## 2026-08-11 — resolved-plan selector + admin plan block (branch `billing-revamp-pr3`)
+
+Part of billing-revamp PR3 (the API half landed in `f92564a8`, which added the
+resolved `plan` block to `/billing/account-state`). This is the SDK half: the
+contract for that block and the one selector every host reads it through, so no
+host re-derives a plan name from `subscription.tier_key` again.
+
+Additive surface, TDD (RED → GREEN), no rename, no removal, `version` untouched:
+
+- `src/core/rest/projects-client/billing.ts`
+  - `AccountState.plan?` — `{ key, family, label, sublabel, status, shape,
+    rank, is_grandfathered }`, optional so a client on an older API still
+    type-checks.
+  - `resolvedPlan(state)` → `ResolvedPlanView { family, label, sublabel,
+    isGrandfathered }`. Reads the `plan` block; falls back to
+    `tier.display_name ?? tier_key` + a three-way family guess when the API is
+    older than the resolver.
+  - `PlanFamily` (`'free' | 'team' | 'enterprise'`), `ResolvedPlanView`.
+  - `AccountStateAppAccessView.plan?` — the login gate's projection now carries
+    the resolved plan key it was already receiving on the wire.
+- `src/react/use-admin-accounts.ts` — `AdminAccountPlan` + optional
+  `AdminAccount.plan`, matching the admin list route's new block.
+
+RED (before implementation):
+
+```
+SyntaxError: Export named 'resolvedPlan' not found in module '…/billing.ts'
+src/react/use-admin-accounts.test.ts(50,45): error TS2344: Type '"plan"' does not satisfy the constraint 'keyof AdminAccount'.
+src/core/rest/projects-client/billing.test.ts(350,5): error TS2353: Object literal may only specify known properties, and 'plan' does not exist in type 'AccountStateAppAccessView'.
+```
+
+GREEN:
+
+- `bun run typecheck`: exit `0` for the package and `examples/tsconfig.json`.
+- `pnpm test -- --sdk-only` (worktree root, the sanctioned lane): `1855 pass`,
+  `0 fail`, `7120 expect()` across `142` files (was `1852 pass / 2 skip` before
+  this change).
+- `bun run smoke:install`: `✔ install smoke test passed`.
+
+Both surface snapshots re-recorded. The diff is **9 insertions, 0 deletions** —
+`resolvedPlan` in the runtime snapshot (root + `./react` subpath), and
+`resolvedPlan` + `PlanFamily` + `ResolvedPlanView` + `AdminAccountPlan` in the
+type snapshot. No subpath added, so the three-synchronized-edits rule does not
+apply.
+
+Verified against the live worktree stack (web `:15400`, API `:15408`): a
+Chromium run drove `/admin/accounts` and asserted 15 conditions, including that
+a trialing per-seat account renders `Team` (stored `tier` still `per_seat`), a
+grandfathered per-seat account renders `Team · $40/seat/mo · grandfathered`, and
+the string `· legacy` appears nowhere. `GET /v1/billing/account-state` returned
+`plan = {"key":"team","family":"team","label":"Team","sublabel":null,"status":"retired","shape":"flat","rank":8,"is_grandfathered":false}`
+while `subscription.tier_key` stayed `per_seat`.
+
+**Status:** COMPLETE on branch `billing-revamp-pr3`.
+
+**SDK package shippable to production: YES.**
+## Session `monitors` — `type: monitor` on the trigger client (2026-08-12)
+No **Now** task claimed. This is the SDK half of the Monitors feature
+(`docs/specs/2026-08-12-monitors.md`), the third trigger type. The server side
+(manifest, DB, ingest, observer, box runtime) already landed on branch
+`monitors`; this change makes the published trigger client able to read and
+write it.
+Claimed SDK scope, in `core/rest/projects-client/triggers.ts` only:
+- Widen `ProjectTriggerType` with `'monitor'`.
+- Add the four monitor read fields to `ProjectTrigger`, matching
+  `TriggerSchema` in `@kortix/api-contract` (`run`, `mode`, `interval_seconds`,
+  `expect_event_within_seconds` — all nullable, like `cron`/`secret_env`).
+- Add the monitor draft fields the server's `parseTriggerDraft` accepts to
+  `CreateProjectTriggerInput` / `UpdateProjectTriggerInput` (`run`, `mode`,
+  `interval`, `expect_event_within` — durations are literals, never numbers).
+- One new exported type, `ProjectMonitorMode` (`'poll' | 'stream'`).
+**Additive only.** No name was renamed or removed, no optional field became
+required, no subpath was added (the client rides the existing
+`projects-client` barrel), and the package `version` is untouched.
+RED — `pnpm --filter @kortix/sdk typecheck` before implementation, with the new
+`src/core/rest/projects-client/triggers.test.ts` in place: **exit 2**, 17
+errors, including `Module '"./triggers"' has no exported member
+'ProjectMonitorMode'`, `Type '"monitor"' is not assignable to type
+'ProjectTriggerType'`, `Property 'run' does not exist on type 'ProjectTrigger'`,
+and `'mode' does not exist in type 'UpdateProjectTriggerInput'`.
+- `bun test src/core/rest/projects-client/triggers.test.ts`: `6 pass`, `0 fail`,
+- `pnpm --filter @kortix/sdk test`: `1852 pass`, `2 skip`, `0 fail`,
+  `7109 expect()` calls across `142` files. Session baseline measured on the
+  branch before the change: `1846 pass`, `2 skip`, `0 fail`, `141` files.
+`public-type-surface.snapshot.json` was re-recorded: **2 insertions, 0
+deletions** — `ProjectMonitorMode` on `.` and `./projects-client`. Purely
+additive, so no consumer breaks. The runtime surface snapshot is unchanged (the
+addition is a type, not a value).
+
+## Session `queue-batch` — `claimBatch` on the message queue (2026-08-13)
+
+**Why.** Reported by Marko: the web session queue released one message per turn.
+Three queued messages meant three full agent runs, with the agent answering each
+in isolation. Claude Code and Codex flush the whole queue at the turn boundary.
+
+**Claimed SDK scope, in `core/session/message-queue.ts` only:**
+- New `claimBatch(state)` — claims the maximal leading run of `pending` that
+  shares the head's `agent`/`model`/`variant`, recording the claim in the same
+  transition. One prompt carries one set of dispatch options, so a batch ends
+  where they change.
+- New `inFlightIdsOf(state)` — the single read path for the lock, tolerating a
+  state persisted before `inFlightIds` existed.
+- `SessionQueue.inFlightIds?: string[]` — **optional on purpose.** Required
+  would stop a consumer's hand-built `SessionQueue` literal from compiling,
+  which the package's own rules class as breaking. `inFlightId` keeps its name
+  and meaning as the head of that array; every transition writes both.
+- `completeInFlight` / `failInFlight` / `removeQueued` / `editQueued` /
+  `reorderQueued` now act on the whole in-flight batch rather than one id. A
+  row the user can still edit while it is on the wire is a bug the single-id
+  lock could not prevent.
+
+**Additive only.** No name renamed or removed, no optional field made required,
+no subpath added, `version` untouched.
+
+**RED first.** `bun test src/core/session/message-queue.test.ts` before
+implementation: `SyntaxError: Export named 'claimBatch' not found in module
+'.../message-queue.ts'` — `0 pass`, `1 fail`, `1 error`.
+
+**Gates, real output:**
+- `pnpm --filter @kortix/sdk typecheck` — clean (`tsc --noEmit` + examples).
+- `pnpm --filter @kortix/sdk test` — `1901 pass`, `2 skip`, `0 fail`, `7244
+  expect()` calls across `145` files. Session baseline measured on this branch
+  before the change: `1883 pass`, `2 skip`, `0 fail`, `145` files.
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test passed`.
+
+**Snapshots re-recorded, both purely additive:**
+`public-surface.snapshot.json` +2 (`claimBatch`, `inFlightIdsOf` on
+`./message-queue`), `public-type-surface.snapshot.json` +2 (same names). The
+type-surface tool's own drift report labelled both `← added — additive, fine`.
+Nothing removed, nothing renamed.
+
+**Host side (not SDK, recorded for context):** `apps/web` gained
+`features/session/queued-batch.ts` (`mergeQueuedBatch`, pure) and now makes
+exactly ONE `handleSend` call per batch. A loop would reintroduce RC4 from
+`docs/superpowers/specs/2026-08-05-session-message-queue-design.md` —
+`handleSend` resolves on the server's 204 ACK, not on turn end.

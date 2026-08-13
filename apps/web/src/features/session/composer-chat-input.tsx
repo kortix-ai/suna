@@ -2,8 +2,9 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
+import type { SessionOverrideSlot } from '@/features/session/overrides/session-overrides-toolbar';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
-import { SessionScopeToolbar } from '@/features/session/scope/session-scope-toolbar';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -56,14 +57,17 @@ export function ComposerChatInput({
   clearOnSend,
   queuedMessages,
   failedQueuedMessages,
-  queueInFlightId,
+  queueInFlightIds,
+  queuePaused,
+  queueIsRunning,
+  onSendQueuedMessageNow,
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
-  onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onAgentSelectionChange,
+  sandboxSlot,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -95,15 +99,19 @@ export function ComposerChatInput({
   /** Queued-while-busy support, passed straight through to SessionChatInput. */
   queuedMessages?: SessionChatInputProps['queuedMessages'];
   failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
-  queueInFlightId?: SessionChatInputProps['queueInFlightId'];
+  queueInFlightIds?: SessionChatInputProps['queueInFlightIds'];
+  queuePaused?: SessionChatInputProps['queuePaused'];
+  queueIsRunning?: SessionChatInputProps['queueIsRunning'];
+  onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
   onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onSendQueuedMessageNow?: (id: string) => void;
   onRetryQueuedMessage?: (id: string) => void;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
+  /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
+  sandboxSlot?: SessionOverrideSlot;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -141,18 +149,44 @@ export function ComposerChatInput({
     },
     [selectedAgentName],
   );
+  // Every axis a session can override, in one popover — built from the SAME
+  // agent/model/effort controls this toolbar already renders.
   const sessionScopeToolbar = useMemo(
     () =>
       projectId ? (
-        <SessionScopeToolbar
+        <SessionOverridesComposer
           projectId={projectId}
           sessionId={sessionId}
-          agentName={selectedAgentName ?? undefined}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
+          agents={local.agent.list}
+          selectedAgent={selectedAgentName}
+          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          agentLocked={!!lockedAgentName}
+          defaultAgentName={projectConfig?.open_code_default_agent}
+          models={local.model.list}
+          modelsLoading={providersLoading}
+          selectedModel={local.model.currentKey ?? null}
+          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+          providers={providers}
+          defaultModel={local.model.defaults.resolveDefaultFor(selectedAgentName ?? undefined)}
+          sandboxSlot={sandboxSlot}
         />
       ) : null,
-    [handleCommittedScope, projectId, selectedAgentName, sessionId],
+    [
+      handleCommittedScope,
+      local.agent,
+      local.model,
+      lockedAgentName,
+      projectConfig?.open_code_default_agent,
+      projectId,
+      providers,
+      providersLoading,
+      sandboxSlot,
+      selectedAgentName,
+      sessionId,
+    ],
   );
+
   const combinedToolbarSlot = useMemo(
     () =>
       toolbarSlot || sessionScopeToolbar ? (
@@ -184,12 +218,14 @@ export function ComposerChatInput({
       clearOnSend={clearOnSend}
       queuedMessages={queuedMessages}
       failedQueuedMessages={failedQueuedMessages}
-      queueInFlightId={queueInFlightId}
+      queueInFlightIds={queueInFlightIds}
+      queuePaused={queuePaused}
+      queueIsRunning={queueIsRunning}
+      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}
       onReorderQueuedMessage={onReorderQueuedMessage}
-      onSendQueuedMessageNow={onSendQueuedMessageNow}
       onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
       stopDisabled={stopDisabled}

@@ -47,6 +47,8 @@ export {
   projectSecretScopeEnum,
   projectTriggerRuntime,
   projectTriggerExecutions,
+  projectMonitorEvents,
+  projectMonitorBoxes,
   sessionLifecycleCommands,
   chatChannelBindings,
   chatInstalls,
@@ -138,6 +140,8 @@ export {
   // Platform User Roles
   platformRoleEnum,
   platformUserRoles,
+  // Impersonation
+  impersonationGrants,
   // Access Control
   accessRequestStatusEnum,
   platformSettings,

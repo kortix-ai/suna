@@ -98,6 +98,28 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
+/**
+ * NOT in the list above, deliberately: `KORTIX_CONNECTORS_MCP_ENABLED`.
+ *
+ * It shapes `out.mcp` INSIDE the config file, and `tryDisposeReload` rewrites
+ * that file and makes opencode re-read it — so it belongs to the dispose fast
+ * path by the same rule as every other config-file key.
+ *
+ * Flagged because two comments in this repo disagree and one of them is wrong:
+ * `routes/env.ts` says enabling the face "must restart OpenCode because MCP
+ * servers are registered only at spawn", which would make dispose insufficient
+ * for the email channel's mid-session enable (channels/email/session.ts:123,
+ * 208). Whether `POST /global/dispose` re-registers a server that was not
+ * previously in the set is UNVERIFIED against the pinned opencode.
+ *
+ * Left alone rather than guessed at: adding it here breaks the tested
+ * invariant in dispose-reload.test.ts ("every name spawnChild consumes outside
+ * the config file is listed") and would buy an ~8s respawn for a case nobody
+ * has measured. Resolve it with a live sandbox — enable the face mid-session,
+ * then ask opencode whether the server is registered — and update whichever
+ * comment turns out to be false.
+ */
+
 /** Does this env delta need a full respawn rather than a dispose? */
 export function requiresRespawn(changedNames: readonly string[]): boolean {
   return changedNames.some((name) =>
@@ -277,7 +299,14 @@ export async function buildOpencodeConfigContent(
         type: 'local',
         // Use the absolute path so OpenCode's MCP launcher does not depend on
         // PATH propagation. The normal agent path is still `kortix connectors`.
-        command: ['/usr/local/bin/kortix', 'connector', 'mcp'],
+        //
+        // `connectors`, plural — it must match a real CLI command. Between
+        // 2026-08-06 (e868be1d6c) and this fix it read `connector`, which the
+        // CLI router rejects with "unknown command", so OpenCode's launcher
+        // got exit 2 and the MCP server never started. The CLI now also
+        // accepts the singular as an alias, which recovers snapshots baked
+        // with the old string.
+        command: ['/usr/local/bin/kortix', 'connectors', 'mcp'],
         enabled: true,
         environment: {
           // Proxy mode: the MCP talks to the localhost connector proxy with a
@@ -803,25 +832,54 @@ type KortixGatewayModel = {
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'claude-opus-4.8': {
-    name: 'Claude Opus 4.8',
+  // 2026-08-10 managed slim-down: Claude Opus 4.8 / Claude Sonnet 4.6 / Kimi K3
+  // deactivated in @kortix/llm-catalog MANAGED_MODELS — kept commented out here
+  // to match, so this fallback map never advertises a model the gateway
+  // resolves as model_not_found.
+  // 'claude-opus-4.8': {
+  //   name: 'Claude Opus 4.8',
+  //   provider: 'kortix',
+  //   reasoning: true,
+  //   tool_call: true,
+  //   attachment: true,
+  //   temperature: true,
+  //   limit: { context: 1_000_000, output: 64_000 },
+  // },
+  // 'claude-sonnet-4.6': {
+  //   name: 'Claude Sonnet 4.6',
+  //   provider: 'kortix',
+  //   reasoning: true,
+  //   tool_call: true,
+  //   attachment: true,
+  //   temperature: true,
+  //   limit: { context: 1_000_000, output: 64_000 },
+  // },
+  // Managed default for fresh sessions (PLATFORM_DEFAULT_MODEL_ID).
+  // Bare id = Kortix-managed.
+  'deepseek-v4-flash': {
+    name: 'DeepSeek V4 Flash',
     provider: 'kortix',
     reasoning: true,
     tool_call: true,
-    attachment: true,
+    attachment: false,
     temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
+    limit: { context: 1_048_576, output: 64_000 },
   },
-  'claude-sonnet-4.6': {
-    name: 'Claude Sonnet 4.6',
+  'deepseek-v4-pro-0813': {
+    name: 'DeepSeek V4 Pro 0813',
     provider: 'kortix',
     reasoning: true,
+    reasoning_options: [
+      { type: 'toggle' },
+      { type: 'effort', values: ['low', 'high', 'max'] },
+    ],
     tool_call: true,
-    attachment: true,
+    attachment: false,
+    structured_output: false,
     temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
+    limit: { context: 1_048_575, output: 384_000 },
+    cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
   },
-  // Managed default for fresh sessions. Bare id = Kortix-managed.
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',
@@ -831,21 +889,69 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 131_072 },
   },
+  'muse-spark-1.2': {
+    name: 'Muse Spark 1.2',
+    provider: 'kortix',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 131_072 },
+  },
+  'minimax-m3': {
+    name: 'MiniMax M3',
+    provider: 'kortix',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 524_288, output: 131_072 },
+  },
+  // temperature:false — Luna rejects a client-sent temperature (models.dev
+  // openrouter/openai/gpt-5.6-luna), same regression class as the OpenAI
+  // reasoning-model guard below. Must NOT advertise temperature support or
+  // OpenCode sends one and 400s the turn.
+  'gpt-5.6-luna': {
+    name: 'GPT-5.6 Luna',
+    provider: 'kortix',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: false,
+    limit: { context: 1_050_000, output: 128_000 },
+  },
+  'grok-4.6': {
+    name: 'Grok 4.6',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
+    tool_call: true,
+    attachment: true,
+    structured_output: true,
+    temperature: true,
+    limit: { context: 500_000, output: 500_000 },
+    cost: {
+      input: 2,
+      output: 6,
+      cache_read: 0.5,
+      context_over_200k: { input: 4, output: 12, cache_read: 1 },
+    },
+  },
   // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
   // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
   // `temperature:false` — models.dev advertises Kimi K3 as
   // `temperature:false` (it rejects a client-sent temperature), matching
   // capabilitiesOf() in the served catalog. Must NOT advertise temperature
   // support or OpenCode sends one and 400s the turn.
-  'kimi-k3': {
-    name: 'Kimi K3',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: false,
-    limit: { context: 1_048_576, output: 131_072 },
-  },
+  // 'kimi-k3': {
+  //   name: 'Kimi K3',
+  //   provider: 'kortix',
+  //   reasoning: true,
+  //   tool_call: true,
+  //   attachment: true,
+  //   temperature: false,
+  //   limit: { context: 1_048_576, output: 131_072 },
+  // },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',

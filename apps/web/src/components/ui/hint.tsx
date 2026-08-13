@@ -1,4 +1,9 @@
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export type HintProps = {
   label?: React.ReactNode;
@@ -23,18 +28,24 @@ const Hint = ({
   ...props
 }: HintProps) => {
   return (
-    <Tooltip {...props}>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent
-        side={side}
-        align={align}
-        sideOffset={sideOffset}
-        alignOffset={alignOffset}
-        className={className}
-      >
-        {label ? label : content}
-      </TooltipContent>
-    </Tooltip>
+    // Own provider, same 300ms delay as the app root's: Radix Tooltip.Root
+    // throws without one, and Hint rides along into trees rendered outside
+    // the app shell (SSR tests, portals). Nesting under the root provider is
+    // supported and harmless.
+    <TooltipProvider delayDuration={300}>
+      <Tooltip {...props}>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent
+          side={side}
+          align={align}
+          sideOffset={sideOffset}
+          alignOffset={alignOffset}
+          className={className}
+        >
+          {label ? label : content}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 };
 

@@ -8,13 +8,14 @@ const client = () => new QueryClient({ defaultOptions: { queries: { retry: false
 const ID = 'proj_1';
 
 /**
- * These are the EXACT functions `settings-view.tsx` wires into
- * `useMutation({ onMutate, onError, onSettled })` — see the source-scan
- * assertions in `settings-view.rename.test.tsx` that pin the wiring itself.
- * This file covers what those functions actually DO, against a real
- * QueryClient — no react-query mocking (mocking `@tanstack/react-query` here
- * would be process-wide across `bun test`'s non---isolate run in `apps/web`
- * and corrupt every other test file in the run).
+ * These are the EXACT functions `features/workspace/settings/tabs/
+ * general-tab.tsx` wires into `useMutation({ onMutate, onError, onSettled })`
+ * — see the source-scan assertions in `general-tab.rename.test.tsx` that pin
+ * the wiring itself. This file covers what those functions actually DO,
+ * against a real QueryClient — no react-query mocking (mocking
+ * `@tanstack/react-query` here would be process-wide across `bun test`'s
+ * non---isolate run in `apps/web` and corrupt every other test file in the
+ * run).
  *
  * `edit-project-modal.tsx` was the second caller and had its own paired
  * source-scan file. The workspace-switcher work deleted that modal — rename

@@ -60,6 +60,8 @@ export const FeatureFlagMapSchema = z.object({
   review_center: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
+  monitors: z.boolean(),
+  network_boundary_shim: z.boolean(),
   warm_sessions: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
@@ -326,7 +328,18 @@ export type SessionRequiredConnectors = z.infer<typeof SessionRequiredConnectors
 export const SessionScopeInputSchema = z
   .object({
     secrets: SessionSecretsAllowlistSchema.nullable().optional(),
-    connector_bindings: SessionConnectorBindingsInputSchema.optional(),
+    /**
+     * FULL new binding map — REPLACES the previous one. Three distinct states,
+     * and conflating any two of them is a bug:
+     *
+     * - **omitted** — leave the session's connector scope exactly as it is.
+     * - **`null`** — CLEAR the override. The session goes back to inheriting the
+     *   project default for every alias its agent grants. This is the only way
+     *   to undo an override; without it an override was permanent.
+     * - **`{}`** — an EXPLICIT zero-connector override: this session gets no
+     *   connector at all, project defaults included. The opposite of `null`.
+     */
+    connector_bindings: SessionConnectorBindingsInputSchema.nullable().optional(),
     require_connectors: SessionRequiredConnectorsSchema.nullable().optional(),
   })
   .strict()
@@ -348,6 +361,26 @@ export const SessionScopeSchema = z
     added_secrets: z.array(z.string()),
     dropped_bindings: z.array(z.string()),
     retroactive: z.boolean(),
+    /**
+     * Whether this session HOLDS its own connector override.
+     *
+     * `connector_bindings` above is the server-RESOLVED effective map, so it
+     * looks identical whether the session overrode its connectors or simply
+     * inherited the project defaults. A client could not tell the two apart, so
+     * it rendered an inherited session as "None selected" and wrote an explicit
+     * zero-connector override on the next untouched save. This flag is the
+     * difference: `false` means every alias still resolves to the project
+     * default; `true` means the stored bindings are authoritative.
+     *
+     * Send `connector_bindings: null` to put it back to `false`.
+     */
+    connector_bindings_configured: z.boolean(),
+    /**
+     * Whether an alias with NO stored binding still falls back to the project
+     * default while an override is configured. Create-time only, and false for
+     * a session that supplied bindings at create — those fail closed.
+     */
+    connector_bindings_inherit_unbound: z.boolean(),
     /**
      * True when the new secrets scope was pushed to the live sandbox and
      * OpenCode was restarted to pick it up — the change is in effect NOW.
@@ -917,7 +950,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook']),
+  type: z.enum(['cron', 'webhook', 'monitor']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -926,6 +959,14 @@ export const TriggerSchema = z.object({
   run_at: z.string().nullable(),
   timezone: z.string(),
   secret_env: z.string().nullable(),
+  /** For type=monitor only — the repo-relative command the box supervises. */
+  run: z.string().nullable(),
+  /** For type=monitor only — `poll` (run on interval) or `stream` (long-running). */
+  mode: z.enum(['poll', 'stream']).nullable(),
+  /** For mode=poll only — the poll period, in whole seconds. */
+  interval_seconds: z.number().nullable(),
+  /** For type=monitor only — the silence watchdog, in whole seconds. */
+  expect_event_within_seconds: z.number().nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
@@ -1089,3 +1130,27 @@ export const SecretSchema = z.object({
   requires_rotation: z.boolean(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
+
+export const GrantSecretToAgentInputSchema = z
+  .object({ agent: z.string().trim().min(1).max(200) })
+  .strict();
+export type GrantSecretToAgentInput = z.infer<typeof GrantSecretToAgentInputSchema>;
+
+/**
+ * Result of POST /projects/:projectId/secrets/:identifier/grant — the one-click
+ * fix for `delivery_blocked_reason: 'no_agent_grant'`.
+ *
+ * `adopted_governance` is the field that matters. It is true when the commit
+ * published the project's FIRST agent roster, which flips the project from
+ * "every agent may receive every secret" to "an agent the manifest does not
+ * list receives nothing". Surface it; a caller that ignores it silently
+ * revokes working secrets from every undeclared agent.
+ */
+export const GrantSecretToAgentResultSchema = z.object({
+  identifier: z.string(),
+  agent: z.string(),
+  /** The agent already admitted this identifier, so no commit was made. */
+  already_granted: z.boolean(),
+  adopted_governance: z.boolean(),
+});
+export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;

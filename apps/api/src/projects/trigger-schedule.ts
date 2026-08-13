@@ -3,7 +3,9 @@ import { Cron } from 'croner';
 
 export interface TriggerScheduleSpec {
   slug: string;
-  type: 'cron' | 'webhook';
+  /** `monitor` never schedules — `nextTriggerScheduleSlot` returns null for it,
+   *  so the cron sweep's `trigger_type = 'cron'` claim can never see one. */
+  type: 'cron' | 'webhook' | 'monitor';
   enabled: boolean;
   cron: string | null;
   runAt: string | null;
@@ -15,6 +17,11 @@ export interface TriggerScheduleSpec {
   pinnedSessionId: string | null;
   sessionKey: string | null;
   filter: Record<string, string> | null;
+  /** type=monitor only — see GitTriggerSpec. Absent for cron/webhook. */
+  run?: string | null;
+  monitorMode?: 'poll' | 'stream' | null;
+  intervalSeconds?: number | null;
+  expectEventWithinSeconds?: number | null;
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
@@ -59,6 +66,19 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     pinnedSessionId: spec.pinnedSessionId,
     sessionKey: spec.sessionKey,
     filter,
+    // Monitor fields join the hash ONLY for a monitor. Adding them
+    // unconditionally would change every existing cron/webhook revision on
+    // deploy, and a revision change re-upserts the catalog row — which
+    // recomputes `next_fire_at` and would re-arm every already-fired one-off
+    // `run_at` trigger in the fleet.
+    ...(spec.type === 'monitor'
+      ? {
+          run: spec.run ?? null,
+          monitorMode: spec.monitorMode ?? null,
+          intervalSeconds: spec.intervalSeconds ?? null,
+          expectEventWithinSeconds: spec.expectEventWithinSeconds ?? null,
+        }
+      : {}),
   };
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');
 }

@@ -90,6 +90,49 @@ jobs:
             echo "found ${image}:staging-${SHA8}"
           done
 
+  # ── Apply staging Terraform before any image rolls ──────────────────────────
+  # Both staging roots are safe to apply unattended: every variable has a
+  # default and the committed terraform.tfvars.example is identical to those
+  # defaults (api_environment = {}, manage_dns = false), so CI plans exactly
+  # what an operator plans. Skipped while TF_APPLY_ROLE_ARN_STAGING is unset.
+  terraform-staging:
+    name: Apply staging Terraform
+    needs: preflight
+    if: vars.TF_APPLY_ROLE_ARN_STAGING != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/staging
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
+      github_environment: staging
+      trusted_branch: staging
+      cloudflare: true
+      ref: ${{ needs.preflight.outputs.sha }}
+    secrets: inherit
+
+  # staging-web shares modules/ecs-api with staging; apply it after so a shared
+  # module change lands in one order, not two racing ones.
+  terraform-staging-web:
+    name: Apply staging web Terraform
+    needs: [preflight, terraform-staging]
+    if: vars.TF_APPLY_ROLE_ARN_STAGING != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/staging-web
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
+      github_environment: staging
+      trusted_branch: staging
+      cloudflare: true
+      ref: ${{ needs.preflight.outputs.sha }}
+    secrets: inherit
+
   sync-secret:
     name: Sync staging secret bundle
     needs: preflight
@@ -240,7 +283,15 @@ jobs:
   # so a broken ECS staging deploy fails the staging rollout loudly.
   deploy-ecs:
     name: Deploy API + gateway to staging (ECS Fargate)
-    needs: [preflight, sync-secret, migrate-db]
+    needs: [preflight, sync-secret, migrate-db, terraform-staging]
+    # `always()` is required because terraform-staging is SKIPPED while
+    # TF_APPLY_ROLE_ARN_STAGING is unset. Every other upstream stays required.
+    if: >-
+      ${{ always()
+        && needs.preflight.result == 'success'
+        && needs.sync-secret.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-staging.result == 'success' || needs.terraform-staging.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -351,7 +402,12 @@ jobs:
 
   deploy-web-ecs:
     name: Deploy staging web to ECS Fargate
-    needs: [preflight, deploy-ecs]
+    needs: [preflight, deploy-ecs, terraform-staging-web]
+    if: >-
+      ${{ always()
+        && needs.preflight.result == 'success'
+        && needs.deploy-ecs.result == 'success'
+        && (needs.terraform-staging-web.result == 'success' || needs.terraform-staging-web.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -528,7 +584,7 @@ jobs:
           { [ "$cookie_status" = 200 ] || [ "$cookie_status" = 307 ] || [ "$cookie_status" = 308 ]; } || {
             echo "::error::staging ECS frontend shared-cookie status=$cookie_status"; exit 1;
           }
-          grep -F $'\t.kortix.com\t' "$cookie_jar" >/dev/null || {
+          grep -E $'^(#HttpOnly_)?\\.kortix\\.com\t' "$cookie_jar" >/dev/null || {
             echo "::error::staging ECS frontend did not set the parent-domain access cookie"; exit 1;
           }
           ecs_health="$(curl -fsS --max-time 20 "$ecs/api/health")"

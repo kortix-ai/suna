@@ -336,6 +336,29 @@ const envSchema = z.object({
   // Manager bundle. Self-host deployments leave it unset.
   ASTER_API_URL: optUrl('https://api.asterlab.ai/v1'),
   ASTER_API_KEY: optStr,
+  // Whether network-boundary secrets may be delivered by the IN-GUEST shim on
+  // providers that have no credential edge of their own (i.e. Daytona, which is
+  // production). The shim terminates the guest's TLS and relays to the broker
+  // route; the credential stays server-side either way.
+  //
+  // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
+  // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
+  // connector meta-tools plus `secret_call`, the only way to use an
+  // HTTPS-broker secret — those have no env var and no readable value, so
+  // without a tool the model has to find a shell command in a prompt file.
+  //
+  // ON by default: the tools are the discoverable surface for capabilities the
+  // agent already has. This is the operator kill switch — it takes the MCP
+  // server away fleet-wide without a code change.
+  //
+  // optBoolTrue disables on the literal string `false` ONLY: `0`, `no` and
+  // `off` all leave it ON. Write `CONNECTORS_MCP_ENABLED=false`.
+  //
+  // The email channel sets the guest variable itself from durable session
+  // metadata (session-channel-env.ts) and keeps the face either way — that
+  // channel was the only consumer before this flag, so turning this off
+  // restores the previous behaviour rather than regressing email sessions.
+  CONNECTORS_MCP_ENABLED: optBoolTrue,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
@@ -368,7 +391,12 @@ const envSchema = z.object({
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('claude-sonnet-4.6'),
+  // Target when a DEFAULT-model request carries image input and the default
+  // model lacks vision. Empty = no reroute (the request goes to the default
+  // model as-is). gpt-5.6-luna is the cheapest vision-capable managed model
+  // ($0.20/$1.20) — the default platform model (deepseek-v4-flash) is
+  // text-only.
+  LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -380,7 +408,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),
@@ -985,6 +1013,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   ASTER_API_URL: env.ASTER_API_URL,
   ASTER_API_KEY: env.ASTER_API_KEY,
+  CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.

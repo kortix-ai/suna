@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 567,
+  "count": 578,
   "routes": [
     {
       "method": "GET",
@@ -515,6 +515,14 @@
       "path": "/v1/admin/api/accounts/:id/managed-models"
     },
     {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/members/:userId/role"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/accounts/:id/overrides"
+    },
+    {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/projects"
     },
@@ -537,6 +545,18 @@
     {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/impersonate"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/admin/api/impersonate/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/impersonate/active"
     },
     {
       "method": "GET",
@@ -1659,6 +1679,10 @@
       "path": "/v1/projects/:projectId/model-picker"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/monitors/ingest"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
     },
@@ -1761,6 +1785,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/secrets/:identifier/broker"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/secrets/:identifier/grant"
     },
     {
       "method": "PUT",
@@ -2053,6 +2081,22 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/managed-skills"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/manifest"
     },
     {
       "method": "GET",

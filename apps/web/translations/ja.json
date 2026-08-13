@@ -66,6 +66,11 @@
         "current": "現在の言語",
         "select": "言語を選択"
       },
+      "accountSettings": {
+        "title": "アカウント",
+        "description": "請求、メンバー、組織の設定を管理",
+        "button": "アカウント設定"
+      },
       "deleteAccount": {
         "title": "アカウント削除",
         "description": "アカウントとすべての関連データを永久に削除",
@@ -320,7 +325,10 @@
         "おはよう！何を作る？",
         "おはようございます！準備はOK？"
       ],
-      "afternoon": ["こんにちは！何かお手伝いしましょうか？", "調子はどう？何をする？"],
+      "afternoon": [
+        "こんにちは！何かお手伝いしましょうか？",
+        "調子はどう？何をする？"
+      ],
       "evening": [
         "こんばんは！夜遅くまでお疲れ様！",
         "こんばんは！今夜は何に取り組む？",
@@ -4361,24 +4369,6 @@
       "line63JsxAttrDescriptionSystemRolesShipWithThePlatformCreateCustom": "システムロールはプラットフォームに標準で含まれています。アカウントに必要な権限だけをまとめるには、カスタムロールを作成してください。",
       "line68JsxTextCreateARole": "ロールを作成",
       "line80JsxAttrPlaceholderSearchRolesByNameOrKey": "名前またはキーでロールを検索..."
-    },
-    "componentsInstancesInstanceMembersPanel": {
-      "line130JsxTextPeopleWithAccessToThisInstanceInviteTeammates": "このインスタンスにアクセスできるユーザーです。チームメイトをメールで招待してください — すでに Kortix を使っている場合はすぐにアクセスでき、そうでない場合は登録リンクを送信します。",
-      "line142JsxTextInviteTeammate": "チームメイトを招待",
-      "line149JsxTextLoadingTeam": "チームを読み込み中…",
-      "line152JsxAttrTitleFailedToLoadMembers": "メンバーを読み込めませんでした",
-      "line160JsxAttrTitleJustYouForNow": "今のところ、あなただけです",
-      "line161JsxAttrDescriptionInviteATeammateToCollaborateOnThisInstance": "このインスタンスで共同作業するチームメイトを招待します。相手にはあなたがアクセス権を付与したプロジェクトが表示され、そのセッションはあなたのものとは別に非公開のまま保たれます。",
-      "line166JsxTextInviteTeammate": "チームメイトを招待",
-      "line205JsxAttrTitleRemoveFromTeam": "チームから削除しますか？",
-      "line221JsxAttrTitleRevokeInvite": "招待を取り消しますか？",
-      "line324JsxTextPending": "保留中 ·",
-      "line332JsxTextExpires": "· 有効期限",
-      "line345JsxAttrAriaLabelRevokeInvite": "招待を取り消す",
-      "line412JsxAttrAriaLabelMemberActions": "メンバー操作",
-      "line564JsxTextEmailAddress": "メールアドレス",
-      "line569JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
-      "line601JsxTextIfTheyDonTHaveKortixYetWe": "まだ Kortix を利用していない場合は、登録リンクを送信します。"
     },
     "componentsKortixCredentialsTab": {
       "line63JsxTextAes256GcmEncryptedScopedToThisProject": "AES-256-GCM で暗号化され、このプロジェクトのみにスコープ設定されています。エージェントは次を介して読み取ります:",

@@ -7,6 +7,12 @@ export interface AllowEntry {
 export const uncoveredAllow: AllowEntry[] = [
   {
     method: "POST",
+    path: "/v1/admin/api/accounts/:*/members/:*/role",
+    reason:
+      "DEBT, not a considered exemption. The route has existed on the app for a while but was absent from tests/spec/routes.generated.json, so the gate never saw it; regenerating the manifest for the secret-grant route surfaced it. Nothing covers it — it needs a flow, and this entry exists so the gap stays visible instead of being re-hidden by a stale manifest.",
+  },
+  {
+    method: "POST",
     path: "/v1/projects/provision-stream",
     reason:
       "SSE progress-stream sibling of the flow-covered POST /projects/provision (#6276 /new create page) — same provisioning engine and auth boundary; the JSON sibling carries the contract coverage, and its own source-level guards live in apps/api/src/projects/provision-stream.test.ts",
@@ -16,6 +22,12 @@ export const uncoveredAllow: AllowEntry[] = [
     path: "/v1/platform/boot-timeline",
     reason:
       "sandbox-only telemetry sink called by the in-guest boot relay with a sandbox token; not an end-user API route",
+  },
+  {
+    method: "POST",
+    path: "/v1/projects/:*/monitors/ingest",
+    reason:
+      "monitor-box-only event intake: the runner posts with its own box's sandbox token, authenticated against project_monitor_boxes; not an end-user API route. Auth, dedup, truncation, and rate-limit behavior are covered source-level in apps/api/src/__tests__/unit-monitor-ingest-route.test.ts",
   },
   // The three worker-only voice callbacks that used to be allowlisted here
   // (/voice/prompt, /voice/run-command, /voice/turns) no longer exist: the

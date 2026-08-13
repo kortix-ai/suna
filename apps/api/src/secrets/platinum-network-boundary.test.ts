@@ -27,12 +27,27 @@ mock.module('../shared/platinum', () => ({
     const body = init.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ path, method, body });
 
-    if (method === 'GET' && path.startsWith('/v1/secrets/')) {
+    // The real API resolves this path by ID ONLY — a name 404s here and then
+    // POST answers 409 name_conflict. Verified against api.platinum.dev; the
+    // mock used to accept either, which hid the bug that broke every re-arm.
+    if (method === 'GET' && /^\/v1\/secrets\/[^?]+$/.test(path)) {
       const key = decodeURIComponent(path.slice('/v1/secrets/'.length));
-      const item = [...external.values()].find((secret) => secret.id === key || secret.name === key);
+      const item = [...external.values()].find((secret) => secret.id === key);
       if (!item) throw new Error(`platinum GET ${path} -> 404 {"code":"not_found"}`);
       const { value: _value, ...descriptor } = item;
       return descriptor;
+    }
+    // Cursor-paged list — the only way to resolve a replica by name.
+    if (method === 'GET' && path.startsWith('/v1/secrets?')) {
+      const params = new URLSearchParams(path.slice(path.indexOf('?') + 1));
+      const limit = Number(params.get('limit') ?? '100');
+      const cursor = params.get('cursor');
+      const ordered = [...external.values()].map(({ value: _value, ...rest }) => rest);
+      const start = cursor ? ordered.findIndex((item) => item.id === cursor) + 1 : 0;
+      const items = ordered.slice(start, start + limit);
+      const last = items.at(-1);
+      const more = last ? ordered.indexOf(ordered.find((i) => i.id === last.id)!) + 1 < ordered.length : false;
+      return { items, total: ordered.length, cursor: more && last ? last.id : null };
     }
     if (method === 'POST' && path === '/v1/secrets') {
       const id = `sec_${nextId++}`;
@@ -72,13 +87,15 @@ mock.module('../shared/platinum', () => ({
     const sandboxMatch = path.match(/^\/v1\/sandboxes\/([^/]+)\/secrets$/);
     if (sandboxMatch && method === 'GET') {
       const ids = attached.get(sandboxMatch[1]) ?? [];
+      // Reports the CURRENT attachment state, so a poll can observe an edge that
+      // is still arming instead of always answering 'armed' on the first read.
       return {
         sandbox_id: sandboxMatch[1],
         epoch: 1,
-        leased_epoch: 1,
-        state: 'armed',
+        leased_epoch: attachmentState === 'armed' ? 1 : 0,
+        state: attachmentState,
         implied_egress: { domains: [], rules: {}, proxy: true },
-        secrets: ids.map((id) => ({ secret_id: id, state: 'armed' })),
+        secrets: ids.map((id) => ({ secret_id: id, state: attachmentState })),
       };
     }
     if (sandboxMatch && method === 'PUT') {
@@ -183,6 +200,33 @@ describe('syncPlatinumNetworkBoundary', () => {
       calls.filter((call) => call.method === 'GET' && call.path.endsWith('/secrets')),
     ).toHaveLength(1);
     expect(attached.get('sandbox-1')).toEqual([]);
+  });
+
+  test('gives up on a stuck arm at the wall-clock budget, without hammering the edge', async () => {
+    // The old loop was 40 attempts x 250ms, so its real ceiling was 10s PLUS 40
+    // sequential round-trips. A deadline with backoff bounds the elapsed time
+    // and cuts the poll count.
+    attachmentState = 'arming';
+
+    const startedAt = Date.now();
+    await expect(
+      syncPlatinumNetworkBoundary('sandbox-1', [binding()], context, { armTimeoutMs: 400 }),
+    ).rejects.toThrow('did not arm for sandbox-1 within 400ms');
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(2_000);
+    expect(
+      calls.filter((call) => call.method === 'GET' && call.path.endsWith('/secrets')),
+    ).not.toHaveLength(0);
+    expect(
+      calls.filter((call) => call.method === 'GET' && call.path.endsWith('/secrets')).length,
+    ).toBeLessThanOrEqual(4);
+  });
+
+  test('returns as soon as the edge reports armed', async () => {
+    const startedAt = Date.now();
+    await syncPlatinumNetworkBoundary('sandbox-1', [binding()], context);
+    expect(Date.now() - startedAt).toBeLessThan(150);
   });
 
   test('fails closed when the provider reports an unavailable binding', async () => {

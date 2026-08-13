@@ -101,10 +101,17 @@ describe('account page rail groups the enterprise surfaces', () => {
     expect(pageSource).toContain('accountStateQuery.data?.enterprise_license_available');
   });
 
-  test('tokens section carries the PAT policy and service accounts cards', () => {
+  /**
+   * `PatPolicyCard` + `ServiceAccountsCard` until 2026-08-12, when both were
+   * replaced by the components the settings panel's API keys tab mounts. The
+   * order flipped with them: the keys come first now, the rules that govern
+   * them second — the same fix made in `tabs/api-keys-tab.tsx`, for the same
+   * reason (a policy form is not what someone opening "Tokens" came for).
+   */
+  test('tokens section carries the keys list and then the key rules', () => {
     expect(pageSource).toMatch(/activeSection === 'tokens' && canWriteAccount/);
     expect(pageSource).toMatch(
-      /activeSection === 'tokens'[\s\S]*?<PatPolicyCard[\s\S]*?<ServiceAccountsCard/,
+      /activeSection === 'tokens'[\s\S]*?<ApiKeysSection[\s\S]*?<KeyRulesCard/,
     );
   });
 

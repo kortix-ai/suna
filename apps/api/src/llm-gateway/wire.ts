@@ -1,5 +1,5 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { createGateway } from '@kortix/llm-gateway';
+import { DEFAULT_MAX_REQUEST_BYTES, createGateway } from '@kortix/llm-gateway';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { createInProcessGatewayHooks } from './hooks';
@@ -365,6 +365,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
+      maxRequestBytes: DEFAULT_MAX_REQUEST_BYTES,
     });
     // OpenAPIHono (not a plain Hono) so the inference surface below registers
     // in the shared OpenAPI registry — `.route()` merges a child OpenAPIHono's

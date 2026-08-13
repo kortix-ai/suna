@@ -45,6 +45,22 @@ describe('extractUpstreamErrorDetail', () => {
     ).toEqual({ message: 'nope', code: 400 });
   });
 
+  test('normalizes a numeric OpenRouter context overflow code from its message', () => {
+    expect(
+      extractUpstreamErrorDetail({
+        error: {
+          message:
+            "This endpoint's maximum context length is 1050000 tokens. However, you requested about 1550000 tokens.",
+          code: 400,
+        },
+      }),
+    ).toEqual({
+      message:
+        "This endpoint's maximum context length is 1050000 tokens. However, you requested about 1550000 tokens.",
+      code: 'context_length_exceeded',
+    });
+  });
+
   test('empty message inside error object → falls through', () => {
     expect(extractUpstreamErrorDetail({ error: { message: '' } })).toBeNull();
   });

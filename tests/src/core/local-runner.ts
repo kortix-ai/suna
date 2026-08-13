@@ -44,6 +44,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
   const targetFull = args.includes('--target-full');
+  const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const modes = [
     full,
     flowsOnly,
@@ -58,6 +59,21 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, or --target-full',
     );
   }
+  if (browserShardArgs.length > 1) {
+    throw new Error('choose only one --browser-shard value');
+  }
+  const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
+  if (browserShardArgs.length === 1) {
+    const match = browserShard.match(/^(\d+)\/(\d+)$/);
+    const current = Number(match?.[1]);
+    const total = Number(match?.[2]);
+    if (!match || current < 1 || total < 2 || current > total) {
+      throw new Error('--browser-shard must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL');
+    }
+    if (!browserOnly) {
+      throw new Error('--browser-shard requires --browser-only');
+    }
+  }
 
   const flowArgs = args.filter(
     (arg) =>
@@ -67,7 +83,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--browser-only' &&
       arg !== '--packages-only' &&
       arg !== '--target-smoke' &&
-      arg !== '--target-full',
+      arg !== '--target-full' &&
+      !arg.startsWith('--browser-shard='),
   );
   const flows: LocalTestLane = {
     name: 'api-cli-flows',
@@ -91,7 +108,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   };
   const browser: LocalTestLane = {
     name: 'browser',
-    command: ['bun', 'run', 'test:browser'],
+    command: [
+      'bun',
+      'run',
+      'test:browser',
+      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+    ],
     cwd: 'tests',
   };
   const packageQuality: LocalTestLane = {
@@ -111,6 +133,15 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
+    // Runs as its OWN stage (serialized before the browser lane — see below),
+    // so it has the staging Daytona provider to itself. 3 concurrent sandbox
+    // boots is proven to reach runtime-ready fine on its own; the API
+    // (non-sandbox) workers stay at 3 too since those flows are fast. Override
+    // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
+    env: {
+      KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
+      KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
+    },
   };
   const targetBrowserFull: LocalTestLane = {
     name: 'target-browser-full',
@@ -120,9 +151,12 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       E2E_BROWSER_WORKERS: '2',
       E2E_ENABLE_SDK_ONLY_SESSION: '1',
       E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-      E2E_OAUTH_PROVIDER_INITIATION: '1',
+      E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
+      ...(process.env.KE2E_TARGET === 'preview'
+        ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' }
+        : {}),
     },
   };
 
@@ -137,6 +171,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     return { mode: 'target', lanes, stages: [lanes] };
   }
   if (targetFull) {
+    // Lanes run CONCURRENTLY (one stage). A serialize experiment was tried to
+    // fix RUN-*/SESS-* "session runtime ready" timeouts, but that was a
+    // MISDIAGNOSIS: the flow lane ALONE (serialized, browser idle) still timed
+    // out, and a live probe showed staging session-provisioning was in a
+    // transient ~2h outage during that window (sessions stuck 'provisioning',
+    // never reaching a sandbox). When staging is healthy a fresh session reaches
+    // 'running' in ~21s, so both lanes provision fine concurrently (as they did
+    // before the outage). Concurrent keeps the run ~75m within the 90m cap and
+    // the 2h token lifetime. If staging provisioning is genuinely down, the gate
+    // SHOULD fail — that's a real staging outage, not a test defect.
     const lanes = [targetApiFull, targetBrowserFull];
     return { mode: 'target-full', lanes, stages: [lanes] };
   }
@@ -146,7 +190,21 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       command: [...flows.command, '--api-workers', '4'],
     };
     const fullBrowser: LocalTestLane = { ...browser };
-    const lanes = [fullFlows, runnerUnit, routeCoverage, worktreeUnit, fullBrowser, packageQuality];
+    const fullPackageQuality: LocalTestLane = {
+      ...packageQuality,
+      // Full mode runs the SDK as a named lane. Keep package-only mode complete,
+      // but do not execute the same SDK tests twice inside one full run.
+      env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+    };
+    const lanes = [
+      fullFlows,
+      sdk,
+      runnerUnit,
+      routeCoverage,
+      worktreeUnit,
+      fullBrowser,
+      fullPackageQuality,
+    ];
     return {
       mode: 'full',
       lanes,
@@ -154,9 +212,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
       stages: [
-        [fullFlows, runnerUnit, routeCoverage, worktreeUnit],
+        [fullFlows, sdk, runnerUnit, routeCoverage, worktreeUnit],
         [fullBrowser],
-        [packageQuality],
+        [fullPackageQuality],
       ],
     };
   }
@@ -241,9 +299,14 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         'KE2E_DATABASE_URL',
         'KE2E_STRIPE_SECRET_KEY',
         'KE2E_STRIPE_WEBHOOK_SECRET',
-        'E2E_AGENTMAIL_API_KEY',
       ] as const;
       const missing = required.filter((name) => !process.env[name]?.trim());
+      if (
+        !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
+        !process.env.E2E_MAILPIT_URL?.trim()
+      ) {
+        missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
+      }
       if (missing.length > 0) {
         throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
       }

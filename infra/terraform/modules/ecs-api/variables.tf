@@ -196,6 +196,12 @@ variable "ses_send_identity_names" {
   default     = []
 }
 
+variable "ses_send_configuration_set_names" {
+  description = "SES configuration sets the task may send through. SESv2 SendEmail authorizes against the configuration-set ARN in addition to the identity; the API's transport always sends with kortix-transactional."
+  type        = list(string)
+  default     = ["kortix-transactional"]
+}
+
 variable "ses_send_region" {
   description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
   type        = string

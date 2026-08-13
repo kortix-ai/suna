@@ -16,6 +16,10 @@ import { accountGithubInstallationStates, accountGithubInstallations, accountMem
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../../shared/impersonation';
 // Imported from the leaf modules, not the `../../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
@@ -54,6 +58,18 @@ const loadAccountMembership = ttlMemo({
 registerPrincipalScopedMemo(loadAccountMembership);
 
 export async function getAccountMembership(userId: string, accountId: string) {
+  // Act-as: a platform admin holding a live grant on this account resolves as
+  // its owner. Checked BEFORE the memo, never inside it — `loadAccountMembership`
+  // is keyed `${userId}|${accountId}` and shared across requests, so caching an
+  // impersonation-derived membership would hand the operator owner rights on
+  // their own later, non-impersonated requests for the whole TTL window.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { accountId, accountRole: 'owner' as const };
+  }
+  // …and CONFINES: while a grant is live, the operator's own memberships are
+  // out of reach. Otherwise "open the app" lands on their last project (a
+  // cookie), which is theirs, under a banner naming the customer.
+  if (isImpersonationBlockedAccount(userId, accountId)) return null;
   return loadAccountMembership(userId, accountId);
 }
 
@@ -747,6 +763,18 @@ export async function authorizeGitProxy(
         ))
         .limit(1);
       if (!sandbox) {
+        // Not a session box — a MONITOR box authenticates with the same token
+        // class but lives in `project_monitor_boxes` (it has no session row by
+        // design; docs/specs/2026-08-12-monitors.md §Security model). It clones
+        // the repo at default-branch HEAD through this proxy — the
+        // clone-credential route is session-shaped and cannot serve it.
+        const { loadMonitorBoxForToken } = await import('./monitor-ingest');
+        const monitorBox = await loadMonitorBoxForToken({
+          projectId,
+          accountId: result.accountId,
+          sandboxId: result.sandboxId,
+        });
+        if (monitorBox) return { ok: true, project };
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {

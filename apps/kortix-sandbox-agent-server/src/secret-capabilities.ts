@@ -8,12 +8,45 @@ const IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/
 const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/
 const SERVICE_CONSUMERS = new Set(['llm_gateway', 'connector', 'git_proxy'])
 const MAX_CATALOG_BYTES = 64 * 1024
+const HOST_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+const HEADER_RE = /^[a-z0-9!#$%&'*+.^_`|~-]{1,128}$/
+const MAX_NOTES_CHARS = 4_000
 
 type CatalogEntry = {
   identifier: string
-  delivery: 'sandbox' | 'https_broker' | 'kortix_service'
+  delivery: 'sandbox' | 'https_broker' | 'kortix_service' | 'network'
   environment_variable?: string
   consumer?: string
+  /** Network-boundary only: the exact hosts the provider edge injects on. */
+  hosts?: string[]
+  /** Network-boundary only: the header name the edge writes. Never the value. */
+  header?: string
+}
+
+/** The API authors the network rules once, as `notes.network`. Rendering them
+ *  here rather than restating them keeps the guest-facing wording in a single
+ *  place — the agent reads this file as OpenCode `instructions`. */
+function parseNetworkNotes(raw: string | undefined): string[] {
+  if (!raw || Buffer.byteLength(raw, 'utf8') > MAX_CATALOG_BYTES) return []
+  try {
+    const value = JSON.parse(raw) as { notes?: unknown }
+    const notes = value.notes as Record<string, unknown> | undefined
+    const network = notes && typeof notes === 'object' ? notes.network : undefined
+    // The API emits an array of rules; a plain string is accepted so a future
+    // shape change degrades to "render it" instead of "drop it silently".
+    const list = Array.isArray(network) ? network : typeof network === 'string' ? [network] : []
+    let budget = MAX_NOTES_CHARS
+    const out: string[] = []
+    for (const line of list) {
+      if (typeof line !== 'string' || line.length === 0) continue
+      if (line.length > budget) break
+      budget -= line.length
+      out.push(line)
+    }
+    return out
+  } catch {
+    return []
+  }
 }
 
 function parseCatalog(raw: string | undefined): CatalogEntry[] {
@@ -28,7 +61,9 @@ function parseCatalog(raw: string | undefined): CatalogEntry[] {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
       const item = entry as Record<string, unknown>
       if (typeof item.identifier !== 'string' || !IDENTIFIER_RE.test(item.identifier)) return []
-      if (!['sandbox', 'https_broker', 'kortix_service'].includes(String(item.delivery))) return []
+      if (!['sandbox', 'https_broker', 'kortix_service', 'network'].includes(String(item.delivery))) {
+        return []
+      }
       return [
         {
           identifier: item.identifier,
@@ -38,6 +73,16 @@ function parseCatalog(raw: string | undefined): CatalogEntry[] {
             : {}),
           ...(typeof item.consumer === 'string' && SERVICE_CONSUMERS.has(item.consumer)
             ? { consumer: item.consumer }
+            : {}),
+          ...(Array.isArray(item.hosts)
+            ? {
+                hosts: item.hosts.filter(
+                  (host): host is string => typeof host === 'string' && HOST_RE.test(host),
+                ),
+              }
+            : {}),
+          ...(typeof item.header === 'string' && HEADER_RE.test(item.header)
+            ? { header: item.header }
             : {}),
         },
       ]
@@ -49,6 +94,7 @@ function parseCatalog(raw: string | undefined): CatalogEntry[] {
 
 export function renderSecretCapabilitiesInstruction(raw: string | undefined): string {
   const entries = parseCatalog(raw)
+  const hasNetwork = entries.some((entry) => entry.delivery === 'network')
   const lines = [
     '# Session secret capabilities',
     '',
@@ -72,12 +118,24 @@ export function renderSecretCapabilitiesInstruction(raw: string | undefined): st
         lines.push(
           `- \`${entry.identifier}\`: HTTPS broker. Use \`kortix secrets call ${entry.identifier} <https-url> [options]\`.`,
         )
+      } else if (entry.delivery === 'network') {
+        const hosts = (entry.hosts ?? []).join(', ')
+        lines.push(
+          `- \`${entry.identifier}\`: network boundary. Kortix adds the \`${entry.header ?? 'authorization'}\`` +
+            ` header to your HTTPS requests to ${hosts || 'its allow-listed hosts'} — outside this sandbox.` +
+            ' Send the request normally and add no credential of your own.',
+        )
       } else {
         lines.push(
           `- \`${entry.identifier}\`: Kortix service \`${entry.consumer ?? 'managed'}\`; no sandbox plaintext.`,
         )
       }
     }
+  }
+  const networkNotes = hasNetwork ? parseNetworkNotes(raw) : []
+  if (networkNotes.length > 0) {
+    lines.push('', '## Network boundary', '')
+    for (const note of networkNotes) lines.push(`- ${note}`)
   }
   return `${lines.join('\n')}\n`
 }

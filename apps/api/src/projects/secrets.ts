@@ -593,6 +593,23 @@ export async function materializeSecretDelivery(
       env[row.key] = await input.mintHandleFor(row);
       continue;
     }
+    // Network boundary: mint the handle ROW, put NOTHING in the guest env.
+    //
+    // The broker route requires an active handle row for the secret — it looks
+    // it up by secretId and reads its policy snapshot; it never validates a
+    // token the caller presents. Boundary secrets never got one (the branch
+    // above is broker-only), so a boundary relay died on
+    // `session_secret_handle_required` even after the strategy gate was
+    // relaxed. That was the second gate behind the first.
+    //
+    // The row is minted, the value is not exported. Assigning the handle to
+    // `env[row.key]` the way the broker branch does would put a credential
+    // reference in the sandbox, and "the guest receives nothing — no value, no
+    // alias, no placeholder" is the entire property that distinguishes a
+    // boundary secret. A test pins the env staying empty.
+    if (delivery.emit === 'handle' && delivery.strategy === 'egress' && consumer === 'network') {
+      await input.mintHandleFor(row);
+    }
     delete env[row.key];
   }
 }

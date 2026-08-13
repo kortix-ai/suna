@@ -114,7 +114,10 @@ test.describe
       });
 
       await test.step('The owner starts a one-time credit purchase', async () => {
-        await page.getByRole('button', { name: '$10', exact: true }).click();
+        // The topup button's accessible name is "$10 1,000 credits" (two spans:
+        // amount + credits), so an exact "$10" never matches. Anchor on the
+        // leading amount instead of pinning the whole composite label.
+        await page.getByRole('button', { name: /^\$10\b/ }).click();
         const purchaseResponsePromise = page.waitForResponse(
           (response) =>
             response.request().method() === 'POST' &&

@@ -34,9 +34,15 @@
 
 import {
   MANIFEST_FILENAME_YAML,
+  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  MONITOR_MIN_INTERVAL_SECONDS,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   type ManifestFormat,
+  formatDurationSeconds,
   manifestCandidatePaths,
   manifestFormatForPath,
+  parseDurationSeconds,
   parseManifestText,
   serializeManifestObject,
 } from '@kortix/manifest-schema';
@@ -85,7 +91,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export type GitTriggerType = 'cron' | 'webhook';
+export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
+
+/** For type=monitor only — how the platform runs `run`. */
+export type GitMonitorMode = 'poll' | 'stream';
 
 export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
@@ -128,6 +137,26 @@ export interface GitTriggerSpec {
    * signing secret. The actual secret value is never inline.
    */
   secretEnv: string | null;
+  /**
+   * For type=monitor only — the repo-relative command the platform supervises
+   * 24/7 in the project's monitor box. Its stdout lines are the events;
+   * nothing else is. See docs/specs/2026-08-12-monitors.md.
+   */
+  run: string | null;
+  /**
+   * For type=monitor only. `'poll'` runs `run` every `intervalSeconds` and
+   * exits; `'stream'` runs it once and keeps it alive. Downstream (filter →
+   * prompt → session_mode) cannot tell the two apart.
+   */
+  monitorMode: GitMonitorMode | null;
+  /** For `monitorMode === 'poll'` only — the poll period, in whole seconds. */
+  intervalSeconds: number | null;
+  /**
+   * For type=monitor only — the silence watchdog. No event within this window
+   * synthesizes a `silent` lifecycle event, so a wedged monitor can never fail
+   * silently. Null when the monitor declares no expectation.
+   */
+  expectEventWithinSeconds: number | null;
   /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
@@ -182,6 +211,101 @@ export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
   'pinned',
   'keyed',
 ];
+
+/**
+ * The `session_mode` a trigger gets when it declares none.
+ *
+ * `'reuse'` for a monitor, `'fresh'` for cron/webhook. A monitor fires
+ * repeatedly by design — a live log emits all day — so defaulting it to fresh
+ * would mint one session per event. Spec: docs/specs/2026-08-12-monitors.md
+ * §"Manifest surface".
+ */
+export function defaultTriggerSessionMode(type: GitTriggerType): GitTriggerSessionMode {
+  return type === 'monitor' ? 'reuse' : 'fresh';
+}
+
+export interface GitMonitorFields {
+  run: string;
+  monitorMode: GitMonitorMode;
+  intervalSeconds: number | null;
+  expectEventWithinSeconds: number | null;
+}
+
+/**
+ * Parse + validate the `type: monitor` fields off a manifest entry or a CRUD
+ * body. ONE implementation for both paths, mirroring
+ * `@kortix/manifest-schema`'s `validateMonitorTrigger` rule for rule — the
+ * write gate and the runtime reader must never disagree on what a monitor is.
+ * Returns a plain error string so each caller can wrap it in its own shape.
+ */
+export function parseMonitorFields(
+  row: Record<string, unknown>,
+): GitMonitorFields | { error: string } {
+  const run = typeof row.run === 'string' ? row.run.trim() : '';
+  if (!run) return { error: 'monitor triggers must declare a `run` command (repo-relative)' };
+  if (run.length > MONITOR_RUN_MAX_LENGTH) {
+    return { error: `run must be at most ${MONITOR_RUN_MAX_LENGTH} characters` };
+  }
+  if (/[\r\n]/.test(run)) return { error: 'run must be a single command line — no newlines' };
+
+  const modeRaw = typeof row.mode === 'string' ? row.mode.trim().toLowerCase() : '';
+  if (!(MONITOR_MODES as readonly string[]).includes(modeRaw)) {
+    return { error: `mode must be "poll" or "stream" (got "${modeRaw || 'unset'}")` };
+  }
+  const monitorMode = modeRaw as GitMonitorMode;
+
+  let intervalSeconds: number | null = null;
+  if (monitorMode === 'poll') {
+    const parsed = parseMonitorDuration(row.interval, 'interval', MONITOR_MIN_INTERVAL_SECONDS);
+    if ('error' in parsed) return parsed;
+    intervalSeconds = parsed.seconds;
+  } else if (row.interval !== undefined && row.interval !== null) {
+    return { error: 'interval is only valid on a `mode: poll` monitor — a stream runs continuously' };
+  }
+
+  let expectEventWithinSeconds: number | null = null;
+  const expectRaw = row.expect_event_within ?? row.expectEventWithin;
+  if (expectRaw !== undefined && expectRaw !== null) {
+    const parsed = parseMonitorDuration(
+      expectRaw,
+      'expect_event_within',
+      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+    );
+    if ('error' in parsed) return parsed;
+    expectEventWithinSeconds = parsed.seconds;
+  }
+
+  // cron/webhook wiring on a monitor is a hard error, not a silent drop: a
+  // manifest that claims a schedule the monitor runner never reads is a lie.
+  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return {
+        error: `${key} is not valid on a monitor trigger — monitors are driven by their \`run\` process`,
+      };
+    }
+  }
+  return { run, monitorMode, intervalSeconds, expectEventWithinSeconds };
+}
+
+function parseMonitorDuration(
+  value: unknown,
+  field: string,
+  floorSeconds: number,
+): { seconds: number } | { error: string } {
+  if (typeof value !== 'string' || !value.trim()) {
+    return { error: `${field} must be a duration string like "30s", "5m", "24h", or "7d"` };
+  }
+  const seconds = parseDurationSeconds(value);
+  if (seconds === null) {
+    return {
+      error: `${field} must be a positive integer plus s/m/h/d (got "${value}")`,
+    };
+  }
+  if (seconds < floorSeconds) {
+    return { error: `${field} must be at least ${floorSeconds}s (got "${value}")` };
+  }
+  return { seconds };
+}
 
 export interface GitTriggerParseError {
   slug: string;
@@ -491,9 +615,10 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   // `session_mode` enum in @kortix/manifest-schema, which the `kortix validate`
   // / CR-merge gate gets to before it learns about new modes.
   const keyedByKey = spec.sessionMode === 'keyed' && !!spec.sessionKey;
-  // Only emit session_mode when it deviates from the default ('fresh') so
-  // existing manifests stay byte-stable on round-trip.
-  if (spec.sessionMode !== 'fresh' && !keyedByKey) {
+  // Only emit session_mode when it deviates from this type's default ('fresh'
+  // for cron/webhook, 'reuse' for a monitor) so existing manifests stay
+  // byte-stable on round-trip.
+  if (spec.sessionMode !== defaultTriggerSessionMode(spec.type) && !keyedByKey) {
     entry.session_mode = spec.sessionMode;
   }
   // `pinned` carries the exact session id to loop.
@@ -514,6 +639,16 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
       entry.cron = spec.cron ?? '';
     }
     entry.timezone = spec.timezone;
+  } else if (spec.type === 'monitor') {
+    entry.run = spec.run ?? '';
+    entry.mode = spec.monitorMode ?? '';
+    // Durations re-emit in canonical form (largest whole unit) — the same
+    // normalization `run_at` gets. `interval` is poll-only; a stream monitor
+    // has none to write.
+    if (spec.intervalSeconds !== null) entry.interval = formatDurationSeconds(spec.intervalSeconds);
+    if (spec.expectEventWithinSeconds !== null) {
+      entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
+    }
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
@@ -553,8 +688,8 @@ function parseTriggerEntry(
   }
 
   const typeRaw = typeof row.type === 'string' ? row.type.trim() : '';
-  if (typeRaw !== 'cron' && typeRaw !== 'webhook') {
-    return err(slug, `type must be "cron" or "webhook" (got "${typeRaw || 'unset'}")`);
+  if (typeRaw !== 'cron' && typeRaw !== 'webhook' && typeRaw !== 'monitor') {
+    return err(slug, `type must be "cron", "webhook", or "monitor" (got "${typeRaw || 'unset'}")`);
   }
   const type = typeRaw as GitTriggerType;
 
@@ -609,7 +744,7 @@ function parseTriggerEntry(
     ? (sessionModeRaw as GitTriggerSessionMode)
     : sessionKeyRaw
       ? 'keyed'
-      : 'fresh';
+      : defaultTriggerSessionMode(type);
 
   // `pinned` carries the exact session id to loop (manifest key `session_id`).
   const pinnedSessionIdRaw =
@@ -655,6 +790,36 @@ function parseTriggerEntry(
 
   const path = `${filename}#triggers.${slug}`;
 
+  if (type === 'monitor') {
+    const monitor = parseMonitorFields(row);
+    if ('error' in monitor) return err(slug, monitor.error);
+    return {
+      ok: true,
+      spec: {
+        slug,
+        path,
+        name,
+        type: 'monitor',
+        agent,
+        model,
+        enabled,
+        promptTemplate: prompt,
+        cron: null,
+        runAt: null,
+        timezone: 'UTC',
+        secretEnv: null,
+        run: monitor.run,
+        monitorMode: monitor.monitorMode,
+        intervalSeconds: monitor.intervalSeconds,
+        expectEventWithinSeconds: monitor.expectEventWithinSeconds,
+        sessionMode,
+        pinnedSessionId,
+        sessionKey,
+        filter,
+      },
+    };
+  }
+
   if (type === 'cron') {
     const cron =
       typeof row.cron === 'string'
@@ -694,6 +859,10 @@ function parseTriggerEntry(
           runAt: new Date(parsed).toISOString(),
           timezone,
           secretEnv: null,
+          run: null,
+          monitorMode: null,
+          intervalSeconds: null,
+          expectEventWithinSeconds: null,
           sessionMode,
           pinnedSessionId,
           sessionKey,
@@ -721,6 +890,10 @@ function parseTriggerEntry(
         runAt: null,
         timezone,
         secretEnv: null,
+        run: null,
+        monitorMode: null,
+        intervalSeconds: null,
+        expectEventWithinSeconds: null,
         sessionMode,
         pinnedSessionId,
           sessionKey,
@@ -760,6 +933,10 @@ function parseTriggerEntry(
       runAt: null,
       timezone: 'UTC',
       secretEnv,
+      run: null,
+      monitorMode: null,
+      intervalSeconds: null,
+      expectEventWithinSeconds: null,
       sessionMode,
       pinnedSessionId,
           sessionKey,

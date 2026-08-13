@@ -10,7 +10,6 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import { useSessionStateStore } from '@kortix/sdk/react';
 import {
   getChildSessionError,
   getRetryInfo,
@@ -18,6 +17,7 @@ import {
   type MessageWithParts,
   type ToolPart,
 } from '@/ui';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -129,6 +129,7 @@ function SubAgentStatusBanner({
         message={retryMessage}
         attempt={retryInfo.attempt}
         secondsLeft={secondsLeft}
+        details={retryInfo.details}
         className="mt-2"
       />
     );

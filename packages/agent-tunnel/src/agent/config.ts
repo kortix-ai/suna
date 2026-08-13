@@ -194,6 +194,25 @@ export function absoluteWsPath(value: string): string {
   return value;
 }
 
+/**
+ * Builds the relay WebSocket URL. The token is never placed in the URL — the
+ * agent sends it in the first `auth` message instead.
+ */
+export function buildTunnelWsUrl(
+  config: Pick<TunnelConfig, 'apiUrl' | 'tunnelId'> & { wsPath?: string },
+): string {
+  const base = trustedHttpUrl(config.apiUrl)
+    .replace(/^http:/, 'ws:')
+    .replace(/^https:/, 'wss:');
+
+  const wsPath = absoluteWsPath(config.wsPath || '/ws');
+  const params = new URLSearchParams({
+    tunnelId: trustedCredential(config.tunnelId, 'tunnelId'),
+  });
+
+  return `${base}${wsPath}?${params.toString()}`;
+}
+
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
   let fileConfig: Partial<TunnelConfig> = {};
   if (existsSync(CONFIG_FILE)) {

@@ -1,0 +1,298 @@
+name: Terraform Apply
+
+# Reusable, guarded `terraform apply` for exactly ONE Terraform root.
+#
+# WHY THIS EXISTS: until now the only workflow that ran `terraform apply` was
+# deploy-prod-us-east-2-shadow.yml. Every other root — dev, staging, prod, the
+# three *-web roots, compliance-monitoring, security-baseline — was applied by
+# hand from an operator laptop. On 2026-08-10 two merged compliance PRs (#6295,
+# #6344) sat unapplied for hours because nobody ran the apply. Merged Terraform
+# that never reaches AWS is not a change, it is a lie in the repository.
+#
+# CONTRACT
+#   - The caller pins the root, the region, the OIDC role, and the GitHub
+#     environment. The environment is part of the OIDC subject
+#     (repo:kortix-ai/suna:environment:<name>), so it must match the trust
+#     policy of `role_arn` — see security-baseline/iam-gha-tf-apply.tf.
+#   - Plan first, guard the plan, then apply THE SAME plan file. Never
+#     `apply -auto-approve` without a plan: that would re-resolve the diff after
+#     the guard ran.
+#   - The guard blocks every destroy. The single exception is an immutable
+#     `aws_ecs_task_definition` replacement, which Terraform always renders as
+#     a delete+create pair and which destroys nothing that serves traffic.
+#     Logic copied from deploy-prod-us-east-2-shadow.yml, generalized from two
+#     hardcoded module addresses to the resource type.
+#   - Terraform is pinned to the same TF_VERSION as terraform-ci.yml. State is
+#     forward-incompatible: applying with a newer Terraform than the drift job
+#     runs would break drift detection with "state snapshot was created by a
+#     newer Terraform". Bump both files together or neither.
+#
+# EVERY root under infra/terraform is now driven from here. environments/dev and
+# environments/prod were the last two manual ones: they read an operator-local,
+# gitignored terraform.tfvars, so CI planned inputs no operator ever used. Every
+# value from those files now lives in committed variable defaults, except
+# `api_image` — that one changes per deploy, so the caller passes it (see the
+# input below) and CI plans the exact image the same run ships.
+# infra/terraform/README.md carries the full root-by-root table.
+
+on:
+  workflow_call:
+    inputs:
+      tf_root:
+        description: Terraform root directory, relative to the repository root.
+        required: true
+        type: string
+      allow_deletes:
+        description: >-
+          Permit planned deletes (reviewed cleanups only — e.g. retiring an IAM
+          group after its user was removed). The guard still prints every
+          delete; it just does not block. Never set on automatic triggers.
+        required: false
+        type: boolean
+        default: false
+      aws_region:
+        description: Region for the OIDC session and the state backend.
+        required: false
+        default: us-west-2
+        type: string
+      role_arn:
+        description: OIDC role to assume. Must trust the github_environment subject.
+        required: true
+        type: string
+      github_environment:
+        description: GitHub environment. Part of the OIDC subject, so it is required.
+        required: true
+        type: string
+      trusted_branch:
+        description: >-
+          Branch the applied commit must be reachable from (main, staging, prod).
+          Enforced in-workflow before any credential is minted.
+        required: true
+        type: string
+      api_image:
+        description: >-
+          API container image for roots that declare `api_image`
+          (environments/dev, environments/prod). Exported as TF_VAR_api_image,
+          which outranks the root's committed default. Leave empty for every
+          other root — the value is per-deploy, so it is the one input that
+          cannot be committed.
+        required: false
+        default: ""
+        type: string
+      cloudflare:
+        description: Pass CLOUDFLARE_API_TOKEN as TF_VAR_cloudflare_api_token.
+        required: false
+        default: false
+        type: boolean
+      ref:
+        description: Ref or SHA to check out. Defaults to the caller's ref.
+        required: false
+        default: ""
+        type: string
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        description: Cloudflare token for roots that manage DNS or ACM validation.
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: 1.15.8
+  ALLOW_DELETES: ${{ inputs.allow_deletes && 'true' || 'false' }}
+
+jobs:
+  apply:
+    name: apply ${{ inputs.tf_root }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.github_environment }}
+    env:
+      TF_ROOT: ${{ inputs.tf_root }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          # Full history: the trusted-branch guard below needs a merge base.
+          fetch-depth: 0
+
+      # Runs BEFORE configure-aws-credentials, so untrusted code never reaches a
+      # credential. The GitHub environment alone is not a sufficient gate: it is
+      # part of the OIDC subject, but the deployment-branch restriction that
+      # backs it is out-of-band repository configuration, and three of the four
+      # callers are workflow_dispatch-able from an arbitrary branch. Without
+      # this step, anyone who can dispatch deploy-prod.yml from a branch could
+      # apply arbitrary Terraform with the production role.
+      #
+      # Reachability, not `github.ref`: it is correct for push, dispatch, and
+      # workflow_run alike, and it proves the applied commit is merged rather
+      # than merely running under a trusted-looking ref.
+      - name: Enforce a trusted branch
+        env:
+          TRUSTED_BRANCH: ${{ inputs.trusted_branch }}
+        run: |
+          set -euo pipefail
+          # Explicit refspec: this must update refs/remotes/origin/<branch> to the
+          # live tip, not just FETCH_HEAD, and it must fail if the branch is gone.
+          git fetch --no-tags --quiet origin \
+            "+refs/heads/${TRUSTED_BRANCH}:refs/remotes/origin/${TRUSTED_BRANCH}"
+          head="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$head" "origin/${TRUSTED_BRANCH}"; then
+            echo "::error::${head} is not reachable from origin/${TRUSTED_BRANCH}. Refusing to apply ${TF_ROOT}."
+            exit 1
+          fi
+          echo "${head} is reachable from origin/${TRUSTED_BRANCH}."
+
+      - name: Require the root to exist
+        run: |
+          set -euo pipefail
+          if [ ! -f "$TF_ROOT/backend.tf" ]; then
+            echo "::error::$TF_ROOT is not a Terraform root (no backend.tf)."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ inputs.role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Export Cloudflare credentials
+        if: inputs.cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::$TF_ROOT manages Cloudflare, but CLOUDFLARE_API_TOKEN is unset."
+            exit 1
+          fi
+          printf 'TF_VAR_cloudflare_api_token=%s\n' "$CLOUDFLARE_API_TOKEN" >> "$GITHUB_ENV"
+
+      # The image tag is the one input a root cannot commit: it changes on every
+      # deploy, and a stale pin would seed a task-definition pointing at an image
+      # nobody ships. TF_VAR_ outranks the variable default and is the same
+      # mechanism the Cloudflare token above uses. Validate the reference first —
+      # an empty or malformed caller expression must fail here, not silently
+      # register a broken task-def the next time one is created.
+      - name: Pin the API image
+        if: inputs.api_image != ''
+        env:
+          API_IMAGE: ${{ inputs.api_image }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$API_IMAGE" | grep -Eq '^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$'; then
+            echo "::error::api_image is not a valid <repository>:<tag> reference: '${API_IMAGE}'."
+            exit 1
+          fi
+          printf 'TF_VAR_api_image=%s\n' "$API_IMAGE" >> "$GITHUB_ENV"
+          echo "$TF_ROOT plans api_image=${API_IMAGE}."
+
+      - name: terraform init
+        run: terraform -chdir="$TF_ROOT" init -input=false -no-color
+
+      - name: terraform plan
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_ROOT" plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            -out=tf.plan
+
+      # Copied from deploy-prod-us-east-2-shadow.yml and generalized: block every
+      # planned delete except an immutable ECS task-definition replacement, which
+      # Terraform always renders as a delete+create pair.
+      - name: Guard against destructive changes
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_ROOT" show -json tf.plan > "$RUNNER_TEMP/plan.json"
+
+          blocked_destructive_changes="$(
+            jq '[
+              .resource_changes[]?
+              | select(.change.actions | index("delete"))
+              | select(
+                  (.type != "aws_ecs_task_definition")
+                  or (
+                    .change.actions != ["delete", "create"]
+                    and .change.actions != ["create", "delete"]
+                  )
+                )
+            ] | length' "$RUNNER_TEMP/plan.json"
+          )"
+          task_definition_replacements="$(
+            jq '[
+              .resource_changes[]?
+              | select(.type == "aws_ecs_task_definition")
+              | select(
+                  .change.actions == ["delete", "create"]
+                  or .change.actions == ["create", "delete"]
+                )
+            ] | length' "$RUNNER_TEMP/plan.json"
+          )"
+
+          echo "Planned actions:"
+          jq -r '
+            [.resource_changes[]?.change.actions | join(",")]
+            | group_by(.)
+            | map({action: .[0], count: length})
+          ' "$RUNNER_TEMP/plan.json"
+
+          if [ "$blocked_destructive_changes" != "0" ] && [ "${ALLOW_DELETES}" = "true" ]; then
+            echo "::warning::$TF_ROOT plans $blocked_destructive_changes destructive change(s) — permitted by allow_deletes (reviewed cleanup):"
+            jq -r '
+              .resource_changes[]?
+              | select(.change.actions | index("delete"))
+              | "  \(.address): \(.change.actions | join(","))"
+            ' "$RUNNER_TEMP/plan.json"
+            blocked_destructive_changes=0
+          fi
+          if [ "$blocked_destructive_changes" != "0" ]; then
+            echo "::error::$TF_ROOT plans $blocked_destructive_changes blocked destructive change(s). Apply it by hand after review."
+            jq -r '
+              .resource_changes[]?
+              | select(.change.actions | index("delete"))
+              | select(
+                  (.type != "aws_ecs_task_definition")
+                  or (
+                    .change.actions != ["delete", "create"]
+                    and .change.actions != ["create", "delete"]
+                  )
+                )
+              | "  \(.address): \(.change.actions | join(","))"
+            ' "$RUNNER_TEMP/plan.json"
+            exit 1
+          fi
+          echo "Allowed immutable ECS task-definition replacements: $task_definition_replacements."
+
+      - name: terraform apply
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_ROOT" apply \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            -auto-approve \
+            tf.plan
+
+      - name: Summary
+        if: always()
+        env:
+          API_IMAGE: ${{ inputs.api_image }}
+        run: |
+          {
+            echo "### Terraform apply — \`${TF_ROOT}\`"
+            echo "- Region: \`${{ inputs.aws_region }}\`"
+            echo "- Environment: \`${{ inputs.github_environment }}\`"
+            echo "- Terraform: \`${TF_VERSION}\`"
+            echo "- API image: \`${API_IMAGE:-committed default}\`"
+            echo "- Result: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
