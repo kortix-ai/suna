@@ -30,11 +30,24 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 /**
- * `notes` is the spoken script for the slide — what the presenter says while it
- * is on screen. It is never rendered on the stage itself, only in the presenter
- * drawer (`N`), so a screen recording of the deck stays clean.
+ * A slide can be a single picture or a **build**: `steps: 3` means → is pressed
+ * four times on that slide, and `node` is called with the current step so the
+ * diagram can add a stage each time. Advancing past the last step moves to the
+ * next slide; reversing off step 0 lands on the previous slide at *its* last
+ * step, so ← always undoes exactly what → just did.
+ *
+ * `notes` is the spoken script — what the presenter says. It never renders on
+ * the stage, only in the presenter drawer (`N`), so a screen recording of the
+ * deck stays clean. Pass an array to give each build step its own line.
  */
-export type SlideDef = { id: string; label: string; node: ReactNode; notes?: string };
+export type SlideDef = {
+  id: string;
+  label: string;
+  node: ReactNode | ((step: number) => ReactNode);
+  /** Extra build steps beyond the base picture. Total presses = steps + 1. */
+  steps?: number;
+  notes?: string | readonly string[];
+};
 
 export function Deck({
   slides,
@@ -46,6 +59,8 @@ export function Deck({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [index, setIndex] = useState(0);
+  /** Which build stage of the current slide is showing. */
+  const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
   const [overview, setOverview] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -57,16 +72,40 @@ export function Deck({
   const hasNotes = slides.some((s) => s.notes);
 
   const total = slides.length;
+  const stepsOf = useCallback((i: number) => slides[i]?.steps ?? 0, [slides]);
 
+  /** Jumping to a slide always lands on its first stage. */
   const go = useCallback(
     (n: number, direction?: number) => {
       setDir(direction ?? (n > index ? 1 : -1));
       setIndex(Math.max(0, Math.min(total - 1, n)));
+      setStep(0);
     },
     [index, total],
   );
-  const next = useCallback(() => go(index + 1, 1), [go, index]);
-  const prev = useCallback(() => go(index - 1, -1), [go, index]);
+
+  const next = useCallback(() => {
+    if (step < stepsOf(index)) {
+      setStep((s) => s + 1);
+      return;
+    }
+    if (index >= total - 1) return;
+    setDir(1);
+    setIndex(index + 1);
+    setStep(0);
+  }, [index, step, stepsOf, total]);
+
+  /** Reversing off the first stage re-enters the previous slide fully built. */
+  const prev = useCallback(() => {
+    if (step > 0) {
+      setStep((s) => s - 1);
+      return;
+    }
+    if (index === 0) return;
+    setDir(-1);
+    setIndex(index - 1);
+    setStep(stepsOf(index - 1));
+  }, [index, step, stepsOf]);
 
   useEffect(() => setMounted(true), []);
 
@@ -145,9 +184,21 @@ export function Deck({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [next, prev, go, total, overview, notesOpen]);
+  }, [next, prev, go, total, overview, notesOpen, step]);
 
   const slide = slides[index];
+  const slideSteps = stepsOf(index);
+  /** The stage cross-fades between slides only — a build step must not remount
+      the tree, or the diagrams would restart instead of adding a stage. */
+  const stageNode = typeof slide.node === 'function' ? slide.node(step) : slide.node;
+
+  const noteFor = (s: SlideDef, at: number) =>
+    Array.isArray(s.notes) ? (s.notes[Math.min(at, s.notes.length - 1)] ?? '') : (s.notes as string);
+
+  /** Progress counts build steps, not slides, so the bar tracks the talk. */
+  const buildsBefore = slides.slice(0, index).reduce((n, s) => n + (s.steps ?? 0) + 1, 0);
+  const buildsTotal = slides.reduce((n, s) => n + (s.steps ?? 0) + 1, 0);
+  const progress = ((buildsBefore + step + 1) / buildsTotal) * 100;
 
   const toggleFs = () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
@@ -177,7 +228,7 @@ export function Deck({
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="absolute inset-0"
           >
-            {slide.node}
+            {stageNode}
           </m.div>
         </AnimatePresence>
 
@@ -185,14 +236,12 @@ export function Deck({
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-6 py-5 sm:px-8">
           <KortixLogo variant="logomark" size={22} className="text-foreground" />
           <div className="pointer-events-auto flex items-center gap-3">
-            {altDeck ? (
-              <Link
-                href={altDeck.href}
-                className="text-muted-foreground hover:text-foreground hidden font-mono text-xs tracking-wider transition-colors sm:inline"
-              >
-                {altDeck.label} ↗
-              </Link>
-            ) : null}
+            <Link
+              href={altDeck?.href ?? '/presentations'}
+              className="text-muted-foreground hover:text-foreground hidden font-mono text-xs tracking-wider transition-colors sm:inline"
+            >
+              {altDeck?.label ?? 'All decks'} ↗
+            </Link>
             <span className="text-muted-foreground hidden font-mono text-xs tracking-wider tabular-nums sm:inline">
               {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
             </span>
@@ -210,20 +259,34 @@ export function Deck({
       <div className="bg-border/40 absolute inset-x-0 top-0 h-0.5">
         <div
           className="bg-foreground h-full transition-[width] duration-300 ease-out"
-          style={{ width: `${((index + 1) / total) * 100}%` }}
+          style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* ── Floating controls ──────────────────────────────────────────── */}
       <div className="border-border bg-card/90 absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-sm border p-1.5 shadow-sm backdrop-blur-md">
-        <Ctrl onClick={prev} disabled={index === 0} label="Previous">
+        <Ctrl onClick={prev} disabled={index === 0 && step === 0} label="Previous">
           <ChevronLeft className="size-4" />
         </Ctrl>
         <span className="text-muted-foreground px-2 font-mono text-xs tabular-nums">
           {String(index + 1).padStart(2, '0')}
           <span className="text-muted-foreground/40"> / {String(total).padStart(2, '0')}</span>
         </span>
-        <Ctrl onClick={next} disabled={index === total - 1} label="Next">
+        {/* Build pips — how many presses are left on this slide. */}
+        {slideSteps > 0 ? (
+          <span className="flex items-center gap-1 pr-1">
+            {Array.from({ length: slideSteps + 1 }, (_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  'size-1.5 rounded-full transition-colors',
+                  i <= step ? 'bg-foreground' : 'bg-muted-foreground/25',
+                )}
+              />
+            ))}
+          </span>
+        ) : null}
+        <Ctrl onClick={next} disabled={index === total - 1 && step === slideSteps} label="Next">
           <ChevronRight className="size-4" />
         </Ctrl>
         <span className="bg-border mx-0.5 h-4 w-px" />
@@ -261,7 +324,9 @@ export function Deck({
             <div className="mx-auto w-full max-w-4xl px-6 py-6 sm:px-8">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-                  {notesAll ? 'Full script' : `Script · ${slide.label}`}
+                  {notesAll
+                    ? 'Full script'
+                    : `Script · ${slide.label}${slideSteps > 0 ? ` · ${step + 1}/${slideSteps + 1}` : ''}`}
                 </span>
                 <div className="flex items-center gap-1">
                   <button
@@ -282,25 +347,40 @@ export function Deck({
 
               {notesAll ? (
                 <ol className="space-y-6">
-                  {slides.map((s, i) => (
-                    <li key={s.id} className="flex gap-4">
-                      <span className="text-muted-foreground/50 w-6 shrink-0 pt-0.5 font-mono text-xs tabular-nums">
-                        {String(i + 1).padStart(2, '0')}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-muted-foreground/70 font-mono text-[10px] tracking-widest uppercase">
-                          {s.label}
-                        </p>
-                        <p className="text-foreground mt-1.5 text-[15px] leading-relaxed whitespace-pre-line">
-                          {s.notes ?? '—'}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
+                  {slides.map((s, i) => {
+                    const lines = Array.isArray(s.notes)
+                      ? s.notes
+                      : [(s.notes as string | undefined) ?? '—'];
+                    return (
+                      <li key={s.id} className="flex gap-4">
+                        <span className="text-muted-foreground/50 w-6 shrink-0 pt-0.5 font-mono text-xs tabular-nums">
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-muted-foreground/70 font-mono text-[10px] tracking-widest uppercase">
+                            {s.label}
+                          </p>
+                          {lines.map((line, li) => (
+                            <p
+                              key={li}
+                              className="text-foreground mt-1.5 text-[15px] leading-relaxed whitespace-pre-line"
+                            >
+                              {lines.length > 1 ? (
+                                <span className="text-muted-foreground/40 font-mono text-[11px]">
+                                  {`→${li} `}
+                                </span>
+                              ) : null}
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ol>
               ) : (
                 <p className="text-foreground text-base leading-relaxed whitespace-pre-line">
-                  {slide.notes ?? 'No script for this slide.'}
+                  {noteFor(slide, step) || 'No script for this slide.'}
                 </p>
               )}
             </div>
@@ -345,7 +425,9 @@ export function Deck({
                     setOverview(false);
                   }}
                 >
-                  {s.node}
+                  {/* Thumbnails show the slide fully built — a half-drawn
+                      diagram is unrecognisable at 320px wide. */}
+                  {typeof s.node === 'function' ? s.node(s.steps ?? 0) : s.node}
                 </Thumb>
               ))}
             </div>

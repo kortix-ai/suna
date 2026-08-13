@@ -298,15 +298,23 @@ export function Terminal({
 export function RowList({
   rows,
   className,
+  /**
+   * Build support: rows past this index stay ghosted instead of unmounting, so
+   * revealing one does not reflow the ones already on screen. Omit to show all.
+   */
+  upTo,
 }: {
   rows: readonly { readonly id: string; readonly k: string; readonly v: ReactNode }[];
   className?: string;
+  upTo?: number;
 }) {
   return (
     <dl className={cn('border-border bg-card overflow-hidden rounded-sm border', className)}>
       {rows.map((row, i) => (
-        <div
+        <m.div
           key={row.id}
+          animate={{ opacity: upTo === undefined || i <= upTo ? 1 : 0.12 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             'border-border grid gap-1.5 px-5 py-4 sm:grid-cols-12 sm:gap-8 sm:px-7 sm:py-5',
             i > 0 && 'border-t',
@@ -316,7 +324,7 @@ export function RowList({
             {row.k}
           </dt>
           <dd className="text-muted-foreground text-sm leading-relaxed sm:col-span-8">{row.v}</dd>
-        </div>
+        </m.div>
       ))}
     </dl>
   );

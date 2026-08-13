@@ -55,9 +55,10 @@ import {
   Shot,
   Slide,
   Terminal,
-} from './parts';
+} from '../engine/parts';
+import type { SlideDef } from '../engine/deck';
 
-export type SlideDef = { id: string; label: string; node: ReactNode };
+// SlideDef is the engine's contract — see engine/deck.tsx.
 
 const SHOT = '/images/landing-showcase/platform';
 const DELIV = '/images/landing-showcase';
