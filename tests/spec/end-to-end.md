@@ -318,9 +318,9 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 
 ---
 
-## 12. Triggers (cron + webhook; source of truth = `kortix.yaml`)
+## 12. Triggers (cron + webhook + monitor; source of truth = `kortix.yaml`)
 
-Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `project_trigger_runtime`. Types: `cron`, `webhook` only.
+Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `project_trigger_runtime`. Types: `cron`, `webhook`, `monitor` (experimental, behind the `monitors` feature flag — see `docs/specs/2026-08-12-monitors.md`). A `monitor` entry requires `run` + `mode` (`poll`|`stream`; `interval` ≥30s required iff `poll`), rejects cron/webhook-only fields, and defaults `session_mode` to `reuse`. Monitor FIRING is not an end-user HTTP surface: the per-project monitor box posts to `POST /projects/:id/monitors/ingest` with its own sandbox token (coverage-allowlisted; auth/dedup/rate-limit behavior pinned in `apps/api/src/__tests__/unit-monitor-ingest-route.test.ts`), and the observer drains events into `fireGitTrigger` inside the scheduler. The local test profile excludes cloud sandboxes, so the box lifecycle is covered by unit tests plus the live verification recorded in the spec doc.
 
 `TRG-1` `GET /projects/:id/triggers` → `read` + leaf `project.trigger.read` → specs + `last_fired_at` + parse `errors` + `webhook_url`; non-member 403/404; ANON 401.
 `TRG-2` `POST /projects/:id/triggers {name(required),slug?,type,agent?,enabled?,prompt_template,cron?,timezone?,secret_env?}` → `manage` → 201, manifest committed; `name` is required (slug derived from it when omitted); duplicate slug → 409. `webhook` requires `secret_env` (names a `project_secrets` key, regex `^[A-Z_][A-Z0-9_]*$`). `cron` requires 6-field croner expr + IANA `timezone` (default UTC).
