@@ -4062,6 +4062,124 @@ export function isFramelessNetworkErrorNoise(input: {
   return true;
 }
 
+// Safari third-party-script "undefined variable" ReferenceError noise — the
+// `Can't find variable: <Name>` wording is Safari/JavaScriptCore's canonical
+// ReferenceError for a variable reference that resolved to an undeclared
+// binding (Chrome/V8 says `<Name> is not defined`). When a THIRD-PARTY script
+// loaded on the marketing homepage (a charting/finance library such as
+// TradingView / lightweight-charts, or any vendor script that defines a
+// top-level constant like `EmptyRanges`) fails to load or initialize on iOS
+// Safari — a network abort, a parse failure, a CSP block, a script-load race
+// — the referencing code dereferences the now-undefined global and Safari's
+// `window.onerror` captures a FRAMELESS `ReferenceError`: the engine could
+// not produce a stack because the throw originated in script text that never
+// evaluated, so `call_site_file` is the literal `"undefined"` placeholder and
+// there are NO stack frames. The variable name (`EmptyRanges`, …) belongs to
+// the third-party script, NEVER to first-party `apps/web/src/…` code (grep
+// confirms `EmptyRanges` is absent from the codebase).
+//
+// Better Stack pattern
+// 304f7345eea41d488225ebf2dd238fa05ca073187fd0e2ffc61071ac99f40408
+// (Kortix Frontend prod, application_id 2346967): `ReferenceError`, message
+// `Can't find variable: EmptyRanges`, 5 occurrences / 0 identified users,
+// first 2026-08-13 06:24:03 UTC, release
+// `1f8409e2bedf441343eb12086a2131ff69397c37` (v0.12.8 prod),
+// call_site_function `?`, call_site_file `undefined` (the literal
+// placeholder — NO resolvable source location), request URL
+// `https://kortix.com/` (marketing homepage), browser iPhone iOS 18.7 Safari
+// (Safari 26), mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT
+// global `onerror`, `handled:false` — never reached a React error
+// boundary). Frames: `undefined` — no stack frames at all.
+//
+// Same family as the prior frameless Safari / browser-internal noise matchers
+// — `isUnresolvableStackOverflowNoise` (Safari frameless `onerror` stack
+// overflow), `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), and `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`) — a frameless global-handler capture dropped by a precise
+// message matcher with two negative guards preserving any first-party or
+// resolvable frame.
+//
+// `Can't find variable: <Name>` is Safari's GENERIC ReferenceError wording —
+// a REAL first-party `ReferenceError` (e.g. a typo referencing an undeclared
+// variable in our own code, `Can't find variable: myHelper`) would surface
+// with the SAME wording, so the matcher requires BOTH:
+//   1. The Safari ReferenceError PREFIX `/^Can't find variable: /`
+//      (case-sensitive). The variable name (`EmptyRanges`, `WebAssembly`, …)
+//      varies per third-party script, so a prefix (not exact) match is
+//      required. Chrome/V8's `<Name> is not defined` wording is a DIFFERENT
+//      surface and is deliberately NOT matched, so a Chromium first-party
+//      ReferenceError keeps reporting.
+//   2. The FRAMELESS shape as a positive guard: no resolvable frame location
+//      at all (every frame's `filename` is empty or the literal `"undefined"`
+//      placeholder, and the window.onerror `filename` is empty/`undefined`)
+//      — mirroring `isNonErrorUndefinedRejectionNoise` /
+//      `isOperationErrorPopErrorScopeNoise` / `isUnresolvableStackOverflowNoise`.
+// Plus two negative guards: (a) any resolved first-party `apps/web/src/…`
+// frame → keep reporting (our own ReferenceError with a stack is preserved —
+// a real first-party Safari `ReferenceError` de-minifies to `apps/web/src/…`);
+// (b) ANY resolvable frame location (real chunk/URL/named file) → keep
+// reporting (a reference error with a stack frame is from traceable code,
+// first-party OR a third-party script that DID load and threw a resolvable
+// ReferenceError). Only the frameless capture (the production noise pattern:
+// a third-party script that failed to load entirely, leaving no stack) is
+// dropped. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-prefix
+// match there would swallow a real first-party Safari ReferenceError the
+// negative guards exist to preserve; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const UNDEFINED_VARIABLE_NOISE_PATTERN = /^Can't find variable: /;
+
+/**
+ * Whether a Sentry / window.onerror event is the Safari third-party-script
+ * "undefined variable" ReferenceError noise class: a `Can't find variable:
+ * <Name>` `ReferenceError` (Safari/JavaScriptCore's canonical wording for an
+ * undeclared variable reference — Chrome/V8 says `<Name> is not defined`)
+ * captured by the global `onerror` handler with NO resolvable source
+ * location (the throw originated in a third-party script that failed to load,
+ * so the engine produced no stack and `call_site_file` is the literal
+ * `"undefined"` placeholder). The variable name belongs to the third-party
+ * script (e.g. `EmptyRanges` from a charting/finance library), never to
+ * first-party `apps/web/src/…` code. Requires BOTH the Safari ReferenceError
+ * prefix AND the frameless shape (positive guard), plus two negative guards:
+ * any resolved first-party `apps/web/src/…` frame → keep reporting (our own
+ * ReferenceError with a stack is preserved); any resolvable frame location →
+ * keep reporting (a reference error with a stack frame is from traceable
+ * code). Only the frameless capture is dropped. See
+ * `UNDEFINED_VARIABLE_NOISE_PATTERN` for the full rationale and Better Stack
+ * pattern `304f7345…`.
+ */
+export function isUndefinedVariableThirdPartyNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!UNDEFINED_VARIABLE_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code referenced an undeclared variable → a real first-party
+  // ReferenceError with a stack; keep reporting so the call site can be found
+  // + fixed. A real first-party Safari `ReferenceError` de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable ReferenceError with a real stack (first-party OR a
+  // third-party script that DID load and threw a resolvable ReferenceError);
+  // keep reporting. Only the frameless capture (the production noise pattern:
+  // a third-party script that failed to load entirely, leaving no stack)
+  // remains → drop it.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -4415,6 +4533,27 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // carries a chunk/source frame keeps reporting. See
   // `isUnresolvableStackOverflowNoise`.
   if (isUnresolvableStackOverflowNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Safari third-party-script "undefined variable" ReferenceError noise —
+  // `Can't find variable: <Name>` (Safari/JavaScriptCore's ReferenceError
+  // wording for an undeclared variable; Chrome/V8 says `<Name> is not
+  // defined`) captured by the global `onerror` handler with NO resolvable
+  // source location. A third-party script (e.g. a charting/finance library
+  // defining a constant like `EmptyRanges`) failed to load on iOS Safari,
+  // leaving the referenced global undefined and the engine with no stack
+  // (`call_site_file` is the literal `"undefined"` placeholder). Requires
+  // BOTH the Safari ReferenceError prefix AND the frameless shape, plus two
+  // negative guards: any resolved first-party `apps/web/src/…` frame → keep
+  // reporting; any resolvable frame location → keep reporting. See
+  // `isUndefinedVariableThirdPartyNoise`.
+  if (
+    isUndefinedVariableThirdPartyNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
     return true;
   }
 
@@ -4871,6 +5010,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isUnresolvableStackOverflowNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isUnresolvableStackOverflowNoise({ message, frames })) {
+    return true;
+  }
+
+  // Safari third-party-script "undefined variable" ReferenceError noise —
+  // `Can't find variable: <Name>` (Safari/JavaScriptCore's ReferenceError
+  // wording for an undeclared variable; Chrome/V8 says `<Name> is not
+  // defined`) captured by the global `onerror` handler with NO resolvable
+  // source location (`call_site_file` is the literal `"undefined"`
+  // placeholder, no stack frames). A third-party script (e.g. a
+  // charting/finance library defining a constant like `EmptyRanges`) failed
+  // to load on iOS Safari, leaving the referenced global undefined. Requires
+  // BOTH the Safari ReferenceError prefix AND the frameless shape (positive
+  // guard), plus two negative guards: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting; any resolvable frame location →
+  // keep reporting. Only the frameless capture (the production noise pattern)
+  // is dropped. NOT in `ignoreErrors` (no frame context there). See
+  // `isUndefinedVariableThirdPartyNoise` and Better Stack pattern
+  // `304f7345…`.
+  if (isUndefinedVariableThirdPartyNoise({ message, frames })) {
     return true;
   }
 
