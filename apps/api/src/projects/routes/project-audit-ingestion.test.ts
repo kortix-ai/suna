@@ -80,7 +80,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-await import('./r7');
+await import('./project-audit');
 
 function hostileEvent() {
   return {

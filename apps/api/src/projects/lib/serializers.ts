@@ -774,5 +774,21 @@ export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
   return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
 }
 
-// GET /v1/projects/:projectId/group-grants
-// List every group attached to this project, with the role + group name.
+/**
+ * Parse a bounded positive integer query parameter, or report why it is invalid.
+ * Shared by every paged read route (transcript, voice transcript, approvals).
+ */
+export function parseBoundedPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
+  }
+  return { ok: true, value };
+}

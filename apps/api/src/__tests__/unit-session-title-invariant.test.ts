@@ -134,7 +134,7 @@ describe('session-title invariant', () => {
     // EMPTY body on purpose — the project's own defaults, no prompt — so Hook 1
     // no-ops there. It must never quietly acquire one without the titling
     // question being asked.
-    const src = readFileSync(join(SRC, 'projects/routes/r7.ts'), 'utf8');
+    const src = readFileSync(join(SRC, 'projects/routes/warm-sessions.ts'), 'utf8');
     const at = src.indexOf('const result = await createProjectSession({');
     expect(at).toBeGreaterThan(-1);
     const open = src.indexOf('body: {', at);

@@ -2,15 +2,16 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const routes = readFileSync(join(import.meta.dir, 'routes/r7.ts'), 'utf8');
+const routes = readFileSync(join(import.meta.dir, 'routes/session-config.ts'), 'utf8');
 const reloadCore = readFileSync(join(import.meta.dir, 'lib/session-reload.ts'), 'utf8');
 
+// The streamed reload is the LAST route in this module, so the slice runs to
+// the next route declaration if one is ever added after it, else to the end.
 function streamRouteSource(): string {
   const start = routes.indexOf("path: '/{projectId}/sessions/{sessionId}/reload-stream'");
   expect(start).toBeGreaterThan(-1);
-  const end = routes.indexOf("path: '/{projectId}/sessions/{sessionId}/scope'", start);
-  expect(end).toBeGreaterThan(start);
-  return routes.slice(start, end);
+  const next = routes.indexOf("    path: '/{projectId}", start + 1);
+  return routes.slice(start, next === -1 ? routes.length : next);
 }
 
 describe('POST /projects/:projectId/sessions/:sessionId/reload-stream', () => {
