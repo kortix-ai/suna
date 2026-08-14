@@ -61,7 +61,6 @@ export function buildPlaceholderVariants(base: string, mac: boolean): string[] {
     'Drag and drop files to attach them',
     "Ask what's changed in your project",
     'Press Shift+Enter for a new line',
-    'Type @ to bring in a past session',
     `Press ${mod}, to open settings`,
     'Ask to compact the session when it gets long',
   ];
