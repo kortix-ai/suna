@@ -1,5 +1,10 @@
 /**
- * One user action = one submission.
+ * One user action = one submission — and the NEXT user action must survive.
+ *
+ * The latch's BEHAVIOR (defer a typed second message, drop a same-tick
+ * double-fire, release on throw) is asserted with real promises in
+ * `submit-latch.test.ts`. This file pins only the composer's WIRING of it,
+ * which a behavioral test of the pure module cannot see.
  *
  * Source assertions, for the reason stated in `session-chat-queued-retry-id.test.ts`:
  * `apps/web` has no DOM harness, the composer sits behind a `React.lazy`
@@ -7,12 +12,12 @@
  * rendered output. Every slice goes through `between()`, which FAILS on a
  * missing anchor rather than yielding '' and passing.
  *
- * Why this guard exists at all: the sandbox proxy used to absorb an accidental
- * double-fire for free, deduping a delivery by sha256 of the request body
- * (the browser cannot send `Idempotency-Key` — it is not on the API's CORS
- * allow-list). Giving each submission its own `messageID` deliberately ended
- * that, because the same mechanism was silently swallowing prompts the user
- * MEANT to send twice. The accidental case then had nothing behind it.
+ * History: the first latch was an inline `if (submissionInFlight.current)
+ * return;`. That blanket return held the gate for the entire await of the
+ * previous send's ACK (seconds with uploads, ~30s against a waking sandbox)
+ * and silently dropped every submission inside the window — the "second
+ * message never queues, Enter does nothing" bug. The expectation this file
+ * used to pin was that behavior; it changed on purpose.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -37,42 +42,45 @@ function between(start: string, end: string): string {
   return source.slice(from, to);
 }
 
-describe('the composer refuses a re-entrant submit', () => {
-  test('handleSubmit gates on the latch before dispatching', () => {
-    const latch = between('const handleSubmit = useCallback(', 'const editorPlaceholder');
-
-    expect(latch).toContain('if (submissionInFlight.current) return;');
-    expect(latch).toContain('submissionInFlight.current = true;');
-    expect(latch).toContain('await dispatchSubmission();');
+describe('the composer submits through the latch', () => {
+  test('handleSubmit goes through ONE latch instance, held in a ref', () => {
+    // A latch rebuilt per render forgets it is in flight, which reopens the
+    // same-tick double-fire window mid-send. The `??=` into a ref is what makes
+    // the instance survive every render; the handler itself is stable (`[]`)
+    // because its only inputs are refs.
+    const wiring = between('const submitLatchRef = useRef', 'const editorPlaceholder');
+    expect(wiring).toContain('submitLatchRef.current ??= createSubmitLatch(');
+    expect(wiring).toContain('return submitLatchRef.current();');
+    expect(wiring).toContain('}, []);');
   });
 
-  test('the latch releases in a finally, so a throw cannot wedge the composer', () => {
-    // The failure this prevents is worse than the one it fixes: a send that
-    // throws would leave the gate closed and the composer permanently dead.
-    const latch = between('const handleSubmit = useCallback(', 'const editorPlaceholder');
-    const finallyBlock = latch.slice(latch.indexOf('} finally {'));
-
-    expect(latch).toContain('} finally {');
-    expect(finallyBlock).toContain('submissionInFlight.current = false;');
+  test('the latch dispatches through a ref, so a deferred re-run reads fresh state', () => {
+    // The deferred re-run fires after the in-flight send settles — an
+    // arbitrarily later render. Dispatching the closure captured at latch
+    // creation would submit against stale attachedFiles/queue props.
+    const wiring = between('const dispatchSubmissionRef = useRef', 'const editorPlaceholder');
+    expect(wiring).toContain('dispatchSubmissionRef.current = dispatchSubmission;');
+    expect(wiring).toContain('() => dispatchSubmissionRef.current()');
   });
 
-  test('it is a ref, not state — it must be readable in the tick it is set', () => {
-    // `useState` would not have flushed by the time a second Enter in the same
-    // tick reads it, which is exactly the window being closed.
-    expect(source).toContain('const submissionInFlight = useRef(false);');
+  test('the deferral discriminator is typed text in the live editor', () => {
+    // A double-fire arrives with the editor already cleared (dispatch clears it
+    // synchronously); a distinct second message arrives with text. Files alone
+    // must NOT arm the deferral — un-flushed `attachedFiles` state is exactly
+    // the hazard the latch exists to swallow.
+    const wiring = between('submitLatchRef.current ??= createSubmitLatch(', 'const editorPlaceholder');
+    expect(wiring).toContain('editorRef.current?.getContent().text.trim()');
   });
 
   test('every submit entry point goes through the latched handler', () => {
     // The keyboard path and the button path must not diverge: a disabled button
     // does nothing to Enter, and a latch on only one of them guards neither.
     //
-    // Counted over CODE only. The first draft of this test counted the whole
-    // file and tripped on the two prose mentions in the latch's own comment —
-    // a reference in a comment calls nothing.
+    // Counted over CODE only (comments reference the name without calling it).
     const refs = code().match(/\bdispatchSubmission\b/g) ?? [];
 
-    // Exactly three: the definition, the call inside the latch, and the
-    // dependency array entry. A fourth means something calls it unlatched.
+    // Exactly three: the definition, the `useRef(dispatchSubmission)` seed, and
+    // the ref-mirror assignment. A fourth means something calls it unlatched.
     expect(refs).toHaveLength(3);
     expect(source).toContain('onSubmit={handleSubmit}');
   });

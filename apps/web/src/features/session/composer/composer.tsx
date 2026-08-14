@@ -67,6 +67,7 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
 import { QueuedMessages, type QueuedMessageView } from './queued-messages';
+import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
 export interface SessionChatInputProps {
@@ -115,6 +116,13 @@ export interface SessionChatInputProps {
   onStop?: () => void;
   stopDisabled?: boolean;
   isSending?: boolean;
+  /**
+   * The session sits on a rewound path: sending commits it, restoring keeps
+   * the removed messages and file changes. Renders a compact Restore control
+   * beside send/stop — the moment of commitment — instead of a banner above
+   * the card.
+   */
+  rewind?: { pending?: boolean; onRestore: () => void };
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
@@ -315,6 +323,7 @@ function ComposerImpl({
   onStop,
   stopDisabled = false,
   isSending = false,
+  rewind,
   agents = [],
   selectedAgent = null,
   onAgentChange,
@@ -994,38 +1003,34 @@ function ComposerImpl({
   ]);
 
   /**
-   * One user action = one submission, even if the action fires twice.
+   * One user action = one submission — without eating the next one. The whole
+   * story (why a latch exists, why a blanket `if (inFlight) return` silently
+   * dropped the second message a user typed while the previous send's ACK was
+   * pending, and how a double-fire is told apart from a distinct message) lives
+   * on `createSubmitLatch`.
    *
-   * The sandbox proxy used to absorb an accidental double-fire for free: with
-   * no `Idempotency-Key` (the browser cannot send one — it is absent from the
-   * API's CORS allow-list) it deduped a delivery by sha256 of the request body,
-   * so two identical prompts inside 60s collapsed to one. Giving each
-   * submission its own `messageID` deliberately ended that, because the same
-   * mechanism was silently swallowing prompts a user MEANT to send twice.
-   *
-   * That leaves the accidental case with nothing behind it. `dispatchSubmission`
-   * clears the editor synchronously before it awaits, which stops a repeat of
-   * the TEXT — but `setAttachedFiles([])` is React state and has not flushed, so
-   * a second Enter in the same tick could still get past the empty-draft guard
-   * on `attachedFiles.length > 0` and post an empty message carrying the files.
-   *
-   * A latch is the honest fix, and it belongs here rather than in the transport:
-   * only this layer knows the difference between one user action and two. A ref,
-   * not state, because it has to be observable in the same tick it is set.
+   * Created ONCE and dispatching through a ref: the latch's in-flight state
+   * must survive re-renders (a fresh latch mid-send would reopen the
+   * double-fire window), while the deferred re-run must read the CURRENT
+   * dispatch closure, not the one from the render that created the latch.
    */
-  const submissionInFlight = useRef(false);
-  const handleSubmit = useCallback(async () => {
-    if (submissionInFlight.current) return;
-    submissionInFlight.current = true;
-    try {
-      await dispatchSubmission();
-    } finally {
-      // `finally`, so a throw from any dispatch path cannot wedge the composer
-      // into permanently refusing to send. `dispatchSubmission` already handles
-      // its own send failure and restores the draft; this only releases the gate.
-      submissionInFlight.current = false;
-    }
-  }, [dispatchSubmission]);
+  const dispatchSubmissionRef = useRef(dispatchSubmission);
+  useEffect(() => {
+    dispatchSubmissionRef.current = dispatchSubmission;
+  });
+  const submitLatchRef = useRef<(() => Promise<void>) | null>(null);
+  const handleSubmit = useCallback(() => {
+    // Lazy-created at the first submit (never during render, which the
+    // compiler's ref rules forbid) and reused forever after.
+    submitLatchRef.current ??= createSubmitLatch(
+      () => dispatchSubmissionRef.current(),
+      // Typed text is what marks a re-entrant submit as a distinct message
+      // worth deferring; a double-fire arrives with the editor already
+      // cleared.
+      () => Boolean(editorRef.current?.getContent().text.trim()),
+    );
+    return submitLatchRef.current();
+  }, []);
 
   const editorPlaceholder = resolveEditorPlaceholder({
     lockForApproval,
@@ -1334,7 +1339,12 @@ function ComposerImpl({
               selectedVariant={selectedVariant}
               onVariantChange={onVariantChange}
               projectId={projectId}
-              toolbarSlot={toolbarSlot}
+              // Inline placement has no under-row, so the slot (the session
+              // overrides gear, meta indicator) rides the toolbar itself. With
+              // the 'below' placement the ComposerUnderbar further down renders
+              // it — passing it here as well would show the gear twice.
+              toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
+              rewind={rewind}
               onTranscription={handleTranscription}
               voiceDisabled={submitDisabled || isBusy}
               isSending={isSending}

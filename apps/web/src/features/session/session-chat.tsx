@@ -3753,27 +3753,6 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
-        {sessionState?.rewindMessageId ? (
-          <div className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-2">
-            <RotateCcw className="text-muted-foreground size-3.5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-foreground text-xs font-medium">Session rewound</p>
-              <p className="text-muted-foreground text-xs">
-                Sending a new prompt commits this path. Restore keeps the removed messages and file
-                changes.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={sessionState.rewindPending}
-              onClick={() => void handleRestoreRewind()}
-            >
-              {sessionState.rewindPending ? <Loading /> : 'Restore'}
-            </Button>
-          </div>
-        ) : null}
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -3808,9 +3787,6 @@ export function SessionChat({
     ),
     [
       sessionId,
-      sessionState?.rewindMessageId,
-      sessionState?.rewindPending,
-      handleRestoreRewind,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -3820,6 +3796,18 @@ export function SessionChat({
       handleQuestionActionChange,
     ],
   );
+
+  // The rewound-path notice lives on the composer toolbar, beside send/stop —
+  // send is what commits the path, so the control sits at the moment of
+  // commitment instead of in a banner above the card. No manual useMemo: the
+  // React Compiler memoizes this component, and a hand-written dependency list
+  // narrower than `sessionState` makes it skip the whole component.
+  const composerRewind = sessionState?.rewindMessageId
+    ? {
+        pending: sessionState.rewindPending,
+        onRestore: () => void handleRestoreRewind(),
+      }
+    : undefined;
 
   // ============================================================================
   // Loading / Not-found states
@@ -4252,6 +4240,7 @@ export function SessionChat({
                         : null
                 }
                 isBusy={isBusy}
+                rewind={composerRewind}
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
                 queueInFlightIds={queueInFlightIds}

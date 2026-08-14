@@ -510,7 +510,10 @@ export function QueuedMessages({
           fades whichever edge has more rows beyond it, so a clipped row reads
           as "scroll", not as a rendering fault. The strip is `bg-sidebar`, so
           the default `from-sidebar` fade matches by construction. */}
-      <FadedScrollArea rootClassName="w-full" className="max-h-40">
+      <FadedScrollArea
+        rootClassName="w-full"
+        className={cn('max-h-40', orderedMessages.length > 4 ? 'from-sidebar' : 'from-transparent')}
+      >
         <Reorder.Group
           axis="y"
           values={orderedMessages.map((m) => m.id)}
