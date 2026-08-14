@@ -4,7 +4,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
 import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
-import type { ProviderName } from '../platform/providers';
+import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 import type { StopReason } from './stop-reason';
 
@@ -254,6 +254,116 @@ export async function preserveEstablishedRuntime(
 
   reportLostRuntime(preserved, reason, stopReason, now);
   return preserved;
+}
+
+/**
+ * The gate between "the computer failed" and "the computer was LOST".
+ *
+ * Only a fresh, definitive provider `removed` may classify an identity as
+ * lost. Every other answer — a present state, a transitional state, or a probe
+ * the provider could not answer — parks the runtime as an ordinary stopped row
+ * that a later `/start` can wake. Incident 2026-08-14: a dead local tunnel kept
+ * two healthy sandboxes from booting, the on-open path preserved both as lost
+ * without asking the provider, and both control planes showed the boxes running
+ * the whole time (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+ */
+export type RuntimeLossVerdict = 'preserve' | 'park';
+
+export function runtimeLossVerdict(providerStatus: string): RuntimeLossVerdict {
+  return providerStatus === 'removed' ? 'preserve' : 'park';
+}
+
+/**
+ * Metadata patch for a parked (NOT lost) runtime. Pure so a test can pin that
+ * a park never carries `runtimeIdentityState: 'unavailable'` — the one flag the
+ * web renders as "This session's computer was lost".
+ */
+export function parkMetadataPatch(
+  reason: string,
+  stopReason: StopReason,
+  now: Date,
+): Record<string, unknown> {
+  return {
+    stopReason,
+    stoppedAt: now.toISOString(),
+    runtimeParkReason: reason,
+  };
+}
+
+type ParkableRuntimeRow = Pick<
+  typeof sessionSandboxes.$inferSelect,
+  'sandboxId' | 'sessionId' | 'externalId' | 'metadata' | 'provider'
+>;
+
+/**
+ * Park an established runtime that FAILED without being lost: close its
+ * compute window, stop the provider box, and record an ordinary stopped row.
+ * Unlike {@link preserveEstablishedRuntime} it writes no loss flags, so the
+ * session stays wakeable and the UI shows the honest "restart it" card. The
+ * provider stop is load-bearing, not defensive: the incident's boot-failed
+ * boxes stayed RUNNING on both providers after their rows were marked stopped
+ * and their metering closed — unmetered compute until a backstop fired.
+ */
+export async function parkEstablishedRuntime(
+  row: ParkableRuntimeRow,
+  reason: string,
+  stopReason: StopReason,
+  now = new Date(),
+): Promise<typeof sessionSandboxes.$inferSelect | null> {
+  if (!row.externalId) {
+    throw new Error(`Cannot park sandbox ${row.sandboxId} as established without an external_id`);
+  }
+  const externalId = row.externalId;
+
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(
+      `[runtime-identity] failed to close compute for ${row.sandboxId} while parking ${externalId}:`,
+      err,
+    ),
+  );
+  await getProvider(row.provider as ProviderName)
+    .stop(externalId)
+    .catch((err) =>
+      console.warn(
+        `[runtime-identity] provider stop failed while parking ${externalId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    );
+
+  const metadata = {
+    ...((row.metadata as Record<string, unknown> | null) ?? {}),
+  };
+  delete metadata.needsReprovision;
+  delete metadata.runtimeRecoveryLeaseId;
+  delete metadata.runtimeRecoveryLeaseAt;
+  delete metadata.runtimeRecoveryLeaseExpiresAtMs;
+  Object.assign(metadata, parkMetadataPatch(reason, stopReason, now));
+
+  try {
+    return await db.transaction(async (tx) => {
+      const [liveSession] = await tx
+        .update(projectSessions)
+        .set({ status: 'stopped', error: null, updatedAt: now })
+        .where(and(eq(projectSessions.sessionId, row.sessionId), sessionIsNotDeleted()))
+        .returning({ sessionId: projectSessions.sessionId });
+      if (!liveSession) return null;
+      const [parkedRow] = await tx
+        .update(sessionSandboxes)
+        .set({ status: 'stopped', metadata, updatedAt: now })
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            eq(sessionSandboxes.externalId, externalId),
+          ),
+        )
+        .returning();
+      if (!parkedRow) throw new RuntimeIdentityCasLostError();
+      return parkedRow;
+    });
+  } catch (err) {
+    if (err instanceof RuntimeIdentityCasLostError) return null;
+    throw err;
+  }
 }
 
 /**

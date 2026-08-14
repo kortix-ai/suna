@@ -32,8 +32,10 @@ import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
   markInPlaceRuntimeRecoveryAccepted,
+  parkEstablishedRuntime,
   preserveEstablishedRuntime,
   retireUnmaterializedRuntime,
+  runtimeLossVerdict,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import type { StopReason } from '../stop-reason';
@@ -692,6 +694,9 @@ async function preserveEstablishedRuntimeOnOpen(
    *  failed wake, a failed boot, a real provider removal) and cannot tell them
    *  apart from the inside. */
   stopReason: StopReason,
+  /** A provider status the CALLER just observed, so the loss gate below does
+   *  not re-probe. Pass only a fresh answer; omit to let the gate ask. */
+  knownProviderStatus?: SandboxStatus,
 ): Promise<SessionStartResult> {
   if (!row.externalId) {
     await retireUnmaterializedRuntime(row, reason);
@@ -702,6 +707,28 @@ async function preserveEstablishedRuntimeOnOpen(
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
+      reason,
+    };
+  }
+  // Incident 2026-08-14: only a definitive provider `removed` may become the
+  // terminal "computer was lost" state. Two healthy boxes were preserved as
+  // lost because a dead local tunnel kept them from booting and nothing asked
+  // the provider first. Anything short of `removed` — including `unknown`,
+  // which is a probe failure, not evidence — parks the row retriable instead.
+  const providerStatus =
+    knownProviderStatus ??
+    (await getProvider(row.provider as SandboxProviderName)
+      .getStatus(row.externalId)
+      .catch(() => 'unknown' as const));
+  if (runtimeLossVerdict(providerStatus) === 'park') {
+    const parked = await parkEstablishedRuntime(row, reason, stopReason);
+    return {
+      stage: 'failed',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(parked ?? row),
+      opencode_session_id: null,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason,
     };
   }
@@ -963,6 +990,7 @@ export async function openSession(args: {
       // The provider itself answered `removed` and in-place recovery came back
       // unavailable — a real Path D2 removal, not a wake that ran out of time.
       'provider_removed',
+      'removed',
     );
   }
 
@@ -988,6 +1016,7 @@ export async function openSession(args: {
         row,
         staleWake,
         'runtime_wake_failed',
+        providerStatus,
       );
     }
     if (providerStatus === 'stopped') {

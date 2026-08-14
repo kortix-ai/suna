@@ -577,6 +577,63 @@ export function sandboxCallbackUnreachableReason(): string | null {
   );
 }
 
+// One probe verdict is cached briefly: session create and restart are
+// user-facing paths and must not pay a fresh network round-trip on every call.
+const TUNNEL_PROBE_TTL_MS = 30_000;
+const TUNNEL_PROBE_TIMEOUT_MS = 3_000;
+let tunnelProbe: { base: string; reason: string | null; at: number } | null = null;
+
+/** Test seam: drop the cached verdict so a test can force a fresh probe. */
+export function resetTunnelProbeCache(): void {
+  tunnelProbe = null;
+}
+
+/**
+ * Liveness check for a quick-tunnel KORTIX_URL. The static loopback check
+ * above catches a MISSING tunnel; this catches a DEAD one. trycloudflare quick
+ * tunnels die server-side while the local `cloudflared` process stays up, and
+ * every sandbox created after that boots into a callback URL that can never
+ * answer — the runtime never becomes ready and the failure used to surface as
+ * a false "computer was lost" (incident 2026-08-14). Scoped to
+ * *.trycloudflare.com on purpose: deployed environments use a stable public
+ * URL and must not pay a self-probe on the session-create path.
+ */
+export async function sandboxCallbackDeadTunnelReason(
+  now = Date.now(),
+  base = deriveKortixApiBase(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  let host: string;
+  try {
+    host = new URL(base).hostname.toLowerCase();
+  } catch {
+    return null; // sandboxCallbackUnreachableReason() already reports an invalid URL
+  }
+  if (!host.endsWith('.trycloudflare.com')) return null;
+  if (tunnelProbe && tunnelProbe.base === base && now - tunnelProbe.at < TUNNEL_PROBE_TTL_MS) {
+    return tunnelProbe.reason;
+  }
+  let reason: string | null = null;
+  try {
+    const res = await fetchImpl(`${base}/health`, {
+      signal: AbortSignal.timeout(TUNNEL_PROBE_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      reason =
+        `The dev tunnel at ${config.KORTIX_URL} answered ${res.status} to a health probe. ` +
+        `Cloud sandboxes cannot call back to this API through it, so a new sandbox would ` +
+        `boot but never become ready. Restart the dev stack (\`pnpm dev\`) to mint a fresh tunnel.`;
+    }
+  } catch {
+    reason =
+      `The dev tunnel at ${config.KORTIX_URL} is not answering. Cloud sandboxes cannot ` +
+      `call back to this API through it, so a new sandbox would boot but never become ` +
+      `ready. Restart the dev stack (\`pnpm dev\`) to mint a fresh tunnel.`;
+  }
+  tunnelProbe = { base, reason, at: now };
+  return reason;
+}
+
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
@@ -1066,7 +1123,8 @@ export async function createProjectSession(input: {
   const providerName: SandboxProviderName =
     'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
 
-  const callbackUnreachable = sandboxCallbackUnreachableReason();
+  const callbackUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
   if (callbackUnreachable) {
     return {
       error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },

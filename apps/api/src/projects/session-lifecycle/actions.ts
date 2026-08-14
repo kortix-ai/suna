@@ -16,7 +16,11 @@ import {
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import {
+  buildSessionSandboxEnvVars,
+  sandboxCallbackDeadTunnelReason,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
 import { invalidateProviderCache } from '../../sandbox-proxy';
@@ -168,7 +172,8 @@ export async function restartSession(input: {
     };
   }
 
-  const restartUnreachable = sandboxCallbackUnreachableReason();
+  const restartUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
   if (restartUnreachable) {
     return {
       status: 503,

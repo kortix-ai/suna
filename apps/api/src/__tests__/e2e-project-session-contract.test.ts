@@ -2542,7 +2542,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a sandbox that stayed stopped after wake grace', async () => {
+  // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
+  // provider lost the box — the provider just answered `stopped`, which proves
+  // the box exists. The row parks retriable instead of being preserved as
+  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2578,8 +2582,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_wake_timeout',
       sandbox: { external_id: 'box-stuck-stopped', status: 'stopped' },
     });
 
@@ -2587,6 +2591,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-stuck-stopped');
+    // A park must never carry the loss flag the web renders as "computer was
+    // lost", and must record which failure parked it.
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
   });
 
   test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
@@ -3038,7 +3047,13 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  // Incident 2026-08-14: this exact population — a RUNNING box whose runtime
+  // never became ready (a dead local tunnel blocked the guest's git clone) —
+  // was preserved as "computer was lost" while both provider control planes
+  // showed the box alive. A failed boot on a present box parks retriable and
+  // stops the provider box, so a DB-stopped row cannot keep burning unmetered
+  // compute.
+  test('dashboard start parks (not preserves) a running sandbox whose OpenCode runtime never becomes reachable', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -3077,8 +3092,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_unreachable_timeout',
       sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
     });
 
@@ -3086,6 +3101,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
+    // The box was RUNNING when the boot failed: the park must stop it.
+    expect(providerStopCalls).toBe(1);
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
