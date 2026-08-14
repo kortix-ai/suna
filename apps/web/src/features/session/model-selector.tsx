@@ -567,7 +567,11 @@ export function ModelSelector({
               }
             />
 
-            <CommandSeparator className="bg-border/60" />
+            {/* Same condition as the group headings below: with one group the
+                input's own `border-b` (command.tsx) is the only divider —
+                adding this too stacks a doubled hairline. With 2+ groups the
+                sectioned list earns the stronger edge under the input. */}
+            {grouped.length > 1 && <CommandSeparator className="bg-border/60" />}
 
             <CommandList className="max-h-[380px]">
               {modelsLoading || entitlementsPending ? (
@@ -614,8 +618,18 @@ export function ModelSelector({
                           already-filtered list, so an empty group cannot exist
                           and a separator can never end up orphaned. */}
                       {groupIndex > 0 && <CommandSeparator />}
+                      {/* A provider heading only earns its row when there is a
+                          second provider to tell apart. With one group (the
+                          common gateway case — everything is "Kortix") the
+                          label answers a question nobody asked; cmdk skips the
+                          heading element entirely when `heading` is undefined,
+                          so no empty padding is left behind. */}
                       <CommandGroup
-                        heading={<GroupHeading>{group.providerName}</GroupHeading>}
+                        heading={
+                          grouped.length > 1 ? (
+                            <GroupHeading>{group.providerName}</GroupHeading>
+                          ) : undefined
+                        }
                         forceMount
                       >
                         {group.models.map((model) => (

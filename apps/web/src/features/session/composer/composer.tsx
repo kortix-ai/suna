@@ -43,6 +43,7 @@ import { useModelConnectionGate } from '../use-model-connection-gate';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Close } from '@/features/icon/icons/close';
+import { AnimatedComposerPlaceholder } from './animated-placeholder';
 import { AttachmentTiles } from './attachment-tiles';
 import {
   draftWillRunCommand,
@@ -102,11 +103,11 @@ export interface SessionChatInputProps {
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   /**
-   * Accepted but no longer wired to anything. The queue drains as ONE batch,
-   * so moving row 3 above row 2 changes nothing a user can observe — the
-   * reorder UI was chrome for a distinction without a difference and was
-   * removed with the ChatGPT-style queue rows. Kept in the type so existing
-   * callers keep compiling; delete it here and at those call sites together.
+   * Move a queued message to `toIndex` — a position in `queuedMessages`,
+   * in-flight rows included, matching the store's pending array. The batch
+   * drains as one message composed in list order, so reordering rows edits
+   * what that message says; the store clamps the index so nothing crosses
+   * the in-flight batch.
    */
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
   onSendQueuedMessageNow?: (id: string) => void;
@@ -293,6 +294,7 @@ function ComposerImpl({
   onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
+  onReorderQueuedMessage,
   onSendQueuedMessageNow,
   onRetryQueuedMessage,
   onStop,
@@ -1017,6 +1019,16 @@ function ComposerImpl({
   });
 
   /**
+   * The rotating-hint overlay owns the placeholder only in the plain idle
+   * state. A lock's copy is functional ("Answer the question…"), and a
+   * disabled editor should not advertise shortcuts it will not honour — in
+   * both cases the static TipTap placeholder keeps the job. While the overlay
+   * IS active the editor gets `''`, so its `::before` renders empty and two
+   * placeholders never paint at once (see animated-placeholder.tsx).
+   */
+  const animatePlaceholder = isEmpty && !editorDisabled && !lockForQuestion;
+
+  /**
    * Whether the inset strip above the card has anything to show. Gated on
    * actual CONTENT, never on `sessionId`: that was truthy in every session, so
    * the strip's padded, bordered shell rendered as an empty rounded sliver
@@ -1069,7 +1081,7 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 px-2 py-1.5 empty:hidden">
+            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
               <QueuedMessages
                   messages={queuedMessages ?? EMPTY_QUEUE}
                   failed={failedQueuedMessages}
@@ -1078,6 +1090,7 @@ function ComposerImpl({
                   isRunning={queueIsRunning}
                   onRemove={onRemoveQueuedMessage}
                   onEdit={onEditQueuedMessage}
+                  onReorder={onReorderQueuedMessage}
                   onSendNow={onSendQueuedMessageNow}
                   onRetry={onRetryQueuedMessage}
                 />
@@ -1240,10 +1253,14 @@ function ComposerImpl({
                 editorRef.current?.focus();
               }}
             >
+              <AnimatedComposerPlaceholder
+                placeholder={editorPlaceholder}
+                active={animatePlaceholder}
+              />
               <Suspense fallback={<ComposerEditorFallback />}>
                 <ComposerEditorLazy
                   ref={setEditorRef}
-                  placeholder={editorPlaceholder}
+                  placeholder={animatePlaceholder ? '' : editorPlaceholder}
                   disabled={editorDisabled}
                   onSubmit={handleSubmit}
                   onEmptyChange={setIsEmpty}

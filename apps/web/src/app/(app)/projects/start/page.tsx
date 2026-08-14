@@ -196,7 +196,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
       </div>
       <div className="flex items-center gap-2">
         <Button onClick={onRetry}>Try again</Button>
-        <Button variant="ghost" asChild>
+        <Button variant="secondary" asChild>
           <Link href="/new">Create a workspace</Link>
         </Button>
       </div>

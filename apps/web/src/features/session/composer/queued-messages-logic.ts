@@ -57,6 +57,36 @@ export function reorderTargetIndex(
 }
 
 /**
+ * The `toIndex` — in the FULL pending array — for moving `id` to `targetSlot`
+ * in the visible list.
+ *
+ * Two coordinate systems meet here. The list renders `visibleIds` (pending
+ * minus the in-flight batch), but the store's reorder takes a position in
+ * `pendingIds`, where the in-flight batch still occupies the head. The row
+ * that currently occupies `targetSlot` marks where the moved row must land in
+ * the full array; passing the visible index itself would aim moves at the
+ * in-flight slots the user cannot even see.
+ *
+ * The occupant's PRE-move index is correct for any distance, both directions,
+ * because the store moves by splice-out-then-splice-in: removing the dragged
+ * row first shifts the occupant into exactly the slot that puts the dragged
+ * row back on the correct side of it. `null` for a no-op or an out-of-range
+ * slot.
+ */
+export function reorderToPendingIndex(
+  visibleIds: string[],
+  pendingIds: string[],
+  id: string,
+  targetSlot: number,
+): number | null {
+  const index = visibleIds.indexOf(id);
+  if (index === -1 || targetSlot === index) return null;
+  if (targetSlot < 0 || targetSlot >= visibleIds.length) return null;
+  const toIndex = pendingIds.indexOf(visibleIds[targetSlot]);
+  return toIndex === -1 ? null : toIndex;
+}
+
+/**
  * Which row to focus after removing the one at `removedIndex`.
  *
  * The row that slides into the vacated slot, or the one before it when the last

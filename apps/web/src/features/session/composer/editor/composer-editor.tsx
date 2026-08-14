@@ -560,7 +560,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       <EditorContent
         editor={editor}
         className={cn(
-          'kortix-composer-editor w-full text-base sm:text-[15px]',
+          'kortix-composer-editor w-full text-[15px] sm:text-[14px]',
           disabled && 'opacity-50',
         )}
       />

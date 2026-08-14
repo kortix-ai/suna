@@ -37,7 +37,7 @@ const MENU_ROW_SIZE: Record<MenuRowSize, string> = {
  * rather than trailing it.
  */
 const MENU_ROW_BASE =
-  'relative flex w-full cursor-default items-center gap-2 rounded-md font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0';
+  'relative flex w-full cursor-default items-center gap-2 rounded-[calc(var(--radius)-3px)] font-normal outline-none select-none transition-colors duration-150 ease-out data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0';
 
 /**
  * Keyboard focus and pointer hover resolve to the same treatment on purpose —

@@ -43,7 +43,7 @@ export function chipAriaLabel(kind: string, label: string): string {
  *
  * `text-[0.95em]`, not `text-base sm:text-sm`. The size has to be relative
  * because this chip now sits in two type contexts: the composer's editor
- * (`text-base sm:text-[15px]`) and the message bubble's `text-[0.9rem]`. A
+ * (`text-[15px] sm:text-[14px]`) and the message bubble's `text-[0.9rem]`. A
  * fixed `text-base` is very slightly smaller than the composer's own body on
  * desktop, which is what the chip already looked like — but dropped into the
  * 14.4px bubble it would render LARGER than the sentence around it. An `em`
