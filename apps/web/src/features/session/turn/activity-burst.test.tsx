@@ -155,14 +155,14 @@ describe('ActivityGroupStep', () => {
     expect(step.label).not.toContain('Read 2 files');
   });
 
-  test('a failed group carries the destructive mark, not just the wording', () => {
-    // The gap this closes: the row used to render the same muted family glyph
-    // whatever `step.status` said, so a failed group and a clean one were
-    // indistinguishable until the reader clicked one level deeper.
+  test('a failed group wears the wording alone — no destructive mark', () => {
+    // The label already states the failure ("Couldn't read your files"), so
+    // the row keeps its muted family glyph: a red warning beside words that
+    // already say "failed" states the verdict twice.
     const markup = render(false, mixed);
     expect(markup).toContain('data-status="error"');
-    expect(markup).toContain('aria-label="This step failed"');
-    expect(markup).toContain('text-destructive');
+    expect(markup).not.toContain('aria-label="This step failed"');
+    expect(markup).not.toContain('text-destructive');
     expect(markup).not.toContain('Read 2 files');
   });
 
@@ -705,7 +705,7 @@ describe('ActivityBurst', () => {
     expect(markup).toContain('ls');
   });
 
-  test('a burst with a failure says so in words, and still carries the glyph', () => {
+  test('a burst with a failure says so in words alone — no warning glyph', () => {
     const parts: Part[] = [
       ...Array.from({ length: 10 }, (_, i) => done(`ok${i}`, 'bash')),
       tool('bad', 'bash', { status: 'error', error: 'Error: boom' }),
@@ -713,8 +713,9 @@ describe('ActivityBurst', () => {
     const markup = renderBurst(parts);
     // The clause is what removes the subtraction from `10 of 11`.
     expect(markup).toContain('Completed 10 of 11 steps · 1 failed');
-    // Shape as well as words, for a reader who cannot see the destructive tint.
-    expect(markup).toContain('aria-label="1 step failed"');
+    // The words are the whole signal — the summary line never carries a
+    // destructive mark beside a title that already says "failed".
+    expect(markup).not.toContain('aria-label="1 step failed"');
   });
 
   test('a burst where everything failed never claims a completion', () => {

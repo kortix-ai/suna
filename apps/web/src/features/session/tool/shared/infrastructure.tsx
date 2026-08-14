@@ -882,7 +882,7 @@ function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
       aria-label={outcome === 'failed' ? 'This step failed' : 'This step partly failed'}
       className={cn(
         'size-4 shrink-0',
-        outcome === 'failed' ? STATUS_TEXT.destructive : STATUS_TEXT.warning,
+        outcome === 'failed' ? STATUS_TEXT.neutral : STATUS_TEXT.neutral,
       )}
     />
   );

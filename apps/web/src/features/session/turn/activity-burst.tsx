@@ -19,18 +19,16 @@
  * height is always one row.
  */
 
-import { CaretRightIcon, CircleDashedIcon, WarningIcon } from '@phosphor-icons/react';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-
 import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
 import type { ConversationDensity } from '@/stores/user-preferences-store';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
+import { CaretRightIcon, CircleDashedIcon } from '@phosphor-icons/react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Step } from '../action-panel/shared/group-steps';
 import { normalizeActivityToolName } from '../session-activity-groups';
 import { ActivityFileChipStep, isFileChipPart } from './activity-file-chips';
@@ -204,17 +202,11 @@ function ThoughtChainStepImpl({
  * `InlineTriggerTitle` in tool/shared/infrastructure.tsx). Indent alone left the
  * two levels reading as one list at a glance.
  *
- * `step.status` is consumed here, not discarded. `groupSteps` already picks the
- * WORDS — a group holding a failure gets `narrateFailedStep`, never success
- * wording — but the row used to render the same muted glyph either way, so the
- * only failure signal inside an open burst was the sentence, and a reader had to
- * click one level deeper to find out anything had gone wrong.
- *
- * Failure REPLACES the family glyph rather than sitting beside it, the same call
- * `ToolOutcomeIcon` makes one level down: the row has one 16px gutter, and what
- * the reader needs from it is the verdict — the family is still spelled out in
- * the words immediately to its right ("Couldn't read your files"). Shape carries
- * it as much as colour, so the mark survives a reader who cannot see the red.
+ * Failure carries NO icon of its own. `groupSteps` already picks the WORDS —
+ * a group holding a failure gets `narrateFailedStep` ("Couldn't read your
+ * files"), never success wording — and the sentence is the whole signal. The
+ * row keeps its muted family glyph either way; a red warning mark beside a
+ * label that already says "failed" states the verdict twice.
  *
  * Running shimmers the label, which is how every tool row in this same chain
  * already says "still going" — one running vocabulary per surface, not two.
@@ -230,7 +222,6 @@ function ActivityGroupStepImpl({
   running: boolean;
   disableNavigation?: boolean;
 }) {
-  const failed = step.status === 'error';
   const Icon = iconFor(step.parts[0]);
 
   return (
@@ -246,24 +237,7 @@ function ActivityGroupStepImpl({
             'text-left text-sm leading-[1.5] transition-colors',
           )}
         >
-          {failed ? (
-            <>
-              {/* Closed: failure mark replaces the family glyph. Open: the
-							    member rows carry their own verdicts, so the trigger falls
-							    back to the family icon and drops the duplicate warning. */}
-              <WarningIcon
-                weight="fill"
-                aria-label="This step failed"
-                className={cn(
-                  'size-4 flex-none group-data-[state=open]/step:hidden',
-                  STATUS_TEXT.destructive,
-                )}
-              />
-              <Icon className="text-muted-foreground hidden size-4 flex-none group-data-[state=open]/step:block" />
-            </>
-          ) : (
-            <Icon className="text-muted-foreground size-4 flex-none" />
-          )}
+          <Icon className="text-muted-foreground size-4 flex-none" />
           {step.status === 'running' ? (
             <TextShimmer className="min-w-0 truncate leading-[1.5] font-medium">
               {step.label}
@@ -391,7 +365,6 @@ function ActivityBurstImpl({
   // failures while running, so the "no failure count mid-flight" rule lives in
   // one place rather than being re-applied by every caller.
   const title = burstSummaryLabel(summary, running);
-  const failures = running ? 0 : summary.failed;
 
   /**
    * One step's body, without the chain wrapper.
@@ -545,19 +518,6 @@ function ActivityBurstImpl({
               </TextShimmer>
             ) : (
               <span className="min-w-0 truncate tabular-nums">{title}</span>
-            )}
-            {/* The title now states the failure in words ("· 1 failed"), so this
-  					    mark is the SHAPE half of that signal — what a reader who cannot see
-  					    the destructive tint gets, and what survives a truncated title. It is
-  					    the same glyph the failed row carries inside; it sits before the caret
-  					    so the caret keeps its job as the affordance. Hidden while open — the
-  					    chain body (failed rows + closing step) already carries the verdict. */}
-            {failures > 0 && !open && (
-              <WarningIcon
-                weight="fill"
-                aria-label={failures === 1 ? '1 step failed' : `${failures} steps failed`}
-                className={cn('size-3.5 flex-none', STATUS_TEXT.destructive)}
-              />
             )}
             {/* The caret answers the pointer on its own, driven by `group/burst`.
                 The row's `hover:text-muted-foreground` reaches only the title, and
