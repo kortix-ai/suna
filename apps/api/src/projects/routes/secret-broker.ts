@@ -16,7 +16,12 @@ import { resolveSecretDelivery } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { decryptProjectSecret, intersectSecretGrants } from '../secrets';
+import { config } from '../../config';
 import { loadProjectForUser } from '../lib/access';
+import {
+  requestEgressIp,
+  verifySandboxEgressIp,
+} from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { readBody } from '../lib/serializers';
@@ -57,6 +62,35 @@ projectsApp.openapi(
         {
           error: 'Secret broker requests require a session-scoped agent token',
           code: 'session_agent_token_required',
+        },
+        403,
+      );
+    }
+
+    // Is this request coming from the sandbox the session token was issued to?
+    //
+    // The token lives in the agent's own shell env (it needs it for the CLI and
+    // git), so the agent can copy it out. Everything else on this route checks
+    // what the token IS; this checks where it is being used FROM. Unpinned
+    // sessions pass — see sandbox-egress-pin.ts on why that direction is the
+    // safe one.
+    const pin = await verifySandboxEgressIp(sessionId, requestEgressIp(c));
+    if (!pin.ok) {
+      // Logged whether or not it blocks, so log-only mode still surfaces the
+      // event — a kill switch that also silences the evidence is useless.
+      console.warn('[secret-broker] refused an off-sandbox token use', {
+        sessionId,
+        projectId,
+        pinned: pin.pinned,
+        seen: pin.seen,
+        enforced: config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+      });
+    }
+    if (!pin.ok && config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED) {
+      return c.json(
+        {
+          error: 'This session credential may only be used from its own sandbox',
+          code: 'sandbox_egress_mismatch',
         },
         403,
       );

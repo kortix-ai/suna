@@ -521,7 +521,7 @@ Caveats, stated rather than implied:
 
 ### 7.5 Wiring — what is done, what is left
 
-#### Done: the server half (behind `EGRESS_SHIM_ENABLED`, default OFF)
+#### Done: the server half (behind the `network_boundary_shim` project flag, default OFF)
 
 Three gates stood between a non-Platinum project and this feature.
 
@@ -541,45 +541,167 @@ Three gates stood between a non-Platinum project and this feature.
    the pre-check guaranteed the method existed — with a shim-backed provider reaching it, that
    would have been a TypeError at provision time instead of a clean skip.
 
-**The flag defaults OFF deliberately.** Turning it on makes the API *advertise* boundary
-delivery to non-Platinum projects — the save gate, `delivery_status`, and the web control all
-read it. Until the guest actually runs the shim, that is a feature that looks available and
-silently does nothing, which is the failure this whole document exists to unpick. Flip it once
-a fresh sandbox has been *observed* running the shim, not merely once the code is merged.
+**It is a per-project experimental flag, not an operator env var.** The first version was
+`EGRESS_SHIM_ENABLED`, an env var, which was wrong twice over. It made the smallest testable
+unit the whole deployment, and it put the switch in the infrastructure repo — so verifying the
+feature on dev required a GitOps change before anyone could see whether it worked at all. The
+registry entry (`feature-flags/registry.ts`, `stability: 'experimental'`) is toggled through
+the existing Feature flags UI and `PATCH /projects/:id/experimental`, so one project can opt in
+and be proven before anything else is exposed to it.
 
-#### Left: the guest half
+**It still defaults OFF deliberately.** Turning it on makes the API *advertise* boundary
+delivery — the save gate, `delivery_status`, and the web control all read it. Until the guest
+actually runs the shim, that is a feature that looks available and silently does nothing, which
+is the failure this whole document exists to unpick. What the flag really asserts is "this
+project's sandbox image runs the shim", a fact the API cannot introspect. Turn it on once a
+fresh sandbox has been *observed* running the shim, not merely once the code is merged.
 
-1. **Ship the shim and start it.** No new image artifact is needed — the daemon already ships
-   in the image and already starts child processes, so it can host the shim. It needs the
-   session token, project id, and the host->identifier rules (no values).
-2. **Trust the CA.** Install the ephemeral CA into the system store *and* the per-runtime env
-   vars. §7.6 measured which ones actually matter.
-3. **Point the clients.** `HTTPS_PROXY` plus `NODE_USE_ENV_PROXY=1` and `REQUESTS_CA_BUNDLE`.
-4. **The web gate.** `apps/web/.../secret-delivery.ts` requires the project to run Platinum and
-   does **not** read `network_boundary_available`. That is correct while the flag is off, and
-   wrong the moment it flips — the API has to expose which mode applies
-   (`provider-edge` vs `in-guest-shim`) and the web has to read it. Belongs with this half,
-   not before it.
-5. **Optional: the allow-list.** Not required for the security property — an agent that
+#### Done: the guest half
+
+Built as `apps/kortix-sandbox-agent-server/src/egress-shim/`. Items 1-3 below were the plan;
+all three shipped. Item 4 remains optional and unbuilt.
+
+1. **The shim runs in the daemon.** No new image artifact — the daemon already ships in the
+   image, so it hosts the shim on loopback `4321`. It needed the session token, project id and
+   host->identifier rules, and **every one of those was already injected at provision**: the
+   rules are the `delivery:'network'` entries of `KORTIX_SECRET_CAPABILITIES`, and the rest are
+   `KORTIX_PROJECT_ID` / `KORTIX_API_URL` / `KORTIX_CLI_TOKEN`. No new API plumbing at all.
+2. **The CA is trusted.** Minted per sandbox at boot, key held in memory only and dropped on
+   shutdown. Written as a bundle of the SYSTEM roots plus our CA, and installed into the OS
+   store best-effort.
+3. **The clients are pointed at it.** The measured set from §7.6, delivered to the agent's
+   shells through `agent-env.sh` (BASH_ENV) and to the opencode process for its in-process
+   HTTP clients.
+4. **Optional: the allow-list.** Still not required for the security property — an agent that
    bypasses the shim gets an *unauthenticated* request, not a credential — so it is egress
    restriction, a separate feature. It also needs a stable Kortix egress address, which
    `dev-api` (Cloudflare-fronted) does not provide.
 
-#### Blocked on infrastructure, not code
+**Broker mode only.** The API-side ancestor had an `inject` mode that held the credential
+literally. It is absent from the guest copy on purpose: a binary running inside the sandbox
+must be structurally incapable of holding the thing this design exists to keep out. The
+API-side proxy had no production caller and was deleted.
 
-- **Dev Daytona provisioning is failing** (`/start` succeeds, the sandbox never reaches
-  running), which blocks the Daytona re-run of §7.4.1.
-- **The Daytona snapshot quota is exhausted** — 225 of 200 — so every CI run that builds a
-  snapshot fails, on any PR. Deleting all 18 CI snapshots only reaches 207; the bulk is live
-  product data (`kortix-meta-*` 117, `kortix-app-*` 38). Needs a quota raise or a retention
-  policy.
+**`KORTIX_CLI_TOKEN`, not `KORTIX_TOKEN`.** The sandbox holds two credentials and the obvious
+one is wrong. `KORTIX_TOKEN`/`KORTIX_SANDBOX_TOKEN` is the daemon's own identity and carries no
+user, so project-scoped routes reject it — the broker route requires `authType==='pat'` plus a
+session id plus an agent grant. Reaching for the obvious name yields a 403 on every relay.
+Absent `KORTIX_CLI_TOKEN`, the shim does not start and says which piece was missing.
 
+**Two defects found by an adversarial pass over the first draft**, both now pinned by tests:
 
-- **Provisioning wiring.** Mint the CA per session, push it into the guest trust store plus
-  the ~11 per-runtime env vars, set `HTTPS_PROXY`, and set `networkAllowList` to the proxy.
+- *gzip silently defeated echo redaction.* The broker redacts by scanning response BYTES; a
+  compressed body does not contain them. `curl` offers gzip by default and the broker does not
+  block `accept-encoding`, so forwarding the guest's value returned echoed credentials intact.
+  The shim forces `identity`.
+- *Only 4 of the 12 headers the broker REJECTS were stripped.* `sanitizeHeaders` 400s rather
+  than stripping, so a cookie-bearing client or `curl -H 'Authorization: …'` hard-failed. The
+  full set is stripped, and a test reads the broker's real list off disk so the copy cannot
+  drift.
+
+**A third Bun divergence, measured** (bun 1.3.14 vs node v22.22.0): Bun fires `'upgrade'`, but
+a write from that handler never reaches the client — a websocket attempt hung forever with
+nothing in the log. It is reset instead. This joins `emit('connection')` being a no-op and
+`SNICallback` never firing; all three shape this file's architecture.
+
+**Known limits of the relay path**, inherited from the broker and worth stating: it is fully
+buffered, so no streaming, SSE, or websockets; 1 MiB request / 5 MiB response caps; redirects
+are followed server-side and the guest never sees a 3xx; the response header whitelist drops
+`set-cookie` and friends. And echo semantics differ from Platinum — the edge BLOCKS, the broker
+REDACTS — so the same secret behaves differently depending on which mechanism serves it. The
+capability catalog still advertises `on_echo:'block'`, which is wrong for shim projects.
+
+The web gate moved into the *done* half along with the flag. `networkBoundaryAvailability`
+(`apps/web/.../secret-delivery.ts`) reads `project.experimental.network_boundary_shim` and
+short-circuits the provider question when it is on, because the shim runs nowhere near a
+provider edge. Both blocked-state messages now name the flag: neither state says "not available
+in this deployment" any more, because neither is true — both are one opt-in away.
+
+`buildSecretView` takes the project metadata through a REQUIRED argument, and so do the three
+functions in `network-boundary-availability.ts`. That is the second answer to this problem; the
+first two were both wrong and are worth recording, because the failure mode is invisible.
+
+An OPTIONAL argument was the original. It let a caller omit the project and still typecheck,
+silently reporting the pre-flag Platinum-only answer — a wrong feature verdict that no test
+happened to look at. The second attempt had `loadSecretViewsForUser` read
+`projects.metadata` itself so no route had to remember. That hid a DB read inside a serializer
+and broke 22 route tests whose mock whitelists the tables it will serve; the mock was right.
+
+Required is the answer: tsc names every caller, and all five have the project row in scope. One
+caveat found the hard way — a required POSITIONAL parameter is not enough. The type is
+`unknown`, so it accepts anything, and a call site that had been passing `agentGrants` in that
+slot compiled while feeding the grants config in as the project metadata. The signature is
+named options for that reason.
+
+### 7.7 PARITY, PROVEN ON DAYTONA
+
+The whole point of this document, measured end to end on a real Daytona sandbox on dev
+(`ed82f4f969`), with every link real and nothing stubbed:
+
+```
+agent curl ──▶ in-guest shim ──▶ Kortix broker route ──▶ postman-echo.com
+```
+
+An unmodified `curl` inside the guest:
+
+```json
+{"headers":{"host":"postman-echo.com","accept-encoding":"gzip, br","accept":"*/*",
+ "x-parity":"Bearer [REDACTED]","user-agent":"curl/8.5.0"},
+ "url":"https://postman-echo.com/get"}
+```
+
+One response proves three things at once, which is why an echo endpoint is the right probe
+HERE and the wrong one under Platinum's edge (§7.6):
+
+- `x-parity` is present → **the credential was injected**
+- the value reads `[REDACTED]` → **the echo was scrubbed server-side**
+- the real value appears nowhere → **it never entered the sandbox**
+
+`python-requests/2.34.2` returns the same, and `env` inside the guest contains neither the
+value nor the key. An unruled host (`example.com`) still answers 200 through a blind tunnel,
+so pinned-certificate and mTLS clients are untouched. **14 assertions, 0 failures.**
+
+This is the Platinum property on a provider with no credential edge of its own.
+
+#### What running it for real caught that nothing local did
+
+Both bugs passed every unit test and every `curl` probe:
+
+1. **The CA was unusable by Python.** No Subject Key Identifier on the CA, no Authority Key
+   Identifier on the leaves, so OpenSSL could not bind a leaf to its issuer.
+   `CERTIFICATE_VERIFY_FAILED ... Missing Authority Key Identifier`. curl accepted the same
+   chain, so only a real Python client in a real guest surfaced it. The first fix was worse:
+   forge's parsed `subjectKeyIdentifier` is a hex STRING, and feeding it back produced an AKI
+   pointing at an issuer that does not exist — every handshake then failed.
+   `generateSubjectKeyIdentifier().getBytes()` is the correct source.
+2. **gzip silently defeated echo redaction.** The broker redacts by scanning response BYTES; a
+   compressed body does not contain them, and `curl` offers gzip by default. Visible in the
+   run above as the shim forcing `accept-encoding: identity`.
+
+That is now three bugs in this feature that ONLY a real client in a real guest found — the
+`git` 407 framing bug of §7.6 was the first. The pattern is worth naming: this component's
+correctness is defined by what heterogeneous third-party clients accept, and no amount of
+in-process testing substitutes for running them.
+
+#### Getting a dev session at all
+
+Dev enforces billing (`billingStateAllowsRun` admits only `active`), so a fresh account 402s
+on session create and the feature cannot be reached. Funding one the way CI does —
+`tests/src/fixtures/billing.ts`, a real Stripe **test-mode** subscription — is the unblock.
+Note the account becomes runnable from the SUBSCRIPTION alone; the forged credit-purchase
+webhook returns 400 against dev because the deployed API validates the signature against AWS
+Secrets Manager rather than `.env.dev`.
+
+#### Still open
+
 - **Allow-list survival across resume / CoW-restore** — the funnel must not open on restore.
-- **Clients that ignore `HTTPS_PROXY`** (notably Node/Bun `fetch`) reach nothing once the
-  allow-list is on. Needs either an `LD_PRELOAD` shim or honest documentation.
+  Not required for the security property (an agent that bypasses the shim gets an
+  UNAUTHENTICATED request, never a credential), so this is egress restriction, a separate
+  feature.
+- **The relay's shape**, inherited from the broker: fully buffered, so no streaming, SSE or
+  websockets; 1 MiB request / 5 MiB response caps; redirects followed server-side.
+- **Daytona snapshot quota** — 225 of 200 at the time of writing; the bulk is live product
+  data (`kortix-meta-*` 117, `kortix-app-*` 38). Needs a retention policy, not a one-off purge.
 
 ## 8. What I would not build
 

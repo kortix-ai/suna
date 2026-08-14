@@ -1,8 +1,14 @@
 /**
  * The availability gate decides whether the API ADVERTISES network-boundary
- * delivery — save-time validation, delivery_status, and the web control all
+ * delivery — save-time validation, `delivery_status`, and the web control all
  * read it. Getting it wrong in the permissive direction ships a feature that
  * looks available and silently does nothing, so the default is pinned here.
+ *
+ * The shim half is a PER-PROJECT experimental flag rather than an operator env
+ * var. What it really depends on is a sandbox image new enough to run the shim,
+ * which the API cannot introspect — so it is a human decision, and scoping it
+ * per project lets one project opt in and be verified before anything else is
+ * exposed to it.
  */
 import { describe, expect, test } from 'bun:test';
 import { config } from '../config';
@@ -12,58 +18,70 @@ import {
   networkBoundaryShimAvailable,
 } from './network-boundary-availability';
 
-function withConfig<T>(patch: { platinum?: boolean; shim?: boolean }, run: () => T): T {
-  const originalShim = config.EGRESS_SHIM_ENABLED;
-  const originalIsPlatinum = config.isPlatinumEnabled;
+/** Project metadata with the flag explicitly on/off. The override map lives at
+ *  `projects.metadata.experimental` — a stable storage detail. */
+const withShim = (on: boolean) => ({ experimental: { network_boundary_shim: on } });
+const noOverrides = {};
+
+function withPlatinum<T>(enabled: boolean, run: () => T): T {
+  const original = config.isPlatinumEnabled;
   try {
-    if (patch.shim !== undefined) {
-      (config as { EGRESS_SHIM_ENABLED: boolean }).EGRESS_SHIM_ENABLED = patch.shim;
-    }
-    if (patch.platinum !== undefined) {
-      (config as { isPlatinumEnabled: () => boolean }).isPlatinumEnabled = () => patch.platinum!;
-    }
+    (config as { isPlatinumEnabled: () => boolean }).isPlatinumEnabled = () => enabled;
     return run();
   } finally {
-    (config as { EGRESS_SHIM_ENABLED: boolean }).EGRESS_SHIM_ENABLED = originalShim;
-    (config as { isPlatinumEnabled: () => boolean }).isPlatinumEnabled = originalIsPlatinum;
+    (config as { isPlatinumEnabled: () => boolean }).isPlatinumEnabled = original;
   }
 }
 
 describe('network boundary availability', () => {
-  test('the shim is OFF unless an operator turns it on', () => {
-    // Pins the sequencing decision: the API must not advertise boundary
-    // delivery to non-Platinum projects before the guest can perform it.
-    expect(config.EGRESS_SHIM_ENABLED).toBe(false);
+  test('a project that has not opted in gets nothing without Platinum', () => {
+    // The default has to be off: turning it on for a project whose sandbox
+    // image predates the shim means the secret saves and nothing can spend it.
+    withPlatinum(false, () => {
+      expect(networkBoundaryShimAvailable(noOverrides)).toBe(false);
+      expect(networkBoundaryDeliveryAvailable(noOverrides)).toBe(false);
+      expect(networkBoundaryMode('daytona', noOverrides)).toBeNull();
+    });
+  });
+
+  test('absent metadata is treated as not opted in', () => {
+    // Callers that cannot supply the project must not accidentally widen the
+    // gate; an unknown project is a closed one.
+    withPlatinum(false, () => {
+      expect(networkBoundaryShimAvailable(undefined)).toBe(false);
+      expect(networkBoundaryDeliveryAvailable(undefined)).toBe(false);
+    });
   });
 
   test('Platinum alone still satisfies availability, as before', () => {
-    withConfig({ platinum: true, shim: false }, () => {
-      expect(networkBoundaryDeliveryAvailable()).toBe(true);
-      expect(networkBoundaryMode('platinum')).toBe('provider-edge');
+    withPlatinum(true, () => {
+      expect(networkBoundaryDeliveryAvailable(noOverrides)).toBe(true);
+      expect(networkBoundaryMode('platinum', noOverrides)).toBe('provider-edge');
     });
   });
 
-  test('with the shim off and no Platinum, the feature stays unavailable', () => {
-    withConfig({ platinum: false, shim: false }, () => {
-      expect(networkBoundaryDeliveryAvailable()).toBe(false);
-      expect(networkBoundaryShimAvailable()).toBe(false);
-      expect(networkBoundaryMode('daytona')).toBeNull();
+  test('the flag makes it available on a provider with no credential edge', () => {
+    withPlatinum(false, () => {
+      expect(networkBoundaryShimAvailable(withShim(true))).toBe(true);
+      expect(networkBoundaryDeliveryAvailable(withShim(true))).toBe(true);
+      expect(networkBoundaryMode('daytona', withShim(true))).toBe('in-guest-shim');
     });
   });
 
-  test('the shim makes it available on a provider with no credential edge', () => {
-    withConfig({ platinum: false, shim: true }, () => {
-      expect(networkBoundaryDeliveryAvailable()).toBe(true);
-      expect(networkBoundaryMode('daytona')).toBe('in-guest-shim');
+  test('an explicit off is respected even where Platinum exists', () => {
+    withPlatinum(true, () => {
+      expect(networkBoundaryShimAvailable(withShim(false))).toBe(false);
+      // Platinum still covers the project — the flag only governs the shim.
+      expect(networkBoundaryDeliveryAvailable(withShim(false))).toBe(true);
     });
   });
 
-  test('Platinum keeps the provider edge even when the shim is available', () => {
+  test('Platinum keeps the provider edge even when the project has the flag', () => {
     // The edge injects for ANY client; the shim only for requests routed
     // through it. Where both exist the edge is strictly better, so it wins.
-    withConfig({ platinum: true, shim: true }, () => {
-      expect(networkBoundaryMode('platinum')).toBe('provider-edge');
-      expect(networkBoundaryMode('daytona')).toBe('in-guest-shim');
+    withPlatinum(true, () => {
+      expect(networkBoundaryMode('platinum', withShim(true))).toBe('provider-edge');
+      expect(networkBoundaryMode('daytona', withShim(true))).toBe('in-guest-shim');
     });
   });
 });

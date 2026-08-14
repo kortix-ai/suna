@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
 import {
+  UNSUPPORTED_SECRET_DELIVERY_MESSAGE,
   INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
   SANDBOX_PROVIDER_CAPACITY_MESSAGE,
   SANDBOX_PROVIDER_FAILURE_MESSAGE,
@@ -52,10 +53,14 @@ describe('classifySandboxProvisioningFailure', () => {
       new Error('Sandbox provider daytona does not support network-boundary secret delivery'),
     );
 
+    // Compared against the CONSTANT, not a second copy of the sentence. The
+    // literal used to be duplicated here, so editing the user-facing copy broke
+    // this test for no reason a reader could see — and a grep for the constant's
+    // name did not find this file. The wording itself is asserted in
+    // sandbox-provisioning-error.remedy.test.ts, which is where it belongs.
     expect(result).toEqual({
       category: 'unsupported-secret-delivery',
-      userMessage:
-        'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+      userMessage: UNSUPPORTED_SECRET_DELIVERY_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
     });

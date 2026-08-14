@@ -18,8 +18,14 @@ export const SANDBOX_PROVIDER_CAPACITY_MESSAGE =
 export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
   'The sandbox provider could not start this session. Try again.';
 
+// Names all THREE remedies. It used to say "Select Platinum or change the
+// secret delivery policy", which on a deployment that ships no Platinum left
+// the reader with one impossible option and one destructive one — and it
+// predates the flag that is now the cheapest fix.
 export const UNSUPPORTED_SECRET_DELIVERY_MESSAGE =
-  'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.';
+  'This sandbox provider cannot enforce network-boundary secret delivery. ' +
+  'Turn on "Network boundary without Platinum" in Feature flags → Experimental, ' +
+  'or run the project on Platinum, or change the secret delivery policy.';
 
 export const INVALID_SECRET_BOUNDARY_POLICY_MESSAGE =
   "A network-boundary secret in this project has an invalid outbound policy, so no session can start. " +

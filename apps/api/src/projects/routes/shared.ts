@@ -595,7 +595,13 @@ function stoppedWakeResult(
 ): SessionStartResult | null {
   if (row?.status !== 'stopped' || !row.externalId) return null;
   const metadata = sandboxMetadata(row);
-  if (runtimeWakeInProgress(metadata)) {
+  // An identity already preserved as unavailable outranks every wake clock on
+  // this row. Both payloads below describe a wake that may still succeed, and
+  // the cooldown one even advertises `retryable: true` — for a runtime the
+  // provider has disowned that is a dead-end button, not a retry. Fall through
+  // to the authoritative removed/recovery path, which either restores the box
+  // in place or re-reports `runtime_identity_unavailable`.
+  if (metadata.runtimeIdentityState !== 'unavailable' && runtimeWakeInProgress(metadata)) {
     return {
       stage: 'starting',
       agent_name: agentName ?? 'default',
@@ -606,6 +612,7 @@ function stoppedWakeResult(
       reason: 'runtime_waking',
     };
   }
+  if (metadata.runtimeIdentityState === 'unavailable') return null;
   if (!runtimeWakeRetryCoolingDown(metadata)) return null;
   return {
     stage: 'stopped',

@@ -33,7 +33,10 @@ import {
 } from '@/features/workspace/project-sidebar/workspace-grouping';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
+import {
+  shouldShowProjectSwitchLoading,
+  useProjectSwitchStore,
+} from '@/stores/project-switch-store';
 import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
@@ -44,7 +47,7 @@ export function WorkspaceMenuSection() {
   const params = useParams<{ id?: string }>();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
-  const switching = useIsSwitchingProject();
+  const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);
   const [query, setQuery] = useState('');
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
@@ -165,7 +168,13 @@ export function WorkspaceMenuSection() {
                 </DropdownMenuLabel>
                 {group.workspaces.map((workspace) => {
                   const active = workspace.project_id === activeProjectId;
-                  const loading = switching && workspace.project_id !== activeProjectId;
+                  // Only the row you clicked, and only until the URL is on it.
+                  // Never the whole list — see `shouldShowProjectSwitchLoading`.
+                  const loading = shouldShowProjectSwitchLoading(
+                    switchingToProjectId,
+                    workspace.project_id,
+                    activeProjectId ?? null,
+                  );
                   return (
                     <DropdownMenuItem
                       key={workspace.project_id}

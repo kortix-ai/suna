@@ -9,6 +9,7 @@ import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
+import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
   EMPTY_REAP_RESULT,
@@ -240,6 +241,7 @@ export async function runProjectMaintenance(): Promise<void> {
       snapshotGc,
       connectorAttachments,
       runtimeWakes,
+      parkedRuntimes,
       monitorBoxes,
       monitorEventsPurged,
     ] = await Promise.all([
@@ -349,7 +351,20 @@ export async function runProjectMaintenance(): Promise<void> {
           '[project-maintenance] runtime-wake reconcile failed:',
           err instanceof Error ? err.message : err,
         );
-        return { checked: 0, stopped: 0, errors: 1 };
+        return { checked: 0, stopped: 0, removed: 0, errors: 1 };
+      }),
+      // Nothing else ever re-checks a PARKED sandbox: the reaper's candidate
+      // predicate is `status = 'active'` and the wake fence only sees rows with
+      // a live wake. So a box the provider lost while it sat parked stayed
+      // advertised as resumable until a user tripped over it — 16,243 prod rows
+      // had never been re-verified, 16 of them already dead (2026-08-13).
+      // Rotating + bounded, and it also clears the flag when a runtime is back.
+      verifyParkedRuntimes().catch((err) => {
+        console.warn(
+          '[project-maintenance] parked-runtime verification failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { examined: 0, lost: 0, healed: 0, errors: 1 };
       }),
       // Monitors (docs/specs/2026-08-12-monitors.md D5). Converges the
       // per-project monitor box: flag on + >=1 enabled monitor => a box exists
@@ -393,7 +408,11 @@ export async function runProjectMaintenance(): Promise<void> {
         connectorAttachments.deleted ||
         connectorAttachments.errors ||
         runtimeWakes.stopped ||
+        runtimeWakes.removed ||
         runtimeWakes.errors ||
+        parkedRuntimes.lost ||
+        parkedRuntimes.healed ||
+        parkedRuntimes.errors ||
         monitorBoxes.created ||
         monitorBoxes.restarted ||
         monitorBoxes.stopped ||
@@ -442,6 +461,10 @@ export async function runProjectMaintenance(): Promise<void> {
       `idle_skipped=${idle.skipped}`,
       `compute_rows_closed=${orphanCompute.closed}`,
       `late_wakes_stopped=${runtimeWakes.stopped}`,
+      `parked_runtimes_preserved=${runtimeWakes.removed}`,
+      `parked_verified=${parkedRuntimes.examined}`,
+      `parked_lost=${parkedRuntimes.lost}`,
+      `parked_healed=${parkedRuntimes.healed}`,
       // A monitor box only stays billable while this sweep observes it, so
       // `monitor_observed` going flat while boxes exist is the signal that
       // monitor billing has silently stopped earning.

@@ -43,6 +43,8 @@ import {
   type WorkspaceModeV2,
 } from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases } from './lib/agent-config-v2';
+import { isMetaAgentName } from '@kortix/shared';
+import { platformMetaAgentGrant } from './lib/platform-meta-agent';
 
 const MANIFEST_FILENAME = 'kortix.toml';
 
@@ -330,6 +332,17 @@ export async function resolveAgentGrant(
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
 export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): AgentGrant | null {
+  // The reserved platform coordinator is injected by the platform and is NEVER
+  // declared in a project manifest, so manifest resolution cannot answer for it:
+  // a governed project falls through to the unlisted default-DENY below, and an
+  // ungoverned one returns the UNRESTRICTED null. Both are wrong, and the wrong
+  // answers were load-bearing — `remintGrantForAgentSwitch` re-resolves the
+  // running agent's grant on EVERY prompt and writes it onto the session's
+  // token, so the deny-all overwrote the coordinator's real grant on its first
+  // turn (every later `kortix` call then 403'd) and the null made the re-mint
+  // refuse the prompt outright. Its grant is platform-owned, at mint and here.
+  if (isMetaAgentName(agentName)) return platformMetaAgentGrant();
+
   // No [[agents]] section parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return null;

@@ -128,10 +128,7 @@ const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only
-const warm = await kortix.project(pid).sessions.ensureWarm();
-await kortix
-  .project(pid)
-  .sessions.claimWarm({ session_id: warm.session.session_id });
+const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);

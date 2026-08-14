@@ -12,6 +12,145 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-13 — session `warm-index` — warm-session decline must not toast
+
+**Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
+recoverable `409 WARM_SESSION_UNAVAILABLE` reached `platformConfig().onError` and
+became an error toast on an ordinary project page view. The browser fires that
+call on every project visit and ignores every failure by contract, so the toast
+was pure noise — and an account sitting at its concurrent-session cap saw it
+every time. `claimWarmProjectSession` already had the flag for exactly this
+reason (B26); this brings its sibling in line.
+
+Also marked `claimWarmProjectSession` and `sessions.claimWarm` `@deprecated`. A
+warm session is an ordinary session, so the API's send path no longer claims
+anything — it navigates to the session and prompts it, and the first prompt makes
+it visible. The export STAYS: it has shipped in every published version since
+v0.11.0 (verified against the 0.11.0 and 0.12.8 tarballs), so removing it would
+404 an external consumer at runtime. Removal belongs to the next major.
+
+RED first:
+
+```
+$ bun test packages/sdk/src/core/rest/projects-client/sessions.test.ts
+(fail) ensureWarmProjectSession keeps a declined warm session out of the global error sink
+error: expect(received).not.toHaveBeenCalled()
+Expected number of calls: 0
+Received number of calls: 1
+ 40 pass
+ 1 fail
+```
+
+GREEN after the fix:
+
+```
+$ bun test packages/sdk/src/core/rest/projects-client/sessions.test.ts
+ 41 pass
+ 0 fail
+Ran 41 tests across 1 file. [35.00ms]
+```
+
+No exported name, signature or type changed. Public-surface snapshots unchanged.
+The `version` field was not touched.
+
+**Housekeeping:** removed two committed diff3 conflict markers (`||||||| b55497c392`
+from #6437, `||||||| f398f755c2` from #6244). Neither had matching `<<<<<<<` /
+`>>>>>>>` lines, so nothing ever flagged them.
+
+**Claim note:** the claim was recorded with the work rather than before it — this
+change was a one-file bug fix discovered mid-refactor, not a scheduled task.
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-13 — session `runtime-identity-ux` — error message: sentence over slug
+
+**Done.** `core/http/api-client.ts` read `errorData.reason` FIRST when building
+`ApiError.message`. Every Kortix error body pairs a machine slug (`reason`) with
+the sentence written for the user (`error`/`message`), so the slug always won.
+A customer saw the literal string `runtime_identity_unavailable` as both the
+session card detail and the toast (prod session ad4b63ac, 2026-08-13).
+
+Surveyed every `reason:` literal in `apps/api/src`: all are snake_case slugs, not
+one is a sentence — so preferring it could only ever downgrade the message.
+`reason` is now the LAST fallback, behind `message` / `error` / `detail` /
+`detail.message`. A body carrying only `reason` still yields it, so nothing
+regresses; `ApiError.code` is untouched, so code-based branching is unaffected.
+
+3 tests added in `api-client.test.ts` (RED first, verified failing on the real
+409 restart body). Isolated run: 33 pass / 0 fail.
+
+**Caveat, pre-existing:** the FULL `packages/sdk` suite is red at baseline —
+404 failures on the unmodified tree, from cross-file pollution of the shared
+`globalThis.fetch` / `configureKortix()` singletons when 141 files run together.
+With this change: 407 failures over 1851 tests (+3 tests, +3 failures — my own
+three, which pass in isolation). **Net new failures attributable to this change:
+zero.** Not fixed here: it is a test-harness isolation problem across the whole
+package and deserves its own task. Filed under Next.
+
+---
+
+### 2026-08-13 — session `warm-index` claim — DONE
+
+Additive only: registered the `warm_sessions` project feature flag key so the
+platform's warm-session endpoints can be gated. The SDK is the runtime witness
+of the flag key list, so a new platform flag cannot skip this package.
+
+Claimed SDK scope:
+
+- Add `warm_sessions` to the hand-written `FeatureFlagKey` union and to the
+  `FEATURE_FLAG_KEYS` runtime array in
+  `src/core/rest/projects-client/projects.ts`.
+- Change no existing exported name, no signature, no `version` field.
+
+RED:
+
+- `FEATURE_FLAG_KEYS lists every flag key exactly once` failed with the key
+  added to the expected list and absent from the runtime array
+  (`54 pass, 1 fail`).
+
+GREEN:
+
+- Union + runtime array updated together, keeping the two in the same order.
+- Cross-package drift holds: `@kortix/api-contract` `FeatureFlagMapSchema`, the
+  API registry, and this list all carry the key
+  (`apps/api` `unit-feature-flag-drift.test.ts` + `unit-feature-flags.test.ts`
+  green, `50 pass, 0 fail`).
+
+Gates:
+
+- `bun test --isolate src` — `1846 pass, 2 skip, 0 fail`.
+- `bun run typecheck` — clean, exit 0.
+- `bun run smoke:install` — `install smoke test passed`, exit 0.
+
+Shippable to production: YES.
+
+
+### 2026-08-13 — session `latest-managed-models`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding managed `deepseek-v4-pro-0813`. The
+package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1901 pass`, `2 skip`,
+`0 fail`, and `7244` assertions across `145` files; packed-install smoke passes.
+The managed model also passed the local catalog, inference, usage-log, and
+generation-record canary through the API.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
+### 2026-08-13 — session `grok-4-6-managed`
+
+No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
+matches `@kortix/llm-catalog` after adding `grok-4.6`. It also includes the
+three managed ids added on 2026-08-10. The package version is unchanged.
+
+Verification: SDK typecheck exits `0`; SDK tests report `1903 pass`, `0 fail`,
+and `7250` assertions across `145` files; packed-install smoke passes.
+
+**Status:** COMPLETE. SDK package shippable to production: YES.
+
 ### 2026-08-11 — session `billing-revamp-pr5-ui` claim
 
 No **Now** task claimed. User-directed work: the UI half of PR5 (the admin
@@ -8276,7 +8415,6 @@ would now fail to compile. Flagging rather than burying it.
 made; this entry is the handoff record).
 
 **SDK package shippable to production: YES.**
-||||||| f398f755c2
 
 ### 2026-08-07 — session `connectors-grid`: `listPipedreamApps` forwards the catalogue total
 

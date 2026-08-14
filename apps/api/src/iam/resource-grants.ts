@@ -34,7 +34,7 @@
  * `secret` stay in RESOURCE_GRANT_TYPES / ResourceType purely for back-compat:
  * pre-existing grant rows of those types must keep reading, listing, and
  * revoking correctly. NEW grants of those types are rejected at the API layer
- * (see CREATABLE_RESOURCE_GRANT_TYPES + the r7.ts POST /resource-grants gate)
+ * (see CREATABLE_RESOURCE_GRANT_TYPES + the routes/resource-grants.ts POST gate)
  * — this module stays permissive so it never has to know which caller is
  * enforcing that; it's a write-time policy, not a storage-model change.
  *

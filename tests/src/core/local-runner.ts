@@ -171,20 +171,18 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     return { mode: 'target', lanes, stages: [lanes] };
   }
   if (targetFull) {
-    // SERIALIZE the two lanes (two stages). Both provision heavy OpenCode
-    // sessions on the shared staging Daytona provider; staging can service ONE
-    // lane's session-provisioning (proven: flow lane's ~3 concurrent sessions
-    // reach runtime-ready fine when the browser lane is idle) but not both at
-    // once — concurrent provisioning starved RUN-*/SESS-* "runtime ready" for
-    // ~16 min until they timed out. Reducing per-lane worker counts did NOT
-    // help (the browser lane's sessions are the heavy ones), so the lanes must
-    // not provision simultaneously. This costs wall-clock (~115m sequential,
-    // why tests-release runs at 120m), but each lane alone stays within the
-    // provider's throughput. The earlier serialize attempt only failed on the
-    // now-fixed JWT expiry (staging tokens are 2h) — each lane mints its tokens
-    // inside its own <60m window. Follow-up: shard onto isolated provisioners.
+    // Lanes run CONCURRENTLY (one stage). A serialize experiment was tried to
+    // fix RUN-*/SESS-* "session runtime ready" timeouts, but that was a
+    // MISDIAGNOSIS: the flow lane ALONE (serialized, browser idle) still timed
+    // out, and a live probe showed staging session-provisioning was in a
+    // transient ~2h outage during that window (sessions stuck 'provisioning',
+    // never reaching a sandbox). When staging is healthy a fresh session reaches
+    // 'running' in ~21s, so both lanes provision fine concurrently (as they did
+    // before the outage). Concurrent keeps the run ~75m within the 90m cap and
+    // the 2h token lifetime. If staging provisioning is genuinely down, the gate
+    // SHOULD fail — that's a real staging outage, not a test defect.
     const lanes = [targetApiFull, targetBrowserFull];
-    return { mode: 'target-full', lanes, stages: [[targetApiFull], [targetBrowserFull]] };
+    return { mode: 'target-full', lanes, stages: [lanes] };
   }
   if (full) {
     const fullFlows: LocalTestLane = {

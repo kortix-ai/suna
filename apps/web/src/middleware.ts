@@ -81,7 +81,9 @@ const PUBLIC_ROUTES = [
   '/mcp', // Public read-only MCP server and server card
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
-  '/presentation', // Standalone product deck (/presentation) should be public
+  '/presentation', // Legacy deck paths, now 307'd to /presentations (next.config.ts)
+  '/presentations', // Deck index + every registered deck. Link-shared, noindex, no login
+
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public

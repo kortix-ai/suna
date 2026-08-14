@@ -788,13 +788,12 @@ export const projectSessions = kortixSchema.table(
       table.projectId,
       table.sessionId,
     ),
-    uniqueIndex('idx_project_sessions_one_available_warm')
-      .on(table.projectId, table.createdBy)
-      .where(
-        sql`${table.createdBy} is not null
-          and ${table.metadata}->'warm_session'->>'state' = 'available'
-          and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
-      ),
+    // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
+    // session per project+creator) USED to be declared here. It arbitrated a
+    // create race that no longer exists: a warm session is now an ordinary
+    // session and a duplicate costs one extra box, bounded by the reserved
+    // concurrent-session slot. Dropped by
+    // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: a plain btree `idx_project_sessions_created_at` (created_at) ALSO
     // exists — created by migrations/20260807202731277_admin_analytics_time_indexes.concurrent.ts
     // so the admin activity dashboard's global `created_at >= $1` window scan

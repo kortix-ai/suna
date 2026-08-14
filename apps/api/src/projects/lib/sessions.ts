@@ -96,10 +96,10 @@ import {
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
-  projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 
@@ -164,14 +164,24 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
   return Number(row?.provisioningCount ?? 0);
 }
 
+/**
+ * @param reserveSlots How many concurrent-session slots this create must LEAVE
+ *   FREE. `0` (the default) is the ordinary cap: a create may take the last
+ *   slot. `1` is speculative creation — a pre-created session is real, booted,
+ *   billed compute holding a slot exactly like a working session, so it must
+ *   never take the LAST one and 429 the next genuine session start. On Starter
+ *   (`concurrentSessionLimit: 3`, billing/services/tiers.ts) three project page
+ *   views with zero real work were enough.
+ */
 export async function enforceConcurrentSessionCap(
   accountId: string,
   userId: string,
   request?: RequestAuditContext,
+  reserveSlots = 0,
 ): Promise<SessionCreateError | null> {
   const { tier, limit, source } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
-  if (activeSessions < limit) return null;
+  if (activeSessions < limit - reserveSlots) return null;
 
   recordAuditEvent({
     accountId,
@@ -187,6 +197,7 @@ export async function enforceConcurrentSessionCap(
       limit,
       limit_source: source,
       active_sessions: activeSessions,
+      reserve_slots: reserveSlots,
     },
   }).catch((error) => {
     console.error('[projects] Failed to record session cap audit event:', error);
@@ -205,6 +216,7 @@ export async function enforceConcurrentSessionCap(
       code: 'concurrent_session_limit',
       limit,
       active_sessions: activeSessions,
+      reserve_slots: reserveSlots,
     },
   };
 }
@@ -213,6 +225,7 @@ export async function checkConcurrentSessionCap(
   accountId: string,
   userId: string,
   request?: RequestAuditContext,
+  reserveSlots = 0,
 ): Promise<{
   error?: SessionCreateError;
   headers: Record<string, string>;
@@ -225,9 +238,9 @@ export async function checkConcurrentSessionCap(
     'X-RateLimit-Remaining': String(remainingAfterCreate),
   };
 
-  if (activeSessions < limit) return { headers };
+  if (activeSessions < limit - reserveSlots) return { headers };
 
-  const error = await enforceConcurrentSessionCap(accountId, userId, request);
+  const error = await enforceConcurrentSessionCap(accountId, userId, request, reserveSlots);
   return {
     headers: error?.headers ?? headers,
     ...(error ? { error } : {}),
@@ -570,6 +583,12 @@ export async function createProjectSession(input: {
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
+  /**
+   * Concurrent-session slots this create must LEAVE FREE. Defaults to 0 — an
+   * ordinary create may take the last slot. Speculative creation passes 1; see
+   * `enforceConcurrentSessionCap`.
+   */
+  reserveConcurrentSlots?: number;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -642,7 +661,7 @@ export async function createProjectSession(input: {
   // connectors keeps the project-default fallback for the rest unless the caller
   // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
   // composer's "I picked these specific connections, turn the others off"
-  // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
+  // signal). Defaulting absent→true matches the re-scope path (routes/session-scope.ts), which
   // deliberately never flips this flag on a scope save. Before this, a caller
   // sending `connector_bindings: {...}` without `inherit_unbound` left it
   // `false`, hiding EVERY unbound connector from `kortix connectors ls`
@@ -737,7 +756,7 @@ export async function createProjectSession(input: {
   // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
   // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
   // agent name.
-  const metaAgentEnabled = projectMetaAgentEnabled(project.metadata);
+  const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -1088,7 +1107,12 @@ export async function createProjectSession(input: {
   // still evaluated/returned before billing (402).
   const [capResult, billingCheck] = await Promise.all([
     input.enforceAccountCap !== false
-      ? checkConcurrentSessionCap(accountId, userId, input.request)
+      ? checkConcurrentSessionCap(
+          accountId,
+          userId,
+          input.request,
+          input.reserveConcurrentSlots ?? 0,
+        )
       : Promise.resolve(null),
     checkBillingActive(accountId),
   ]);

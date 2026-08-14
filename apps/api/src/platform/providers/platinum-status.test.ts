@@ -89,3 +89,57 @@ test('recoverInPlace() refuses to create a replacement for an unbacked terminal 
 
   await expect(provider.recoverInPlace('sbx_unbacked')).resolves.toBe('unavailable');
 });
+
+// Regression for incident 2026-08-12 (sbx_01KZP370WDB8DGYNAQM1B875VR).
+//
+// Platinum's reconciler deleted a sandbox that had a COMPLETED 4.87 GB backup
+// in S3. From that moment `GET /v1/sandboxes/:id` returns 404 — the same 404 a
+// never-existed id returns. `recoverInPlace` treated that 404 as proof of loss
+// and returned 'unavailable' immediately, which made the restore branch below
+// it DEAD CODE: it handles `state ∈ {failed-start,lost,deleted}` + a completed
+// backup, but a tombstoned sandbox can never reach it. The one path written to
+// recover exactly this case could never run.
+test('recoverInPlace() still attempts a backup restore when the sandbox 404s (tombstoned)', async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({ url: String(input), method: String(init?.method ?? 'GET') });
+    if (String(input).endsWith('/restore-from-backup')) {
+      return new Response(JSON.stringify({ id: 'sbx_tombstoned', state: 'restoring' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    // What a tombstoned row answers today.
+    return new Response(JSON.stringify({ error: 'sandbox not found', code: 'sandbox_not_found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  await expect(provider.recoverInPlace('sbx_tombstoned')).resolves.toBe('recovering');
+  expect(calls).toContainEqual({
+    url: 'https://platinum.example.test/v1/sandboxes/sbx_tombstoned/restore-from-backup',
+    method: 'POST',
+  });
+  // NEVER a create: the identity is preserved or nothing happens.
+  expect(calls.some((call) => call.url.includes('/v1/sandboxes?'))).toBe(false);
+});
+
+// Platinum refuses a restore for a tombstoned row TODAY (the `sbx.deletedAt`
+// guard on the endpoint). That refusal must read as "not recoverable", not as
+// an exception that escapes into the caller's start path.
+test('recoverInPlace() answers unavailable when the restore itself is refused', async () => {
+  globalThis.fetch = (async (input) =>
+    new Response(JSON.stringify({ error: 'sandbox not found', code: 'sandbox_not_found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
+
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  await expect(provider.recoverInPlace('sbx_gone_for_good')).resolves.toBe('unavailable');
+});

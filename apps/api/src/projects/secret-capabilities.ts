@@ -43,8 +43,19 @@ export type SecretCapability =
       scheme: 'https';
       /** The value is not in the sandbox in any form. */
       readable_in_sandbox: false;
-      /** A response that would echo the value back into the sandbox is cut. */
-      on_echo: 'block';
+      /**
+       * What happens when an upstream echoes the credential back.
+       *
+       *  - `block`   the provider edge CUTS the response mid-flight (Platinum)
+       *  - `redact`  Kortix replaces the value with `[REDACTED]` and returns
+       *              the rest (the in-guest shim, which relays through the
+       *              broker)
+       *
+       * This is not cosmetic. The two produce OPPOSITE symptoms for the same
+       * working request — an empty reply versus a 200 — so an agent told the
+       * wrong one misreads success as failure, or the reverse.
+       */
+      on_echo: 'block' | 'redact';
     };
 
 /**
@@ -59,18 +70,44 @@ export type SecretCapability =
  * same for every network secret, and repeating them would spend the 48 KB
  * budget that `serializeSecretCapabilities` divides between capabilities.
  */
-export const NETWORK_BOUNDARY_NOTES: readonly string[] = [
+const SHARED_BOUNDARY_NOTES: readonly string[] = [
   'Kortix adds these credentials outside the sandbox, at the network boundary.',
   'The value is not in this sandbox: no environment variable, no file, no alias, no placeholder.',
   'Do not search for the value, do not ask the user for it, and do not build the header yourself.',
   'Send an ordinary request with no credential. The boundary sets the header in flight.',
   'Each capability lists its own `hosts` and `header`. Only those hosts get that header.',
   'HTTPS is required. Plain HTTP to a listed host is refused before it leaves the sandbox.',
+]
+
+/** Provider edge (Platinum): the echoing response is CUT. */
+export const NETWORK_BOUNDARY_NOTES_BLOCK: readonly string[] = [
+  ...SHARED_BOUNDARY_NOTES,
   'A response that would echo the value back into the sandbox is cut mid-flight.',
   'So `curl: (52) Empty reply from server` on a listed host means the boundary worked. The host is not down.',
   'Verify with an endpoint that CONSUMES the credential and returns 200 or 401, never one that reflects request headers.',
   'A listed host that answers 401 means the header did not arrive. Report that; do not invent a credential.',
-];
+]
+
+/**
+ * In-guest shim: the echoing response comes back REDACTED, not cut.
+ *
+ * The opposite symptom from the edge, which is the whole reason these are two
+ * lists. Telling a shim-backed agent that an empty reply means success would
+ * have it read a genuinely dead host as a working boundary — and read the real
+ * success (a 200 containing `[REDACTED]`) as a failure.
+ */
+export const NETWORK_BOUNDARY_NOTES_REDACT: readonly string[] = [
+  ...SHARED_BOUNDARY_NOTES,
+  'A response that would echo the value back into the sandbox comes back with `[REDACTED]` in its place.',
+  'So seeing `[REDACTED]` on a listed host means the boundary worked — that is the credential, removed on the way in.',
+  'An empty reply or a connection error on a listed host is a REAL failure here. Do not read it as the boundary working.',
+  'Requests are relayed through Kortix, so responses are not streamed: no SSE, no websockets, and large bodies are capped.',
+  'A listed host that answers 401 means the header did not arrive. Report that; do not invent a credential.',
+]
+
+/** @deprecated Ambiguous now that two mechanisms exist. Use the mode-specific
+ *  lists above; kept so an out-of-tree importer keeps compiling. */
+export const NETWORK_BOUNDARY_NOTES = NETWORK_BOUNDARY_NOTES_BLOCK
 
 export interface SecretCapabilityCatalog {
   version: 1;
@@ -122,8 +159,18 @@ export function buildSecretCapabilities(
     grantEnv?: string[] | 'all';
     sessionAllowlist?: string[] | null;
     sessionId?: string | null;
+    /**
+     * Which mechanism actually serves this session's boundary secrets.
+     *
+     * Defaults to the provider edge. That is the conservative default for a
+     * caller that has not been updated: `block` is what Platinum has always
+     * done, so an un-passed mode keeps the pre-shim wording rather than
+     * inventing a claim about a mechanism the caller never named.
+     */
+    boundaryMode?: 'provider-edge' | 'in-guest-shim' | null;
   },
 ): SecretCapabilityCatalog {
+  const echo = input.boundaryMode === 'in-guest-shim' ? 'redact' : 'block';
   const capabilities: SecretCapability[] = [];
 
   for (const row of rows) {
@@ -181,7 +228,7 @@ export function buildSecretCapabilities(
           header: destination.header,
           scheme: 'https',
           readable_in_sandbox: false,
-          on_echo: 'block',
+          on_echo: echo,
         });
       }
       continue;
@@ -214,7 +261,13 @@ export function buildSecretCapabilities(
   return {
     version: 1,
     capabilities,
-    ...(hasNetworkCapability(capabilities) ? { notes: { network: NETWORK_BOUNDARY_NOTES } } : {}),
+    ...(hasNetworkCapability(capabilities)
+      ? {
+          notes: {
+            network: echo === 'redact' ? NETWORK_BOUNDARY_NOTES_REDACT : NETWORK_BOUNDARY_NOTES_BLOCK,
+          },
+        }
+      : {}),
   };
 }
 
@@ -226,7 +279,7 @@ export function serializeSecretCapabilities(catalog: SecretCapabilityCatalog): s
   // The notes travel with the capabilities they explain: dropped when
   // truncation leaves no network capability, and counted against the budget
   // when it does, so the payload cannot exceed the cap by adding them last.
-  const notes = catalog.notes ?? { network: NETWORK_BOUNDARY_NOTES };
+  const notes = catalog.notes ?? { network: NETWORK_BOUNDARY_NOTES_BLOCK };
   const build = (kept: SecretCapability[]): SecretCapabilityCatalog => ({
     version: 1,
     capabilities: kept,

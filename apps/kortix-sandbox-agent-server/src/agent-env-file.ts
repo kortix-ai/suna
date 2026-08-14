@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, wr
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
+import { egressShimEnv } from './egress-shim'
 import { logger } from './logger'
 import type { ProjectEnvStore } from './project-env'
 
@@ -119,6 +120,14 @@ function renderShellEnv(
       logger.warn('[agent-env] skipping oversized secret value', { name })
       continue
     }
+    lines.push(`export ${name}=${shellQuote(value)}`)
+  }
+  // The egress shim's proxy + CA variables, when a shim is running. NOT secrets
+  // and NOT KORTIX_-prefixed: a proxy URL and some file paths. They belong here
+  // rather than in the daemon's own process env, because putting HTTPS_PROXY on
+  // the daemon would route the shim's OWN broker call back through the shim.
+  // Empty object when no shim runs, which is the common case.
+  for (const [name, value] of Object.entries(egressShimEnv())) {
     lines.push(`export ${name}=${shellQuote(value)}`)
   }
   // Per-session identity/context creds (SHELL_SESSION_CREDS allowlist). Emitted

@@ -308,14 +308,32 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
+/**
+ * Pre-create the session a present user is about to start.
+ *
+ * Speculative by contract: the caller ignores every failure and falls through to
+ * `createProjectSession`, which re-evaluates every gate and surfaces the real
+ * error. `showErrors: false` keeps the recoverable `409 WARM_SESSION_UNAVAILABLE`
+ * — an account with no concurrent-session headroom, a project whose repo cannot
+ * be read — out of the global error sink, where it became a toast on an ordinary
+ * project page view.
+ */
 export async function ensureWarmProjectSession(projectId: string) {
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}),
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}, {
+      showErrors: false,
+    }),
   );
   markSessionFresh(result.session.session_id);
   return result;
 }
 
+/**
+ * @deprecated A warm session is an ordinary session. Navigate to
+ * `ensureWarmProjectSession`'s `session.session_id` and prompt it — the first
+ * prompt makes it visible on its own. This call remains only so consumers
+ * pinned to an older shape keep working; it will be removed in the next major.
+ */
 export async function claimWarmProjectSession(
   projectId: string,
   input: ClaimWarmProjectSessionInput,

@@ -4,6 +4,7 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isWarmProjectSession } from './warm-sessions';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -118,6 +119,15 @@ export function selectSessionRowsForViewer(input: {
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
+      // A warm session the user never prompted holds no work of theirs, so
+      // listing it is noise: they would see a session in the sidebar they never
+      // started. The marker is dropped by the first prompt, and from that moment
+      // the row lists like any other session. See lib/warm-sessions.ts.
+      //
+      // `visible` scope only. The `project` scope is the manager's full
+      // inventory — somebody auditing every session in the project must still
+      // see warm rows, because they are real rows that held a real sandbox.
+      if (isWarmProjectSession(item.row.metadata)) return false;
       return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
     }),
   };

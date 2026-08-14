@@ -127,6 +127,85 @@ describe('selectSessionRowsForViewer', () => {
   });
 });
 
+/**
+ * The project shell pre-creates a warm session on mount so the sandbox is
+ * already up when the user finishes typing. Until its first prompt lands it
+ * holds no user work, so the sidebar must not show a session the user never
+ * started. ONE marker carries that — see projects/lib/warm-sessions.ts.
+ */
+describe('selectSessionRowsForViewer — warm sessions', () => {
+  function visible(rows: Array<typeof projectSessions.$inferSelect>) {
+    return selectSessionRowsForViewer({
+      rows,
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    }).items.map((item) => item.row.sessionId);
+  }
+
+  test('visible scope hides a warm session', () => {
+    expect(visible([row('own'), row('warm', { metadata: { warm: true } })])).toEqual(['own']);
+  });
+
+  test('a used session lists like any other — the first prompt drops the marker', () => {
+    expect(visible([row('used-warm', { metadata: {} })])).toEqual(['used-warm']);
+  });
+
+  // The reaper flips `project_sessions.status` to stopped and leaves the marker
+  // in place. That row must not surface through the resumable-stopped branch.
+  test('a reaped warm session stays hidden even though it looks resumable', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map([['reaped-warm', 'stopped']]),
+    });
+
+    expect(selected.items).toEqual([]);
+  });
+
+  // A manager auditing the project must see every session, warm ones included:
+  // they are real rows holding a real sandbox.
+  test('project scope keeps the warm session', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('own'), row('warm', { metadata: { warm: true } })],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['own', 'warm']);
+  });
+
+  test('a malformed warm marker never hides a real session', () => {
+    const rows = [
+      row('no-metadata', { metadata: null }),
+      row('empty', { metadata: {} }),
+      row('string-marker', { metadata: { warm: 'true' } }),
+      row('array-marker', { metadata: { warm: [true] } }),
+      row('object-marker', { metadata: { warm: { state: 'available' } } }),
+      row('legacy-marker', { metadata: { warm_session: { state: 'available' } } }),
+    ];
+    expect(visible(rows)).toEqual([
+      'no-metadata',
+      'empty',
+      'string-marker',
+      'array-marker',
+      'object-marker',
+      'legacy-marker',
+    ]);
+  });
+});
+
 describe('mergeSessionOwnerIdentities', () => {
   test('resolves humans, agent service accounts, and stale principals distinctly', () => {
     const humanId = '33333333-3333-4333-8333-333333333333';

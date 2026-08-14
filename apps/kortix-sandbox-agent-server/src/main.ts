@@ -46,6 +46,7 @@ import {
   writeOpenCodeSessionPin,
 } from './runtime-state'
 import { createProjectEnvStore } from './project-env'
+import { startEgressShim } from './egress-shim'
 import { startProxy } from './proxy'
 import {
   startLlmProxy,
@@ -149,6 +150,13 @@ async function main() {
   if (!agentEnvDirIsTmpfs()) {
     logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
   }
+  // Network-boundary secrets on a provider with no credential edge. Started
+  // BEFORE the first writeAgentEnvFile below, because that file is how the
+  // proxy + CA variables reach the agent's shells — and before opencode spawns,
+  // because the shim's port has to be listening by the time anything can make a
+  // request. Returns null for the ordinary session that holds no boundary
+  // secret; see src/egress-shim/index.ts.
+  await startEgressShim()
   if (!writeAgentEnvFile(projectEnv)) {
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
   }
@@ -805,6 +813,19 @@ async function runWarmSeedMode(
     void (async () => {
       const t0 = Date.now()
       reloadSessionEnv()
+      // The fork's REAL session env has just landed. A warm seed never started
+      // an egress shim (runWarmSeedMode returns long before the boot path that
+      // does), so a forked session holding a network-boundary secret would
+      // otherwise get none — its requests would leave uncredentialed and the
+      // upstream 401 would look like a bad secret. Start it here, BEFORE
+      // writeAgentEnvFile, because that file is how the proxy + CA variables
+      // reach the agent's shells.
+      //
+      // Deliberately after reloadSessionEnv(): starting earlier would arm the
+      // shim with the DERIVING session's token and project id — the same class
+      // of bug as the 2026-06-10 incident where forks answered health on main
+      // with the deriving session's credentials.
+      await startEgressShim()
       writeAgentEnvFile(createProjectEnvStore())
       const cfg2 = loadConfig()
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted

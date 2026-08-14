@@ -186,6 +186,32 @@ test('ensureWarmProjectSession POSTs the server-owned warm-session request', asy
   expect(result.reused).toBe(true);
 });
 
+test('ensureWarmProjectSession keeps a declined warm session out of the global error sink', async () => {
+  const onError = mock(() => {});
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError,
+  });
+  nextResponse = {
+    status: 409,
+    body: {
+      error: 'This project cannot prepare a warm session right now.',
+      code: 'WARM_SESSION_UNAVAILABLE',
+    },
+  };
+
+  try {
+    await expect(ensureWarmProjectSession('P1')).rejects.toMatchObject({
+      status: 409,
+      code: 'WARM_SESSION_UNAVAILABLE',
+    });
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
 test('claimWarmProjectSession POSTs the selected warm session and create options', async () => {
   nextResponse = { status: 200, body: { session_id: 'WARM-1' } };
   const result = await claimWarmProjectSession('P1', {

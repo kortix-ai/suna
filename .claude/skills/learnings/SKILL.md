@@ -21,6 +21,33 @@ linked, not inlined.
 
 ## Register
 
+### A platform-injected principal must never have its authority re-derived from user config (2026-08-13)
+
+**When:** touching code that RE-resolves an already-minted credential —
+`remintGrantForAgentSwitch` / `reconcileStoredSessionAgentGrant`
+(`apps/api/src/projects/lib/session-token-grant.ts`), which run on EVERY prompt
+and every connector call. The `meta` coordinator is injected by
+`addPlatformMetaAgent` and appears in no `kortix.yaml`, so resolving it through
+the manifest returns "unlisted agent": deny-all on a governed project,
+UNRESTRICTED on an ungoverned one. Both are destructive — the deny-all was
+WRITTEN over the coordinator's real grant on its first turn, and the null made
+the re-mint refuse the turn outright. Branch for the platform-owned principal in
+the ONE pure resolver every path shares (`grantFromLoadedAgents`); a special case
+at the mint alone is exactly what the re-mint then erases.
+Two traps cost hours here. A comment asserting a fast path is not evidence the
+fast path exists — `preview.ts:1144` says an ordinary turn "skips the manifest
+read entirely" while the callee has no early return at all; read the callee. And
+`authorizeV2` returns `super_admin` BEFORE the agent-grant fold, while a personal
+account's primary owner has `is_super_admin = true` — so this entire bug class is
+invisible on a laptop until you clear that flag.
+*Incident:* the meta coordinator could not list or spawn sessions for the account
+owner running it; `kortix sessions ls` / `new` 403'd from turn one onward, and
+the 403 blamed their role (that misdiagnosis fixed separately in #6443).
+*Enforcer:* `apps/api/src/__tests__/unit-meta-agent-grant-resolution.test.ts`
+pins resolution for governed / ungoverned / unreadable manifests, the `skip`
+re-mint decision, and the old destructive `write` as a regression guard. Nothing
+enforces the comment-vs-callee or super-admin traps — those are prose only.
+
 ### Anything created per-deploy needs a reaper, and the reaper needs a namespace (2026-08-12)
 
 **When:** adding or reviewing code that creates a named provider-side artifact
@@ -230,6 +257,51 @@ grep -E treats `\t` in single quotes as a literal `t` while macOS grep interpret
 it, so a locally-green pattern can be dead on ubuntu runners. Use ANSI-C
 quoting (`$'\t'`) and test the exact pattern in an ubuntu container.
 *Incident:* staging web verify failed twice on the same one-line assertion.
+
+### A TLS/proxy component is only as correct as the third-party clients that accept it (2026-08-14)
+
+**When:** shipping anything that terminates TLS, mints certificates, or sits in
+front of other people's HTTP clients (the in-guest egress shim, any MITM proxy).
+Unit tests and a `curl` probe are NOT evidence. Three separate bugs in this one
+component passed every in-process test and every curl check, and each was found
+only by running a real heterogeneous client in a real guest:
+
+- `git` sends CONNECT, gets a 407, and retries **on the same socket**. Without
+  `Content-Length: 0` + `Connection: close` on the challenge the retry vanishes
+  and every clone fails, while curl is unaffected because it reconnects.
+- Python's OpenSSL refuses a chain whose leaf carries no **Authority Key
+  Identifier** (`CERTIFICATE_VERIFY_FAILED ... Missing Authority Key
+  Identifier`); curl accepts the identical certificate. An AKI also needs a
+  **Subject Key Identifier** on the issuer to point at, and node-forge's PARSED
+  `subjectKeyIdentifier` is a hex string — feeding it back yields an AKI naming
+  an issuer that does not exist and breaks every handshake. Use
+  `caCert.generateSubjectKeyIdentifier().getBytes()`.
+- `curl` offers `Accept-Encoding: gzip` by default. Any redaction that scans
+  response BYTES is silently defeated by a compressed body, so a credential
+  echoed back returns intact. Force `identity` on the relayed request.
+
+Run the real clients — `curl`, `python3 -m requests`, `git`, `node fetch` — in a
+real sandbox before claiming a proxy works, and assert on what the UPSTREAM
+received, not on the absence of an error.
+*Incident:* the Daytona network-boundary shim shipped to dev broken for every
+Python client; caught by a live probe, not by 27 green tests.
+
+### Bun diverges from Node in three load-bearing ways around raw sockets and TLS (2026-08-14)
+
+**When:** writing socket/TLS code that runs under Bun (the API and the sandbox
+daemon both do). Measured, bun 1.3.14 vs node v22.22.0:
+
+- `http.Server.emit('connection', socket)` is a **no-op** — the request event
+  never fires and the connection hangs with nothing in any log. Use a real
+  loopback listener and pipe into it.
+- `SNICallback` **never fires** — the handshake completes against a default
+  certificate. Bind one static-cert listener per terminated host instead.
+- The `'upgrade'` event fires, but a write from that handler **never reaches the
+  client**; Node delivers the same bytes. Destroy the socket rather than trying
+  to answer.
+
+All three fail SILENTLY (a hang, or the wrong certificate), never an exception.
+*Incident:* each cost a debugging cycle in the egress proxy/shim.
 
 ### A path allowlist that gates non-idempotency must list EVERY turn-creating endpoint (2026-08-11)
 

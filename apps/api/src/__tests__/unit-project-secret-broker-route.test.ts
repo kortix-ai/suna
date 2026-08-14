@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSecrets, projectSessionSecretHandles, projectSessions } from '@kortix/db';
+import {
+  projectSecrets,
+  projectSessionSecretHandles,
+  projectSessions,
+  sessionSandboxes,
+} from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
 import * as realProjectSecrets from '../projects/secrets';
@@ -55,11 +60,21 @@ function sharedSecret(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** `null` = no pin recorded. Set `{ metadata: { egress_ip: '…' } }` to pin. */
+let sandboxRow: { metadata: Record<string, unknown> } | null = null;
+
 const databaseMock = {
   select: () => ({
     from: (table: unknown) => ({
       where: () => {
         if (table === projectSessions) return { limit: async () => (sessionRow ? [sessionRow] : []) };
+        // The egress pin reads the sandbox row to see whether this token is
+        // being used from the box it was issued to. `sandboxRow` is null by
+        // default, i.e. UNPINNED — which the route must allow, or every session
+        // provisioned before the pin shipped would lose its secrets.
+        if (table === sessionSandboxes) {
+          return { limit: async () => (sandboxRow ? [sandboxRow] : []) };
+        }
         if (table === projectSecrets) return Promise.resolve(secretRows);
         if (table === projectSessionSecretHandles) {
           return {
@@ -141,10 +156,14 @@ function buildApp() {
   return app;
 }
 
-function brokerRequest() {
+function brokerRequest(fromIp?: string) {
   return buildApp().request(`/v1/projects/${PROJECT_ID}/secrets/PRIMARY/broker`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      // Cloudflare fronts this API and appends, so the FIRST hop is the caller.
+      ...(fromIp ? { 'x-forwarded-for': `${fromIp}, 172.68.1.1` } : {}),
+    },
     body: JSON.stringify({
       url: 'https://api.example.com/v1/messages?trace=private',
       method: 'POST',
@@ -171,6 +190,51 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     decrypted.length = 0;
     brokerCalls.length = 0;
     brokerFailure = null;
+    sandboxRow = null;
+  });
+
+  /**
+   * The session token lives in the AGENT's own shell env (it needs it for the
+   * CLI and git), so the agent can copy it out and hand it to someone else.
+   * Everything else on this route checks what the token IS. These check where
+   * it is being used FROM.
+   */
+  describe('the session credential is bound to its own sandbox', () => {
+    test('a request from the pinned sandbox is served', async () => {
+      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      const response = await brokerRequest('67.213.121.131');
+      expect(response.status).toBe(200);
+      expect(brokerCalls).toHaveLength(1);
+    });
+
+    test('the SAME token from anywhere else is refused before the secret is decrypted', async () => {
+      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      const response = await brokerRequest('203.0.113.9');
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: 'sandbox_egress_mismatch' });
+      // The point of refusing EARLY: an exfiltrated token must not reach the
+      // decrypt path at all, not merely fail afterwards.
+      expect(decrypted).toHaveLength(0);
+      expect(brokerCalls).toHaveLength(0);
+    });
+
+    test('an UNPINNED session is still served', async () => {
+      // Fails open on purpose. Sandboxes provisioned before the pin shipped
+      // have none, and a boot relay that never landed would otherwise take a
+      // working session's secrets away with a 403 nobody could diagnose.
+      sandboxRow = null;
+      const response = await brokerRequest('203.0.113.9');
+      expect(response.status).toBe(200);
+    });
+
+    test('a caller with no resolvable address cannot pass a pinned session', async () => {
+      // Absent != matching. Treating "unknown" as a match would let anyone
+      // through by simply stripping the header.
+      sandboxRow = { metadata: { egress_ip: '67.213.121.131' } };
+      const response = await brokerRequest();
+      expect(response.status).toBe(403);
+      expect(brokerCalls).toHaveLength(0);
+    });
   });
 
   test('requires a session-scoped agent token', async () => {

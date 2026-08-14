@@ -141,6 +141,18 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  /**
+   * Enforce the sandbox egress pin on the secret-broker route (default ON).
+   *
+   * A kill switch, not a feature flag. The pin blocks a session token used from
+   * outside its own sandbox — but the broker route also serves
+   * `kortix secrets call` and the connector MCP, so if a provider ever
+   * reassigns a running sandbox's egress address the pin would 403 real work.
+   * Set this to `false` to fall back to log-only while that is investigated,
+   * instead of reverting a deploy. Watch for `[secret-broker] refused an
+   * off-sandbox token use`.
+   */
+  KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
   // Kortix-owned session titles: the moment a session's first prompt text is
   // known server-side (at create when it carries one, else on the first HTTP
   // prompt), generate the title ourselves via the internal LLM gateway instead
@@ -341,18 +353,6 @@ const envSchema = z.object({
   // production). The shim terminates the guest's TLS and relays to the broker
   // route; the credential stays server-side either way.
   //
-  // OFF by default, deliberately, and this is the sequencing that matters:
-  // turning it on makes the API ADVERTISE network-boundary delivery to
-  // non-Platinum projects (save-time gate, delivery_status, the web control).
-  // If the sandbox image does not yet run the shim, a user could save a
-  // boundary secret that nothing in the guest can honour — a feature that
-  // looks available and silently does nothing, which is the exact failure
-  // this project has spent too long unpicking.
-  //
-  // Flip to `true` only once the guest half is in the image and a fresh
-  // sandbox has been observed running the shim. `optBoolFalse` accepts
-  // true/1/yes/on.
-  EGRESS_SHIM_ENABLED: optBoolFalse,
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -939,6 +939,7 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
@@ -1026,7 +1027,6 @@ export const config = {
   ASTER_API_URL: env.ASTER_API_URL,
   ASTER_API_KEY: env.ASTER_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
-  EGRESS_SHIM_ENABLED: env.EGRESS_SHIM_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.

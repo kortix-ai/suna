@@ -4,9 +4,9 @@ import {
   addPlatformMetaAgent,
   buildPlatformMetaOpenCodeConfig,
   platformMetaAgentGrant,
-  projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from '../projects/lib/platform-meta-agent';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { resolveManifestVerdict } from '../projects/lib/manifest-verdict';
 
 describe('platform meta agent', () => {
@@ -79,11 +79,13 @@ describe('platform meta agent', () => {
     });
   });
 
+  // Read through the canonical registry helper at every call site — the module
+  // above must stay free of runtime imports, see its header comment.
   test('is gated on the meta_agent feature flag, default off', () => {
-    expect(projectMetaAgentEnabled(null)).toBe(false);
-    expect(projectMetaAgentEnabled({})).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: {} })).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: { meta_agent: false } })).toBe(false);
-    expect(projectMetaAgentEnabled({ experimental: { meta_agent: true } })).toBe(true);
+    expect(resolveFeatureFlag(null, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({}, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: {} }, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { meta_agent: false } }, 'meta_agent')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { meta_agent: true } }, 'meta_agent')).toBe(true);
   });
 });

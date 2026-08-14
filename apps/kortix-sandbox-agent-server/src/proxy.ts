@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { egressShimPort } from './egress-shim'
 import type { ServerWebSocket } from 'bun'
 
 import type { Config } from './config'
@@ -218,7 +219,12 @@ export function buildOpencodeApp(
   // The agent server's own port is blocked to prevent recursion; opencode's
   // internal port is reachable via the catch-all below, not /proxy.
   const portProxyRouter = createPortProxyRouter({
-    blockedPorts: new Set([cfg.servicePort]),
+    // The egress shim too. It already refuses a plain-HTTP request with 405
+    // (it is CONNECT-only) and its per-host TLS listeners reject an HTTP dial,
+    // so this closes a door that is bolted — but the shim is the one listener
+    // in the guest whose job is to sit in front of a credential, and "it fails
+    // closed today" is a weaker guarantee than "it is not routable".
+    blockedPorts: new Set([cfg.servicePort, egressShimPort()]),
   })
   app.route('/proxy', portProxyRouter)
 
@@ -237,6 +243,7 @@ export function buildOpencodeApp(
       // half would leave the other reachable the moment they trade places.
       blockedSelfPorts: new Set([
         cfg.servicePort,
+        egressShimPort(),
         cfg.opencodeInternalPort,
         cfg.opencodeStandbyPort,
       ]),

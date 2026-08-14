@@ -204,6 +204,20 @@ export function managedModels(): Record<string, GatewayModel> {
           ...(m.pricing.cacheWritePerMillion != null
             ? { cache_write: m.pricing.cacheWritePerMillion }
             : {}),
+          ...(m.pricing.contextOver200k
+            ? {
+                context_over_200k: {
+                  input: m.pricing.contextOver200k.inputPerMillion,
+                  output: m.pricing.contextOver200k.outputPerMillion,
+                  ...(m.pricing.contextOver200k.cachedInputPerMillion != null
+                    ? { cache_read: m.pricing.contextOver200k.cachedInputPerMillion }
+                    : {}),
+                  ...(m.pricing.contextOver200k.cacheWritePerMillion != null
+                    ? { cache_write: m.pricing.contextOver200k.cacheWritePerMillion }
+                    : {}),
+                },
+              }
+            : {}),
         }
       : undefined;
     const real = catalogModelForWireModel(m.id);
