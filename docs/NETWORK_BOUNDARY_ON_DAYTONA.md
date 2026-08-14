@@ -692,6 +692,30 @@ Note the account becomes runnable from the SUBSCRIPTION alone; the forged credit
 webhook returns 400 against dev because the deployed API validates the signature against AWS
 Secrets Manager rather than `.env.dev`.
 
+#### The session credential is bound to its sandbox
+
+`KORTIX_CLI_TOKEN` is in the agent's own shell env (the CLI and git need it) and
+is what the shim authenticates to the broker with, so an agent can copy it out.
+The credential it spends was never readable and still is not; the exposure was
+the TOKEN being usable from somewhere the sandbox is not.
+
+Verified on dev by running the actual attack — read the token out of the guest,
+then call the broker from a laptop:
+
+    broker call from outside the sandbox -> 403
+    {"code":"sandbox_egress_mismatch"}
+
+with the in-sandbox control still passing in the same run. Pinned at boot from
+the daemon's boot-timeline relay (sandbox credential, before the agent runs), so
+trust-on-first-use cannot let an attacker pin themselves. Fails OPEN when
+unpinned — see the learnings entry on split API/daemon controls.
+
+The egress ALLOW-LIST was considered for this and rejected on measurement:
+dev-api and api.kortix.com are both Cloudflare-fronted on the same anycast
+addresses, so a CIDR pin means trusting 1,524,736 addresses and an agent would
+exfiltrate through a Cloudflare Worker — while breaking git, npm and pip. It
+becomes worth building only behind a dedicated non-Cloudflare ingress.
+
 #### Still open
 
 - **Allow-list survival across resume / CoW-restore** — the funnel must not open on restore.
