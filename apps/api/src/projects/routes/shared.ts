@@ -715,11 +715,19 @@ async function preserveEstablishedRuntimeOnOpen(
   // lost because a dead local tunnel kept them from booting and nothing asked
   // the provider first. Anything short of `removed` — including `unknown`,
   // which is a probe failure, not evidence — parks the row retriable instead.
-  const providerStatus =
-    knownProviderStatus ??
-    (await getProvider(row.provider as SandboxProviderName)
-      .getStatus(row.externalId)
-      .catch(() => 'unknown' as const));
+  // try/catch, not .catch(): getProvider() itself throws SYNCHRONOUSLY for a
+  // disabled provider (missing API key), and that must read as "cannot ask" —
+  // park — never as a 500 out of /start.
+  let providerStatus: SandboxStatus = knownProviderStatus ?? 'unknown';
+  if (!knownProviderStatus) {
+    try {
+      providerStatus = await getProvider(row.provider as SandboxProviderName).getStatus(
+        row.externalId,
+      );
+    } catch {
+      providerStatus = 'unknown';
+    }
+  }
   if (runtimeLossVerdict(providerStatus) === 'park') {
     const parked = await parkEstablishedRuntime(row, reason, stopReason);
     return {

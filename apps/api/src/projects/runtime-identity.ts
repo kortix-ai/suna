@@ -321,14 +321,16 @@ export async function parkEstablishedRuntime(
       err,
     ),
   );
-  await getProvider(row.provider as ProviderName)
-    .stop(externalId)
-    .catch((err) =>
-      console.warn(
-        `[runtime-identity] provider stop failed while parking ${externalId}:`,
-        err instanceof Error ? err.message : err,
-      ),
+  // try/catch, not .catch(): getProvider() throws synchronously for a
+  // disabled provider, and a park must survive that too.
+  try {
+    await getProvider(row.provider as ProviderName).stop(externalId);
+  } catch (err) {
+    console.warn(
+      `[runtime-identity] provider stop failed while parking ${externalId}:`,
+      err instanceof Error ? err.message : err,
     );
+  }
 
   const metadata = {
     ...((row.metadata as Record<string, unknown> | null) ?? {}),
