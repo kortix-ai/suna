@@ -222,6 +222,9 @@ export function ProjectHome({
             // the toolbar itself, ahead of the model selector. The session
             // page keeps the default row beneath the card.
             underbarPlacement="inline"
+            // Hero composer mid-page: the `/` menu opens BELOW the card, into
+            // the empty lower half, instead of shoving the heading up.
+            slashMenuPlacement="below"
             placeholder={tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
             )}

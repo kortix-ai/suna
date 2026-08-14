@@ -187,6 +187,21 @@ export interface SessionChatInputProps {
    */
   underbarPlacement?: 'below' | 'inline';
 
+  /**
+   * Where the `/` menu docks relative to the card. `'above'` (default) keeps
+   * it in flow above the composer — on the session page the card sits at the
+   * viewport bottom, so above is the only side with room, and pushing the
+   * card down is invisible there.
+   *
+   * `'below'` absolutely positions the dock under the card instead. Project
+   * Home is a HERO composer in the middle of the page: docking above would
+   * shove the centered heading up on every keystroke that filters the list,
+   * while below has the whole empty lower half of the page to paint over.
+   * Absolute — not in flow — so opening the menu never reflows the hero or
+   * the starter chips beneath it.
+   */
+  slashMenuPlacement?: 'above' | 'below';
+
   cardClassName?: string;
 
   replyTo?: { text: string } | null;
@@ -331,6 +346,7 @@ function ComposerImpl({
   inputSlot,
   toolbarSlot,
   underbarPlacement = 'below',
+  slashMenuPlacement = 'above',
   cardClassName,
   replyTo,
   onClearReply,
@@ -1057,7 +1073,7 @@ function ComposerImpl({
         reader that never announces it leaves exactly the confusion this bar
         exists to remove.
       */}
-      <div id={dockId} />
+      {slashMenuPlacement === 'above' && <div id={dockId} />}
 
       {/*
         The stack above the card. Each layer owns its OWN top rounding rather
@@ -1362,6 +1378,20 @@ function ComposerImpl({
       )}
 
       <ModelConnectionBar show={noModelsConnected} />
+
+      {/*
+        The `'below'` dock. Absolute, not in flow: `top-full` hangs it off the
+        shell's bottom edge so an opening menu paints OVER whatever sits under
+        the composer (starter chips, empty page) instead of pushing it down.
+        `mt-2.5` is the same gap the menu's own `mb-2.5` gives the `'above'`
+        dock — there the margin faces the card, here it faces away, so the
+        gap moves to the dock. The horizontal inset mirrors the shell's
+        `px-4 md:pr-1` gutter so the menu stays flush with the card edges.
+        Empty (menu closed) it has zero height and intercepts nothing.
+      */}
+      {slashMenuPlacement === 'below' && (
+        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-2.5" />
+      )}
     </div>
   );
 }

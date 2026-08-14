@@ -52,6 +52,7 @@ export function ComposerChatInput({
   inputSlot,
   toolbarSlot,
   underbarPlacement,
+  slashMenuPlacement,
   cardClassName,
   boundAgentName,
   clearOnSend,
@@ -93,6 +94,7 @@ export function ComposerChatInput({
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
+  slashMenuPlacement?: SessionChatInputProps['slashMenuPlacement'];
   /** Extra classes for the input card (e.g. the project-home radius override). */
   cardClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
@@ -222,6 +224,7 @@ export function ComposerChatInput({
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}
+      slashMenuPlacement={slashMenuPlacement}
       cardClassName={cardClassName}
       sessionId={sessionId}
       projectId={projectId}
