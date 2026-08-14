@@ -35,11 +35,14 @@ export function chipAriaLabel(kind: string, label: string): string {
 }
 
 /**
- * Two visual registers, one node. A mention is a REFERENCE — neutral, it sits
- * in the sentence. A command is an INSTRUCTION — it takes the primary tint so
- * `/deep-research` reads as a thing being invoked rather than a thing being
- * pointed at. Both keep `align-baseline` so they ride the surrounding line
- * instead of stretching it.
+ * One visual register for every chip. Mentions and commands share the faint
+ * primary tint — the surface says "this token is structured", and the prefix
+ * (`@` vs `/` from `chipPrefix`) says whether it is a reference or an
+ * instruction. The tint is duplicated as `dark:bg-primary/[0.08]` on purpose:
+ * an unprefixed `bg-*` does not reach into the dark variant group, and without
+ * the explicit override the chip would lose its tint in dark mode only.
+ * `align-baseline` keeps the chip riding the surrounding line instead of
+ * stretching it.
  *
  * `text-[0.95em]`, not `text-base sm:text-sm`. The size has to be relative
  * because this chip now sits in two type contexts: the composer's editor
@@ -51,27 +54,12 @@ export function chipAriaLabel(kind: string, label: string): string {
  * looks the same in both places" holds by construction rather than by two
  * files agreeing on a pixel value.
  *
- * `cn`, not a template literal, and the difference is not cosmetic. The
- * variant adds `bg-primary/[0.08]` while the base carries `bg-muted`, so both
- * classes would otherwise reach the element — and class order in the
- * `class` ATTRIBUTE decides nothing. CSS resolves the tie by which rule
- * Tailwind emitted later in the stylesheet, which is not something this file
- * can see or control. `cn`'s twMerge pass deletes the losing class outright,
- * which is the only way "the variant wins" is actually true.
- *
- * `dark:bg-primary/[0.08]` is there for the same reason: `dark:bg-card` sits
- * in a different variant group, so twMerge does NOT treat it as conflicting
- * with the unprefixed `bg-primary/[0.08]`. Without an explicit dark override
- * the command chip would take the primary tint in light mode and the plain
- * card surface in dark — the two themes disagreeing about whether a command
- * looks different to a mention at all.
+ * The `kind` parameter is kept even though every kind currently resolves to
+ * the same class: callers pass it, and a future kind-specific surface changes
+ * this one function rather than every call site.
  */
-export function chipClass(kind: string): string {
-  const base =
-    'rounded-sm border border-[0.5px] bg-muted px-1.5 py-[0.08rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card font-medium whitespace-nowrap align-baseline text-[0.95em]';
-  return kind === 'command'
-    ? cn(base, 'bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]')
-    : cn(base, 'bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]');
+export function chipClass(_kind: string): string {
+  return 'rounded-sm border-[0.5px] px-1.5 py-[0.08rem] [overflow-wrap:anywhere] font-medium whitespace-nowrap align-baseline text-[0.95em] bg-primary/[0.08] text-foreground dark:bg-primary/[0.08]';
 }
 
 /**

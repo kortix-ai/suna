@@ -107,10 +107,14 @@ describe('BasicTool leading icon', () => {
     );
     expect(html).not.toContain('data-testid="globe"');
     expect(html).toContain('data-tone="failed"');
-    expect(html).toContain('text-destructive');
+    // The glyph is deliberately muted — the triangle is the verdict, not an
+    // alarm — so the failure must still be SAID: the aria-label is the only
+    // text distinguishing this row from a healthy one for a screen reader.
+    expect(html).toContain('aria-label="This step failed"');
+    expect(html).not.toContain('text-destructive');
   });
 
-  test('a partial step is amber, not red', () => {
+  test('a partial step keeps the same muted mark with its own tone and name', () => {
     const html = renderToStaticMarkup(
       <ToolOutcomeContext.Provider value="partial">
         <BasicTool icon={globe} trigger={{ title: 'Scrape Webpage' }} />
@@ -118,13 +122,16 @@ describe('BasicTool leading icon', () => {
     );
     expect(html).not.toContain('data-testid="globe"');
     expect(html).toContain('data-tone="partial"');
-    expect(html).toContain('text-amber-600');
+    expect(html).toContain('aria-label="This step partly failed"');
+    expect(html).not.toContain('text-amber-600');
   });
 
-  test('the row stops forcing muted onto a toned icon', () => {
+  test('the row stops forcing its colour onto a toned icon', () => {
     // The colour lives on the icon, but TOOL_ROW_CLASS paints every leading
     // svg from the row and that descendant selector outranks it. The `:not`
-    // is what keeps the red red — without it the icon swaps but stays grey.
+    // keeps the verdict icon's own class authoritative — today both resolve
+    // to muted, but without the exclusion any future tone change would be
+    // silently repainted by the row.
     const html = renderToStaticMarkup(
       <ToolOutcomeContext.Provider value="failed">
         <BasicTool icon={globe} trigger={{ title: 'Scrape Webpage' }} />

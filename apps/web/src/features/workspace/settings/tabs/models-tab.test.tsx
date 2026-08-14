@@ -49,17 +49,22 @@ describe('Models tab — gate and gateway sub-sections', () => {
   });
 
   test('keeps every llm-* gateway sub-section, and its deep-link map', () => {
-    for (const label of [
-      'Providers',
-      'Overview',
-      'Logs',
-      'Budgets',
-      'API keys',
-      'API',
-      'Routing',
-      'Playground',
+    // Pinned as id+label PAIRS, not bare labels: two tabs share the
+    // 'API keys' label ('providers' and 'keys'), so a bare-label check
+    // could pass with one of them deleted.
+    for (const pair of [
+      "{ id: 'providers', label: 'API keys' }",
+      "{ id: 'models', label: 'Models' }",
+      "{ id: 'custom', label: 'Custom' }",
+      "{ id: 'routing', label: 'Routing' }",
+      "{ id: 'playground', label: 'Playground' }",
+      "{ id: 'overview', label: 'Overview' }",
+      "{ id: 'logs', label: 'Logs' }",
+      "{ id: 'budgets', label: 'Budgets' }",
+      "{ id: 'keys', label: 'API keys' }",
+      "{ id: 'api', label: 'API' }",
     ]) {
-      expect(gatewaySource).toContain(`label: '${label}'`);
+      expect(gatewaySource).toContain(pair);
     }
     // The six legacy `llm-*` ids that name a sub-section still map to one.
     for (const legacy of [

@@ -843,8 +843,8 @@ export const BoundActivateContext = createContext<(() => void) | null>(null);
 //
 // The colour rule skips `[data-tone]` icons. It is a descendant selector on the
 // ROW — `(0,2,2)` — so it outranks any `text-*` class the icon carries itself
-// `(0,1,0)`, and it silently repainted every toned leading icon back to muted.
-// Excluding toned icons by attribute is how the failure icon keeps its red
+// `(0,1,0)`, and it silently repainted every toned leading icon. Excluding
+// toned icons by attribute keeps the verdict icon's OWN class authoritative
 // without an `!important` arms race inside a shared class.
 const TOOL_ROW_CLASS = cn(
   'flex items-center gap-1.5 py-0.5',
@@ -860,10 +860,12 @@ const TOOL_ROW_CLASS = cn(
  * one 16px gutter, and the thing the reader needs from it is the verdict — the
  * tool's identity is still spelled out in the title immediately to its right.
  *
- * One glyph, two tones: a wholly failed call is `destructive`, a batch that
- * half-landed is `warning`. Same triangle `ScrapeResultItem` already puts on a
- * dead URL inside the card, so the summary row and the row it summarises say
- * the same thing with the same mark.
+ * One glyph, one muted tone: the triangle itself is the verdict, and it stays
+ * `neutral` so a failed step reads as information beside the row's title, not
+ * as an alarm. Which KIND of failure it was still travels on `data-tone` and
+ * the aria-label. Same triangle `ScrapeResultItem` already puts on a dead URL
+ * inside the card, so the summary row and the row it summarises say the same
+ * thing with the same mark.
  */
 /**
  * The verdict mark on a tool row.
@@ -880,10 +882,7 @@ function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
       weight="fill"
       data-tone={outcome}
       aria-label={outcome === 'failed' ? 'This step failed' : 'This step partly failed'}
-      className={cn(
-        'size-4 shrink-0',
-        outcome === 'failed' ? STATUS_TEXT.neutral : STATUS_TEXT.neutral,
-      )}
+      className={cn('size-4 shrink-0', STATUS_TEXT.neutral)}
     />
   );
 }

@@ -149,9 +149,10 @@ describe('renderHTML output', () => {
     // Asserted by class, not by the whole string in order: the exact
     // concatenation order is an implementation detail of how `chipClass`
     // composes its base, and pinning it turns any reshuffle into a false
-    // failure. What must hold is the visual contract — a REFERENCE is neutral
-    // (`bg-muted`) and rides the line it sits on.
-    expect(attrs.class).toContain('bg-muted');
+    // failure. What must hold is the visual contract — every chip carries the
+    // faint primary tint in BOTH themes and rides the line it sits on.
+    expect(attrs.class).toContain('bg-primary/[0.08]');
+    expect(attrs.class).toContain('dark:bg-primary/[0.08]');
     expect(attrs.class).toContain('align-baseline');
     expect(content).toBe('@README.md');
   });
@@ -176,16 +177,15 @@ describe('renderHTML output', () => {
     expect(content).toBe('/deep-research');
     expect(attrs['data-mention']).toBe('command');
     expect(attrs['aria-label']).toBe('command: /deep-research');
-    // The tint is the whole visual difference from a mention, and BOTH of
-    // these matter. `toContain` proves the variant applied; `not.toContain`
-    // proves twMerge actually deleted the base's `bg-muted` instead of
-    // shipping both classes and leaving the winner to stylesheet order — the
-    // exact failure a template-literal `chipClass` produces, invisibly.
+    // Commands and mentions now share one tint; the `/` prefix above is the
+    // visual difference. `not.toContain` pins that the old neutral base
+    // (`bg-muted`) never resurfaces beside the tint, where stylesheet order —
+    // not this file — would pick the winner.
     expect(attrs.class).toContain('bg-primary/[0.08]');
     expect(attrs.class).not.toContain('bg-muted');
-    // Same trap, dark side: `dark:bg-card` is a different variant group, so
-    // twMerge cannot drop it for an unprefixed `bg-*`. It has to be overridden
-    // explicitly or the chip loses its tint in dark mode only.
+    // `dark:bg-*` is a different variant group, so an unprefixed `bg-*` cannot
+    // stand in for it. Without the explicit dark override the chip loses its
+    // tint in dark mode only.
     expect(attrs.class).toContain('dark:bg-primary/[0.08]');
     expect(attrs.class).not.toContain('dark:bg-card');
   });
