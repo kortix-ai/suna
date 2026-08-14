@@ -287,7 +287,7 @@ export function SessionSiteHeader({
             instead. */}
         <div
           className={cn(
-            'flex items-center justify-between p-2 px-4 pt-3',
+            'flex items-center justify-between p-2 px-3.5 pt-2 pr-4',
             // Unconditional on the shell. The LEFT indent depends on the
             // sidebar (expanded, it covers the macOS lights itself) and is
             // gated by the data attribute — but the RIGHT one does not: this
