@@ -18,6 +18,14 @@ on:
     paths:
       - 'apps/desktop-electron/**'
       - '.github/workflows/desktop.yml'
+      # The installer now CONTAINS the web app (apps/web/desktop/build.mjs
+      # exports it into the bundle), so a desktop build is stale the moment the
+      # product surface changes. Scoped to the code that actually ships in the
+      # bundle — marketing, docs, and API routes are excluded from the export.
+      - 'apps/web/src/app/(app)/**'
+      - 'apps/web/src/app/(auth)/**'
+      - 'apps/web/desktop/**'
+      - 'packages/sdk/**'
   workflow_dispatch:
 
 concurrency:
@@ -25,8 +33,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  bundle:
+    name: Build web bundle
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install pnpm
+        run: corepack enable pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      # The static export of apps/web's product surface. Platform-independent,
+      # so it is built once here and fanned out to the signing runners below.
+      - name: Build desktop bundle
+        run: |
+          cd apps/web
+          NEXT_PUBLIC_BACKEND_URL=/v1 \
+          node desktop/build.mjs --web-origin https://dev.kortix.com
+        env:
+          DOTENV_PRIVATE_KEY_DEV: ${{ secrets.DOTENV_PRIVATE_KEY_DEV }}
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ github.sha }}
+
+      - name: Verify bundle is complete
+        run: node apps/desktop-electron/scripts/prepack.js
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-web-bundle
+          path: apps/web/out
+          retention-days: 3
+          if-no-files-found: error
+
   build:
     name: Build dev desktop ${{ matrix.target_pretty }}
+    needs: bundle
     runs-on: ${{ matrix.runner }}
     env:
       # Baked into the app so the shell points at dev by default.
@@ -123,6 +168,18 @@ jobs:
             printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
             echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
           fi
+
+      # The bundle built by the `bundle` job. electron-builder's extraResources
+      # copies apps/web/out into the app's Resources directory.
+      - name: Download web bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-web-bundle
+          path: apps/web/out
+
+      - name: Verify bundle is complete
+        shell: bash
+        run: node apps/desktop-electron/scripts/prepack.js
 
       # electron-builder reads electron's binary from node_modules; .npmrc sets
       # ignore-scripts=true so its download postinstall is skipped — ensure it.

@@ -141,6 +141,20 @@ function resolveTurbopackMemoryEviction(): false | 'auto' | 'full' {
 // (next start never reads .next/standalone) and skip ESLint.
 const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
 
+// --- Desktop static-export build ------------------------------------------
+// desktop/build.mjs sets KORTIX_DESKTOP_BUILD=1, hides every route group except
+// (app), and runs `next build`. The result is a static SPA in `out/` that the
+// Electron shell serves over the app:// protocol, replacing today's thin
+// wrapper around a remote kortix.com. Three knobs below are load-bearing:
+//   · output: 'export'            — no server exists in the packaged app.
+//   · images.unoptimized          — /_next/image is a server route.
+//   · resolveAlias next/navigation — a statically exported dynamic route is
+//     prerendered against a placeholder param, so useParams() must be recovered
+//     from the URL. See desktop/nav-shim.tsx for the measured behaviour.
+// Sentry's tunnelRoute and the PostHog /ingest rewrites are server-side and are
+// dropped for this build; desktop telemetry goes direct to the DSN instead.
+const IS_DESKTOP_BUILD = process.env.KORTIX_DESKTOP_BUILD === '1';
+
 // --- Cross-origin dev / preview access -----------------------------------
 // The app is frequently reached through a proxy whose hostname differs from the
 // origin the browser sends: the Kortix platform proxy (p<port>-<id>.localhost:<port>),
@@ -186,12 +200,28 @@ const nextConfig = (): NextConfig => ({
   // NFT for adapter builds, but its standalone finalizer still requires that
   // file. Disable standalone on Vercel, where the platform does not use it.
   // See https://github.com/vercel/next.js/issues/96646.
-  output: IS_PREVIEW_BUILD || process.env.VERCEL ? undefined : 'standalone',
+  // IS_DESKTOP_BUILD exports the (app) group as static HTML for the Electron
+  // shell to serve over app:// — see desktop/build.mjs.
+  output: IS_DESKTOP_BUILD
+    ? 'export'
+    : IS_PREVIEW_BUILD || process.env.VERCEL
+      ? undefined
+      : 'standalone',
   // Inline the resolved version so NEXT_PUBLIC_KORTIX_VERSION is available in
   // both the server (runtime-config) and client bundles, even on Vercel.
   env: {
     NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
     NEXT_PUBLIC_KORTIX_COMMIT: KORTIX_COMMIT,
+    // Client-readable form of KORTIX_DESKTOP_BUILD — see src/lib/desktop-build.ts.
+    ...(IS_DESKTOP_BUILD
+      ? {
+          NEXT_PUBLIC_KORTIX_DESKTOP_BUILD: '1',
+          // Origin OAuth must return to — a loopback URL is not in the
+          // Supabase redirect allowlist. See desktop/overlay/.../auth/page.tsx.
+          NEXT_PUBLIC_KORTIX_WEB_ORIGIN:
+            process.env.KORTIX_DESKTOP_WEB_ORIGIN || 'https://kortix.com',
+        }
+      : {}),
   },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —
@@ -284,6 +314,12 @@ const nextConfig = (): NextConfig => ({
       canvas: {
         browser: './src/lib/empty-module.ts', // Exclude canvas from browser builds
       },
+      // Desktop export only: correct useParams() on shell-exported dynamic
+      // routes, for all 95 call sites at once. The shim imports the real
+      // implementation via `next/dist/client/components/navigation` — aliasing
+      // is not self-referential, and importing `next/navigation` inside the
+      // shim would resolve back into itself and fail the build.
+      ...(IS_DESKTOP_BUILD ? { 'next/navigation': './desktop/nav-shim.tsx' } : {}),
     },
   },
 
@@ -343,6 +379,9 @@ const nextConfig = (): NextConfig => ({
 
   // Optimize images
   images: {
+    // /_next/image is a server route that a static export cannot provide, so
+    // the desktop bundle serves source images as-is.
+    unoptimized: IS_DESKTOP_BUILD,
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
@@ -508,8 +547,14 @@ const nextConfig = (): NextConfig => ({
 const withMDX = createMDX();
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
+const composed = withBetterStack(withMDX(withNextIntl(nextConfig())));
+
 // Compose config wrappers: next-intl → MDX → Better Stack (structured logs) → Sentry (error tracking)
-export default withSentryConfig(withBetterStack(withMDX(withNextIntl(nextConfig()))), {
+// Sentry is skipped for the desktop export: its `tunnelRoute` generates a
+// server route handler, which `output: 'export'` cannot emit.
+export default IS_DESKTOP_BUILD
+  ? composed
+  : withSentryConfig(composed, {
   // Suppresses source map uploading logs during build
   silent: true,
 

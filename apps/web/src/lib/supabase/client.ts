@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { IS_DESKTOP_BUILD } from '@/lib/desktop-build';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from './constants'
 import { getEnv } from '@/lib/env-config'
 
@@ -66,6 +67,13 @@ export function createClient() {
       path: '/',
       sameSite: 'lax',
     },
+    // The desktop bundle runs on a loopback origin and completes OAuth in the
+    // user's real browser, so the PKCE code verifier written when the flow
+    // starts is not readable when the callback deep-links back — measured as
+    // "PKCE code verifier not found in storage". The implicit flow returns the
+    // session directly in the URL fragment instead, so there is no verifier to
+    // lose. Web keeps PKCE, which is strictly better where it works.
+    ...(IS_DESKTOP_BUILD ? { auth: { flowType: 'implicit' as const } } : {}),
   })
 }
 

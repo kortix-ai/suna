@@ -29,6 +29,19 @@ files:
   - assets/**/*
   - package.json
 
+# The bundled web app. `apps/web/desktop/build.mjs` statically exports the
+# product surface to apps/web/out; this copies it to <app>/Contents/Resources/web
+# (and the platform equivalents), which is exactly where src/bundle.js looks
+# (`process.resourcesPath/web`).
+#
+# The app degrades to loading the remote site when this directory is absent, so
+# `scripts/prepack.js` FAILS the build rather than let a release ship silently
+# unbundled — a packaged app that quietly reverts to the network is the exact
+# regression this feature exists to remove.
+extraResources:
+  - from: ../web/out
+    to: web
+
 # Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
 protocols:
   - name: Kortix

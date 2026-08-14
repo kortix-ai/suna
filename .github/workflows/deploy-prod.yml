@@ -551,9 +551,49 @@ jobs:
             "Deprecated: use @kortix/sdk and kortix.project(projectId).connectors"
 
   # ── Build prod desktop installers (Electron, signed) ────────────────────────
+  bundle-desktop:
+    name: Build prod web bundle
+    needs: version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install pnpm
+        run: corepack enable pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      # The installer CONTAINS the web app, so it is built from the exact
+      # release SHA and pointed at PRODUCTION origins. `/v1` stays relative:
+      # the shell proxies it to the API, keeping every request same-origin.
+      - name: Build desktop bundle (prod)
+        run: |
+          cd apps/web
+          NEXT_PUBLIC_BACKEND_URL=/v1 \
+          node desktop/build.mjs --web-origin https://kortix.com
+        env:
+          DOTENV_PRIVATE_KEY_PROD: ${{ secrets.DOTENV_PRIVATE_KEY_PROD }}
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.version.outputs.version }}
+
+      - name: Verify bundle is complete
+        run: node apps/desktop-electron/scripts/prepack.js
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-web-bundle-prod
+          path: apps/web/out
+          retention-days: 7
+          if-no-files-found: error
+
   build-desktop:
     name: Build prod desktop ${{ matrix.target_pretty }}
-    needs: version
+    needs: [version, bundle-desktop]
     runs-on: ${{ matrix.runner }}
     env:
       DESKTOP_URL: https://kortix.com/projects
@@ -638,6 +678,18 @@ jobs:
             printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
             echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
           fi
+
+      # The bundle built by `bundle-desktop` from this exact release SHA.
+      # electron-builder's extraResources copies apps/web/out into the app.
+      - name: Download web bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-web-bundle-prod
+          path: apps/web/out
+
+      - name: Verify bundle is complete
+        shell: bash
+        run: node apps/desktop-electron/scripts/prepack.js
 
       - name: Ensure Electron runtime
         run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js

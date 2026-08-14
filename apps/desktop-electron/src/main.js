@@ -26,6 +26,7 @@ const {
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
+const { startBundleServer, isBundleMode } = require('./bundle');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
@@ -116,8 +117,44 @@ function appBaseUrl() {
   return process.env.KORTIX_DESKTOP_URL || DEFAULT_URL;
 }
 
-/** Effective URL the window should load — persisted override beats the default. */
+/**
+ * Origin the bundled app proxies /v1 to. In bundle mode the frontend is on
+ * disk, so the only thing still remote is the API — and it is chosen the same
+ * way the remote URL always was (env, then the value baked at build time).
+ */
+function bundleBackendOrigin() {
+  const explicit = process.env.KORTIX_DESKTOP_BACKEND_ORIGIN;
+  if (explicit) return explicit.replace(/\/+$/, '');
+  try {
+    return new URL(appBaseUrl()).origin.replace('//dev.', '//dev-api.').replace('//kortix.com', '//api.kortix.com');
+  } catch {
+    return 'https://api.kortix.com';
+  }
+}
+
+// Set once the loopback bundle server is listening (bundle mode only).
+let bundleBaseUrl = null;
+
+/**
+ * Effective URL the window should load.
+ *
+ * Precedence, highest first:
+ *   1. KORTIX_DESKTOP_URL — set for this launch, so it is the most explicit
+ *      instruction available and beats everything.
+ *   2. The bundle — the whole point of a bundled build is that it does not
+ *      depend on a remote host.
+ *   3. The persisted Frontend-URL override, then the baked default.
+ *
+ * The bundle deliberately outranks the persisted override. That file survives
+ * across launches, so a value left behind by an earlier remote run would
+ * silently send a bundled app back to the network — observed exactly once, as
+ * a bundled build loading dev.kortix.com and dying on its Basic-auth gate.
+ * Changing the URL from the menu still works: it writes the override AND
+ * navigates, and self-hosters run a non-bundled build.
+ */
 function resolveAppUrl() {
+  if (process.env.KORTIX_DESKTOP_URL) return process.env.KORTIX_DESKTOP_URL;
+  if (bundleBaseUrl) return `${bundleBaseUrl}/projects`;
   return readUrlOverride() || appBaseUrl();
 }
 
@@ -249,6 +286,10 @@ function translateDeepLink(deepLink) {
   if (p === '') p = '/';
   target.pathname = p;
   target.search = incoming.search;
+  // Carry the fragment too. Supabase returns implicit-flow sessions as
+  // `#access_token=…&refresh_token=…`, and dropping it silently turns a
+  // successful sign-in into a callback page with nothing to act on.
+  target.hash = incoming.hash;
   return target.toString();
 }
 
@@ -455,11 +496,29 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
+  // A dead renderer closes the window, which trips window-all-closed and quits
+  // the whole app — with no trace of why. Surface the reason instead: an
+  // out-of-memory or crashed renderer is otherwise indistinguishable from the
+  // user simply closing the window.
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(
+      `[kortix] renderer gone: reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    console.error(`[kortix] load failed: ${code} ${description} (${url})`);
+  });
+
   mainWindow.on('closed', () => {
+    console.log('[kortix] main window closed');
     mainWindow = null;
   });
 
-  mainWindow.loadURL(resolveAppUrl());
+  const targetUrl = resolveAppUrl();
+  console.log(`[kortix] loading ${targetUrl}`);
+  mainWindow.loadURL(targetUrl);
 }
 
 /** Full-page reload of the main window onto `url` (used by the menu/IPC). */
@@ -697,6 +756,31 @@ if (!gotLock) {
   // A kortix:// link that arrives before the window exists (macOS cold start).
   let pendingDeepLink = null;
 
+  // HTTP Basic challenges (dev/staging sit behind one shared credential — see
+  // apps/web/src/middleware.ts, which answers 401 "Authentication required.").
+  //
+  // Chrome shows its own username/password dialog for these. Electron does NOT:
+  // if nothing handles 'login' the request is simply cancelled, so the window
+  // renders the bare 401 body with no way to get past it. That is exactly what
+  // a dev build pointed at dev.kortix.com looks like.
+  //
+  // Bundle mode never reaches this: the frontend is served from disk and
+  // dev-api.kortix.com is not behind the gate.
+  app.on('login', (event, _webContents, _details, authInfo, callback) => {
+    if (!authInfo.isProxy && authInfo.scheme === 'basic') {
+      const password = process.env.KORTIX_DESKTOP_BASIC_PASSWORD;
+      if (password) {
+        event.preventDefault();
+        callback(process.env.KORTIX_DESKTOP_BASIC_USER || 'kortix', password);
+        return;
+      }
+      console.warn(
+        `[kortix] ${authInfo.host} requires HTTP Basic auth and no credential is set. ` +
+          `Re-run with KORTIX_DESKTOP_BASIC_PASSWORD=… (user defaults to "kortix").`,
+      );
+    }
+  });
+
   app.on('second-instance', (_event, argv) => {
     const deepLink = argv.find((a) => a.startsWith(`${URL_SCHEME}://`));
     if (deepLink) handleDeepLink(deepLink);
@@ -714,7 +798,7 @@ if (!gotLock) {
     else pendingDeepLink = url; // arrived before the window existed
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     // Register kortix:// so the OS routes auth callbacks back to the app.
     if (process.defaultApp && process.argv.length >= 2) {
       app.setAsDefaultProtocolClient(URL_SCHEME, process.execPath, [
@@ -722,6 +806,19 @@ if (!gotLock) {
       ]);
     } else {
       app.setAsDefaultProtocolClient(URL_SCHEME);
+    }
+
+    // Must finish before createMainWindow(): resolveAppUrl() reads the port.
+    if (isBundleMode()) {
+      const backendOrigin = bundleBackendOrigin();
+      const webOrigin =
+        process.env.KORTIX_DESKTOP_WEB_ORIGIN || new URL(appBaseUrl()).origin;
+      const server = await startBundleServer(backendOrigin, webOrigin);
+      bundleBaseUrl = server.baseUrl;
+      app.on('will-quit', () => server.close());
+      console.log(
+        `[kortix] bundle mode — serving the export at ${server.baseUrl}, /v1 proxied to ${backendOrigin}`,
+      );
     }
 
     applyUserAgent();
@@ -762,7 +859,10 @@ if (!gotLock) {
     });
   });
 
+  app.on('before-quit', () => console.log('[kortix] before-quit'));
+
   app.on('window-all-closed', () => {
+    console.log('[kortix] window-all-closed');
     if (process.platform !== 'darwin') app.quit();
   });
 }

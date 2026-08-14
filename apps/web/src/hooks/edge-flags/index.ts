@@ -1,6 +1,7 @@
 'use client';
 
-import { automaticMaintenanceConfig } from '@/lib/maintenance-client';
+import { IS_DESKTOP_BUILD } from '@/lib/desktop-build';
+import { automaticMaintenanceConfig, noMaintenanceConfig } from '@/lib/maintenance-client';
 import type { MaintenanceConfig } from '@/lib/maintenance-store';
 import { useQuery } from '@tanstack/react-query';
 
@@ -33,6 +34,17 @@ export interface SystemStatusResponse {
 }
 
 async function fetchMaintenanceConfig(): Promise<MaintenanceConfig> {
+  // The desktop bundle ships no Next route handlers, so `/api/maintenance`
+  // 404s there. That is indistinguishable from a real outage to the catch
+  // below, which falls back to automaticMaintenanceConfig() — measured effect:
+  // the app redirected straight to /maintenance on every launch.
+  //
+  // TODO(desktop): serve maintenance state from the API (`/v1`) so the desktop
+  // app honours a real maintenance window instead of opting out of the gate.
+  if (IS_DESKTOP_BUILD) {
+    return noMaintenanceConfig();
+  }
+
   try {
     const response = await fetch('/api/maintenance');
     if (!response.ok) {

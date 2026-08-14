@@ -6,8 +6,23 @@ import { cookies, headers } from 'next/headers';
 import { defaultLocale, type Locale } from './config';
 import { getUserLocale, normalizeLocale } from './locale';
 
+// Set only by desktop/build.mjs (static export for the Electron shell).
+const IS_DESKTOP_BUILD = process.env.KORTIX_DESKTOP_BUILD === '1';
+
 export default getRequestConfig(async ({ requestLocale }) => {
   let locale: Locale = defaultLocale;
+
+  // A static export has no request, so cookies(), headers(), and the Supabase
+  // profile lookup below are all unavailable. Every source this resolver
+  // consults is request-scoped, so the desktop bundle ships the default locale
+  // and switches language client-side instead.
+  if (IS_DESKTOP_BUILD) {
+    return {
+      locale: defaultLocale,
+      messages: (await import(`../../translations/${defaultLocale}.json`)).default,
+    };
+  }
+
   const cookieStore = await cookies();
   const headersList = await headers();
 

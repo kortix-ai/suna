@@ -29,6 +29,11 @@ import { roobertMono } from './(system)/fonts/roobert-mono';
 import './globals.css';
 import { ReactQueryProvider } from './react-query-provider';
 
+// Set only by desktop/build.mjs, which statically exports the (app) route group
+// for the Electron shell. Read at build time, so the web build tree-shakes the
+// desktop path away entirely.
+const IS_DESKTOP_BUILD = process.env.KORTIX_DESKTOP_BUILD === '1';
+
 // Lazy load non-critical analytics and global components
 const Analytics = lazy(() =>
   import('@vercel/analytics/react').then((mod) => ({ default: mod.Analytics })),
@@ -163,9 +168,18 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const tHardcodedUi = { raw: getHardcodedUiServerText };
-  // Opt into dynamic rendering so process.env is evaluated at request time,
-  // not baked at build time. Critical for Docker images with runtime env vars.
-  await connection();
+
+  // The desktop bundle (desktop/build.mjs) is a static export with no server at
+  // runtime, so every request-time API below is unavailable there — and every
+  // value it computes is already known: config is baked by the installer, the
+  // client is the desktop app by definition, and the bundle contains no
+  // locale-routed marketing URLs. KORTIX_DESKTOP_BUILD is unset for the web
+  // build, which therefore takes the identical path it always has.
+  if (!IS_DESKTOP_BUILD) {
+    // Opt into dynamic rendering so process.env is evaluated at request time,
+    // not baked at build time. Critical for Docker images with runtime env vars.
+    await connection();
+  }
   const runtimeEnv = getServerPublicEnv();
 
   // Suppress marketing/visitor-tracking scripts inside the desktop app. The
@@ -173,12 +187,13 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // website still loads them as normal. Keeps third-party de-anonymization
   // pixels (Vector/Artisan via GTM, plus the hardcoded loader) out of the
   // authenticated native client.
-  const requestHeaders = await headers();
-  const isDesktopApp = requestHeaders.get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
+  const requestHeaders = IS_DESKTOP_BUILD ? null : await headers();
+  const isDesktopApp =
+    IS_DESKTOP_BUILD || (requestHeaders?.get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false);
 
   // Locale-routed marketing pages (/de, /fr, …) are rewritten onto the
   // unprefixed route by the middleware, which records the locale in x-locale.
-  const requestLocale = requestHeaders.get('x-locale');
+  const requestLocale = requestHeaders?.get('x-locale');
   const htmlLang =
     requestLocale && locales.includes(requestLocale as Locale) ? requestLocale : 'en';
 
@@ -383,18 +398,25 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                         <ImpersonationBanner />
                       </Suspense>
                     </ReactQueryProvider>
-                    {/* Analytics - lazy loaded to not block FCP */}
-                    <Suspense fallback={null}>
-                      <Analytics />
-                    </Suspense>
+                    {/* Analytics - lazy loaded to not block FCP. Both Vercel
+                        products fetch their scripts from /_vercel/*, which is
+                        served by the Vercel platform — in the desktop bundle
+                        that is a guaranteed 404, so they are omitted there. */}
+                    {!IS_DESKTOP_BUILD && (
+                      <Suspense fallback={null}>
+                        <Analytics />
+                      </Suspense>
+                    )}
                     {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
                       <Suspense fallback={null}>
                         <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
                       </Suspense>
                     )}
-                    <Suspense fallback={null}>
-                      <SpeedInsights />
-                    </Suspense>
+                    {!IS_DESKTOP_BUILD && (
+                      <Suspense fallback={null}>
+                        <SpeedInsights />
+                      </Suspense>
+                    )}
                     <Suspense fallback={null}>
                       <PostHogIdentify />
                     </Suspense>
