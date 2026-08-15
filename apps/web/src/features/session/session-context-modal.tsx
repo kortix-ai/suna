@@ -24,7 +24,6 @@ import {
   ModalBody,
   ModalClose,
   ModalContent,
-  ModalDescription,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
@@ -738,10 +737,7 @@ function SessionContextModalBody({
     <>
       <ModalHeader>
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-0.5">
-            <ModalTitle>{t.raw('title')}</ModalTitle>
-            <ModalDescription>{t.raw('description')}</ModalDescription>
-          </div>
+          <ModalTitle>{t.raw('title')}</ModalTitle>
           <div className="flex shrink-0 items-center gap-2">
             <CopyAllButton
               messages={messages}
