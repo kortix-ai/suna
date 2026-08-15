@@ -615,7 +615,6 @@ function SubSessionTreeNode({
 // ============================================================================
 
 const RAW_PAGE_SIZE = 30;
-const ACTIVITY_PAGE_SIZE = 8;
 
 function SessionContextModalBody({
   messages,
@@ -649,7 +648,6 @@ function SessionContextModalBody({
     setRawVisibleCount(RAW_PAGE_SIZE);
   }, []);
 
-  const [activityVisibleCount, setActivityVisibleCount] = useState(ACTIVITY_PAGE_SIZE);
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -704,26 +702,6 @@ function SessionContextModalBody({
     () => (subSessionTree ? sumTreeCosts(subSessionTree) : null),
     [subSessionTree],
   );
-
-  // Per-reply activity — latest first, so recent spend is on top.
-  const activity = useMemo(() => {
-    const rows: { id: string; time: number | undefined; tokens: number; cost: number }[] = [];
-    for (const m of messages ?? []) {
-      if (m.info.role !== 'assistant') continue;
-      const info = m.info as AssistantMessage;
-      const tokens = tokenTotal(info);
-      if (tokens <= 0) continue;
-      rows.push({
-        id: info.id,
-        time: info.time?.created,
-        tokens,
-        cost: getSessionCost([m], pricingLookup),
-      });
-    }
-    return rows.reverse();
-  }, [messages, pricingLookup]);
-  const visibleActivity = activity.slice(0, activityVisibleCount);
-  const remainingActivity = activity.length - visibleActivity.length;
 
   const filteredRawMessages = useMemo(() => {
     let list = messages ?? [];
@@ -780,93 +758,59 @@ function SessionContextModalBody({
       </ModalHeader>
 
       <ModalBody className="space-y-6">
-        {/* Overview + technical detail — one uniform borderless grid: always
-            2-up on mobile and 4-up on desktop, so every row lines up. Hairline
-            dividers come from a 1px grid gap over a border-colored background;
-            cells paint bg-sidebar to match ModalContent's default variant, so
-            only the internal lines show — no outer border. */}
-        <div className="bg-border/70 grid grid-cols-2 gap-px lg:grid-cols-4">
-          <div className="bg-sidebar px-4 py-3">
-            <OverviewStat
-              label={t.raw('statModel')}
-              value={ctx?.modelLabel ?? '—'}
-              meta={ctx?.providerLabel}
-            />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <OverviewStat
-              label={t.raw('statContextUsed')}
-              value={fmt.percent(ctx?.usage)}
-              valueClassName={usageTone}
-              meta={
-                ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
-              }
-            />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat
-              label={t.raw('detailCache')}
-              value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
-            />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat
-              label={t.raw('detailAssistantMessages')}
-              value={counts.assistant.toLocaleString()}
-            />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
-          </div>
-          <div className="bg-sidebar px-4 py-3">
-            <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
-          </div>
+        {/* Overview — three naked stats, typography only, no boxes. Context
+            usage lives in the section below instead of duplicating here. */}
+        <div className="flex flex-wrap items-start gap-x-12 gap-y-4">
+          <OverviewStat
+            label={t.raw('statModel')}
+            value={ctx?.modelLabel ?? '—'}
+            meta={ctx?.providerLabel}
+          />
+          <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
+          <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
         </div>
 
-        {/* Context composition — segmented bar + plain-language legend */}
-        {breakdown.length > 0 && (
-          <section>
-            <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-              {usageFraction != null && (
-                <div className="flex items-baseline justify-between text-xs">
-                  <span className="text-muted-foreground">{t.raw('statContextUsed')}</span>
-                  <span className={cn('text-foreground font-medium tabular-nums', usageTone)}>
-                    {fmt.percent(ctx?.usage)}
-                  </span>
-                </div>
-              )}
-              {/* Segments scale to the share of the context limit; leftover
-                  track reads as free space. No known limit → composition only. */}
-              <div className="bg-muted flex h-2.5 w-full gap-px overflow-hidden rounded-full">
-                {breakdown.map((segment) => (
+        {/* Context usage and technical detail, side by side on desktop. The
+            bar does one job — how full — as a single fill; the composition is
+            readable as rows, where a 0.1% category is a number, not a
+            sub-pixel sliver. */}
+        <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
+          <section className="space-y-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <span className="text-foreground text-sm font-medium">
+                {t.raw('statContextUsed')}
+              </span>
+              <span className={cn('text-foreground text-sm font-semibold tabular-nums', usageTone)}>
+                {fmt.percent(ctx?.usage)}
+              </span>
+            </div>
+            {usageFraction != null && (
+              <>
+                <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
                   <div
-                    key={segment.key}
-                    className={cn('h-full', BREAKDOWN_SEGMENT_CLASS[segment.key])}
-                    style={{ width: `${segment.width * (usageFraction ?? 1)}%` }}
+                    className={cn(
+                      'h-full rounded-full',
+                      ctx?.usage != null && ctx.usage >= 95
+                        ? 'bg-kortix-red'
+                        : ctx?.usage != null && ctx.usage >= 80
+                          ? 'bg-kortix-orange'
+                          : 'bg-foreground',
+                    )}
+                    // A non-empty context always shows at least a visible nub.
+                    style={{
+                      width: `${usageFraction > 0 ? Math.max(usageFraction * 100, 1.5) : 0}%`,
+                    }}
                   />
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                </div>
+                <div className="text-muted-foreground text-right text-xs tabular-nums">
+                  {fmt.number(ctx?.total)} / {fmt.number(ctx?.limit)}
+                </div>
+              </>
+            )}
+            {breakdown.length > 0 && (
+              <ul className="space-y-2 pt-1">
                 {breakdown.map((segment) => (
-                  <div key={segment.key} className="flex items-center gap-1.5 text-xs">
+                  <li key={segment.key} className="flex items-center gap-2 text-xs">
                     <span
                       className={cn(
                         'size-2 shrink-0 rounded-[2px]',
@@ -876,56 +820,45 @@ function SessionContextModalBody({
                     <span className="text-foreground">
                       {t.raw(BREAKDOWN_LABEL_KEY[segment.key])}
                     </span>
-                    <span className="text-muted-foreground tabular-nums">
+                    <span className="text-muted-foreground ml-auto tabular-nums">
                       {fmt.number(segment.tokens)} · {segment.percent}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Cost per reply — latest first */}
-        {activity.length > 0 && (
-          <section className="space-y-3">
-            <Label>{t.raw('activityLabel')}</Label>
-            <div className="bg-popover rounded-md border">
-              <ul className="divide-border divide-y">
-                {visibleActivity.map((row) => (
-                  <li key={row.id} className="flex items-center gap-3 px-4 py-2.5 text-xs">
-                    <span className="text-foreground min-w-0 truncate font-medium tabular-nums">
-                      {fmt.time(row.time)}
-                    </span>
-                    <span className="text-muted-foreground ml-auto shrink-0 tabular-nums">
-                      {fmt.number(row.tokens)} {t.raw('activityTokens')}
-                    </span>
-                    <span className="text-foreground w-16 shrink-0 text-right font-medium tabular-nums">
-                      {formatCost(row.cost)}
                     </span>
                   </li>
                 ))}
               </ul>
-              {remainingActivity > 0 && (
-                <div className="border-t px-4 py-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() =>
-                      setActivityVisibleCount((count) => count + RAW_PAGE_SIZE)
-                    }
-                  >
-                    {t.raw('showMore')}
-                    <span className="text-muted-foreground tabular-nums">
-                      ({remainingActivity})
-                    </span>
-                  </Button>
-                </div>
-              )}
-            </div>
+            )}
           </section>
-        )}
+
+          <section className="space-y-3">
+            <span className="text-foreground text-sm font-medium">{t.raw('detailsLabel')}</span>
+            <dl className="divide-border/60 divide-y">
+              {[
+                { label: t.raw('detailInput'), value: fmt.number(ctx?.input) },
+                { label: t.raw('detailOutput'), value: fmt.number(ctx?.output) },
+                { label: t.raw('detailReasoning'), value: fmt.number(ctx?.reasoning) },
+                {
+                  label: t.raw('detailCache'),
+                  value: `${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`,
+                },
+                { label: t.raw('detailUserMessages'), value: counts.user.toLocaleString() },
+                {
+                  label: t.raw('detailAssistantMessages'),
+                  value: counts.assistant.toLocaleString(),
+                },
+                { label: t.raw('detailStarted'), value: fmt.time(session?.time?.created) },
+                { label: t.raw('detailLastReply'), value: fmt.time(ctx?.message?.time?.created) },
+              ].map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-baseline justify-between gap-4 py-1.5 first:pt-0 last:pb-0"
+                >
+                  <dt className="text-muted-foreground text-xs">{row.label}</dt>
+                  <dd className="text-foreground text-xs font-medium tabular-nums">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </div>
 
         {/* Sub-agents — combined totals + per-session tree */}
         {hasSubSessions && subSessionTree && aggregateTotals && (

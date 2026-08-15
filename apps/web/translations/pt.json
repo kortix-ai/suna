@@ -5565,13 +5565,12 @@
       "rawLabel": "Dados brutos das mensagens",
       "rawDescription": "As mensagens exatas trocadas com o modelo. Útil para depuração.",
       "showMore": "Mostrar mais",
-      "activityLabel": "Custo por resposta",
-      "activityTokens": "tokens",
       "rawSearchPlaceholder": "Pesquisar mensagens",
       "rawFilterAll": "Todos",
       "rawFilterUser": "Você",
       "rawFilterAssistant": "Assistente",
-      "rawNoMatches": "Nenhuma mensagem correspondente"
+      "rawNoMatches": "Nenhuma mensagem correspondente",
+      "detailsLabel": "Detalhes"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Visualização unificada",

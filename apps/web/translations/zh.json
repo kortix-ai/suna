@@ -5565,13 +5565,12 @@
       "rawLabel": "消息原始数据",
       "rawDescription": "与模型交换的确切消息，便于调试。",
       "showMore": "显示更多",
-      "activityLabel": "每次回复费用",
-      "activityTokens": "令牌",
       "rawSearchPlaceholder": "搜索消息",
       "rawFilterAll": "全部",
       "rawFilterUser": "你",
       "rawFilterAssistant": "助手",
-      "rawNoMatches": "没有匹配的消息"
+      "rawNoMatches": "没有匹配的消息",
+      "detailsLabel": "详情"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "统一视图",

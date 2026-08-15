@@ -5629,13 +5629,12 @@
       "rawLabel": "Raw message data",
       "rawDescription": "The exact messages exchanged with the model. Useful for debugging.",
       "showMore": "Show more",
-      "activityLabel": "Cost per reply",
-      "activityTokens": "tokens",
       "rawSearchPlaceholder": "Search messages",
       "rawFilterAll": "All",
       "rawFilterUser": "You",
       "rawFilterAssistant": "Assistant",
-      "rawNoMatches": "No matching messages"
+      "rawNoMatches": "No matching messages",
+      "detailsLabel": "Details"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Unified view",

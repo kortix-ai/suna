@@ -5565,13 +5565,12 @@
       "rawLabel": "メッセージの生データ",
       "rawDescription": "モデルと交換された正確なメッセージです。デバッグに役立ちます。",
       "showMore": "さらに表示",
-      "activityLabel": "応答ごとのコスト",
-      "activityTokens": "トークン",
       "rawSearchPlaceholder": "メッセージを検索",
       "rawFilterAll": "すべて",
       "rawFilterUser": "あなた",
       "rawFilterAssistant": "アシスタント",
-      "rawNoMatches": "一致するメッセージがありません"
+      "rawNoMatches": "一致するメッセージがありません",
+      "detailsLabel": "詳細"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "コネクタービュー",
