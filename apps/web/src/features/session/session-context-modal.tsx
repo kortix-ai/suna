@@ -724,6 +724,27 @@ function SessionContextModalBody({
   const remainingRawMessages = filteredRawMessages.length - visibleRawMessages.length;
 
   const usageFraction = ctx?.limit ? Math.min(1, ctx.total / ctx.limit) : null;
+
+  // Bar segments keep the legend colors. Every non-zero category gets at
+  // least MIN_SEGMENT so a 0.1% share still renders as a visible chip; the
+  // large segments absorb the difference.
+  const barSegments = useMemo(() => {
+    if (!breakdown.length) return [];
+    const trackTotal = (usageFraction ?? 1) * 100;
+    const MIN_SEGMENT = Math.min(1.5, trackTotal / breakdown.length);
+    const raw = breakdown.map((s) => (s.width / 100) * trackTotal);
+    let fixed = 0;
+    let flexSum = 0;
+    for (const width of raw) {
+      if (width < MIN_SEGMENT) fixed += MIN_SEGMENT;
+      else flexSum += width;
+    }
+    const scale = flexSum > 0 ? (trackTotal - fixed) / flexSum : 0;
+    return breakdown.map((s, i) => ({
+      key: s.key,
+      width: raw[i] < MIN_SEGMENT ? MIN_SEGMENT : raw[i] * scale,
+    }));
+  }, [breakdown, usageFraction]);
   const usageTone =
     ctx?.usage == null
       ? undefined
@@ -784,27 +805,31 @@ function SessionContextModalBody({
                 {fmt.percent(ctx?.usage)}
               </span>
             </div>
-            {usageFraction != null && (
+            {(usageFraction != null || barSegments.length > 0) && (
               <>
-                <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
-                  <div
-                    className={cn(
-                      'h-full rounded-full',
-                      ctx?.usage != null && ctx.usage >= 95
-                        ? 'bg-kortix-red'
-                        : ctx?.usage != null && ctx.usage >= 80
-                          ? 'bg-kortix-orange'
-                          : 'bg-foreground',
-                    )}
-                    // A non-empty context always shows at least a visible nub.
-                    style={{
-                      width: `${usageFraction > 0 ? Math.max(usageFraction * 100, 1.5) : 0}%`,
-                    }}
-                  />
+                <div className="bg-muted flex h-2 w-full overflow-hidden rounded-full">
+                  {barSegments.length > 0 ? (
+                    barSegments.map((segment) => (
+                      <div
+                        key={segment.key}
+                        className={cn('h-full', BREAKDOWN_SEGMENT_CLASS[segment.key])}
+                        style={{ width: `${segment.width}%` }}
+                      />
+                    ))
+                  ) : (
+                    <div
+                      className="bg-foreground h-full"
+                      style={{
+                        width: `${(usageFraction ?? 0) > 0 ? Math.max((usageFraction ?? 0) * 100, 1.5) : 0}%`,
+                      }}
+                    />
+                  )}
                 </div>
-                <div className="text-muted-foreground text-right text-xs tabular-nums">
-                  {fmt.number(ctx?.total)} / {fmt.number(ctx?.limit)}
-                </div>
+                {usageFraction != null && (
+                  <div className="text-muted-foreground text-right text-xs tabular-nums">
+                    {fmt.number(ctx?.total)} / {fmt.number(ctx?.limit)}
+                  </div>
+                )}
               </>
             )}
             {breakdown.length > 0 && (
