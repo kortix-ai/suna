@@ -12,7 +12,7 @@ export function visibleSuggestions<T>(pool: T[], max: number): T[] {
   return pool.slice(0, max);
 }
 
-export type SuggestionRowKind = 'prompt' | 'connector' | 'action';
+export type SuggestionRowKind = 'prompt' | 'connector' | 'skill' | 'action';
 
 interface SuggestionRowKindItem {
   action?: StarterSuggestionAction;
@@ -27,6 +27,9 @@ interface SuggestionRowKindItem {
  *   server-validated `connector` record AND the viewer can write project
  *   connectors — renders the in-place Connect row + modal instead of
  *   navigating away.
+ * - `skill`: `action === 'skills'` — renders the in-place skill row instead
+ *   of navigating; the row prefills the composer with `item.prompt`, same as
+ *   a plain prompt row. Takes precedence over the generic `action` branch.
  * - `action`: every other action row, including a `connectors` item with no
  *   `connector` record, or one the viewer can't write — navigates to the
  *   matching capability page or settings tab, same as before.
@@ -37,5 +40,6 @@ export function suggestionRowKind(
 ): SuggestionRowKind {
   if (!item.action) return 'prompt';
   if (item.action === 'connectors' && item.connector != null && canConnect) return 'connector';
+  if (item.action === 'skills') return 'skill';
   return 'action';
 }

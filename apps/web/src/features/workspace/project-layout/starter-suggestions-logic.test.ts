@@ -49,4 +49,13 @@ describe('suggestionRowKind', () => {
     expect(suggestionRowKind({ action: 'schedules' }, true)).toBe('action');
     expect(suggestionRowKind({ action: 'schedules', connector }, true)).toBe('action');
   });
+
+  test('a skills action is always a skill row, canConnect or not', () => {
+    expect(suggestionRowKind({ action: 'skills' }, true)).toBe('skill');
+    expect(suggestionRowKind({ action: 'skills' }, false)).toBe('skill');
+  });
+
+  test('a skills action with a connector field is still a skill row, not a connector row', () => {
+    expect(suggestionRowKind({ action: 'skills', connector }, true)).toBe('skill');
+  });
 });

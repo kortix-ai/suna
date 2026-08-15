@@ -1,12 +1,16 @@
 'use client';
 
 /**
- * The connector-suggestion row on project home and the modal it opens.
+ * The connector-suggestion row on project home, the shared row shell it
+ * shares with the skill-suggestion row, and the connect modal.
  *
  * Split out of `starter-suggestions.tsx` because the row needs a real nested
  * `Button` (the "Connect" trailing control) and the modal needs its own data
  * (existing connector slugs, the connect mutation) — neither belongs in the
- * list component that just picks which row shape to render.
+ * list component that just picks which row shape to render. `SuggestionActionRow`
+ * lives here too, rather than in `starter-suggestions.tsx`, so the skill row
+ * (built there) reuses the exact same a11y scaffolding instead of a second
+ * copy.
  *
  * Same connect flow `ToolsStep` uses in onboarding
  * (`components/projects/onboarding/steps/tools-step.tsx`): propose a slug,
@@ -16,6 +20,7 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -36,16 +41,71 @@ export interface PendingConnectorApp {
 }
 
 /**
- * A connector-suggestion row: app icon, label, trailing "Connect" button —
- * both open the same modal.
+ * Shared row shell for a starter-suggestion row that hosts a real trailing
+ * button rather than just navigating or prefilling on its own click — a
+ * leading icon slot, the row label, and a trailing button slot.
  *
  * The row is a non-button container (`role="button"`, not a `<button>`), and
- * `Connect` is the one real `<button>` inside it — the same shape
+ * the trailing button is the one real `<button>` inside it — the same shape
  * `SessionRow` uses for a clickable row that hosts a real trailing control
  * (`project-sessions/session-row.tsx`), because a `<button>` cannot legally
  * nest another `<button>`. The button's own click stops propagation purely
- * to avoid firing `onConnect` twice (row bubble + button); both paths call
+ * to avoid firing `onAction` twice (row bubble + button); both paths call
  * the identical handler, so this is not a behavior fork.
+ *
+ * Used by `ConnectorSuggestionRow` (icon = app logo, button = "Connect") and
+ * the skill row on project home (icon = Sparkle, button = "Create skill").
+ */
+export function SuggestionActionRow({
+  label,
+  icon,
+  buttonLabel,
+  onAction,
+}: {
+  label: string;
+  icon: ReactNode;
+  buttonLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onAction}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onAction();
+      }}
+      className={cn(
+        'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left',
+        'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
+        'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
+      )}
+    >
+      {icon}
+      <span className="text-foreground/90 line-clamp-1 min-w-0 flex-1 text-sm leading-snug">
+        {label}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="ml-auto shrink-0"
+        onClick={(event) => {
+          event.stopPropagation();
+          onAction();
+        }}
+      >
+        {buttonLabel}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * A connector-suggestion row: app icon, label, trailing "Connect" button —
+ * both open the same modal.
  */
 export function ConnectorSuggestionRow({
   label,
@@ -57,38 +117,12 @@ export function ConnectorSuggestionRow({
   onConnect: () => void;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onConnect}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        onConnect();
-      }}
-      className={cn(
-        'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left',
-        'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
-        'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
-      )}
-    >
-      <ConnectorConnectionIcon src={app.imgSrc} name={app.name} />
-      <span className="text-foreground/90 line-clamp-1 min-w-0 flex-1 text-sm leading-snug">
-        {label}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="ml-auto shrink-0"
-        onClick={(event) => {
-          event.stopPropagation();
-          onConnect();
-        }}
-      >
-        Connect
-      </Button>
-    </div>
+    <SuggestionActionRow
+      label={label}
+      icon={<ConnectorConnectionIcon src={app.imgSrc} name={app.name} />}
+      buttonLabel="Connect"
+      onAction={onConnect}
+    />
   );
 }
 

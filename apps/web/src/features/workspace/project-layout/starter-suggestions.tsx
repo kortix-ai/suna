@@ -27,6 +27,7 @@ import { STARTER_PROMPT_FALLBACKS } from '@kortix/shared';
 import {
   ConnectorSuggestionRow,
   StarterSuggestionConnectModal,
+  SuggestionActionRow,
   type PendingConnectorApp,
 } from './starter-suggestion-connect';
 import { suggestionRowKind, visibleSuggestions } from './starter-suggestions-logic';
@@ -72,12 +73,17 @@ const ACTION_ICONS: Record<StarterSuggestionAction, ComponentType<{ className?: 
  * server would otherwise send, so there is no flash, no spinner, and no
  * layout shift when the personalized set lands.
  *
- * One exception to "navigates instead": a `connectors` item that carries a
- * server-validated `connector` record, for a viewer who can write project
- * connectors, renders as a connect-in-place row instead — see
- * `suggestionRowKind` and `starter-suggestion-connect.tsx`. Anyone without
- * that write access still gets the plain navigating row, same as a
- * connectors item with no `connector` record.
+ * Two exceptions to "navigates instead":
+ * - a `connectors` item that carries a server-validated `connector` record,
+ *   for a viewer who can write project connectors, renders as a
+ *   connect-in-place row instead — see `suggestionRowKind` and
+ *   `starter-suggestion-connect.tsx`. Anyone without that write access still
+ *   gets the plain navigating row, same as a connectors item with no
+ *   `connector` record.
+ * - a `skills` item never navigates: it renders the same connect-in-place row
+ *   shape (Sparkle icon + "Create skill" button) but both the row and the
+ *   button prefill the composer with `item.prompt`, same as a plain prompt
+ *   row — see `suggestionRowKind`.
  */
 export function StarterSuggestions({
   projectId,
@@ -118,12 +124,17 @@ export function StarterSuggestions({
       onPick(item.prompt);
       return;
     }
-    if (suggestionRowKind(item, canConnect) === 'connector' && item.connector) {
+    const kind = suggestionRowKind(item, canConnect);
+    if (kind === 'connector' && item.connector) {
       setPendingApp({
         slug: item.connector.slug,
         name: item.connector.name,
         imgSrc: item.connector.img_src,
       });
+      return;
+    }
+    if (kind === 'skill') {
+      onPick(item.prompt);
       return;
     }
     navigateForAction(item.action);
@@ -132,7 +143,8 @@ export function StarterSuggestions({
   return (
     <div className="flex w-full flex-col items-center gap-1 px-4">
       {items.map((item) => {
-        if (suggestionRowKind(item, canConnect) === 'connector' && item.connector) {
+        const kind = suggestionRowKind(item, canConnect);
+        if (kind === 'connector' && item.connector) {
           return (
             <ConnectorSuggestionRow
               key={item.id}
@@ -143,6 +155,17 @@ export function StarterSuggestions({
                 imgSrc: item.connector.img_src,
               }}
               onConnect={() => handlePick(item)}
+            />
+          );
+        }
+        if (kind === 'skill') {
+          return (
+            <SuggestionActionRow
+              key={item.id}
+              label={item.label}
+              icon={<SparklesSolid className="text-muted-foreground size-4" aria-hidden />}
+              buttonLabel="Create skill"
+              onAction={() => handlePick(item)}
             />
           );
         }
