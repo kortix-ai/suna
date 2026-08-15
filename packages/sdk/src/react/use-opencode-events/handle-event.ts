@@ -14,6 +14,7 @@ import {
 } from '../../platform/ui';
 import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
+import { isAbortError } from '../../core/http/abort-error';
 import { getClient } from '../../core/runtime/client';
 import {
   SESSION_SYNC_PAGE_SIZE,
@@ -25,7 +26,6 @@ import { type MessageWithParts, opencodeKeys, type Session } from '../use-openco
 import { applyPartDiagnostics } from './diagnostics';
 import {
   asStringOrUndefined,
-  looksLikeAbortError,
   patchKortixSessionTitleMirrors,
   readSessionInfo,
   realRuntimeTitle,
@@ -343,8 +343,8 @@ export function createEventHandler(deps: {
           // may not have persisted the partial assistant response yet,
           // so hydrating would wipe the streamed content the user saw.
           // The error is already patched onto the message above.
-          const isAbortError = looksLikeAbortError(error);
-          if (!isAbortError) {
+          const aborted = isAbortError(error);
+          if (!aborted) {
             reconcileTail(sessionID, 'session-error')
               .then(() => {
                 useSyncStore.getState().clearOptimisticMessages(sessionID);

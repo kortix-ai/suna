@@ -649,7 +649,7 @@ describe('session.error', () => {
     useSyncStore.getState().optimisticAdd('ses_1', userMessage('msg_optimistic'), []);
 
     // A real `session.error` event's `error.name` is restricted to the SDK's
-    // typed union — but `looksLikeAbortError` (see `helpers.ts`) exists
+    // typed union — but `isAbortError` (see `core/http/abort-error.ts`) exists
     // precisely because some servers emit a differently-shaped abort error.
     // Bypass the strict type here (as the real synthetic-abort call site in
     // `use-event-stream-refs.ts` also must) to exercise that defensive path.

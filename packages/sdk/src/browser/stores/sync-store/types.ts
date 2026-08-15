@@ -4,6 +4,7 @@ import type {
 	Part,
 	SnapshotFileDiff,
 } from "@opencode-ai/sdk/v2/client";
+import type { AbortReason } from "../../../core/http/abort-error";
 
 // Inlined from web's `@/ui/types` (FileDiff is a derived type, not exported by
 // the OpenCode SDK). Type-only — zero runtime impact, byte-identical behavior.
@@ -16,14 +17,21 @@ export type FileDiff = Omit<SnapshotFileDiff, "patch"> & {
 /**
  * A locally-synthesized "operation aborted" marker — distinct from (and not
  * present in) the opencode SDK's `AssistantMessage['error']` union. The React
- * layer fabricates this shape when a runtime disposes mid-stream (there's no
- * real SSE event for that case); consumers duck-type on `.name`/`.data.message`
- * exactly like the real wire errors, so it only needs to match that access
- * pattern, not the SDK's exact error union.
+ * layer fabricates this shape both for a real user Stop and when a runtime
+ * disposes mid-stream (there's no real SSE event for either case); consumers
+ * duck-type on `.name`/`.data.message` exactly like the real wire errors, so
+ * it only needs to match that access pattern, not the SDK's exact error
+ * union.
+ *
+ * `data.reason` is the machine-readable WHY — read via `abortErrorReason`
+ * (`core/http/abort-error.ts`), which is also where the closed `AbortReason`
+ * union and its "not yet emitted" members are documented. Optional because a
+ * real wire `MessageAbortedError` (which shares this duck-typed access
+ * pattern but is a different TS type) never carries one.
  */
 export interface SyntheticAbortError {
 	name: "AbortError";
-	data: { message: string };
+	data: { message: string; reason?: AbortReason };
 }
 
 /** Every shape `AssistantMessage.error` (and `session.error`'s `error`
