@@ -4118,7 +4118,16 @@ export function SessionChat({
               <div
                 ref={scrollContainerCallbackRef}
                 className={cn(
-                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
+                  // overflow-anchor:none — this scroll area does ALL of its own
+                  // anchoring (useAutoScroll's spacer + RAF follow, the send-path
+                  // turn anchor, and the history-prepend content-space restore in
+                  // session-history-scroll.ts). The browser's native scroll
+                  // anchoring (default `overflow-anchor: auto`) tries to
+                  // compensate for the SAME prepends independently, and the two
+                  // corrections stacking is the other half of the scroll-up
+                  // teleport: ours restores the reader's position, then the
+                  // native one nudges it again.
+                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
                   shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
