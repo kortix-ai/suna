@@ -1,21 +1,31 @@
 'use client';
 
-import { ArrowUpRightIcon, ShuffleIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import {
+  CalendarDotsIcon as CalendarClock,
+  SparkleIcon as SparklesSolid,
+  SquaresFourIcon as HiOutlineViewGrid,
+  UsersThreeIcon as UsersGroupSolid,
+} from '@phosphor-icons/react';
+import { useRouter } from 'next/navigation';
+import type { ComponentType } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { Slack } from '@/features/icon/icons/slack';
+import {
+  CAPABILITY_TABS,
+  capabilityTabHref,
+  type CapabilityTab,
+} from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { cn } from '@/lib/utils';
-import type { StarterSuggestionsResponse } from '@kortix/sdk';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import type { StarterSuggestionAction, StarterSuggestionsResponse } from '@kortix/sdk';
 import { useProjectStarterSuggestions } from '@kortix/sdk/react';
 import { STARTER_PROMPT_FALLBACKS } from '@kortix/shared';
 
-import { nextPage, pageCount, sliceForPage } from './starter-suggestions-logic';
+import { visibleSuggestions } from './starter-suggestions-logic';
 
-const PAGE_SIZE = 3;
+const MAX_VISIBLE = 5;
 
-// Same shape as the live SDK response's items — carries `label` even though
-// the row renderer below only ever shows `prompt`, so the fallback pool
-// isn't silently narrower than what `useProjectStarterSuggestions` returns.
 type SuggestionItem = StarterSuggestionsResponse['items'][number];
 
 const FALLBACK_POOL: SuggestionItem[] = STARTER_PROMPT_FALLBACKS.map(({ id, label, prompt }) => ({
@@ -24,13 +34,36 @@ const FALLBACK_POOL: SuggestionItem[] = STARTER_PROMPT_FALLBACKS.map(({ id, labe
   prompt,
 }));
 
+/** Same routing an action row navigates to is used by the setup tiles at the
+ *  bottom of project-home — see `PROJECT_SETUP_TILES` there. Connectors,
+ *  Skills, and Agent graduated into their own routed pages; Schedules,
+ *  Members, and Channels stay inside the settings overlay. */
+const isCapabilityTabKey = (
+  action: StarterSuggestionAction,
+): action is CapabilityTab['key'] => CAPABILITY_TABS.some((tab) => tab.key === action);
+
+/** Small muted leading icon per action — the same icon `PROJECT_SETUP_TILES`
+ *  uses for the matching section. Prompt rows carry no icon at all. */
+const ACTION_ICONS: Record<StarterSuggestionAction, ComponentType<{ className?: string }>> = {
+  connectors: HiOutlineViewGrid,
+  schedules: CalendarClock,
+  skills: SparklesSolid,
+  channels: Slack,
+  members: UsersGroupSolid,
+  agent: Kortix,
+};
+
 /**
- * Starter-suggestion rows shown under the hero composer — quiet Perplexity/
- * Sana-style rows (arrow tile + prompt text) with a small Shuffle beneath
- * that rotates through 3-item slices of the pool. One visual system for both
- * the personalized and static states: while loading or on error this renders
- * the same static fallback texts the server would otherwise send, so there is
- * no flash, no spinner, and no layout shift when the personalized set lands.
+ * Starter-suggestion rows shown under the hero composer — quiet, icon-free
+ * text rows keyed to `item.label` (the row face), never the full prompt.
+ * A row without an `action` prefills the composer with `item.prompt`; a row
+ * with an `action` navigates to the matching capability page or settings
+ * tab instead, with a small muted leading icon to mark it as a destination
+ * rather than a prompt. Always the first 5 items of the pool — no shuffle.
+ * One visual system for both the personalized and static states: while
+ * loading or on error this renders the same static fallback texts the
+ * server would otherwise send, so there is no flash, no spinner, and no
+ * layout shift when the personalized set lands.
  */
 export function StarterSuggestions({
   projectId,
@@ -39,54 +72,47 @@ export function StarterSuggestions({
   projectId: string;
   onPick: (text: string) => void;
 }) {
+  const router = useRouter();
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   const { data } = useProjectStarterSuggestions(projectId);
   const pool: SuggestionItem[] = data?.items ?? FALLBACK_POOL;
-
-  const [page, setPage] = useState(0);
-  const pages = pageCount(pool.length, PAGE_SIZE);
-  // Clamp instead of resetting on every pool-identity change — the
-  // personalized set can land while the user is mid-read; only snap back
-  // when the current page no longer exists in the new pool.
-  const activePage = Math.min(page, Math.max(pages - 1, 0));
-  const items = sliceForPage(pool, activePage, PAGE_SIZE);
+  const items = visibleSuggestions(pool, MAX_VISIBLE);
 
   if (items.length === 0) return null;
 
+  const handlePick = (item: SuggestionItem) => {
+    if (!item.action) {
+      onPick(item.prompt);
+      return;
+    }
+    if (isCapabilityTabKey(item.action)) {
+      router.push(capabilityTabHref(projectId, item.action));
+      return;
+    }
+    openSettings(item.action);
+  };
+
   return (
-    <div className="flex w-full max-w-[40rem] flex-col items-center gap-1">
-      <div key={activePage} className="animate-in fade-in slide-in-from-bottom-1 w-full duration-150">
-        {items.map((item) => (
+    <div className="flex w-full flex-col items-center gap-1 px-4">
+      {items.map((item) => {
+        const Icon = item.action ? ACTION_ICONS[item.action] : null;
+        return (
           <button
             key={item.id}
             type="button"
-            onClick={() => onPick(item.prompt)}
+            onClick={() => handlePick(item)}
             className={cn(
-              'flex w-full items-start gap-3 rounded-md px-2.5 py-2 text-left',
+              'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left',
               'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
             )}
           >
-            <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
-              <ArrowUpRightIcon className="text-muted-foreground size-3.5" aria-hidden />
-            </span>
-            <span className="text-foreground/90 line-clamp-2 text-sm leading-snug">
-              {item.prompt}
+            {Icon ? <Icon className="text-muted-foreground size-4 shrink-0" /> : null}
+            <span className="text-foreground/90 line-clamp-1 text-sm leading-snug">
+              {item.label}
             </span>
           </button>
-        ))}
-      </div>
-      {pages > 1 ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label="Show different suggestions"
-          onClick={() => setPage(nextPage(activePage, pages))}
-          className="gap-1.5"
-        >
-          <ShuffleIcon className="size-3.5" aria-hidden />
-          Shuffle
-        </Button>
-      ) : null}
+        );
+      })}
     </div>
   );
 }

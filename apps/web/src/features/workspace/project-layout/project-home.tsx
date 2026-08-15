@@ -307,7 +307,7 @@ export function ProjectHomeWelcomeBody({
           </h1>
 
           {composer || onPickSuggestion ? (
-            <div className="flex w-full flex-col items-center space-y-4">
+            <div className="flex w-full flex-col max-w-2xl items-center space-y-4">
               {composer}
               {onPickSuggestion ? (
                 <StarterSuggestions projectId={projectId} onPick={onPickSuggestion} />
