@@ -152,15 +152,17 @@ import {
   isToolPart,
   shouldShowToolPart,
 } from '@/ui';
-import { updateProjectSession } from '@kortix/sdk';
+import { abortErrorReason, isAbortError, updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
+  type AbortSettlement,
   type KortixSendError,
   type ModelKey,
   type UseSessionResult,
   abandonOptimisticSend,
   applyOptimisticAbort,
   ascendingId,
+  awaitAbortSettlement,
   beginOptimisticSend,
   classifySendError,
   clearStartStash,
@@ -434,6 +436,15 @@ const ABORT_SETTLE_TIMEOUT_MS = 5000;
  * races the abort — the prompt can arrive while the old turn is still winding
  * down. Subscribing to the status the server actually reports is the only
  * version of this that is not a guess.
+ *
+ * T10: no longer the primary gate for "Stop & send" — see
+ * `stopThenSendNow` below. `applyOptimisticAbort` (run by `handleStop`) flips
+ * the very store this function polls to idle SYNCHRONOUSLY, before the abort
+ * request round-trips to the server, so gating a send on it lets the send
+ * race the still-in-flight abort. `stopThenSendNow` now awaits the abort's
+ * own `AbortSettlement` instead. This function survives as its defensive
+ * fallback for the (should-not-happen) case where a stop produced no
+ * trackable settlement to await.
  */
 function waitForSessionIdle(sessionId: string): Promise<void> {
   const isIdle = () => {
@@ -456,6 +467,53 @@ function waitForSessionIdle(sessionId: string): Promise<void> {
     // The status may have settled between the check above and the subscribe.
     if (isIdle()) finish();
   });
+}
+
+/** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
+ *  directly testable without React or a DOM. */
+export interface StopThenSendNowDeps {
+  /** True when a turn is currently running and must be stopped first. */
+  isRunning: () => boolean;
+  /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
+   *  stop produced no trackable settlement (defensive fallback only — see
+   *  `waitIdle`). Called only when `isRunning()` is true. Never expected to
+   *  reject — `AbortSettlement`-producing paths (`sessionState.cancel()`,
+   *  `awaitAbortSettlement`) never do. */
+  stop: () => Promise<AbortSettlement | null>;
+  /** Fallback wait, used only when `stop()` resolves `null`. */
+  waitIdle: () => Promise<void>;
+  /** Unpause the queue so the drain can dispatch again. */
+  resumeQueue: () => void;
+  /** The actual send-now dispatch. */
+  dispatch: () => Promise<void>;
+}
+
+/**
+ * Orchestrates "Stop & send": end the current turn (if one is running), wait
+ * for that to actually settle, then dispatch.
+ *
+ * T10: waits for the SERVER-confirmed `AbortSettlement` `stop()`
+ * returns — never the optimistic sync-store idle flip `waitForSessionIdle`
+ * polls, because `applyOptimisticAbort` sets that store to idle synchronously,
+ * before the abort request round-trips, so gating the send on it races the
+ * abort still in flight. `stop()`'s settlement is already bounded (~5s, see
+ * `awaitAbortSettlement`/`ABORT_SETTLE_TIMEOUT_MS`), never rejects, and a
+ * `{status:'failed'}` or `{status:'timed-out'}` result still lets `dispatch()`
+ * proceed once that bound elapses: whichever cancel path produced the
+ * settlement already cancelled any local in-flight delivery
+ * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
+ * the client to race even without a server acknowledgement.
+ *
+ * When nothing is running, `stop()`/`waitIdle()` are never called and the
+ * send is not delayed at all.
+ */
+export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> {
+  if (deps.isRunning()) {
+    const settlement = await deps.stop();
+    if (settlement === null) await deps.waitIdle();
+  }
+  deps.resumeQueue();
+  await deps.dispatch();
 }
 
 // ============================================================================
@@ -508,6 +566,31 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // ============================================================================
 // Session Turn — core turn component
 // ============================================================================
+
+/**
+ * Pure derivation of "was this turn's error an abort, and why" from a turn's
+ * assistant messages — the exact logic `turnErrorIsAbort`/`turnErrorAbortReason`
+ * below run per render. Extracted (T17) so it can be exercised by real
+ * behavior tests (`interrupted-label.test.ts`) instead of a source-text
+ * pattern match. No behavior change: both `useMemo`s below now call this one
+ * function instead of duplicating its two loops.
+ *
+ * Scans for the FIRST assistant message carrying an object error (matching
+ * `getTurnError`'s own "first wins" rule) and classifies THAT message once —
+ * see the two `useMemo`s below for why identity/reason must come from the
+ * SDK's single `isAbortError`/`abortErrorReason` classifier.
+ */
+export function deriveTurnErrorAbortState(turn: {
+  assistantMessages: ReadonlyArray<{ info: unknown }>;
+}): { isAbort: boolean; abortReason: string | undefined } {
+  for (const msg of turn.assistantMessages) {
+    const err = (msg.info as { error?: unknown }).error;
+    if (!err || typeof err !== 'object') continue;
+    const isAbort = isAbortError(err);
+    return { isAbort, abortReason: isAbort ? abortErrorReason(err) : undefined };
+  }
+  return { isAbort: false, abortReason: undefined };
+}
 
 interface SessionTurnProps {
   turn: Turn;
@@ -759,23 +842,26 @@ function SessionTurnImpl({
    * `getTurnError` flattens the structured error to a display string and drops
    * its `name`, so the banner was left substring-matching "abort" over arbitrary
    * prose — which renders a genuine failure as a muted "Interrupted" and hides
-   * what really went wrong. The identity is right here on the message; read it.
-   *
-   * Both real producers set `name: 'AbortError'`: opencode's own abort, and the
-   * optimistic patch applied when the user hits Stop.
+   * what really went wrong. The identity is right here on the message; read it
+   * through the SDK's single `isAbortError` classifier, which recognizes both
+   * real producers: the opencode wire's `MessageAbortedError` and the client's
+   * synthesized `AbortError` patch applied when the user hits Stop.
    */
-  const turnErrorIsAbort = useMemo(() => {
-    for (const msg of turn.assistantMessages) {
-      const err = (msg.info as { error?: unknown }).error;
-      if (!err || typeof err !== 'object') continue;
-      // Narrow to a string BEFORE comparing — `name` is `unknown` here, and
-      // comparing that to a literal is the inconvertible-types smell CodeQL
-      // flags (and would silently be false for a boxed String or a symbol).
-      const name = (err as { name?: unknown }).name;
-      return typeof name === 'string' && name === 'AbortError';
-    }
-    return false;
-  }, [turn]);
+  const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
+
+  /**
+   * The machine-readable WHY behind `turnErrorIsAbort`, when the abort was
+   * client-synthesized and tagged one (`data.reason` — see
+   * `core/http/abort-error.ts`'s `AbortReason` union).
+   *
+   * `undefined` covers two different cases the banner treats identically to
+   * `'user'`: no abort at all, and a genuine wire `MessageAbortedError`
+   * (opencode's own abort — never tagged, see the classifier's doc comment).
+   * Only a reason present AND not `'user'` (currently just
+   * `'runtime-disposed'`, from `markSessionAbortedLocally`) means "pure
+   * infrastructure, render nothing" — see `TurnErrorDisplay`.
+   */
+  const turnErrorAbortReason = useMemo(() => deriveTurnErrorAbortState(turn).abortReason, [turn]);
 
   // The gateway's structured fields (provider/suggestion/request_id) for
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
@@ -1199,6 +1285,7 @@ function SessionTurnImpl({
             errorText={turnError}
             errorDetails={turnErrorDetails}
             isAbort={turnErrorIsAbort}
+            abortReason={turnErrorAbortReason}
             className="mt-2"
           />
         )}
@@ -1492,6 +1579,7 @@ function SessionTurnImpl({
           errorText={turnError}
           errorDetails={turnErrorDetails}
           isAbort={turnErrorIsAbort}
+          abortReason={turnErrorAbortReason}
         />
       )}
 
@@ -1768,6 +1856,37 @@ export function SessionChat({
   const projectConfig = useProjectConfig(projectId);
   const abortSession = useAbortRuntimeSession();
   const executeCommand = useExecuteRuntimeCommand();
+
+  // T10: the most recently issued stop/cancel's `AbortSettlement`
+  // promise for this session, so `stopThenSendNow` (used by
+  // `handleQueueSendNow`) can await the SERVER-confirmed settlement instead
+  // of racing the optimistic idle flip `applyOptimisticAbort` makes
+  // synchronously. Keyed by sessionId even though this component instance is
+  // 1:1 with a session, matching the sessionId-keyed conventions used
+  // elsewhere in this file (e.g. the zustand stores) rather than assuming the
+  // prop never changes across this instance's lifetime.
+  const pendingAbortSettlementRef = useRef<Map<string, Promise<AbortSettlement>>>(new Map());
+
+  /**
+   * The one place that issues a stop/cancel for this session's run, whether
+   * through the mounted `sessionState` hook or the fallback raw mutation.
+   * Both branches resolve a real `AbortSettlement` (never throwing — see
+   * `awaitAbortSettlement`) and stash it in `pendingAbortSettlementRef` for
+   * `stopThenSendNow` to await. Cleared once it settles so a stale settlement
+   * never gates an unrelated future send.
+   */
+  const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
+    const settlement = sessionState
+      ? sessionState.cancel()
+      : awaitAbortSettlement(() => abortSession.mutateAsync(sessionId));
+    pendingAbortSettlementRef.current.set(sessionId, settlement);
+    void settlement.finally(() => {
+      if (pendingAbortSettlementRef.current.get(sessionId) === settlement) {
+        pendingAbortSettlementRef.current.delete(sessionId);
+      }
+    });
+    return settlement;
+  }, [sessionId, sessionState, abortSession]);
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
@@ -2826,14 +2945,17 @@ export function SessionChat({
       } catch {
         // ignore — SSE "question.rejected" event will also remove it
       }
-      // Also abort the session so the "The operation was aborted." banner appears
+      // Also abort the session so the "The operation was aborted." banner
+      // appears. Routed through `issueSessionCancel` (T10) so this
+      // cancel's `AbortSettlement` is tracked the same as every other stop
+      // path, in case a queued "send now" follows a question rejection.
       if (sessionState) {
-        sessionState.cancel();
+        issueSessionCancel();
       } else if (!abortSession.isPending) {
-        abortSession.mutate(sessionId);
+        issueSessionCancel();
       }
     },
-    [sessionState, removeQuestion, abortSession, sessionId, suppressQuestionFor],
+    [sessionState, removeQuestion, abortSession, suppressQuestionFor, issueSessionCancel],
   );
   const hasCompactionTurn = useMemo(
     () =>
@@ -3411,28 +3533,37 @@ export function SessionChat({
     // user was trying to get ahead of.
     queueDrain.pause();
 
-    if (sessionState) sessionState.cancel();
-    else abortSession.mutate(sessionId);
-  }, [sessionId, sessionState, abortSession, queueDrain]);
+    // Routed through `issueSessionCancel` (T10) so this stop's
+    // `AbortSettlement` is tracked for `handleQueueSendNow`'s
+    // `stopThenSendNow` to await — see that function's doc for why.
+    issueSessionCancel();
+  }, [sessionId, abortSession, queueDrain, issueSessionCancel]);
 
   /**
    * The per-row action: end the current turn if one is running, then send that
    * message. The only path that interrupts a running turn — automatic draining
    * never does — which is why it is a deliberate click and says what it does.
    *
-   * Waits for the server to actually report idle rather than guessing with a
-   * fixed delay, so the prompt cannot race the abort it just issued.
+   * T10: waits for the real `AbortSettlement` the stop it just issued
+   * produces (via `stopThenSendNow`), not a guess and not the optimistic
+   * idle flip `handleStop` makes synchronously — so the prompt cannot race
+   * the abort still in flight on the server.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
-      const status = useSessionStateStore.getState().sessionStatus[sessionId];
-      const running = status?.type === 'busy' || status?.type === 'retry';
-      if (running) {
-        handleStop();
-        await waitForSessionIdle(sessionId);
-      }
-      queueDrain.resume();
-      await queueDrain.dispatchNow(id);
+      await stopThenSendNow({
+        isRunning: () => {
+          const status = useSessionStateStore.getState().sessionStatus[sessionId];
+          return status?.type === 'busy' || status?.type === 'retry';
+        },
+        stop: () => {
+          handleStop();
+          return pendingAbortSettlementRef.current.get(sessionId) ?? Promise.resolve(null);
+        },
+        waitIdle: () => waitForSessionIdle(sessionId),
+        resumeQueue: () => queueDrain.resume(),
+        dispatch: () => queueDrain.dispatchNow(id),
+      });
     },
     [sessionId, handleStop, queueDrain],
   );
@@ -4130,7 +4261,13 @@ export function SessionChat({
                     </ToolActivateContext.Provider>
 
                     {/* Busy indicator when no turns yet but session is busy */}
-                    {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                    {commandError && (
+                      <TurnErrorDisplay
+                        error={commandError}
+                        isAbort={isAbortError(commandError.cause)}
+                        className="mt-2"
+                      />
+                    )}
                     {/* A turn refused for a missing connector renders HERE — after
                     the last turn, directly under the message that triggered it —
                     rather than as a one-line pill. It is the one failure with a

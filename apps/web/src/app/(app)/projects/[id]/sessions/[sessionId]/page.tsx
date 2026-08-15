@@ -42,6 +42,7 @@ import {
   shouldMountSessionChat,
 } from '@/features/session/session-surface';
 import {
+  canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
@@ -357,6 +358,20 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // card. It needs its own terminal branch — see the render below.
   const runtimeIdentityUnavailable =
     !authLoading && !!user && isRuntimeIdentityUnavailable(sandbox);
+  // A stopped/errored sandbox with a renderable cached transcript should show
+  // the CONVERSATION, not the full-screen restart/waking card `fatal` forces
+  // below. `hasTranscript` is already the route's own veto signal (painted from
+  // the SDK sync store's IndexedDB/memory cache without waiting on a runtime —
+  // see the comment on `sawTranscript` above); reading it again here, rather
+  // than re-deriving cache presence, is what keeps this additive to the
+  // existing chat-mount path instead of a second cache implementation.
+  // Sending still waits on the runtime — `sessionComposerReadiness` /
+  // `canDrainQueue`'s `runtimeReady` gate (unchanged) queue a submit instead
+  // of dropping it, and show their own "waking" notice above the composer.
+  const showCachedTranscriptWhileDown = canRenderCachedTranscriptWhileSandboxDown({
+    sandboxStatus: sandbox?.status,
+    hasCachedContent: hasTranscript,
+  });
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
   // OpenCode REST error, so a still-provisioning session used to be classified
@@ -603,7 +618,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (fatal) {
+    // `showCachedTranscriptWhileDown` VETOES the terminal card below, exactly
+    // the way transcript evidence already vetoes the new-session shell above
+    // (`isNewSessionSurface`) — a session with renderable history is never a
+    // dead end, live sandbox or not. Falls through to the same dual-layer chat
+    // mount every non-fatal open uses; nothing here needs its own render path.
+    if (fatal && !showCachedTranscriptWhileDown) {
       // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {

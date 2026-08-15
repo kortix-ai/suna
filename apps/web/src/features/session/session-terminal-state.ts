@@ -52,3 +52,43 @@ export function isDormantSessionWithoutRuntime(state: SessionTerminalState): boo
   if (state.stage !== 'stopped') return false;
   return state.sandboxStatus == null;
 }
+
+/** The subset of `fatal`'s inputs this decision needs. */
+export interface StoppedSandboxCacheState {
+  /** `sandbox.status` from the route's `fatal` gate — only `'stopped'`/`'error'` matter here. */
+  sandboxStatus: string | null | undefined;
+  /**
+   * Renderable content already exists for this session without a live
+   * runtime — cached transcript messages (SDK sync store, painted from
+   * IndexedDB/memory; see `use-session-sync.ts`) or an optimistic prompt in
+   * flight. The cheapest truthful signal, read from the route's own
+   * `hasTranscript`/pending-prompt state — never recomputed here.
+   */
+  hasCachedContent: boolean;
+}
+
+/**
+ * A `stopped`/`error` sandbox whose session already has renderable cached
+ * content should render the TRANSCRIPT with a calm waking affordance, not the
+ * full-screen restart/waking card `fatal` used to force unconditionally.
+ *
+ * Reading what you already wrote never needs a sandbox — Gate B in
+ * `session-chat.tsx` (`resolveSessionContentState`) already paints cached
+ * messages without waiting on the runtime; this is the route-level gate that
+ * used to defeat it by replacing the whole chat before Gate B ever ran.
+ *
+ * The composer stays gated separately: `sessionComposerReadiness` disables
+ * nothing (it queues instead — see `message-queue-boundary.ts`'s
+ * `runtimeReady` gate) but shows its own "waking" notice while the runtime is
+ * down. Only the READ path is freed here; SENDING still waits on the runtime,
+ * unchanged.
+ *
+ * A sandbox status outside `'stopped'`/`'error'` — or no cached content —
+ * returns `false`: the terminal card stays exactly as it was, byte for byte.
+ */
+export function canRenderCachedTranscriptWhileSandboxDown(
+  state: StoppedSandboxCacheState,
+): boolean {
+  const sandboxIsDown = state.sandboxStatus === 'stopped' || state.sandboxStatus === 'error';
+  return sandboxIsDown && state.hasCachedContent;
+}

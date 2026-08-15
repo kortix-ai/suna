@@ -5,83 +5,151 @@
  * costs twice: the user is told they stopped something they didn't, and the
  * real failure is never shown.
  *
- * It was decided by substring-matching the error's display text for "abort" /
- * "cancel". `getTurnError` flattens the structured error to a string and drops
- * its `name`, so that was the only signal left — and it fires on any message
- * that merely contains the word.
+ * T17: this file used to assert on the SOURCE TEXT of
+ * `session-error-banner.tsx` / `session-chat.tsx` (`expect(code(BANNER)).toContain(...)`).
+ * That style cannot fail on a real regression: a caller can satisfy every
+ * string check while shipping broken behavior (e.g. keep the substring
+ * `isAbort ?? isAbortError(text)` present but dead-code it), and — see
+ * `apps/web`'s documented source-assertion trap — a refactor that keeps the
+ * exact wording but changes the logic slips through untouched. Replaced with
+ * BEHAVIOR tests:
  *
- * The transcript can read the identity directly off the message, so it now
- * passes `isAbort`. The prose sniff survives only for the send-failure path,
- * where a message really is all there is.
+ *  1. `TurnErrorDisplay` (`session-error-banner.tsx`), rendered for real via
+ *     `renderToStaticMarkup` (this repo has no DOM harness — see
+ *     `session-error-banner-abort.test.tsx`, which this file's render matrix
+ *     deliberately mirrors rather than duplicates in full) — across the
+ *     reason-gate matrix.
+ *  2. `deriveTurnErrorAbortState` (`session-chat.tsx`) — the wiring seam that
+ *     computes `isAbort`/`abortReason` from a turn's assistant messages before
+ *     passing them to the banner. It used to be two inline, untestable
+ *     `useMemo` loops; exported (no behavior change — see the comment at its
+ *     definition) so this file can exercise the real derivation with
+ *     realistic message fixtures instead of grepping for its source.
  */
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-const BANNER = await Bun.file(
-  new URL('./session-error-banner.tsx', import.meta.url).pathname,
-).text();
-const CHAT = await Bun.file(new URL('./session-chat.tsx', import.meta.url).pathname).text();
+import { deriveTurnErrorAbortState } from './session-chat';
+import { TurnErrorDisplay } from './session-error-banner';
 
-function code(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((l) => !l.trim().startsWith('//'))
-    .join('\n');
-}
+// This file is `.ts`, not `.tsx` (filename is pinned — see T17), so
+// JSX syntax is unavailable; `createElement` renders the exact same tree.
+// No `NextIntlClientProvider` wrapper needed: every scenario below renders
+// the abort row or the plain error card, neither of which call
+// `useTranslations` (only the billing/usage-limit cards do — see
+// `session-error-banner-abort.test.tsx` for those, which DOES need the
+// provider).
+const render = (props: Parameters<typeof TurnErrorDisplay>[0]) =>
+  renderToStaticMarkup(createElement(TurnErrorDisplay, props));
 
-/** The predicate the banner uses, mirrored. */
-function rendersInterrupted(isAbort: boolean | undefined, text: string): boolean {
-  const patterns = ['aborted', 'abort', 'cancelled', 'canceled'];
-  return isAbort ?? patterns.some((p) => text.toLowerCase().includes(p));
-}
+// ============================================================================
+// 1. TurnErrorDisplay render matrix — the four cases T17 asks for.
+// ============================================================================
 
-describe('identity wins over prose', () => {
-  test('a real abort is labelled Interrupted', () => {
-    expect(rendersInterrupted(true, 'The operation was aborted.')).toBe(true);
+describe('TurnErrorDisplay — reason-gated render matrix', () => {
+  test('user-reason abort: the Interrupted row is present', () => {
+    const markup = render({
+      errorText: 'The operation was aborted.',
+      isAbort: true,
+      abortReason: 'user',
+    });
+    expect(markup).toContain('Interrupted');
   });
 
-  test('a genuine failure that merely says "aborted" is NOT', () => {
-    // The bug. This is a real error the user needs to see, not a muted note
-    // telling them they stopped their own turn.
-    expect(rendersInterrupted(false, 'upstream connection aborted by peer')).toBe(false);
-    expect(rendersInterrupted(false, 'signal is aborted without reason')).toBe(false);
-    expect(rendersInterrupted(false, 'stream cancelled by server')).toBe(false);
+  test('runtime-disposed reason: renders nothing at all', () => {
+    const markup = render({
+      errorText: 'The operation was aborted because the runtime shut down.',
+      isAbort: true,
+      abortReason: 'runtime-disposed',
+    });
+    expect(markup.trim()).toBe('');
   });
 
-  test('a clean turn shows nothing either way', () => {
-    // No error text at all → the component returns null before any of this.
-    expect(rendersInterrupted(false, '')).toBe(false);
+  test('untagged abort (no reason): the Interrupted row is present', () => {
+    const markup = render({
+      errorText: 'The operation was aborted.',
+      isAbort: true,
+      abortReason: undefined,
+    });
+    expect(markup).toContain('Interrupted');
   });
 
-  test('the prose sniff still covers a caller that cannot tell', () => {
-    // The send-failure path has only a message.
-    expect(rendersInterrupted(undefined, 'Request aborted')).toBe(true);
-    expect(rendersInterrupted(undefined, 'Payment required')).toBe(false);
+  test('non-abort error: an error card renders, never the Interrupted row', () => {
+    // A plain gateway failure, not a billing/usage-limit one — those render a
+    // dedicated card that needs `useTranslations`, covered separately by
+    // `session-error-banner-abort.test.tsx` under its intl provider.
+    const markup = render({ errorText: 'upstream unreachable: socket hang up', isAbort: false });
+    expect(markup).not.toContain('Interrupted');
+    expect(markup).toContain('upstream unreachable');
   });
 });
 
-describe('wiring', () => {
-  test('the banner prefers the explicit signal', () => {
-    expect(code(BANNER)).toContain('isAbort ?? looksLikeAbortText(text)');
+// ============================================================================
+// 2. deriveTurnErrorAbortState — the session-chat.tsx wiring seam.
+// ============================================================================
+
+/** Build a minimal turn with a single assistant message carrying `error`. */
+function turnWithError(error: unknown) {
+  return { assistantMessages: [{ info: { error } }] };
+}
+
+describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay', () => {
+  test('a real user Stop (applyOptimisticAbort): AbortError + reason "user"', () => {
+    const turn = turnWithError({ name: 'AbortError', data: { message: 'stopped', reason: 'user' } });
+    expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: true, abortReason: 'user' });
   });
 
-  test('the transcript reads the structured error name', () => {
-    const src = code(CHAT);
-    // Narrowed to a string before the comparison — comparing the raw `unknown`
-    // to a literal is the inconvertible-types smell CodeQL flags, and it would
-    // read false for a boxed String.
-    expect(src).toContain("typeof name === 'string' && name === 'AbortError'");
+  test('an infra respawn (markSessionAbortedLocally): AbortError + reason "runtime-disposed"', () => {
+    const turn = turnWithError({
+      name: 'AbortError',
+      data: { message: 'runtime disposed', reason: 'runtime-disposed' },
+    });
+    expect(deriveTurnErrorAbortState(turn)).toEqual({
+      isAbort: true,
+      abortReason: 'runtime-disposed',
+    });
   });
 
-  test('BOTH render sites pass it', () => {
-    // There are two: the compact row and the full transcript. Wiring one leaves
-    // the other sniffing prose, and which one you see depends on the layout.
-    const hits = [...code(CHAT).matchAll(/isAbort=\{turnErrorIsAbort\}/g)];
-    expect(hits.length).toBe(2);
+  test('a genuine opencode wire abort (MessageAbortedError): identity true, reason undefined', () => {
+    const turn = turnWithError({ name: 'MessageAbortedError', data: { message: 'aborted' } });
+    expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: true, abortReason: undefined });
   });
 
-  test('the sniff is no longer named as if it were authoritative', () => {
-    // It was `isAbortError`, which read like a fact. It is a guess.
-    expect(code(BANNER)).not.toContain('function isAbortError(');
+  test('a genuine failure whose prose merely contains "aborted": NOT an abort', () => {
+    const turn = turnWithError({
+      name: 'Error',
+      data: { message: 'upstream unreachable: The operation was aborted.' },
+    });
+    expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: false, abortReason: undefined });
+  });
+
+  test('no error on any message: not an abort, no reason', () => {
+    const turn = { assistantMessages: [{ info: {} }, { info: { error: undefined } }] };
+    expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: false, abortReason: undefined });
+  });
+
+  test('reads the FIRST message carrying an error, matching getTurnError', () => {
+    const turn = {
+      assistantMessages: [
+        { info: {} },
+        { info: { error: { name: 'AbortError', data: { message: 'stopped', reason: 'user' } } } },
+        { info: { error: { name: 'MessageAbortedError', data: { message: 'later' } } } },
+      ],
+    };
+    expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: true, abortReason: 'user' });
+  });
+
+  test('end to end: the derived state renders exactly what TurnErrorDisplay would show', () => {
+    const infraTurn = turnWithError({
+      name: 'AbortError',
+      data: { message: 'runtime disposed', reason: 'runtime-disposed' },
+    });
+    const { isAbort, abortReason } = deriveTurnErrorAbortState(infraTurn);
+    expect(render({ errorText: 'runtime disposed', isAbort, abortReason }).trim()).toBe('');
+
+    const userTurn = turnWithError({ name: 'AbortError', data: { message: 'stopped', reason: 'user' } });
+    const userState = deriveTurnErrorAbortState(userTurn);
+    expect(render({ errorText: 'stopped', ...userState })).toContain('Interrupted');
   });
 });
