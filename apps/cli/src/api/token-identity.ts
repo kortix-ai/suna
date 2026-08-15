@@ -3,7 +3,6 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { configFilePath } from './config.ts';
-import type { MeResponse } from './types.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Who is this token?
@@ -27,6 +26,30 @@ import type { MeResponse } from './types.ts';
 // matters: the platform re-resolves the grant on every prompt, and an agent
 // switch mid-session changes the answer.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The `/accounts/me` fields this module reads.
+ *
+ * Declared structurally instead of importing `MeResponse` on purpose. This
+ * file is reachable from `api/client.ts`, which puts it in the in-sandbox
+ * `kortix connectors` import closure — every file in that closure is hashed
+ * into the snapshot runtime fingerprint (see cli-connector-closure.test.ts).
+ * `api/types.ts` changes with every API type addition (23 commits in 6
+ * months), so pulling it into the fingerprint would re-mint every project's
+ * runtime identity on edits that cannot affect the connector binary.
+ * `MeResponse` satisfies this shape, so callers pass it unchanged.
+ */
+export interface AccountsMeBody {
+  user_id: string;
+  email?: string;
+  token_context?: {
+    auth_type?: string | null;
+    project_id?: string | null;
+    session_id?: string | null;
+    agent?: string | null;
+    kortix_cli?: string[] | 'all' | null;
+  };
+}
 
 /** What a minted token resolves to. Mirrors `MeResponse.token_context`. */
 export interface TokenIdentity {
@@ -111,7 +134,7 @@ function writeCacheFile(file: CacheFile): void {
 }
 
 /** Translate an `/accounts/me` body into the cached shape. */
-export function identityFromMe(me: MeResponse): TokenIdentity {
+export function identityFromMe(me: AccountsMeBody): TokenIdentity {
   const ctx = me.token_context;
   return {
     authType: ctx?.auth_type ?? null,
@@ -130,7 +153,7 @@ export function identityFromMe(me: MeResponse): TokenIdentity {
  * (whoami, projects, accounts, login, doctor, ship, the session scan) warm the
  * cache without a single extra request.
  */
-export function rememberTokenIdentity(token: string, me: MeResponse): void {
+export function rememberTokenIdentity(token: string, me: AccountsMeBody): void {
   if (!token) return;
   const key = tokenKey(token);
   const entry: CacheEntry = { identity: identityFromMe(me), fetchedAt: Date.now() };

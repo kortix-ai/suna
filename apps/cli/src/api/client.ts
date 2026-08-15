@@ -3,8 +3,7 @@ import { backendApi } from '@kortix/sdk';
 import type { Auth } from './auth.ts';
 import { secureRemoteBase } from './config.ts';
 import { withKortixScope } from './sdk.ts';
-import { rememberTokenIdentity } from './token-identity.ts';
-import type { MeResponse } from './types.ts';
+import { rememberTokenIdentity, type AccountsMeBody } from './token-identity.ts';
 
 // Re-exported for callers/tests that reach it via the client module.
 export { secureRemoteBase };
@@ -99,7 +98,7 @@ function isMeEndpoint(endpoint: string): boolean {
 function captureIdentity(endpoint: string, token: string, data: unknown): void {
   if (!isMeEndpoint(endpoint) || !token || !data || typeof data !== 'object') return;
   try {
-    rememberTokenIdentity(token, data as MeResponse);
+    rememberTokenIdentity(token, data as AccountsMeBody);
   } catch {
     /* best effort */
   }
