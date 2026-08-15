@@ -2,13 +2,28 @@ import { describe, expect, test, beforeEach, mock } from 'bun:test';
 
 let promptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
   async () => ({ data: {} });
+/** Overridable per-test — the `client.session.abort()` call `abortOpenCodeSession` makes. */
+let abortImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
+  async () => ({ data: {} });
+/** Overridable per-test — the post-abort `client.session.status()` re-read. */
+let statusImpl: () => Promise<{ data?: Record<string, { type: string }> }> = async () => ({ data: {} });
 
 // Overridable per-test so "Server URL not ready" (getClient() throwing before
 // the runtime url is pinned) can be simulated N times before it starts
 // resolving — mirrors the real client's throw during the sandbox-loading
 // window (see opencode/client.ts).
-let getClientImpl: () => { session: { promptAsync: (args: unknown) => Promise<unknown> } } = () => ({
-  session: { promptAsync: (args: unknown) => promptImpl(args) },
+let getClientImpl: () => {
+  session: {
+    promptAsync: (args: unknown) => Promise<unknown>;
+    abort?: (args: unknown) => Promise<unknown>;
+    status?: () => Promise<unknown>;
+  };
+} = () => ({
+  session: {
+    promptAsync: (args: unknown) => promptImpl(args),
+    abort: (args: unknown) => abortImpl(args),
+    status: () => statusImpl(),
+  },
 });
 
 mock.module('../../core/runtime/client', () => ({
@@ -20,7 +35,11 @@ mock.module('../../core/http/logger', () => ({
 }));
 
 import { useSyncStore } from '../../browser/stores/sync-store';
+import { isAbortError } from '../../core/http/abort-error';
 import {
+  abortInFlightDeliveries,
+  abortOpenCodeSession,
+  awaitAbortSettlement,
   extractSendErrorMessage,
   getSendRetryDelayMs,
   isOpenCodeNotReadyError,
@@ -30,7 +49,15 @@ import {
 
 beforeEach(() => {
   promptImpl = async () => ({ data: {} });
-  getClientImpl = () => ({ session: { promptAsync: (args: unknown) => promptImpl(args) } });
+  abortImpl = async () => ({ data: {} });
+  statusImpl = async () => ({ data: {} });
+  getClientImpl = () => ({
+    session: {
+      promptAsync: (args: unknown) => promptImpl(args),
+      abort: (args: unknown) => abortImpl(args),
+      status: () => statusImpl(),
+    },
+  });
 });
 
 describe('promptOpenCodeMessage', () => {
@@ -262,6 +289,11 @@ async function withInstantBackoff<T>(run: () => Promise<T>): Promise<T> {
   } finally {
     globalThis.setTimeout = realSetTimeout;
   }
+}
+
+/** Flush pending microtasks (promise resolutions) without advancing real timers. */
+async function tick(rounds = 10): Promise<void> {
+  for (let i = 0; i < rounds; i++) await Promise.resolve();
 }
 
 describe('promptOpenCodeMessage messageID', () => {
@@ -550,6 +582,205 @@ describe('promptOpenCodeMessage messageID', () => {
 
     const minted = encodedOf(captured[0].messageID as string);
     expect(minted).toBeLessThan(encodedAt(before + 60_000));
+  });
+});
+
+// ── T9: cancel() cancels in-flight delivery and awaits the abort ───
+//
+// Before this, a prompt still retrying its boot-window backoff when the user
+// hit Stop had no `AbortSignal` at all — it landed AFTER the abort and ran
+// the OLD text. `abortInFlightDeliveries` lets `cancel()` reach every
+// in-flight `promptOpenCodeMessage` call for a session and stop it before its
+// next attempt, whether that attempt is mid-network-call or mid-backoff-sleep.
+describe('abortInFlightDeliveries', () => {
+  test('a delivery mid-retry-backoff is aborted before its next attempt fires', async () => {
+    let calls = 0;
+    promptImpl = async () => {
+      calls++;
+      // Always transient — without an abort this would retry across the full
+      // boot window and eventually succeed or exhaust it. The abort must cut
+      // it off after the FIRST attempt, before the second ever happens.
+      return { error: { message: 'opencode not ready' }, response: new Response(null, { status: 503 }) };
+    };
+
+    const delivery = promptOpenCodeMessage({
+      sessionId: 'sess-abort-1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    // Flush microtasks so the first attempt completes and the retry loop is
+    // now waiting on the (real, ~400ms) backoff timer — but nowhere near firing
+    // it, so this assertion is deterministic without a real wait.
+    await tick(10);
+    expect(calls).toBe(1);
+
+    const aborted = abortInFlightDeliveries('sess-abort-1');
+    expect(aborted).toBe(1);
+
+    const result = await delivery.then(
+      () => 'resolved',
+      (e) => e,
+    );
+    expect(isAbortError(result)).toBe(true);
+    // The retry loop never got to fire its second attempt.
+    expect(calls).toBe(1);
+  });
+
+  test('aborts a delivery waiting on getClient() during the boot-window retry', async () => {
+    let getClientCalls = 0;
+    getClientImpl = () => {
+      getClientCalls++;
+      throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    };
+
+    const delivery = promptOpenCodeMessage({
+      sessionId: 'sess-abort-2',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    await tick(10);
+    expect(getClientCalls).toBe(1);
+
+    abortInFlightDeliveries('sess-abort-2');
+
+    const result = await delivery.then(
+      () => 'resolved',
+      (e) => e,
+    );
+    expect(isAbortError(result)).toBe(true);
+    expect(getClientCalls).toBe(1);
+  });
+
+  test('returns 0 and is a no-op when nothing is in flight for that session', () => {
+    expect(abortInFlightDeliveries('sess-nothing-in-flight')).toBe(0);
+  });
+
+  test('aborting one session never touches another session in flight at the same time', async () => {
+    let callsA = 0;
+    let callsB = 0;
+    promptImpl = async (args) => {
+      const sessionID = (args as { sessionID: string }).sessionID;
+      if (sessionID === 'sess-a') callsA++;
+      else callsB++;
+      return { error: { message: 'opencode not ready' }, response: new Response(null, { status: 503 }) };
+    };
+
+    const deliveryA = promptOpenCodeMessage({ sessionId: 'sess-a', parts: [{ type: 'text', text: 'hi' }] });
+    const deliveryB = promptOpenCodeMessage({ sessionId: 'sess-b', parts: [{ type: 'text', text: 'hi' }] });
+    await tick(10);
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+
+    abortInFlightDeliveries('sess-a');
+    const resultA = await deliveryA.then(
+      () => 'resolved',
+      (e) => e,
+    );
+    expect(isAbortError(resultA)).toBe(true);
+
+    // B was never touched — its own (real, ~400ms) backoff timer is still
+    // running, untouched by A's abort. Let it fire and succeed on its own
+    // (not aborted — resolves cleanly instead of rejecting).
+    promptImpl = async (args) => {
+      const sessionID = (args as { sessionID: string }).sessionID;
+      if (sessionID === 'sess-b') callsB++;
+      return { data: {} };
+    };
+    await expect(deliveryB).resolves.toBeUndefined();
+    expect(callsB).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a resolved delivery unregisters itself — a later abort call finds nothing', async () => {
+    promptImpl = async () => ({ data: {} });
+    await promptOpenCodeMessage({ sessionId: 'sess-done', parts: [{ type: 'text', text: 'hi' }] });
+
+    expect(abortInFlightDeliveries('sess-done')).toBe(0);
+  });
+});
+
+describe('abortOpenCodeSession', () => {
+  test('POSTs the abort to the runtime for the given session', async () => {
+    let captured: unknown;
+    abortImpl = async (args) => {
+      captured = args;
+      return { data: {} };
+    };
+
+    await expect(abortOpenCodeSession('sess-1')).resolves.toBeUndefined();
+    expect(captured).toEqual({ sessionID: 'sess-1' });
+  });
+
+  test('force-updates the store when the server still reports busy after the abort', async () => {
+    statusImpl = async () => ({ data: { 'sess-1': { type: 'busy' } } });
+    useSyncStore.setState({ sessionStatus: {} });
+
+    await abortOpenCodeSession('sess-1');
+
+    expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'busy' });
+  });
+
+  test('propagates a genuine abort failure instead of swallowing it', async () => {
+    abortImpl = async () => ({
+      error: { message: 'boom' },
+      response: new Response(null, { status: 500 }),
+    });
+
+    await expect(abortOpenCodeSession('sess-1')).rejects.toThrow();
+  });
+
+  test('a status-recheck failure after a successful abort is non-fatal', async () => {
+    abortImpl = async () => ({ data: {} });
+    statusImpl = async () => {
+      throw new Error('status endpoint unreachable');
+    };
+
+    await expect(abortOpenCodeSession('sess-1')).resolves.toBeUndefined();
+  });
+});
+
+describe('awaitAbortSettlement', () => {
+  test('resolves "aborted" once the abort call resolves — not before', async () => {
+    let resolveAbort: () => void = () => {};
+    const abortPromise = new Promise<void>((resolve) => {
+      resolveAbort = resolve;
+    });
+    let settled: unknown;
+    const settlement = awaitAbortSettlement(() => abortPromise, 1000).then((r) => {
+      settled = r;
+    });
+
+    await tick(10);
+    expect(settled).toBeUndefined();
+
+    resolveAbort();
+    await settlement;
+    expect(settled).toEqual({ status: 'aborted' });
+  });
+
+  test('a hanging abort call times out with a bounded settlement, not forever', async () => {
+    const hanging = new Promise<void>(() => {});
+
+    const result = await awaitAbortSettlement(() => hanging, 20);
+
+    expect(result).toEqual({ status: 'timed-out' });
+  });
+
+  test('a failing abort call settles as "failed" with the real error — never silently swallowed', async () => {
+    const boom = new Error('abort mutation exhausted its retries');
+
+    const result = await awaitAbortSettlement(() => Promise.reject(boom), 1000);
+
+    expect(result).toEqual({ status: 'failed', error: boom });
+  });
+
+  test('the timeout is cleared once the abort call settles, so it never fires late', async () => {
+    // Regression guard against a leaked timer: if the timeout weren't
+    // cleared, a fast-resolving abort followed by a wait longer than
+    // `timeoutMs` would still be fine (the promise already settled), but the
+    // dangling timer is exactly the kind of bug that later shows up as an
+    // unexplained state flip. Assert the settled VALUE stays 'aborted', not
+    // silently swapped to 'timed-out' by a stray timer firing after the fact.
+    const result = await awaitAbortSettlement(() => Promise.resolve(), 20);
+    await tick(5);
+    expect(result).toEqual({ status: 'aborted' });
   });
 });
 

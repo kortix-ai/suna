@@ -49,27 +49,33 @@ import {
   resetSessionSyncControllers,
 } from '../browser/session-sync/session-sync-registry';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useSyncStore } from '../browser/stores/sync-store';
 import { BillingError } from '../core/http/api/errors';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
 import {
+  SESSION_START_FRESH_MS,
   SESSION_START_POLL_MS,
   SESSION_START_POLL_OPTIONS,
   START_INCONCLUSIVE_GIVE_UP_MS,
   answerPermission,
   answerQuestion,
+  beginOptimisticPlainTextSend,
   beginRestPromptObservation,
   buildSessionCommandInput,
+  cachedStartResultIsReady,
   classifySendError,
   computeStartSettled,
   hasStartGivenUp,
+  markDispatchedForPartIds,
   nextInconclusiveSince,
   rejectQuestion,
   sendRestPromptWithObservation,
   sendStateOnError,
   sendStateOnStart,
+  sessionStartStaleTime,
   shouldPollSessionStart,
   shouldRetrySessionStart,
 } from './use-session';
@@ -320,6 +326,107 @@ describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
   });
 });
 
+// ── T15: one user bubble ────────────────────────────────────────────
+//
+// `send()` used to build its outgoing part as `{ type: 'text', text }` with no
+// id, so `markDispatchedForPartIds` (called unconditionally by `sendParts`)
+// could never find anything to correlate — the optimistic message never got
+// marked dispatched, and the sync store's `message.updated` supersession
+// fallback (which requires `isDispatched`) could never retire it. The user's
+// text rendered twice until the session went idle and `clearOptimisticMessages`
+// swept it. `beginOptimisticPlainTextSend` mints ONE id shared by the
+// optimistic part and the outgoing wire part, closing the gap.
+function userMessageUpdatedEvent(id: string, sessionID: string) {
+  return {
+    id: 'evt_test',
+    type: 'message.updated',
+    properties: {
+      info: { id, sessionID, role: 'user', time: { created: Date.now() } },
+    },
+  } as never;
+}
+
+describe('beginOptimisticPlainTextSend', () => {
+  beforeEach(() => {
+    useSyncStore.getState().reset();
+  });
+
+  test('adds a user message optimistically and flips the session busy', () => {
+    const { messageId, parts } = beginOptimisticPlainTextSend('sess-plain-1', 'hello there');
+
+    const msgs = useSyncStore.getState().messages['sess-plain-1'];
+    expect(msgs).toHaveLength(1);
+    expect(msgs?.[0]).toMatchObject({ id: messageId, role: 'user' });
+    expect(useSyncStore.getState().sessionStatus['sess-plain-1']).toEqual({ type: 'busy' });
+    expect(parts).toEqual([{ type: 'text', text: 'hello there', id: expect.any(String) }]);
+  });
+
+  test('the optimistic part and the outgoing wire part carry the SAME id', () => {
+    const { messageId, parts } = beginOptimisticPlainTextSend('sess-plain-2', 'hi');
+
+    const wireId = (parts[0] as { id?: string }).id;
+    expect(typeof wireId).toBe('string');
+    expect(useSyncStore.getState().parts[messageId]?.[0]?.id).toBe(wireId as string);
+  });
+
+  test('adds no optimistic parts for empty/whitespace-only text, but still sends a wire part', () => {
+    const { messageId, parts } = beginOptimisticPlainTextSend('sess-plain-3', '   ');
+
+    expect(parts).toHaveLength(1);
+    expect(useSyncStore.getState().parts[messageId] ?? []).toHaveLength(0);
+  });
+
+  test('two calls for the same session mint two different ids', () => {
+    const first = beginOptimisticPlainTextSend('sess-plain-4', 'one');
+    const second = beginOptimisticPlainTextSend('sess-plain-4', 'two');
+
+    expect(first.messageId).not.toBe(second.messageId);
+    expect((first.parts[0] as { id?: string }).id).not.toBe(
+      (second.parts[0] as { id?: string }).id,
+    );
+  });
+});
+
+describe('send() supersession: optimistic + server echo → one user message', () => {
+  beforeEach(() => {
+    useSyncStore.getState().reset();
+  });
+
+  test('marking dispatched via the shared part id lets the server echo supersede the optimistic message', () => {
+    const sessionId = 'sess-echo-1';
+    const { messageId, parts } = beginOptimisticPlainTextSend(sessionId, 'hello there');
+
+    // What `sendParts` does next, unconditionally, once the parts carry ids.
+    markDispatchedForPartIds(sessionId, parts);
+
+    // The server's real message — a different id, no parts populated yet
+    // (matches the live SSE order: `message.updated` arrives before
+    // `message.part.updated`).
+    useSyncStore.getState().applyEvent(userMessageUpdatedEvent('msg_server_real', sessionId));
+
+    const finalMsgs = useSyncStore.getState().messages[sessionId];
+    expect(finalMsgs).toHaveLength(1);
+    expect(finalMsgs?.[0]?.id).toBe('msg_server_real');
+    expect(finalMsgs?.some((m) => m.id === messageId)).toBe(false);
+  });
+
+  test('regression pin: WITHOUT an id on the outgoing part, the optimistic message is never dispatched and both survive', () => {
+    // The exact pre-fix shape `send()` used to build.
+    const sessionId = 'sess-echo-2';
+    const { messageId } = beginOptimisticPlainTextSend(sessionId, 'hello there');
+
+    markDispatchedForPartIds(sessionId, [{ type: 'text', text: 'hello there' }]); // no `id` → no-op
+
+    useSyncStore.getState().applyEvent(userMessageUpdatedEvent('msg_server_real_2', sessionId));
+
+    const finalMsgs = useSyncStore.getState().messages[sessionId];
+    // Both the optimistic AND the real message survive — this is the bug.
+    expect(finalMsgs?.map((m) => m.id).sort()).toEqual(
+      [messageId, 'msg_server_real_2'].sort(),
+    );
+  });
+});
+
 describe('buildSessionCommandInput', () => {
   test('preserves the command model, agent, and variant overrides', () => {
     expect(
@@ -425,6 +532,51 @@ describe('shouldPollSessionStart', () => {
 describe('SESSION_START_POLL_OPTIONS', () => {
   test('keeps interval fetches active while the document is hidden', () => {
     expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
+  });
+});
+
+// T5 — outcome-aware staleTime: a remount renders a cached `ready`
+// result instantly (no network `/start` before first paint), everything else
+// stays maximally stale so it still refetches on every mount.
+describe('sessionStartStaleTime', () => {
+  const withData = (data: unknown) => ({ state: { data } }) as never;
+
+  test('grants the fresh window ONLY to a ready result', () => {
+    expect(sessionStartStaleTime(withData({ stage: 'ready' }))).toBe(SESSION_START_FRESH_MS);
+  });
+
+  test('stays maximally stale (0) for every in-flight or terminal-but-not-ready stage', () => {
+    for (const stage of ['provisioning', 'starting', 'stopped', 'failed']) {
+      expect(sessionStartStaleTime(withData({ stage }))).toBe(0);
+    }
+  });
+
+  test('stays maximally stale (0) with no cached data at all', () => {
+    expect(sessionStartStaleTime(withData(null))).toBe(0);
+    expect(sessionStartStaleTime(withData(undefined))).toBe(0);
+  });
+});
+
+// T8 defect 1 — the mount-time decision that feeds
+// `markRuntimeReadyVerified()`. Pure so the "should this mount seed the
+// connection store's ready-verified flag" call is unit-testable without
+// rendering the hook or a component tree — see the `useIsomorphicLayoutEffect`
+// in `useSession` for how this wires into the ordering fix.
+describe('cachedStartResultIsReady', () => {
+  test('true only when the cached /start state already says ready', () => {
+    expect(cachedStartResultIsReady({ data: { stage: 'ready' } as never })).toBe(true);
+  });
+
+  test('false for every other stage — still in flight or terminal-but-not-ready', () => {
+    for (const stage of ['provisioning', 'starting', 'stopped', 'failed']) {
+      expect(cachedStartResultIsReady({ data: { stage } as never })).toBe(false);
+    }
+  });
+
+  test('false with no cached entry at all', () => {
+    expect(cachedStartResultIsReady({ data: null })).toBe(false);
+    expect(cachedStartResultIsReady({ data: undefined })).toBe(false);
+    expect(cachedStartResultIsReady(undefined)).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   classifyProbeResult,
@@ -15,8 +15,12 @@ import {
 } from './use-runtime-reconnect';
 import {
   incrementSandboxFail,
+  markRuntimeReadyVerified,
   requestRuntimeReconnect,
+  resetForServerSwitch,
   resetSandboxFail,
+  setOpenCodeHealth,
+  setSandboxStatus,
   useSandboxConnectionStore,
 } from '../browser/stores/sandbox-connection-store';
 
@@ -167,5 +171,81 @@ describe('sandbox-connection-store recovery resets counters', () => {
 
     incrementSandboxFail();
     expect(useSandboxConnectionStore.getState().failCount).toBe(1);
+  });
+});
+
+// T8 defect 1 — `useRuntimeReconnect`'s first-mount
+// `resetForServerSwitch()` (called unconditionally here, matching the hook's
+// own `if (isFirstMount) resetForServerSwitch();`) must converge to
+// connected+healthy regardless of whether `useSession`'s mount-time seed
+// (`markRuntimeReadyVerified()`, driven by `cachedStartResultIsReady` in
+// `use-session.ts`) ran before or after it. Both orderings are exercised
+// directly at the store level — this package has no hook-render harness, so
+// this is the level everything in this file is already tested at.
+describe('mount-time ordering: markRuntimeReadyVerified vs resetForServerSwitch', () => {
+  // `markRuntimeReadyVerified`/`resetForServerSwitch` round-trip through
+  // `sessionStorage` — this bun test environment has a `window` shim but no
+  // `sessionStorage` (see `session-start-stash.test.ts` for the same shim),
+  // so without this both silently no-op (caught, swallowed) and the test
+  // would pass for the wrong reason.
+  class MemoryStorage {
+    private map = new Map<string, string>();
+    getItem(key: string): string | null {
+      return this.map.has(key) ? this.map.get(key)! : null;
+    }
+    setItem(key: string, value: string): void {
+      this.map.set(key, value);
+    }
+    removeItem(key: string): void {
+      this.map.delete(key);
+    }
+    clear(): void {
+      this.map.clear();
+    }
+  }
+  beforeEach(() => {
+    (globalThis as any).sessionStorage = new MemoryStorage();
+  });
+  afterEach(() => {
+    delete (globalThis as any).sessionStorage;
+  });
+
+  test('seed-then-reset: a flag set before the first-mount reset makes reset seed connected+healthy instead of clobbering it', () => {
+    // `useSession`'s useIsomorphicLayoutEffect ran first (a cache-hit /start
+    // — Task A's staleTime made `stage==='ready'` visible on this mount's
+    // very first render, strictly before any `useEffect`, this reset
+    // included).
+    markRuntimeReadyVerified();
+
+    // `useRuntimeReconnect`'s first-mount reset — a plain `useEffect`, always
+    // fires after every `useLayoutEffect` in the tree.
+    resetForServerSwitch();
+
+    expect(useSandboxConnectionStore.getState()).toMatchObject({
+      status: 'connected',
+      healthy: true,
+    });
+  });
+
+  test('reset-then-seed: reset runs first (no flag yet); the health-seed effect converges it directly afterward, unaffected by what reset just wrote', () => {
+    // No cached ready result was visible yet — a genuine network /start,
+    // still in flight when this mount's reset runs.
+    resetForServerSwitch();
+    expect(useSandboxConnectionStore.getState()).toMatchObject({
+      status: 'connecting',
+      healthy: null,
+    });
+
+    // /start resolves ready later; `useSession`'s health-seed effect (step 3)
+    // writes the store directly once `switched` flips — `resetForServerSwitch`
+    // never runs again for this mount (`useRuntimeReconnect` only calls it on
+    // first mount), so nothing clobbers this.
+    setSandboxStatus('connected');
+    setOpenCodeHealth(true);
+
+    expect(useSandboxConnectionStore.getState()).toMatchObject({
+      status: 'connected',
+      healthy: true,
+    });
   });
 });

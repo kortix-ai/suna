@@ -7,7 +7,7 @@ import {
   reconcileSessionTail,
 } from '../../browser/session-sync/session-sync-registry';
 import { logger } from '../../core/http/logger';
-import { getClient, resetClient } from '../../core/runtime/client';
+import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
@@ -21,7 +21,11 @@ import { opencodeKeys } from '../use-opencode-sessions';
 import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
-import { releaseMessageRehydrate, reserveMessageRehydrate } from './helpers';
+import {
+  releaseMessageRehydrate,
+  reserveMessageRehydrate,
+  resolveClientEvictionUrl,
+} from './helpers';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
 
@@ -83,15 +87,30 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // URL/port updates within the same runtime.
     const isServerSwitch = prevRuntimeVersionRef.current !== runtimeVersion;
     prevRuntimeVersionRef.current = runtimeVersion;
-    const didServerUrlChange = prevServerUrlRef.current !== activeServerUrl;
+    const previousServerUrl = prevServerUrlRef.current;
+    const didServerUrlChange = previousServerUrl !== activeServerUrl;
     prevServerUrlRef.current = activeServerUrl;
 
     // Only reset the SDK client on actual server switches — NOT on URL/port
     // updates. Resetting on every urlVersion change tears down the client
     // unnecessarily, causing SSE disconnection → reconnection → cache
     // invalidation cascade that manifests as random loading flashes.
+    //
+    // Evict ONLY the one url actually being replaced (`resolveClientEvictionUrl`)
+    // — never `resetClient()`'s full `clientsByUrl` wipe, which would force
+    // every OTHER concurrently-open session's client to be recreated just
+    // because THIS session's runtime switched (`clientsByUrl` is deliberately
+    // keyed per url so several session sandboxes stay connected at once).
+    const evictUrl = resolveClientEvictionUrl({
+      isFirstMount,
+      isServerSwitch,
+      didServerUrlChange,
+      previousServerUrl,
+      activeServerUrl,
+    });
+    if (evictUrl) dropClientForUrl(evictUrl);
+
     if (isFirstMount || isServerSwitch) {
-      resetClient();
       clearConfigOverrides();
       clearPending();
       // NOTE: we intentionally do NOT wipe the sync store or the opencode
@@ -103,11 +122,6 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       // scope) and would otherwise bleed across sandboxes.
       useDiagnosticsStore.getState().clearAll();
       resetPrefetchState();
-    } else if (didServerUrlChange) {
-      // URL changed on the same logical server (e.g. sandbox/proxy refresh).
-      // Recreate the SDK client so SSE reconnects to the new endpoint, but
-      // keep caches/status intact to avoid loading flashes.
-      resetClient();
     }
 
     // Do not connect SSE or hydrate OpenCode-backed endpoints while the
