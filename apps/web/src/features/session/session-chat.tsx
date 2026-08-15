@@ -3014,6 +3014,16 @@ export function SessionChat({
     try {
       const { messageId, text } = rewindTarget;
       await sessionState.rewind(messageId);
+      // The queued messages belong to the abandoned trajectory, not merely to
+      // a turn that has not started yet — an edit-and-resend means "start
+      // over from here", and anything still waiting was written against the
+      // conversation the user just asked to discard. Clearing outright (not
+      // pausing) is deliberate: a pause needs an explicit resume, and nothing
+      // here should auto-resend text the user may not even want anymore once
+      // they see the rewound transcript. `revertStaged` (the queue-gate memo
+      // above) additionally blocks anything ELSE from queuing into this same
+      // staged window in the meantime.
+      useMessageQueueStore.getState().clearSession(sessionId);
       setRewindDraft({ text, id: ++rewindPrefillId.current });
       setRewindTarget(null);
     } catch (error) {
@@ -3021,7 +3031,7 @@ export function SessionChat({
         description: formatCommandError(error),
       });
     }
-  }, [rewindTarget, sessionState]);
+  }, [rewindTarget, sessionState, sessionId]);
 
   const handleRestoreRewind = useCallback(async () => {
     if (!sessionState?.rewindMessageId) return;
@@ -3430,6 +3440,12 @@ export function SessionChat({
       // releases it by itself when the box answers. This is what makes leaving
       // the composer ENABLED safe — see `sessionComposerReadiness`.
       runtimeReady,
+      // T22 — the web must never prompt across a staged session rewind. See
+      // `QueueDrainGates.revertStaged`'s doc comment for why the OTHER gates
+      // read wrong (open, not closed) during a staged revert and cannot
+      // stand in for this one. `rewindMessageId` is already exactly "staged,
+      // not yet committed" — null once committed or cleared.
+      revertStaged: !!sessionState?.rewindMessageId,
     }),
     [
       runtimeReady,
@@ -3441,6 +3457,7 @@ export function SessionChat({
       hasPendingApproval,
       pendingPermissions.length,
       readOnly,
+      sessionState?.rewindMessageId,
     ],
   );
 

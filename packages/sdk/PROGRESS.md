@@ -12,6 +12,229 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
+
+**Files:** `packages/sdk/src/core/session/rewind.ts` (+`.test.ts`),
+`packages/sdk/src/browser/stores/sync-store.ts` (+`.test.ts`),
+`packages/sdk/src/browser/stores/sync-store/types.ts`,
+`packages/sdk/src/react/use-session.ts` (rewind region only),
+`packages/sdk/src/react/use-opencode-events/handle-event.ts` (+`.test.ts`),
+`packages/sdk/src/public-surface.snapshot.json`,
+`packages/sdk/src/public-type-surface.snapshot.json`,
+`apps/web/src/features/session/message-queue-boundary.ts` (+`.test.ts`),
+`apps/web/src/features/session/use-message-queue-drain.ts`,
+`apps/web/src/features/session/session-chat.tsx` (rewind + queue-gate regions
+only). Did NOT touch `apps/kortix-sandbox-agent-server/*` or
+`apps/api/src/projects/session-lifecycle/*` — sibling session's concurrent
+server half of the same JAY-600/T22 spec. No git commands run (shared
+worktree).
+
+**Problem (verified claims from the investigation, re-checked against
+current HEAD).** `session.revert` is a STAGED server pointer — nothing is
+deleted until the next prompt commits it; `unrevert` restores it while
+staged. The client boundary lived in `use-session.ts` component state
+(`restRewind`, a `useState`): `messagesBeforeRewind` sliced the transcript at
+the boundary MESSAGE INDEX, hiding everything from the boundary onward —
+including messages minted AFTER staging. Sending the replacement prompt
+produced a NEWER message that sorted above the boundary exactly like the
+hidden ones, so it vanished too until an unrelated remount flooded the whole
+transcript back, interleaved. `reconcileCommittedSessionRewind` was dead code
+on any live mount: `hydrate` is (deliberately) additive-only and never
+deletes, so the boundary message it checked for never disappeared on its own.
+Component state also meant a page reload lost all knowledge of a staged
+revert — the server still held the pointer, the UI didn't. Separately, the
+web's message queue (`localStorage`) survived a rewind untouched:
+`handleConfirmRewind` cleared nothing, and `QueueDrainGates` had no revert
+awareness — worse, the OTHER gates (`hasIncompleteAssistant`, `isServerBusy`)
+read WRONG (open, not closed) during a staged revert, because the local hide
+window removed the very messages that would have kept them closed.
+
+**Fix — four parts, matching the settled design:**
+
+1. **Watermark-bounded hide window (`core/session/rewind.ts`).**
+   `SessionRewindState` gained `watermark: string` — the newest message id
+   known AT STAGE TIME, frozen once, never recomputed. `messagesBeforeRewind`
+   now hides only `[messageId, watermark]` (both inclusive), so anything
+   minted after staging always renders. `stageSessionRewind(messages,
+   messageId)` computes the watermark as `newestMessageId(messages) ??
+   messageId` (max-by-VALUE scan, not "last element" — robust against an
+   out-of-order optimistic append). `commitSessionRewind` unchanged in shape
+   (flips `staged` false, keeps the hide window). Removed
+   `reconcileCommittedSessionRewind` — superseded by (3): deletion and
+   record-clearing now happen atomically in one store action, so there is no
+   window left for a "boundary vanished, reconcile" pass to catch that the
+   atomic action doesn't already cover.
+2. **Server mirror, not component state (`sync-store.ts`).** New
+   `sessionRevert: Record<sessionId, SessionRewindState | null>` plus four
+   actions: `stageSessionRevert` (idempotent per boundary id — a redundant
+   restage of the SAME `messageId`, e.g. the local REST caller racing the
+   wire's own `.staged` echo, is a no-op so neither can widen an
+   already-frozen watermark; a DIFFERENT `messageId` replaces the record with
+   a fresh one), `commitSessionRevert`, `clearSessionRevert`, and
+   `applyCommittedRevert(sessionId, boundaryId, watermark)`. `useSession`'s
+   `restRewind` is now `useSyncStore((s) => s.sessionRevert[ocSessionId])`
+   instead of local state; `rewind()`/`restoreRewind()`/`sendParts()` call
+   the store actions directly after their REST calls succeed.
+3. **Committed revert deletes — explicit, not via `hydrate`.**
+   `applyCommittedRevert` is the first thing this store deletes outside
+   `removeMessage`/`clearSession`: it filters `messages[sessionId]` and
+   `parts` for ids inside `[boundaryId, watermark]`, in the SAME `set()` call
+   that clears the local record — so the two can never observe an
+   inconsistent middle state. Wired to the wire's
+   `session.next.revert.staged/.cleared/.committed` (three new `applyEvent`
+   cases; `Event` already included these three variants in
+   `@opencode-ai/sdk`, confirmed by reading `v2/gen/types.gen.d.ts`, no SDK
+   dependency bump needed). `.committed` prefers the LOCALLY TRACKED
+   watermark (frozen at stage time) and only falls back to "current known
+   tip" when nothing was tracked (a client that missed `.staged` — a
+   reconnect gap). `hydrate`'s additive invariant is untouched — a dedicated
+   test (`sync-store.test.ts`) pins that a session with no local messages, or
+   nothing in range, still clears the record without deleting anything it
+   shouldn't.
+4. **Reload/cross-tab recovery, best-effort.** New store action
+   `syncSessionRevertFromInfo(sessionId, revert)`, called from
+   `handle-event.ts`'s existing `session.created`/`session.updated` cases off
+   `readSessionInfo(event).revert` (OpenCode's own `Session.revert` field,
+   confirmed present in the SDK's `Session` type). Deliberately asymmetric: a
+   PRESENT `revert.messageID` seeds a fresh record (idempotent, same as (2));
+   an ABSENT one never clears an existing one — the three wire events remain
+   the sole authority for transitions, so a stale/momentarily-absent snapshot
+   can't race ahead of them. **Caveat, stated plainly:** this only recovers
+   state the moment a `session.created`/`session.updated` event next fires
+   for the session — it is not a guaranteed "read on mount" (that would
+   require either `SessionStartResult` (`session-sandbox.ts`, NOT in this
+   session's exclusive file list — plausibly the sibling server half's
+   surface to add a `.revert` field to) or an explicit `client.session.get()`
+   call I chose not to add speculatively into `use-session.ts`'s rewind
+   region without confirming the server half's shape first). A reload that
+   never receives a fresh `session.updated`/`.created` event stays unaware of
+   a pre-existing staged revert until one does. Flagging as a known gap
+   rather than silently claiming full reload coverage.
+5. **The web never prompts across a staged revert
+   (`message-queue-boundary.ts`, `use-message-queue-drain.ts`,
+   `session-chat.tsx`).** `QueueDrainGates` gained `revertStaged: boolean`;
+   `canDrainQueue` hard-closes on it, independent of every other gate —
+   necessary because the OTHER gates read wrong (open) during a staged
+   revert for the reason above. `session-chat.tsx`'s `queueGates` memo wires
+   `revertStaged: !!sessionState?.rewindMessageId` (already exactly "staged,
+   not committed"). `handleConfirmRewind` additionally calls
+   `useMessageQueueStore.getState().clearSession(sessionId)` after a
+   successful `rewind()` — the queued messages belong to the abandoned
+   trajectory, not merely a turn that hasn't started, so they are dropped
+   outright (not paused: a pause needs an explicit resume, and nothing
+   should auto-resend text the user may not want once they see the rewound
+   transcript).
+
+**TDD, RED confirmed before every GREEN** (real failures, right reason, not
+inferred):
+- `rewind.test.ts` — 15 tests, all new/rewritten around the new
+  `SessionRewindState`/watermark shape; RED via missing exports before
+  implementation.
+- `sync-store.test.ts` — 19 new tests (`stageSessionRevert` idempotency +
+  watermark capture, `commitSessionRevert`/`clearSessionRevert`,
+  `applyCommittedRevert` deletion + record-clear + empty-session safety, the
+  three `applyEvent` wire cases including the missed-`.staged` fallback,
+  `syncSessionRevertFromInfo`'s seed/no-op/never-clears-on-absence
+  semantics, `clearSession`/`reset` cleanup) — RED via `TypeError: ... is not
+  a function` on every new action before implementation.
+- `handle-event.test.ts` — 4 new tests (`session.created`/`.updated` seeding
+  off `info.revert`, absence never clearing) — RED (`toEqual` diff:
+  `sessionRevert.ses_new` was `undefined`) before wiring `handle-event.ts`.
+- `message-queue-boundary.test.ts` — 3 new tests (`revertStaged` closes
+  `canDrainQueue`, resumes once cleared, holds `stepDrainMachine` at zero) —
+  RED (`Expected: false, Received: true`) before adding the field + the
+  `canDrainQueue` clause.
+- One incidental RED not part of the plan: the isomorphic tripwire
+  (`index.isomorphic.test.ts`) flagged `core/session/rewind.ts:45` for a bare
+  `window.` — a false positive from a doc-comment line starting with `/**`
+  rather than `*` (the tripwire's comment-skip only recognizes lines starting
+  literally with `*`/`//`, a pre-existing gap in the tripwire itself, out of
+  this task's scope to fix). Reworded the comment ("hide window." → "hide
+  range —") rather than touch the tripwire.
+
+**Verified — real commands, real output:**
+
+```
+pnpm --filter @kortix/sdk typecheck
+  → clean (tsc --noEmit + examples/tsconfig.json), 0 errors
+
+pnpm --filter @kortix/sdk test
+  → baseline (measured before this session's edits, matching this task's own
+    "≥2038 pass" hint): 2038 pass, 0 fail, 147 files
+  → after: 2073 pass, 0 fail, 7593 expect() calls, 147 files
+    (net +35 tests, +0 files — 12 in rewind.test.ts, 19 in
+    sync-store.test.ts, 4 in handle-event.test.ts)
+
+pnpm --filter @kortix/sdk run smoke:install
+  → "OK: @kortix/sdk and @kortix/executor-sdk import and construct from
+    packed tarballs" — ✔ install smoke test passed
+
+cd apps/web && bun test src/features/session
+  → 2036 pass, 0 fail, 4158 expect() calls, 157 files
+
+cd apps/web && bun test src
+  → 7319 pass, 0 fail, 24194 expect() calls, 586 files (the
+    maintenance-store.test.ts warn-level console noise is documented
+    pre-existing expected test output, not a failure)
+
+cd apps/web && npx tsc --noEmit
+  → 15 errors, all in the 3 documented baseline files
+    (template-url.test.ts, preview-fit.test.tsx, easy-panel-logic.test.ts) —
+    exact count matches the documented baseline, 0 new errors
+
+cd apps/web && npx eslint src/features/session/session-chat.tsx \
+  src/features/session/message-queue-boundary.ts \
+  src/features/session/message-queue-boundary.test.ts \
+  src/features/session/use-message-queue-drain.ts \
+  src/stores/message-queue-store.ts
+  → 0 errors, 38 warnings (all pre-existing react-hooks/refs, all outside
+    the touched line ranges — confirmed by cross-referencing warning line
+    numbers against the diff's edited regions)
+```
+
+Public surface snapshots re-recorded (`UPDATE_TYPE_SURFACE_SNAPSHOT=1`,
+`UPDATE_SURFACE_SNAPSHOT=1`) — **purely additive, 2 insertions, 0 removals**:
+`SessionRewindState` type added to `./sync-store` and `./internal/sync-store`
+(both already carry `MessageError`/`MessageWithParts` the same way — internal
+machinery per `AGENTS.md`'s browser-only-tier note, not exposed on
+`window.Kortix`). `public-surface.snapshot.json` (value-level) had NO diff —
+no new value export, only a type.
+
+**Discovered, not fixed (append to Backlog if this needs its own row):** the
+isomorphic tripwire's comment-skip (`index.isomorphic.test.ts` — lines
+starting with `*`/`//` after trimStart) does not recognize a `/** ... */`
+block comment's OPENING line (`/** text */` does not start with `*`), so a
+bare-global-shaped substring inside prose on that exact line is flagged as
+real code. Worked around by rewording; the tripwire itself is unaudited by
+this session.
+
+**Shippable to production: YES**, with one named caveat.
+- **Verified:** SDK typecheck/test/smoke:install all green against a
+  re-derived session baseline; apps/web `features/session` and full `bun
+  test src` green; apps/web tsc shows the exact pre-existing 15-error
+  baseline and nothing new; eslint clean of errors on every touched file;
+  every new behavior RED-proven before GREEN; both public-surface snapshots
+  re-recorded and reviewed as purely additive.
+- **Unverified:** no live browser/E2E pass driving a real staged-rewind →
+  edit → resend → commit round trip against a running sandbox (unit +
+  store-level coverage only, per this task's own verification list, which
+  named unit tests, not a browser drive). No live proof of the reload
+  recovery path specifically (item 4) beyond its unit tests — see the named
+  caveat below.
+- **Risk, concretely:** (a) reload recovery (item 4) only fires on the NEXT
+  `session.created`/`session.updated` event for the session, not
+  synchronously on mount — a reload that receives neither before the user
+  acts stays unaware of a pre-existing staged revert until one does; closing
+  that gap for real needs either a `SessionStartResult.revert` field (likely
+  the sibling server-half's surface — `session-sandbox.ts` is not in this
+  session's file list) or an explicit `client.session.get()` call added to
+  `use-session.ts`, deliberately not added speculatively this session. (b) a
+  concurrent second tab/session sending DURING another tab's staged window is
+  an acknowledged, out-of-scope race — the committed watermark could then
+  undercount what the server actually truncates; noted, not solved.
+
+---
+
 ### 2026-08-15 — session `session-middle-stop` — T13: durable prompt idempotency across wake — DONE
 
 **Files:** `apps/api/src/sandbox-proxy/prompt-dedupe.ts` (+`.test.ts`),

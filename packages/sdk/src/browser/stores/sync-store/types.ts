@@ -5,6 +5,7 @@ import type {
 	SnapshotFileDiff,
 } from "@opencode-ai/sdk/v2/client";
 import type { AbortReason } from "../../../core/http/abort-error";
+export type { SessionRewindState } from "../../../core/session/rewind";
 
 // Inlined from web's `@/ui/types` (FileDiff is a derived type, not exported by
 // the OpenCode SDK). Type-only — zero runtime impact, byte-identical behavior.

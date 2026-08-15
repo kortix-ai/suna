@@ -47,12 +47,7 @@ import {
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
-import {
-  type SessionRewindState,
-  commitSessionRewind,
-  messagesBeforeRewind,
-  reconcileCommittedSessionRewind,
-} from '../core/session/rewind';
+import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
@@ -1002,24 +997,29 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
-  const [restRewind, setRestRewind] = useState<SessionRewindState | null>(null);
+  // T22 — the revert record lives in the sync store, not component state.
+  // Component state made the boundary math wrong in two ways at once: it
+  // reset on every remount (stranding an invisible staged revert after a
+  // reload — the server still held the pointer, nothing here knew), and it
+  // was the ONLY thing to mirror server truth, so a `.staged`/`.cleared`/
+  // `.committed` wire event or another tab's action never reached this
+  // session's view at all. The store is the single place all of those
+  // sources (this hook's own `rewind()`/`restoreRewind()`, the three wire
+  // events via `handle-event.ts`, and a `Session.revert` field read on
+  // reload) converge — see `sync-store.ts`'s `sessionRevert` doc comment.
+  const restRewind = useSyncStore((s) => s.sessionRevert[ocSessionId] ?? null);
   const [rewindPending, setRewindPending] = useState(false);
   const [rewindError, setRewindError] = useState<KortixSendError | null>(null);
   const rewindMessageId = restRewind?.staged ? restRewind.messageId : null;
   const messages = useMemo(
-    () => messagesBeforeRewind(sync.messages, restRewind?.messageId ?? null),
-    [sync.messages, restRewind?.messageId],
+    () => messagesBeforeRewind(sync.messages, restRewind),
+    [sync.messages, restRewind],
   );
 
   useEffect(() => {
-    setRestRewind(null);
     setRewindPending(false);
     setRewindError(null);
   }, [sessionId, ocSessionId]);
-
-  useEffect(() => {
-    setRestRewind((current) => reconcileCommittedSessionRewind(sync.messages, current));
-  }, [sync.messages]);
 
   // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store) — see
@@ -1146,7 +1146,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
       }),
     );
-    setRestRewind(commitSessionRewind);
+    useSyncStore.getState().commitSessionRevert(ocSessionId);
   };
 
   const send = (
@@ -1196,7 +1196,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindError(null);
     try {
       await rewindOpenCodeSession(ocSessionId, messageId);
-      setRestRewind({ messageId, staged: true });
+      useSyncStore.getState().stageSessionRevert(ocSessionId, messageId);
     } catch (error) {
       const classified = classifySendError(error);
       setRewindError(classified);
@@ -1213,7 +1213,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindError(null);
     try {
       await restoreOpenCodeSessionRewind(ocSessionId);
-      setRestRewind(null);
+      useSyncStore.getState().clearSessionRevert(ocSessionId);
     } catch (error) {
       const classified = classifySendError(error);
       setRewindError(classified);

@@ -392,6 +392,83 @@ describe('session lifecycle cache mutations', () => {
 });
 
 // ============================================================================
+// T22 — session.created / session.updated seed the sync store's revert
+// mirror off `Session.revert` (the reload/cross-tab recovery path — see
+// `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment). `applySyncEvent`
+// is a spy in this harness (see the note above), so this reads the REAL
+// `useSyncStore` directly, exactly like the existing session.error tests do.
+// ============================================================================
+
+describe('session.created / session.updated — revert mirror (T22)', () => {
+  test('session.created with a revert field stages it, watermark off currently known messages', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().hydrate('ses_new', [
+      { info: userMessage('msg_1'), parts: [] },
+      { info: userMessage('msg_2'), parts: [] },
+    ]);
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: {
+        sessionID: 'ses_new',
+        info: session('ses_new', { revert: { messageID: 'msg_2' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_new).toEqual({
+      messageId: 'msg_2',
+      watermark: 'msg_2',
+      staged: true,
+    });
+  });
+
+  test('session.updated with a revert field seeds it too', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: {
+        sessionID: 'ses_a',
+        info: session('ses_a', { revert: { messageID: 'msg_1' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).toEqual({
+      messageId: 'msg_1',
+      watermark: 'msg_1',
+      staged: true,
+    });
+  });
+
+  test('an ordinary update with no revert field never clears an already-tracked one', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().stageSessionRevert('ses_a', 'msg_1');
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: { sessionID: 'ses_a', info: session('ses_a') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).not.toBeNull();
+  });
+
+  test('session.created / session.updated with no revert field never fabricates one', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: { sessionID: 'ses_b', info: session('ses_b') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_b).toBeUndefined();
+  });
+});
+
+// ============================================================================
 // Kortix session-title mirroring — a runtime title change lands in the cached
 // Kortix session reads immediately, without waiting for the server-side
 // opencode_sessions snapshot (~20s) to make the next refetch carry it.

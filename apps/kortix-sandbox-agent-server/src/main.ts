@@ -972,6 +972,17 @@ async function runWarmSeedMode(
 // creating (and pinning) a brand-new root — see `resolveExistingRoot`'s
 // `defer` outcome — which was the SAME spinner-incident shape one layer up:
 // timeout read as "no roots" instead of "opencode is just slow".
+//
+// T22: `hasMessages` alone is not enough. OpenCode's `session.revert` is a
+// STAGED pointer — nothing is deleted until the next prompt, from ANY
+// producer, commits the truncation. A commit can truncate the reused root
+// all the way back to zero messages, and `initialPromptAlreadyDelivered`
+// reads that exactly like "never delivered" — re-running `prompt` (the
+// original task kickoff) into a session the user was mid-rewind on. A prior
+// pin for this sandbox is stronger evidence than message count: it proves
+// `maybeCreateInitialOpencodeSession` already ran to a delivery decision on
+// this box before, so an empty transcript behind an existing pin means
+// truncation, not "never delivered". See the `priorPin` check below.
 async function maybeCreateInitialOpencodeSession(
   opencode: Opencode,
   bootState: SandboxBootState,
@@ -1000,7 +1011,10 @@ async function maybeCreateInitialOpencodeSession(
   //   opencode-session-created (existing) → first prompt delivered
   // A big opencode-answering means the fix is in the image (pre-booted
   // opencode); a big root-ready means it's our bootstrap.
-  const resolved = await resolveExistingRoot(baseUrl, workspace)
+  // Captured BEFORE this boot writes its own pin below, so it reflects only
+  // what a PRIOR boot of this sandbox left behind — see the T22 note above.
+  const priorPin = readPinnedOpencodeSessionId()
+  const resolved = await resolveExistingRoot(baseUrl, workspace, priorPin)
   bootMark('opencode-answering')
   if (resolved.status === 'defer') {
     // opencode never answered the root list within the deadline, and a prior
@@ -1033,10 +1047,11 @@ async function maybeCreateInitialOpencodeSession(
   let alreadyDelivered = false
   if (existing) {
     sessionId = existing.id
-    alreadyDelivered = initialPromptAlreadyDelivered(existing)
+    alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin)
     logger.info('[boot] reusing existing opencode root', {
       sessionId,
       alreadyDelivered,
+      priorPin: priorPin !== null,
       known: existing.known,
       lastTurnIncomplete: existing.lastTurnIncomplete,
       lastTurnHasError: existing.lastTurnHasError,
@@ -1423,6 +1438,34 @@ function isTurnStillOrphaned(inspection: {
 export function initialPromptAlreadyDelivered(existing: { known: boolean; hasMessages: boolean }): boolean {
   if (!existing.known) return true
   return existing.hasMessages
+}
+
+/**
+ * T22 — the initial-prompt gate for a REUSED root, one layer above
+ * `initialPromptAlreadyDelivered`. OpenCode's `session.revert` is a STAGED
+ * pointer; nothing is deleted until the next prompt — from ANY producer —
+ * commits the truncation. A commit can truncate the reused root all the way
+ * back to zero messages, and `initialPromptAlreadyDelivered` reads that
+ * exactly like "never delivered" — re-running `prompt` (the original task
+ * kickoff) into a session the user was mid-rewind on.
+ *
+ * A prior pin for this sandbox outranks that message-count read: it proves
+ * `maybeCreateInitialOpencodeSession` already reached a delivery decision on
+ * this box once before, so an empty transcript behind an existing pin means
+ * truncation, not "never delivered". `priorPin` must be read BEFORE this
+ * boot writes its own pin (see the call site) so it reflects only what a
+ * PRIOR boot left behind — never this one's own pending write.
+ *
+ * Only the PINLESS case (no prior boot ever pinned anything on this sandbox)
+ * falls through to `initialPromptAlreadyDelivered`'s message-count read —
+ * unchanged from T12.
+ */
+export function reusedRootAlreadyDelivered(
+  existing: { known: boolean; hasMessages: boolean },
+  priorPin: string | null,
+): boolean {
+  if (priorPin !== null) return true
+  return initialPromptAlreadyDelivered(existing)
 }
 
 /**

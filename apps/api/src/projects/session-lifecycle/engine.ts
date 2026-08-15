@@ -1,5 +1,11 @@
-import { connectorCalls, projectSessions, projects, serviceAccounts } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import {
+  connectorCalls,
+  projectSessions,
+  projects,
+  serviceAccounts,
+  sessionSandboxes,
+} from '@kortix/db';
+import { and, desc, eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { mayRequeueFailedCreate } from './requeue-policy';
@@ -7,6 +13,8 @@ import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -590,7 +598,90 @@ export async function drainSessionLifecycleQueue(
  * `UNDELIVERED_PROMPT_STARVATION_MS` in `undelivered-prompts.ts` treats as a
  * dead scheduler) can outrun this — an accepted risk, not a silent one.
  */
-async function executeQueuedContinue(
+/**
+ * T22 — staged-revert guard for the queued `continue_session` backstop.
+ *
+ * OpenCode's `session.revert` is a STAGED pointer on the session row
+ * (`Session.revert?: { messageID, ... }`, `@opencode-ai/sdk` `types.gen`).
+ * Nothing is deleted until the NEXT prompt — from ANY producer — commits the
+ * truncation. A queued continue (an approval "resume", a trigger fire) that
+ * was enqueued BEFORE a user staged a revert must never be that committing
+ * prompt: the user is mid-edit of their own session history, and an
+ * automated continue queued against the pre-rewind trajectory is void once
+ * the rewind lands. This is checked at DRAIN time (same reasoning as the
+ * consumed-marker check above `executeQueuedContinue`) so a revert staged
+ * after enqueue but before this row's turn to drain is still caught.
+ *
+ * Reuses `sandboxOpencodeEndpoint` (the same signed-proxy resolution
+ * `session-transcript.ts` and `opencode-mapping.ts` already use — no new
+ * client) to read the sandbox's live OpenCode session row. Any resolution
+ * failure (no pin yet, sandbox unreachable, request timeout) fails OPEN —
+ * returns false, i.e. delivers exactly as before this guard existed — so a
+ * transient read failure never blocks a legitimate follow-up.
+ */
+async function queuedContinueHasStagedRevert(row: SessionLifecycleCommandRow): Promise<boolean> {
+  if (!row.sessionId) return false;
+  try {
+    const [session] = await db
+      .select({
+        opencodeSessionId: projectSessions.opencodeSessionId,
+        sandboxUrl: projectSessions.sandboxUrl,
+        accountId: projectSessions.accountId,
+        projectId: projectSessions.projectId,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, row.sessionId))
+      .limit(1);
+    if (!session?.opencodeSessionId) return false;
+
+    let externalId = externalIdFromSandboxUrlField(session.sandboxUrl);
+    if (!externalId) {
+      const [sandbox] = await db
+        .select({ externalId: sessionSandboxes.externalId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sessionId, row.sessionId),
+            eq(sessionSandboxes.projectId, session.projectId),
+            eq(sessionSandboxes.accountId, session.accountId),
+          ),
+        )
+        .orderBy(desc(sessionSandboxes.updatedAt))
+        .limit(1);
+      externalId = sandbox?.externalId ?? null;
+    }
+    if (!externalId) return false;
+
+    const endpoint = await sandboxOpencodeEndpoint(externalId, row.actorUserId ?? undefined);
+    if (!endpoint) return false;
+
+    const url = `${endpoint.url}/session/${encodeURIComponent(session.opencodeSessionId)}?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return false;
+    const info = (await res.json().catch(() => null)) as { revert?: unknown } | null;
+    return Boolean(info?.revert);
+  } catch (err) {
+    console.warn('[session-lifecycle] staged-revert check failed — proceeding as not staged', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/** `sandboxUrl` on the session row looks like `.../p/<external_id>/8000/...`. */
+function externalIdFromSandboxUrlField(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/\/p\/([^/]+)\//);
+  return match?.[1] ?? null;
+}
+
+export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
@@ -618,6 +709,19 @@ async function executeQueuedContinue(
       );
       return 'succeeded';
     }
+  }
+
+  if (await queuedContinueHasStagedRevert(row)) {
+    console.warn('[session-lifecycle] dropping queued continue — session has a staged revert', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+    });
+    await markCommandSucceeded(
+      row.commandId,
+      { status: 'skipped', reason: 'staged_revert' },
+      row.sessionId,
+    );
+    return 'succeeded';
   }
 
   try {

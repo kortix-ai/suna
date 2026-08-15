@@ -11,16 +11,27 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
 
+import {
+	commitSessionRewind,
+	isWithinRewindWindow,
+	newestMessageId,
+	stageSessionRewind,
+} from "../../core/session/rewind";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { writeStreamCache } from "./sync-store/stream-cache";
-import type { FileDiff, MessageError, MessageWithParts } from "./sync-store/types";
+import type {
+	FileDiff,
+	MessageError,
+	MessageWithParts,
+	SessionRewindState,
+} from "./sync-store/types";
 
 // Re-export moved helpers/types so the public surface stays byte-identical:
 // `Binary`, `ascendingId`, and the `MessageWithParts` type remain importable
 // from this module exactly as before.
 export { ascendingId, Binary };
-export type { MessageError, MessageWithParts };
+export type { MessageError, MessageWithParts, SessionRewindState };
 
 /** The two `Part` variants that carry streaming `.text` (vs. tool/file/etc.
  *  parts, which don't). Narrows a `Part` down so `.text` is safe to read
@@ -42,6 +53,22 @@ interface SyncState {
 	sessionStatus: Record<string, SessionStatus>;
 	diffs: Record<string, FileDiff[]>;
 	todos: Record<string, Todo[]>;
+	/**
+	 * T22 — the client's mirror of the server's staged/committed session
+	 * revert, per session. `null` means "no revert pointer" (either never
+	 * staged, or observed cleared/committed-and-deleted). Absent from the
+	 * record entirely (`undefined` via plain lookup) means the same thing as
+	 * `null` — no session has ever had one tracked.
+	 *
+	 * Driven by three independent sources that must all converge on the same
+	 * shape: a local `rewind()` REST call (`useSession`), the wire events
+	 * `session.next.revert.staged/.cleared/.committed` (below, via
+	 * `applyEvent`), and a `Session.revert` field read off `session.created`/
+	 * `session.updated` (`syncSessionRevertFromInfo`, called from
+	 * `use-opencode-events/handle-event.ts` — the reload/cross-tab recovery
+	 * path, since a hard reload observes neither of the other two).
+	 */
+	sessionRevert: Record<string, SessionRewindState | null>;
 
 	// ---- Actions ----
 	applyEvent: (event: OpenCodeEvent) => void;
@@ -99,6 +126,54 @@ interface SyncState {
 	setStatus: (sessionID: string, status: SessionStatus) => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
+	/**
+	 * Stage a rewind's local hide window. Idempotent per boundary id: calling
+	 * this again for the SAME `messageID` while already staged is a no-op —
+	 * whichever caller stages first freezes the watermark, and a redundant
+	 * echo (the local REST caller AND the wire's `.staged` confirmation both
+	 * call this for the same action) must never widen it after messages have
+	 * moved on. A DIFFERENT `messageID` replaces the record with a fresh
+	 * watermark computed from the CURRENTLY known message list.
+	 */
+	stageSessionRevert: (sessionId: string, messageId: string) => void;
+	/** Mark a staged rewind committed (Restore stops being offered) without
+	 *  dropping its hide window — see `commitSessionRewind`'s doc comment.
+	 *  No-op when nothing is tracked for this session. */
+	commitSessionRevert: (sessionId: string) => void;
+	/** Drop the local revert record entirely — `unrevert` succeeded, or a
+	 *  `session.next.revert.cleared` wire event says the server dropped it.
+	 *  The window was only ever HIDDEN while staged, never deleted, so
+	 *  clearing alone is enough to make every row visible again. */
+	clearSessionRevert: (sessionId: string) => void;
+	/**
+	 * The `.committed` event's actual cleanup: delete every message (and its
+	 * parts) inside `[boundaryId, watermark]` and drop the revert record. The
+	 * first explicit deletion this store performs for rewind — `hydrate`
+	 * never deletes (see its own doc comment), by design; this is a
+	 * dedicated, separately tested action instead of a weakening of that
+	 * invariant. A session with no local messages (or nothing in range)
+	 * safely clears the record and does nothing else.
+	 */
+	applyCommittedRevert: (sessionId: string, boundaryId: string, watermark: string) => void;
+	/**
+	 * Reconcile the local revert record against a `Session.revert` field read
+	 * off a `session.created`/`session.updated` event's `info` — the reload
+	 * and cross-tab recovery path. A hard page reload observes neither a
+	 * fresh `rewind()` call nor a `.staged` wire transition (that already
+	 * happened, possibly in a different tab or before this tab existed), so
+	 * this is the only way a reload can rediscover an already-staged revert.
+	 *
+	 * Deliberately asymmetric: a PRESENT `revert.messageID` seeds a fresh
+	 * local record (via `stageSessionRevert`, so the same idempotency and
+	 * watermark-freezing rules apply) — but an ABSENT one never clears an
+	 * existing record. The three wire events are the sole authority for
+	 * transitions; a stale or momentarily-absent `Session.revert` snapshot
+	 * must never race ahead of (or override) them.
+	 */
+	syncSessionRevertFromInfo: (
+		sessionId: string,
+		revert: { messageID: string } | null | undefined,
+	) => void;
 	optimisticAdd: (
 		sessionID: string,
 		message: Message,
@@ -587,6 +662,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	sessionStatus: {},
 	diffs: {},
 	todos: {},
+	sessionRevert: {},
 
 	// Compat alias
 	get statuses() {
@@ -794,6 +870,63 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			todos: { ...s.todos, [sessionID]: todos },
 		})),
 
+	stageSessionRevert: (sessionId, messageId) =>
+		set((s) => {
+			const current = s.sessionRevert[sessionId];
+			if (current?.staged && current.messageId === messageId) return s;
+			return {
+				sessionRevert: {
+					...s.sessionRevert,
+					[sessionId]: stageSessionRewind(get().getMessages(sessionId), messageId),
+				},
+			};
+		}),
+
+	commitSessionRevert: (sessionId) =>
+		set((s) => {
+			const current = s.sessionRevert[sessionId] ?? null;
+			const next = commitSessionRewind(current);
+			if (next === current) return s;
+			return { sessionRevert: { ...s.sessionRevert, [sessionId]: next } };
+		}),
+
+	clearSessionRevert: (sessionId) =>
+		set((s) => {
+			if (!s.sessionRevert[sessionId]) return s;
+			return { sessionRevert: { ...s.sessionRevert, [sessionId]: null } };
+		}),
+
+	applyCommittedRevert: (sessionId, boundaryId, watermark) =>
+		set((s) => {
+			const list = s.messages[sessionId];
+			if (!list || list.length === 0) {
+				return { sessionRevert: { ...s.sessionRevert, [sessionId]: null } };
+			}
+			const rewind: SessionRewindState = { messageId: boundaryId, watermark, staged: false };
+			const removedIds: string[] = [];
+			const kept = list.filter((m) => {
+				if (isWithinRewindWindow(m.id, rewind)) {
+					removedIds.push(m.id);
+					return false;
+				}
+				return true;
+			});
+			const nextParts = { ...s.parts };
+			for (const id of removedIds) delete nextParts[id];
+			return {
+				messages: { ...s.messages, [sessionId]: kept },
+				parts: nextParts,
+				sessionRevert: { ...s.sessionRevert, [sessionId]: null },
+			};
+		}),
+
+	syncSessionRevertFromInfo: (sessionId, revert) => {
+		if (!revert?.messageID) return;
+		const current = get().sessionRevert[sessionId];
+		if (current?.messageId === revert.messageID) return;
+		get().stageSessionRevert(sessionId, revert.messageID);
+	},
+
 	optimisticAdd: (sessionID, message, messageParts) => {
 		trackId(optimisticIds, sessionID, message.id);
 		// The user has typed into this session, so the disk repaint stands down.
@@ -886,6 +1019,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
+				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
 			};
 		}),
 
@@ -1239,6 +1373,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			sessionStatus: {},
 			diffs: {},
 			todos: {},
+			sessionRevert: {},
 		});
 	},
 
@@ -1603,6 +1738,33 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			});
 			return;
 		}
+			case "session.next.revert.staged": {
+				const props = event.properties as {
+					sessionID: string;
+					revert: { messageID: string };
+				};
+				if (props.sessionID && props.revert?.messageID) {
+					store.stageSessionRevert(props.sessionID, props.revert.messageID);
+				}
+				return;
+			}
+			case "session.next.revert.cleared": {
+				const props = event.properties as { sessionID: string };
+				if (props.sessionID) store.clearSessionRevert(props.sessionID);
+				return;
+			}
+			case "session.next.revert.committed": {
+				const props = event.properties as { sessionID: string; messageID: string };
+				if (props.sessionID && props.messageID) {
+					const tracked = get().sessionRevert[props.sessionID];
+					const watermark =
+						tracked?.watermark ??
+						newestMessageId(get().getMessages(props.sessionID)) ??
+						props.messageID;
+					store.applyCommittedRevert(props.sessionID, props.messageID, watermark);
+				}
+				return;
+			}
 			case "session.diff": {
 				const props = event.properties as {
 					sessionID: string;

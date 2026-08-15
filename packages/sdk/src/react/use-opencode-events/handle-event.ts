@@ -125,6 +125,15 @@ export function createEventHandler(deps: {
       case 'session.created': {
         const info = readSessionInfo(event);
         if (info) {
+          // T22 — reload/cross-tab recovery: a `Session.revert` field on the
+          // info this event carries is the only way a fresh mount (nothing
+          // staged locally yet, the `.staged` wire event already happened
+          // before this tab connected) rediscovers an already-staged revert.
+          // See `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment —
+          // absence never clears an existing record; only the three
+          // dedicated wire events (also routed through `applySyncEvent`
+          // above) do that.
+          useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
           queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
             if (!old) return [info];
             const exists = old.findIndex((s) => s.id === info.id);
@@ -152,6 +161,8 @@ export function createEventHandler(deps: {
       case 'session.updated': {
         const info = readSessionInfo(event);
         if (info) {
+          // T22 — see the identical call in the `session.created` case above.
+          useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
           // OpenCode auto-titles after the first message via session.updated.
           // Capture the previous title before local cache mutation so we only
           // force the server-owned mirror read when the title actually changed.

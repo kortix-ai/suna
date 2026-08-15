@@ -1913,3 +1913,292 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(held.rebuild()).not.toBe(held.rows);
 	});
 });
+
+// ============================================================================
+// T22 — session rewind/revert state mirrored from the server.
+//
+// `session.revert` is a STAGED pointer server-side: nothing is deleted until
+// the replacement prompt COMMITS it. These tests cover the store's mirror of
+// that lifecycle — `stageSessionRevert`/`commitSessionRevert`/
+// `clearSessionRevert`/`applyCommittedRevert`, the three wire events that
+// drive them through `applyEvent`, and `syncSessionRevertFromInfo` (the
+// reload/cross-tab recovery path off a `Session.revert` field).
+// ============================================================================
+
+describe("useSyncStore — stageSessionRevert", () => {
+	test("captures the watermark from the CURRENTLY KNOWN message list", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_3",
+			staged: true,
+		});
+	});
+
+	test("re-staging the SAME boundary is a no-op — the original watermark is never widened", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+		expect(useSyncStore.getState().sessionRevert.ses_1?.watermark).toBe("msg_2");
+
+		// More messages arrive locally (e.g. a stray echo) BEFORE the second
+		// caller (the SSE confirmation of the same stage) runs.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test("a DIFFERENT boundary replaces the tracked record with a fresh watermark", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_1"), parts: [] }]);
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test("sessions are isolated", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+		expect(useSyncStore.getState().sessionRevert.ses_2).toBeUndefined();
+	});
+});
+
+describe("useSyncStore — commitSessionRevert / clearSessionRevert", () => {
+	test("commit flips staged false and keeps the hide window", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.commitSessionRevert("ses_1");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_1",
+			watermark: "msg_1",
+			staged: false,
+		});
+	});
+
+	test("commit on a session with no staged revert is a no-op", () => {
+		const store = useSyncStore.getState();
+		store.commitSessionRevert("ses_never_staged");
+		expect(useSyncStore.getState().sessionRevert.ses_never_staged).toBeUndefined();
+	});
+
+	test("clear drops the record entirely (unrevert / .cleared)", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.clearSessionRevert("ses_1");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+});
+
+describe("useSyncStore — applyCommittedRevert (the explicit deletion)", () => {
+	test("deletes every message AND its parts inside [boundary, watermark], keeps the rest", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [textPart("prt_2", "msg_2", "edited away")] },
+			{ info: assistantMessage("msg_3"), parts: [textPart("prt_3", "msg_3", "old answer")] },
+			{ info: userMessage("msg_4"), parts: [textPart("prt_4", "msg_4", "replacement")] },
+		]);
+
+		store.applyCommittedRevert("ses_1", "msg_2", "msg_3");
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1", "msg_4"]);
+		expect(state.parts.msg_2).toBeUndefined();
+		expect(state.parts.msg_3).toBeUndefined();
+		expect(state.parts.msg_4).toBeDefined();
+	});
+
+	test("clears the local revert record once the rows are actually gone", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+		expect(useSyncStore.getState().sessionRevert.ses_1).not.toBeNull();
+
+		store.applyCommittedRevert("ses_1", "msg_2", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test("a session with no local messages yet just clears the record, without error", () => {
+		const store = useSyncStore.getState();
+		expect(() => store.applyCommittedRevert("ses_never_synced", "msg_1", "msg_1")).not.toThrow();
+		expect(useSyncStore.getState().sessionRevert.ses_never_synced).toBeNull();
+	});
+});
+
+describe("useSyncStore — applyEvent(session.next.revert.staged/.cleared/.committed)", () => {
+	test(".staged stages the boundary and freezes the watermark at the current tip", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.next.revert.staged",
+			properties: {
+				timestamp: 1,
+				sessionID: "ses_1",
+				revert: { messageID: "msg_2" },
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test(".cleared drops the record (unrevert observed over the wire)", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.applyEvent({
+			id: "evt_2",
+			type: "session.next.revert.cleared",
+			properties: { timestamp: 1, sessionID: "ses_1" },
+		} as never);
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test(".committed deletes [boundary, tracked watermark] and clears the record", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		store.applyEvent({
+			id: "evt_3",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1"]);
+		expect(state.sessionRevert.ses_1).toBeNull();
+	});
+
+	test(".committed with NO locally tracked record falls back to the current known tip as watermark", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		// No prior stageSessionRevert — simulates a client that missed .staged
+		// (reconnect gap) and only observes .committed.
+
+		store.applyEvent({
+			id: "evt_4",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		expect(useSyncStore.getState().messages.ses_1?.map((m) => m.id)).toEqual(["msg_1"]);
+	});
+});
+
+describe("useSyncStore — syncSessionRevertFromInfo (reload / cross-tab recovery)", () => {
+	test("a present revert field seeds a fresh local record, watermark off currently known messages", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_2" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test("an ALREADY-tracked boundary is left untouched (does not re-widen the watermark)", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_1"), parts: [] }]);
+		store.stageSessionRevert("ses_1", "msg_1");
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_1" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1?.watermark).toBe("msg_1");
+	});
+
+	test("absence never clears an existing record — explicit events own clearing, not this", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.syncSessionRevertFromInfo("ses_1", null);
+		store.syncSessionRevertFromInfo("ses_1", undefined);
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).not.toBeNull();
+	});
+});
+
+describe("useSyncStore — sessionRevert is released with the session (clearSession / reset)", () => {
+	test("clearSession drops the tracked revert too", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.clearSession("ses_1");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test("reset clears every session's revert state", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.reset();
+
+		expect(useSyncStore.getState().sessionRevert).toEqual({});
+	});
+});

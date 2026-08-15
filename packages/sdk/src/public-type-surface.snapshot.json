@@ -3472,6 +3472,7 @@
     "Binary",
     "MessageError",
     "MessageWithParts",
+    "SessionRewindState",
     "ascendingId",
     "useSyncStore"
   ],
@@ -6372,6 +6373,7 @@
     "Binary",
     "MessageError",
     "MessageWithParts",
+    "SessionRewindState",
     "ascendingId",
     "useSyncStore"
   ],

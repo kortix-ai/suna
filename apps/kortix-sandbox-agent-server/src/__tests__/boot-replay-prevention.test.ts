@@ -30,7 +30,12 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { finalizeOrphanedTurn, initialPromptAlreadyDelivered, resolveExistingRoot } from '../main'
+import {
+  finalizeOrphanedTurn,
+  initialPromptAlreadyDelivered,
+  resolveExistingRoot,
+  reusedRootAlreadyDelivered,
+} from '../main'
 
 const SRC = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
 
@@ -193,10 +198,44 @@ describe('the boot path is wired to the defer outcome, not just resolveExistingR
     expect(returnAt).toBeLessThan(pinCallAt)
   })
 
-  test('delivery is gated through initialPromptAlreadyDelivered, not a raw hasMessages read', () => {
+  test('delivery is gated through reusedRootAlreadyDelivered, not a raw hasMessages read', () => {
     const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
     const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
     const body = SRC.slice(start, end)
-    expect(body).toContain('alreadyDelivered = initialPromptAlreadyDelivered(existing)')
+    expect(body).toContain('alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin)')
+    // T22: `priorPin` must be captured BEFORE `resolveExistingRoot` runs, so it
+    // reflects only what a PRIOR boot pinned — never this boot's own pending
+    // write (see `pinOpencodeSessionFile` further down the same function).
+    const priorPinReadAt = body.indexOf('const priorPin = readPinnedOpencodeSessionId()')
+    const resolveCallAt = body.indexOf('await resolveExistingRoot(')
+    const pinWriteAt = body.indexOf('pinOpencodeSessionFile(')
+    expect(priorPinReadAt).toBeGreaterThan(-1)
+    expect(priorPinReadAt).toBeLessThan(resolveCallAt)
+    expect(priorPinReadAt).toBeLessThan(pinWriteAt)
+  })
+})
+
+describe('reusedRootAlreadyDelivered — the T22 staged-revert boot guard', () => {
+  test('a prior pin overrides an empty (revert-truncated) transcript', () => {
+    // Same shape a committed revert leaves behind: the read succeeded
+    // (`known: true`) but found zero messages — exactly what
+    // `initialPromptAlreadyDelivered` alone would read as "never delivered".
+    expect(reusedRootAlreadyDelivered({ known: true, hasMessages: false }, 'ses_prior_pin')).toBe(
+      true,
+    )
+  })
+
+  test('a prior pin overrides an unreadable transcript too', () => {
+    expect(reusedRootAlreadyDelivered({ known: false, hasMessages: false }, 'ses_prior_pin')).toBe(
+      true,
+    )
+  })
+
+  test('pinless + has messages: still delivered (unchanged from T12)', () => {
+    expect(reusedRootAlreadyDelivered({ known: true, hasMessages: true }, null)).toBe(true)
+  })
+
+  test('pinless + genuinely empty: not yet delivered, deliver now (unchanged from T12)', () => {
+    expect(reusedRootAlreadyDelivered({ known: true, hasMessages: false }, null)).toBe(false)
   })
 })
