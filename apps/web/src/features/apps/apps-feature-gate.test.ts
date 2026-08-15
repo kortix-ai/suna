@@ -16,12 +16,42 @@ test('every Apps discovery surface hides until the apps feature flag is on', () 
   // per-feature hook and never a hand-rolled `experimental?.apps` read.
   expect(nav).toContain("useFeatureFlag(projectId, 'apps')");
   expect(nav).toContain('if (!appsGate.enabled) return null;');
-  expect(nav).toContain('Experimental');
   expect(menu).toContain("requiresFlag: 'apps'");
   expect(view).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(view).toContain('Experimental');
   expect(nav).not.toContain('useAppsFeatureEnabled');
   expect(view).not.toContain('useAppsFeatureEnabled');
+});
+
+test('Apps is an ordinary feature flag — nothing calls it experimental', () => {
+  // Apps shipped labelled Experimental on every surface. It is now a STABLE
+  // flag: still opt-in per project, but no badge on the sidebar entry and none
+  // on the page header. The stability badge in Settings → Feature flags is
+  // rendered from the registry's `stability`, so that list follows on its own.
+  const nav = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    'utf8',
+  );
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+
+  expect(nav).not.toContain('Experimental');
+  expect(view).not.toContain('Experimental');
+});
+
+test('Apps sits with Customize in the sidebar, not in the bottom alert group', () => {
+  const sidebar = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
+    'utf8',
+  );
+
+  // It is a project surface you configure and operate, so it belongs on the
+  // Customize row — not below Files among the bottom-anchored alerts, which
+  // shift as late-arriving billing and sandbox state lands.
+  const customizeAt = sidebar.indexOf('<ProjectCustomizeNavItem />');
+  const appsAt = sidebar.indexOf('<ProjectAppsNavItem />');
+  const filesAt = sidebar.indexOf('<ProjectFilesNavItem />');
+  expect(customizeAt).toBeGreaterThan(-1);
+  expect(appsAt).toBeGreaterThan(customizeAt);
+  expect(appsAt).toBeLessThan(filesAt);
 });
 
 test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {
@@ -56,6 +86,20 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).toContain('kortix apps deploy .');
   expect(view).toContain('<iframe');
   expect(view).toContain('className="max-w-5xl"');
+});
+
+test('an App with no deployment never claims to be Running', () => {
+  // `desired_state` defaults to 'running' when the App row is created, so
+  // reading the badge off it alone painted a green "Running" pill on an App
+  // that had never been deployed and had no runtime at all.
+  const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
+
+  expect(view).toContain('const deployed = Boolean(app.active_deployment_id);');
+  expect(view).toContain("const live = deployed && app.desired_state === 'running';");
+  expect(view).toContain("!deployed ? 'Not deployed'");
+  // The badge and its tint must both follow real state, not intent.
+  expect(view).not.toContain("variant={app.desired_state === 'running' ? 'success' : 'muted'}");
+  expect(view).not.toContain("{app.desired_state === 'running' ? 'Running' : 'Suspended'}");
 });
 
 test('a suspended App preview issues the request that wakes its active deployment', () => {

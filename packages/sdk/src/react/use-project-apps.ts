@@ -97,18 +97,34 @@ export function useAppDeployments(
   return { ...query, deploy, rollback };
 }
 
+export interface UseAppAccessOptions {
+  /**
+   * Fetch the access POLICY as well as the session. Defaults to true.
+   *
+   * `GET .../apps/{id}/access` is an administrative read — a caller without
+   * `project.customize.write` gets a 403. A list of Apps only needs the SESSION
+   * (the short-lived URL its preview tile loads), so a grid of N Apps was firing
+   * N policy reads it never displayed, every one of them a 403 for an ordinary
+   * member. Pass `false` there and let the surface that actually edits access
+   * (the access modal) be the one that asks for it.
+   */
+  policy?: boolean;
+}
+
 /** App access policy plus a short-lived URL that exchanges into a host-only cookie. */
 export function useAppAccess(
   projectId: string | null | undefined,
   appId: string | null | undefined,
+  options: UseAppAccessOptions = {},
 ) {
   const queryClient = useQueryClient();
+  const wantsPolicy = options.policy ?? true;
   const queryKey = qk.project.appAccess(projectId ?? '', appId ?? '');
   const sessionQueryKey = qk.project.appAccessSession(projectId ?? '', appId ?? '');
   const policy = useQuery({
     queryKey,
     queryFn: () => getAppAccess(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    enabled: !!projectId && !!appId && wantsPolicy,
     ...contract('config'),
   });
   const session = useQuery({

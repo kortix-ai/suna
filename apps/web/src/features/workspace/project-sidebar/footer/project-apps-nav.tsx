@@ -1,7 +1,6 @@
 'use client';
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { GlobeIcon } from '@phosphor-icons/react';
@@ -21,8 +20,10 @@ export function ProjectAppsNavItem() {
   }, [isMobile, setOpenMobile]);
 
   if (!projectId) return null;
-  /* Fail-closed: the entry exists only after the project turns the `apps`
-     feature flag on in Customize → Feature flags. Loading counts as disabled. */
+  /* Fail-closed like every other flagged surface: the entry exists once the
+     project turns the `apps` feature flag on in Settings → Feature flags.
+     Loading counts as disabled. Apps is a STABLE flag — an ordinary per-project
+     opt-in, so the row carries no stability badge. */
   if (!appsGate.enabled) return null;
   return (
     <SidebarMenuItem>
@@ -35,9 +36,6 @@ export function ProjectAppsNavItem() {
         <Link href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
           <GlobeIcon />
           Apps
-          <Badge aria-hidden size="xs" variant="beta" className="ml-auto">
-            Experimental
-          </Badge>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

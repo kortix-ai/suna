@@ -22,6 +22,7 @@ process.env.FRONTEND_URL = 'https://app.example.com';
 const { KNOWN_PROVIDERS, config } = await import('../../config');
 const { getProvider } = await import('./index');
 const { getProviderComputeRateCard } = await import('./compute-rates');
+const { effectiveAppMachine } = await import('./index');
 const { getSandboxProvider } = await import('../../snapshots/providers');
 const { SANDBOX_TEMPLATE_PROVIDERS } = await import('../../snapshots/provider-coverage');
 
@@ -55,6 +56,22 @@ describe('sandbox provider parity across shared subsystems', () => {
       expect(typeof card.diskPerGbSecond).toBe('number');
     });
 
+    test(`${name}: can host an App runtime and declares what of the machine it enforces`, () => {
+      const provider = getProvider(name);
+      // Every provider must be able to bring the App supervisor back. A no-op
+      // here silently disables AppHostingProvider.waitUntilReady's recovery.
+      expect(typeof provider.ensureAppRuntimeStarted).toBe('function');
+
+      // Billing meters the EFFECTIVE machine, so a dimension the provider
+      // cannot set must resolve to zero rather than to the requested number.
+      const requested = { cpuCores: 2, memoryGb: 4, diskGb: 10 };
+      const effective = effectiveAppMachine(provider, requested);
+      const support = provider.appMachineSupport ?? { cpu: true, memoryGb: true, diskGb: true };
+      expect(effective.cpuCores).toBe(support.cpu ? requested.cpuCores : 0);
+      expect(effective.memoryGb).toBe(support.memoryGb ? requested.memoryGb : 0);
+      expect(effective.diskGb).toBe(support.diskGb ? requested.diskGb : 0);
+    });
+
     test(`${name}: has a registered snapshot-build adapter`, () => {
       const adapter = getSandboxProvider(name);
       expect(adapter.id).toBe(name);
@@ -66,4 +83,19 @@ describe('sandbox provider parity across shared subsystems', () => {
     });
   }
 
+  test('E2B cannot size an App disk, so an App on E2B is not billed for one', () => {
+    // e2b 2.37.0 Template.build takes cpuCount and memoryMB only — there is no
+    // disk parameter — so disk_gb is provider-managed there. Charging the
+    // requested disk billed storage Kortix never asked E2B to allocate.
+    expect(getProvider('e2b').appMachineSupport).toEqual({ cpu: true, memoryGb: true, diskGb: false });
+    expect(effectiveAppMachine(getProvider('e2b'), { cpuCores: 4, memoryGb: 8, diskGb: 50 }))
+      .toEqual({ cpuCores: 4, memoryGb: 8, diskGb: 0 });
+
+    // Daytona and Platinum size the whole machine at build time, so they meter
+    // exactly what the App asked for.
+    for (const name of ['daytona', 'platinum'] as const) {
+      expect(effectiveAppMachine(getProvider(name), { cpuCores: 4, memoryGb: 8, diskGb: 50 }))
+        .toEqual({ cpuCores: 4, memoryGb: 8, diskGb: 50 });
+    }
+  });
 });

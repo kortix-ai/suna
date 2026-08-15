@@ -120,6 +120,17 @@ export const PROJECT_ACTIONS = {
   PROJECT_CONNECTOR_CONNECTIONS_MANAGE: 'project.connector.connections.manage',
   PROJECT_CONNECTOR_WRITE: 'project.connector.write',
 
+  // Kortix Apps. Apps used to borrow project.customize.write / project.gitops
+  // .read, so a custom role could not grant or revoke Apps on its own. These
+  // are the real leaves. `read` = list and inspect the Apps the caller may see.
+  // `write` = create, rename, resize, delete, and set the access policy.
+  // `deploy` = ship a version, roll back, start, or stop — the action that
+  // changes what the public hostname serves, so it stays separable from write
+  // exactly as project.gitops.merge is separable from project.gitops.push.
+  PROJECT_APP_READ: 'project.app.read',
+  PROJECT_APP_WRITE: 'project.app.write',
+  PROJECT_APP_DEPLOY: 'project.app.deploy',
+
   // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts
   // an output / decision / batch up for human review (floor user + their agent).
   // `act` = approve / reject / request-changes / answer — a consequential

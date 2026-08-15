@@ -1,7 +1,7 @@
 import { connectorAttachments } from '@kortix/db';
 import { and, asc, eq, inArray, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { getSupabase } from '../shared/supabase';
+import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 
 export const MAX_CONNECTOR_ATTACHMENT_FILES = 20;
 export const MAX_CONNECTOR_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -247,7 +247,7 @@ class DbConnectorAttachmentStore implements ConnectorAttachmentStore {
             content_type: row.contentType,
             content_disposition: row.contentDisposition as 'attachment' | 'inline',
             ...(row.contentId ? { content_id: row.contentId } : {}),
-            url: data.signedUrl,
+            url: toPublicStorageUrl(data.signedUrl),
           };
         }),
       );

@@ -136,6 +136,41 @@ Kortix routing header before the request reaches the user process.
 Every value is server-configurable. Account policy can impose lower or higher
 limits.
 
+## Resource controls
+
+An App runtime is a sandbox on the same providers, drawing on the same wallet
+as a session, so it answers to the same controls. `apps/limits.ts` is the single
+place that decides whether an App may consume compute.
+
+- **Machine** — an App machine may not exceed `SANDBOX_SPEC_LIMITS` (32 CPU,
+  128 GB memory, 500 GB disk), the ceiling a session snapshot already answers
+  to. Create and update both enforce it. Apps REJECT an oversized machine
+  instead of clamping it: an App bills from the specification it recorded, so a
+  silent downgrade would charge for compute the provider never allocated.
+- **Account entitlement** — deploy and wake run `checkBillingActive`, the same
+  gate session create runs. An account that cannot start a session cannot keep
+  burning compute through an App instead.
+- **App count** — bounded by the plan's concurrent-workload allowance. Apps are
+  deliberately not a new priced dimension; if they ever become one, this is the
+  single place to read that entitlement.
+- **Concurrency** — running App runtimes are capped per account on their own
+  counter, so Apps can never starve interactive sessions. The runtime being
+  woken is excluded from its own count.
+
+Every cap lifts when billing is off, so local and self-hosted deployments are
+never gated by a plan they do not have. Operators can override the App count and
+concurrency caps with `KORTIX_APPS_MAX_PER_ACCOUNT` and
+`KORTIX_APPS_MAX_CONCURRENT_RUNTIMES`.
+
+## Provider machine support
+
+Providers do not enforce the same dimensions. A provider declares what it can
+actually allocate, and billing meters THAT, not the requested specification.
+E2B's `Template.build` accepts `cpuCount` and `memoryMB` and has no disk
+parameter, so an App's disk on E2B is provider-managed and is not billed. A gap
+between the requested and effective machine is recorded as a deployment event
+rather than silently accepted.
+
 ## Hostnames
 
 Cloudflare Universal SSL does not cover `foo.apps.kortix.com`. Kortix will use
@@ -154,7 +189,24 @@ Local development uses:
 
 `http://<route-key>.apps.localhost:<api-port>`
 
-The root domain and environment prefix are configuration values.
+The root domain and environment prefix are configuration values. `KORTIX_APPS_
+BASE_DOMAIN` sets the root explicitly. Unset, it is DERIVED from the
+deployment's own public API origin (`api.kortix.com` → `apps.kortix.com`), so a
+self-hosted instance publishes on a domain it actually controls instead of on
+kortix.com. When no domain can be resolved the API refuses to mint a hostname.
+One resolver (`apps/hostnames.ts`) serves both the published URL and the
+inbound host matcher, so the two cannot drift.
+
+A self-host has no Cloudflare Apps Worker to sign requests; its own reverse
+proxy is the trust boundary, and `KORTIX_APPS_ALLOW_DIRECT_EDGE=true` tells the
+API to accept direct App traffic. `kortix self-host configure` sets both.
+
+`X-Kortix-App-Host` is an EDGE-SIGNED field: the Worker sets it and the HMAC
+covers it. It is authoritative only where that signature is verified. In
+direct-edge mode nothing verifies a signature, so the API ignores the header
+entirely and routes on the real `Host` — otherwise any caller able to reach the
+public API origin could name any App in the header and be proxied into it, past
+that App's access policy.
 
 ## Cloudflare routing
 
@@ -389,10 +441,14 @@ Apps reuse `sandbox_compute_sessions`. The table gains `workload_type` and
 The lifecycle opens a compute session after provider start and closes it after
 provider stop. Billing uses the persisted deployment resource specification.
 
-Wake checks the account entitlement and the App monthly budget. A browser sees
-a stable branded `402` budget page without account details. A machine client
-receives `402 app_budget_exceeded`. The authenticated App API returns the exact
-spent and budget values.
+Wake checks the account entitlement, the account App-concurrency cap, and the
+App monthly budget, in that order (`assertAppComputeAllowed`). A browser sees a
+stable branded page without account details: `402` for the budget, `402` for an
+unfunded account, `429` at the concurrency cap. A machine client receives
+`402 app_budget_exceeded`, `402` with the billing reason, or
+`429 app_concurrency_limit`. The authenticated App API returns the exact spent
+and budget values. A refusal during deploy is permanent — retrying it three
+times only restates the same answer.
 
 The Cloudflare layer applies per-IP request limits. The API applies per-App wake
 and concurrent-request limits. One runtime bounds provider compute cost even

@@ -3,6 +3,8 @@ import {
   appAccessCookie,
   appAccessCookieName,
   appAccessDecision,
+  appTeamScope,
+  appVisibleToSubject,
   createAppAccessToken,
   verifyAppAccessToken,
 } from './access';
@@ -31,6 +33,43 @@ describe('Kortix App access', () => {
     expect(appAccessDecision({ mode: 'restricted', ownerId: OWNER_ID, grants: [], subject: member })).toBe(false);
     expect(appAccessDecision({ mode: 'public', ownerId: OWNER_ID, grants: [], subject: null })).toBe(true);
     expect(appAccessDecision({ mode: 'password', ownerId: OWNER_ID, grants: [], subject: null })).toBe(false);
+  });
+
+  test('scopes the App to the team the same way a session is scoped', () => {
+    const GROUP_ID = '44444444-4444-4444-8444-444444444444';
+    const owner = { userId: OWNER_ID, groupIds: [] as string[] };
+    const member = { userId: MEMBER_ID, groupIds: [GROUP_ID] };
+    const visible = (
+      mode: Parameters<typeof appTeamScope>[0],
+      subject: { userId: string; groupIds: string[] },
+      grants: Array<{ principalType: 'member' | 'group'; principalId: string }> = [],
+      isProjectManager = false,
+    ) => appVisibleToSubject({ mode, ownerId: OWNER_ID, grants, subject, isProjectManager });
+
+    // private → the member who created it, nobody else.
+    expect(visible('private', owner)).toBe(true);
+    expect(visible('private', member)).toBe(false);
+
+    // restricted → owner plus the member/group allow-list.
+    expect(visible('restricted', member)).toBe(false);
+    expect(visible('restricted', member, [{ principalType: 'member', principalId: MEMBER_ID }])).toBe(true);
+    expect(visible('restricted', member, [{ principalType: 'group', principalId: GROUP_ID }])).toBe(true);
+
+    // project → the whole project.
+    expect(visible('project', member)).toBe(true);
+
+    // A password or a public hostname protects PUBLIC traffic. Neither hides
+    // the App from the teammates who operate it.
+    expect(visible('password', member)).toBe(true);
+    expect(visible('public', member)).toBe(true);
+
+    // A project manager keeps control of every App, so a private App never
+    // becomes unmanageable when its creator leaves the account.
+    expect(visible('private', member, [], true)).toBe(true);
+
+    expect(appTeamScope('private')).toBe('owner');
+    expect(appTeamScope('restricted')).toBe('shared');
+    expect(appTeamScope('password')).toBe('team');
   });
 
   test('signs scoped expiring tokens and rejects tampering, expiry, and cross-App reuse', () => {
