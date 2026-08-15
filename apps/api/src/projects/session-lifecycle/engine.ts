@@ -558,6 +558,37 @@ export async function drainSessionLifecycleQueue(
  * consumed-marker check runs at DRAIN time, not enqueue time, so a live held
  * request that picked the decision up during the grace window cleanly turns
  * this into a no-op instead of a duplicate prompt.
+ *
+ * T13 — no-blind-repost on a retryable ('pending') delivery: below,
+ * `retryable = delivery === 'pending'` re-queues this SAME row, and a later
+ * drain calls `continueSession` again with the identical `sessionId`/`text` —
+ * so a delivery that actually reached opencode but was reported ambiguous
+ * (network reset after the daemon accepted it, a timed-out response read)
+ * must not re-POST blind on the next pass.
+ *
+ * This module does not re-check that itself — a cheap authoritative read
+ * (list opencode's messages by id, or ask the daemon "did you see this one?")
+ * is not available here without another round trip per retry. Instead the
+ * guarantee is carried by `postPrompt`'s own transport: it POSTs through
+ * `forwardToSandbox`, which is the SAME proxy path the SDK's browser/CLI
+ * sends run through, and that path claims a delivery in
+ * `apps/api/src/sandbox-proxy/prompt-dedupe.ts` before it ever reaches
+ * opencode. Two `postPrompt` calls for the same row carry byte-identical
+ * bodies (same `sessionId` + `text`, no messageID field — see `postPrompt`
+ * below), so the claim's content-hash key collides on the retry and the
+ * SECOND POST is answered `200 {"deduplicated":true}`, which `postPrompt`
+ * reads as accepted. That claim is held for `DEDUPE_TTL_MS` (10 minutes,
+ * `prompt-dedupe.ts`) — comfortably past both the scheduler's ~60s drain tick
+ * and this file's own `deliverWithRetry` deadline (45s), so an ordinary
+ * requeue-and-redrain cycle never outlives it. Pinned in
+ * `prompt-dedupe.test.ts`: the TTL boundary itself ("a key is claimable again
+ * once its TTL has elapsed") and, exercising `postPrompt`'s exact body shape
+ * (`{"parts":[{"type":"text","text":…}]}`, no messageID field), "a retried
+ * `continue_session` delivery — postPrompt's exact body shape — collides on
+ * the same dedupe key". Only a retry that is itself starved past 10 minutes
+ * (the same bound
+ * `UNDELIVERED_PROMPT_STARVATION_MS` in `undelivered-prompts.ts` treats as a
+ * dead scheduler) can outrun this — an accepted risk, not a silent one.
  */
 async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
@@ -798,6 +829,20 @@ function isProviderName(value: string | null): value is ProviderName {
   );
 }
 
+/**
+ * T13 — this body deliberately carries NO `messageID` field, unlike
+ * the SDK's `promptOpenCodeMessage` payload. Minting one here would mean
+ * placing it correctly in opencode's id-ordered transcript (the id's clock
+ * prefix decides "already answered?" — see `messages.ts`'s
+ * `mintPromptMessageId`), which requires reading that transcript's current
+ * state; this call site has no cheap way to do that server-side, and a
+ * wrongly-ordered id silently drops the turn instead of merely losing dedupe
+ * precision. So this delivery relies on `prompt-dedupe.ts`'s content-hash
+ * fallback instead: `sessionId` + `text` are identical across every retry of
+ * ONE queued command (same row, same payload), so the hash key collides on a
+ * retry exactly as a shared `messageID` would — see the guarantee documented
+ * on `executeQueuedContinue` above and pinned in `prompt-dedupe.test.ts`.
+ */
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
