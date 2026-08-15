@@ -5,6 +5,7 @@ import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
+import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -76,6 +77,17 @@ export async function stopSession(input: {
       now,
     });
   }
+  // Close the live turn before powering the box off, but only when the box is
+  // actually running one: `cancellingWake` means the row is already stopped
+  // (a wake was mid-flight), so there is no live opencode process to abort.
+  if (!cancellingWake) {
+    await abortLiveTurnBeforeStop({
+      sandboxId: sandbox.sandboxId,
+      externalId: sandbox.externalId,
+      userId,
+    });
+  }
+
   try {
     await provider.stop(sandbox.externalId);
   } catch (err) {

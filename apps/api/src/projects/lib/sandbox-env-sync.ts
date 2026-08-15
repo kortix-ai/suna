@@ -92,6 +92,95 @@ export function __resetNetworkBoundaryArmCacheForTests(): void {
 }
 
 /**
+ * Per-sandbox record of the last `refreshModels`-relevant payload this process
+ * delivered to the daemon on the PER-PROMPT hot path (`syncSandboxEnvForPrompt`).
+ *
+ * T3: every `/prompt_async|/message|/command` used to post
+ * `refreshModels: true` unconditionally. The daemon's `/kortix/env` already
+ * gates the actual reload on a value DELTA (`routes/env.ts`'s
+ * `result.changed || opencodeEnvChanged`), so a byte-identical resend never
+ * disposes/respawns OpenCode by itself — but it still pays for the comparison
+ * on every turn, and it is the only signal the daemon has: this cache lets the
+ * API stop asking at all once nothing config-affecting has moved, so a client
+ * bug or a future daemon change can't turn a no-op post into a live reload.
+ *
+ * In-process on purpose, same reasoning as `armedNetworkBoundaries`: it is a
+ * cost optimization, not state anyone reads for a decision. A fresh API
+ * replica (deploy, scale-out, restart) misses and sends `refreshModels: true`
+ * once for that sandbox — never less correct, only a single extra no-op
+ * comparison on the daemon.
+ */
+const lastPromptModelSignature = new Map<string, string>();
+/** Entries are ~200 bytes; the process is long-lived and external ids are
+ *  never reused, so this must be bounded the same way `armedNetworkBoundaries`
+ *  is. No TTL: unlike the boundary arm this is not self-healing drift, it is a
+ *  pure memo of "what did we last tell this box", so eviction on capacity
+ *  (oldest-write-first, same as the boundary cache) is enough. */
+const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
+
+/** Test seam: drop every remembered per-prompt signature. */
+export function __resetPromptModelSignatureCacheForTests(): void {
+  lastPromptModelSignature.clear();
+}
+
+/**
+ * Digest of EVERY value `syncSandboxEnvForPrompt` sends that can move the
+ * daemon's `result.changed || opencodeEnvChanged` gate (`routes/env.ts:196`):
+ *
+ *   - `snapshot.revision` — a sha256 of the full granted project-secrets env
+ *     (`projectSecretsRevision`), so any secret add/remove/rotation changes it.
+ *     This is NOT limited to "model-relevant" secrets on purpose: a project
+ *     secret delta is the daemon's ONLY signal to respawn opencode so its
+ *     process env picks the new value up (see the comment on
+ *     `pushSessionScopeToSandbox`), and the per-turn sync is sometimes the
+ *     only path that ever re-delivers it (see `runPrePromptEnvSync`'s comment
+ *     on `/command` self-heal). Narrowing this to a "model tokens" subset
+ *     would silently stop propagating an unrelated secret rotation.
+ *   - `snapshot.capabilitiesJson` — pushed as `KORTIX_SECRET_CAPABILITIES`,
+ *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
+ *   - the LLM-gateway triple (`enabled`, `baseUrl`, `denyEnv`) — the daemon
+ *     maps these onto `KORTIX_LLM_API_KEY` / `KORTIX_LLM_BASE_URL` /
+ *     `KORTIX_OPENCODE_DENY_ENV`, the model/token/key values the task calls
+ *     out by name.
+ *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
+ *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
+ *     see `continueSession`/engine.ts). Omitting it would silently drop that
+ *     caller's request to apply its own change.
+ *
+ * Keys of `opencodeEnv` are sorted so caller-side object literal order never
+ * produces a spurious digest change.
+ */
+function promptModelSignature(input: {
+  revision: string;
+  capabilitiesJson: string;
+  llmGatewayEnabled: boolean;
+  llmGatewayBaseUrl?: string;
+  llmGatewayDenyEnv?: string;
+  opencodeEnv?: Record<string, string | null>;
+}): string {
+  const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return JSON.stringify([
+    input.revision,
+    input.capabilitiesJson,
+    input.llmGatewayEnabled,
+    input.llmGatewayBaseUrl ?? '',
+    input.llmGatewayDenyEnv ?? '',
+    opencodeEnvEntries,
+  ]);
+}
+
+function rememberPromptModelSignature(externalId: string, signature: string): void {
+  lastPromptModelSignature.delete(externalId);
+  if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
+    const oldest = lastPromptModelSignature.keys().next();
+    if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
+  }
+  lastPromptModelSignature.set(externalId, signature);
+}
+
+/**
  * Identity AND material of the binding set, as the provider edge sees it.
  *
  * Keyed on everything a re-arm would change at the edge — the replica identity
@@ -623,17 +712,43 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
+  const llmGatewayBaseUrl = llmGatewayEnabled
+    ? llmGatewayBaseUrlForProvider(args.providerName)
+    : undefined;
+  const llmGatewayDenyEnv = llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '';
+  // Only ask the daemon to reload when something that could move ITS
+  // `result.changed || opencodeEnvChanged` gate has actually changed since the
+  // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
+  // byte-identical push (see routes/env.ts), but every prompt used to ask
+  // anyway — this stops the ask itself, so a future daemon change can't turn a
+  // steady-state prompt into a live reload just because `refreshModels` was
+  // unconditionally true. See `promptModelSignature` for exactly what is
+  // covered (it is NOT limited to "model" fields — project-secret deltas ride
+  // the same gate and must never be silently skipped).
+  const signature = promptModelSignature({
+    revision: snapshot.revision,
+    capabilitiesJson: snapshot.capabilitiesJson,
+    llmGatewayEnabled,
+    llmGatewayBaseUrl,
+    llmGatewayDenyEnv,
+    opencodeEnv: args.opencodeEnv,
+  });
+  const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
-    refreshModels: true,
+    refreshModels,
     opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
-    llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
-    llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
+    llmGatewayBaseUrl,
+    llmGatewayDenyEnv,
   });
+  // Remember only AFTER a successful push. A throw below (network/HTTP
+  // failure) must leave the memo alone so the next prompt retries with
+  // `refreshModels: true` again instead of assuming the failed attempt landed.
+  rememberPromptModelSignature(args.externalId, signature);
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
   // is forwarded the instant this returns, so block until opencode is serving —
   // otherwise the forward hits the restart window and 503s "opencode not ready",

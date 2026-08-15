@@ -11,12 +11,99 @@
  */
 
 import { getProvider } from '../../platform/providers';
+import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
+import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import type { StopReason } from '../stop-reason';
 import { type ReapCandidate, reloadDeadlineAt } from './box-queries';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
 
 export type StopBoxOutcome = 'stopped' | 'skipped' | 'errors';
+
+/** The daemon's control port; kortix-sandbox-agent-server owns `/kortix/abort`. */
+const DAEMON_PORT = 8000;
+
+/**
+ * Bounded so a wedged or already-unreachable box never delays reaping. The
+ * abort is an optimization — close the turn cleanly before power-off — never
+ * a gate on the stop itself.
+ */
+const ABORT_TIMEOUT_MS = 4_000;
+
+/**
+ * Best-effort: end the live opencode turn on a box BEFORE `provider.stop()`
+ * powers it off.
+ *
+ * Without this, the VM powers off mid-turn and OpenCode's last assistant
+ * message is left incomplete on disk — the orphan the daemon's boot
+ * finalizer has to clean up later, and the historical cause of repeated
+ * "Interrupted" turns. Closing the turn first removes that orphan class at
+ * the source (T11).
+ *
+ * Shared by `stopSession` and `stopExpiredBox` — the only two call sites that
+ * power a box off.
+ *
+ * Reuses the exact primitives the rest of apps/api uses to reach a sandbox
+ * daemon directly server-to-server — `resolveServiceKey` +
+ * `resolveSandboxIngress` (sandbox-proxy/backend.ts) and
+ * `encodeKortixUserContext` (shared/kortix-user-context.ts), the same trio
+ * `opencode-mapping.ts`'s `sandboxOpencodeEndpoint` and
+ * `sandbox-proxy/backend.ts`'s `buildSandboxUpstreamHeaders` compose — not a
+ * new client.
+ *
+ * `userId` is omitted for system-triggered stops (the reaper: deadline
+ * expiry, the 24h run cap). The daemon's `/kortix/abort` only verifies the
+ * HMAC signature, not who it names, so a synthetic system identity signed
+ * with the sandbox's own service key clears its auth gate exactly like a real
+ * user's would. `buildSandboxUpstreamHeaders` / `resolvePreviewUserContext`
+ * are NOT reused here: they run an account-membership lookup that has no
+ * subject for a system stop and would silently omit the signed header,
+ * making the abort call a guaranteed 401.
+ *
+ * Never throws. Any failure — no service key on record, ingress resolution
+ * error, timeout, non-2xx from the daemon — is logged and swallowed. The
+ * caller stops the box regardless.
+ */
+export async function abortLiveTurnBeforeStop(input: {
+  sandboxId: string;
+  externalId: string;
+  userId?: string;
+}): Promise<void> {
+  const { sandboxId, externalId, userId } = input;
+  try {
+    const serviceKey = await resolveServiceKey(externalId);
+    if (!serviceKey) return; // nothing to sign with — box has no key on record
+
+    const ingress = await resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' });
+    const headers: Record<string, string> = {
+      ...ingress.headers,
+      Authorization: `Bearer ${serviceKey}`,
+      [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
+        {
+          userId: userId ?? 'system:reaper',
+          sandboxId,
+          sandboxRole: 'platform_admin',
+          scopes: ['*'],
+        },
+        serviceKey,
+      ),
+    };
+
+    const res = await fetch(`${ingress.url.replace(/\/$/, '')}/kortix/abort`, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.warn(`[stop] pre-stop abort declined for sandbox ${sandboxId}: ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(
+      `[stop] pre-stop abort failed for sandbox ${sandboxId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
 
 /** The only fields a stop needs. Narrower than ReapCandidate so a request-path
  *  caller (the run-cap park below) can hand over the row it already has. */
@@ -45,6 +132,11 @@ export async function stopExpiredBox(
   // the pass's `now` is as stale as its snapshot.
   const deadlineAt = await reloadDeadlineAt(row.sandboxId);
   if (!deadlineAt || deadlineAt.getTime() > Date.now()) return 'skipped';
+
+  // Close the turn before the box loses power. Every row reaching this line
+  // came from `reapCandidatePredicate` (status = 'active'), so the box can
+  // plausibly still be running one — best-effort, never gates the stop below.
+  await abortLiveTurnBeforeStop({ sandboxId: row.sandboxId, externalId: row.externalId });
 
   try {
     await getProvider(row.provider).stop(row.externalId);
