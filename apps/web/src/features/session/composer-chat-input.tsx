@@ -55,6 +55,7 @@ export function ComposerChatInput({
   slashMenuPlacement,
   cardClassName,
   parentClassName,
+  dockClassName,
   boundAgentName,
   clearOnSend,
   queuedMessages,
@@ -100,6 +101,8 @@ export function ComposerChatInput({
   cardClassName?: string;
   /** Extra classes for the composer shell. */
   parentClassName?: string;
+  /** Extra classes for the composer dock. */
+  dockClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
   /** Queued-while-busy support, passed straight through to SessionChatInput. */
@@ -226,6 +229,7 @@ export function ComposerChatInput({
       slashMenuPlacement={slashMenuPlacement}
       cardClassName={cardClassName}
       parentClassName={parentClassName}
+      dockClassName={dockClassName}
       sessionId={sessionId}
       projectId={projectId}
       providers={providers}

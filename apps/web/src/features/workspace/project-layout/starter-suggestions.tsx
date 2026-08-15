@@ -149,8 +149,8 @@ export function StarterSuggestions({
   // `z-99` only ranks inside the composer's stacking context, so a z-index
   // here that beats the shell (`z-50` when below) covers the menu.
   return (
-    <section className="mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1">
-      <div className="flex w-full flex-col items-center gap-1 rounded-xl p-1.5 border border-border/40">
+    <section className="mx-auto w-full max-w-210 shrink-0">
+      <div className="border-border/60 flex w-full flex-col items-center gap-1 rounded-xl border p-1.5">
         {items.map((item) => {
           const kind = suggestionRowKind(item, canConnect);
           if (kind === 'connector' && item.connector) {
@@ -172,7 +172,13 @@ export function StarterSuggestions({
               <SuggestionActionRow
                 key={item.id}
                 label={item.label}
-                icon={<SparklesSolid className="text-muted-foreground size-4" weight='fill' aria-hidden />}
+                icon={
+                  <SparklesSolid
+                    className="text-muted-foreground size-4"
+                    weight="fill"
+                    aria-hidden
+                  />
+                }
                 buttonLabel="Create skill"
                 onAction={() => handlePick(item)}
               />
