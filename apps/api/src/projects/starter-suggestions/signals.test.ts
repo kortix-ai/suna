@@ -5,14 +5,20 @@ import {
   AVAILABLE_CONNECTORS_CAP,
   BUNDLE_CAP,
   FILE_PATHS_MAX_ENTRIES,
+  isConnectedApp,
   MAX_AVAILABLE_CONNECTORS,
   MEMORY_CAP,
   README_CAP,
   renderSignalBundle,
   selectAvailableConnectors,
   SESSIONS_CAP,
+  type ConnectedConnector,
   type SignalSources,
 } from './signals';
+
+function connected(over: Partial<ConnectedConnector> & { name: string }): ConnectedConnector {
+  return { slug: null, updatedAt: new Date('2026-01-01T00:00:00Z'), ...over };
+}
 
 function emptySources(): SignalSources {
   return {
@@ -267,16 +273,30 @@ describe('selectAvailableConnectors', () => {
     expect(selectAvailableConnectors([], [])).toEqual([]);
   });
 
-  it('excludes apps whose name already appears among connected connector names', () => {
+  it('excludes apps whose name already appears among connected connectors (no known slug)', () => {
     const apps = [catalogApp({ slug: 'slack', name: 'Slack' }), catalogApp({ slug: 'notion', name: 'Notion' })];
-    const result = selectAvailableConnectors(apps, ['Slack']);
+    const result = selectAvailableConnectors(apps, [connected({ name: 'Slack' })]);
     expect(result).toEqual([{ slug: 'notion', name: 'Notion' }]);
   });
 
   it('excludes connected names case-insensitively', () => {
     const apps = [catalogApp({ slug: 'slack', name: 'Slack' })];
-    const result = selectAvailableConnectors(apps, ['slack']);
+    const result = selectAvailableConnectors(apps, [connected({ name: 'slack' })]);
     expect(result).toEqual([]);
+  });
+
+  it('excludes apps by slug even when the connection label differs from the catalog name', () => {
+    const apps = [catalogApp({ slug: 'slack', name: 'Slack' })];
+    const result = selectAvailableConnectors(apps, [connected({ name: 'My Slack Workspace', slug: 'slack' })]);
+    expect(result).toEqual([]);
+  });
+
+  it('does not fall back to name when the connection has a known (non-matching) slug', () => {
+    const apps = [catalogApp({ slug: 'slack', name: 'Slack' })];
+    // The connection's display name coincidentally matches "Slack", but its real
+    // provider slug points at a different app — slug is authoritative once known.
+    const result = selectAvailableConnectors(apps, [connected({ name: 'Slack', slug: 'some-other-app' })]);
+    expect(result).toEqual([{ slug: 'slack', name: 'Slack' }]);
   });
 
   it('orders by featuredWeight descending, then name', () => {
@@ -301,5 +321,31 @@ describe('selectAvailableConnectors', () => {
     const apps = [catalogApp({ slug: 'slack', name: 'Slack', imgSrc: 'https://example.test/slack.png' })];
     const result = selectAvailableConnectors(apps, []);
     expect(result).toEqual([{ slug: 'slack', name: 'Slack' }]);
+  });
+});
+
+describe('isConnectedApp', () => {
+  it('matches by slug when the connection has one', () => {
+    const app = { slug: 'slack', name: 'Slack' };
+    expect(isConnectedApp(app, [connected({ name: 'anything', slug: 'slack' })])).toBe(true);
+  });
+
+  it('is case-insensitive on slug', () => {
+    const app = { slug: 'slack', name: 'Slack' };
+    expect(isConnectedApp(app, [connected({ name: 'anything', slug: 'SLACK' })])).toBe(true);
+  });
+
+  it('falls back to case-insensitive name when the connection has no slug', () => {
+    const app = { slug: 'slack', name: 'Slack' };
+    expect(isConnectedApp(app, [connected({ name: 'slack' })])).toBe(true);
+  });
+
+  it('does not match on name once the connection has a different known slug', () => {
+    const app = { slug: 'slack', name: 'Slack' };
+    expect(isConnectedApp(app, [connected({ name: 'Slack', slug: 'notion' })])).toBe(false);
+  });
+
+  it('returns false against an empty connected list', () => {
+    expect(isConnectedApp({ slug: 'slack', name: 'Slack' }, [])).toBe(false);
   });
 });

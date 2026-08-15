@@ -272,14 +272,52 @@ async function readSessions(
   }
 }
 
+/** One active connector connection, identified for cross-referencing against
+ *  the Pipedream catalog and against a suggestion's enriched `connector`
+ *  field (route-side connected-filter, generation-time offer exclusion). */
+export interface ConnectedConnector {
+  name: string;
+  /** Pipedream catalog app slug — real provider identity, not a display name.
+   *  Present only for `provider_type = 'pipedream'` connectors, read from
+   *  `connectors.config.app` (set by `connectorConfig` in `materialize.ts`
+   *  from the manifest's `app:` field — the same value `createConnectToken`
+   *  sends Pipedream and `getPipedreamCatalogApps()` keys catalog entries
+   *  on). Every other provider (mcp/http/channel/computer/…) has no catalog
+   *  app identity here — callers fall back to case-insensitive name
+   *  comparison via `isConnectedApp`. */
+  slug: string | null;
+  updatedAt: Date;
+}
+
+/** `connectors.config.app` for a `provider_type = 'pipedream'` row, or `null`
+ *  for every other provider (no reliable catalog-app identity exists there —
+ *  see `ConnectedConnector.slug`'s doc comment for the full rationale). */
+function connectorAppSlug(providerType: string, config: Record<string, unknown> | null): string | null {
+  if (providerType !== 'pipedream') return null;
+  const app = (config ?? {}).app;
+  return typeof app === 'string' && app.trim() ? app.trim() : null;
+}
+
+/** Whether `app` (a catalog offer, or a suggestion's enriched `connector`) is
+ *  one of `connected`'s apps — by slug when that connection carries one
+ *  (provider-verified identity), else by case-insensitive name (the only
+ *  signal available for non-Pipedream providers). */
+export function isConnectedApp(
+  app: { slug: string; name: string },
+  connected: ConnectedConnector[],
+): boolean {
+  return connected.some((c) =>
+    c.slug ? c.slug.toLowerCase() === app.slug.toLowerCase() : c.name.toLowerCase() === app.name.toLowerCase(),
+  );
+}
+
 /**
  * Pure catalog-offer selection: apps from the snapshot the project has NOT
- * already connected (matched by name, case-insensitively — connector names
- * and catalog app names come from different sources and casing isn't a
- * meaningful distinction here), ordered popular/featured-first
- * (`compareByProminence`, the same resting order the snapshot itself uses),
- * capped to `MAX_AVAILABLE_CONNECTORS`, and stripped to exactly the
- * `{ slug, name }` shape `SignalSources.availableConnectors` carries.
+ * already connected (see `isConnectedApp` — slug when known, name
+ * otherwise), ordered popular/featured-first (`compareByProminence`, the
+ * same resting order the snapshot itself uses), capped to
+ * `MAX_AVAILABLE_CONNECTORS`, and stripped to exactly the `{ slug, name }`
+ * shape `SignalSources.availableConnectors` carries.
  *
  * `catalogApps === null` (snapshot missing/warming) fails open to `[]` —
  * unit-tested directly here since `readAvailableConnectors` below, like every
@@ -287,12 +325,11 @@ async function readSessions(
  */
 export function selectAvailableConnectors(
   catalogApps: CatalogApp[] | null,
-  connectedNames: string[],
+  connected: ConnectedConnector[],
 ): Array<{ slug: string; name: string }> {
   if (!catalogApps || catalogApps.length === 0) return [];
-  const connected = new Set(connectedNames.map((name) => name.toLowerCase()));
   return [...catalogApps]
-    .filter((app) => !connected.has(app.name.toLowerCase()))
+    .filter((app) => !isConnectedApp(app, connected))
     .sort(compareByProminence)
     .slice(0, MAX_AVAILABLE_CONNECTORS)
     .map((app) => ({ slug: app.slug, name: app.name }));
@@ -300,26 +337,49 @@ export function selectAvailableConnectors(
 
 /** Only when Pipedream is configured — an unconfigured deployment has no
  *  catalog to offer, same gating as `listPipedreamApps` (`db-deps.ts`). */
-function readAvailableConnectors(connectedNames: string[]): Array<{ slug: string; name: string }> {
+function readAvailableConnectors(connected: ConnectedConnector[]): Array<{ slug: string; name: string }> {
   if (!pipedreamConfigured()) return [];
   try {
-    return selectAvailableConnectors(getPipedreamCatalogApps(), connectedNames);
+    return selectAvailableConnectors(getPipedreamCatalogApps(), connected);
   } catch {
     // Catalog read failed — no available-connectors signal.
     return [];
   }
 }
 
-async function readConnectors(projectId: string): Promise<string[]> {
+/**
+ * Real read: this project's active connector connections, each identified by
+ * `{ name, slug, updatedAt }` — one row per connection (not de-duped; two
+ * connections can point at the same connector, e.g. two Slack workspaces,
+ * and callers that need recency want every row's `updatedAt`).
+ *
+ * Reused by the `starter-suggestions` route for both the serve-time
+ * connected-filter (`isConnectedApp`) and the activity-aware staleness
+ * signal (`max(updatedAt)` across these rows) — one query serves both, and
+ * the route wraps the call in its own try/catch (fail-open there, unlike
+ * `collectSignalSources`'s use below).
+ */
+export async function readConnectedConnectors(projectId: string): Promise<ConnectedConnector[]> {
+  const rows = await db
+    .select({
+      name: connectors.name,
+      config: connectors.config,
+      providerType: connectors.providerType,
+      updatedAt: connectorConnections.updatedAt,
+    })
+    .from(connectorConnections)
+    .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+    .where(and(eq(connectorConnections.projectId, projectId), eq(connectorConnections.status, 'active')));
+  return rows.map((row) => ({
+    name: row.name,
+    slug: connectorAppSlug(row.providerType, row.config),
+    updatedAt: row.updatedAt,
+  }));
+}
+
+async function readConnectors(projectId: string): Promise<ConnectedConnector[]> {
   try {
-    const rows = await db
-      .select({ name: connectors.name })
-      .from(connectorConnections)
-      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
-      .where(and(eq(connectorConnections.projectId, projectId), eq(connectorConnections.status, 'active')));
-    // De-dup: two connections can point at the same connector (e.g. two Slack
-    // workspaces) — one signal entry per distinct connector name.
-    return Array.from(new Set(rows.map((row) => row.name)));
+    return await readConnectedConnectors(projectId);
   } catch {
     // Connector query failed — no connector signal.
     return [];
@@ -344,7 +404,7 @@ export async function collectSignalSources(projectRow: ProjectRow): Promise<Sign
     gitProject = null;
   }
 
-  const [memory, readme, filePaths, config, sessions, connectorNames] = await Promise.all([
+  const [memory, readme, filePaths, config, sessions, connected] = await Promise.all([
     gitProject ? readMemoryFiles(gitProject) : Promise.resolve([]),
     gitProject ? readReadme(gitProject) : Promise.resolve(null),
     gitProject ? readFilePaths(gitProject) : Promise.resolve([]),
@@ -353,12 +413,18 @@ export async function collectSignalSources(projectRow: ProjectRow): Promise<Sign
     readConnectors(projectRow.projectId),
   ]);
 
-  // Sequenced after `connectorNames` (not folded into the `Promise.all`
-  // above) because the offer must exclude apps this project already
-  // connected — it needs that result, not just the project id. The read
-  // itself is synchronous/non-blocking (an in-process snapshot lookup), so
-  // there's no IO cost to paying for it after the rest lands.
-  const availableConnectors = readAvailableConnectors(connectorNames);
+  // One connection per connector name can be redundant for the rendered
+  // "## Connectors" section (two Slack workspaces should read as one
+  // "Slack" signal) — de-dup here; `selectAvailableConnectors` below needs
+  // every row (it matches by slug first), so it reads `connected` directly.
+  const connectorNames = Array.from(new Set(connected.map((c) => c.name)));
+
+  // Sequenced after `connected` (not folded into the `Promise.all` above)
+  // because the offer must exclude apps this project already connected — it
+  // needs that result, not just the project id. The read itself is
+  // synchronous/non-blocking (an in-process snapshot lookup), so there's no
+  // IO cost to paying for it after the rest lands.
+  const availableConnectors = readAvailableConnectors(connected);
 
   return {
     onboarding,

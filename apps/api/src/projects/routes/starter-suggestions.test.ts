@@ -11,6 +11,8 @@
  *   - a cache older than the 24h TTL still answers from the SAME cached items —
  *     staleness only decides whether a regeneration is fired in the background,
  *     never what the route answers with.
+ *   - v1.3: a cached connector item whose app is already connected is dropped
+ *     from the response — the serve-time connected filter.
  *
  * Harness: the `describeWithDb` real-Postgres gate from
  * `../lib/project-registration.icon.integration.test.ts` /
@@ -22,7 +24,15 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { STARTER_PROMPT_FALLBACKS } from '@kortix/shared';
-import { type Database, accountMembers, accounts, createDb, projects } from '@kortix/db';
+import {
+  type Database,
+  accountMembers,
+  accounts,
+  connectorConnections,
+  connectors,
+  createDb,
+  projects,
+} from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -67,6 +77,36 @@ async function seedCache(
       }),
     })
     .where(eq(projects.projectId, PROJECT_ID));
+}
+
+/** Seeds one active `provider_type = 'pipedream'` connector connection for
+ *  `PROJECT_ID`, with `config.app = appSlug` — the real column the route's
+ *  `readConnectedConnectors` reads to identify a connected app by slug (see
+ *  `signals.ts`'s `connectorAppSlug`). Returns a cleanup callback. */
+async function seedConnectedConnector(appSlug: string, name: string): Promise<() => Promise<void>> {
+  const [connector] = await db()
+    .insert(connectors)
+    .values({
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      slug: appSlug,
+      name,
+      providerType: 'pipedream',
+      config: { app: appSlug },
+    })
+    .returning({ connectorId: connectors.connectorId });
+  const connectorId = connector!.connectorId;
+  await db().insert(connectorConnections).values({
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    connectorId,
+    label: 'default',
+    status: 'active',
+  });
+  return async () => {
+    await db().delete(connectorConnections).where(eq(connectorConnections.connectorId, connectorId));
+    await db().delete(connectors).where(eq(connectors.connectorId, connectorId));
+  };
 }
 
 describeWithDb('GET /v1/projects/:projectId/starter-suggestions — real Postgres + real Supabase auth', () => {
@@ -211,6 +251,58 @@ describeWithDb('GET /v1/projects/:projectId/starter-suggestions — real Postgre
     const body = (await r.json()) as { source: string; generated_at: string | null; items: unknown[] };
     expect(body.source).toBe('personalized');
     expect(body.generated_at).toBe(staleGeneratedAt);
+    expect(body.items).toEqual(items);
+  });
+
+  test('a cached connector item whose app is already connected is dropped from the response', async () => {
+    const cleanup = await seedConnectedConnector('slack', 'Slack');
+    try {
+      const generatedAt = new Date().toISOString();
+      const items = [
+        {
+          id: 'slack-item',
+          label: 'Connect Slack',
+          prompt: 'Connect Slack to post daily updates.',
+          action: 'connectors',
+          connector: { slug: 'slack', name: 'Slack', img_src: null },
+        },
+        {
+          id: 'notion-item',
+          label: 'Connect Notion',
+          prompt: 'Connect Notion to sync your docs.',
+          action: 'connectors',
+          connector: { slug: 'notion', name: 'Notion', img_src: null },
+        },
+      ];
+      await seedCache(items, generatedAt);
+
+      const r = await get(token);
+      expect(r.status).toBe(200);
+      const body = (await r.json()) as { source: string; generated_at: string | null; items: unknown[] };
+      expect(body.source).toBe('personalized');
+      expect(body.items).toEqual([items[1]]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('a cached connector item survives unfiltered when nothing is connected', async () => {
+    const generatedAt = new Date().toISOString();
+    const items = [
+      {
+        id: 'linear-item',
+        label: 'Connect Linear',
+        prompt: 'Connect Linear to triage issues.',
+        action: 'connectors',
+        connector: { slug: 'linear', name: 'Linear', img_src: null },
+      },
+    ];
+    await seedCache(items, generatedAt);
+
+    const r = await get(token);
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { source: string; generated_at: string | null; items: unknown[] };
+    expect(body.source).toBe('personalized');
     expect(body.items).toEqual(items);
   });
 });

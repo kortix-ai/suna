@@ -10,14 +10,18 @@ import {
 } from './sanitize';
 import {
   enrichConnectorItems,
+  filterConnectedConnectorItems,
   type GenerateStarterSuggestionsOptions,
   type StarterSuggestionsCache,
+  STARTER_SUGGESTIONS_MIN_REFRESH_MS,
   STARTER_SUGGESTIONS_TTL_MS,
   generateStarterSuggestions,
   isSuggestionsCacheStale,
+  isSuggestionsCacheStaleForActivity,
   readSuggestionsCache,
   suggestionsCompletionBody,
 } from './generate';
+import type { ConnectedConnector } from './signals';
 
 const originalEnabled = config.STARTER_SUGGESTIONS_ENABLED;
 afterEach(() => {
@@ -81,6 +85,18 @@ describe('suggestionsCompletionBody', () => {
     expect(userContent).toMatch(/Available connectors/);
     expect(userContent).toMatch(/never invent/i);
     expect(userContent).toMatch(/at most 2/i);
+  });
+
+  it('instructs a skill-creation suggestion for a repeated/manual workflow seen in recent sessions', () => {
+    const body = JSON.parse(suggestionsCompletionBody('glm-5.2', 'some workspace signal text'));
+    const userContent = body.messages[1].content as string;
+
+    expect(userContent).toMatch(/"action":\s*"skills"/);
+    expect(userContent).toMatch(/repeated/i);
+    expect(userContent).toMatch(/Recent sessions/);
+    expect(userContent).toMatch(/1-2/);
+    expect(userContent).toMatch(/create a skill/i);
+    expect(userContent).toContain('Create a skill for weekly summaries');
   });
 });
 
@@ -302,6 +318,93 @@ describe('isSuggestionsCacheStale', () => {
   it('is stale when generated_at is unparseable', () => {
     const cache: StarterSuggestionsCache = { generated_at: 'not-a-date', model: 'glm-5.2', items: [] };
     expect(isSuggestionsCacheStale(cache, now)).toBe(true);
+  });
+});
+
+describe('isSuggestionsCacheStaleForActivity', () => {
+  const now = new Date('2026-08-15T12:00:00.000Z');
+
+  function cacheGeneratedAgo(ms: number): StarterSuggestionsCache {
+    return { generated_at: new Date(now.getTime() - ms).toISOString(), model: 'glm-5.2', items: [] };
+  }
+
+  it('is stale when the cache is absent, regardless of activity', () => {
+    expect(isSuggestionsCacheStaleForActivity(null, now, now)).toBe(true);
+    expect(isSuggestionsCacheStaleForActivity(null, null, now)).toBe(true);
+  });
+
+  it('is fresh (not stale) when there is no activity signal at all', () => {
+    const cache = cacheGeneratedAgo(5 * 60 * 1000); // 5m old
+    expect(isSuggestionsCacheStaleForActivity(cache, null, now)).toBe(false);
+  });
+
+  it('is fresh when activity happened but the cache is still inside the refresh floor', () => {
+    const cache = cacheGeneratedAgo(5 * 60 * 1000); // 5m old, well under the 30m floor
+    const lastActivityAt = new Date(now.getTime() - 60 * 1000); // activity after generated_at
+    expect(isSuggestionsCacheStaleForActivity(cache, lastActivityAt, now)).toBe(false);
+  });
+
+  it('is stale once the cache has cleared the refresh floor AND activity happened after it was generated', () => {
+    const cache = cacheGeneratedAgo(STARTER_SUGGESTIONS_MIN_REFRESH_MS + 1000); // just past the 30m floor
+    const lastActivityAt = new Date(now.getTime() - 1000); // activity after generated_at
+    expect(isSuggestionsCacheStaleForActivity(cache, lastActivityAt, now)).toBe(true);
+  });
+
+  it('is NOT stale past the refresh floor when activity happened BEFORE the cache was generated', () => {
+    const cache = cacheGeneratedAgo(STARTER_SUGGESTIONS_MIN_REFRESH_MS + 1000);
+    const generatedAtMs = now.getTime() - (STARTER_SUGGESTIONS_MIN_REFRESH_MS + 1000);
+    const lastActivityAt = new Date(generatedAtMs - 1000); // activity BEFORE generated_at
+    expect(isSuggestionsCacheStaleForActivity(cache, lastActivityAt, now)).toBe(false);
+  });
+
+  it('is always stale past the plain 24h TTL, activity or not', () => {
+    const cache = cacheGeneratedAgo(STARTER_SUGGESTIONS_TTL_MS + 1000);
+    expect(isSuggestionsCacheStaleForActivity(cache, null, now)).toBe(true);
+    expect(isSuggestionsCacheStaleForActivity(cache, now, now)).toBe(true);
+  });
+});
+
+describe('filterConnectedConnectorItems', () => {
+  function connected(over: Partial<ConnectedConnector> & { name: string }): ConnectedConnector {
+    return { slug: null, updatedAt: new Date('2026-01-01T00:00:00Z'), ...over };
+  }
+
+  const plainItem: StarterSuggestionItem = { id: 'gen-0', label: 'Do X', prompt: 'Please do X for me' };
+  const slackItem: StarterSuggestionItem = {
+    id: 'gen-1',
+    label: 'Connect Slack',
+    prompt: 'Connect Slack to post updates',
+    action: 'connectors',
+    connector: { slug: 'slack', name: 'Slack', img_src: null },
+  };
+  const notionItem: StarterSuggestionItem = {
+    id: 'gen-2',
+    label: 'Connect Notion',
+    prompt: 'Connect Notion to sync docs',
+    action: 'connectors',
+    connector: { slug: 'notion', name: 'Notion', img_src: null },
+  };
+
+  it('returns items unchanged when nothing is connected', () => {
+    const items = [plainItem, slackItem, notionItem];
+    expect(filterConnectedConnectorItems(items, [])).toEqual(items);
+  });
+
+  it('drops a connector item whose app is already connected by slug', () => {
+    const items = [plainItem, slackItem, notionItem];
+    const result = filterConnectedConnectorItems(items, [connected({ name: 'My Slack', slug: 'slack' })]);
+    expect(result).toEqual([plainItem, notionItem]);
+  });
+
+  it('drops a connector item by name when the connection carries no known slug', () => {
+    const items = [slackItem, notionItem];
+    const result = filterConnectedConnectorItems(items, [connected({ name: 'Slack' })]);
+    expect(result).toEqual([notionItem]);
+  });
+
+  it('never drops a plain (non-connector) item', () => {
+    const result = filterConnectedConnectorItems([plainItem], [connected({ name: 'anything', slug: 'anything' })]);
+    expect(result).toEqual([plainItem]);
   });
 });
 

@@ -7,7 +7,7 @@
  *
  * Allowed writers:
  *   - connectors/sync.ts       — THE connector materializer (manifest → DB)
- *   - __tests__/*             — fixtures / seeds
+ *   - __tests__/* and any *.test.ts — fixtures / seeds, wherever the test lives
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -38,7 +38,11 @@ function offenders(table: string, allow: (rel: string) => boolean): string[] {
   const re = insertOf(table);
   for (const file of tsFiles(SRC)) {
     const rel = file.slice(SRC.length + 1);
-    if (rel.startsWith('__tests__/')) continue;
+    // Any test file is a fixture/seed writer, not a production code path —
+    // `__tests__/*` by directory (e.g. `e2e-connector-mcp-live.ts`, no
+    // `.test.ts` suffix) and `*.test.ts` anywhere else in the tree (e.g.
+    // route-level DB-integration suites under `projects/routes/`).
+    if (rel.startsWith('__tests__/') || rel.endsWith('.test.ts') || rel.endsWith('.test.tsx')) continue;
     if (allow(rel)) continue;
     if (re.test(readFileSync(file, 'utf8'))) hits.push(rel);
   }

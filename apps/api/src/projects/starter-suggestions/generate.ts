@@ -12,7 +12,8 @@ import {
 import { db } from '../../shared/db';
 import type { ProjectRow } from '../lib/serializers';
 import { metadataMergeSubtree } from '../lib/metadata-merge';
-import { collectSignalSources, renderSignalBundle } from './signals';
+import { collectSignalSources, isConnectedApp, renderSignalBundle } from './signals';
+import type { ConnectedConnector } from './signals';
 import {
   MAX_LABEL_CHARS,
   MAX_PROMPT_CHARS,
@@ -38,6 +39,11 @@ import type { StarterSuggestionItem, SuggestionAction } from './sanitize';
 // fails the request it hangs off.
 
 export const STARTER_SUGGESTIONS_TTL_MS = 24 * 60 * 60 * 1000;
+/** Activity-aware refresh floor (see `isSuggestionsCacheStaleForActivity`):
+ *  even with fresh activity, a cache younger than this never triggers a
+ *  regeneration — caps how often one active project can re-fire the
+ *  generator, independent of the plain 24h TTL. */
+export const STARTER_SUGGESTIONS_MIN_REFRESH_MS = 30 * 60 * 1000;
 const DEFAULT_GENERATION_TIMEOUT_MS = 20_000;
 // 9 x MAX_PROMPT_CHARS (400) + labels + JSON overhead can approach the
 // completion ceiling; 4096 keeps headroom so truncation doesn't turn into a
@@ -103,7 +109,12 @@ export function suggestionsCompletionBody(model: string, signals: string): strin
     '"connectors", also include "connector_slug": the exact slug of ONE app from the ' +
     '"## Available connectors" list above — never invent a slug that is not listed there, ' +
     'and omit "connector_slug" entirely if no listed app fits. At most 2 of the 9 objects ' +
-    'may carry "connector_slug". No prose, no markdown fence, no extra keys.';
+    'may carry "connector_slug". If the "## Recent sessions" signal shows a workflow the ' +
+    'user repeated, or did manually across multiple steps, include 1-2 objects with ' +
+    '"action": "skills" whose "prompt" is a concrete request to create a skill that ' +
+    'automates that workflow (e.g. "Create a skill that drafts my weekly competitor ' +
+    'summary the way we did in past sessions") and whose "label" is a short phrase like ' +
+    '"Create a skill for weekly summaries". No prose, no markdown fence, no extra keys.';
   return JSON.stringify({
     model,
     stream: false,
@@ -372,6 +383,52 @@ export function isSuggestionsCacheStale(cache: StarterSuggestionsCache | null, n
   const generatedAt = new Date(cache.generated_at).getTime();
   if (Number.isNaN(generatedAt)) return true;
   return now.getTime() - generatedAt >= STARTER_SUGGESTIONS_TTL_MS;
+}
+
+/**
+ * Activity-aware staleness: stale whenever the plain 24h rule already says so
+ * (`isSuggestionsCacheStale`), OR the project has been active more recently
+ * than the cache was generated AND the cache has cleared the
+ * `STARTER_SUGGESTIONS_MIN_REFRESH_MS` floor. The floor exists so one active
+ * project can't re-fire the generator on every request — it bounds refresh
+ * frequency independent of how often `lastActivityAt` moves.
+ *
+ * `lastActivityAt: null` (no activity signal, or the caller's activity read
+ * failed) falls back to the plain 24h rule with no activity boost — the
+ * route wraps its DB read in try/catch and passes `null` on any failure so
+ * this predicate degrades to `isSuggestionsCacheStale`, never throws, and
+ * never blocks the response.
+ */
+export function isSuggestionsCacheStaleForActivity(
+  cache: StarterSuggestionsCache | null,
+  lastActivityAt: Date | null,
+  now: Date,
+): boolean {
+  if (isSuggestionsCacheStale(cache, now)) return true;
+  // `cache` is non-null with a valid `generated_at` past this point — the
+  // 24h check above already ruled out both a missing cache and an
+  // unparseable timestamp.
+  if (!cache || !lastActivityAt) return false;
+  const generatedAt = new Date(cache.generated_at).getTime();
+  if (lastActivityAt.getTime() <= generatedAt) return false;
+  return now.getTime() - generatedAt >= STARTER_SUGGESTIONS_MIN_REFRESH_MS;
+}
+
+/**
+ * Serve-time connected filter: drops cached items whose enriched `connector`
+ * is already connected (see `isConnectedApp` — slug when known, name
+ * otherwise) — a suggestion to "Connect Slack" is dead weight once Slack is
+ * already wired up, and the cache can lag a connection made after
+ * generation. Non-connector items pass through untouched. `connected` is the
+ * route's own `readConnectedConnectors` read, wrapped in try/catch there —
+ * an empty list (failed read) makes this a no-op, fail-open by construction.
+ */
+export function filterConnectedConnectorItems(
+  items: StarterSuggestionItem[],
+  connected: ConnectedConnector[],
+): StarterSuggestionItem[] {
+  if (connected.length === 0) return items;
+  return items.filter((item) => !item.connector || !isConnectedApp(item.connector, connected));
 }
 
 export interface GenerateStarterSuggestionsInput {
