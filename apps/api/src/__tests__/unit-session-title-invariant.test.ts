@@ -127,6 +127,9 @@ describe('session-title invariant', () => {
     // The key title generation mints is deleted, not soft-revoked, so the key
     // list needs no exclusion — an exclusion keyed on the user-settable `name`
     // let any member mint a valid, billable key nobody could see or revoke.
+    // Starter-suggestion generation mints and deletes its own internal key the
+    // same way (INTERNAL_STARTER_SUGGESTIONS_KEY_NAME) — the second, and so
+    // far only other, sanctioned internal-key deleter.
     const keys = readFileSync(join(SRC, 'llm-gateway/gateway-keys.ts'), 'utf8');
     const list = keys.slice(keys.indexOf('export async function listGatewayKeys'));
     expect(list.slice(0, list.indexOf('\n}')).includes('INTERNAL_SESSION_TITLE_KEY_NAME')).toBe(
@@ -136,6 +139,7 @@ describe('session-title invariant', () => {
       offenders(/\bdeleteGatewayKey\b/, [
         'llm-gateway/gateway-keys.ts',
         'projects/session-title-generate.ts',
+        'projects/starter-suggestions/generate.ts',
       ]),
     ).toEqual([]);
   });

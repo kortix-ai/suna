@@ -97,7 +97,13 @@ flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, 
   });
 });
 
-flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detail"] }, async (ctx) => {
+flow(
+  "PROJ-6",
+  {
+    domain: "projects",
+    routes: ["GET /v1/projects/:projectId/detail", "GET /v1/projects/:projectId/starter-suggestions"],
+  },
+  async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("detail returns project + manifest", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
@@ -106,6 +112,19 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
   await ctx.step("NONMEMBER → 403", async () => {
     const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
     r.status(403);
+  });
+  await ctx.step("starter-suggestions: fresh project answers with the static fallback pool", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .get("/v1/projects/:projectId/starter-suggestions", { params: { projectId: p.id } });
+    // No LLM is configured on the local profile, so the platform default model
+    // never resolves and generation never persists a cache — the static
+    // fallback pool is the local contract, not a transient/flaky first read.
+    r.status(200).body().has("$.source", "static").has("$.generated_at", null);
+    const items = r.json<{ items: unknown[] }>().items;
+    if (items.length !== 6) {
+      throw new Error(`expected 6 static starter suggestions, got ${items.length}`);
+    }
   });
   if (ctx.env.capabilities.admin) {
     const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");

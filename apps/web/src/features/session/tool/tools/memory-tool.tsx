@@ -10,11 +10,13 @@ import {
   partStatus,
   partStreamingInput,
   ToolCode,
+  ToolCodeCard,
   ToolEmptyState,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
 import { cn } from '@/lib/utils';
@@ -85,89 +87,112 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     if (view?.type === 'dir') {
       body =
         view.entries.length > 0 ? (
-          <FadedScrollArea fadeColor="from-background">
-            {view.entries.map((entry, i) => {
-              const isLast = i + 1 >= view.entries.length;
-              const name = memoryRelPath(entry.path);
-              return (
-                <div key={entry.path} className="flex gap-2.5">
-                  <div className={cn('flex min-w-0 flex-1 items-center gap-2', !isLast && 'pb-3')}>
-                    <span className="text-muted-foreground truncate font-mono text-xs">{name}</span>
-                    <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs tabular-nums">
-                      {entry.size}
-                    </span>
+          <ToolResultCard bodyClassName="px-2 py-1.5">
+            {/* The card is bg-popover, so the fade must match it, not the page. */}
+            <FadedScrollArea fadeColor="from-popover">
+              {view.entries.map((entry, i) => {
+                const isLast = i + 1 >= view.entries.length;
+                const name = memoryRelPath(entry.path);
+                return (
+                  <div key={entry.path} className="flex gap-2.5">
+                    <div
+                      className={cn('flex min-w-0 flex-1 items-center gap-2', !isLast && 'pb-3')}
+                    >
+                      <span className="text-muted-foreground truncate font-mono text-xs">
+                        {name}
+                      </span>
+                      <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs tabular-nums">
+                        {entry.size}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </FadedScrollArea>
+                );
+              })}
+            </FadedScrollArea>
+          </ToolResultCard>
         ) : (
-          <ToolEmptyState
-            message={tI18nHardcoded.raw(
-              'autoFeaturesSessionToolRenderersJsxAttrMessageMemoryIsEmptyc797bb83',
-            )}
-          />
+          <ToolResultCard>
+            <ToolEmptyState
+              message={tI18nHardcoded.raw(
+                'autoFeaturesSessionToolRenderersJsxAttrMessageMemoryIsEmptyc797bb83',
+              )}
+            />
+          </ToolResultCard>
         );
     } else if (view?.type === 'file' && view.content) {
-      body = <ToolCode code={view.content} language={ext} />;
+      body = <ToolCodeCard code={view.content} language={ext} />;
     } else if (output) {
       body = <ToolOutputFallback output={output} toolName="memory" />;
     } else {
-      body = <ToolEmptyState message={isStreaming ? 'Reading memory…' : 'Nothing to show.'} />;
+      body = (
+        <ToolResultCard>
+          <ToolEmptyState message={isStreaming ? 'Reading memory…' : 'Nothing to show.'} />
+        </ToolResultCard>
+      );
     }
   } else if (command === 'create') {
     body = fileText ? (
-      <ToolCode code={fileText} language={ext} />
+      <ToolCodeCard code={fileText} language={ext} />
     ) : (
-      <ToolEmptyState message={isStreaming ? 'Writing memory…' : 'No content.'} />
+      <ToolResultCard>
+        <ToolEmptyState message={isStreaming ? 'Writing memory…' : 'No content.'} />
+      </ToolResultCard>
     );
   } else if (command === 'str_replace') {
     body = failed ? (
       <ToolError error={output} toolName="memory" />
     ) : oldStr || newStr ? (
-      <div data-scrollable className="max-h-96 overflow-auto">
+      <ToolResultCard bodyClassName="max-h-96">
         <InlineDiffView oldValue={oldStr} newValue={newStr} filename={relPath} />
-      </div>
+      </ToolResultCard>
     ) : (
-      <ToolEmptyState
-        message={tI18nHardcoded.raw(
-          'autoFeaturesSessionToolRenderersJsxAttrMessageNoChanges0aa33a4a',
-        )}
-      />
+      <ToolResultCard>
+        <ToolEmptyState
+          message={tI18nHardcoded.raw(
+            'autoFeaturesSessionToolRenderersJsxAttrMessageNoChanges0aa33a4a',
+          )}
+        />
+      </ToolResultCard>
     );
   } else if (command === 'insert') {
-    body = (
-      <>
-        {insertLine != null && (
-          <div className="text-muted-foreground/70 px-3 pt-2 text-xs">
-            {tI18nHardcoded.raw('autoFeaturesSessionToolRenderersJsxTextInsertedAtLine1bc36059')}
-            {String(insertLine)}
-          </div>
-        )}
-        {insertText ? <ToolCode code={insertText} language={ext} /> : null}
-        {!insertText && insertLine == null ? (
+    body =
+      !insertText && insertLine == null ? (
+        <ToolResultCard>
           <ToolEmptyState
             message={tI18nHardcoded.raw(
               'autoFeaturesSessionToolRenderersJsxAttrMessageNothingInsertede2d2969f',
             )}
           />
-        ) : null}
-      </>
-    );
+        </ToolResultCard>
+      ) : (
+        <ToolResultCard>
+          {insertLine != null && (
+            <div className="text-muted-foreground/70 px-3 pt-2 text-xs">
+              {tI18nHardcoded.raw('autoFeaturesSessionToolRenderersJsxTextInsertedAtLine1bc36059')}
+              {String(insertLine)}
+            </div>
+          )}
+          {insertText ? <ToolCode code={insertText} language={ext} /> : null}
+        </ToolResultCard>
+      );
   } else if (command === 'rename') {
     body = (
-      <div className="text-muted-foreground/80 flex flex-wrap items-center gap-1.5 px-3 py-2 font-mono text-xs">
-        <span className="truncate">{memoryRelPath(oldPath || path)}</span>
-        <ChevronRight className="text-muted-foreground/40 size-3 shrink-0" />
-        <span className="text-foreground/80 truncate">{memoryRelPath(newPath)}</span>
-      </div>
+      <ToolResultCard>
+        <div className="text-muted-foreground/80 flex flex-wrap items-center gap-1.5 px-2 py-1.5 font-mono text-xs">
+          <span className="truncate">{memoryRelPath(oldPath || path)}</span>
+          <ChevronRight className="text-muted-foreground/40 size-3 shrink-0" />
+          <span className="text-foreground/80 truncate">{memoryRelPath(newPath)}</span>
+        </div>
+      </ToolResultCard>
     );
   } else if (command === 'delete') {
     body = (
-      <div className="text-muted-foreground/70 flex items-center gap-1.5 px-3 py-2 text-xs">
-        <Trash2 className="size-3 shrink-0" />
-        <span className="truncate font-mono">{relPath}</span>
-      </div>
+      <ToolResultCard>
+        <div className="text-muted-foreground/70 flex items-center gap-1.5 px-2 py-1.5 text-xs">
+          <Trash2 className="size-3 shrink-0" />
+          <span className="truncate font-mono">{relPath}</span>
+        </div>
+      </ToolResultCard>
     );
   } else if (output) {
     body = <ToolOutputFallback output={output} toolName="memory" />;

@@ -989,7 +989,6 @@ Gates:
 
 Shippable to production: YES.
 
-
 ### 2026-08-13 — session `latest-managed-models`
 
 No public SDK API changes. The playground's compile-time `MODEL_IDS` union now
@@ -9627,6 +9626,136 @@ behavior change, no public name touched, no snapshot drift.
 entry's `clientMessageId` in `overrides`, preserving the branch's retry-dedupe
 guarantee through the batch path; `session-chat.tsx` `sendQueuedBatch` =
 command dispatch (batch of one, guaranteed by `claimBatch`) + merged text send.
+
+## Session `starter-suggestions` — project starter-suggestions query surface (2026-08-15)
+
+**Task 6** of `docs/superpowers/sdd/plan-personalized-starter-prompts/`
+(external plan, not this file's own Now chain). Consumes the already-merged API
+route `GET /v1/projects/:id/starter-suggestions` on branch
+`personalization-recommendation`.
+
+**Added, additive only:**
+- `StarterSuggestionsResponse` (type) + `getProjectStarterSuggestions(projectId)`
+  — `core/rest/projects-client/starter-suggestions.ts`, same `unwrap`/`backendApi`
+  shape as the `files.ts` exemplar. Re-exported from the barrel.
+- `qk.project.starterSuggestions(id)` — `[...scope(id), 'starter-suggestions']`,
+  sibling of `triggers`/`files`, guarded in `query-keys.test.ts` (never a prefix
+  of, never prefixed by, either).
+- `FRESHNESS.starterSuggestions = 'config'` — same tier as `triggers`/`files`;
+  no out-of-band writer needs sub-minute freshness.
+- `useProjectStarterSuggestions(projectId)` — `react/use-project-starter-suggestions.ts`,
+  gated `enabled: !!projectId`, `contract('config')`.
+
+**TDD:** RED confirmed per-file before implementation (module-not-found for the
+fn/hook, `undefined` tier for the contract, `TypeError: … is not a function` for
+the key). GREEN after implementation.
+
+**Gates:**
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: session baseline `1940 pass`, `2 skip`,
+  `0 fail`, `145` files. After: `1950 pass`, `2 skip`, `0 fail`, `147` files
+  (+10 tests, +2 files: `starter-suggestions.test.ts`,
+  `use-project-starter-suggestions.test.ts`).
+- `pnpm --filter @kortix/sdk run smoke:install`: passed (tarball packs,
+  installs, imports).
+- `pnpm test -- --sdk-only` (repo root): `1952 pass`, `0 fail`.
+
+**Surface snapshots** (both re-recorded deliberately, diff reviewed — additive
+only, 4 new names across `.` and `./react`): `getProjectStarterSuggestions` (x2,
+runtime `.`/`./react` barrels), `useProjectStarterSuggestions` (x2),
+`StarterSuggestionsResponse` (type-surface only, x2). No name removed or
+renamed.
+
+Commit: `feat(sdk): project starter-suggestions query`. No SDK subpath change —
+`starter-suggestions.ts` lives inside the existing `projects-client` barrel and
+`./react`, so the three-synchronized-edits rule for NEW subpaths does not apply
+here.
+
+## Session `starter-suggestions-action` — v1.1: optional `action` on suggestion items (2026-08-15)
+
+v1.1 amendment to the already-merged starter-suggestions feature (see the
+`starter-suggestions` session above). Server-side (`apps/api`) gained an
+optional per-item `action` enum (`'connectors' | 'skills' | 'schedules' |
+'agent' | 'members' | 'channels'`) so a suggestion can point at a setup step
+instead of a plain prompt. This session's SDK slice: widen
+`StarterSuggestionsResponse['items'][number]` to carry the same optional
+field.
+
+**Added, additive only:**
+- `StarterSuggestionAction` (new exported type, `core/rest/projects-client/starter-suggestions.ts`)
+  — mirrors the API's `SuggestionAction` union.
+- `StarterSuggestionsResponse['items'][number].action?: StarterSuggestionAction`
+  — widened an existing interface field (optional add, not a rename, not a
+  required field).
+
+**TDD:** RED first — `getProjectStarterSuggestions passes through an optional
+action field on an item` failed `tsc --noEmit` (`TS2339: Property 'action'
+does not exist`) before the type change; GREEN after.
+
+**Gates:**
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: session baseline `1952 pass`, `0 fail`,
+  `147` files (via `bun test --isolate src`, matching `package.json`'s `test`
+  script — plain `bun test src` without `--isolate` is NOT the baseline, it
+  shows spurious cross-file failures). After: `1953 pass`, `0 fail`, `147`
+  files (+1 test, no new file).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+- `pnpm test -- --sdk-only` (repo root): `1953 pass`, `0 fail`.
+
+**Surface snapshots:** `public-type-surface.snapshot.json` re-recorded
+deliberately, diff reviewed — `+2` (`StarterSuggestionAction` on `.` and
+`./projects-client`), nothing removed or renamed. `public-surface.snapshot.json`
+(runtime) untouched — a type-only export is invisible there by design.
+
+No SDK subpath change — `starter-suggestions.ts` lives inside the existing
+`projects-client` barrel and `./react`, so the three-synchronized-edits rule
+for new subpaths does not apply.
+
+Commit: `feat(sdk): action field on starter-suggestion items`.
+
+## Session `starter-suggestions-connector` — v1.2: connector field on suggestion items (2026-08-15)
+
+v1.2 amendment to the same starter-suggestions feature (see the
+`starter-suggestions` and `starter-suggestions-action` sessions above).
+Server-side (`apps/api`) gained an enriched, generator-set-only per-item
+`connector: { slug, name, img_src }` field — set only when the model named a
+real catalog app that was actually offered for that run (validated against
+`availableConnectors` collected for the run). This session's SDK slice:
+widen `StarterSuggestionsResponse['items'][number]` to carry the same
+optional field.
+
+**Added, additive only:**
+- `StarterSuggestionsResponse['items'][number].connector?: { slug: string; name: string; img_src: string | null }`
+  — widened an existing interface field (optional add, not a rename, not a
+  required field). No new exported type name — the connector shape is an
+  inline object type, not a standalone export (unlike `action`'s
+  `StarterSuggestionAction`), so the type-surface snapshot has nothing new to
+  record for it.
+
+**TDD:** RED first — `getProjectStarterSuggestions passes through an optional
+connector field on an item` failed `tsc --noEmit` (`TS2769`/`TS2339`,
+`connector` does not exist on the items type) before the type change; GREEN
+after.
+
+**Gates:**
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: session baseline `1953 pass`, `0 fail`,
+  `147` files. After: `1955 pass`, `0 fail`, `147` files (+2 tests, no new
+  file).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+- `pnpm test -- --sdk-only` (repo root): `1955 pass`, `0 fail`.
+
+**Surface snapshots:** ran `UPDATE_TYPE_SURFACE_SNAPSHOT=1 bun test
+src/public-type-surface.test.ts` deliberately — `git status` showed the
+snapshot file **unchanged**. Expected: `connector`'s shape is inline, not a
+new exported symbol, so there is nothing for the export-name snapshot to
+diff. `public-surface.snapshot.json` (runtime) also untouched — type-only
+change.
+
+No SDK subpath change — same `projects-client`/`./react` barrels as the prior
+two sessions.
+
+Commit: `feat(sdk): connector field on starter-suggestion items`.
 
 ## Session `session-middle-stop` — T2: infra aborts are typed and never render as "Interrupted" (2026-08-15)
 

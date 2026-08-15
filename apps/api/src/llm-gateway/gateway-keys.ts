@@ -14,6 +14,14 @@ import { generateGatewayKeyPair, hashSecretKey } from '../shared/crypto';
  */
 export const INTERNAL_SESSION_TITLE_KEY_NAME = 'internal-session-title';
 
+/**
+ * Name of the short-lived key starter-suggestion generation mints for each
+ * internal gateway call. Same constraint as {@link INTERNAL_SESSION_TITLE_KEY_NAME}:
+ * Kortix's own plumbing, DELETED (not soft-revoked) the moment the call
+ * finishes — see the doc comment above.
+ */
+export const INTERNAL_STARTER_SUGGESTIONS_KEY_NAME = 'internal-starter-suggestions';
+
 export interface CreatedGatewayKey {
   key_id: string;
   name: string;

@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { KeyIcon as KeyRound, PlugIcon as Plug } from '@phosphor-icons/react';
 import React, { useState } from 'react';
+import { Button } from '../ui/button';
 import { ConnectorIntake } from './connector-intake';
 import { SecretIntakeForm } from './secret-intake-form';
 import { setupLinkChipLabel, type SetupLinkKind } from './util';
@@ -49,21 +50,12 @@ export function SetupLinkButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={cn(
-          'bg-popover inline-flex max-w-full items-center gap-1.5 rounded-full border py-1 pr-3 pl-2',
-          'text-foreground align-middle text-sm font-medium',
-          'hover:bg-muted active:scale-[0.96]',
-          'transition-[background-color,scale] duration-150',
-        )}
-      >
+      <Button type="button" onClick={() => setOpen(true)} className={cn('max-w-full')} size="sm">
         <span className="bg-primary/[0.06] flex size-5 shrink-0 items-center justify-center rounded-full">
           <Icon className="text-muted-foreground size-3" />
         </span>
         <span className="truncate">{label}</span>
-      </button>
+      </Button>
 
       <Modal open={open} onOpenChange={setOpen}>
         <ModalContent className="lg:max-w-md">
