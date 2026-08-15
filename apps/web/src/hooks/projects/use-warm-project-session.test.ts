@@ -23,7 +23,7 @@ function client(overrides: Partial<WarmSessionClient> = {}): WarmSessionClient {
 }
 
 beforeEach(() => {
-  useWarmSessionStore.setState({ creating: {}, ready: {} });
+  useWarmSessionStore.setState({ creating: {}, ready: {}, takenSessionIds: {} });
 });
 
 describe('warmSessionFitsSend', () => {
@@ -178,5 +178,80 @@ describe('takeWarmSession', () => {
     await createWarmSession('proj-2', client({ create: async () => warm({ sessionId: 'warm-b' }) }));
     expect(takeWarmSession(P, { replenish: false })).toBe('warm-a');
     expect(useWarmSessionStore.getState().ready['proj-2']?.sessionId).toBe('warm-b');
+  });
+
+  // --- JAY-596 / T20: "New Session" must never hand back the session the
+  // user just left. ---------------------------------------------------------
+  //
+  // Root cause: the replenish this file fires from `takeWarmSession` used to
+  // hit the server with NO memory of which session it just handed out. The
+  // server's own warm marker only drops on the first prompt, seconds later, so
+  // the replenish could — and did — get the JUST-TAKEN session back with
+  // `reused: true`, and this store filed it right back into `ready[projectId]`.
+  // Two defenses, both covered below: (1) the replenish call carries
+  // `excludeSessionId` so a fixed server never offers the id back, and (2) the
+  // store itself refuses to file an already-taken id as ready even if a
+  // server WITHOUT the fix (or a race) echoes it anyway.
+
+  test('replenish carries the just-taken id as excludeSessionId', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const calls: Array<string | undefined> = [];
+    const create = mock(async (_projectId: string, excludeSessionId?: string) => {
+      calls.push(excludeSessionId);
+      return warm({ sessionId: 'warm-2' });
+    });
+
+    expect(takeWarmSession(P, { isPresent: PRESENT, client: { create } })).toBe('warm-1');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toEqual(['warm-1']);
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-2');
+  });
+
+  test('the store refuses to file an already-taken id as ready', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    takeWarmSession(P, { replenish: false });
+    expect(useWarmSessionStore.getState().takenSessionIds['warm-1']).toBe(true);
+
+    const accepted = useWarmSessionStore.getState().settleCreate(P, warm({ sessionId: 'warm-1' }));
+
+    expect(accepted).toBe(false);
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+  });
+
+  test('a server without the fix that echoes the just-taken id gets exactly ONE retry, then gives up — no infinite loop', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const create = mock(async () => warm({ sessionId: 'warm-1' })); // always echoes the taken id
+
+    expect(takeWarmSession(P, { isPresent: PRESENT, client: { create } })).toBe('warm-1');
+    // Let the initial replenish AND its one retry both settle.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(create).toHaveBeenCalledTimes(2); // one attempt + one bounded retry, never more
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+    expect(useWarmSessionStore.getState().creating[P]).toBeUndefined();
+  });
+
+  test('regression: take W, a stale replenish resolves with W again — ready[P] never holds W, and the next take is null/new, never W', async () => {
+    const W = 'warm-regression-1';
+    // Simulates the exact bug: a server that ignores exclude_session_id and
+    // hands the just-taken session straight back with reused semantics.
+    const client: WarmSessionClient = { create: async () => warm({ sessionId: W }) };
+
+    await createWarmSession(P, client);
+    const taken = takeWarmSession(P, { isPresent: PRESENT, client });
+    expect(taken).toBe(W);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+    expect(takeWarmSession(P, { replenish: false })).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
@@ -52,11 +52,18 @@ const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_MET
  * client compares what comes back against what the user actually selected and
  * falls back to an ordinary create when they differ, which is why the server
  * needs no notion of compatibility at all.
+ *
+ * `excludeSessionId` skips one session id — the one the caller just took. The
+ * warm marker only drops when the FIRST PROMPT reaches the preview proxy
+ * (`recordSessionActivity`), seconds after the client already consumed the
+ * session client-side, so without this exclusion a replenish racing that gap
+ * finds the just-taken row and hands it straight back as `reused: true`.
  */
-async function findWarmProjectSession(scope: {
+export async function findWarmProjectSession(scope: {
   accountId: string;
   projectId: string;
   userId: string;
+  excludeSessionId?: string | null;
 }) {
   const [row] = await db
     .select()
@@ -69,6 +76,7 @@ async function findWarmProjectSession(scope: {
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         WARM_SESSION_MARKER,
         sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+        ...(scope.excludeSessionId ? [ne(projectSessions.sessionId, scope.excludeSessionId)] : []),
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
@@ -105,7 +113,22 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: z.object({}).strict() } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                // The id of the warm session the caller just took for a send.
+                // Excluded from the reuse lookup below, so a replenish racing
+                // the window before the first prompt drops `metadata.warm`
+                // (`recordSessionActivity`) creates a FRESH session instead of
+                // handing the just-taken one straight back as `reused: true`.
+                exclude_session_id: z.string().optional(),
+              })
+              .strict(),
+          },
+        },
+      },
     },
     responses: {
       200: json(WarmProjectSessionResultSchema, 'The available warm session'),
@@ -122,6 +145,9 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
     if (gate) return gate;
 
+    const body = await readBody(c);
+    const excludeSessionId = normalizeString(body.exclude_session_id);
+
     const view = {
       viewerId: loaded.userId,
       canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
@@ -130,6 +156,7 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
+      excludeSessionId,
     });
     if (existing) {
       return c.json(
