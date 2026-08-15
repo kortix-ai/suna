@@ -74,6 +74,60 @@ test('getProjectStarterSuggestions passes through an optional action field on an
   expect(action).toBe('connectors');
 });
 
+test('getProjectStarterSuggestions passes through an optional connector field on an item', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      source: 'personalized',
+      generated_at: '2026-08-15T00:00:00.000Z',
+      items: [
+        {
+          id: 's1',
+          label: 'Connect Slack',
+          prompt: 'Connect Slack to post updates',
+          action: 'connectors',
+          connector: { slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' },
+        },
+      ],
+    },
+  };
+  const result = await getProjectStarterSuggestions('P1');
+  expect(result.items[0]).toEqual({
+    id: 's1',
+    label: 'Connect Slack',
+    prompt: 'Connect Slack to post updates',
+    action: 'connectors',
+    connector: { slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' },
+  });
+  // Type-level proof: `connector` must be assignable to this exact shape —
+  // this line only compiles if StarterSuggestionsResponse['items'][number]
+  // declares `connector` with `img_src: string | null`.
+  const connector: { slug: string; name: string; img_src: string | null } | undefined =
+    result.items[0]?.connector;
+  expect(connector?.slug).toBe('slack');
+  expect(connector?.img_src).toBe('https://example.test/slack.png');
+});
+
+test('getProjectStarterSuggestions passes through a connector with a null img_src', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      source: 'personalized',
+      generated_at: '2026-08-15T00:00:00.000Z',
+      items: [
+        {
+          id: 's1',
+          label: 'Connect Notion',
+          prompt: 'Connect Notion to sync docs',
+          connector: { slug: 'notion', name: 'Notion', img_src: null },
+        },
+      ],
+    },
+  };
+  const result = await getProjectStarterSuggestions('P1');
+  expect(result.items[0]?.connector).toEqual({ slug: 'notion', name: 'Notion', img_src: null });
+});
+
 test('getProjectStarterSuggestions passes through the static fallback shape', async () => {
   nextResponse = {
     status: 200,

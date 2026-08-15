@@ -8848,3 +8848,47 @@ No SDK subpath change — `starter-suggestions.ts` lives inside the existing
 for new subpaths does not apply.
 
 Commit: `feat(sdk): action field on starter-suggestion items`.
+
+## Session `starter-suggestions-connector` — v1.2: connector field on suggestion items (2026-08-15)
+
+v1.2 amendment to the same starter-suggestions feature (see the
+`starter-suggestions` and `starter-suggestions-action` sessions above).
+Server-side (`apps/api`) gained an enriched, generator-set-only per-item
+`connector: { slug, name, img_src }` field — set only when the model named a
+real catalog app that was actually offered for that run (validated against
+`availableConnectors` collected for the run). This session's SDK slice:
+widen `StarterSuggestionsResponse['items'][number]` to carry the same
+optional field.
+
+**Added, additive only:**
+- `StarterSuggestionsResponse['items'][number].connector?: { slug: string; name: string; img_src: string | null }`
+  — widened an existing interface field (optional add, not a rename, not a
+  required field). No new exported type name — the connector shape is an
+  inline object type, not a standalone export (unlike `action`'s
+  `StarterSuggestionAction`), so the type-surface snapshot has nothing new to
+  record for it.
+
+**TDD:** RED first — `getProjectStarterSuggestions passes through an optional
+connector field on an item` failed `tsc --noEmit` (`TS2769`/`TS2339`,
+`connector` does not exist on the items type) before the type change; GREEN
+after.
+
+**Gates:**
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: session baseline `1953 pass`, `0 fail`,
+  `147` files. After: `1955 pass`, `0 fail`, `147` files (+2 tests, no new
+  file).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+- `pnpm test -- --sdk-only` (repo root): `1955 pass`, `0 fail`.
+
+**Surface snapshots:** ran `UPDATE_TYPE_SURFACE_SNAPSHOT=1 bun test
+src/public-type-surface.test.ts` deliberately — `git status` showed the
+snapshot file **unchanged**. Expected: `connector`'s shape is inline, not a
+new exported symbol, so there is nothing for the export-name snapshot to
+diff. `public-surface.snapshot.json` (runtime) also untouched — type-only
+change.
+
+No SDK subpath change — same `projects-client`/`./react` barrels as the prior
+two sessions.
+
+Commit: `feat(sdk): connector field on starter-suggestion items`.

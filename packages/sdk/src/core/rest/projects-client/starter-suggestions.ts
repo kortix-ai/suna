@@ -25,6 +25,12 @@ export interface StarterSuggestionsResponse {
     label: string;
     prompt: string;
     action?: StarterSuggestionAction;
+    /** A real, connectable catalog app the suggestion points at — present
+     *  only when the API validated a model-named connector against its
+     *  offered catalog for that run. Never present on the static fallback
+     *  pool. Mirrors the API's enriched `connector` field
+     *  (`apps/api/src/projects/starter-suggestions/sanitize.ts`). */
+    connector?: { slug: string; name: string; img_src: string | null };
   }>;
 }
 
