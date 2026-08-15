@@ -31,10 +31,19 @@ export function ProjectAppsNavItem() {
         asChild
         isActive={pathname?.startsWith(`/projects/${projectId}/apps`) === true}
         tooltip="Apps"
-        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+        /* Must match the row contract of THIS group — New session and Customize
+           (project-settings-nav `ProjectCustomizeNavItem`). The bottom group
+           (Files, Settings) uses a different one with no px-3 and no muted
+           resting colour; Apps kept that after moving up here, which left its
+           icon and label ~8px left of its neighbours and a shade darker. */
+        className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
       >
         <Link href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
-          <GlobeIcon />
+          {/* shrink-0 so the glyph keeps its box when the label is long or the
+              sidebar is narrow — the sibling rows wrap their icons the same way. */}
+          <span className="shrink-0">
+            <GlobeIcon />
+          </span>
           Apps
         </Link>
       </SidebarMenuButton>
