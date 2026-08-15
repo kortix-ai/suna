@@ -32,3 +32,22 @@ describe('/projects/start does not bounce to /projects', () => {
     expect(source).toContain('withCurrentQuery(`/projects/${project.project_id}`)');
   });
 });
+
+/**
+ * The terminal and error states render with zero app chrome, so without an
+ * explicit control a user parked there could not sign out and try another
+ * account — the page was a dead end. Both stuck branches must mount the
+ * escape hatch; the transient skeleton must not (it is a loading frame, not
+ * a destination).
+ */
+describe('/projects/start stuck states offer a sign-out escape hatch', () => {
+  test('terminal AND error branches mount StartSignOutButton', () => {
+    const mounts = source.split('<StartSignOutButton />').length - 1;
+    expect(mounts).toBe(2);
+  });
+
+  test('the escape hatch signs out through the provider (which resets client state)', () => {
+    expect(source).toContain('await signOut();');
+    expect(source).toContain("router.replace('/auth')");
+  });
+});

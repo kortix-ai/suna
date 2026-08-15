@@ -88,6 +88,30 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).toContain('className="max-w-5xl"');
 });
 
+test('the Apps row matches the row contract of the group it sits in', () => {
+  // The sidebar has TWO row conventions. The top group (New session, Customize)
+  // pads with px-3 and rests muted; the bottom group (Files, Settings) does
+  // neither. Apps moved from the bottom group to the top one and kept the old
+  // class list, so its icon and label sat ~8px left of its neighbours and read a
+  // shade darker — visibly out of line.
+  const apps = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    'utf8',
+  );
+  const customize = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/project-settings-nav.tsx'),
+    'utf8',
+  );
+
+  const ROW = 'group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!';
+  // The same string the sibling rows in this group use — if that contract is
+  // ever restyled, this fails rather than letting Apps silently drift out.
+  expect(customize).toContain(ROW);
+  expect(apps).toContain(ROW);
+  // The glyph keeps its box on a narrow sidebar, like its neighbours.
+  expect(apps).toContain('<span className="shrink-0">');
+});
+
 test('an App with no deployment never claims to be Running', () => {
   // `desired_state` defaults to 'running' when the App row is created, so
   // reading the badge off it alone painted a green "Running" pill on an App
