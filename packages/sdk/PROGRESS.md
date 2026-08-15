@@ -8806,3 +8806,45 @@ Commit: `feat(sdk): project starter-suggestions query`. No SDK subpath change �
 `starter-suggestions.ts` lives inside the existing `projects-client` barrel and
 `./react`, so the three-synchronized-edits rule for NEW subpaths does not apply
 here.
+
+## Session `starter-suggestions-action` — v1.1: optional `action` on suggestion items (2026-08-15)
+
+v1.1 amendment to the already-merged starter-suggestions feature (see the
+`starter-suggestions` session above). Server-side (`apps/api`) gained an
+optional per-item `action` enum (`'connectors' | 'skills' | 'schedules' |
+'agent' | 'members' | 'channels'`) so a suggestion can point at a setup step
+instead of a plain prompt. This session's SDK slice: widen
+`StarterSuggestionsResponse['items'][number]` to carry the same optional
+field.
+
+**Added, additive only:**
+- `StarterSuggestionAction` (new exported type, `core/rest/projects-client/starter-suggestions.ts`)
+  — mirrors the API's `SuggestionAction` union.
+- `StarterSuggestionsResponse['items'][number].action?: StarterSuggestionAction`
+  — widened an existing interface field (optional add, not a rename, not a
+  required field).
+
+**TDD:** RED first — `getProjectStarterSuggestions passes through an optional
+action field on an item` failed `tsc --noEmit` (`TS2339: Property 'action'
+does not exist`) before the type change; GREEN after.
+
+**Gates:**
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: session baseline `1952 pass`, `0 fail`,
+  `147` files (via `bun test --isolate src`, matching `package.json`'s `test`
+  script — plain `bun test src` without `--isolate` is NOT the baseline, it
+  shows spurious cross-file failures). After: `1953 pass`, `0 fail`, `147`
+  files (+1 test, no new file).
+- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
+- `pnpm test -- --sdk-only` (repo root): `1953 pass`, `0 fail`.
+
+**Surface snapshots:** `public-type-surface.snapshot.json` re-recorded
+deliberately, diff reviewed — `+2` (`StarterSuggestionAction` on `.` and
+`./projects-client`), nothing removed or renamed. `public-surface.snapshot.json`
+(runtime) untouched — a type-only export is invisible there by design.
+
+No SDK subpath change — `starter-suggestions.ts` lives inside the existing
+`projects-client` barrel and `./react`, so the three-synchronized-edits rule
+for new subpaths does not apply.
+
+Commit: `feat(sdk): action field on starter-suggestion items`.

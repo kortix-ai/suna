@@ -43,6 +43,37 @@ test('getProjectStarterSuggestions GETs /projects/:id/starter-suggestions', asyn
   });
 });
 
+test('getProjectStarterSuggestions passes through an optional action field on an item', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      source: 'personalized',
+      generated_at: '2026-08-15T00:00:00.000Z',
+      items: [
+        {
+          id: 's1',
+          label: 'Connect Slack',
+          prompt: 'Connect Slack to post updates',
+          action: 'connectors',
+        },
+      ],
+    },
+  };
+  const result = await getProjectStarterSuggestions('P1');
+  expect(result.items[0]).toEqual({
+    id: 's1',
+    label: 'Connect Slack',
+    prompt: 'Connect Slack to post updates',
+    action: 'connectors',
+  });
+  // Type-level proof: `action` must be assignable to the six-member union —
+  // this line only compiles if StarterSuggestionsResponse['items'][number]
+  // declares `action` with that exact literal union.
+  const action: 'connectors' | 'skills' | 'schedules' | 'agent' | 'members' | 'channels' | undefined =
+    result.items[0]?.action;
+  expect(action).toBe('connectors');
+});
+
 test('getProjectStarterSuggestions passes through the static fallback shape', async () => {
   nextResponse = {
     status: 200,
