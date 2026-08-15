@@ -34,11 +34,6 @@ import { ComposerChatInput, type ComposerOptions } from '@/features/session/comp
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
-  CAPABILITY_TABS,
-  capabilityTabHref,
-  type CapabilityTab,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
@@ -316,7 +311,7 @@ export function ProjectHomeWelcomeBody({
       </div>
 
       <div className="flex shrink-0 justify-center px-4 pb-6">
-        <ProjectHomeSections projectId={projectId} />
+        <ProjectHomeSections />
       </div>
     </div>
   );
@@ -473,15 +468,11 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  // Agents, Connectors and Skills graduated out of Settings into their own
-  // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
-  // carry a capability tab key instead of a SettingsTab and navigate
-  // there directly.
-  section: SettingsTab | CapabilityTab['key'];
+  // Every tile names a pane, and a pane names its own surface (see
+  // `TAB_SURFACE` in settings-tabs.ts) — so one call opens the right panel and
+  // no tile needs to know whether it lands in Customize or Settings.
+  section: SettingsTab;
 };
-
-const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
-  CAPABILITY_TABS.some((tab) => tab.key === section);
 
 /** Static navigation does not fetch counts before the user opens Customize. */
 const PROJECT_SETUP_TILES: SetupTile[] = [
@@ -519,16 +510,12 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     icon: Kortix,
     title: 'Agent',
     desc: 'Shape how your agent thinks and acts.',
-    // 'agent' (the route segment), not the old 'agents' overlay section —
-    // `isCapabilityTabKey` matches on the key, so the wrong spelling would
-    // silently fall through to `openSettings('agents')` and open nothing.
-    section: 'agent',
+    section: 'agents',
   },
 ];
 
-function ProjectHomeSections({ projectId }: { projectId: string }) {
+function ProjectHomeSections() {
   const openSettings = useSettingsPanelStore((s) => s.openSettings);
-  const router = useRouter();
   const tiles = PROJECT_SETUP_TILES;
 
   return (
@@ -541,11 +528,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                isCapabilityTabKey(section)
-                  ? router.push(capabilityTabHref(projectId, section))
-                  : openSettings(section)
-              }
+              onClick={() => openSettings(section)}
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />

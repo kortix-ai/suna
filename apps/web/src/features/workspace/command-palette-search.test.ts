@@ -47,6 +47,7 @@ const IN_A_PROJECT: SettingsPaletteParams = {
     llmGatewayAvailable: true,
     voiceEnabled: true,
     reviewEnabled: true,
+  appsEnabled: true,
   },
   billingEnabled: true,
 };
@@ -295,15 +296,20 @@ describe('queries return the rows they name', () => {
     }
   });
 
-  test('"apps" reaches the Apps page, not Connectors', () => {
-    expect(hits('apps')).toEqual(['nav:proj-apps']);
+  // Apps, Agents, Skills and Connectors used to be hand-written `proj-*`
+  // registry rows AND, once they became Customize panes, derived rows as well
+  // — two palette entries per destination. The registry rows are gone; the
+  // derived one is the single answer, and their keywords moved into
+  // `tab-keywords.ts` (see the synonym table at the bottom of this file).
+  test('"apps" reaches the Apps pane, and only it', () => {
+    expect(hits('apps')).toEqual(['settings:apps']);
   });
 
-  test('"agents" and "skills" reach their pages, not a restart command', () => {
+  test('"agents" and "skills" reach their panes, not a restart command', () => {
     expect(hits('agents')).not.toContain('nav:restart-config');
-    expect(hits('agents')).toContain('nav:proj-agents');
+    expect(hits('agents')).toContain('settings:agents');
     expect(hits('skills')).not.toContain('nav:restart-config');
-    expect(hits('skills')).toContain('nav:proj-skills');
+    expect(hits('skills')).toContain('settings:skills');
     // The Marketplace installs both, so it keeps them.
     expect(hits('skills')).toContain('settings:marketplace');
   });
@@ -313,7 +319,7 @@ describe('queries return the rows they name', () => {
   });
 
   test('"connections" reaches Connectors, not Channels', () => {
-    expect(hits('connections')).toEqual(['nav:proj-connectors']);
+    expect(hits('connections')).toEqual(['settings:connectors']);
   });
 
   test('"log" no longer drags Snapshots into an audit search', () => {
@@ -338,19 +344,19 @@ describe('genuine synonyms still answer', () => {
   const KEPT: ReadonlyArray<[string, string]> = [
     ['shell', 'nav:open-session-terminal'],
     ['pty', 'nav:open-session-terminal'],
-    ['connectors', 'nav:proj-connectors'],
-    ['pipedream', 'nav:proj-connectors'],
+    ['connectors', 'settings:connectors'],
+    ['pipedream', 'settings:connectors'],
     ['guardrails', 'nav:proj-connectors-policies'],
     ['teammate', 'nav:proj-invite'],
-    ['subagents', 'nav:proj-agents'],
-    ['abilities', 'nav:proj-skills'],
+    ['subagents', 'settings:agents'],
+    ['abilities', 'settings:skills'],
     ['drive', 'nav:proj-files'],
     ['threads', 'nav:proj-sessions'],
     ['organizations', 'nav:nav-accounts'],
     ['conflict', 'nav:sync-session-branch'],
     ['reconcile', 'nav:sync-session-branch'],
     ['restart', 'nav:restart-config'],
-    ['deployments', 'nav:proj-apps'],
+    ['deployments', 'settings:apps'],
     ['signout', 'nav:logout'],
     ['env', 'settings:secrets'],
     ['cron', 'settings:schedules'],

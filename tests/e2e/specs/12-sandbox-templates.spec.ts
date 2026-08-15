@@ -32,7 +32,7 @@ import {
 } from "../helpers/session-auth";
 import {
   dismissOnboarding,
-  openSettingsTab,
+  openCustomizeTab,
   selectAccountForUi,
 } from "../helpers/ui";
 
@@ -59,8 +59,9 @@ async function openSandboxSection(page: Page, projectId: string) {
   await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
   await dismissOnboarding(page);
   // "Sandbox templates" is the rail label for the `sandbox` tab (rail.ts) and
-  // the `SettingsTabHeader` title the pane renders from it.
-  const panel = await openSettingsTab(page, "Sandbox templates");
+  // the `SettingsTabHeader` title the pane renders from it. It is a CUSTOMIZE
+  // row — the sandbox is part of what the agent can do, not administration.
+  const panel = await openCustomizeTab(page, "Sandbox templates");
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), {
     timeout: 30_000,
   });

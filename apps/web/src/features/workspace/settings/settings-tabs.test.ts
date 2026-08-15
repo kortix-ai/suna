@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_CUSTOMIZE_TAB,
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
+  TAB_SURFACE,
   legacySectionRedirect,
   parseSettingsTab,
   resolveSettingsOverlayHref,
+  settingsTabHref,
+  surfaceForTab,
 } from './settings-tabs';
 
 describe('SETTINGS_TABS', () => {
@@ -12,8 +16,11 @@ describe('SETTINGS_TABS', () => {
     expect(new Set(SETTINGS_TABS).size).toBe(SETTINGS_TABS.length);
   });
 
-  test('the default tab is a real tab', () => {
+  test('each surface default is a real tab, on that surface', () => {
     expect(SETTINGS_TABS).toContain(DEFAULT_SETTINGS_TAB);
+    expect(SETTINGS_TABS).toContain(DEFAULT_CUSTOMIZE_TAB);
+    expect(surfaceForTab(DEFAULT_SETTINGS_TAB)).toBe('settings');
+    expect(surfaceForTab(DEFAULT_CUSTOMIZE_TAB)).toBe('customize');
   });
 
   test('carries the tabs the spec names', () => {
@@ -24,9 +31,22 @@ describe('SETTINGS_TABS', () => {
       'models', 'marketplace', 'review', 'voice', 'sandbox', 'snapshots',
       'organization', 'billing', 'usage', 'groups', 'roles', 'identity', 'audit',
       'api-keys', 'experimental', 'upgrades',
+      'agents', 'skills', 'connectors', 'apps',
     ]) {
       expect(SETTINGS_TABS).toContain(tab as never);
     }
+  });
+
+  test('every tab is assigned to exactly one surface', () => {
+    for (const tab of SETTINGS_TABS) {
+      expect(['customize', 'settings']).toContain(TAB_SURFACE[tab]);
+    }
+    expect(Object.keys(TAB_SURFACE).sort()).toEqual([...SETTINGS_TABS].sort());
+  });
+
+  test('settingsTabHref puts a tab on the surface that owns it', () => {
+    expect(settingsTabHref('p1', 'secrets')).toBe('/projects/p1/customize/secrets');
+    expect(settingsTabHref('p1', 'members')).toBe('/projects/p1/settings/members');
   });
 
   // The Instructions tab was removed outright: it only ever rendered
@@ -109,32 +129,43 @@ describe('legacySectionRedirect', () => {
       'llm-budgets': 'models',
       'llm-keys': 'models',
       'llm-api': 'models',
+      agent: 'agents',
+      computers: 'connectors',
     };
     for (const [legacyId, newTab] of Object.entries(renames)) {
-      expect(legacySectionRedirect('p1', legacyId)).toBe(`/projects/p1/settings/${newTab}`);
+      expect(legacySectionRedirect('p1', legacyId)).toBe(
+        settingsTabHref('p1', newTab as never),
+      );
     }
   });
 
-  test('graduated capability pages still leave the overlay', () => {
-    expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/skills');
-    expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/agent');
-    expect(legacySectionRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
-    expect(legacySectionRedirect('p1', 'files')).toBe('/projects/p1/files');
+  test('the capability pages resolve to their Customize panes', () => {
+    expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/customize/skills');
+    expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/customize/agents');
+    expect(legacySectionRedirect('p1', 'connectors')).toBe('/projects/p1/customize/connectors');
+    expect(legacySectionRedirect('p1', 'apps')).toBe('/projects/p1/customize/apps');
   });
 
-  test('computers graduated to Connectors — a bookmark must not 404', () => {
+  test('files and changes are routes, not panes, so they leave the panel', () => {
+    expect(legacySectionRedirect('p1', 'files')).toBe('/projects/p1/files');
+    expect(legacySectionRedirect('p1', 'changes')).toBe(
+      '/projects/p1/files?panel=proposed-changes',
+    );
+  });
+
+  test('computers is a connector — a bookmark must not 404', () => {
     // `main` (#6313) deleted `computers-view.tsx` and made the computer a
     // connector (`ComputerTunnelManager`). Both the legacy `/customize/
     // computers` and the settings-era `/settings/computers` deep links resolve
     // through this map, so neither can land on a tab that no longer exists.
-    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/connectors');
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/customize/connectors');
     expect(SETTINGS_TABS).not.toContain('computers' as never);
     expect(parseSettingsTab('computers')).toBeNull();
   });
 
   test('every llm sub-section lands on models', () => {
     for (const s of ['llm-management', 'llm-overview', 'llm-providers', 'llm-logs', 'llm-budgets', 'llm-keys', 'llm-api']) {
-      expect(legacySectionRedirect('p1', s)).toBe('/projects/p1/settings/models');
+      expect(legacySectionRedirect('p1', s)).toBe('/projects/p1/customize/models');
     }
   });
 
@@ -144,30 +175,36 @@ describe('legacySectionRedirect', () => {
 
   // Coverage carried forward from the retired legacy Customize-sections test —
   // cases the spec test above doesn't exercise but the old suite caught.
-  test('the graduated agent/agents spellings both redirect', () => {
-    expect(legacySectionRedirect('p1', 'agent')).toBe('/projects/p1/agent');
+  test('the agent/agents spellings both land on the Agents pane', () => {
+    // `agent` was the route segment, `agents` the overlay section id. Both are
+    // in the wild.
+    expect(legacySectionRedirect('p1', 'agent')).toBe('/projects/p1/customize/agents');
+    expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/customize/agents');
   });
 
-  test('changes redirects to the files proposed-changes panel', () => {
-    expect(legacySectionRedirect('p1', 'changes')).toBe('/projects/p1/files?panel=proposed-changes');
+  test('a live id resolves to its own surface, not the one in the caller url', () => {
+    expect(legacySectionRedirect('p1', 'secrets')).toBe('/projects/p1/customize/secrets');
+    expect(legacySectionRedirect('p1', 'members')).toBe('/projects/p1/settings/members');
   });
 
-  test('an id that never changed resolves to its own settings tab', () => {
-    expect(legacySectionRedirect('p1', 'secrets')).toBe('/projects/p1/settings/secrets');
-  });
-
-  test('files, connectors, skills, and agent are not settings tabs', () => {
-    for (const graduated of ['files', 'changes', 'agent', 'agents', 'connectors', 'skills']) {
-      expect(SETTINGS_TABS).not.toContain(graduated as never);
-      expect(parseSettingsTab(graduated)).toBeNull();
+  test('files and changes are not tabs', () => {
+    for (const route of ['files', 'changes']) {
+      expect(SETTINGS_TABS).not.toContain(route as never);
+      expect(parseSettingsTab(route)).toBeNull();
     }
   });
 });
 
 describe('resolveSettingsOverlayHref', () => {
-  test('a bare settings href opens the default tab', () => {
+  test('a bare href opens that surface on its default tab', () => {
     expect(resolveSettingsOverlayHref('/projects/p1/settings')).toEqual({
       opensOverlay: true,
+      surface: 'settings',
+      tab: undefined,
+    });
+    expect(resolveSettingsOverlayHref('/projects/p1/customize')).toEqual({
+      opensOverlay: true,
+      surface: 'customize',
       tab: undefined,
     });
   });
@@ -175,12 +212,28 @@ describe('resolveSettingsOverlayHref', () => {
   test('a named tab opens that tab', () => {
     expect(resolveSettingsOverlayHref('/projects/p1/settings/members')).toEqual({
       opensOverlay: true,
+      surface: 'settings',
       tab: 'members',
     });
   });
 
-  test('an unresolvable segment does not open the overlay', () => {
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/skills')).toEqual({
+  test('a tab opens on the surface that owns it, not the one in the href', () => {
+    // A stale `/settings/secrets` href must still land on Secrets, which is a
+    // Customize pane now.
+    expect(resolveSettingsOverlayHref('/projects/p1/settings/secrets')).toEqual({
+      opensOverlay: true,
+      surface: 'customize',
+      tab: 'secrets',
+    });
+    expect(resolveSettingsOverlayHref('/projects/p1/customize/members')).toEqual({
+      opensOverlay: true,
+      surface: 'settings',
+      tab: 'members',
+    });
+  });
+
+  test('an unresolvable segment does not open a panel', () => {
+    expect(resolveSettingsOverlayHref('/projects/p1/settings/files')).toEqual({
       opensOverlay: false,
     });
   });

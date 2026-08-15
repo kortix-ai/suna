@@ -34,6 +34,8 @@
 import { GearSixIcon } from '@phosphor-icons/react';
 
 import { UPGRADE_ITEM, railGroups, type RailFlags } from '@/features/workspace/settings/rail';
+import { surfaceForTab } from '@/features/workspace/settings/settings-tabs';
+import { TAB_KEYWORDS } from '@/features/workspace/settings/tab-keywords';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import type { RailItem } from '@/features/workspace/settings/type';
 
@@ -62,73 +64,6 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
  * project workspace tab and is filtered out of a project-less rail.
  */
 export const PALETTE_NO_PROJECT_DEFAULT_TAB: SettingsTab = 'profile';
-
-/**
- * Query terms per tab, on top of the rail's `label` and `description`.
- *
- * **The rule.** A word belongs on a tab only when it NAMES THAT TAB — a
- * synonym, an alias, or something the tab itself contains. A word that names a
- * DIFFERENT row's subject is a defect: it answers a query this row is the
- * wrong answer to. Ask "if a user typed this word, is this tab a correct
- * answer?" before adding one.
- *
- * **The `project customize` tail is gone.** Twelve bags used to end in it,
- * carried over verbatim from the old `Customize · X` registry entries, so
- * "customize" returned twelve settings tabs plus five navigation rows and
- * "project" returned twelve tabs that are not the Projects page. `customize`
- * survives on exactly one row here — `general`, the Workspace tab that
- * `proj-customize`'s href actually opens (`/projects/{id}/settings/general`) —
- * so the legacy word still lands on the legacy destination and nowhere else.
- * `project` survives only inside `general`'s phrase "project settings", the
- * pane's own former name.
- *
- * Four further corrections rather than straight carry-overs:
- *
- *   - `snapshot` moved off `sandbox` (it was `proj-sandbox`'s keyword) onto
- *     `snapshots`, which is the tab that word names. Typing "snapshot" used
- *     to reach Sandbox templates and could not reach Snapshots at all.
- *   - `profile name email` moved off the workspace `general` tab (they were
- *     `pref-general`'s keywords, pointing at the wrong of the app's three
- *     Generals) onto `profile`.
- *   - `keys` left `preferences` (it meant keyboard keys; `keyboard hotkeys
- *     keybindings` already say that) because it is the subject word of the
- *     `api-keys` tab.
- *   - `sso` left `organization` and `log record` left `snapshots`: `identity`
- *     is the tab that configures SSO and `audit` is the tab that is a log.
- */
-const TAB_KEYWORDS: Record<SettingsTab, string> = {
-  profile: 'profile name email avatar personal you account display',
-  preferences:
-    'preferences appearance theme color mode dark light wallpaper shader shaders background sounds audio volume notification sound effects mute shortcuts keyboard hotkeys keybindings',
-  connected: 'connected accounts linked oauth google github identities social sign in providers',
-  general:
-    'general project settings workspace repository danger zone rename delete customize configure',
-  members: 'members team access collaborators people invite',
-  secrets: 'secrets env environment variables values',
-  channels: 'channels slack email agent mail agentmail agentic mail inbox messaging notifications',
-  repositories: 'git repository repositories provider github code storage clone proxy branch sync',
-  schedules: 'schedules cron triggers timed recurring',
-  webhooks: 'webhooks triggers http endpoint',
-  models:
-    'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai',
-  marketplace: 'marketplace store install templates agents skills browse community',
-  review: 'review center inbox approvals change requests approve reject needs you',
-  voice: 'voice call speak spoken conversation livekit bot name',
-  sandbox: 'sandbox templates image runtime environment machine',
-  snapshots: 'snapshots snapshot builds prepared machine image history',
-  organization: 'organization org account company name sign in rules teams manage',
-  billing:
-    'billing payment credit card subscription manage wallet tier plan limits overview spend',
-  usage: 'usage credits ledger transactions history purchases receipts spend consumption',
-  groups: 'groups teams directory scim membership sets',
-  roles: 'roles permissions access rbac policy custom role',
-  identity: 'identity sso saml oidc scim login provider single sign on directory',
-  audit: 'audit log logs events history trail compliance',
-  'api-keys':
-    'api keys tokens personal access pat cli command line authentication service account',
-  experimental: 'experimental feature flags beta preview labs toggles',
-  upgrades: 'upgrades upgrade migrate migration registry manifest one-off runner change request',
-};
 
 export interface SettingsPaletteItem {
   /** Stable cmdk/React key. Namespaced so it can never collide with a `menuRegistry` id. */
@@ -180,14 +115,28 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
     description: item.description,
     icon: item.icon ?? GearSixIcon,
     groupLabel,
-    keywords: [item.label, item.description ?? '', TAB_KEYWORDS[item.tab], 'settings'].join(' '),
+    // "settings" is appended to Settings rows only. It is NOT mirrored with
+    // "customize" on the other surface: that word is the one this file's header
+    // documents as the legacy tail that returned seventeen rows, and it now
+    // survives on exactly one row (`general`, which is where `proj-customize`'s
+    // href actually lands). Adding it back to twelve Customize rows would
+    // rebuild the defect the tail was removed to fix.
+    keywords: [
+      item.label,
+      item.description ?? '',
+      TAB_KEYWORDS[item.tab],
+      surfaceForTab(item.tab) === 'settings' ? 'settings' : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
   };
 }
 
 /**
- * Every settings tab this user can reach, grouped exactly as the rail groups
- * it. Groups that lose all their rows disappear whole, so the palette never
- * renders an empty heading.
+ * Every pane this user can reach — BOTH surfaces — grouped exactly as each
+ * rail groups it. Customize's groups come first, then Settings', because that
+ * is the order the two sidebar rows sit in. Groups that lose all their rows
+ * disappear whole, so the palette never renders an empty heading.
  *
  * `UPGRADE_ITEM` is appended to the LAST group. The rail pins it below the
  * scrolling groups in a footer of its own; a command palette has no footer to
@@ -195,7 +144,10 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
  * joins the trailing group (`Developer`) instead of inventing a heading.
  */
 export function settingsPaletteGroups(params: SettingsPaletteParams): SettingsPaletteGroup[] {
-  const rail = railGroups(params.flags).map((group) => ({
+  const rail = [
+    ...railGroups('customize', params.flags),
+    ...railGroups('settings', params.flags),
+  ].map((group) => ({
     label: group.label,
     items: [...group.items],
   }));

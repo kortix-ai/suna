@@ -7,6 +7,7 @@ import {
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import type { RailFlags } from '@/features/workspace/settings/rail';
 import {
+  DEFAULT_CUSTOMIZE_TAB,
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
   resolveSettingsOverlayHref,
@@ -27,12 +28,14 @@ const ALL_FLAGS_ON: RailFlags = {
   llmGatewayAvailable: true,
   voiceEnabled: true,
   reviewEnabled: true,
+  appsEnabled: true,
 };
 const ALL_FLAGS_OFF: RailFlags = {
   marketplaceEnabled: false,
   llmGatewayAvailable: false,
   voiceEnabled: false,
   reviewEnabled: false,
+  appsEnabled: false,
 };
 
 const IN_A_PROJECT: SettingsPaletteParams = {
@@ -289,21 +292,31 @@ describe('the registry no longer carries palette settings destinations', () => {
 
     // `nav-accounts` opens the in-palette account switcher; this href is the
     // routed fallback for surfaces without that picker.
-    // `proj-customize` is the generic "Customize" door.
+    // `proj-customize` is the generic "Customize" door — and it opens the
+    // Customize panel now, not the Settings panel's workspace General tab.
     const byId = new Map(resolved.map((entry) => [entry.id, entry.match]));
-    expect(byId.get('nav-accounts')).toEqual({ opensOverlay: true, tab: 'organization' });
-    expect(byId.get('proj-customize')).toEqual({ opensOverlay: true, tab: 'general' });
+    expect(byId.get('nav-accounts')).toEqual({
+      opensOverlay: true,
+      surface: 'settings',
+      tab: 'organization',
+    });
+    expect(byId.get('proj-customize')).toEqual({
+      opensOverlay: true,
+      surface: 'customize',
+      tab: 'agents',
+    });
   });
 
   test('proj-customize names a tab instead of resuming the last one', () => {
-    // A bare `/projects/{id}/settings` resolved to `{ tab: undefined }`, and
-    // `openSettings(undefined)` keeps whatever was last open — so one entry
-    // landed somewhere different on every click.
+    // A bare `/projects/{id}/customize` resolves to `{ tab: undefined }`, and
+    // opening with no tab keeps whatever was last open — so the entry would
+    // land somewhere different on every click.
     const customize = paletteItems.find((item) => item.id === 'proj-customize');
-    expect(customize?.href).toBe('/projects/{projectId}/settings/general');
+    expect(customize?.href).toBe('/projects/{projectId}/customize/agents');
     expect(resolveSettingsOverlayHref(customize!.href!)).toEqual({
       opensOverlay: true,
-      tab: DEFAULT_SETTINGS_TAB,
+      surface: 'customize',
+      tab: DEFAULT_CUSTOMIZE_TAB,
     });
   });
 

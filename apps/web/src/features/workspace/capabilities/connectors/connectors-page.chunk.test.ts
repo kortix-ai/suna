@@ -4,8 +4,14 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * The `/projects/[id]/connectors` route's initial client chunk, walked as a
- * static import graph from the route entry.
+ * The Connectors pane's initial client chunk, walked as a static import graph
+ * from the pane component.
+ *
+ * The walk used to start at `app/(app)/projects/[id]/(capabilities)/connectors/
+ * page.tsx`. Connectors is a Customize PANE now, not a route, and
+ * `settings-panel.tsx` reaches it through `next/dynamic` — so the pane
+ * component itself is the chunk root, and it is the module whose graph this
+ * has always actually been about.
  *
  * `customize/sections/connectors-view.tsx` is 5,075 lines whose own import
  * list pulls `@pipedream/sdk/browser` (10M installed), `HighlightedCode`
@@ -30,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(here, '../../../..');
-const ROUTE_ENTRY = resolve(SRC, 'app/(app)/projects/[id]/(capabilities)/connectors/page.tsx');
+const ROUTE_ENTRY = resolve(SRC, 'features/workspace/capabilities/connectors/connectors-page.tsx');
 
 /** Modules that must not be parsed before the connectors grid paints. */
 const FORBIDDEN = [

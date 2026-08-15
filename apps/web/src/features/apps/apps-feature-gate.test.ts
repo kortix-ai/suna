@@ -5,53 +5,61 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dir, '../..');
 
 test('every Apps discovery surface hides until the apps feature flag is on', () => {
-  const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+  // Apps lost its standalone sidebar row when Customize became a rail. It is a
+  // Customize pane now, so the rail row IS the discovery surface and
+  // `settings-panel.tsx` is where it is gated.
+  const panel = readFileSync(
+    resolve(root, 'features/workspace/settings/settings-panel.tsx'),
     'utf8',
   );
+  const rail = readFileSync(resolve(root, 'features/workspace/settings/rail.ts'), 'utf8');
   const menu = readFileSync(resolve(root, 'lib/menu-registry.ts'), 'utf8');
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  // ONE gating primitive everywhere — the SDK's `useFeatureFlag`, never a
-  // per-feature hook and never a hand-rolled `experimental?.apps` read.
-  expect(nav).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(nav).toContain('if (!appsGate.enabled) return null;');
-  expect(menu).toContain("requiresFlag: 'apps'");
+  // Fail-closed, and gated exactly like the panel's three other flag-gated
+  // rows (marketplace, voice, review) — off the project detail the panel has
+  // already resolved, which is the same `qk.project.detail` entry the SDK's
+  // `useFeatureFlag` reads.
+  expect(panel).toContain('const appsEnabled = project?.experimental?.apps ?? false;');
+  expect(rail).toContain('...(flags.appsEnabled ? [APPS_ITEM] : [])');
+
+  // ONE gate, not two. The registry's `proj-apps` row (its own `requiresFlag`)
+  // duplicated the derived rail row, so the palette listed Apps twice and the
+  // two entries could disagree about whether the flag was on.
+  expect(menu).not.toContain("id: 'proj-apps'");
+
+  // ONE gating primitive on the page itself — the SDK's `useFeatureFlag`,
+  // never a per-feature hook.
   expect(view).toContain("useFeatureFlag(projectId, 'apps')");
-  expect(nav).not.toContain('useAppsFeatureEnabled');
   expect(view).not.toContain('useAppsFeatureEnabled');
 });
 
 test('Apps is an ordinary feature flag — nothing calls it experimental', () => {
   // Apps shipped labelled Experimental on every surface. It is now a STABLE
-  // flag: still opt-in per project, but no badge on the sidebar entry and none
-  // on the page header. The stability badge in Settings → Feature flags is
+  // flag: still opt-in per project, but no badge on its rail row and none on
+  // the page header. The stability badge in Settings → Feature flags is
   // rendered from the registry's `stability`, so that list follows on its own.
-  const nav = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
-    'utf8',
-  );
+  const rail = readFileSync(resolve(root, 'features/workspace/settings/rail.ts'), 'utf8');
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  expect(nav).not.toContain('Experimental');
+  expect(rail.slice(rail.indexOf('const APPS_ITEM'), rail.indexOf('const CHANNELS_ITEM'))).not.toContain(
+    'Experimental',
+  );
   expect(view).not.toContain('Experimental');
 });
 
-test('Apps sits with Customize in the sidebar, not in the bottom alert group', () => {
-  const sidebar = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
-    'utf8',
-  );
+test('Apps sits with Customize — inside it, on the Reach row', () => {
+  const rail = readFileSync(resolve(root, 'features/workspace/settings/rail.ts'), 'utf8');
 
-  // It is a project surface you configure and operate, so it belongs on the
-  // Customize row — not below Files among the bottom-anchored alerts, which
-  // shift as late-arriving billing and sandbox state lands.
-  const customizeAt = sidebar.indexOf('<ProjectCustomizeNavItem />');
-  const appsAt = sidebar.indexOf('<ProjectAppsNavItem />');
-  const filesAt = sidebar.indexOf('<ProjectFilesNavItem />');
-  expect(customizeAt).toBeGreaterThan(-1);
-  expect(appsAt).toBeGreaterThan(customizeAt);
-  expect(appsAt).toBeLessThan(filesAt);
+  // It used to be its own sidebar row placed directly under Customize, for the
+  // reason that survives the move: it is a project surface you configure and
+  // operate. Customize is a rail now, so "with Customize" means a row IN it —
+  // under Reach, beside Connectors and Channels, because an App is one more
+  // way the outside world reaches this project.
+  const reach = rail.slice(rail.indexOf("label: 'Reach'"), rail.indexOf("label: 'Automate'"));
+  expect(reach).toContain('APPS_ITEM');
+  expect(reach).toContain('CONNECTORS_ITEM');
+  expect(reach).toContain('CHANNELS_ITEM');
 });
 
 test('the Apps page cannot enable Apps — activation lives only in Feature flags', () => {

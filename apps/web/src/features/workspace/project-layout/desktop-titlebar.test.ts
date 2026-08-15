@@ -290,10 +290,6 @@ describe('page-level sidebar openers all use the shared gate', () => {
       repoRoot,
       'apps/web/src/features/workspace/project-sessions/project-sessions-view.tsx',
     ),
-    'capability-tabs.tsx': join(
-      repoRoot,
-      'apps/web/src/features/workspace/capabilities/shared/capability-tabs.tsx',
-    ),
     'session-site-header.tsx': join(
       repoRoot,
       'apps/web/src/features/session/header/session-site-header.tsx',

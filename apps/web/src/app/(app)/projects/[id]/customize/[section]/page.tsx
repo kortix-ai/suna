@@ -1,39 +1,20 @@
 'use client';
 
 /**
- * /projects/[id]/customize/[section] — legacy deep-link entry into what is
- * now the Settings overlay (e.g. `/customize/git`, `/customize/agents`). The
- * Customize overlay itself no longer exists — it was merged into Settings
- * (see `features/workspace/settings/settings-panel.tsx`) — and this route is
- * kept ONLY so bookmarks / Cmd+K deep links keep working: it resolves the
- * path segment (preferring it) or the legacy `?section=` query through
- * `legacySectionRedirect`, which folds every renamed tab (`git` ->
- * `repositories`, `commands` -> `instructions`, every `llm-*` -> `models`,
- * ...) and every graduated section (`agents`, `connectors`, `skills`, ...)
- * onto its current home, and replaces straight there. An unresolvable
- * segment falls back to the bare `/settings` route.
+ * /projects/[id]/customize/[section] — the canonical deep link into a
+ * Customize pane (e.g. `/customize/secrets`, `/customize/agents`). Also the
+ * landing spot for every legacy Customize-overlay id, which
+ * `legacySectionRedirect` folds onto its current pane.
+ *
+ * A segment that names a Settings pane opens Settings instead — the tab owns
+ * its surface, not the URL. See `panel-deep-link.tsx`.
  */
 
-import { useEffect } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
-import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
+import { PanelDeepLink } from '@/features/workspace/settings/panel-deep-link';
 
-export default function ProjectCustomizeSectionRedirect() {
-  const params = useParams<{ id: string; section: string }>();
-  const projectId = params?.id ?? '';
-  const rawSection = params?.section;
-  const searchParams = useSearchParams();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!projectId) return;
-    const redirect =
-      legacySectionRedirect(projectId, rawSection) ??
-      legacySectionRedirect(projectId, searchParams.get('section')) ??
-      `/projects/${projectId}/settings`;
-    router.replace(redirect);
-  }, [projectId, rawSection, searchParams, router]);
-
-  return null;
+export default function ProjectCustomizeSectionPage() {
+  const params = useParams<{ section: string }>();
+  return <PanelDeepLink segment={params?.section} fallbackSurface="customize" />;
 }

@@ -12,6 +12,7 @@ const ALL_FLAGS_OFF: RailFlags = {
   llmGatewayAvailable: false,
   voiceEnabled: false,
   reviewEnabled: false,
+  appsEnabled: false,
 };
 
 /**
@@ -39,8 +40,11 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('every declared requiresFlag value is a real feature flag key', () => {
+    // No lower bound on the count: every flagged PALETTE entry has been
+    // superseded by a derived rail row, whose gate is a `RailFlags` field.
+    // What must never happen is a `requiresFlag` naming a key the SDK does not
+    // have — that reads as permanently off and silently hides the row.
     const declared = menuRegistry.flatMap((item) => (item.requiresFlag ? [item.requiresFlag] : []));
-    expect(declared.length).toBeGreaterThan(0);
     for (const key of declared) {
       expect(FEATURE_FLAG_KEYS).toContain(key);
     }
@@ -90,14 +94,12 @@ describe('menu registry feature-flag gating', () => {
     expect(menuRegistry.filter((item) => item.requiresFlag === 'llm_gateway')).toEqual([]);
   });
 
-  test('the palette honours requiresFlag for the entries that still declare one', () => {
-    // `proj-apps` is the only remaining flagged palette entry. The filter
-    // line is the whole gate, so it is pinned literally — a rename or a
-    // fail-OPEN rewrite of it would otherwise pass every other test here.
-    const flagged = menuRegistry.filter(
-      (item) => item.requiresFlag && item.showIn.includes('commandPalette'),
-    );
-    expect(flagged.map((item) => item.id)).toContain('proj-apps');
+  test('the palette honours requiresFlag wherever an entry declares one', () => {
+    // The filter line is the whole gate, so it is pinned literally — a rename
+    // or a fail-OPEN rewrite of it would otherwise pass every other test here.
+    // `proj-apps` used to be the one flagged palette entry; Apps is a
+    // Customize pane now and its gate is `appsEnabled` in `railGroups`, so the
+    // registry may legitimately carry no flagged palette entry at all.
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;',
     );

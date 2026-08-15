@@ -38,6 +38,7 @@ import {
   ConnectorConnectedMark,
   ConnectorStatusBadge,
 } from './connector-identity';
+import { GlobalRulesControl } from './global-rules-control';
 import { providerLabel } from './provider-label';
 
 import { ComputersAddFlow } from '@/features/workspace/capabilities/connectors/add/computers-add-flow';
@@ -404,17 +405,24 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         </InputGroupSearch>
       }
       action={
-        canWrite ? (
-          <Button
-            size="icon-md"
-            variant="secondary"
-            aria-label="Add a custom connector"
-            onClick={() => setPanel('custom')}
-            className="relative transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
-          >
-            <PlusIcon className="size-4" />
-          </Button>
-        ) : undefined
+        // Global rules moved here from the capabilities tab bar when Customize
+        // became a rail — see `global-rules-control.tsx`. It is ungated on
+        // purpose, exactly as the bar had it: the panel inside enforces its own
+        // writes and a read-only member may still need to see the rules.
+        <>
+          <GlobalRulesControl projectId={projectId} />
+          {canWrite ? (
+            <Button
+              size="icon-md"
+              variant="secondary"
+              aria-label="Add a custom connector"
+              onClick={() => setPanel('custom')}
+              className="relative transition-transform duration-150 ease-out before:absolute before:-inset-1.5 before:content-[''] active:scale-[0.96]"
+            >
+              <PlusIcon className="size-4" />
+            </Button>
+          ) : null}
+        </>
       }
       filters={
         <>

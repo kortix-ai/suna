@@ -37,13 +37,22 @@ const flags = {
   llmGatewayAvailable: false,
   voiceEnabled: false,
   reviewEnabled: false,
+  appsEnabled: false,
 };
 
-const allGroups = railGroups(flags);
+/**
+ * BOTH surfaces' groups in one list. The shell is presentational — it renders
+ * whatever `groups` it is handed — and combining them here keeps every pane
+ * mountable in one render, which is what the pane-wiring tests below need.
+ * The surface-specific behaviour (which rail a real panel passes) is pinned in
+ * `rail.test.ts`; what this file pins is the shell.
+ */
+const allGroups = [...railGroups('customize', flags), ...railGroups('settings', flags)];
 const allItems: readonly RailItem[] = [...allGroups.flatMap((g) => g.items), UPGRADE_ITEM];
 
 function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPanelShellProps {
   return {
+    surface: 'settings',
     tab: DEFAULT_SETTINGS_TAB,
     onTabChange: () => {},
     isMobile: false,
@@ -139,7 +148,7 @@ describe('SettingsPanelShell — desktop rail', () => {
       }
       // The empty-state line belongs to a query that matched nothing, so it
       // must not be in the markup on a blank query.
-      expect(html).not.toContain('No settings match');
+      expect(html).not.toContain('matches “');
     });
   });
 });
@@ -250,12 +259,22 @@ const REAL_VIEW_TABS: readonly SettingsTab[] = [
  *  real-view tabs in the rail at once, which is what this describe
  *  block's "every real-view tab exists as a sibling" claim requires to be
  *  literally true. */
-const allFlagsOnGroups = railGroups({
-  marketplaceEnabled: true,
-  llmGatewayAvailable: true,
-  voiceEnabled: true,
-  reviewEnabled: true,
-});
+const allFlagsOnGroups = [
+  ...railGroups('customize', {
+    marketplaceEnabled: true,
+    llmGatewayAvailable: true,
+    voiceEnabled: true,
+    reviewEnabled: true,
+    appsEnabled: true,
+  }),
+  ...railGroups('settings', {
+    marketplaceEnabled: true,
+    llmGatewayAvailable: true,
+    voiceEnabled: true,
+    reviewEnabled: true,
+    appsEnabled: true,
+  }),
+];
 const allFlagsOnItems: readonly RailItem[] = [
   ...allFlagsOnGroups.flatMap((g) => g.items),
   UPGRADE_ITEM,
@@ -443,16 +462,16 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
 describe('SettingsPanelShell — badges', () => {
   test('the Review trigger carries the needs-you count when nonzero', () => {
-    const withReview = railGroups({ ...flags, reviewEnabled: true });
+    const withReview = railGroups('customize', { ...flags, reviewEnabled: true });
     const items = [...withReview.flatMap((g) => g.items), UPGRADE_ITEM];
-    const html = render({ groups: withReview, allItems: items, reviewNeedsYou: 3 });
+    const html = render({ surface: 'customize', groups: withReview, allItems: items, reviewNeedsYou: 3 });
     expect(html).toContain('>3<');
   });
 
   test('the Review trigger carries no badge when the count is zero', () => {
-    const withReview = railGroups({ ...flags, reviewEnabled: true });
+    const withReview = railGroups('customize', { ...flags, reviewEnabled: true });
     const items = [...withReview.flatMap((g) => g.items), UPGRADE_ITEM];
-    const html = render({ groups: withReview, allItems: items, reviewNeedsYou: 0 });
+    const html = render({ surface: 'customize', groups: withReview, allItems: items, reviewNeedsYou: 0 });
     expect(html).not.toContain('tabular-nums');
   });
 

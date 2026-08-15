@@ -1,73 +1,33 @@
 'use client';
 
 import { GearSixIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import {
-  activeCapabilityTab,
-  capabilityTabHref,
-  type CapabilityTab,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useDevice } from '@/hooks/use-device';
 import { useIsMobile } from '@/hooks/utils';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
- * The two project-configuration entries in the sidebar. They are different
- * surfaces, and which one is which does not follow from the labels:
+ * The two project-configuration entries in the sidebar. They open the two
+ * halves of the same shell (`settings/settings-panel.tsx`), split by
+ * `TAB_SURFACE` in `settings/settings-tabs.ts`:
  *
- *  - ProjectCustomizeNavItem — top of the panel, under New session. Navigates
- *    to the capability pages (Connectors / Agents / Skills). Gated, because
- *    those pages can 403.
- *  - ProjectSettingsNavItem — bottom of the footer group, on the line the old
- *    Customize row held. Opens the Customize overlay and carries the Mod+,
- *    keycap. Ungated.
+ *  - ProjectCustomizeNavItem — top of the panel, under New session. Opens
+ *    Customize: what the agent is and what it can do (Agents, Skills, Models,
+ *    Connectors, Apps, Channels, Schedules, Webhooks, Secrets, Sandbox
+ *    templates, Snapshots, Marketplace).
+ *  - ProjectSettingsNavItem — bottom of the footer group. Opens Settings:
+ *    administration (profile, members, billing, roles, audit, API keys), and
+ *    carries the Mod+, keycap.
+ *
+ * Neither is gated. Each panel holds a dozen panes behind a dozen different
+ * leaves and filters its own rail per-row, so gating the ENTRY on any one leaf
+ * would hide a whole surface from a caller who can still use most of it. This
+ * is why the Customize row no longer probes the three capability leaves it
+ * used to: it stopped being a link to one page that could 403.
  */
-
-/**
- * The tab the Customize row lands on, in preference order. **This mirrors
- * `CAPABILITY_TABS` and a test asserts it does** — the row should land on the
- * first tab of the bar it navigates into, so reordering the bar cannot leave
- * this pointing at the second one.
- *
- * The fallbacks exist because each tab carries its own IAM leaf: a caller
- * denied `project.connector.read` but allowed `project.skill.read` still gets
- * a working row, rather than a link to a page that 403s.
- *
- * Commands is intentionally absent: its standalone capability page was removed,
- * so there is no `/projects/<id>/commands` route to land on. Commands stays
- * reachable through the Customize overlay (`/customize/commands` via the
- * `proj-commands` palette entry and the Settings row).
- */
-const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: string }[] = [
-  { key: 'connectors', action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ },
-  { key: 'agent', action: PROJECT_ACTIONS.PROJECT_AGENT_READ },
-  { key: 'skills', action: PROJECT_ACTIONS.PROJECT_SKILL_READ },
-];
-
-/**
- * First tab the caller may open, or null when every one of them is an explicit
- * deny. Optimistic while a probe loads — same rule as ProjectFilesNavItem: the
- * entry only disappears on a denial we actually received.
- *
- * The probes are unconditional and fixed-order on purpose. Hooks cannot
- * be called from a loop that short-circuits.
- */
-function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
-  const canConnectors = useProjectCan(projectId, TAB_PREFERENCE[0].action);
-  const canAgents = useProjectCan(projectId, TAB_PREFERENCE[1].action);
-  const canSkills = useProjectCan(projectId, TAB_PREFERENCE[2].action);
-
-  const probes = [canConnectors, canAgents, canSkills];
-  const hit = probes.findIndex((p) => p.allowed || p.isLoading);
-  return hit === -1 ? null : TAB_PREFERENCE[hit].key;
-}
 
 /**
  * Mod+, — printed on the Settings row, so it does what that row does: open the
@@ -98,47 +58,39 @@ export function useSettingsKeyboardShortcut() {
 }
 
 /**
- * Customize — the top-of-panel entry, mounted directly under New session. It
- * navigates to the project's capability pages (Connectors / Agents / Skills),
- * landing on the bar's first tab.
+ * Customize — the top-of-panel entry, mounted directly under New session.
+ * Opens the Customize panel.
  *
- * Gated on the three capability leaves via useCapabilityTab(): those pages 403
- * per-leaf, so a caller who may read none gets no row rather than a dead one.
- *
- * A real `<Link prefetch>`, not `router.push` — same reason as
- * ProjectFilesNavItem: the button form cannot be prefetched, so every click
- * pays for the RSC payload and the route chunk cold.
+ * A button, not a `<Link prefetch>`. The panel is not a route: it floats over
+ * whatever project page is active so you keep your place (see
+ * settings-panel-store), which is also why active state reads the store rather
+ * than the pathname. It used to be a link into `/projects/<id>/connectors`,
+ * back when Customize meant three routed capability pages.
  *
  * Sliders, not a second gear: two identical gear rows in one panel read as a
  * duplicate, not as two ways in. No keycap either — Mod+, is printed on the
  * Settings row, and one shortcut advertised on two rows is a lie on one of them.
  */
 export function ProjectCustomizeNavItem() {
-  const pathname = usePathname();
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const tab = useCapabilityTab(projectId);
-  const isActive = !!pathname && activeCapabilityTab(pathname) !== null;
+  const openCustomize = useSettingsPanelStore((s) => s.openCustomize);
+  const isActive = useSettingsPanelStore((s) => s.open && s.surface === 'customize');
 
   const handleClick = useCallback(() => {
+    openCustomize();
     if (isMobile) setOpenMobile(false);
-  }, [isMobile, setOpenMobile]);
-
-  if (!tab) return null;
-  // No project id means no valid href, so there is nothing to render.
-  if (!projectId) return null;
+  }, [openCustomize, isMobile, setOpenMobile]);
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        asChild
+        onClick={handleClick}
         isActive={isActive}
         tooltip="Customize"
         className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
       >
-        <Link href={capabilityTabHref(projectId, tab)} prefetch onClick={handleClick}>
+        <>
           <span className="shrink-0">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -158,7 +110,7 @@ export function ProjectCustomizeNavItem() {
             </svg>
           </span>
           Customize
-        </Link>
+        </>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -183,7 +135,9 @@ export function ProjectSettingsNavItem() {
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const openSettings = useSettingsPanelStore((s) => s.openSettings);
-  const isActive = useSettingsPanelStore((s) => s.open);
+  // Both rows open the same overlay, so `open` alone would light BOTH of them
+  // whenever either was showing. The surface is what tells them apart.
+  const isActive = useSettingsPanelStore((s) => s.open && s.surface === 'settings');
   // useDevice() returns an OS string, never a boolean. `isMac ? … : …` on its
   // raw return is always truthy — that is how the old Customize row showed ⌘
   // to Windows users.

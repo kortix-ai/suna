@@ -729,6 +729,7 @@ export function CommandPalette() {
       llmGatewayAvailable: projectFlags.llm_gateway,
       voiceEnabled: projectFlags.voice,
       reviewEnabled: projectFlags.review_center,
+      appsEnabled: projectFlags.apps,
     }),
     [projectFlags],
   );

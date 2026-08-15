@@ -31,6 +31,10 @@ export type CustomizeSection =
   | 'git'
   | 'review'
   | 'commands'
+  | 'agents'
+  | 'skills'
+  | 'connectors'
+  | 'apps'
   | 'marketplace'
   | 'secrets'
   | 'llm-management'
@@ -114,9 +118,32 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   CustomizeSection,
   { read: ProjectAction; write?: ProjectAction }
 > = {
-  // No `agents` entry: Agents graduated to /projects/<id>/agent, which gates
-  // itself on PROJECT_AGENT_READ/WRITE directly (project-settings-nav's
-  // TAB_PREFERENCE and the page's own useProjectCan).
+  // Agents, Skills and Connectors are Customize panes again (they were
+  // standalone /projects/<id>/{agent,skills,connectors} pages behind a
+  // three-tab bar). Each keeps the exact leaf pair its own page already
+  // enforced, so moving the surface changed no permission: a caller who could
+  // read the page can read the pane, and one who could not gets no rail row
+  // instead of a page that 403s.
+  agents: {
+    read: PROJECT_ACTIONS.PROJECT_AGENT_READ,
+    write: PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+  },
+  skills: {
+    read: PROJECT_ACTIONS.PROJECT_SKILL_READ,
+    write: PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
+  },
+  connectors: {
+    read: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    write: PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+  },
+  // Apps got its own IAM leaves in #6453 (project.app.read/write/deploy), so
+  // the pane gates on the leaves the backend actually asserts rather than on
+  // project.read. `deploy` is separate again and stays enforced inside the
+  // pane, the same split `git` uses for gitops.push.
+  apps: {
+    read: PROJECT_ACTIONS.PROJECT_APP_READ,
+    write: PROJECT_ACTIONS.PROJECT_APP_WRITE,
+  },
   //
   // `commands` no longer backs any settings tab. The Instructions tab that
   // mapped to it (via `settings-panel.tsx`'s `GATED_TAB_SECTION`) was removed

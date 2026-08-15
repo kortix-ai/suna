@@ -15,7 +15,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
@@ -200,11 +199,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   </KbdGroup>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {/* Apps used to sit here, directly under Customize, for the
+                  reason that survives: it is a project surface you configure
+                  and operate. Customize is a rail now, so Apps is a row IN it
+                  (Reach, beside Connectors and Channels) rather than a second
+                  sidebar entry pointing at the same kind of thing. */}
               <ProjectCustomizeNavItem />
-              {/* Apps belongs with Customize, not down in the bottom group: it
-                  is a project surface you configure and operate, not a
-                  late-arriving alert. Self-hides until the `apps` flag is on. */}
-              <ProjectAppsNavItem />
             </SidebarMenu>
           </SidebarGroup>
 

@@ -16,20 +16,63 @@ const flags = (overrides: Partial<RailFlags> = {}): RailFlags => ({
   llmGatewayAvailable: false,
   voiceEnabled: false,
   reviewEnabled: false,
+  appsEnabled: false,
   ...overrides,
 });
 
-const tabsOf = (f: RailFlags): string[] => railGroups(f).flatMap((g) => g.items.map((i) => i.tab));
+const ALL_ON: RailFlags = {
+  marketplaceEnabled: true,
+  llmGatewayAvailable: true,
+  voiceEnabled: true,
+  reviewEnabled: true,
+  appsEnabled: true,
+};
+
+/** Every tab on BOTH surfaces — the rail is split in two now. */
+const tabsOf = (f: RailFlags): string[] =>
+  [...railGroups('customize', f), ...railGroups('settings', f)].flatMap((g) =>
+    g.items.map((i) => i.tab),
+  );
+
+const customizeTabs = (f: RailFlags): string[] =>
+  railGroups('customize', f).flatMap((g) => g.items.map((i) => i.tab));
+const settingsTabs = (f: RailFlags): string[] =>
+  railGroups('settings', f).flatMap((g) => g.items.map((i) => i.tab));
 
 describe('railGroups', () => {
-  test('renders the five groups in order', () => {
-    expect(railGroups(flags()).map((g) => g.label)).toEqual([
+  test('Customize renders its groups in order', () => {
+    expect(railGroups('customize', ALL_ON).map((g) => g.label)).toEqual([
+      'Agent',
+      'Reach',
+      'Automate',
+      'Runtime',
+      'Get more',
+    ]);
+  });
+
+  test('Settings renders its groups in order', () => {
+    expect(railGroups('settings', flags()).map((g) => g.label)).toEqual([
       'You',
       'Workspace',
-      'Agent',
       'Organization',
       'Developer',
     ]);
+  });
+
+  test('the two surfaces share no tab', () => {
+    const c = new Set(customizeTabs(ALL_ON));
+    expect(settingsTabs(ALL_ON).filter((t) => c.has(t))).toEqual([]);
+  });
+
+  test('what the agent is and can do is in Customize, administration is in Settings', () => {
+    const c = customizeTabs(ALL_ON);
+    for (const tab of ['agents', 'skills', 'models', 'connectors', 'apps', 'channels', 'schedules', 'webhooks', 'secrets', 'sandbox', 'snapshots', 'marketplace']) {
+      expect(c).toContain(tab);
+    }
+    const s = settingsTabs(ALL_ON);
+    for (const tab of ['profile', 'preferences', 'general', 'members', 'repositories', 'billing', 'roles', 'audit', 'api-keys', 'experimental']) {
+      expect(s).toContain(tab);
+    }
   });
 
   test('with every flag off it holds the static tabs only', () => {
@@ -40,42 +83,48 @@ describe('railGroups', () => {
     expect(tabs).not.toContain('voice');
     expect(tabs).not.toContain('review');
     expect(tabs).not.toContain('marketplace');
+    expect(tabs).not.toContain('apps');
   });
 
   test('each flag adds exactly its own tab', () => {
     expect(tabsOf(flags({ voiceEnabled: true }))).toContain('voice');
     expect(tabsOf(flags({ reviewEnabled: true }))).toContain('review');
     expect(tabsOf(flags({ marketplaceEnabled: true }))).toContain('marketplace');
+    expect(tabsOf(flags({ appsEnabled: true }))).toContain('apps');
   });
 
-  test('two flags in one group both land — the rail.ts:110 regression', () => {
-    const tabs = tabsOf(
-      flags({ marketplaceEnabled: true, reviewEnabled: true, voiceEnabled: true }),
+  test('two flags in one group both land — the old early-return regression', () => {
+    // Reach carries two gated rows (Apps, Voice). The rail used to return a
+    // group on the first flag that matched, silently dropping the second.
+    const reach = railGroups('customize', ALL_ON).find((g) => g.label === 'Reach');
+    expect(reach?.items.map((i) => i.tab)).toEqual(['connectors', 'apps', 'channels', 'voice']);
+  });
+
+  test('a gated row keeps its place in the group, it does not fall to the end', () => {
+    const reach = railGroups('customize', flags({ appsEnabled: true })).find(
+      (g) => g.label === 'Reach',
     );
-    expect(tabs).toContain('marketplace');
-    expect(tabs).toContain('review');
-    expect(tabs).toContain('voice');
+    expect(reach?.items.map((i) => i.tab)).toEqual(['connectors', 'apps', 'channels']);
   });
 
-  test('every flag on yields 25 content tabs', () => {
-    // 27 before the `main` merge — Computers graduated to the standalone
-    // Connectors page (#6313), taking the `agent_tunnel`-gated rail row and
-    // the whole `computers` tab with it. 26 until Instructions was removed:
-    // that tab only ever rendered `CommandsView`, and the project-level
-    // instructions surface it was named for never existed.
-    const all = flags({
-      marketplaceEnabled: true,
-      llmGatewayAvailable: true,
-      voiceEnabled: true,
-      reviewEnabled: true,
-    });
-    expect(tabsOf(all)).toHaveLength(25);
+  test('an empty group is never returned — Get more exists only with Marketplace', () => {
+    expect(railGroups('customize', flags()).map((g) => g.label)).not.toContain('Get more');
+    expect(railGroups('customize', flags({ marketplaceEnabled: true })).map((g) => g.label)).toContain(
+      'Get more',
+    );
+    for (const group of [...railGroups('customize', flags()), ...railGroups('settings', flags())]) {
+      expect(group.items.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('every flag on yields 29 content tabs across both surfaces', () => {
+    // 25 before Customize took the four capability panes (Agents, Skills,
+    // Connectors, Apps) back off their standalone routes.
+    expect(tabsOf(ALL_ON)).toHaveLength(29);
   });
 
   test('no tab appears in two groups', () => {
-    const tabs = tabsOf(
-      flags({ marketplaceEnabled: true, voiceEnabled: true, reviewEnabled: true }),
-    );
+    const tabs = tabsOf(ALL_ON);
     expect(new Set(tabs).size).toBe(tabs.length);
   });
 
@@ -87,7 +136,7 @@ describe('railGroups', () => {
   // covered this same rail before the settings-panel cutover deleted the
   // legacy Customize overlay and its own rail module.
   test('uses Secrets as the user-facing tab name', () => {
-    const secrets = railGroups(flags())
+    const secrets = railGroups('customize', flags())
       .flatMap((group) => group.items)
       .find((railItem) => railItem.tab === 'secrets');
     expect(secrets?.label).toBe('Secrets');
@@ -97,7 +146,7 @@ describe('railGroups', () => {
     const tabs = tabsOf(flags());
     expect(tabs).toContain('repositories');
     expect(tabs).toContain('sandbox');
-    const sandbox = railGroups(flags())
+    const sandbox = railGroups('customize', flags())
       .flatMap((g) => g.items)
       .find((i) => i.tab === 'sandbox');
     expect(sandbox?.label).toBe('Sandbox templates');
@@ -105,22 +154,15 @@ describe('railGroups', () => {
     expect(tabs).not.toContain('dev');
   });
 
-  test('the rail excludes standalone agent, connectors and skills pages', () => {
-    const tabs = tabsOf(
-      flags({
-        marketplaceEnabled: true,
-        llmGatewayAvailable: true,
-        voiceEnabled: true,
-        reviewEnabled: true,
-      }),
-    );
-    // Agent, Connectors and Skills graduated to their own routed pages — a
-    // rail tab here would open a settings pane that has no case for them.
+  test('the capability panes are in Customize, under their own spellings', () => {
+    const tabs = customizeTabs(ALL_ON);
+    // Plural `agents` is the tab id. `agent` was the old ROUTE segment and is
+    // not a tab — `legacySectionRedirect` folds it onto `agents`.
+    expect(tabs).toContain('agents');
     expect(tabs).not.toContain('agent');
-    expect(tabs).not.toContain('agents');
-    expect(tabs).not.toContain('connectors');
-    expect(tabs).not.toContain('skills');
-    // Computers joined them on `main` (#6313) — it is a connector now.
+    expect(tabs).toContain('connectors');
+    expect(tabs).toContain('skills');
+    // Computers is a connector since #6313 — never its own row.
     expect(tabs).not.toContain('computers');
   });
 
@@ -133,13 +175,8 @@ describe('railGroups', () => {
 
   test('instructions has no rail row — the tab was removed, not hidden', () => {
     // Every flag ON, so this cannot pass merely because a gate is closed.
-    const allOn = flags({
-      marketplaceEnabled: true,
-      llmGatewayAvailable: true,
-      voiceEnabled: true,
-      reviewEnabled: true,
-    });
-    expect(tabsOf(allOn)).not.toContain('instructions');
+    expect(tabsOf(ALL_ON)).not.toContain('instructions');
+    expect(tabsOf(ALL_ON)).not.toContain('commands');
   });
 
   test('models is reachable in the rail regardless of the llm gateway flag — unlike the legacy llm-management row, it is not flag-gated', () => {
@@ -148,13 +185,13 @@ describe('railGroups', () => {
   });
 
   test('organization (JAY-546) is first in the Organization group, before billing', () => {
-    const org = railGroups(flags()).find((g) => g.label === 'Organization');
+    const org = railGroups('settings', flags()).find((g) => g.label === 'Organization');
     expect(org?.items.map((i) => i.tab)[0]).toBe('organization');
     expect(org?.items.map((i) => i.tab)).toContain('billing');
   });
 
   test('organization uses "General" as its user-facing label', () => {
-    const organization = railGroups(flags())
+    const organization = railGroups('settings', flags())
       .flatMap((g) => g.items)
       .find((i) => i.tab === 'organization');
     expect(organization?.label).toBe('General');
@@ -163,7 +200,7 @@ describe('railGroups', () => {
   test('a tab reachable in the rail is the one the panel can activate', () => {
     // The panel bounces to the default tab when no rail item matches, so a
     // gated tab MUST resolve through isRailItemActive to be reachable.
-    const items = railGroups(flags({ reviewEnabled: true })).flatMap((g) => g.items);
+    const items = railGroups('customize', flags({ reviewEnabled: true })).flatMap((g) => g.items);
     expect(items.some((i) => isRailItemActive(i, 'review'))).toBe(true);
   });
 });
@@ -199,7 +236,7 @@ describe('isRailItemActive', () => {
 });
 
 describe('filterRailGroups', () => {
-  const all = () => railGroups(flags());
+  const all = () => railGroups('settings', flags());
   const shape = (gs: readonly { label: string; items: readonly RailItem[] }[]) =>
     gs.map((g) => [g.label, g.items.map((i) => i.tab)] as const);
 
@@ -257,7 +294,7 @@ describe('filterRailGroups', () => {
 
   test('it never invents a row that railGroups did not produce', () => {
     const visible = filterRailGroups(all(), 'e').flatMap((g) => g.items.map((i) => i.tab));
-    const every = tabsOf(flags());
+    const every = settingsTabs(flags());
     expect(visible.every((t) => every.includes(t))).toBe(true);
   });
 });

@@ -11,21 +11,26 @@ import {
   FingerprintIcon as Fingerprint,
   FlaskIcon as Flask,
   GitForkIcon as GitFork,
+  GlobeIcon as Globe,
   TrayIcon as Inbox,
   KeyIcon as KeyRound,
   LinkIcon as Link,
   NetworkIcon as Network,
+  PlugsConnectedIcon as Plugs,
+  RobotIcon as Robot,
   ScrollIcon as ScrollText,
   GearSixIcon as Settings,
   ShieldIcon as Shield,
   SlidersHorizontalIcon as SlidersHorizontal,
+  SparkleIcon as Sparkle,
   StackIcon as Stack,
   StorefrontIcon as Store,
   UserIcon as User,
   UsersThreeIcon as UsersRound,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
-import type { SettingsTab } from './settings-tabs';
+import type { SettingsSurface, SettingsTab } from './settings-tabs';
+import { TAB_KEYWORDS } from './tab-keywords';
 import type { RailGroup, RailItem } from './type';
 
 /**
@@ -62,17 +67,58 @@ export function isRailItemActive(item: RailItem, tab: SettingsTab | LegacyLlmSub
   return item.tab === tab;
 }
 
-const MARKETPLACE_ITEM: RailItem = {
-  tab: 'marketplace',
-  label: 'Marketplace',
-  icon: Store,
-  description: 'Agents and skills published by the Kortix community.',
+/* ------------------------------------------------------------------ *
+ * Customize — what this project's agent is, and what it can do.
+ * ------------------------------------------------------------------ */
+
+const AGENTS_ITEM: RailItem = {
+  tab: 'agents',
+  label: 'Agents',
+  icon: Robot,
+  description: "Who does the work — each one's instructions, model, and access.",
+};
+const SKILLS_ITEM: RailItem = {
+  tab: 'skills',
+  label: 'Skills',
+  icon: Sparkle,
+  description: 'Reusable instructions your agents load on demand.',
+};
+// No description. `models-tab.tsx` draws its own header, and every word this
+// row could carry ("project", "workspace") is the subject word of a DIFFERENT
+// row — a description here answers queries Models is the wrong answer to. Its
+// query terms live in `TAB_KEYWORDS` instead, where they can be curated.
+const MODELS_ITEM: RailItem = {
+  tab: 'models',
+  label: 'Models',
+  icon: Boxes,
 };
 const REVIEW_ITEM: RailItem = {
   tab: 'review',
   label: 'Review',
   icon: Inbox,
   description: 'Work waiting on a person before it can continue.',
+};
+
+const CONNECTORS_ITEM: RailItem = {
+  tab: 'connectors',
+  label: 'Connectors',
+  icon: Plugs,
+  description: 'Give agents access to outside tools and data.',
+};
+const APPS_ITEM: RailItem = {
+  tab: 'apps',
+  label: 'Apps',
+  icon: Globe,
+  // Not "this project publishes": "project" is the subject word of the
+  // Projects nav row, and a description carrying it makes a one-word query for
+  // Projects return this pane too.
+  description: 'Web interfaces you publish from here, and who can open each one.',
+};
+const CHANNELS_ITEM: RailItem = {
+  tab: 'channels',
+  label: 'Channels',
+  icon: ChatTeardropIcon,
+  description: 'Reach your agent from the tools your team already uses.',
 };
 const VOICE_ITEM: RailItem = {
   tab: 'voice',
@@ -87,11 +133,66 @@ const VOICE_ITEM: RailItem = {
     'Send the agent into a call. It listens, answers out loud, and keeps working while you talk.',
 };
 
+// Both panes are one component, `components/projects/schedule-view.tsx`,
+// switched by its `type` prop. Its own `KIND_COPY` used to carry these two
+// sentences as `title`/`description` — the one screen-copy table in the app
+// that also owned a pane heading. They live here now, like every other pane's,
+// and `KIND_COPY` keeps the wording that is genuinely per-kind and appears
+// INSIDE the pane (noun, empty state, column).
+const SCHEDULES_ITEM: RailItem = {
+  tab: 'schedules',
+  label: 'Schedules',
+  icon: AlarmClock,
+  description: 'Have an agent do something on a repeating schedule, or once at a set time.',
+};
+const WEBHOOKS_ITEM: RailItem = {
+  tab: 'webhooks',
+  label: 'Webhooks',
+  icon: Webhook,
+  description: 'Give another app a private address that starts an agent when it sends a request.',
+};
+
+const SECRETS_ITEM: RailItem = {
+  tab: 'secrets',
+  label: 'Secrets',
+  icon: KeyRound,
+  description: 'Store encrypted values and control where each value can be used.',
+};
+const SANDBOX_ITEM: RailItem = {
+  tab: 'sandbox',
+  label: 'Sandbox templates',
+  icon: Container,
+  description: 'The recipe for the machine a session runs on.',
+  docsHref: '/docs/work/runtime',
+};
+const SNAPSHOTS_ITEM: RailItem = {
+  tab: 'snapshots',
+  label: 'Snapshots',
+  icon: Stack,
+  // The pane opened on a log of `kortix-tpl-…` strings with nothing above it
+  // saying what any of them were. Say what a snapshot is, in the one line that
+  // is always on screen, before the log starts.
+  description:
+    'Every session starts on a machine Kortix prepared in advance. This is the record of each time it prepared one.',
+  docsHref: '/docs/work/runtime',
+};
+
+const MARKETPLACE_ITEM: RailItem = {
+  tab: 'marketplace',
+  label: 'Marketplace',
+  icon: Store,
+  description: 'Agents and skills published by the Kortix community.',
+};
+
+/* ------------------------------------------------------------------ *
+ * Settings — administration of the person, the project, the org.
+ * ------------------------------------------------------------------ */
+
 /**
  * The Upgrades tab is always reachable (it hosts the one-off registry
- * upgrade runner) and lives pinned at the very bottom of the rail — out of
- * the scrolling groups (see the desktop footer / mobile tail in whatever
- * consumes `railGroups`). Mirrors the legacy Customize rail's `UPGRADE_ITEM`.
+ * upgrade runner) and lives pinned at the very bottom of the Settings rail —
+ * out of the scrolling groups (see the desktop footer / mobile tail in
+ * whatever consumes `railGroups`).
  */
 export const UPGRADE_ITEM: RailItem = {
   tab: 'upgrades',
@@ -107,7 +208,7 @@ export const UPGRADE_ITEM: RailItem = {
   icon: ArrowUpCircle,
 };
 
-const STATIC_GROUPS: readonly RailGroup[] = [
+const SETTINGS_GROUPS: readonly RailGroup[] = [
   {
     label: 'You',
     items: [
@@ -143,69 +244,10 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         description: 'Who can reach this workspace, and what each person can do.',
       },
       {
-        tab: 'secrets',
-        label: 'Secrets',
-        icon: KeyRound,
-        description: 'Store encrypted values and control where each value can be used.',
-      },
-      {
-        tab: 'channels',
-        label: 'Channels',
-        icon: ChatTeardropIcon,
-        description: 'Reach your agent from the tools your team already uses.',
-      },
-      {
         tab: 'repositories',
         label: 'Repositories',
         icon: GitFork,
         description: "Where this workspace's code lives, and how to work on it from your computer.",
-      },
-      // Both panes are one component, `components/projects/schedule-view.tsx`,
-      // switched by its `type` prop. Its own `KIND_COPY` used to carry these
-      // two sentences as `title`/`description` — the one screen-copy table in
-      // the app that also owned a pane heading. They live here now, like every
-      // other pane's, and `KIND_COPY` keeps the wording that is genuinely
-      // per-kind and appears INSIDE the pane (noun, empty state, column).
-      {
-        tab: 'schedules',
-        label: 'Schedules',
-        icon: AlarmClock,
-        description: 'Have an agent do something on a repeating schedule, or once at a set time.',
-      },
-      {
-        tab: 'webhooks',
-        label: 'Webhooks',
-        icon: Webhook,
-        description:
-          'Give another app a private address that starts an agent when it sends a request.',
-      },
-    ],
-  },
-  {
-    label: 'Agent',
-    items: [
-      {
-        tab: 'models',
-        label: 'Models',
-        icon: Boxes,
-      },
-      {
-        tab: 'sandbox',
-        label: 'Sandbox templates',
-        icon: Container,
-        description: 'The recipe for the machine a session runs on.',
-        docsHref: '/docs/work/runtime',
-      },
-      {
-        tab: 'snapshots',
-        label: 'Snapshots',
-        icon: Stack,
-        // The pane opened on a log of `kortix-tpl-…` strings with nothing
-        // above it saying what any of them were. Say what a snapshot is, in
-        // the one line that is always on screen, before the log starts.
-        description:
-          'Every session starts on a machine Kortix prepared in advance. This is the record of each time it prepared one.',
-        docsHref: '/docs/work/runtime',
       },
     ],
   },
@@ -281,49 +323,98 @@ export interface RailFlags {
   llmGatewayAvailable: boolean;
   voiceEnabled: boolean;
   reviewEnabled: boolean;
+  appsEnabled: boolean;
 }
 
 /**
- * The rail, composed from the five static groups plus every flag-gated item.
+ * The rail for one surface, with every flag-gated row spliced in at its own
+ * position.
  *
- * `models` (Agent group) is always present — `llmGatewayAvailable` only
- * controls whether the `llm-*` sub-sections render inside the Models tab, it
- * does NOT gate the row. Getting this backwards makes Models disappear for
- * most projects, since most projects don't have the LLM gateway on.
+ * Written as one literal per group with inline spreads, rather than a pass
+ * that pushes optional rows onto a group it matched. That older shape had a
+ * bug class this one cannot have: it returned a group on the FIRST flag that
+ * matched, so a second gated row in the same group was silently dropped —
+ * Marketplace defaults on for effectively every project, which made Review and
+ * Voice unreachable. Here every gated row is written where it renders, and a
+ * gated row is a spread, not a push, so it keeps its place in the group
+ * instead of landing at the end.
  *
- * Each group accumulates ALL of its optional items in one pass — a group is
- * never returned early on the first flag that matches, or a second
- * flag-gated item in the same group would be silently dropped. This is the
- * exact bug the legacy Customize rail once documented: Marketplace defaults ON for
- * effectively every project, so an early return on the Agent group's first
- * matching flag made Review (and Voice) unreachable.
+ * `llmGatewayAvailable` deliberately gates NOTHING here: the Models row is
+ * always present, and that flag only controls whether the `llm-*`
+ * sub-sections render INSIDE the Models pane. Getting this backwards makes
+ * Models disappear for most projects, since most projects don't have the LLM
+ * gateway on.
+ *
+ * Never returns an empty group — "Get more" exists only when Marketplace does.
  */
-export function railGroups(flags: RailFlags): readonly RailGroup[] {
-  return STATIC_GROUPS.map((g) => {
-    if (g.label === 'Agent') {
-      const items = [...g.items];
-      if (flags.marketplaceEnabled) items.push(MARKETPLACE_ITEM);
-      if (flags.reviewEnabled) items.push(REVIEW_ITEM);
-      if (flags.voiceEnabled) items.push(VOICE_ITEM);
-      return { ...g, items };
-    }
-    return g;
-  });
+export function railGroups(surface: SettingsSurface, flags: RailFlags): readonly RailGroup[] {
+  if (surface === 'settings') return SETTINGS_GROUPS;
+
+  return [
+    {
+      label: 'Agent',
+      items: [
+        AGENTS_ITEM,
+        SKILLS_ITEM,
+        MODELS_ITEM,
+        ...(flags.reviewEnabled ? [REVIEW_ITEM] : []),
+      ],
+    },
+    {
+      label: 'Reach',
+      items: [
+        CONNECTORS_ITEM,
+        ...(flags.appsEnabled ? [APPS_ITEM] : []),
+        CHANNELS_ITEM,
+        ...(flags.voiceEnabled ? [VOICE_ITEM] : []),
+      ],
+    },
+    { label: 'Automate', items: [SCHEDULES_ITEM, WEBHOOKS_ITEM] },
+    { label: 'Runtime', items: [SECRETS_ITEM, SANDBOX_ITEM, SNAPSHOTS_ITEM] },
+    ...(flags.marketplaceEnabled ? [{ label: 'Get more', items: [MARKETPLACE_ITEM] }] : []),
+  ];
 }
+
+/** Every row that exists on either surface, flags ignored. See `railItemForTab`. */
+const ALL_ITEMS: readonly RailItem[] = [
+  AGENTS_ITEM,
+  SKILLS_ITEM,
+  MODELS_ITEM,
+  REVIEW_ITEM,
+  CONNECTORS_ITEM,
+  APPS_ITEM,
+  CHANNELS_ITEM,
+  VOICE_ITEM,
+  SCHEDULES_ITEM,
+  WEBHOOKS_ITEM,
+  SECRETS_ITEM,
+  SANDBOX_ITEM,
+  SNAPSHOTS_ITEM,
+  MARKETPLACE_ITEM,
+  UPGRADE_ITEM,
+  ...SETTINGS_GROUPS.flatMap((g) => g.items),
+];
 
 /**
  * Whether one rail row answers a search query.
  *
- * Matches the label first — that is the word a person is typing — and the
- * description second, so a query can find a tab by what it does rather than
- * only by what it is called: "sso" finds Identity, "cli" finds API keys.
- * Neither string is long enough for that to produce noise at this rail's size.
+ * Three sources, in the order a person would expect them to work: the label
+ * (the word they are typing), the description (what the pane does), and
+ * `TAB_KEYWORDS` (its aliases and the things it contains) — so "sso" finds
+ * Identity, "cli" finds API keys, and "slack" finds Channels.
+ *
+ * **The keywords are shared with the command palette on purpose.** The rail
+ * used to match label + description only, so the palette found Channels for
+ * "slack" and this field — sitting directly above the Channels row — returned
+ * "Nothing matches". One table, one answer. See `tab-keywords.ts`.
  */
 export function railItemMatches(item: RailItem, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return (
-    item.label.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false)
+    item.label.toLowerCase().includes(q) ||
+    (item.description?.toLowerCase().includes(q) ?? false) ||
+    TAB_KEYWORDS[item.tab].includes(q)
   );
 }
 
@@ -365,22 +456,18 @@ export function filterRailGroups(
 }
 
 /**
- * The `RailItem` for a tab, independent of any flag.
+ * The `RailItem` for a tab, independent of any flag or surface.
  *
- * `railGroups(flags)` answers "what does this user see", which is the right
- * question for the rail and the wrong one here: a pane's heading copy does
- * not change with a feature flag, and a pane can only render when its tab is
- * already reachable. So this walks every item — the five static groups plus
- * the four flag-gated ones — and does not take flags at all.
+ * `railGroups(surface, flags)` answers "what does this user see", which is the
+ * right question for the rail and the wrong one here: a pane's heading copy
+ * does not change with a feature flag, and a pane can only render when its tab
+ * is already reachable. So this walks `ALL_ITEMS` — both surfaces, gated rows
+ * included — and takes neither a surface nor flags.
  *
  * Returns `undefined` for a tab with no rail row (`SettingsTab` has members
  * that fold into another tab, e.g. the `llm-*` ids that resolve to `models`),
  * so callers must handle absence rather than assume a row exists.
  */
 export function railItemForTab(tab: SettingsTab): RailItem | undefined {
-  for (const group of STATIC_GROUPS) {
-    const found = group.items.find((item) => item.tab === tab);
-    if (found) return found;
-  }
-  return [MARKETPLACE_ITEM, REVIEW_ITEM, VOICE_ITEM, UPGRADE_ITEM].find((item) => item.tab === tab);
+  return ALL_ITEMS.find((item) => item.tab === tab);
 }

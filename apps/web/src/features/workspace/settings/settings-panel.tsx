@@ -16,6 +16,7 @@ import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Close } from '@/features/icon/icons/close';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
+import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { detectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
@@ -47,7 +48,8 @@ import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon as ArrowLeft, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   UPGRADE_ITEM,
   filterRailGroups,
@@ -55,7 +57,11 @@ import {
   railGroups,
   railItemMatches,
 } from './rail';
-import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import {
+  defaultTabForSurface,
+  type SettingsSurface,
+  type SettingsTab,
+} from './settings-tabs';
 import { ApiKeysTab } from './tabs/api-keys-tab';
 import { AuditTab } from './tabs/audit-tab';
 import { BillingTab } from './tabs/billing-tab';
@@ -82,9 +88,47 @@ import { UsageTab } from './tabs/usage-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
 
+/**
+ * The four capability panes, kept out of this module's static import graph.
+ *
+ * `project-shell.tsx` imports `SettingsPanel` statically and mounts it on every
+ * project page, so everything this file imports statically lands in the shell's
+ * chunk — parsed before a session's first paint, whether or not anyone opens a
+ * panel. These four were separate ROUTE chunks until Customize became a rail,
+ * and `connectors-page` alone reaches `@pipedream/sdk` and shiki through its
+ * own graph (see `connectors-page.chunk.test.ts`). Splitting them here keeps
+ * the shell exactly as heavy as it was before the move.
+ *
+ * `ssr: false` is safe and correct: a pane only renders inside an open overlay,
+ * which is client-only state.
+ */
+const AgentsPage = dynamic(
+  () => import('@/features/workspace/capabilities/agents/agents-page').then((m) => m.AgentsPage),
+  { ssr: false, loading: () => <CapabilitiesSkeleton /> },
+);
+const SkillsPage = dynamic(
+  () => import('@/features/workspace/capabilities/skills/skills-page').then((m) => m.SkillsPage),
+  { ssr: false, loading: () => <CapabilitiesSkeleton /> },
+);
+const ConnectorsPage = dynamic(
+  () =>
+    import('@/features/workspace/capabilities/connectors/connectors-page').then(
+      (m) => m.ConnectorsPage,
+    ),
+  { ssr: false, loading: () => <CapabilitiesSkeleton /> },
+);
+const AppsView = dynamic(
+  () => import('@/features/apps/apps-view').then((m) => m.AppsView),
+  { ssr: false, loading: () => <CapabilitiesSkeleton /> },
+);
+
 const GATED_TAB_SECTION: Partial<Record<SettingsTab, CustomizeSection>> = {
   general: 'settings',
   members: 'members',
+  agents: 'agents',
+  skills: 'skills',
+  connectors: 'connectors',
+  apps: 'apps',
   secrets: 'secrets',
   channels: 'channels',
   repositories: 'git',
@@ -176,6 +220,7 @@ export function buildSettingsPanelSettingsNav(state: {
 
 export function SettingsPanel({ projectId }: { projectId?: string }) {
   const open = useSettingsPanelStore((s) => s.open);
+  const surface = useSettingsPanelStore((s) => s.surface);
   const tab = useSettingsPanelStore((s) => s.tab);
   const setTab = useSettingsPanelStore((s) => s.setTab);
   const close = useSettingsPanelStore((s) => s.close);
@@ -252,6 +297,11 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
   const llmGatewayEnabled = isLlmGatewayEnabled(project);
   const voiceEnabled = project?.experimental?.voice ?? false;
   const reviewEnabled = project?.experimental?.review_center ?? false;
+  // Same source and same fail-closed rule the sidebar's Apps row used
+  // (`useFeatureFlag(projectId, 'apps')` reads this exact field): the row
+  // exists only once the project turns the flag on, and a project still
+  // loading counts as off.
+  const appsEnabled = project?.experimental?.apps ?? false;
   // Pin Upgrades' attention dot only once the manifest read resolved to v1 —
   // while the detail query is in flight (or on v2 projects) the dot stays off.
   const upgradeAttention = detail.data
@@ -267,17 +317,28 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
 
   const groups = useMemo(
     () =>
-      railGroups({
+      railGroups(surface, {
         marketplaceEnabled,
         llmGatewayAvailable,
         voiceEnabled,
         reviewEnabled,
+        appsEnabled,
       })
         .map((g) => ({ ...g, items: g.items.filter((item) => isTabAllowed(item.tab)) }))
         .filter((g) => g.items.length > 0),
-    [marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled, isTabAllowed],
+    [
+      surface,
+      marketplaceEnabled,
+      llmGatewayAvailable,
+      voiceEnabled,
+      reviewEnabled,
+      appsEnabled,
+      isTabAllowed,
+    ],
   );
-  const upgradeAllowed = isTabAllowed('upgrades');
+  // Upgrades is a Settings row, pinned below that rail's scrolling groups. On
+  // Customize there is nothing to pin, so the footer does not render at all.
+  const upgradeAllowed = surface === 'settings' && isTabAllowed('upgrades');
   const allItems = useMemo(
     () => [...groups.flatMap((g) => g.items), ...(upgradeAllowed ? [UPGRADE_ITEM] : [])],
     [groups, upgradeAllowed],
@@ -286,21 +347,22 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
 
   useEffect(() => {
     if (open && !tabVisible) {
-      setTab(DEFAULT_SETTINGS_TAB);
+      setTab(defaultTabForSurface(surface));
     }
-  }, [open, tabVisible, setTab]);
+  }, [open, tabVisible, setTab, surface]);
 
   const activeAllowed = isTabAllowed(tab);
   useEffect(() => {
     if (!open || activeAllowed) return;
-    const fallback = allItems[0]?.tab ?? DEFAULT_SETTINGS_TAB;
+    const fallback = allItems[0]?.tab ?? defaultTabForSurface(surface);
     if (fallback !== tab) setTab(fallback);
-  }, [open, activeAllowed, allItems, tab, setTab]);
+  }, [open, activeAllowed, allItems, tab, setTab, surface]);
 
   return (
     <SettingsNavProvider value={settingsNav}>
       <SettingsPanelView
         open={open}
+        surface={surface}
         tab={tab}
         onTabChange={setTab}
         onOpenChange={(next) => (next ? undefined : close())}
@@ -321,6 +383,9 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
 
 export interface SettingsPanelViewProps {
   open: boolean;
+  /** Which panel this is — Customize or Settings. Selects the rail groups,
+   *  the heading, and the search placeholder. Everything else is shared. */
+  surface: SettingsSurface;
   tab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
   onOpenChange: (open: boolean) => void;
@@ -340,6 +405,7 @@ export interface SettingsPanelViewProps {
 
 export function SettingsPanelView({
   open,
+  surface,
   tab,
   onTabChange,
   onOpenChange,
@@ -373,10 +439,11 @@ export function SettingsPanelView({
         )}
       >
         <ModalTitle className="sr-only">
-          {project ? `Settings — ${project.name}` : 'Settings'}
+          {project ? `${SURFACE_COPY[surface].title} — ${project.name}` : SURFACE_COPY[surface].title}
         </ModalTitle>
 
         <SettingsPanelShell
+          surface={surface}
           tab={tab}
           onTabChange={onTabChange}
           isMobile={isMobile}
@@ -395,9 +462,48 @@ export function SettingsPanelView({
   );
 }
 
+/**
+ * The two words this shell changes per surface. Everything else — the rail
+ * mechanics, the search, the mobile scroller, the panes — is identical, which
+ * is the whole reason one component serves both.
+ *
+ * `navLabel` is the rail's accessible name. It must differ between the two, or
+ * a screen reader announces two different navigations by the same name.
+ */
+const SURFACE_COPY: Record<SettingsSurface, { title: string; searchPlaceholder: string; navLabel: string }> =
+  {
+    customize: {
+      title: 'Customize',
+      searchPlaceholder: 'Search customize',
+      navLabel: 'Customize',
+    },
+    settings: {
+      title: 'Settings',
+      searchPlaceholder: 'Search settings',
+      navLabel: 'Settings',
+    },
+  };
+
+/**
+ * Panes that own their own scroll container and their own page header, so the
+ * shell must not add padding around them: the four capability panes render
+ * `CapabilityPageShell` (its own `overflow-y-auto` + `max-w-5xl` header), and
+ * Marketplace / Models were already full-bleed for the same reason. Adding the
+ * shell's `px-4 py-10` on top produces a double gutter and a nested scrollbar.
+ */
+const FULL_BLEED_TABS: readonly SettingsTab[] = [
+  'marketplace',
+  'models',
+  'agents',
+  'skills',
+  'connectors',
+  'apps',
+];
+
 export type SettingsPanelShellProps = Omit<SettingsPanelViewProps, 'open' | 'onOpenChange'>;
 
 export function SettingsPanelShell({
+  surface,
   tab,
   onTabChange,
   isMobile,
@@ -445,7 +551,7 @@ export function SettingsPanelShell({
       >
         {isMobile ? (
           <nav
-            aria-label="Settings"
+            aria-label={SURFACE_COPY[surface].navLabel}
             className="border-border/60 bg-background flex h-auto shrink-0 items-center border-b"
           >
             <FadedScrollArea
@@ -507,8 +613,8 @@ export function SettingsPanelShell({
                   <Search />
                 </InputGroupSearchIcon>
                 <InputGroupSearchInput
-                  placeholder="Search settings"
-                  aria-label="Search settings"
+                  placeholder={SURFACE_COPY[surface].searchPlaceholder}
+                  aria-label={SURFACE_COPY[surface].searchPlaceholder}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   variant="popover"
@@ -521,7 +627,7 @@ export function SettingsPanelShell({
             {project ? <RelatedProjectsSwitcher project={project} /> : null}
 
             <nav
-              aria-label="Settings"
+              aria-label={SURFACE_COPY[surface].navLabel}
               className="mt-4 min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               {visibleGroups.map((group, idx) => (
@@ -549,7 +655,7 @@ export function SettingsPanelShell({
                   no room for an icon and a call to action. */}
               {visibleGroups.length === 0 && !upgradeVisible ? (
                 <p className="text-muted-foreground px-3 py-6 text-center text-xs text-balance">
-                  No settings match “{query.trim()}”.
+                  Nothing in {SURFACE_COPY[surface].title} matches “{query.trim()}”.
                 </p>
               ) : null}
             </nav>
@@ -576,7 +682,7 @@ export function SettingsPanelShell({
               value={item.tab}
               className={cn(
                 'mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto',
-                item.tab !== 'marketplace' && item.tab !== 'models' && 'px-4 py-10 pb-20 lg:py-20',
+                !FULL_BLEED_TABS.includes(item.tab) && 'px-4 py-10 pb-20 lg:py-20',
               )}
             >
               <SettingsTabPane
@@ -645,6 +751,26 @@ function SettingsTabPane({
 
   if (projectId) {
     switch (item.tab) {
+      // The four capability panes. They were standalone routed pages behind a
+      // three-tab bar until Customize became a rail; the components are
+      // unchanged — each still renders its own `CapabilityPageShell` header
+      // and scroller, which is why `FULL_BLEED_TABS` lists all four.
+      case 'agents':
+        return <AgentsPage projectId={projectId} />;
+      case 'skills':
+        return <SkillsPage projectId={projectId} />;
+      case 'connectors':
+        // The `Suspense` boundary is required, not decorative: `ConnectorsPage`
+        // reads `useSearchParams()` (the `?c=` detail selection and the
+        // `?oauth2=` return leg), and Next refuses to prerender a tree that
+        // does so unbounded. It came with the route this pane replaced.
+        return (
+          <Suspense fallback={<CapabilitiesSkeleton />}>
+            <ConnectorsPage projectId={projectId} />
+          </Suspense>
+        );
+      case 'apps':
+        return <AppsView projectId={projectId} />;
       case 'general':
         return <GeneralTab projectId={projectId} />;
       case 'experimental':

@@ -316,10 +316,9 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'action',
     actionId: 'restartConfig',
-    // 'agents skills commands' removed for the same reason they were removed
-    // from `proj-customize` below: they name the Agents, Skills and Connectors
-    // destinations. This row restarts the process that READS those files; a
-    // user typing "skills" wants the Skills page, never a restart.
+    // 'agents skills commands' removed because they name the Agents, Skills
+    // and Connectors panes. This row restarts the process that READS those
+    // files; a user typing "skills" wants the Skills pane, never a restart.
     keywords: 'reload restart config',
     requiresSession: true,
   },
@@ -407,32 +406,30 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Names a tab. The bare `/projects/{projectId}/settings` this used to
-    // carry resolved to `{ tab: undefined }` (resolveSettingsOverlayHref),
-    // which `openSettings` reads as "keep whatever was last open" — so the
-    // one entry labelled "Customize" landed somewhere different on every
-    // click. `general` is the project workspace tab and survives every flag,
-    // matching `DEFAULT_SETTINGS_TAB`.
-    href: '/projects/{projectId}/settings/general',
-    requiresProject: true,
-    // 'agents' and 'skills' were deliberately dropped: both graduated out of
-    // the overlay into their own palette entries (proj-agents, proj-skills).
-    // Keeping the words here made this bare Customize entry match those
-    // queries too and — since filteredNavItems preserves registry declaration
-    // order rather than ranking by relevance — it listed ahead of the real
-    // Agents/Skills entries. 'commands' is dropped for a different reason:
-    // the Instructions tab that hosted them no longer exists, so there is
-    // nothing for the query to lead to. 'project settings' went the same way
-    // when the per-tab entries moved to `settings-palette-items.ts`: the
-    // derived Workspace › General row carries those words now, and leaving
-    // them here would list this generic door ahead of the named tab.
+    // Names a tab. The bare `/projects/{projectId}/customize` would resolve to
+    // `{ tab: undefined }` (resolveSettingsOverlayHref), which the store reads
+    // as "keep whatever was last open" — so the one entry labelled "Customize"
+    // would land somewhere different on every click. `agents` is the first row
+    // of the first group and survives every flag, matching
+    // `DEFAULT_CUSTOMIZE_TAB`.
     //
-    // The inverse leak has been closed too: five sibling rows (proj-agents,
-    // proj-skills, proj-connectors, proj-connectors-policies, proj-invite)
-    // used to end in the legacy tail 'project customize', so "customize"
-    // returned six rows. Only this one, whose LABEL is Customize, keeps the
-    // word here; on the settings side only the Workspace General tab keeps it,
-    // which is where this row's href lands.
+    // It pointed at `/settings/general` while Customize was a three-tab bar
+    // and the word was only a label on the project workspace tab. Customize is
+    // its own panel now, so the door opens the door.
+    href: '/projects/{projectId}/customize/agents',
+    requiresProject: true,
+    // 'agents' and 'skills' were deliberately dropped: they name the Agents
+    // and Skills panes. Keeping the words here made this bare Customize entry
+    // match those queries too and — since filteredNavItems preserves registry
+    // declaration order rather than ranking by relevance — it listed ahead of
+    // the real Agents/Skills rows. 'commands' is dropped for a different
+    // reason: the Instructions tab that hosted them no longer exists, so there
+    // is nothing for the query to lead to. 'project settings' went the same
+    // way when the per-tab entries moved to `settings-palette-items.ts`.
+    //
+    // The inverse leak has been closed too: sibling rows used to end in the
+    // legacy tail 'project customize', so "customize" returned six rows. Only
+    // this one, whose LABEL is Customize, keeps the word here.
     keywords: 'customize configure',
   },
   {
@@ -445,57 +442,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository drive browser explorer',
-  },
-  {
-    id: 'proj-apps',
-    label: 'Apps',
-    icon: Globe,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/apps',
-    requiresProject: true,
-    requiresFlag: 'apps',
-    keywords: 'apps deploy deployments serverless docker static hosting urls',
-  },
-  {
-    id: 'proj-agents',
-    label: 'Agents',
-    icon: Bot,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    // The standalone page, not `/customize/agents`. That href still works —
-    // `legacySectionRedirect` bounces it here — but routing through the
-    // redirect costs a second navigation and paints the overlay route first.
-    href: '/projects/{projectId}/agent',
-    requiresProject: true,
-    keywords: 'agents subagents ai',
-  },
-  {
-    id: 'proj-skills',
-    label: 'Skills',
-    icon: Blocks,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/skills',
-    requiresProject: true,
-    keywords: 'skills abilities',
-  },
-  {
-    id: 'proj-connectors',
-    label: 'Connectors',
-    icon: Plug,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/connectors',
-    requiresProject: true,
-    // 'apps' removed: it is the label of `proj-apps` (deployments), so the
-    // one-word query for that page returned Connectors as well. 'connector' /
-    // 'connectors' / 'connections' still cover everything this row is called.
-    keywords: 'connectors connections pipedream mcp openapi postman collections connector',
   },
   {
     id: 'proj-connectors-policies',

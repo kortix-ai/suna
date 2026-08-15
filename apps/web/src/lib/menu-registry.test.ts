@@ -148,45 +148,36 @@ describe('project commands palette entry is gone with the Instructions tab', () 
   });
 });
 
-describe('graduated capability entries are not shadowed by Customize', () => {
+describe('the capability panes are not shadowed by the Customize door', () => {
   // filteredNavItems (command-palette.tsx) preserves registry declaration
   // order rather than ranking by relevance, and 'proj-customize' is declared
-  // before 'proj-skills'/'proj-connectors'. Before this fix, Customize's
-  // keywords included the words "skills" and "commands", so it matched — and
-  // listed ahead of — those real entries. Observed live: query "Skills" ->
-  // ["Customize", "Skills", ...]. ("commands" is asserted in the Instructions
-  // removal block above; its own entry no longer exists to be shadowed.)
+  // before every row it could shadow. Customize's keywords used to include the
+  // words "skills" and "commands", so it matched — and listed ahead of — the
+  // real entries. Observed live: query "Skills" -> ["Customize", "Skills", …].
+  //
+  // Agents, Skills, Connectors and Apps have no registry row at all now: they
+  // are Customize panes, and `settings-palette-items.ts` derives one row each
+  // from the rail. So the shadowing rule is stated against the ONE row still
+  // in the registry — the generic Customize door — which must not answer a
+  // query naming a specific pane. That the panes themselves answer is pinned
+  // in `command-palette-search.test.ts`.
   const customizeItem = paletteItems.find((item) => item.id === 'proj-customize');
-  const skillsItem = paletteItems.find((item) => item.id === 'proj-skills');
-  const connectorsItem = paletteItems.find((item) => item.id === 'proj-connectors');
   const policiesItem = paletteItems.find((item) => item.id === 'proj-connectors-policies');
 
-  test('typing "Skills" surfaces the real Skills entry; Customize no longer matches', () => {
-    expect(skillsItem).toBeDefined();
-    expect(matchesPaletteQuery(skillsItem!, 'Skills')).toBe(true);
-    expect(matchesPaletteQuery(customizeItem!, 'Skills')).toBe(false);
-  });
+  for (const query of ['Skills', 'Connectors', 'agents', 'apps']) {
+    test(`typing "${query}" does not match the generic Customize door`, () => {
+      expect(customizeItem).toBeDefined();
+      expect(matchesPaletteQuery(customizeItem!, query)).toBe(false);
+    });
+  }
 
-  test('typing "Connectors" still surfaces the Connectors entry', () => {
-    expect(connectorsItem).toBeDefined();
-    expect(matchesPaletteQuery(connectorsItem!, 'Connectors')).toBe(true);
-    expect(matchesPaletteQuery(customizeItem!, 'Connectors')).toBe(false);
-  });
-
-  test('typing "agents" surfaces the real Agents entry; Customize no longer matches', () => {
-    // Agents graduated to /projects/<id>/agent and carries its own palette
-    // entry, so Customize dropped the word — exactly like skills and
-    // connectors above. Leaving it would list Customize AHEAD of the page the
-    // user is typing the name of.
-    const agentsItem = paletteItems.find((item) => item.id === 'proj-agents');
-    expect(agentsItem).toBeDefined();
-    expect(matchesPaletteQuery(agentsItem!, 'agents')).toBe(true);
-    expect(matchesPaletteQuery(customizeItem!, 'agents')).toBe(false);
-  });
-
-  test('Connectors and Skills navigate to standalone pages', () => {
-    expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
+  test('no registry row duplicates a capability pane', () => {
+    // Two rows for one destination is the defect this deletion fixed: the
+    // registry row and the derived pane row both pointed at Apps, so "apps"
+    // returned the same place twice.
+    for (const id of ['proj-agents', 'proj-skills', 'proj-connectors', 'proj-apps']) {
+      expect(paletteItems.find((item) => item.id === id)).toBeUndefined();
+    }
   });
 
   test('proj-connectors-policies no longer advertises a Customize destination it cannot reach', () => {
