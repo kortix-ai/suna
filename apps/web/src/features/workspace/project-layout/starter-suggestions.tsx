@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import type { StarterSuggestionsResponse } from '@kortix/sdk';
 import { useProjectStarterSuggestions } from '@kortix/sdk/react';
 import { STARTER_PROMPT_FALLBACKS } from '@kortix/shared';
 
@@ -12,13 +13,14 @@ import { nextPage, pageCount, sliceForPage } from './starter-suggestions-logic';
 
 const PAGE_SIZE = 3;
 
-interface SuggestionItem {
-  id: string;
-  prompt: string;
-}
+// Same shape as the live SDK response's items — carries `label` even though
+// the row renderer below only ever shows `prompt`, so the fallback pool
+// isn't silently narrower than what `useProjectStarterSuggestions` returns.
+type SuggestionItem = StarterSuggestionsResponse['items'][number];
 
-const FALLBACK_POOL: SuggestionItem[] = STARTER_PROMPT_FALLBACKS.map(({ id, prompt }) => ({
+const FALLBACK_POOL: SuggestionItem[] = STARTER_PROMPT_FALLBACKS.map(({ id, label, prompt }) => ({
   id,
+  label,
   prompt,
 }));
 
