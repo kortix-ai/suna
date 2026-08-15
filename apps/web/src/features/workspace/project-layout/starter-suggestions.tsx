@@ -51,7 +51,10 @@ const isCapabilityTabKey = (
 ): action is CapabilityTab['key'] => CAPABILITY_TABS.some((tab) => tab.key === action);
 
 /** Small muted leading icon per action — the same icon `PROJECT_SETUP_TILES`
- *  uses for the matching section. Prompt rows carry no icon at all. */
+ *  uses for the matching section. Prompt rows carry no icon at all.
+ *  The `skills` entry is unreachable from the generic action branch
+ *  (`suggestionRowKind` routes every skills item to its dedicated row) but
+ *  must stay: the `Record` is exhaustive over the action enum by type. */
 const ACTION_ICONS: Record<StarterSuggestionAction, ComponentType<{ className?: string }>> = {
   connectors: HiOutlineViewGrid,
   schedules: CalendarClock,

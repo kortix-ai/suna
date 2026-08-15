@@ -42,6 +42,11 @@ function offenders(table: string, allow: (rel: string) => boolean): string[] {
     // `__tests__/*` by directory (e.g. `e2e-connector-mcp-live.ts`, no
     // `.test.ts` suffix) and `*.test.ts` anywhere else in the tree (e.g.
     // route-level DB-integration suites under `projects/routes/`).
+    // The exemption is filename-based, not reachability-based; it is still
+    // sound because nothing in `src/index.ts`'s import graph ever imports a
+    // `*.test.ts` file, so a guarded insert in one can never run in
+    // production. A production module NAMED `*.test.ts` would bypass this
+    // guard — do not name production files that way.
     if (rel.startsWith('__tests__/') || rel.endsWith('.test.ts') || rel.endsWith('.test.tsx')) continue;
     if (allow(rel)) continue;
     if (re.test(readFileSync(file, 'utf8'))) hits.push(rel);
