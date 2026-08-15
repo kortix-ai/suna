@@ -5565,7 +5565,14 @@
       "detailLastReply": "Última respuesta",
       "rawLabel": "Datos sin procesar",
       "rawDescription": "Los mensajes exactos intercambiados con el modelo. Útil para depurar.",
-      "showMore": "Mostrar más"
+      "showMore": "Mostrar más",
+      "activityLabel": "Costo por respuesta",
+      "activityTokens": "tokens",
+      "rawSearchPlaceholder": "Buscar mensajes",
+      "rawFilterAll": "Todos",
+      "rawFilterUser": "Tú",
+      "rawFilterAssistant": "Asistente",
+      "rawNoMatches": "Sin mensajes coincidentes"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vista unificada",

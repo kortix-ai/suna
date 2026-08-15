@@ -5565,7 +5565,14 @@
       "detailLastReply": "Letzte Antwort",
       "rawLabel": "Rohdaten der Nachrichten",
       "rawDescription": "Die exakten Nachrichten, die mit dem Modell ausgetauscht wurden. Nützlich zum Debuggen.",
-      "showMore": "Mehr anzeigen"
+      "showMore": "Mehr anzeigen",
+      "activityLabel": "Kosten pro Antwort",
+      "activityTokens": "Tokens",
+      "rawSearchPlaceholder": "Nachrichten durchsuchen",
+      "rawFilterAll": "Alle",
+      "rawFilterUser": "Du",
+      "rawFilterAssistant": "Assistent",
+      "rawNoMatches": "Keine passenden Nachrichten"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Einheitliche Ansicht",

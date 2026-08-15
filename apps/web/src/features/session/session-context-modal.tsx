@@ -21,6 +21,14 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { CopyButton } from '@/components/markdown/copy-button';
 import { Close } from '@/features/icon/icons/close';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { ProviderListResponse } from '@kortix/sdk/react';
@@ -36,9 +44,19 @@ import {
   CaretRightIcon,
   CheckIcon,
   CopyIcon,
+  MagnifyingGlassIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 // ============================================================================
 // Context metrics
@@ -262,15 +280,24 @@ function OverviewStat({
   label,
   value,
   meta,
+  valueClassName,
 }: {
   label: string;
   value: string;
   meta?: string;
+  valueClassName?: string;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="text-foreground truncate text-base font-semibold tabular-nums">{value}</div>
+      <div
+        className={cn(
+          'text-foreground truncate text-base font-semibold tabular-nums',
+          valueClassName,
+        )}
+      >
+        {value}
+      </div>
       {meta ? (
         <div className="text-muted-foreground/70 truncate text-xs tabular-nums">{meta}</div>
       ) : null}
@@ -355,9 +382,14 @@ function CopyAllButton({
 function RawMessageJson({ message, parts }: { message: Message; parts: Part[] }) {
   const json = useMemo(() => JSON.stringify({ message, parts }, null, 2), [message, parts]);
   return (
-    <pre className="bg-muted/40 max-h-[400px] overflow-x-auto overflow-y-auto rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap select-text">
-      {json}
-    </pre>
+    <div className="relative">
+      <pre className="bg-muted/40 max-h-[400px] overflow-x-auto overflow-y-auto rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap select-text">
+        {json}
+      </pre>
+      <div className="absolute top-2 right-2">
+        <CopyButton code={json} size="sm" />
+      </div>
+    </div>
   );
 }
 
@@ -584,6 +616,7 @@ function SubSessionTreeNode({
 // ============================================================================
 
 const RAW_PAGE_SIZE = 30;
+const ACTIVITY_PAGE_SIZE = 8;
 
 function SessionContextModalBody({
   messages,
@@ -603,6 +636,21 @@ function SessionContextModalBody({
     // state flip paints first and the click never feels stuck.
     if (open) startTransition(() => setRawMounted(true));
   }, []);
+
+  const [rawQuery, setRawQuery] = useState('');
+  // Keystrokes stay urgent; filtering the full message list runs deferred.
+  const deferredRawQuery = useDeferredValue(rawQuery);
+  const [rawRole, setRawRole] = useState<'all' | 'user' | 'assistant'>('all');
+  const handleRawQueryChange = useCallback((value: string) => {
+    setRawQuery(value);
+    setRawVisibleCount(RAW_PAGE_SIZE);
+  }, []);
+  const handleRawRoleChange = useCallback((value: string) => {
+    setRawRole(value as 'all' | 'user' | 'assistant');
+    setRawVisibleCount(RAW_PAGE_SIZE);
+  }, []);
+
+  const [activityVisibleCount, setActivityVisibleCount] = useState(ACTIVITY_PAGE_SIZE);
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -658,9 +706,55 @@ function SessionContextModalBody({
     [subSessionTree],
   );
 
-  const rawMessages = messages ?? [];
-  const visibleRawMessages = rawMessages.slice(0, rawVisibleCount);
-  const remainingRawMessages = rawMessages.length - visibleRawMessages.length;
+  // Per-reply activity — latest first, so recent spend is on top.
+  const activity = useMemo(() => {
+    const rows: { id: string; time: number | undefined; tokens: number; cost: number }[] = [];
+    for (const m of messages ?? []) {
+      if (m.info.role !== 'assistant') continue;
+      const info = m.info as AssistantMessage;
+      const tokens = tokenTotal(info);
+      if (tokens <= 0) continue;
+      rows.push({
+        id: info.id,
+        time: info.time?.created,
+        tokens,
+        cost: getSessionCost([m], pricingLookup),
+      });
+    }
+    return rows.reverse();
+  }, [messages, pricingLookup]);
+  const visibleActivity = activity.slice(0, activityVisibleCount);
+  const remainingActivity = activity.length - visibleActivity.length;
+
+  const filteredRawMessages = useMemo(() => {
+    let list = messages ?? [];
+    if (rawRole !== 'all') list = list.filter((m) => m.info.role === rawRole);
+    const query = deferredRawQuery.trim().toLowerCase();
+    if (query) {
+      list = list.filter(
+        (m) =>
+          m.info.id.toLowerCase().includes(query) ||
+          m.parts.some(
+            (p) =>
+              typeof (p as any).text === 'string' &&
+              (p as any).text.toLowerCase().includes(query),
+          ),
+      );
+    }
+    return list;
+  }, [messages, rawRole, deferredRawQuery]);
+  const visibleRawMessages = filteredRawMessages.slice(0, rawVisibleCount);
+  const remainingRawMessages = filteredRawMessages.length - visibleRawMessages.length;
+
+  const usageFraction = ctx?.limit ? Math.min(1, ctx.total / ctx.limit) : null;
+  const usageTone =
+    ctx?.usage == null
+      ? undefined
+      : ctx.usage >= 95
+        ? 'text-kortix-red'
+        : ctx.usage >= 80
+          ? 'text-kortix-orange'
+          : undefined;
 
   return (
     <>
@@ -718,6 +812,7 @@ function SessionContextModalBody({
               <OverviewStat
                 label={t.raw('statContextUsed')}
                 value={fmt.percent(ctx?.usage)}
+                valueClassName={usageTone}
                 meta={
                   ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
                 }
@@ -765,12 +860,22 @@ function SessionContextModalBody({
         {breakdown.length > 0 && (
           <section>
             <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+              {usageFraction != null && (
+                <div className="flex items-baseline justify-between text-xs">
+                  <span className="text-muted-foreground">{t.raw('statContextUsed')}</span>
+                  <span className={cn('text-foreground font-medium tabular-nums', usageTone)}>
+                    {fmt.percent(ctx?.usage)}
+                  </span>
+                </div>
+              )}
+              {/* Segments scale to the share of the context limit; leftover
+                  track reads as free space. No known limit → composition only. */}
               <div className="bg-muted flex h-2.5 w-full gap-px overflow-hidden rounded-full">
                 {breakdown.map((segment) => (
                   <div
                     key={segment.key}
                     className={cn('h-full', BREAKDOWN_SEGMENT_CLASS[segment.key])}
-                    style={{ width: `${segment.width}%` }}
+                    style={{ width: `${segment.width * (usageFraction ?? 1)}%` }}
                   />
                 ))}
               </div>
@@ -792,6 +897,47 @@ function SessionContextModalBody({
                   </div>
                 ))}
               </div>
+            </div>
+          </section>
+        )}
+
+        {/* Cost per reply — latest first */}
+        {activity.length > 0 && (
+          <section className="space-y-3">
+            <Label>{t.raw('activityLabel')}</Label>
+            <div className="bg-popover rounded-md border">
+              <ul className="divide-border divide-y">
+                {visibleActivity.map((row) => (
+                  <li key={row.id} className="flex items-center gap-3 px-4 py-2.5 text-xs">
+                    <span className="text-foreground min-w-0 truncate font-medium tabular-nums">
+                      {fmt.time(row.time)}
+                    </span>
+                    <span className="text-muted-foreground ml-auto shrink-0 tabular-nums">
+                      {fmt.number(row.tokens)} {t.raw('activityTokens')}
+                    </span>
+                    <span className="text-foreground w-16 shrink-0 text-right font-medium tabular-nums">
+                      {formatCost(row.cost)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {remainingActivity > 0 && (
+                <div className="border-t px-4 py-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() =>
+                      setActivityVisibleCount((count) => count + RAW_PAGE_SIZE)
+                    }
+                  >
+                    {t.raw('showMore')}
+                    <span className="text-muted-foreground tabular-nums">
+                      ({remainingActivity})
+                    </span>
+                  </Button>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -859,16 +1005,45 @@ function SessionContextModalBody({
                 <p className="text-muted-foreground px-4 pt-3 text-xs">
                   {t.raw('rawDescription')}
                 </p>
-                <Accordion type="multiple" className="px-2 py-2">
-                  {visibleRawMessages.map((msg) => (
-                    <RawMessage
-                      key={msg.info.id}
-                      message={msg.info}
-                      parts={msg.parts}
-                      formatTime={fmt.time}
+                <div className="flex flex-col gap-2 px-4 pt-3 sm:flex-row sm:items-center">
+                  <InputGroupSearch className="flex-1">
+                    <InputGroupSearchIcon>
+                      <MagnifyingGlassIcon />
+                    </InputGroupSearchIcon>
+                    <InputGroupSearchInput
+                      placeholder={t.raw('rawSearchPlaceholder')}
+                      value={rawQuery}
+                      onChange={(e) => handleRawQueryChange(e.target.value)}
+                      variant="popover"
                     />
-                  ))}
-                </Accordion>
+                    <InputGroupSearchClear onClick={() => handleRawQueryChange('')} />
+                  </InputGroupSearch>
+                  <Tabs value={rawRole} onValueChange={handleRawRoleChange} className="w-fit">
+                    <TabsListCompact type="default">
+                      <TabsTriggerCompact value="all">{t.raw('rawFilterAll')}</TabsTriggerCompact>
+                      <TabsTriggerCompact value="user">{t.raw('rawFilterUser')}</TabsTriggerCompact>
+                      <TabsTriggerCompact value="assistant">
+                        {t.raw('rawFilterAssistant')}
+                      </TabsTriggerCompact>
+                    </TabsListCompact>
+                  </Tabs>
+                </div>
+                {filteredRawMessages.length === 0 ? (
+                  <p className="text-muted-foreground px-4 py-6 text-center text-xs">
+                    {t.raw('rawNoMatches')}
+                  </p>
+                ) : (
+                  <Accordion type="multiple" className="px-2 py-2">
+                    {visibleRawMessages.map((msg) => (
+                      <RawMessage
+                        key={msg.info.id}
+                        message={msg.info}
+                        parts={msg.parts}
+                        formatTime={fmt.time}
+                      />
+                    ))}
+                  </Accordion>
+                )}
                 {remainingRawMessages > 0 && (
                   <div className="px-4 pb-3">
                     <Button

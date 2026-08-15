@@ -5565,7 +5565,14 @@
       "detailLastReply": "Dernière réponse",
       "rawLabel": "Données brutes des messages",
       "rawDescription": "Les messages exacts échangés avec le modèle. Utile pour le débogage.",
-      "showMore": "Afficher plus"
+      "showMore": "Afficher plus",
+      "activityLabel": "Coût par réponse",
+      "activityTokens": "tokens",
+      "rawSearchPlaceholder": "Rechercher des messages",
+      "rawFilterAll": "Tous",
+      "rawFilterUser": "Vous",
+      "rawFilterAssistant": "Assistant",
+      "rawNoMatches": "Aucun message correspondant"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vue unifiée",

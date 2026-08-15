@@ -5629,7 +5629,14 @@
       "detailLastReply": "Last reply",
       "rawLabel": "Raw message data",
       "rawDescription": "The exact messages exchanged with the model. Useful for debugging.",
-      "showMore": "Show more"
+      "showMore": "Show more",
+      "activityLabel": "Cost per reply",
+      "activityTokens": "tokens",
+      "rawSearchPlaceholder": "Search messages",
+      "rawFilterAll": "All",
+      "rawFilterUser": "You",
+      "rawFilterAssistant": "Assistant",
+      "rawNoMatches": "No matching messages"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Unified view",

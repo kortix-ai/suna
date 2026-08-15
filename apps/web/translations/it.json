@@ -5565,7 +5565,14 @@
       "detailLastReply": "Ultima risposta",
       "rawLabel": "Dati grezzi dei messaggi",
       "rawDescription": "I messaggi esatti scambiati con il modello. Utile per il debug.",
-      "showMore": "Mostra altro"
+      "showMore": "Mostra altro",
+      "activityLabel": "Costo per risposta",
+      "activityTokens": "token",
+      "rawSearchPlaceholder": "Cerca messaggi",
+      "rawFilterAll": "Tutti",
+      "rawFilterUser": "Tu",
+      "rawFilterAssistant": "Assistente",
+      "rawNoMatches": "Nessun messaggio corrispondente"
     },
     "componentsSessionSessionDiffViewer": {
       "line186JsxAttrTitleUnifiedView": "Vista unificata",
