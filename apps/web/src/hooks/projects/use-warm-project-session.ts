@@ -5,6 +5,7 @@ import { create as createStore } from 'zustand';
 
 import {
   ensureWarmProjectSession,
+  type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
 
@@ -18,8 +19,10 @@ import {
  * A warm session is NOT a species of session. It is an ORDINARY session, created
  * by the same server path the New Session button uses, that the user has not
  * typed into yet. The send path therefore does not "claim" anything: it navigates
- * to the session it already has and prompts it. No claim call, no 409 vocabulary,
- * no client state beyond the id.
+ * to the session it already has and prompts it. No claim call, no 409
+ * vocabulary, no claim PROTOCOL state — `WarmSession` caches the server row
+ * itself (JAY-599/T21) purely so the taker can seed a cache with it, not as
+ * negotiation state of any kind.
  *
  * CREATES at exactly three moments, no timers: on mount (or project change), on
  * regaining visibility, and to replenish after one is used. Holding an id
@@ -64,6 +67,15 @@ export interface WarmSession {
   /** RESOLVED, as the server stored it — never the `default` sentinel. */
   agentName: string | null;
   sandboxSlug: string;
+  /**
+   * The full server row `ensureWarmProjectSession` returned when this session
+   * was created. Carried so `takeWarmSessionEntry`'s caller (`use-new-project-
+   * session.ts`) can seed the sessions-list cache with it at adoption time,
+   * without a second fetch — see `warm-session-seed.ts`. Still shows
+   * `metadata.warm: true` at this point; the server only drops that once
+   * THIS take's own `/start` call lands (`apps/api/.../routes/r8.ts`).
+   */
+  session: ProjectSession;
 }
 
 /**
@@ -181,6 +193,7 @@ const defaultClient: WarmSessionClient = {
       agentName: session.agent_name,
       sandboxSlug:
         typeof session.metadata?.sandbox_slug === 'string' ? session.metadata.sandbox_slug : '',
+      session,
     };
   },
 };
@@ -261,10 +274,18 @@ export interface TakeWarmSessionOptions {
  * A warm session that does not fit is CONSUMED, not kept: the user changed their
  * mind about the agent, so it will not fit the next send either.
  */
-export function takeWarmSession(
+/**
+ * Take this project's warm session for a send, or null to create normally —
+ * the FULL entry (id, agent, sandbox, and the server row itself), not just
+ * the id. `takeWarmSession` below is the historical id-only surface every
+ * existing caller and test uses; `use-new-project-session.ts` calls this one
+ * so it can seed the sessions-list cache with `.session` at adoption time
+ * (`warm-session-seed.ts`) — see JAY-599 / T21.
+ */
+export function takeWarmSessionEntry(
   projectId: string,
   options: TakeWarmSessionOptions = {},
-): string | null {
+): WarmSession | null {
   const warm = useWarmSessionStore.getState().takeReady(projectId);
   if (!warm) return null;
 
@@ -280,7 +301,14 @@ export function takeWarmSession(
   if (options.replenish !== false && (options.isPresent ?? tabIsVisible)()) {
     void createWarmSession(projectId, options.client, { excludeSessionId: warm.sessionId });
   }
-  return warmSessionFitsSend(warm, options.create) ? warm.sessionId : null;
+  return warmSessionFitsSend(warm, options.create) ? warm : null;
+}
+
+export function takeWarmSession(
+  projectId: string,
+  options: TakeWarmSessionOptions = {},
+): string | null {
+  return takeWarmSessionEntry(projectId, options)?.sessionId ?? null;
 }
 
 /** Is the user actually looking at this tab right now? */

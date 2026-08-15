@@ -12,7 +12,8 @@ import {
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { takeWarmSession } from '@/hooks/projects/use-warm-project-session';
+import { takeWarmSessionEntry } from '@/hooks/projects/use-warm-project-session';
+import { seedAdoptedWarmSession } from '@/hooks/projects/warm-session-seed';
 import {
   NEW_SESSION_GUARD_MAX_MS,
   hasLandedOnNewSession,
@@ -25,6 +26,7 @@ import {
   createProjectSession,
   getProjectSessionScope,
   type PendingSessionPrompt,
+  type ProjectSession,
   type SessionConnectorBindingsInput,
   setProjectSessionScope,
 } from '@kortix/sdk';
@@ -41,9 +43,14 @@ import { prefetchSessionStart, qk } from '@kortix/sdk/react';
  * The session id comes from one of two places. When the project shell has a warm
  * session ready that fits this send (`use-warm-project-session.ts`) this takes
  * it and the SERVER owns the id. Otherwise the id is minted client-side and
- * created as before. `takeWarmSession` returns null whenever nothing suitable is
- * held, so the create path below remains the authority on billing, the session
- * cap and connector requirements — the user sees the same outcome either way.
+ * created as before. `takeWarmSessionEntry` returns null whenever nothing
+ * suitable is held, so the create path below remains the authority on billing,
+ * the session cap and connector requirements — the user sees the same outcome
+ * either way. When it DOES fit, `onReady` also seeds the sessions-list cache
+ * with the entry's server row (JAY-599/T21, `warm-session-seed.ts`), so the
+ * sidebar shows the session the instant this tab sends — it does not wait for
+ * the server's own marker-drop (`POST .../start`) to round-trip back through
+ * the reconciling `invalidateQueries` below.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it
  * for entry-point-specific side effects (open a tab, close a drawer, timing
@@ -149,18 +156,26 @@ export function useNewProjectSession(projectId: string | undefined) {
       }
       releaseTimerRef.current = setTimeout(release, NEW_SESSION_GUARD_MAX_MS);
 
+      // The taken warm session's server row, so `onReady` below can seed the
+      // sessions-list cache with it (JAY-599/T21). Set only when a warm
+      // session was actually adopted THIS call — a closure local, not a ref,
+      // so back-to-back activations of this same hook instance never leak one
+      // call's row into another's `onReady`.
+      let adoptedWarmSession: ProjectSession | null = null;
+
       // Use the project's warm session when there is one that fits, else create
       // one exactly as before. The warm session already exists — it is an
       // ordinary session created a few seconds ago — so this is a synchronous,
       // network-free hand-off that skips the sandbox boot the user would
-      // otherwise watch after pressing Enter. `takeWarmSession` returns null
-      // whenever there is nothing suitable, so the create path below stays the
-      // authority on billing, the session cap and connector requirements.
+      // otherwise watch after pressing Enter. `takeWarmSessionEntry` returns
+      // null whenever there is nothing suitable, so the create path below stays
+      // the authority on billing, the session cap and connector requirements.
       const takeOrCreateSession = async () => {
-        const warmSessionId = takeWarmSession(projectId, { create: opts?.create });
-        if (warmSessionId) {
-          router.prefetch(`/projects/${projectId}/sessions/${warmSessionId}`);
-          return warmSessionId;
+        const warm = takeWarmSessionEntry(projectId, { create: opts?.create });
+        if (warm) {
+          adoptedWarmSession = warm.session;
+          router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
+          return warm.sessionId;
         }
 
         const sessionId = crypto.randomUUID();
@@ -187,7 +202,18 @@ export function useNewProjectSession(projectId: string | undefined) {
           // Keep the claim engaged through the navigation: the effect above
           // releases it once the browser is actually showing this session.
           useNewSessionGuardStore.getState().target(projectId, sessionId);
+          // Adoption: this only ever runs once create (+ any scope
+          // replacement) has already SUCCEEDED, so a warm session that got
+          // taken but never made it this far (a scope-replacement failure,
+          // say) never seeds a phantom row here — see warm-session-seed.ts.
+          if (adoptedWarmSession) {
+            queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
+              seedAdoptedWarmSession(current, adoptedWarmSession!),
+            );
+          }
           // The row exists — kick provisioning so it overlaps the navigation.
+          // For an adopted warm session this is also the call that drops the
+          // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
           prefetchSessionStart(queryClient, projectId, sessionId);
           queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
           opts?.onNavigate?.(sessionId);

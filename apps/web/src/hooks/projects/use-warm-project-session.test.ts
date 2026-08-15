@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import type { ProjectSession } from '@kortix/sdk';
+
 import {
   createWarmSession,
   takeWarmSession,
+  takeWarmSessionEntry,
   useWarmSessionStore,
   warmSessionFitsSend,
   type WarmSession,
@@ -14,8 +17,38 @@ const WARM = 'warm-session-1';
 const PRESENT = () => true;
 const AWAY = () => false;
 
+function serverRow(sessionId: string): ProjectSession {
+  return {
+    session_id: sessionId,
+    account_id: 'acct-1',
+    project_id: P,
+    branch_name: sessionId,
+    base_ref: 'main',
+    sandbox_provider: 'daytona',
+    sandbox_id: sessionId,
+    sandbox_url: null,
+    opencode_session_id: null,
+    name: null,
+    custom_name: null,
+    agent_name: 'kortix',
+    status: 'running',
+    error: null,
+    metadata: { warm: true },
+    opencode_sessions: [],
+    created_at: '2026-08-15T00:00:00.000Z',
+    updated_at: '2026-08-15T00:00:00.000Z',
+  } as ProjectSession;
+}
+
 function warm(overrides: Partial<WarmSession> = {}): WarmSession {
-  return { sessionId: WARM, agentName: 'kortix', sandboxSlug: 'default', ...overrides };
+  const sessionId = overrides.sessionId ?? WARM;
+  return {
+    sessionId,
+    agentName: 'kortix',
+    sandboxSlug: 'default',
+    session: serverRow(sessionId),
+    ...overrides,
+  };
 }
 
 function client(overrides: Partial<WarmSessionClient> = {}): WarmSessionClient {
@@ -253,5 +286,35 @@ describe('takeWarmSession', () => {
 
     expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
     expect(takeWarmSession(P, { replenish: false })).toBeNull();
+  });
+});
+
+// --- JAY-599 / T21: the sessions-list optimistic seed needs the full server
+// row, not just the id. -----------------------------------------------------
+describe('takeWarmSessionEntry', () => {
+  test('returns the full entry, including the server row', async () => {
+    await createWarmSession(P, client());
+    const entry = takeWarmSessionEntry(P, { replenish: false });
+    expect(entry?.sessionId).toBe(WARM);
+    expect(entry?.session.session_id).toBe(WARM);
+  });
+
+  test('takeWarmSession is exactly this, narrowed to the id — same consumption, same null cases', async () => {
+    await createWarmSession(P, client());
+    // Same underlying store state; `takeWarmSession` must not double-consume.
+    expect(takeWarmSession(P, { replenish: false })).toBe(WARM);
+    expect(takeWarmSessionEntry(P, { replenish: false })).toBeNull();
+  });
+
+  test('a send that does not fit still returns null, and still abandons the session', async () => {
+    await createWarmSession(P, client());
+    expect(
+      takeWarmSessionEntry(P, { create: { agent_name: 'reviewer' }, replenish: false }),
+    ).toBeNull();
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+  });
+
+  test('returns null with no network call when nothing is held', () => {
+    expect(takeWarmSessionEntry(P, { replenish: false })).toBeNull();
   });
 });

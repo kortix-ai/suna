@@ -84,6 +84,46 @@ export async function findWarmProjectSession(scope: {
   return row ?? null;
 }
 
+/**
+ * Drop `metadata.warm` for one session — nothing else.
+ *
+ * Called from POST /start (routes/r8.ts), the earliest server signal a user
+ * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
+ * the session-lifecycle engine's `startSession` (which this route drives) is
+ * this route itself — nothing pool-side, no server warmer, no automation ever
+ * issues a `/start` against a session it did not adopt. So reaching this
+ * function at all already proves adoption; the drop can be unconditional,
+ * with no separate "I really mean it" flag threaded through the request.
+ *
+ * Deliberately does NOT touch `last_activity_at` or `updated_at`.
+ * `recordSessionActivity` (projects/session-activity.ts) owns that stamp,
+ * coupled to the first accepted TURN, not to session readiness — a session
+ * can sit open a while before the user sends anything, so stamping activity
+ * here would make the sidebar's "last active" column lie.
+ *
+ * A no-op (0 rows touched) when the session was never warm: `WARM_SESSION_MARKER`
+ * in the WHERE clause makes this safe to call unconditionally and concurrently
+ * — a second call (a retried `/start`, a race) finds nothing left to drop.
+ * Best-effort: a failure here degrades the sidebar's timing (the row stays
+ * hidden until the first prompt's `recordSessionActivity` catches it), and
+ * must never fail the readiness call itself.
+ */
+export async function dropWarmSessionMarkerOnAdopt(sessionId: string): Promise<void> {
+  try {
+    await db
+      .update(projectSessions)
+      .set({
+        metadata: sql`${projectSessions.metadata} - ${WARM_SESSION_METADATA_KEY}::text`,
+      })
+      .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER));
+  } catch (err) {
+    console.warn('[warm-session] failed to drop adoption marker', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 function warmSessionUnavailable(c: any) {
   return c.json(
     {
