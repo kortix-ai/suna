@@ -1,9 +1,10 @@
 'use client';
 
 import {
+  ArrowUpRightIcon,
   CalendarDotsIcon as CalendarClock,
-  SparkleIcon as SparklesSolid,
   SquaresFourIcon as HiOutlineViewGrid,
+  SparkleIcon as SparklesSolid,
   UsersThreeIcon as UsersGroupSolid,
 } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
@@ -46,12 +47,11 @@ const FALLBACK_POOL: SuggestionItem[] = STARTER_PROMPT_FALLBACKS.map(({ id, labe
  *  bottom of project-home — see `PROJECT_SETUP_TILES` there. Connectors,
  *  Skills, and Agent graduated into their own routed pages; Schedules,
  *  Members, and Channels stay inside the settings overlay. */
-const isCapabilityTabKey = (
-  action: StarterSuggestionAction,
-): action is CapabilityTab['key'] => CAPABILITY_TABS.some((tab) => tab.key === action);
+const isCapabilityTabKey = (action: StarterSuggestionAction): action is CapabilityTab['key'] =>
+  CAPABILITY_TABS.some((tab) => tab.key === action);
 
 /** Small muted leading icon per action — the same icon `PROJECT_SETUP_TILES`
- *  uses for the matching section. Prompt rows carry no icon at all.
+ *  uses for the matching section. Prompt rows carry the arrow icon instead.
  *  The `skills` entry is unreachable from the generic action branch
  *  (`suggestionRowKind` routes every skills item to its dedicated row) but
  *  must stay: the `Record` is exhaustive over the action enum by type. */
@@ -65,8 +65,11 @@ const ACTION_ICONS: Record<StarterSuggestionAction, ComponentType<{ className?: 
 };
 
 /**
- * Starter-suggestion rows shown under the hero composer — quiet, icon-free
- * text rows keyed to `item.label` (the row face), never the full prompt.
+ * Starter-suggestion rows shown under the hero composer — quiet text rows
+ * keyed to `item.label` (the row face), never the full prompt. Every row
+ * leads with a small muted icon: the arrow for plain prompts, the section
+ * icon for navigating actions, the app logo / Sparkle for the dedicated
+ * connector and skill rows.
  * A row without an `action` prefills the composer with `item.prompt`; a row
  * with an `action` navigates to the matching capability page or settings
  * tab instead, with a small muted leading icon to mark it as a destination
@@ -106,10 +109,8 @@ export function StarterSuggestions({
     (item) => item.action === 'connectors' && item.connector != null,
   );
   const canConnect =
-    useProjectCan(
-      hasConnectorItem ? projectId : undefined,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    ).allowed === true;
+    useProjectCan(hasConnectorItem ? projectId : undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE)
+      .allowed === true;
   const [pendingApp, setPendingApp] = useState<PendingConnectorApp | null>(null);
 
   if (items.length === 0) return null;
@@ -143,58 +144,64 @@ export function StarterSuggestions({
     navigateForAction(item.action);
   };
 
+  // No z-index. The project-home `/` menu docks under the composer
+  // (`slashMenuPlacement="below"`) and must paint over these rows. The dock's
+  // `z-99` only ranks inside the composer's stacking context, so a z-index
+  // here that beats the shell (`z-50` when below) covers the menu.
   return (
-    <div className="flex w-full flex-col items-center gap-1 px-4">
-      {items.map((item) => {
-        const kind = suggestionRowKind(item, canConnect);
-        if (kind === 'connector' && item.connector) {
+    <section className="mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1">
+      <div className="flex w-full flex-col items-center gap-1 rounded-xl p-1.5 border border-border/40">
+        {items.map((item) => {
+          const kind = suggestionRowKind(item, canConnect);
+          if (kind === 'connector' && item.connector) {
+            return (
+              <ConnectorSuggestionRow
+                key={item.id}
+                label={item.label}
+                app={{
+                  slug: item.connector.slug,
+                  name: item.connector.name,
+                  imgSrc: item.connector.img_src,
+                }}
+                onConnect={() => handlePick(item)}
+              />
+            );
+          }
+          if (kind === 'skill') {
+            return (
+              <SuggestionActionRow
+                key={item.id}
+                label={item.label}
+                icon={<SparklesSolid className="text-muted-foreground size-4" weight='fill' aria-hidden />}
+                buttonLabel="Create skill"
+                onAction={() => handlePick(item)}
+              />
+            );
+          }
+          const Icon = item.action ? ACTION_ICONS[item.action] : ArrowUpRightIcon;
           return (
-            <ConnectorSuggestionRow
+            <button
               key={item.id}
-              label={item.label}
-              app={{
-                slug: item.connector.slug,
-                name: item.connector.name,
-                imgSrc: item.connector.img_src,
-              }}
-              onConnect={() => handlePick(item)}
-            />
+              type="button"
+              onClick={() => handlePick(item)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left',
+                'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
+              )}
+            >
+              <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+              <span className="text-foreground/60 line-clamp-1 text-sm leading-snug">
+                {item.label}
+              </span>
+            </button>
           );
-        }
-        if (kind === 'skill') {
-          return (
-            <SuggestionActionRow
-              key={item.id}
-              label={item.label}
-              icon={<SparklesSolid className="text-muted-foreground size-4" aria-hidden />}
-              buttonLabel="Create skill"
-              onAction={() => handlePick(item)}
-            />
-          );
-        }
-        const Icon = item.action ? ACTION_ICONS[item.action] : null;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => handlePick(item)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left',
-              'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
-            )}
-          >
-            {Icon ? <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden /> : null}
-            <span className="text-foreground/90 line-clamp-1 text-sm leading-snug">
-              {item.label}
-            </span>
-          </button>
-        );
-      })}
-      <StarterSuggestionConnectModal
-        projectId={projectId}
-        pendingApp={pendingApp}
-        onOpenChange={(open) => !open && setPendingApp(null)}
-      />
-    </div>
+        })}
+        <StarterSuggestionConnectModal
+          projectId={projectId}
+          pendingApp={pendingApp}
+          onOpenChange={(open) => !open && setPendingApp(null)}
+        />
+      </div>
+    </section>
   );
 }

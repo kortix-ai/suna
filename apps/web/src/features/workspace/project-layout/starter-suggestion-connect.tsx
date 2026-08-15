@@ -78,19 +78,18 @@ export function SuggestionActionRow({
         onAction();
       }}
       className={cn(
-        'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left',
+        'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left',
         'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
       )}
     >
       {icon}
-      <span className="text-foreground/90 line-clamp-1 min-w-0 flex-1 text-sm leading-snug">
+      <span className="text-foreground/60 line-clamp-1 min-w-0 flex-1 text-sm leading-snug">
         {label}
       </span>
       <Button
         type="button"
-        variant="outline"
-        size="sm"
+        size="xs"
         className="ml-auto shrink-0"
         onClick={(event) => {
           event.stopPropagation();

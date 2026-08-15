@@ -221,6 +221,7 @@ export interface SessionChatInputProps {
   questionCanAct?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;
+  parentClassName?: string;
 }
 
 /**
@@ -366,6 +367,7 @@ function ComposerImpl({
   questionCanAct = true,
   onQuestionAction,
   escCount = 0,
+  parentClassName,
 }: SessionChatInputProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
@@ -1060,7 +1062,17 @@ function ComposerImpl({
   const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
 
   return (
-    <div className={COMPOSER_SHELL_CLASS}>
+    <div
+      className={cn(
+        COMPOSER_SHELL_CLASS,
+        // `'below'` docks the `/` menu as an overlay of later siblings
+        // (starter suggestions). `twMerge` replaces the shell's `z-10` so
+        // this stacking context sits above them; the dock's own `z-99` only
+        // ranks inside this shell and cannot do that job.
+        slashMenuPlacement === 'below' && 'z-50',
+        parentClassName,
+      )}
+    >
       {/*
         The "still waking" notice. Above the card, in flow, so it pushes the
         composer down rather than covering anything — the same reasoning as the
@@ -1398,9 +1410,15 @@ function ComposerImpl({
         gap moves to the dock. The horizontal inset mirrors the shell's
         `px-4 md:pr-1` gutter so the menu stays flush with the card edges.
         Empty (menu closed) it has zero height and intercepts nothing.
+
+        `z-99` only beats siblings inside THIS shell (the card is
+        `isolate z-10`). The shell itself is raised to `z-50` when placement
+        is `'below'` so this whole stacking context sits above later siblings
+        (starter suggestions). A z-index on those siblings that exceeds `z-50`
+        would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-2.5" />
+        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-3.5 z-99" />
       )}
     </div>
   );
