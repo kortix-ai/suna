@@ -10,7 +10,20 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Disclosure,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
+import { Label } from '@/components/ui/label';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
@@ -20,16 +33,16 @@ import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { allDescendantIds, childMapByParent, formatCost, getSessionCost } from '@kortix/sdk/turns';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import {
-  CheckIcon as Check,
-  CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  CopyIcon as Copy,
-  NetworkIcon as Network,
+  CaretDownIcon,
+  CaretRightIcon,
+  CheckIcon,
+  CopyIcon,
 } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { AnimatePresence, m } from 'motion/react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
-// Context metrics — ported 1:1 from SolidJS session-context-metrics.ts
+// Context metrics
 // ============================================================================
 
 interface ContextMetrics {
@@ -105,7 +118,7 @@ function getSessionContextMetrics(
 }
 
 // ============================================================================
-// Context breakdown — ported 1:1 from SolidJS session-context-breakdown.ts
+// Context breakdown estimation
 // ============================================================================
 
 type BreakdownKey = 'system' | 'user' | 'assistant' | 'tool' | 'other';
@@ -117,20 +130,22 @@ interface BreakdownSegment {
   percent: number;
 }
 
-const BREAKDOWN_COLORS: Record<BreakdownKey, string> = {
-  system: 'var(--color-blue-400)', // blue
-  user: 'var(--color-emerald-400)', // green
-  assistant: 'var(--color-violet-400)', // purple
-  tool: 'var(--color-amber-400)', // yellow
-  other: 'var(--color-muted-foreground)', // gray
+const BREAKDOWN_ORDER: BreakdownKey[] = ['system', 'user', 'assistant', 'tool', 'other'];
+
+const BREAKDOWN_SEGMENT_CLASS: Record<BreakdownKey, string> = {
+  system: 'bg-kortix-blue',
+  user: 'bg-kortix-green',
+  assistant: 'bg-kortix-purple',
+  tool: 'bg-kortix-orange',
+  other: 'bg-muted-foreground/40',
 };
 
-const BREAKDOWN_LABELS: Record<BreakdownKey, string> = {
-  system: 'System',
-  user: 'User',
-  assistant: 'Assistant',
-  tool: 'Tool',
-  other: 'Other',
+const BREAKDOWN_LABEL_KEY: Record<BreakdownKey, string> = {
+  system: 'legendSystem',
+  user: 'legendUser',
+  assistant: 'legendAssistant',
+  tool: 'legendTool',
+  other: 'legendOther',
 };
 
 function estimateTokens(chars: number) {
@@ -189,14 +204,12 @@ function estimateBreakdown(
   const estimated = tokens.system + tokens.user + tokens.assistant + tokens.tool;
 
   const buildSegments = (t: Record<string, number>, inp: number) => {
-    return (['system', 'user', 'assistant', 'tool', 'other'] as BreakdownKey[])
-      .filter((k) => (t[k] ?? 0) > 0)
-      .map((k) => ({
-        key: k,
-        tokens: t[k] ?? 0,
-        width: ((t[k] ?? 0) / inp) * 100,
-        percent: Math.round(((t[k] ?? 0) / inp) * 1000) / 10,
-      }));
+    return BREAKDOWN_ORDER.filter((k) => (t[k] ?? 0) > 0).map((k) => ({
+      key: k,
+      tokens: t[k] ?? 0,
+      width: ((t[k] ?? 0) / inp) * 100,
+      percent: Math.round(((t[k] ?? 0) / inp) * 1000) / 10,
+    }));
   };
 
   if (estimated <= input) {
@@ -214,7 +227,7 @@ function estimateBreakdown(
 }
 
 // ============================================================================
-// Formatter — ported 1:1 from SolidJS session-context-format.ts
+// Formatter
 // ============================================================================
 
 function createFormatter(locale = 'en-US') {
@@ -240,16 +253,98 @@ function createFormatter(locale = 'en-US') {
   };
 }
 
+type Formatter = ReturnType<typeof createFormatter>;
+
 // ============================================================================
-// Stat component
+// Stat primitives
 // ============================================================================
 
-function Stat({ label, value }: { label: string; value: string | React.ReactNode }) {
+function OverviewStat({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+}) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="text-foreground text-xs font-medium tabular-nums">{value}</div>
+      <div className="text-foreground truncate text-base font-semibold tabular-nums">{value}</div>
+      {meta ? (
+        <div className="text-muted-foreground/70 truncate text-xs tabular-nums">{meta}</div>
+      ) : null}
     </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className="text-foreground truncate text-xs font-medium tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Copy-all button (header action)
+// ============================================================================
+
+function CopyAllButton({
+  messages,
+  copyLabel,
+  copiedLabel,
+}: {
+  messages: MessageWithParts[] | undefined;
+  copyLabel: string;
+  copiedLabel: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    // Stringify on click only — never during render.
+    navigator.clipboard.writeText(JSON.stringify(messages ?? [], null, 2));
+    setCopied(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
+  }, [messages]);
+
+  return (
+    <Button
+      onClick={handleCopy}
+      variant="outline"
+      size="sm"
+      className="h-8 gap-1.5 transition-colors active:scale-[0.97]"
+    >
+      <span className="relative inline-flex size-3.5 shrink-0 items-center justify-center">
+        <AnimatePresence initial={false} mode="popLayout">
+          <m.span
+            key={copied ? 'check' : 'copy'}
+            initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+            animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+            exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+            className="absolute inset-0 inline-flex items-center justify-center"
+          >
+            {copied ? (
+              <CheckIcon className="text-kortix-green size-3.5" />
+            ) : (
+              <CopyIcon className="size-3.5" />
+            )}
+          </m.span>
+        </AnimatePresence>
+      </span>
+      {copied ? copiedLabel : copyLabel}
+    </Button>
   );
 }
 
@@ -257,22 +352,32 @@ function Stat({ label, value }: { label: string; value: string | React.ReactNode
 // Raw message accordion item
 // ============================================================================
 
-function RawMessage({
+/** Stringifies only while its accordion item is open — Radix unmounts closed content. */
+function RawMessageJson({ message, parts }: { message: Message; parts: Part[] }) {
+  const json = useMemo(() => JSON.stringify({ message, parts }, null, 2), [message, parts]);
+  return (
+    <pre className="bg-muted/40 max-h-[400px] overflow-x-auto overflow-y-auto rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap select-text">
+      {json}
+    </pre>
+  );
+}
+
+const RawMessage = memo(function RawMessage({
   message,
   parts,
   formatTime,
 }: {
   message: Message;
   parts: Part[];
-  formatTime: (v: number | undefined) => string;
+  formatTime: Formatter['time'];
 }) {
   return (
-    <AccordionItem value={message.id}>
+    <AccordionItem value={message.id} className="border-b-0">
       <AccordionTrigger className="hover:bg-muted/40 rounded-md px-3 py-2 text-xs hover:no-underline">
         <div className="flex w-full items-center justify-between gap-2 pr-2">
           <div className="min-w-0 truncate font-mono">
             <Badge
-              variant={message.role === 'user' ? 'info' : 'success'}
+              variant={message.role === 'user' ? 'info' : 'muted'}
               size="sm"
               className="mr-2 font-semibold uppercase"
             >
@@ -280,19 +385,17 @@ function RawMessage({
             </Badge>
             <span className="text-muted-foreground">{message.id}</span>
           </div>
-          <div className="text-muted-foreground/60 shrink-0 text-xs">
+          <div className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">
             {formatTime(message.time?.created)}
           </div>
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-3 pb-2">
-        <pre className="bg-muted/40 max-h-[400px] overflow-x-auto overflow-y-auto rounded-2xl p-3 font-mono text-xs break-all whitespace-pre-wrap select-text">
-          {JSON.stringify({ message, parts }, null, 2)}
-        </pre>
+        <RawMessageJson message={message} parts={parts} />
       </AccordionContent>
     </AccordionItem>
   );
-}
+});
 
 // ============================================================================
 // Sub-session aggregate types & helpers
@@ -418,45 +521,54 @@ function sumTreeCosts(node: SubSessionCostInfo): {
 // Sub-session tree component
 // ============================================================================
 
-function SubSessionTreeNode({ node, depth = 0 }: { node: SubSessionCostInfo; depth?: number }) {
+function SubSessionTreeNode({
+  node,
+  depth = 0,
+  messagesSuffix,
+}: {
+  node: SubSessionCostInfo;
+  depth?: number;
+  messagesSuffix: string;
+}) {
   const [expanded, setExpanded] = useState(depth < 1);
   const hasChildren = node.children.length > 0;
-  const totals = useMemo(() => sumTreeCosts(node), [node]);
 
   return (
     <div className={cn('flex flex-col', depth > 0 && 'border-border/30 ml-4 border-l pl-3')}>
       <button
         onClick={() => hasChildren && setExpanded(!expanded)}
         className={cn(
-          'flex w-full items-center gap-2 py-1.5 text-left text-xs',
-          hasChildren && 'hover:bg-muted/40 -mx-1.5 cursor-pointer rounded-md px-1.5',
+          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
+          hasChildren && 'hover:bg-muted/40 cursor-pointer',
           !hasChildren && 'cursor-default',
         )}
       >
         {hasChildren ? (
           expanded ? (
-            <ChevronDown className="text-muted-foreground size-3 shrink-0" />
+            <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
           ) : (
-            <ChevronRight className="text-muted-foreground size-3 shrink-0" />
+            <CaretRightIcon className="text-muted-foreground size-3 shrink-0" />
           )
         ) : (
           <div className="size-3 shrink-0" />
         )}
         <span className="text-foreground min-w-0 truncate font-medium">{node.title}</span>
-        <span className="text-muted-foreground ml-auto shrink-0 tabular-nums">
+        <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
+          {node.messages} {messagesSuffix}
+        </span>
+        <span className="text-muted-foreground shrink-0 tabular-nums">
           {formatCost(node.cost)}
         </span>
-        {hasChildren && (
-          <span className="text-muted-foreground/50 shrink-0 text-xs tabular-nums">
-            (tree: {formatCost(totals.cost)})
-          </span>
-        )}
-        <span className="text-muted-foreground/60 shrink-0 text-xs">{node.messages} msgs</span>
       </button>
       {expanded && hasChildren && (
         <div className="flex flex-col">
           {node.children.map((child) => (
-            <SubSessionTreeNode key={child.id} node={child} depth={depth + 1} />
+            <SubSessionTreeNode
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              messagesSuffix={messagesSuffix}
+            />
           ))}
         </div>
       )}
@@ -465,31 +577,21 @@ function SubSessionTreeNode({ node, depth = 0 }: { node: SubSessionCostInfo; dep
 }
 
 // ============================================================================
-// Main modal component
+// Modal body — mounted only while the modal is open, so the store
+// subscriptions and metric computations cost nothing during streaming.
 // ============================================================================
 
-interface SessionContextModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  messages: MessageWithParts[] | undefined;
-  session: Session | undefined;
-  providers: ProviderListResponse | undefined;
-  allSessions?: Session[];
-}
+const RAW_PAGE_SIZE = 30;
 
-export function SessionContextModal({
-  open,
-  onOpenChange,
+function SessionContextModalBody({
   messages,
   session,
   providers,
   allSessions,
-}: SessionContextModalProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [copiedAll, setCopiedAll] = useState(false);
+}: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
+  const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
-
-  const rawMessages = useMemo(() => (messages ?? []).map((m) => m.info), [messages]);
+  const [rawVisibleCount, setRawVisibleCount] = useState(RAW_PAGE_SIZE);
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -500,16 +602,16 @@ export function SessionContextModal({
   const fmt = useMemo(() => createFormatter(), []);
 
   const counts = useMemo(() => {
-    const all = rawMessages;
+    const all = (messages ?? []).map((m) => m.info);
     const user = all.filter((m) => m.role === 'user').length;
     const assistant = all.filter((m) => m.role === 'assistant').length;
     return { all: all.length, user, assistant };
-  }, [rawMessages]);
+  }, [messages]);
 
   const breakdown = useMemo(() => {
     if (!ctx?.input || !messages) return [];
     return estimateBreakdown(messages, ctx.input);
-  }, [ctx?.input, messages]);
+  }, [ctx, messages]);
 
   // ---- Sub-session aggregation ----
   const storeMessages = useSessionStateStore((s) => s.messages);
@@ -540,199 +642,171 @@ export function SessionContextModal({
     );
   }, [session, hasSubSessions, allSessions, storeMessages, storeParts, childMap, pricingLookup]);
 
-  const aggregateTotals = useMemo(() => {
-    if (!subSessionTree) return null;
-    return sumTreeCosts(subSessionTree);
-  }, [subSessionTree]);
-
-  const stats = useMemo(
-    () => [
-      { label: 'Session', value: session?.title ?? session?.id ?? '—' },
-      { label: 'Messages', value: counts.all.toLocaleString() },
-      { label: 'Provider', value: ctx?.providerLabel ?? '—' },
-      { label: 'Model', value: ctx?.modelLabel ?? '—' },
-      { label: 'Context Limit', value: fmt.number(ctx?.limit) },
-      { label: 'Total Tokens', value: fmt.number(ctx?.total) },
-      { label: 'Usage', value: fmt.percent(ctx?.usage) },
-      { label: 'Input Tokens', value: fmt.number(ctx?.input) },
-      { label: 'Output Tokens', value: fmt.number(ctx?.output) },
-      { label: 'Reasoning Tokens', value: fmt.number(ctx?.reasoning) },
-      {
-        label: 'Cache Tokens',
-        value: `${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`,
-      },
-      { label: 'User Messages', value: counts.user.toLocaleString() },
-      { label: 'Assistant Messages', value: counts.assistant.toLocaleString() },
-      { label: 'Total Cost', value: formatCost(metrics.totalCost) },
-      { label: 'Session Created', value: fmt.time(session?.time?.created) },
-      { label: 'Last Activity', value: fmt.time(ctx?.message?.time?.created) },
-    ],
-    [session, counts, ctx, fmt, metrics.totalCost],
+  const aggregateTotals = useMemo(
+    () => (subSessionTree ? sumTreeCosts(subSessionTree) : null),
+    [subSessionTree],
   );
 
-  const handleCopyAll = () => {
-    navigator.clipboard.writeText(JSON.stringify(messages, null, 2));
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
-  };
+  const rawMessages = messages ?? [];
+  const visibleRawMessages = rawMessages.slice(0, rawVisibleCount);
+  const remainingRawMessages = rawMessages.length - visibleRawMessages.length;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="flex max-h-[85vh] max-w-4xl flex-col overflow-hidden"
-        aria-describedby={undefined}
-      >
-        <DialogHeader className="shrink-0">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-base font-semibold">Context</DialogTitle>
-            <Button onClick={handleCopyAll} variant="outline" size="toolbar" className="mr-8">
-              {copiedAll ? <Check className="size-3" /> : <Copy className="size-3" />}
-              {copiedAll ? 'Copied!' : 'Copy All JSON'}
-            </Button>
+    <>
+      {/* pr-40 clears the absolutely-positioned Copy + Close buttons (top-3 right-3) */}
+      <ModalHeader className="pr-40">
+        <ModalTitle>{t.raw('title')}</ModalTitle>
+        <ModalDescription>{t.raw('description')}</ModalDescription>
+      </ModalHeader>
+
+      <ModalBody className="space-y-6">
+        {/* Overview — the four numbers everyone understands */}
+        <div className="bg-popover rounded-md border px-4 py-4">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
+            <OverviewStat
+              label={t.raw('statModel')}
+              value={ctx?.modelLabel ?? '—'}
+              meta={ctx?.providerLabel}
+            />
+            <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
+            <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
+            <OverviewStat
+              label={t.raw('statContextUsed')}
+              value={fmt.percent(ctx?.usage)}
+              meta={
+                ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
+              }
+            />
           </div>
-        </DialogHeader>
+        </div>
 
-        <div className="-mx-6 flex-1 space-y-8 overflow-y-auto px-6 pb-4">
-          {/* Aggregate totals — shown when sub-sessions exist */}
-          {hasSubSessions && aggregateTotals && (
-            <div className="border-primary/20 bg-primary/5 flex flex-col gap-3 rounded-2xl border p-4">
-              <div className="flex items-center gap-2">
-                <Network className="text-primary size-4" />
-                <div className="text-foreground text-sm font-semibold">
-                  {tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line558JsxTextAggregateTotals',
-                  )}
-                  <span className="text-muted-foreground ml-2 text-xs font-normal">
-                    {tHardcodedUi.raw(
-                      'componentsSessionSessionContextModal.line560JsxTextThisSession',
-                    )}
-                    {descendantIds.length} sub-session{descendantIds.length !== 1 ? 's' : ''})
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat
-                  label={tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line565JsxAttrLabelTotalCost',
-                  )}
-                  value={
-                    <span className="text-primary font-semibold">
-                      {formatCost(aggregateTotals.cost)}
-                    </span>
-                  }
-                />
-                <Stat
-                  label={tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line568JsxAttrLabelTotalMessages',
-                  )}
-                  value={aggregateTotals.messages.toLocaleString()}
-                />
-                <Stat
-                  label={tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line569JsxAttrLabelInputTokens',
-                  )}
-                  value={fmt.number(aggregateTotals.inputTokens)}
-                />
-                <Stat
-                  label={tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line570JsxAttrLabelOutputTokens',
-                  )}
-                  value={fmt.number(aggregateTotals.outputTokens)}
-                />
-                <Stat
-                  label={tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line571JsxAttrLabelReasoningTokens',
-                  )}
-                  value={fmt.number(aggregateTotals.reasoningTokens)}
-                />
-                <Stat
-                  label={tHardcodedUi.raw(
-                    'componentsSessionSessionContextModal.line572JsxAttrLabelCacheTokens',
-                  )}
-                  value={`${fmt.number(aggregateTotals.cacheReadTokens)} / ${fmt.number(aggregateTotals.cacheWriteTokens)}`}
-                />
-              </div>
+        {/* What is in the context — segmented bar + plain-language legend */}
+        {breakdown.length > 0 && (
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <Label>{t.raw('contextSectionLabel')}</Label>
+              <p className="text-muted-foreground text-xs">
+                {t.raw('contextSectionDescription')}
+              </p>
             </div>
-          )}
-
-          {/* This session label when sub-sessions exist */}
-          {hasSubSessions && (
-            <div className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              {tHardcodedUi.raw(
-                'componentsSessionSessionContextModal.line580JsxTextThisSessionOnly',
-              )}
-            </div>
-          )}
-
-          {/* Stats grid — 1:1 from SolidJS */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {stats.map((stat) => (
-              <Stat key={stat.label} label={stat.label} value={stat.value} />
-            ))}
-          </div>
-
-          {/* Context breakdown bar — 1:1 from SolidJS */}
-          {breakdown.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="text-muted-foreground text-xs">
-                {tHardcodedUi.raw(
-                  'componentsSessionSessionContextModal.line594JsxTextContextBreakdown',
-                )}
-              </div>
-              <div className="bg-muted flex h-2 w-full overflow-hidden rounded-full">
+            <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+              <div className="bg-muted flex h-2.5 w-full gap-px overflow-hidden rounded-sm">
                 {breakdown.map((segment) => (
                   <div
                     key={segment.key}
-                    className="h-full"
-                    style={{
-                      width: `${segment.width}%`,
-                      backgroundColor: BREAKDOWN_COLORS[segment.key],
-                    }}
+                    className={cn('h-full', BREAKDOWN_SEGMENT_CLASS[segment.key])}
+                    style={{ width: `${segment.width}%` }}
                   />
                 ))}
               </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                 {breakdown.map((segment) => (
-                  <div
-                    key={segment.key}
-                    className="text-muted-foreground flex items-center gap-1 text-xs"
-                  >
-                    <div
-                      className="size-2 rounded-sm"
-                      style={{ backgroundColor: BREAKDOWN_COLORS[segment.key] }}
+                  <div key={segment.key} className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className={cn(
+                        'size-2 shrink-0 rounded-[2px]',
+                        BREAKDOWN_SEGMENT_CLASS[segment.key],
+                      )}
                     />
-                    <div>{BREAKDOWN_LABELS[segment.key]}</div>
-                    <div className="text-muted-foreground/60">{segment.percent}%</div>
+                    <span className="text-foreground">
+                      {t.raw(BREAKDOWN_LABEL_KEY[segment.key])}
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {fmt.number(segment.tokens)} · {segment.percent}%
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
-          )}
+          </section>
+        )}
 
-          {/* Sub-session cost tree */}
-          {hasSubSessions && subSessionTree && subSessionTree.children.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="text-muted-foreground text-xs">
-                {tHardcodedUi.raw(
-                  'componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown',
-                )}
-              </div>
-              <div className="bg-muted/20 rounded-2xl border p-3">
-                {subSessionTree.children.map((child) => (
-                  <SubSessionTreeNode key={child.id} node={child} />
-                ))}
-              </div>
+        {/* Sub-agents — combined totals + per-session tree */}
+        {hasSubSessions && subSessionTree && aggregateTotals && (
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <Label>{t.raw('subAgentsLabel')}</Label>
+              <p className="text-muted-foreground text-xs">{t.raw('subAgentsNote')}</p>
             </div>
-          )}
+            <div className="bg-popover rounded-md border">
+              <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-4">
+                <Stat label={t.raw('combinedCost')} value={formatCost(aggregateTotals.cost)} />
+                <Stat
+                  label={t.raw('combinedMessages')}
+                  value={aggregateTotals.messages.toLocaleString()}
+                />
+                <Stat label={t.raw('tokensIn')} value={fmt.number(aggregateTotals.inputTokens)} />
+                <Stat label={t.raw('tokensOut')} value={fmt.number(aggregateTotals.outputTokens)} />
+              </div>
+              {subSessionTree.children.length > 0 && (
+                <div className="border-t px-2 py-2">
+                  {subSessionTree.children.map((child) => (
+                    <SubSessionTreeNode
+                      key={child.id}
+                      node={child}
+                      messagesSuffix={t.raw('treeMessages')}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
-          {/* Raw messages — 1:1 from SolidJS */}
-          <div className="flex flex-col gap-2">
-            <div className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw('componentsSessionSessionContextModal.line631JsxTextRawMessages')}
-              {counts.all})
+        {/* Technical details — collapsed by default */}
+        <Disclosure variant="outline" className="overflow-hidden">
+          <DisclosureTrigger variant="outline">
+            <Button
+              variant="popover"
+              className="flex w-full items-center justify-between rounded-none px-4"
+            >
+              <span className="text-sm font-medium">{t.raw('detailsLabel')}</span>
+              <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+            </Button>
+          </DisclosureTrigger>
+          <DisclosureContent variant="outline" contentClassName="border-border border-t">
+            <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-3">
+              <Stat label={t.raw('detailProvider')} value={ctx?.providerLabel ?? '—'} />
+              <Stat label={t.raw('detailModel')} value={ctx?.modelLabel ?? '—'} />
+              <Stat label={t.raw('detailContextLimit')} value={fmt.number(ctx?.limit)} />
+              <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
+              <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
+              <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
+              <Stat
+                label={t.raw('detailCache')}
+                value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
+              />
+              <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
+              <Stat
+                label={t.raw('detailAssistantMessages')}
+                value={counts.assistant.toLocaleString()}
+              />
+              <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
+              <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
             </div>
-            <Accordion type="multiple" className="overflow-hidden rounded-2xl border">
-              {(messages ?? []).map((msg) => (
+          </DisclosureContent>
+        </Disclosure>
+
+        {/* Raw message data — collapsed by default, paginated */}
+        <Disclosure variant="outline" className="overflow-hidden">
+          <DisclosureTrigger variant="outline">
+            <Button
+              variant="popover"
+              className="flex w-full items-center justify-between rounded-none px-4"
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-sm font-medium">{t.raw('rawLabel')}</span>
+                <Badge variant="muted" size="sm" className="tabular-nums">
+                  {counts.all}
+                </Badge>
+              </span>
+              <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+            </Button>
+          </DisclosureTrigger>
+          <DisclosureContent variant="outline" contentClassName="border-border border-t">
+            <p className="text-muted-foreground px-4 pt-3 text-xs">{t.raw('rawDescription')}</p>
+            <Accordion type="multiple" className="px-2 py-2">
+              {visibleRawMessages.map((msg) => (
                 <RawMessage
                   key={msg.info.id}
                   message={msg.info}
@@ -741,9 +815,70 @@ export function SessionContextModal({
                 />
               ))}
             </Accordion>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+            {remainingRawMessages > 0 && (
+              <div className="px-4 pb-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setRawVisibleCount((count) => count + RAW_PAGE_SIZE)}
+                >
+                  {t.raw('showMore')}
+                  <span className="text-muted-foreground tabular-nums">
+                    ({remainingRawMessages})
+                  </span>
+                </Button>
+              </div>
+            )}
+          </DisclosureContent>
+        </Disclosure>
+      </ModalBody>
+    </>
+  );
+}
+
+// ============================================================================
+// Main modal component
+// ============================================================================
+
+interface SessionContextModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  messages: MessageWithParts[] | undefined;
+  session: Session | undefined;
+  providers: ProviderListResponse | undefined;
+  allSessions?: Session[];
+}
+
+export function SessionContextModal({
+  open,
+  onOpenChange,
+  messages,
+  session,
+  providers,
+  allSessions,
+}: SessionContextModalProps) {
+  const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent
+        className="max-h-[85vh] lg:max-w-5xl"
+        closeButtonChildren={
+          <CopyAllButton
+            messages={messages}
+            copyLabel={t.raw('copyJson')}
+            copiedLabel={t.raw('copied')}
+          />
+        }
+      >
+        <SessionContextModalBody
+          messages={messages}
+          session={session}
+          providers={providers}
+          allSessions={allSessions}
+        />
+      </ModalContent>
+    </Modal>
   );
 }
