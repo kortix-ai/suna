@@ -268,6 +268,109 @@ describe("useSyncStore — applyEvent(session.error) patches the last assistant 
 		const assistant = useSyncStore.getState().messages.ses_1[0] as AssistantMessage;
 		expect((assistant.error as { data: { message: string } }).data.message).toBe("first");
 	});
+
+	// T2: `data.reason` (the machine-readable abort WHY stamped by
+	// `applyOptimisticAbort`/`markSessionAbortedLocally`, see
+	// `core/http/abort-error.ts`) rides through `applyEvent` untouched — the
+	// handler copies the whole `error` object it is given, it never
+	// constructs one field-by-field, so any reason a producer sets survives.
+	test("passes an abort error's data.reason through untouched", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_3", assistantMessage("msg_c"));
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_3",
+				error: {
+					name: "AbortError",
+					data: { message: "The operation was aborted because the runtime shut down.", reason: "runtime-disposed" },
+				},
+			},
+		} as never);
+
+		const assistant = useSyncStore.getState().messages.ses_3[0] as AssistantMessage;
+		expect((assistant.error as { data: { reason?: string } }).data.reason).toBe("runtime-disposed");
+	});
+
+	test("passes an untagged (wire) abort error through with no reason", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_4", assistantMessage("msg_d"));
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_4",
+				error: { name: "MessageAbortedError", data: { message: "The operation was aborted." } },
+			},
+		} as never);
+
+		const assistant = useSyncStore.getState().messages.ses_4[0] as AssistantMessage;
+		expect((assistant.error as { data: { reason?: string } }).data.reason).toBeUndefined();
+	});
+});
+
+// T16 — the `session.error` stub's own creation comment claims
+// "hydrate can replace it"; nothing previously did. `ascendingId('msg')`
+// sorts BELOW every server id, so a stub left in place after a real
+// assistant message lands sits at the wrong position beside it forever.
+describe("useSyncStore — session.error stub reconciliation on hydrate", () => {
+	test("hydrate drops the stub once the server transcript contains a real assistant message", () => {
+		const store = useSyncStore.getState();
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } },
+		} as never);
+
+		const stubId = useSyncStore.getState().messages.ses_1[0].id;
+		expect(useSyncStore.getState().messages.ses_1).toHaveLength(1);
+
+		// The server's own transcript now contains a real assistant message.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_user"), parts: [] },
+			{ info: assistantMessage("msg_real_asst"), parts: [] },
+		]);
+
+		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
+		expect(ids).not.toContain(stubId);
+		expect(ids).toContain("msg_real_asst");
+	});
+
+	test("a hydrate snapshot with no assistant message yet leaves the stub untouched", () => {
+		const store = useSyncStore.getState();
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } },
+		} as never);
+		const stubId = useSyncStore.getState().messages.ses_1[0].id;
+
+		// Nothing has arrived yet to reconcile against.
+		store.hydrate("ses_1", [{ info: userMessage("msg_user"), parts: [] }]);
+
+		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
+		expect(ids).toContain(stubId);
+	});
+
+	test("a stub in an UNRELATED session is untouched by another session's hydrate", () => {
+		const store = useSyncStore.getState();
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } },
+		} as never);
+		const stubId = useSyncStore.getState().messages.ses_1[0].id;
+
+		store.hydrate("ses_2", [
+			{ info: userMessage("msg_user", "ses_2"), parts: [] },
+			{ info: assistantMessage("msg_real_asst", "ses_2"), parts: [] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toContain(stubId);
+	});
 });
 
 describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + message", () => {
@@ -310,6 +413,102 @@ describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + 
 		// The part is still tracked as an orphan, ready to be picked up once
 		// hydrate()/message.part.updated creates the real message.
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
+	});
+});
+
+// T14 — `applyPartDelta` used to be `existing + delta` with no
+// identity consulted anywhere in the pipeline, so a duplicate delivery of
+// the SAME `message.part.delta` doubled the streamed text. `eventID` is the
+// wire's own `EventMessagePartDelta.id` (a top-level field, not inside
+// `properties`), threaded through from `applyEvent`.
+describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate delivery)", () => {
+	test("a duplicate single delta (same eventID) is a no-op", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1"); // duplicate
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("replaying an identical delta STREAM twice (a stacked second SSE connection) produces byte-identical text", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		const deltas: Array<[string, string]> = [
+			["evt_1", "Hel"],
+			["evt_2", "lo "],
+			["evt_3", "world"],
+		];
+		for (const [id, d] of deltas) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", d, id);
+		}
+		// A stacked second connection redelivers the exact same sequence.
+		for (const [id, d] of deltas) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", d, id);
+		}
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello world");
+	});
+
+	test("an interleaved two-part stream is unaffected — dedupe is per (message, part, field)", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_a", "msg_1", ""));
+		store.upsertPart("msg_1", textPart("prt_b", "msg_1", ""));
+
+		store.applyPartDelta("ses_1", "msg_1", "prt_a", "text", "Hi ", "evt_a1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_b", "text", "Bye ", "evt_b1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_a", "text", "there", "evt_a2");
+		store.applyPartDelta("ses_1", "msg_1", "prt_b", "text", "now", "evt_b2");
+
+		const parts = useSyncStore.getState().parts.msg_1;
+		expect((parts.find((p) => p.id === "prt_a") as TextPart).text).toBe("Hi there");
+		expect((parts.find((p) => p.id === "prt_b") as TextPart).text).toBe("Bye now");
+	});
+
+	test("two GENUINELY distinct deltas with identical content both apply (no content-based false positive)", () => {
+		// Guards the design choice documented on `deltaEventTails`: dedupe is by
+		// EVENT IDENTITY, not delta content — streaming "..." one identical
+		// character at a time must not be mistaken for a duplicate delivery.
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", ".", "evt_1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", ".", "evt_2");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", ".", "evt_3");
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("...");
+	});
+
+	test("applyEvent(message.part.delta) threads the wire event's own id through, deduping a duplicate SSE delivery", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		const deltaEvent = {
+			id: "evt_dup",
+			type: "message.part.delta",
+			properties: {
+				messageID: "msg_asst",
+				partID: "prt_1",
+				sessionID: "ses_1",
+				field: "text",
+				delta: "Hello",
+			},
+		} as never;
+
+		store.applyEvent(deltaEvent);
+		store.applyEvent(deltaEvent); // e.g. a stacked SSE connection redelivering it
+
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("clearSession releases a session's delta-tail tracking — a reused (message,part,eventID) after a fresh lifetime applies normally", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
+		store.clearSession("ses_1");
+
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hi");
 	});
 });
 
@@ -669,6 +868,82 @@ describe("useSyncStore — hydrate vs. an un-acked optimistic send", () => {
 	});
 });
 
+// T16 — extras merge dedupe. `hydrate` used to keep every existing
+// part absent from the incoming snapshot verbatim ("extras"), on the theory
+// that the server simply hasn't persisted it yet. That's right for a part
+// still in flight, but wrong when the server RE-ISSUED the same content
+// under a NEW part id: the old SSE-accumulated twin stayed resident forever,
+// duplicating the text inside one message.
+describe("useSyncStore — hydrate extras dedupe by content identity", () => {
+	test("a re-issued text part under a NEW id retires the old SSE-accumulated twin", () => {
+		const store = useSyncStore.getState();
+		// SSE accumulated partial text under prt_old.
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", textPart("prt_old", "msg_a", "Hello wor"));
+
+		// The server re-issues the SAME content, complete, under a NEW id.
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_new", "msg_a", "Hello world")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toEqual(["prt_new"]);
+	});
+
+	test("an existing extra with UNRELATED content is kept — not mistaken for a re-issue", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", textPart("prt_old", "msg_a", "totally unrelated text"));
+
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_new", "msg_a", "Hello world")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_old");
+		expect(ids).toContain("prt_new");
+	});
+
+	test("negative: distinct non-text (tool-like) parts are never dropped by content matching", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", {
+			id: "prt_tool_old",
+			sessionID: "ses_1",
+			messageID: "msg_a",
+			type: "step-start",
+		} as Part);
+
+		// The server's snapshot carries a DIFFERENT non-text part — not a
+		// re-issue of the old one, and non-text parts are never compared by
+		// content in the first place.
+		store.hydrate("ses_1", [
+			{
+				info: assistantMessage("msg_a"),
+				parts: [{ id: "prt_tool_new", sessionID: "ses_1", messageID: "msg_a", type: "step-start" } as Part],
+			},
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_tool_old");
+		expect(ids).toContain("prt_tool_new");
+	});
+
+	test("an empty-text extra is never dropped by the containment check (nothing meaningful to correlate)", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", textPart("prt_empty", "msg_a", ""));
+
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_new", "msg_a", "Hello world")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_empty");
+		expect(ids).toContain("prt_new");
+	});
+});
+
 // ============================================================================
 // The SAME existential bug, on the OTHER path.
 //
@@ -984,6 +1259,63 @@ describe("useSyncStore — bridgedPartIds tracking is session-scoped", () => {
 		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
 		expect(ids).toContain("prt_step");
 		expect(ids).toContain("prt_text");
+	});
+});
+
+// T16 — bridge retirement used to fire ONLY when the first real part
+// was NON-EMPTY text. A message whose first real part was a tool call (or an
+// empty-text snapshot before content streamed in) kept the optimistic bridge
+// beside the real parts — duplicating the user's text bubble.
+describe("useSyncStore — bridge retirement on the first real part", () => {
+	test("retires the bridge when the first real part is non-text (tool/step), not just non-empty text", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		// The server's FIRST real part for this message is a non-text step-start
+		// part, not the echoed user text.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_1",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+
+		const parts = useSyncStore.getState().parts["msg_reused"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_step"]);
+	});
+
+	test("retires the bridge on an empty-text first real part, not just non-empty text", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+
+		store.upsertPart("msg_reused", textPart("prt_real", "msg_reused", "", "ses_1"));
+
+		const parts = useSyncStore.getState().parts["msg_reused"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_real"]);
+	});
+
+	test("still retires (and applies) on a non-empty real text part — the pre-existing case keeps working", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+
+		store.upsertPart("msg_reused", textPart("prt_real", "msg_reused", "hello", "ses_1"));
+
+		const parts = useSyncStore.getState().parts["msg_reused"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_real"]);
+		expect((parts[0] as TextPart).text).toBe("hello");
 	});
 });
 

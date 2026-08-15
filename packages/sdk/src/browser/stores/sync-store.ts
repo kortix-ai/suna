@@ -79,6 +79,14 @@ interface SyncState {
 	 * it technically part of the published surface, so an out-of-repo consumer
 	 * calling it directly would fail to compile — that needs a semver-relevant
 	 * callout in the next release notes.
+	 *
+	 * `eventID` (T14): the wire's own `message.part.delta` event id
+	 * (`event.id`, not `event.properties.id` — see `deltaEventTails` above for
+	 * why this is the correct duplicate-delivery key). Optional and additive:
+	 * omitting it reproduces this function's exact pre-existing behavior, so
+	 * the one in-repo caller change (`applyEvent`) is the only place this
+	 * matters, and appending a trailing optional param is not a breaking
+	 * arity change.
 	 */
 	applyPartDelta: (
 		sessionID: string,
@@ -86,6 +94,7 @@ interface SyncState {
 		partID: string,
 		field: string,
 		delta: string,
+		eventID?: string,
 	) => void;
 	setStatus: (sessionID: string, status: SessionStatus) => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
@@ -244,6 +253,9 @@ function forgetSessionIds(sessionID: string): void {
 	// bridge-clearing branch fired for it too, wiping every part already
 	// stored under it. See bridgedPartIds below.
 	bridgedPartIds.delete(sessionID);
+	// Same leak class, on the two T14 + T16 maps above.
+	deltaEventTails.delete(sessionID);
+	stubAssistantIds.delete(sessionID);
 }
 
 const isOptimistic = (sessionID: string, messageID: string) =>
@@ -279,6 +291,59 @@ const bridgedPartIds = new Map<string, Set<string>>();
 // delta-accumulated text. Keying by session and releasing only the ending
 // session's bucket fixes it.
 const deltaActiveParts = new Map<string, Set<string>>();
+
+// ---------------------------------------------------------------------------
+// Part-delta idempotency (T14).
+//
+// `applyPartDelta` used to be `existing + delta` with nothing consulted for
+// identity — a duplicate delivery of the SAME `message.part.delta` doubled
+// the streamed text. Realistic duplicate sources: the vendor SSE client's
+// retry loop briefly stacking a second live connection before
+// `event-stream.ts`'s own single-live-stream invariant (or the `sseMaxRetryAttempts:
+// 1` pin) catches up, or a second mounted subscriber replaying the same
+// stream.
+//
+// The wire's own `EventMessagePartDelta` (`@opencode-ai/sdk`'s
+// `v2/gen/types.gen.d.ts`) carries a top-level `id: string` on every event —
+// NOT inside `properties`, so `applyEvent`'s `message.part.delta` case now
+// threads `event.id` through as `applyPartDelta`'s new optional trailing
+// `eventID` param. Two independently-broadcast SSE readers of the SAME
+// published event (a stacked connection, a second subscriber) both receive
+// the identical event object and therefore the identical `id` — which makes
+// event identity the correct dedupe key, not delta CONTENT: content-based
+// dedupe (e.g. "reject a delta whose text matches the last one applied at
+// this length") would false-positive on legitimately-repeated content, such
+// as streaming "..." one identical character at a time.
+//
+// Keyed by session (same shape/reason as the maps above), then by
+// `${messageID}:${partID}:${field}` (a part could in principle accumulate
+// more than one delta-bearing field) to the SET of event ids already applied
+// for that key. A stacked duplicate connection can redeliver a whole tail of
+// the stream, not just the single most-recent event — "replay the last N
+// deltas again" is exactly what a reconnect-and-resume does — so every
+// applied id for the key is kept, not just the last one; a Set lookup stays
+// O(1) either way. Bounded by the per-session clears below, so this never
+// grows across an entire session's lifetime, only within one streaming turn.
+// A delta that arrives with no `eventID` (a caller predating this change, or
+// a hand-built synthetic delta) gets NO protection — identical to this
+// function's behavior before this change — rather than risk a content-based
+// false positive (see the module comment above for why content isn't used).
+//
+// Cleared per-session on `session.idle`/`session.error` (a new turn's deltas
+// use brand-new part ids anyway, so nothing realistic is lost) and released
+// wholesale by `forgetSessionIds`/`reset()`, matching `deltaActiveParts`.
+const deltaEventTails = new Map<string, Map<string, Set<string>>>();
+
+/** Session-scoped tracking for `session.error`'s stub assistant message (see
+ *  the handler below) — same shape/reason as the maps above. A stub only
+ *  ever stands in for a real assistant message that has not arrived yet;
+ *  `hydrate` reconciles (drops) it the moment the server's own transcript
+ *  contains a real one for this session, which is the promise the stub's own
+ *  creation comment made but that nothing previously fulfilled. Released
+ *  wholesale by `forgetSessionIds`/`reset()`; NOT cleared on idle/error — the
+ *  stub message it names still lives in `messages[sessionID]` until hydrate
+ *  reconciles it or the session itself ends. */
+const stubAssistantIds = new Map<string, Set<string>>();
 
 // ---------------------------------------------------------------------------
 // Session retention — how a transcript ever LEAVES memory again.
@@ -585,22 +650,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			let list: Part[];
 			let bridgeCleared = false;
 			if (hasTrackedId(bridgedPartIds, partSessionID, messageID)) {
-				// Only retire the optimistic/bridged user text once a REAL text
-				// part with actual content arrives. A stray non-text part — or an
-				// empty text snapshot — must NOT wipe the bridge, otherwise the
-				// user's message renders as an empty bubble.
-				const incoming = part as { type?: string; text?: unknown };
-				const incomingIsRealText =
-					incoming?.type === "text" &&
-					typeof incoming.text === "string" &&
-					incoming.text.length > 0;
-				if (incomingIsRealText) {
-					untrackId(bridgedPartIds, partSessionID, messageID);
-					list = [];
-					bridgeCleared = true;
-				} else {
-					list = s.parts[messageID] ?? [];
-				}
+				// T16 — retire the bridge on ANY real part arrival for this
+				// message: text, non-text (tool/file/step/…), or an empty-text
+				// snapshot. This used to retire ONLY on a non-empty text part, so a
+				// message whose first real part was a tool call (or an empty text
+				// snapshot before content streamed in) kept the optimistic bridge
+				// alongside the real parts — duplicating the user's text bubble.
+				// The server has started sending this message's real parts either
+				// way, so the bridge's job — standing in until real data exists —
+				// is done the moment ANY of them arrives.
+				untrackId(bridgedPartIds, partSessionID, messageID);
+				list = [];
+				bridgeCleared = true;
 			} else {
 				list = s.parts[messageID] ?? [];
 			}
@@ -681,8 +742,27 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (sessionID, messageID, partID, field, delta) => {
+	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
 		trackId(deltaActiveParts, sessionID, partID);
+		// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
+		// when the caller supplied an event id (every real wire delta does);
+		// a delta with no id gets no protection here, same as before this
+		// change.
+		if (eventID) {
+			const tailKey = `${messageID}:${partID}:${field}`;
+			let sessionTails = deltaEventTails.get(sessionID);
+			if (!sessionTails) {
+				sessionTails = new Map();
+				deltaEventTails.set(sessionID, sessionTails);
+			}
+			let appliedIds = sessionTails.get(tailKey);
+			if (appliedIds?.has(eventID)) return;
+			if (!appliedIds) {
+				appliedIds = new Set();
+				sessionTails.set(tailKey, appliedIds);
+			}
+			appliedIds.add(eventID);
+		}
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
@@ -896,6 +976,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				.map((m) => m.info)
 				.sort((a, b) => cmp(a.id, b.id));
 
+			// T16 — reconcile a `session.error` stub assistant message
+			// (see `stubAssistantIds` and the `session.error` handler above). The
+			// stub only ever stood in for a real assistant message that had not
+			// arrived yet, sorted BELOW every server id (`ascendingId('msg')`) —
+			// wrong once real data exists. The moment the server's OWN transcript
+			// contains a real assistant message for this session, every
+			// currently-tracked stub for it is stale and is dropped below rather
+			// than kept alongside the real one at the wrong position. If the
+			// incoming snapshot has no assistant message at all yet, nothing has
+			// arrived to reconcile against, so the stub is left untouched.
+			const trackedStubIds = stubAssistantIds.get(sessionID);
+			const reconcileStubs =
+				!!trackedStubIds &&
+				trackedStubIds.size > 0 &&
+				incoming.some((m) => m.role === "assistant");
+			if (reconcileStubs) stubAssistantIds.delete(sessionID);
+
 			// Merge incoming messages with existing ones — never delete messages
 			// that exist in the sync store but are missing from the fetch (they may
 			// be from a newer turn that the server hasn't persisted yet).
@@ -957,6 +1054,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const unmatchedOptimisticUsers: typeof existing = [];
 			for (const m of existing) {
 				if (!seen.has(m.id)) {
+					if (reconcileStubs && trackedStubIds!.has(m.id)) {
+						// Superseded by a real assistant message this same hydrate
+						// snapshot introduced — drop it, don't reinsert it below the
+						// real data at its stale `ascendingId` position.
+						continue;
+					}
 					if (isOptimistic(sessionID, m.id)) {
 						if (m.role !== "user") {
 							deferredOptimistic.push(m);
@@ -1083,7 +1186,29 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 					return inP;
 				});
-				for (const ep of extras) {
+				// T16 — dedupe extras by content identity. An "extra" is an
+				// existing part whose id the incoming snapshot no longer has — the
+				// server may simply not have persisted it yet (kept, as before), OR
+				// the server RE-ISSUED the same content under a NEW part id (a real
+				// defect: the old SSE-accumulated twin stayed in `exParts` forever,
+				// duplicating the text inside this one message). Distinguish the two
+				// conservatively: drop an extra only when it is text-like AND its own
+				// accumulated text is a PREFIX of (or equal to) some incoming
+				// text-like part of the SAME type — i.e. the incoming copy confidently
+				// re-issues it, not merely resembles it. Non-text-like extras (tool,
+				// permission, file, step, …) are never dropped by content — they carry
+				// distinct identity per id and a coincidental text match doesn't apply
+				// to them at all.
+				const survivingExtras = extras.filter((extra) => {
+					if (!isTextLikePart(extra) || extra.text.length === 0) return true;
+					return !inParts.some(
+						(inP) =>
+							inP.type === extra.type &&
+							isTextLikePart(inP) &&
+							inP.text.startsWith(extra.text),
+					);
+				});
+				for (const ep of survivingExtras) {
 					const r = Binary.search(reconciled, ep.id, (p) => p.id);
 					if (!r.found) reconciled.splice(r.index, 0, ep);
 				}
@@ -1100,6 +1225,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		dispatchedOptimisticIds.clear();
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
+		deltaEventTails.clear();
+		stubAssistantIds.clear();
 		// The data these holds protected is gone, so the holds are too —
 		// otherwise a late unmount could free a session the next page opened.
 		sessionConsumers.clear();
@@ -1367,12 +1494,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					} as unknown as Part);
 				}
 
+				// `event.id` is a top-level field of every wire event (see
+				// `deltaEventTails` above) — never inside `properties`, so it is
+				// read directly off `event`, not `props`.
 				store.applyPartDelta(
 					props.sessionID,
 					props.messageID,
 					props.partID,
 					props.field,
 					props.delta,
+					event.id,
 				);
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(
@@ -1410,6 +1541,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// accepted normally. Never the whole map: another session may
 			// still be streaming (see comment above deltaActiveParts).
 			if (sessionID) deltaActiveParts.delete(sessionID);
+			// Same reasoning for the delta event-id tails (T14): a new
+			// turn's deltas use brand-new part ids anyway, so nothing realistic
+			// is lost by dropping this session's tracking here.
+			if (sessionID) deltaEventTails.delete(sessionID);
 			return;
 		}
 		case "session.error": {
@@ -1422,6 +1557,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);
+			deltaEventTails.delete(sid);
 
 			// Patch the error onto the last assistant message in the sync store.
 			// If no assistant message exists yet, create a temporary one so the
@@ -1446,8 +1582,15 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 
 				// No assistant message yet — create a stub so the error shows.
-				// Mark it as a client-side stub so hydrate can replace it.
+				// Tracked in `stubAssistantIds` (T16) so `hydrate` can
+				// reconcile it away once a real assistant message for this
+				// session lands — see that map's doc comment and the
+				// reconciliation in `hydrate` below. `ascendingId('msg')` sorts
+				// BELOW every server id, which is fine as a placeholder position
+				// but wrong once real data exists; that is exactly what the
+				// reconciliation fixes.
 				const stubId = ascendingId("msg");
+				trackId(stubAssistantIds, sid, stubId);
 				const stubMsg: Message = {
 					id: stubId,
 					sessionID: sid,

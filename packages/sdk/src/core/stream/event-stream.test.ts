@@ -1166,6 +1166,116 @@ describe('openEventStream gap rehydrate', () => {
   });
 });
 
+describe('openEventStream single-live-stream invariant', () => {
+  test('a second open for the SAME client tears the first stream down', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const firstDispatched: OpenCodeEvent[] = [];
+    const secondDispatched: OpenCodeEvent[] = [];
+
+    const first = openEventStream({ client, onEvent: (e) => firstDispatched.push(e), timers: clock });
+    await tick();
+    expect(channels.length).toBe(1);
+
+    // A second subscriber opens a stream for the SAME client (object
+    // identity — mirrors two callers both resolving `getClientForUrl` for
+    // the same runtime) without closing the first handle.
+    const second = openEventStream({ client, onEvent: (e) => secondDispatched.push(e), timers: clock });
+    await tick();
+
+    // The FIRST connection's underlying attempt is torn down (aborted) — no
+    // new fetch happens for it, and the first attempt's channel is dead —
+    // while the second opens its own fresh connection.
+    expect(channels.length).toBe(2);
+
+    // An event delivered on the (now-dead) first channel must never reach
+    // either onEvent callback — the first stream is fully torn down, not
+    // just logically superseded.
+    channels[0].push(partUpdated('stale'));
+    await tick();
+    await clock.advance(16);
+    expect(firstDispatched).toEqual([]);
+    expect(secondDispatched).toEqual([]);
+
+    // An event on the second (live) channel delivers normally, exactly once,
+    // only to the second subscriber.
+    channels[1].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    expect(firstDispatched).toEqual([]);
+    expect(secondDispatched).toHaveLength(1);
+
+    first.close();
+    second.close();
+  });
+
+  test("closing the FIRST (already-superseded) handle does not clobber the second stream's registration", async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: OpenCodeEvent[] = [];
+
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    const second = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    // Calling close() on the handle that was ALREADY torn down by the second
+    // open must be a safe no-op — in particular it must not delete the
+    // second stream's live registration, which would let a THIRD open skip
+    // tearing the second one down.
+    first.close();
+
+    channels[1].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    expect(dispatched).toHaveLength(1);
+
+    second.close();
+  });
+
+  test('two DIFFERENT clients never collide — both stay live', async () => {
+    const clock = createFakeClock();
+    const a = createConnectableClient();
+    const b = createConnectableClient();
+    const dispatchedA: OpenCodeEvent[] = [];
+    const dispatchedB: OpenCodeEvent[] = [];
+
+    const handleA = openEventStream({ client: a.client, onEvent: (e) => dispatchedA.push(e), timers: clock });
+    const handleB = openEventStream({ client: b.client, onEvent: (e) => dispatchedB.push(e), timers: clock });
+    await tick();
+
+    expect(a.channels.length).toBe(1);
+    expect(b.channels.length).toBe(1);
+
+    a.channels[0].push(partUpdated('pa'));
+    b.channels[0].push(partUpdated('pb'));
+    await tick();
+    await clock.advance(16);
+
+    expect(dispatchedA).toHaveLength(1);
+    expect(dispatchedB).toHaveLength(1);
+
+    handleA.close();
+    handleB.close();
+  });
+
+  test('close() after a supersede is idempotent', async () => {
+    const clock = createFakeClock();
+    const { client } = createConnectableClient();
+
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    const second = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+
+    first.close();
+    first.close();
+    second.close();
+    second.close();
+    await tick();
+  });
+});
+
 describe('openEventStream close()', () => {
   test('tears down cleanly: no further connects, timers, or dispatches', async () => {
     const clock = createFakeClock();

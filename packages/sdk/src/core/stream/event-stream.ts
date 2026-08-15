@@ -206,11 +206,42 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
 }
 
 /**
+ * Enforces "one live stream per client" — see the single-live-stream
+ * invariant in `openEventStream` below.
+ *
+ * Keyed by `EventStreamClient` object identity. `getClientForUrl`
+ * (`core/runtime/client.ts`) caches exactly one client per resolved runtime
+ * URL, so every `openEventStream()` call targeting the SAME runtime (the
+ * same sandbox, the same OpenCode session) is handed the identical client
+ * reference, and every call for a DIFFERENT runtime gets a different one.
+ * That makes the client itself the natural "scope" key — no caller has to
+ * mint or thread an explicit session/scope id, and two genuinely unrelated
+ * streams (different sandboxes) never collide.
+ *
+ * `WeakMap` so a client that falls out of scope (its sandbox torn down, no
+ * live handle referencing it) is never pinned by this module.
+ */
+const liveStreamsByClient = new WeakMap<EventStreamClient, EventStreamHandle>();
+
+/**
  * Connects to the opencode SSE event stream and keeps it alive: heartbeat
  * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
  * and exponential-backoff reconnect. Framework-free — safe to call from any
  * host (the React wrapper calls this once per effect run; a non-React host can
  * call it directly).
+ *
+ * **Single-live-stream invariant.** A second concurrent open for a client
+ * that already has a live stream (see `liveStreamsByClient`) tears the first
+ * one down — aborts it, releases its timers — before this one starts.
+ * Realistic sources of a stacked duplicate: a second mounted subscriber
+ * opening its own stream for the same runtime without closing an existing
+ * one (e.g. an out-of-order remount), or a caller that opens a fresh stream
+ * after a reconnect without discarding its previous handle. Without this,
+ * two live readers of the same SSE connection deliver every event twice to
+ * every `onEvent` callback — the exact failure mode `sync-store.ts`'s
+ * `applyPartDelta` separately guards against for `message.part.delta`, but
+ * this closes it at the transport instead of relying on every consumer to be
+ * idempotent.
  */
 export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
   const { client, onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
@@ -219,6 +250,10 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   const heartbeatTimeoutMs = opts.heartbeatTimeoutMs ?? HEARTBEAT_MS;
   const maxConsecutiveHardFailures =
     opts.maxConsecutiveHardFailures ?? MAX_CONSECUTIVE_HARD_FAILURES;
+
+  // Tear down any existing live stream for this exact client BEFORE starting
+  // a new one — see `liveStreamsByClient`.
+  liveStreamsByClient.get(client)?.close();
 
   const abortController = new AbortController();
   const onExternalAbort = () => abortController.abort();
@@ -562,13 +597,20 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
     }
   })();
 
-  return {
+  let handle: EventStreamHandle;
+  handle = {
     close: () => {
       abortController.abort();
       if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
       if (flushTimer) t.clearTimeout(flushTimer);
+      // Only clear the registry if WE are still the registered live stream
+      // for this client — a stream torn down BY a newer open (see the top of
+      // this function) must not clobber that newer stream's own registration.
+      if (liveStreamsByClient.get(client) === handle) liveStreamsByClient.delete(client);
     },
   };
+  liveStreamsByClient.set(client, handle);
+  return handle;
 }
 
 // The curated chat-event union built on top of this stream's `OpenCodeEvent` —
