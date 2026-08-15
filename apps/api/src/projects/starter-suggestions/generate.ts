@@ -138,11 +138,22 @@ async function defaultCollect(
 }
 
 /** The platform default, probed for servability — the ONLY candidate this
- *  generator ever tries (no fallback ladder, unlike title generation). */
+ *  generator ever tries (no fallback ladder, unlike title generation).
+ *
+ *  Null carries no severity: the caller bails silently on it. The two ways
+ *  to get null are logged differently HERE because only one is a problem —
+ *  a deployment with no platform default at all warns once per attempt,
+ *  while "not servable for this account" (every free-tier account, every
+ *  attempt) is routine gating and stays quiet. */
 async function defaultResolveModel(input: GenerateStarterSuggestionsInput): Promise<string | null> {
   const { platformDefaultModelId } = await import('../../llm-gateway/models/served-managed-models');
   const model = platformDefaultModelId().trim();
-  if (!model) return null;
+  if (!model) {
+    appLogger.warn('[starter-suggestions] no platform default model configured', {
+      projectId: input.projectId,
+    });
+    return null;
+  }
 
   const [{ accountMayUseManagedModels }, { isModelServableForAccount }] = await Promise.all([
     import('../../billing/services/entitlements'),
@@ -322,13 +333,13 @@ export async function generateStarterSuggestions(
     }
     if (!collected.hasSignals) return;
 
+    // Silent no-op by contract: null mostly means "not servable for this
+    // account" — routine gating that fires for every free-tier account, so
+    // it must not warn. The one operational failure behind a null (no
+    // platform default configured at all) is logged inside
+    // `defaultResolveModel`, where the two cases can still be told apart.
     const model = await resolveModel(input);
-    if (!model) {
-      appLogger.warn('[starter-suggestions] no servable model to generate with', {
-        projectId: input.projectId,
-      });
-      return;
-    }
+    if (!model) return;
 
     const minted = await mint(input.accountId, input.projectId, input.userId);
     if (!minted) {

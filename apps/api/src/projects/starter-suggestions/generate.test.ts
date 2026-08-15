@@ -221,7 +221,11 @@ describe('generateStarterSuggestions', () => {
     expect(h.persisted).toEqual([]);
   });
 
-  it('model unservable: no mint, no generate, no persist', async () => {
+  // A null model is a SILENT no-op by contract (routine free-tier gating —
+  // the orchestrator has no warn on this path; the only logged variant, a
+  // missing platform default, lives inside defaultResolveModel and is not
+  // reachable through seams).
+  it('model unservable: silent no-op — no mint, no generate, no persist', async () => {
     const h = harness({ resolveModel: async () => null });
     await generateStarterSuggestions({ ...input, projectId: 'proj-unservable' }, h.options);
     expect(h.minted).toEqual([]);
