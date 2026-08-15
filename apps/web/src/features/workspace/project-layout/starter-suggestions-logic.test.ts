@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { visibleSuggestions } from './starter-suggestions-logic';
+import { suggestionRowKind, visibleSuggestions } from './starter-suggestions-logic';
 
 describe('visibleSuggestions', () => {
   const pool = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -21,5 +21,32 @@ describe('visibleSuggestions', () => {
     const source = ['a', 'b', 'c'];
     visibleSuggestions(source, 2);
     expect(source).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('suggestionRowKind', () => {
+  const connector = { slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' };
+
+  test('an item with no action is a prompt row', () => {
+    expect(suggestionRowKind({}, true)).toBe('prompt');
+    expect(suggestionRowKind({ action: undefined }, true)).toBe('prompt');
+  });
+
+  test('a connectors action with a connector record and write access is a connector row', () => {
+    expect(suggestionRowKind({ action: 'connectors', connector }, true)).toBe('connector');
+  });
+
+  test('a connectors action without write access falls back to an action row', () => {
+    expect(suggestionRowKind({ action: 'connectors', connector }, false)).toBe('action');
+  });
+
+  test('a connectors action with no connector record falls back to an action row', () => {
+    expect(suggestionRowKind({ action: 'connectors' }, true)).toBe('action');
+    expect(suggestionRowKind({ action: 'connectors', connector: null }, true)).toBe('action');
+  });
+
+  test('a non-connectors action is always an action row, connector field or not', () => {
+    expect(suggestionRowKind({ action: 'schedules' }, true)).toBe('action');
+    expect(suggestionRowKind({ action: 'schedules', connector }, true)).toBe('action');
   });
 });

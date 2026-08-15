@@ -7,7 +7,7 @@ import {
   UsersThreeIcon as UsersGroupSolid,
 } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 
 import { Kortix } from '@/features/icon/icons/kortix';
 import { Slack } from '@/features/icon/icons/slack';
@@ -16,13 +16,20 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import type { StarterSuggestionAction, StarterSuggestionsResponse } from '@kortix/sdk';
 import { useProjectStarterSuggestions } from '@kortix/sdk/react';
 import { STARTER_PROMPT_FALLBACKS } from '@kortix/shared';
 
-import { visibleSuggestions } from './starter-suggestions-logic';
+import {
+  ConnectorSuggestionRow,
+  StarterSuggestionConnectModal,
+  type PendingConnectorApp,
+} from './starter-suggestion-connect';
+import { suggestionRowKind, visibleSuggestions } from './starter-suggestions-logic';
 
 const MAX_VISIBLE = 5;
 
@@ -64,6 +71,13 @@ const ACTION_ICONS: Record<StarterSuggestionAction, ComponentType<{ className?: 
  * loading or on error this renders the same static fallback texts the
  * server would otherwise send, so there is no flash, no spinner, and no
  * layout shift when the personalized set lands.
+ *
+ * One exception to "navigates instead": a `connectors` item that carries a
+ * server-validated `connector` record, for a viewer who can write project
+ * connectors, renders as a connect-in-place row instead — see
+ * `suggestionRowKind` and `starter-suggestion-connect.tsx`. Anyone without
+ * that write access still gets the plain navigating row, same as a
+ * connectors item with no `connector` record.
  */
 export function StarterSuggestions({
   projectId,
@@ -77,24 +91,61 @@ export function StarterSuggestions({
   const { data } = useProjectStarterSuggestions(projectId);
   const pool: SuggestionItem[] = data?.items ?? FALLBACK_POOL;
   const items = visibleSuggestions(pool, MAX_VISIBLE);
+  // Only probe IAM when a row could actually need it — most visible sets
+  // carry no connectors item at all, and the probe is a network round trip.
+  const hasConnectorItem = items.some(
+    (item) => item.action === 'connectors' && item.connector != null,
+  );
+  const canConnect =
+    useProjectCan(
+      hasConnectorItem ? projectId : undefined,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    ).allowed === true;
+  const [pendingApp, setPendingApp] = useState<PendingConnectorApp | null>(null);
 
   if (items.length === 0) return null;
+
+  const navigateForAction = (action: StarterSuggestionAction) => {
+    if (isCapabilityTabKey(action)) {
+      router.push(capabilityTabHref(projectId, action));
+      return;
+    }
+    openSettings(action);
+  };
 
   const handlePick = (item: SuggestionItem) => {
     if (!item.action) {
       onPick(item.prompt);
       return;
     }
-    if (isCapabilityTabKey(item.action)) {
-      router.push(capabilityTabHref(projectId, item.action));
+    if (suggestionRowKind(item, canConnect) === 'connector' && item.connector) {
+      setPendingApp({
+        slug: item.connector.slug,
+        name: item.connector.name,
+        imgSrc: item.connector.img_src,
+      });
       return;
     }
-    openSettings(item.action);
+    navigateForAction(item.action);
   };
 
   return (
     <div className="flex w-full flex-col items-center gap-1 px-4">
       {items.map((item) => {
+        if (suggestionRowKind(item, canConnect) === 'connector' && item.connector) {
+          return (
+            <ConnectorSuggestionRow
+              key={item.id}
+              label={item.label}
+              app={{
+                slug: item.connector.slug,
+                name: item.connector.name,
+                imgSrc: item.connector.img_src,
+              }}
+              onConnect={() => handlePick(item)}
+            />
+          );
+        }
         const Icon = item.action ? ACTION_ICONS[item.action] : null;
         return (
           <button
@@ -113,6 +164,11 @@ export function StarterSuggestions({
           </button>
         );
       })}
+      <StarterSuggestionConnectModal
+        projectId={projectId}
+        pendingApp={pendingApp}
+        onOpenChange={(open) => !open && setPendingApp(null)}
+      />
     </div>
   );
 }
