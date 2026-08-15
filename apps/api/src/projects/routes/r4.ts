@@ -149,7 +149,7 @@ import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
-import { turnStreamKindField } from './r4-turn-stream-kind';
+import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -2295,13 +2295,31 @@ projectsApp.openapi(
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-      );
+      // Kind-aware capability floor. The connector.write gate protects the
+      // CHANNEL-SEND primitives: `step`/`answer` — and any unknown kind — fall
+      // through to relayTurnStep/relayTurnAnswer below, which post the agent's
+      // content to the project's Slack/Teams. The SANDBOX-reported LIFECYCLE
+      // signals carry no content and fan out to no connector: `end`/`turn_end`
+      // only shorten this session's idle deadline (LEAST-only — see the comment
+      // at the `end` branch below, it can never EXTEND the box's life), and
+      // `opencode_session` only persists the root-session pin. Those are exactly
+      // what the in-sandbox agent CLI reports over its session/CLI token, which a
+      // SCOPED agent grant has no reason to hold connector.write for — gating them
+      // 403'd every turn-end report on Essentia, stranding sandboxes alive for the
+      // full idle grace (wasted compute). So exempt the lifecycle kinds and keep
+      // the connector gate as the deny-by-default floor for anything that can
+      // reach the send path. The IDOR scope (session_id -> projectId) below still
+      // applies to every kind, and the `read` floor above still requires
+      // membership.
+      if (turnStreamKindNeedsConnectorWrite(body.kind)) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
+      }
     }
 
     if (authenticatedSandboxId) {

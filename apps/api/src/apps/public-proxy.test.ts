@@ -214,6 +214,46 @@ describe('Apps public edge', () => {
     expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now)).toBe(true);
   });
 
+  test('direct-edge mode refuses a caller-supplied App host header', () => {
+    // x-kortix-app-host is an EDGE-SIGNED field. In direct-edge mode (a
+    // self-host with no Apps Worker, which `kortix self-host configure` now
+    // sets up) nothing verifies a signature, so trusting the header would let
+    // anyone who can reach the public API origin name any App and be proxied
+    // into it, past that App's access policy. Only the real Host header counts.
+    const spoofed = 'dev-victim-bbbbbbbbbbbbbbbb.apps.kortix.com';
+    const request = new Request('https://api.kortix.com/secret', {
+      headers: { 'x-kortix-app-host': spoofed },
+    });
+    const url = new URL(request.url);
+
+    process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'true';
+    try {
+      // api.kortix.com is not an App hostname, so the request is not an App
+      // request at all — it falls through to the ordinary API.
+      expect(resolveAppRequest(request, url)).toBeNull();
+
+      // A real App hostname still resolves, from the Host header alone.
+      const direct = new Request(`https://${spoofed}/`, {
+        headers: { 'x-kortix-app-host': 'dev-other-cccccccccccccccc.apps.kortix.com' },
+      });
+      expect(resolveAppRequest(direct, new URL(direct.url))).toEqual({
+        routeKey: 'bbbbbbbbbbbbbbbb',
+        local: false,
+        publicHost: spoofed,
+      });
+    } finally {
+      delete process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;
+    }
+
+    // With the Worker in front, the header IS the signed edge contract and
+    // stays authoritative — verifyAppEdgeRequest checks the HMAC over it.
+    expect(resolveAppRequest(request, url)).toEqual({
+      routeKey: 'bbbbbbbbbbbbbbbb',
+      local: false,
+      publicHost: spoofed,
+    });
+  });
+
   test('resolves local and environment-scoped production hostnames', () => {
     expect(resolveAppHost('aaaaaaaaaaaaaaaa.apps.localhost')).toEqual({
       routeKey: 'aaaaaaaaaaaaaaaa', local: true,

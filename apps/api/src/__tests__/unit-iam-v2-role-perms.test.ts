@@ -83,6 +83,23 @@ describe('IAM V2 — project role table', () => {
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
   });
 
+  test('Apps own their leaves: member reads, editor writes and deploys', () => {
+    // Apps used to assert project.customize.write / project.gitops.read, so a
+    // custom role could not turn Apps on or off without dragging every other
+    // customization leaf with it. Seeding follows the documented convention:
+    // read leaf → floor member, write leaves → editor. WHICH Apps a member then
+    // sees is the App access policy's job, not this leaf's (see apps/access.ts).
+    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_APP_READ)).toBe(true);
+    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_APP_WRITE)).toBe(false);
+    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_APP_DEPLOY)).toBe(false);
+
+    for (const role of ['editor', 'manager'] as const) {
+      expect(projectRoleAllows(role, PROJECT_ACTIONS.PROJECT_APP_READ)).toBe(true);
+      expect(projectRoleAllows(role, PROJECT_ACTIONS.PROJECT_APP_WRITE)).toBe(true);
+      expect(projectRoleAllows(role, PROJECT_ACTIONS.PROJECT_APP_DEPLOY)).toBe(true);
+    }
+  });
+
   test('editor can fire and write triggers but not manage members or delete project', () => {
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
     expect(projectRoleAllows('editor', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);

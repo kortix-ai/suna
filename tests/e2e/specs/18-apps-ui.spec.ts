@@ -39,7 +39,7 @@ interface AppResponse {
 }
 
 test.describe('18 — Kortix Apps UI', () => {
-  test('shows experimental Apps, enables it in place, and renders a read-only deployment index', async ({
+  test('gates Apps on its flag, enables it in place, and renders a read-only deployment index', async ({
     context,
     page,
   }, testInfo) => {
@@ -118,9 +118,11 @@ test.describe('18 — Kortix Apps UI', () => {
       });
       await dismissOnboarding(page);
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
+      // Apps is a STABLE flag: still opt-in per project, but no surface calls
+      // it experimental any more.
+      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toHaveCount(0);
       // The gate screen never self-enables: it points at Settings →
-      // Experimental and there is no Enable button on the feature's own page.
+      // Feature flags and there is no Enable button on the feature's own page.
       await expect(page.getByText('is off for this project')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Enable Apps' })).toHaveCount(0);
       expect(disabledAppRequests).toEqual([]);
@@ -192,28 +194,41 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
       await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
       await expect(page.getByText('Deploy from a terminal', { exact: true })).toBeVisible();
-      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toBeVisible();
+      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toHaveCount(0);
       await expect(page.getByText('kortix apps deploy .', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
       await expect(page.getByRole('dialog', { name: 'Create App' })).toHaveCount(0);
 
-      const seededRow = page.getByRole('listitem', {
-        name: 'Seed App App',
-      });
-      await expect(seededRow).toBeVisible();
-      await expect(seededRow.getByText(seeded.url, { exact: true })).toBeVisible();
-      await expect(seededRow.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
-      await expect(seededRow.getByText('Deploy to see a live preview.')).toBeVisible();
+      // The card is ONE control now: the live preview is its hero and every
+      // action moved into the detail modal, so there are no nested hit areas.
+      // Same assertions as before — they just live where the controls do.
+      const seededCard = page.getByRole('button', { name: 'Open Seed App' });
+      await expect(seededCard).toBeVisible();
+      await expect(seededCard.getByText(seeded.url, { exact: true })).toBeVisible();
+      await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
+      // Never deployed, so it must not claim to be running.
+      await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
 
-      const copy = seededRow.getByRole('button', { name: 'Copy code' });
+      // Opening an App happens IN PLACE — no new tab, no navigation.
+      await seededCard.click();
+      const appModal = page.getByRole('dialog', { name: 'Seed App App' });
+      await expect(appModal).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
+      await expect(appModal.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
+      await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
+
+      await appModal.getByRole('button', { name: 'Show versions' }).click();
+      await expect(appModal.getByText('No deployments yet.')).toBeVisible();
+
+      const copy = appModal.getByRole('button', { name: 'Copy code' });
       await copy.click();
-      await expect(seededRow.getByRole('button', { name: 'Copied' })).toBeVisible();
+      await expect(appModal.getByRole('button', { name: 'Copied' })).toBeVisible();
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toBe(`kortix apps deploy . --app ${seeded.app_id}`);
 
-      await seededRow.getByRole('button', { name: 'Show versions' }).click();
-      await expect(seededRow.getByText('No deployments yet.')).toBeVisible();
+      await appModal.getByRole('button', { name: 'Close' }).click();
+      await expect(appModal).toBeHidden();
 
       await page.evaluate(() => localStorage.setItem('theme', 'light'));
       await page.reload({ waitUntil: 'domcontentloaded' });

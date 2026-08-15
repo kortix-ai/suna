@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { config, type SandboxProviderName } from '../config';
 import {
+  effectiveAppMachine,
   getProvider,
   type ProvisionResult,
   type ResolvedSandboxIngress,
@@ -148,6 +149,14 @@ export class AppHostingProvider {
       runtimeId: input.runtimeId,
       controlTokenHash: appControlTokenHash(token),
     };
+  }
+
+  /**
+   * The machine this provider will really allocate. Billing meters this, not
+   * the requested specification — see effectiveAppMachine.
+   */
+  effectiveMachine(provider: SandboxProviderName, machine: AppMachineSpec): AppMachineSpec {
+    return effectiveAppMachine(this.dependencies.runtimeProvider(provider), machine);
   }
 
   async start(provider: SandboxProviderName, externalId: string): Promise<void> {

@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { posix, resolve, sep } from 'node:path';
 import * as tar from 'tar';
-import { getSupabase } from '../shared/supabase';
+import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 
 export const APP_ARTIFACT_BUCKET = 'app-artifacts';
 // Managed Supabase Storage rejects bucket limits above the project's global
@@ -119,7 +119,7 @@ export async function createAppArtifactUploadUrl(
       if (error || !data?.signedUrl) {
         throw error ?? new Error('failed to create App artifact upload URL');
       }
-      return { uploadUrl: data.signedUrl, objectPath, maxBytes: MAX_ARCHIVE_BYTES };
+      return { uploadUrl: toPublicStorageUrl(data.signedUrl), objectPath, maxBytes: MAX_ARCHIVE_BYTES };
     });
   } catch (error) {
     throw new AppArtifactStorageUnavailableError(error);

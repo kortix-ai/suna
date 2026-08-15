@@ -201,6 +201,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <ProjectCustomizeNavItem />
+              {/* Apps belongs with Customize, not down in the bottom group: it
+                  is a project surface you configure and operate, not a
+                  late-arriving alert. Self-hides until the `apps` flag is on. */}
+              <ProjectAppsNavItem />
             </SidebarMenu>
           </SidebarGroup>
 
@@ -233,7 +237,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   here — one Settings entry, on the Customize row's old line,
                   replaced all four. */}
               <ProjectFilesNavItem />
-              <ProjectAppsNavItem />
               <ProjectSettingsNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
             </SidebarMenu>

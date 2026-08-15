@@ -248,6 +248,128 @@ export async function appAccessibleToUser(
   });
 }
 
+/* ─── Team scoping — who on the team sees this App ────────────────────────────
+ *
+ * The same model sessions use (see connectors/share.ts `isSessionVisibleTo`):
+ * an App is `private` to the member who made it, `restricted` to an allow-list
+ * of members and groups, or visible to the whole project. Apps carry two extra
+ * modes that only describe PUBLIC traffic — `public` and `password` — and both
+ * are team-visible: a password protects the App's hostname from the internet,
+ * it never hides the App from the teammates who operate it.
+ *
+ * Before this, `access_mode` governed public traffic only, so a private App was
+ * still listed, renamed, resized, redeployed, and deleted by every project
+ * member. The management plane now honors the same policy.
+ */
+
+/** Who a mode exposes the App to inside the team, before owner/manager. */
+export type AppTeamScope = 'owner' | 'shared' | 'team';
+
+export function appTeamScope(mode: AppAccessMode): AppTeamScope {
+  if (mode === 'private') return 'owner';
+  if (mode === 'restricted') return 'shared';
+  return 'team';
+}
+
+/**
+ * Pure: may this subject see and operate the App? The App's creator always can,
+ * and so does a project manager — otherwise a private App becomes unmanageable
+ * the moment the member who created it leaves the account.
+ */
+export function appVisibleToSubject(input: {
+  mode: AppAccessMode;
+  ownerId: string | null;
+  grants: SecretGrant[];
+  subject: ShareSubject;
+  isProjectManager: boolean;
+}): boolean {
+  if (input.isProjectManager) return true;
+  if (input.ownerId && input.ownerId === input.subject.userId) return true;
+  switch (appTeamScope(input.mode)) {
+    case 'team':
+      return true;
+    case 'shared':
+      return input.grants.some((grant) =>
+        grant.principalType === 'member'
+          ? grant.principalId === input.subject.userId
+          : input.subject.groupIds.includes(grant.principalId),
+      );
+    case 'owner':
+      return false;
+  }
+}
+
+/** Bulk-load App grants → map appId → grants. Mirrors loadSessionGrants. */
+export async function loadAppAccessGrantsFor(
+  appIds: string[],
+): Promise<Map<string, SecretGrant[]>> {
+  const out = new Map<string, SecretGrant[]>();
+  if (appIds.length === 0) return out;
+  const rows = await db.select({
+    appId: appAccessGrants.appId,
+    principalType: appAccessGrants.principalType,
+    principalId: appAccessGrants.principalId,
+  }).from(appAccessGrants).where(inArray(appAccessGrants.appId, appIds));
+  for (const row of rows) {
+    const list = out.get(row.appId) ?? [];
+    list.push({
+      principalType: row.principalType as 'member' | 'group',
+      principalId: row.principalId,
+    });
+    out.set(row.appId, list);
+  }
+  return out;
+}
+
+interface TeamScopedApp {
+  appId: string;
+  accountId: string;
+  projectId: string;
+  accessMode: string;
+  createdBy: string | null;
+}
+
+async function projectManager(accountId: string, projectId: string, userId: string): Promise<boolean> {
+  const verdict = await authorize(
+    userId,
+    accountId,
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+    { type: 'project', id: projectId },
+  );
+  return verdict.allowed;
+}
+
+/**
+ * The subset of `rows` this user may see. One subject resolution, one manager
+ * verdict, and one grant query for the whole page — never per App.
+ */
+export async function filterAppsVisibleToUser<T extends TeamScopedApp>(
+  rows: T[],
+  userId: string,
+): Promise<T[]> {
+  if (rows.length === 0) return [];
+  const first = rows[0]!;
+  const [subject, isProjectManager, grants] = await Promise.all([
+    resolveShareSubject(userId),
+    projectManager(first.accountId, first.projectId, userId),
+    loadAppAccessGrantsFor(
+      rows.filter((row) => row.accessMode === 'restricted').map((row) => row.appId),
+    ),
+  ]);
+  return rows.filter((row) => appVisibleToSubject({
+    mode: row.accessMode as AppAccessMode,
+    ownerId: row.createdBy,
+    grants: grants.get(row.appId) ?? [],
+    subject,
+    isProjectManager,
+  }));
+}
+
+/** Single-App form of {@link filterAppsVisibleToUser}. */
+export async function appVisibleToUser(app: TeamScopedApp, userId: string): Promise<boolean> {
+  return (await filterAppsVisibleToUser([app], userId)).length === 1;
+}
+
 export function appAccessSessionUrl(
   url: string,
   app: { appId: string; accessRevision: number },

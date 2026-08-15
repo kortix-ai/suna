@@ -2,10 +2,12 @@
 
 import { Sandbox, SandboxNotFoundError, type Sandbox as E2BSandbox } from 'e2b';
 import { config, SANDBOX_VERSION } from '../../config';
+import { e2bDomain } from './e2b-domain';
 import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import type {
+  AppMachineSupport,
   CreateSandboxOpts,
   ProviderName,
   ProvisioningStatus,
@@ -49,8 +51,20 @@ const E2B_REMOVE_TIMEOUT_MS = configuredTimeoutMs(
   1_000,
 );
 
+/**
+ * Every E2B SDK call this provider makes. `domain` is explicit and required:
+ * the SDK defaults it to the E2B_DOMAIN process variable or `e2b.app`, while
+ * Kortix's own config defaults E2B_DOMAIN to `e2b.dev`. Leaving it off pointed
+ * sandbox creation at a DIFFERENT cluster than the one the snapshot adapter
+ * built the template on whenever an operator did not export the variable —
+ * which is exactly the self-hosted-E2B case, where the cluster is neither.
+ */
 function apiOpts() {
-  return { apiKey: config.E2B_API_KEY, requestTimeoutMs: 20_000 } as const;
+  return {
+    apiKey: config.E2B_API_KEY,
+    domain: e2bDomain(),
+    requestTimeoutMs: 20_000,
+  } as const;
 }
 
 function isMissingSandboxError(error: unknown): boolean {
@@ -293,8 +307,28 @@ export class E2BProvider implements SandboxProvider {
     }
   }
 
-  async ensureAppRuntimeStarted(_externalId: string): Promise<void> {
-    // E2B honors the image ENTRYPOINT and resumes the existing process tree.
+  /**
+   * E2B's Template.build takes cpuCount and memoryMB and has no disk parameter
+   * (e2b 2.37.0), so an App's disk_gb is provider-managed here and must not be
+   * billed as if Kortix had allocated it.
+   */
+  readonly appMachineSupport: AppMachineSupport = { cpu: true, memoryGb: true, diskGb: false };
+
+  /**
+   * Relaunch kortix-appd if it died. This used to be a no-op on the reasoning
+   * that E2B honors the image ENTRYPOINT — but the App build overrides the
+   * template start command with `sleep infinity` (see snapshots/providers/e2b),
+   * so nothing brings appd back on its own. AppHostingProvider.waitUntilReady
+   * calls this on a readiness stall precisely to recover a dead supervisor, and
+   * on E2B that recovery did nothing. ensureAppEntrypoint is idempotent: it
+   * checks the process list, launches under a guest flock only if needed, then
+   * health-checks.
+   */
+  async ensureAppRuntimeStarted(externalId: string): Promise<void> {
+    const sandbox = await this.connected(externalId);
+    const envVars = await loadRuntimeEnv(sandbox);
+    if (envVars.KORTIX_WORKLOAD_TYPE !== 'app') return;
+    await ensureAppEntrypoint(sandbox, envVars);
   }
 
   async start(externalId: string): Promise<void> {
