@@ -46,7 +46,10 @@ function db(): Database {
   return testDb;
 }
 
-async function seedCache(items: Array<{ id: string; label: string; prompt: string }>, generatedAt: string) {
+async function seedCache(
+  items: Array<{ id: string; label: string; prompt: string; action?: string }>,
+  generatedAt: string,
+) {
   const { metadataMergeSubtree } = await import('../lib/metadata-merge');
   await db()
     .update(projects)
@@ -137,11 +140,29 @@ describeWithDb('GET /v1/projects/:projectId/starter-suggestions — real Postgre
     expect(body.items).toEqual(
       STARTER_PROMPT_FALLBACKS.map(({ id, label, prompt }) => ({ id, label, prompt })),
     );
+    for (const item of body.items as Array<Record<string, unknown>>) {
+      expect(item).not.toHaveProperty('action');
+    }
   });
 
   test('a fresh cache answers personalized, echoing generated_at and items', async () => {
     const generatedAt = new Date().toISOString();
     const items = [{ id: 'x', label: 'Do X', prompt: 'Please do X for me in detail.' }];
+    await seedCache(items, generatedAt);
+
+    const r = await get(token);
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { source: string; generated_at: string | null; items: unknown[] };
+    expect(body.source).toBe('personalized');
+    expect(body.generated_at).toBe(generatedAt);
+    expect(body.items).toEqual(items);
+  });
+
+  test('a cached item carrying an action round-trips it verbatim', async () => {
+    const generatedAt = new Date().toISOString();
+    const items = [
+      { id: 'z', label: 'Connect Slack', prompt: 'Connect Slack to post daily updates.', action: 'connectors' },
+    ];
     await seedCache(items, generatedAt);
 
     const r = await get(token);

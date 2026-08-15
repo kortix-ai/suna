@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 
 import { config } from '../../config';
-import { MAX_LABEL_CHARS, MAX_PROMPT_CHARS, POOL_SIZE, type StarterSuggestionItem } from './sanitize';
+import {
+  MAX_LABEL_CHARS,
+  MAX_PROMPT_CHARS,
+  POOL_SIZE,
+  SUGGESTION_ACTIONS,
+  type StarterSuggestionItem,
+} from './sanitize';
 import {
   type GenerateStarterSuggestionsOptions,
   type StarterSuggestionsCache,
@@ -51,6 +57,18 @@ describe('suggestionsCompletionBody', () => {
     expect(closeMatches).toHaveLength(1);
     // The hostile marker survives as neutralized text, not a real close.
     expect(userContent).toContain('WORKSPACE-CONTEXT');
+  });
+
+  it('builds the action enum + setup-step guidance from SUGGESTION_ACTIONS', () => {
+    const body = JSON.parse(suggestionsCompletionBody('glm-5.2', 'some workspace signal text'));
+    const userContent = body.messages[1].content as string;
+
+    for (const action of SUGGESTION_ACTIONS) {
+      expect(userContent).toContain(`"${action}"`);
+    }
+    expect(userContent).toMatch(/"action"[^.]*\boptional\b/i);
+    expect(userContent).toMatch(/at most 2 of the 9/i);
+    expect(userContent).toMatch(/short, specific action phrase/i);
   });
 });
 
@@ -114,6 +132,31 @@ describe('readSuggestionsCache', () => {
       starter_suggestions: { generated_at: generatedAt, model: 'glm-5.2', items },
     });
     expect(cache).toEqual({ generated_at: generatedAt, model: 'glm-5.2', items });
+  });
+
+  it('reads a well-formed cache with an item action, preserving it', () => {
+    const generatedAt = new Date().toISOString();
+    const items: StarterSuggestionItem[] = [
+      { id: 'gen-0', label: 'Connect Slack', prompt: 'Connect Slack to post updates', action: 'connectors' },
+      { id: 'gen-1', label: 'Do X', prompt: 'Please do X for me' },
+    ];
+    const cache = readSuggestionsCache({
+      starter_suggestions: { generated_at: generatedAt, model: 'glm-5.2', items },
+    });
+    expect(cache).toEqual({ generated_at: generatedAt, model: 'glm-5.2', items });
+    expect(cache?.items[1]).not.toHaveProperty('action');
+  });
+
+  it('returns null when an item action is not a valid enum value', () => {
+    expect(
+      readSuggestionsCache({
+        starter_suggestions: {
+          generated_at: new Date().toISOString(),
+          model: 'glm-5.2',
+          items: [{ id: 'gen-0', label: 'x', prompt: 'valid prompt text', action: 'not-a-real-action' }],
+        },
+      }),
+    ).toBeNull();
   });
 });
 

@@ -9,6 +9,7 @@ import {
   isSuggestionsCacheStale,
   readSuggestionsCache,
 } from '../starter-suggestions/generate';
+import { SUGGESTION_ACTIONS } from '../starter-suggestions/sanitize';
 
 // GET /v1/projects/:projectId/starter-suggestions
 //
@@ -24,6 +25,7 @@ const StarterSuggestionItemSchema = z.object({
   id: z.string(),
   label: z.string(),
   prompt: z.string(),
+  action: z.enum(SUGGESTION_ACTIONS).optional(),
 });
 
 const StarterSuggestionsResponseSchema = z.object({

@@ -7,11 +7,33 @@ export const MAX_PROMPT_CHARS = 400;
 /** Minimum prompt length after whitespace normalization. */
 const MIN_PROMPT_CHARS = 10;
 
-/** Individual starter suggestion item with generated id. */
+/** The setup actions a suggestion may point at instead of (or alongside) a
+ *  plain prompt — the composer surfaces one of these as a shortcut into the
+ *  matching workspace panel. */
+export const SUGGESTION_ACTIONS = [
+  'connectors',
+  'skills',
+  'schedules',
+  'agent',
+  'members',
+  'channels',
+] as const;
+
+export type SuggestionAction = (typeof SUGGESTION_ACTIONS)[number];
+
+/** Individual starter suggestion item with generated id. `action` is present
+ *  only when the model named a setup step and that name validated against
+ *  `SUGGESTION_ACTIONS` — otherwise the key is omitted entirely rather than
+ *  set to `undefined`, so a plain prompt item round-trips with no extra key. */
 export interface StarterSuggestionItem {
   id: string;
   label: string;
   prompt: string;
+  action?: SuggestionAction;
+}
+
+function isValidAction(value: unknown): value is SuggestionAction {
+  return typeof value === 'string' && (SUGGESTION_ACTIONS as readonly string[]).includes(value);
 }
 
 /** Parse and validate model-generated suggestions: accepts bare JSON arrays,
@@ -75,7 +97,16 @@ export function parseSuggestions(raw: string | null | undefined): StarterSuggest
     if (prompt.length > MAX_PROMPT_CHARS) continue;
     if (prompt.length < MIN_PROMPT_CHARS) continue;
 
-    validated.push({ label, prompt, id: '' }); // id assigned in pool phase
+    // A hallucinated/malformed action strips the field but keeps the item —
+    // a bad action shouldn't cost an otherwise-good suggestion.
+    const action = isValidAction(obj.action) ? obj.action : undefined;
+
+    validated.push({
+      label,
+      prompt,
+      id: '', // id assigned in pool phase
+      ...(action ? { action } : {}),
+    });
   }
 
   // Return null if fewer than MIN_ITEMS survive.
