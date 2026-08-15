@@ -109,13 +109,14 @@ describe('resolveLandingDestination', () => {
     });
   });
 
-  test('every account empty: provisions in the first account the user can create in', async () => {
-    // A member-team selection must not block auto-provision either — the
-    // create falls back to the account where PROJECT_CREATE is actually held.
+  test('all empty, no selection: provisions in the first account the user owns', async () => {
+    // The fresh-signup / invited-user default: with no explicit workspace
+    // context, the user's own account is the primary candidate and the first
+    // project is created there.
     const provisioned: string[] = [];
     const result = await resolveLandingDestination({
       accounts: [account('team', 'member'), account('personal', 'owner')],
-      selectedAccountId: 'team',
+      selectedAccountId: null,
       preferredProjectId: null,
       suppressed: false,
       mayCreate: true,
@@ -136,6 +137,29 @@ describe('resolveLandingDestination', () => {
     });
   });
 
+  test('an explicitly selected member workspace never provisions elsewhere', async () => {
+    // Flow 08 contract (tests/e2e/specs/08-accounts-project-access.spec.ts):
+    // a member whose project access was just revoked, with the org still
+    // selected, sees "No workspace yet" — the app must not react by minting a
+    // project in their personal account. Provisioning is scoped to the
+    // PRIMARY candidate account, and here that is the selected member org.
+    let provisionCalls = 0;
+    const result = await resolveLandingDestination({
+      accounts: [account('team', 'member'), account('personal', 'owner')],
+      selectedAccountId: 'team',
+      preferredProjectId: null,
+      suppressed: false,
+      mayCreate: true,
+      client: fakeClient({ team: [], personal: [] }, async () => {
+        provisionCalls += 1;
+        return project('fresh', 'personal');
+      }),
+    });
+
+    expect(provisionCalls).toBe(0);
+    expect(result).toEqual({ kind: 'terminal', canCreate: false });
+  });
+
   test('member everywhere with nothing to open is the ONLY true no-permission terminal', async () => {
     const result = await resolveLandingDestination({
       accounts: [account('team-a', 'member'), account('team-b', 'member')],
@@ -146,7 +170,7 @@ describe('resolveLandingDestination', () => {
       client: fakeClient({ 'team-a': [], 'team-b': [] }),
     });
 
-    expect(result).toEqual({ kind: 'terminal', canCreateAnywhere: false });
+    expect(result).toEqual({ kind: 'terminal', canCreate: false });
   });
 
   test('suppression after a delete holds back the create but reports it was possible', async () => {
@@ -164,7 +188,7 @@ describe('resolveLandingDestination', () => {
     });
 
     expect(provisionCalls).toBe(0);
-    expect(result).toEqual({ kind: 'terminal', canCreateAnywhere: true });
+    expect(result).toEqual({ kind: 'terminal', canCreate: true });
   });
 
   test('one account list failing does not block landing in another account', async () => {

@@ -20,8 +20,9 @@ import {
  */
 export type LandingResolution =
   | { kind: 'project'; project: KortixProject; accountId: string }
-  /** No project anywhere. `canCreateAnywhere` feeds `classifyLandingTerminal`. */
-  | { kind: 'terminal'; canCreateAnywhere: boolean };
+  /** No project anywhere. `canCreate` (of the primary candidate account —
+   *  the user's active workspace context) feeds `classifyLandingTerminal`. */
+  | { kind: 'terminal'; canCreate: boolean };
 
 export async function resolveLandingDestination(input: {
   accounts: KortixAccount[];
@@ -73,10 +74,15 @@ export async function resolveLandingDestination(input: {
     if (picked) return { kind: 'project', project: picked, accountId: entry.account_id };
   }
 
-  // Nothing to open anywhere. Auto-provision in the first account where the
-  // user actually holds PROJECT_CREATE — a member-only selection must not
-  // block the create the way the old single-account resolver did.
-  const creator = candidates.find(canCreateIn);
+  // Nothing to open anywhere. Auto-provision ONLY in the primary candidate
+  // account — the selected workspace when it is still a membership, else the
+  // first account the user owns. Reaching across from an explicitly selected
+  // member workspace is forbidden by the flow-08 contract: a member whose
+  // project access was just revoked must see the "No workspace yet" terminal,
+  // not a surprise project minted in their personal account (which on a
+  // self-host without managed git would be a guaranteed 503 anyway).
+  const primary = candidates[0];
+  const creator = primary && canCreateIn(primary) ? primary : undefined;
   if (creator && input.mayCreate && !input.suppressed) {
     const created = await ensureFirstProject(
       creator.account_id,
@@ -86,7 +92,7 @@ export async function resolveLandingDestination(input: {
     if (created) return { kind: 'project', project: created, accountId: creator.account_id };
   }
 
-  return { kind: 'terminal', canCreateAnywhere: creator !== undefined };
+  return { kind: 'terminal', canCreate: creator !== undefined };
 }
 
 /** Owners/admins may create projects (ACCOUNT_ACTIONS.PROJECT_CREATE). */

@@ -123,13 +123,13 @@ export default function ProjectStartPage() {
         return;
       }
 
-      // No project exists in ANY account and none may be created: a member
-      // without PROJECT_CREATE everywhere, the account the user just emptied
-      // by deleting their last project, or the rare cross-site-navigation
-      // edge. `/projects` is a redirect back to THIS route (Task 21), so
-      // bouncing there would loop forever — render the terminal state inline
-      // instead.
-      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreateAnywhere, suppressed }));
+      // No project exists in ANY account and the primary candidate account
+      // may not create one: a member workspace context (flow 08's revoked
+      // member), the account the user just emptied by deleting their last
+      // project, or the rare cross-site-navigation edge. `/projects` is a
+      // redirect back to THIS route (Task 21), so bouncing there would loop
+      // forever — render the terminal state inline instead.
+      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed }));
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not
