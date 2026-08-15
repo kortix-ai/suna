@@ -52,6 +52,13 @@ describe('freshness contracts', () => {
     expect(FRESHNESS.messages).toBe('live');
   });
 
+  // Starter suggestions change only through the same mutations that already
+  // invalidate other config-tier entities (project setup, connectors) — no
+  // out-of-band writer needs sub-minute freshness here.
+  test('starter suggestions is config tier', () => {
+    expect(FRESHNESS.starterSuggestions).toBe('config');
+  });
+
   // Both started on `volatile` (5s) purely because "sandbox" and "gateway"
   // SOUND time-sensitive. Neither is. Pinned here so a revert to `volatile`
   // fails a test instead of quietly multiplying refetches on every project

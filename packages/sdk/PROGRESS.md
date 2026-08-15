@@ -8762,3 +8762,47 @@ behavior change, no public name touched, no snapshot drift.
 entry's `clientMessageId` in `overrides`, preserving the branch's retry-dedupe
 guarantee through the batch path; `session-chat.tsx` `sendQueuedBatch` =
 command dispatch (batch of one, guaranteed by `claimBatch`) + merged text send.
+
+## Session `starter-suggestions` — project starter-suggestions query surface (2026-08-15)
+
+**Task 6** of `docs/superpowers/sdd/plan-personalized-starter-prompts/`
+(external plan, not this file's own Now chain). Consumes the already-merged API
+route `GET /v1/projects/:id/starter-suggestions` on branch
+`personalization-recommendation`.
+
+**Added, additive only:**
+- `StarterSuggestionsResponse` (type) + `getProjectStarterSuggestions(projectId)`
+  — `core/rest/projects-client/starter-suggestions.ts`, same `unwrap`/`backendApi`
+  shape as the `files.ts` exemplar. Re-exported from the barrel.
+- `qk.project.starterSuggestions(id)` — `[...scope(id), 'starter-suggestions']`,
+  sibling of `triggers`/`files`, guarded in `query-keys.test.ts` (never a prefix
+  of, never prefixed by, either).
+- `FRESHNESS.starterSuggestions = 'config'` — same tier as `triggers`/`files`;
+  no out-of-band writer needs sub-minute freshness.
+- `useProjectStarterSuggestions(projectId)` — `react/use-project-starter-suggestions.ts`,
+  gated `enabled: !!projectId`, `contract('config')`.
+
+**TDD:** RED confirmed per-file before implementation (module-not-found for the
+fn/hook, `undefined` tier for the contract, `TypeError: … is not a function` for
+the key). GREEN after implementation.
+
+**Gates:**
+- `pnpm --filter @kortix/sdk typecheck`: exit 0.
+- `pnpm --filter @kortix/sdk test`: session baseline `1940 pass`, `2 skip`,
+  `0 fail`, `145` files. After: `1950 pass`, `2 skip`, `0 fail`, `147` files
+  (+10 tests, +2 files: `starter-suggestions.test.ts`,
+  `use-project-starter-suggestions.test.ts`).
+- `pnpm --filter @kortix/sdk run smoke:install`: passed (tarball packs,
+  installs, imports).
+- `pnpm test -- --sdk-only` (repo root): `1952 pass`, `0 fail`.
+
+**Surface snapshots** (both re-recorded deliberately, diff reviewed — additive
+only, 4 new names across `.` and `./react`): `getProjectStarterSuggestions` (x2,
+runtime `.`/`./react` barrels), `useProjectStarterSuggestions` (x2),
+`StarterSuggestionsResponse` (type-surface only, x2). No name removed or
+renamed.
+
+Commit: `feat(sdk): project starter-suggestions query`. No SDK subpath change —
+`starter-suggestions.ts` lives inside the existing `projects-client` barrel and
+`./react`, so the three-synchronized-edits rule for NEW subpaths does not apply
+here.
