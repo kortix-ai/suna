@@ -14,6 +14,7 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { getProvider } from '../platform/providers';
 import { db } from '../shared/db';
+import { inspectDatabaseError } from '../shared/database-errors';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
@@ -447,7 +448,12 @@ projectsApp.openapi(
       }).returning();
       return c.json(serializeApp(row!), 201);
     } catch (error) {
-      if ((error as { code?: string }).code === '23505') return c.json({ error: 'An App with this slug already exists' }, 409);
+      // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
+      // error.cause.code, NOT error.code — reading error.code left this branch
+      // dead and a duplicate-slug create returned 500 instead of 409.
+      // inspectDatabaseError walks the .cause chain for the real pgCode.
+      if (inspectDatabaseError(error)?.pgCode === '23505')
+        return c.json({ error: 'An App with this slug already exists' }, 409);
       throw error;
     }
   },
