@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { CopyButton } from '@/components/markdown/copy-button';
 import {
   Accordion,
   AccordionContent,
@@ -11,6 +12,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import {
   Modal,
@@ -21,31 +28,22 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  InputGroupSearch,
-  InputGroupSearchClear,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { CopyButton } from '@/components/markdown/copy-button';
 import { Close } from '@/features/icon/icons/close';
-import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@/ui/types';
 import type { AssistantMessage, Message, Part, Session } from '@kortix/sdk';
+import type { ProviderListResponse } from '@kortix/sdk/react';
+import { useSessionStateStore } from '@kortix/sdk/react';
 import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { allDescendantIds, childMapByParent, formatCost, getSessionCost } from '@kortix/sdk/turns';
-import { useSessionStateStore } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
   CaretRightIcon,
   CheckIcon,
-  CopyIcon,
   MagnifyingGlassIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
 import {
   memo,
   startTransition,
@@ -56,6 +54,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Copy } from '../icon/icons/copy';
 
 // ============================================================================
 // Context metrics
@@ -348,25 +347,10 @@ function CopyAllButton({
       onClick={handleCopy}
       variant="outline"
       size="sm"
-      className="h-8 gap-1.5 transition-colors active:scale-[0.97]"
+      className="gap-1.5 transition-colors active:scale-[0.97]"
     >
-      <span className="relative inline-flex size-3.5 shrink-0 items-center justify-center">
-        <AnimatePresence initial={false} mode="popLayout">
-          <m.span
-            key={copied ? 'check' : 'copy'}
-            initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-            animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-            exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-            className="absolute inset-0 inline-flex items-center justify-center"
-          >
-            {copied ? (
-              <CheckIcon className="text-kortix-green size-3.5" />
-            ) : (
-              <CopyIcon className="size-3.5" />
-            )}
-          </m.span>
-        </AnimatePresence>
+      <span className="relative inline-flex size-4 shrink-0 items-center justify-center">
+        {copied ? <CheckIcon className="text-kortix-green size-4" /> : <Copy className="size-4" />}
       </span>
       {copied ? copiedLabel : copyLabel}
     </Button>
@@ -589,9 +573,7 @@ function SubSessionTreeNode({
         <span className="text-muted-foreground/60 ml-auto shrink-0 text-xs tabular-nums">
           {node.messages} {messagesSuffix}
         </span>
-        <span className="text-muted-foreground shrink-0 tabular-nums">
-          {formatCost(node.cost)}
-        </span>
+        <span className="text-muted-foreground shrink-0 tabular-nums">{formatCost(node.cost)}</span>
       </button>
       {expanded && hasChildren && (
         <div className="flex flex-col">
@@ -647,7 +629,6 @@ function SessionContextModalBody({
     setRawRole(value as 'all' | 'user' | 'assistant');
     setRawVisibleCount(RAW_PAGE_SIZE);
   }, []);
-
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -713,8 +694,7 @@ function SessionContextModalBody({
           m.info.id.toLowerCase().includes(query) ||
           m.parts.some(
             (p) =>
-              typeof (p as any).text === 'string' &&
-              (p as any).text.toLowerCase().includes(query),
+              typeof (p as any).text === 'string' && (p as any).text.toLowerCase().includes(query),
           ),
       );
     }
@@ -945,9 +925,7 @@ function SessionContextModalBody({
           <div hidden={!rawOpen} className="border-border border-t">
             {rawMounted ? (
               <>
-                <p className="text-muted-foreground px-4 pt-3 text-xs">
-                  {t.raw('rawDescription')}
-                </p>
+                <p className="text-muted-foreground px-4 pt-3 text-xs">{t.raw('rawDescription')}</p>
                 <div className="flex flex-col gap-2 px-4 pt-3 sm:flex-row sm:items-center">
                   <InputGroupSearch className="flex-1">
                     <InputGroupSearchIcon>
