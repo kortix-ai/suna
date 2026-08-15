@@ -89,7 +89,26 @@ function cachePath(): string {
   return resolve(dirname(configFilePath()), 'token-identity.json');
 }
 
-/** Key a cache entry WITHOUT storing the credential. */
+/**
+ * Key a cache entry WITHOUT storing the credential.
+ *
+ * This is a cache partition key, NOT a password hash. CodeQL's
+ * `js/insufficient-password-hash` flags it because the input is tainted as a
+ * credential; the rule's threat model does not apply here:
+ *
+ *   - The input is a machine-generated bearer token (`kortix_pat_…`), never a
+ *     user-chosen password, so there is no dictionary to attack.
+ *   - The digest is truncated to 64 bits and used only to decide which cache
+ *     entry belongs to the acting token. It is never compared for
+ *     authentication, never transmitted, and grants nothing.
+ *   - The PLAINTEXT token already sits in `config.json` (mode 0600) in this
+ *     same directory, so anyone who can read this file already holds the token
+ *     — a slow KDF here would cost every CLI invocation and protect nothing.
+ *
+ * Keying on the token (rather than the session id) is what makes a re-minted
+ * token miss instead of showing a stale agent, which is the whole point: the
+ * platform re-resolves the grant every prompt and an agent switch re-mints.
+ */
 function tokenKey(token: string): string {
   return createHash('sha256').update(token).digest('hex').slice(0, 16);
 }
