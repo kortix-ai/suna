@@ -42,8 +42,8 @@ import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
+import { StarterSuggestions } from '@/features/workspace/project-layout/starter-suggestions';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
@@ -53,7 +53,7 @@ import {
   listProjectSandboxes,
 } from '@kortix/sdk';
 import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
-import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
+import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
@@ -309,7 +309,9 @@ export function ProjectHomeWelcomeBody({
           {composer || onPickSuggestion ? (
             <div className="flex w-full flex-col items-center space-y-4">
               {composer}
-              {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
+              {onPickSuggestion ? (
+                <StarterSuggestions projectId={projectId} onPick={onPickSuggestion} />
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -318,41 +320,6 @@ export function ProjectHomeWelcomeBody({
       <div className="flex shrink-0 justify-center px-4 pb-6">
         <ProjectHomeSections projectId={projectId} />
       </div>
-    </div>
-  );
-}
-
-/**
- * Starter prompt suggestions rendered as a centered, wrapping row of quiet
- * pills directly above the composer (Perplexity-style). All prompts are
- * visible at once — no scroll machinery; small screens show the first four.
- */
-export function StarterPromptChips({ onPick }: { onPick: (text: string) => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
-      {STARTER_PROMPTS.map((p, i) => {
-        const ChipIcon = p.icon;
-        const chalk = chalkColors(p.label);
-        return (
-          <Button
-            key={p.id}
-            onClick={() => onPick(p.prompt)}
-            variant="outline"
-            size="sm"
-            className={cn(
-              'bg-background/60 shrink-0 gap-1.5 rounded-md backdrop-blur-sm',
-              i >= 4 && 'max-sm:hidden',
-            )}
-          >
-            <ChipIcon
-              className="size-3.5 shrink-0"
-              style={{ color: chalk.foreground }}
-              aria-hidden
-            />
-            {p.label}
-          </Button>
-        );
-      })}
     </div>
   );
 }
