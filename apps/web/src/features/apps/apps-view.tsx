@@ -3,6 +3,7 @@
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -49,7 +50,6 @@ import {
 } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon,
-  CaretDownIcon,
   ClockCounterClockwiseIcon,
   GlobeIcon,
   LockKeyIcon,
@@ -57,6 +57,7 @@ import {
   PlayIcon,
   TerminalWindowIcon,
   TrashIcon,
+  XIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
@@ -86,18 +87,37 @@ function AppPreview({
   app,
   url,
   accessError,
+  /**
+   * `false` on a CARD: the card is one big button, and a live iframe would
+   * swallow every click meant for it (and let someone interact with a page
+   * inside a 300px tile). The card renders the frame purely as a thumbnail and
+   * the card takes the click. `true` in the detail modal, where the frame IS
+   * the App.
+   */
+  interactive,
+  className,
 }: {
   app: App;
   url: string | null;
   accessError: boolean;
+  interactive: boolean;
+  className?: string;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const frame = cn(
+    'bg-muted/20 relative overflow-hidden',
+    !interactive && 'aspect-video',
+    className,
+  );
 
   if (!app.active_deployment_id) {
     return (
       <div
-        className="bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center border-b px-6 text-center text-xs text-pretty"
+        className={cn(
+          frame,
+          'text-muted-foreground flex items-center justify-center px-6 text-center text-xs text-pretty',
+        )}
         data-testid="app-preview-empty"
       >
         Deploy to see a live preview.
@@ -108,7 +128,10 @@ function AppPreview({
   if (!url) {
     return (
       <div
-        className="bg-muted/20 text-muted-foreground flex aspect-video items-center justify-center border-b px-6 text-center text-xs text-pretty"
+        className={cn(
+          frame,
+          'text-muted-foreground flex items-center justify-center px-6 text-center text-xs text-pretty',
+        )}
         data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}
       >
         {accessError ? (
@@ -124,7 +147,7 @@ function AppPreview({
   }
 
   return (
-    <div className="bg-muted/20 relative aspect-video overflow-hidden border-b">
+    <div className={frame}>
       <iframe
         key={app.active_deployment_id}
         src={url}
@@ -132,7 +155,11 @@ function AppPreview({
         loading="lazy"
         allow={CLIPBOARD_IFRAME_ALLOW}
         sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
-        className="bg-background absolute inset-0 size-full border-0"
+        className={cn(
+          'bg-background absolute inset-0 size-full border-0',
+          !interactive && 'pointer-events-none',
+        )}
+        {...(interactive ? {} : { tabIndex: -1, 'aria-hidden': true })}
         data-testid="app-live-preview"
         onLoad={() => {
           setLoaded(true);
@@ -162,8 +189,20 @@ export function AppsView({ projectId }: { projectId: string }) {
   const appsGate = useFeatureFlag(projectId, 'apps');
   const apps = useProjectApps(appsGate.enabled ? projectId : null);
   const searchParams = useSearchParams();
+  // Apps own their leaves — the routes assert project.app.write for policy and
+  // shape changes and project.app.deploy for anything that changes what the
+  // public hostname serves. Gating on project.customize.write let a custom role
+  // that granted Apps still render read-only, and one that revoked Apps still
+  // render the controls.
   const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
+  const canDeploy =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_DEPLOY).allowed === true;
+  // Which App the detail modal is showing. Held by id, not by object, so a
+  // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
+  // fresh row instead of a stale copy captured at click time.
+  const [openAppId, setOpenAppId] = useState<string | null>(null);
+  const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
 
   useEffect(() => {
     const target = searchParams.get('open_app');
@@ -183,11 +222,6 @@ export function AppsView({ projectId }: { projectId: string }) {
       description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
       docs="/docs/sdk/apps"
       className="max-w-5xl"
-      action={
-        <Badge size="sm" variant="beta">
-          Experimental
-        </Badge>
-      }
       showSidebarToggleButton
     >
       {appsGate.isLoading ? (
@@ -236,7 +270,12 @@ export function AppsView({ projectId }: { projectId: string }) {
       ) : apps.data?.length ? (
         <ul className="grid gap-4 md:grid-cols-2">
           {apps.data.map((app) => (
-            <AppRow key={app.app_id} projectId={projectId} app={app} canWrite={canWrite} />
+            <AppCard
+              key={app.app_id}
+              projectId={projectId}
+              app={app}
+              onOpen={() => setOpenAppId(app.app_id)}
+            />
           ))}
         </ul>
       ) : (
@@ -268,19 +307,124 @@ export function AppsView({ projectId }: { projectId: string }) {
         </InfoBanner>
       ) : null}
 
+      {openApp ? (
+        <AppDetailModal
+          key={openApp.app_id}
+          projectId={projectId}
+          app={openApp}
+          canWrite={canWrite}
+          canDeploy={canDeploy}
+          open
+          onOpenChange={(next) => {
+            if (!next) setOpenAppId(null);
+          }}
+        />
+      ) : null}
     </CustomizeSectionWrapper>
   );
 }
 
-function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; canWrite: boolean }) {
+function AppCard({
+  projectId,
+  app,
+  onOpen,
+}: {
+  projectId: string;
+  app: App;
+  onOpen: () => void;
+}) {
+  // SESSION only. The access POLICY is an administrative read that 403s for an
+  // ordinary member, and the card never renders it — the detail modal asks.
+  const access = useAppAccess(projectId, app.app_id, { policy: false });
+  const deployed = Boolean(app.active_deployment_id);
+  const live = deployed && app.desired_state === 'running';
+
+  return (
+    <li>
+      {/* One control per card. Everything that used to be a row of six icon
+          buttons now lives at the top of the detail modal, so there is exactly
+          one thing to click and no nested hit areas. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open ${app.name}`}
+        className={cn(
+          'group bg-popover w-full overflow-hidden rounded-md border text-left',
+          'transition-[box-shadow,border-color] hover:border-border hover:shadow-sm',
+          'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+        )}
+      >
+        <div className="relative border-b">
+          <AppPreview
+            key={app.active_deployment_id ?? app.app_id}
+            app={app}
+            url={access.session.data?.url ?? null}
+            accessError={access.session.isError}
+            interactive={false}
+          />
+          {/* Hairline so the thumbnail never bleeds into the panel edge. */}
+          <span className="pointer-events-none absolute inset-0 outline outline-black/10 -outline-offset-1 dark:outline-white/10" />
+        </div>
+
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-sm',
+              live ? 'bg-kortix-green/15' : 'bg-muted',
+            )}
+          >
+            <GlobeIcon
+              weight="fill"
+              className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')}
+            />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-foreground truncate text-sm font-medium">{app.name}</p>
+            <p className="text-muted-foreground truncate font-mono text-xs">{app.url}</p>
+          </div>
+          <Badge size="xs" variant={live ? 'success' : 'muted'}>
+            {!deployed ? 'Not deployed' : app.desired_state === 'running' ? 'Running' : 'Suspended'}
+          </Badge>
+        </div>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * The App, full screen, with its controls above it.
+ *
+ * Opening an App used to mean a new browser tab, which left Kortix behind and
+ * lost every control the moment you arrived. The App now runs in place and the
+ * actions that used to crowd the card sit in one bar over the top of it.
+ */
+function AppDetailModal({
+  projectId,
+  app,
+  canWrite,
+  canDeploy,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  app: App;
+  canWrite: boolean;
+  canDeploy: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const apps = useProjectApps(projectId);
   const deployments = useAppDeployments(projectId, app.app_id);
-  const access = useAppAccess(projectId, app.app_id);
-  const [expanded, setExpanded] = useState(false);
+  const access = useAppAccess(projectId, app.app_id, { policy: canWrite });
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const latest = deployments.data?.[0];
+  const deployed = Boolean(app.active_deployment_id);
+  const live = deployed && app.desired_state === 'running';
+  const running = app.desired_state === 'running';
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
+  const liveUrl = access.session.data?.url ?? app.url;
 
   const lifecycle = async (action: 'start' | 'stop') => {
     try {
@@ -294,161 +438,182 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
   };
 
   return (
-    <li aria-label={`${app.name} App`} className="bg-popover overflow-hidden rounded-md border">
-      <AppPreview
-        key={app.active_deployment_id ?? app.app_id}
-        app={app}
-        url={access.session.data?.url ?? null}
-        accessError={access.session.isError}
-      />
-      <div className="flex items-start gap-3 px-4 py-3">
-        <div
-          className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-sm',
-            app.desired_state === 'running'
-              ? 'bg-kortix-green/15 text-kortix-green'
-              : 'bg-muted text-muted-foreground',
-          )}
-        >
-          <GlobeIcon className="size-5" weight="fill" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-foreground truncate text-sm font-medium">{app.name}</p>
-            <Badge size="xs" variant={app.desired_state === 'running' ? 'success' : 'muted'}>
-              {app.desired_state === 'running' ? 'Running' : 'Suspended'}
-            </Badge>
-            {latest ? (
-              <Badge size="xs" variant={deploymentTone(latest.status)}>
-                {latest.status}
-              </Badge>
-            ) : null}
-            <Badge size="xs" variant="outline">
-              {ACCESS_COPY[app.access_mode].label}
-            </Badge>
-          </div>
-          <a
-            href={access.session.data?.url ?? app.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground mt-0.5 block truncate font-mono text-xs transition-colors"
-          >
-            {app.url}
-          </a>
-          <p className="text-muted-foreground mt-1 text-xs tabular-nums">
-            {app.machine.cpu} vCPU · {app.machine.memory_gb} GB RAM · {app.machine.disk_gb} GB disk
-            · {app.idle_timeout_seconds}s idle
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <Hint label="Open App">
-            <Button asChild size="icon" variant="ghost" className="size-10">
-              <a
-                href={access.session.data?.url ?? app.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Open App"
-              >
-                <ArrowSquareOutIcon className="size-4" />
-              </a>
-            </Button>
-          </Hint>
-          <Hint label="Copy deploy command">
-            <CopyButton code={appCommand(app)} size="lg" />
-          </Hint>
-          {canWrite ? (
-            <Hint label="App access">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-10"
-                aria-label="App access"
-                onClick={() => setAccessOpen(true)}
-              >
-                <LockKeyIcon className="size-4" />
-              </Button>
-            </Hint>
-          ) : null}
-          {canWrite ? (
-            <Hint label={app.desired_state === 'running' ? 'Suspend App' : 'Wake App'}>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-10"
-                disabled={busy || !app.active_deployment_id}
-                aria-label={app.desired_state === 'running' ? 'Suspend App' : 'Wake App'}
-                onClick={() => lifecycle(app.desired_state === 'running' ? 'stop' : 'start')}
-              >
-                {busy ? (
-                  <Loading />
-                ) : app.desired_state === 'running' ? (
-                  <PauseIcon className="size-4" />
-                ) : (
-                  <PlayIcon className="size-4" />
-                )}
-              </Button>
-            </Hint>
-          ) : null}
-          <Hint label="Versions">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-10"
-              aria-label="Show versions"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent
+        side="fullscreen"
+        showCloseButton={false}
+        // Radix focuses the first focusable descendant on open, which is an
+        // action in the bar — and a focused icon button shows its Hint, so the
+        // modal opened with a black tooltip sitting over its own controls.
+        // Focus the dialog instead: the focus trap still holds, Tab still walks
+        // into the bar, and nothing pops unbidden.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus?.();
+        }}
+        className="border-border bg-background! focus:outline-none focus-visible:outline-none inset-0! h-dvh! max-h-none! min-h-dvh! w-auto! max-w-none! translate-x-0! translate-y-0! gap-0! space-y-0! overflow-hidden! rounded-none! border-0! md:inset-4! md:h-auto! md:min-h-0! md:rounded-md! md:border!"
+        aria-label={`${app.name} App`}
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          <header className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
+            <span
+              className={cn(
+                'flex size-8 shrink-0 items-center justify-center rounded-sm',
+                live ? 'bg-kortix-green/15' : 'bg-muted',
+              )}
             >
-              <CaretDownIcon
-                className={cn('size-4 transition-transform', expanded && 'rotate-180')}
+              <GlobeIcon
+                weight="fill"
+                className={cn('size-4', live ? 'text-kortix-green' : 'text-muted-foreground')}
               />
-            </Button>
-          </Hint>
-        </div>
-      </div>
-
-      {expanded ? (
-        <div className="bg-muted/20 border-border/70 border-t px-4 py-3">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-foreground text-xs font-medium">Versions</p>
-            {canWrite ? (
-              <Button
-                size="xs"
-                variant="ghost"
-                className="text-destructive"
-                onClick={() => setDeleteOpen(true)}
-              >
-                <TrashIcon className="size-3.5" />
-                Delete App
-              </Button>
-            ) : null}
-          </div>
-          {deployments.isLoading ? (
-            <Loading className="text-muted-foreground" />
-          ) : deployments.data?.length ? (
-            <div className="space-y-1">
-              {deployments.data.map((deployment) => (
-                <DeploymentRow
-                  key={deployment.deployment_id}
-                  deployment={deployment}
-                  active={deployment.deployment_id === app.active_deployment_id}
-                  canWrite={canWrite}
-                  rollbackPending={deployments.rollback.isPending}
-                  onRollback={async () => {
-                    try {
-                      await deployments.rollback.mutateAsync(deployment.deployment_id);
-                      successToast(`Rolled back to version ${deployment.version}`);
-                    } catch (error) {
-                      errorToast(error instanceof Error ? error.message : 'Rollback failed');
-                    }
-                  }}
-                />
-              ))}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-foreground truncate text-sm font-medium">{app.name}</p>
+                <Badge size="xs" variant={live ? 'success' : 'muted'}>
+                  {!deployed ? 'Not deployed' : running ? 'Running' : 'Suspended'}
+                </Badge>
+                {latest ? (
+                  <Badge size="xs" variant={deploymentTone(latest.status)}>
+                    {latest.status}
+                  </Badge>
+                ) : null}
+                <Badge size="xs" variant="outline">
+                  {ACCESS_COPY[app.access_mode].label}
+                </Badge>
+              </div>
+              <p className="text-muted-foreground truncate font-mono text-xs">{app.url}</p>
             </div>
-          ) : (
-            <p className="text-muted-foreground text-xs">No deployments yet.</p>
-          )}
+
+            <ButtonGroup>
+              {canDeploy ? (
+                <Hint label={running ? 'Suspend App' : 'Wake App'}>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    disabled={busy || !deployed}
+                    aria-label={running ? 'Suspend App' : 'Wake App'}
+                    onClick={() => lifecycle(running ? 'stop' : 'start')}
+                  >
+                    {busy ? (
+                      <Loading className="size-4 shrink-0" />
+                    ) : running ? (
+                      <PauseIcon className="size-4 shrink-0" />
+                    ) : (
+                      <PlayIcon className="size-4 shrink-0" />
+                    )}
+                  </Button>
+                </Hint>
+              ) : null}
+              {canWrite ? (
+                <Hint label="App access">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    aria-label="App access"
+                    onClick={() => setAccessOpen(true)}
+                  >
+                    <LockKeyIcon className="size-4 shrink-0" />
+                  </Button>
+                </Hint>
+              ) : null}
+              <Hint label="Versions">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  aria-label="Show versions"
+                  aria-expanded={versionsOpen}
+                  onClick={() => setVersionsOpen((value) => !value)}
+                >
+                  <ClockCounterClockwiseIcon className="size-4 shrink-0" />
+                </Button>
+              </Hint>
+              <Hint label="Open in a new tab">
+                <Button asChild size="icon" variant="outline">
+                  <a
+                    href={liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Open in a new tab"
+                  >
+                    <ArrowSquareOutIcon className="size-4 shrink-0" />
+                  </a>
+                </Button>
+              </Hint>
+              <Hint label="Close">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  aria-label="Close"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <XIcon className="size-4 shrink-0" />
+                </Button>
+              </Hint>
+            </ButtonGroup>
+          </header>
+
+          <div className="relative min-h-0 flex-1">
+            <AppPreview
+              key={app.active_deployment_id ?? app.app_id}
+              app={app}
+              url={access.session.data?.url ?? null}
+              accessError={access.session.isError}
+              interactive
+              className="absolute inset-0 size-full"
+            />
+          </div>
+
+          {versionsOpen ? (
+            <div className="bg-muted/20 max-h-[40vh] shrink-0 overflow-y-auto border-t px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-foreground text-xs font-medium">Versions</p>
+                <div className="flex items-center gap-2">
+                  <Hint label="Copy deploy command">
+                    <CopyButton code={appCommand(app)} size="md" />
+                  </Hint>
+                  {canWrite ? (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="text-destructive"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <TrashIcon className="size-3.5 shrink-0" />
+                      Delete App
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {deployments.isLoading ? (
+                <Loading className="text-muted-foreground" />
+              ) : deployments.data?.length ? (
+                <div className="space-y-1">
+                  {deployments.data.map((deployment) => (
+                    <DeploymentRow
+                      key={deployment.deployment_id}
+                      deployment={deployment}
+                      active={deployment.deployment_id === app.active_deployment_id}
+                      canDeploy={canDeploy}
+                      rollbackPending={deployments.rollback.isPending}
+                      onRollback={async () => {
+                        try {
+                          await deployments.rollback.mutateAsync(deployment.deployment_id);
+                          successToast(`Rolled back to version ${deployment.version}`);
+                        } catch (error) {
+                          errorToast(error instanceof Error ? error.message : 'Rollback failed');
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-xs">No deployments yet.</p>
+              )}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </ModalContent>
 
       <ConfirmDialog
         open={deleteOpen}
@@ -462,6 +627,9 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
           try {
             await apps.remove.mutateAsync(app.app_id);
             setDeleteOpen(false);
+            // The App this modal is about no longer exists — close it, or the
+            // frame keeps rendering a deleted App behind a dead action bar.
+            onOpenChange(false);
             successToast(`${app.name} deleted`);
           } catch (error) {
             errorToast(error instanceof Error ? error.message : 'Failed to delete App');
@@ -477,9 +645,10 @@ function AppRow({ projectId, app, canWrite }: { projectId: string; app: App; can
           onOpenChange={setAccessOpen}
         />
       ) : null}
-    </li>
+    </Modal>
   );
 }
+
 
 const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }> = {
   private: { label: 'Only you', desc: 'Only the App creator can open it' },
@@ -650,13 +819,13 @@ function AppAccessForm({
 function DeploymentRow({
   deployment,
   active,
-  canWrite,
+  canDeploy,
   rollbackPending,
   onRollback,
 }: {
   deployment: AppDeployment;
   active: boolean;
-  canWrite: boolean;
+  canDeploy: boolean;
   rollbackPending: boolean;
   onRollback: () => void;
 }) {
@@ -671,7 +840,7 @@ function DeploymentRow({
         {deployment.hosting_provider ? ` · ${deployment.hosting_provider}` : ''}
       </span>
       {active ? <span className="text-muted-foreground text-xs">Live</span> : null}
-      {canWrite && deployment.status === 'ready' && !active ? (
+      {canDeploy && deployment.status === 'ready' && !active ? (
         <Button size="xs" variant="ghost" disabled={rollbackPending} onClick={onRollback}>
           {rollbackPending ? <Loading /> : <ClockCounterClockwiseIcon className="size-3.5" />}
           Roll back

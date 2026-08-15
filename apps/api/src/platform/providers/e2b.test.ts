@@ -282,6 +282,43 @@ describe('E2B provider lifecycle', () => {
     );
   });
 
+  test('ensureAppRuntimeStarted relaunches a dead appd instead of doing nothing', async () => {
+    // This used to be a no-op, on the reasoning that E2B honors the image
+    // ENTRYPOINT. The App template start command is overridden with
+    // `sleep infinity`, so nothing restarted appd — and this is exactly the
+    // call AppHostingProvider.waitUntilReady makes to recover a stalled App.
+    const sandbox = fakeSandbox('app-recover');
+    sandbox.persistedFiles.set('/etc/kortix/runtime-env.json', JSON.stringify({
+      KORTIX_WORKLOAD_TYPE: 'app',
+      KORTIX_APPD_TOKEN: 'persisted-appd-token',
+    }));
+    connectFactory = () => sandbox;
+
+    await new E2BProvider().ensureAppRuntimeStarted('app-recover');
+
+    expect(sandbox.runs.map((run) => run.command)).toEqual([
+      expect.stringContaining('/kortix/bin/kortix-appd'),
+      expect.stringContaining('http://127.0.0.1:7331/v1/health'),
+    ]);
+    // The relaunch carries the persisted appd credential, so the recovered
+    // daemon answers the control port instead of 401ing the readiness poll.
+    expect(sandbox.runs[0]!.opts).toMatchObject({
+      envs: { KORTIX_APPD_TOKEN: 'persisted-appd-token' },
+      user: 'root',
+    });
+  });
+
+  test('ensureAppRuntimeStarted leaves a session sandbox alone', async () => {
+    // The persisted default fixture is a SESSION runtime. Launching appd into
+    // one would put a second supervisor in a box that never wanted it.
+    const sandbox = fakeSandbox('session-box');
+    connectFactory = () => sandbox;
+
+    await new E2BProvider().ensureAppRuntimeStarted('session-box');
+
+    expect(sandbox.runs).toEqual([]);
+  });
+
   test('rejects an App workload without KORTIX_APPD_TOKEN', async () => {
     await expect(new E2BProvider().create({
       accountId: 'acc-1',

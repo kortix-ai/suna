@@ -797,6 +797,25 @@ back an unknown deployment, or starting/stopping an undeployed App → 409/400 a
 specified by each route. `APP-2` exercises these boundaries through the real
 HTTP API, then deletes the test App.
 
+`APP-3` Machine limits — an App machine answers to the same ceiling a session
+sandbox does (`SANDBOX_SPEC_LIMITS`: 32 CPU, 128 GB memory, 500 GB disk). The
+create route refuses `cpu: 64`, `memory_gb: 512`, and `disk_gb: 2048`
+independently with **400**, accepts exactly 32/128/500, and applies the same
+bounds to `PATCH …/:appId` so resizing an existing App cannot escape them. A
+value below the floor (`cpu: 0`) is refused too. Apps reject rather than clamp:
+an App bills from the specification it recorded, so a silent downgrade would
+charge for compute the provider never allocated.
+
+`APP-4` Team scoping — an App's access policy governs who on the TEAM sees it,
+not only who reaches its hostname, using the model sessions use. A new App is
+`private`: a project editor who did not create it does not receive it in
+`GET …/apps`, and gets **404** (never 403 — the status must not disclose that a
+teammate's private App exists) from `GET` and `PATCH …/:appId`. Switching the
+policy to `project` puts the App in that teammate's list and makes it readable;
+`restricted` with their `member_ids` keeps them in; returning to `private` puts
+them back out. `password` is a PUBLIC-traffic control and stays team-visible.
+A `NONMEMBER` remains 403 on the whole surface.
+
 ---
 
 ## 29. Additional executable product contracts

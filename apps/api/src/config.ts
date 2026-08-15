@@ -125,6 +125,16 @@ const envSchema = z.object({
     .string()
     .min(1, 'SUPABASE_URL is required')
     .refine((v) => /^https?:\/\//.test(v), { message: 'SUPABASE_URL must be a valid HTTP(S) URL' }),
+  // Public origin for CLIENT-facing Supabase Storage URLs. On a self-host box
+  // SUPABASE_URL is an internal Docker hostname (http://supabase-kong:8000) that
+  // no browser/CLI/remote-sandbox can resolve; this is the box's public origin
+  // (e.g. https://essentia.kortix.cloud) used to rewrite signed URLs on the way
+  // out (see toPublicStorageUrl). Optional: unset on managed cloud, where
+  // SUPABASE_URL is already public and no rewrite is needed.
+  SUPABASE_PUBLIC_URL: z
+    .string()
+    .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
+    .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
 
   // ── API Key Hashing (REQUIRED) ───────────────────────────────────────────
@@ -941,6 +951,7 @@ export const config = {
 
   // ─── Supabase ──────────────────────────────────────────────────────────────
   SUPABASE_URL: env.SUPABASE_URL,
+  SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
