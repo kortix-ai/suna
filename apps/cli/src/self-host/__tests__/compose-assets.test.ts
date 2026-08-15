@@ -8,6 +8,7 @@ import { parse } from 'yaml';
 import {
   kortixRuntimeAssets,
   officialSupabaseDockerAssets,
+  renderCaddyfile,
   renderFullDockerCompose,
   SUPABASE_IMAGE_DIGESTS,
   SUPABASE_UPSTREAM_COMMIT,
@@ -348,6 +349,76 @@ describe('full self-host Docker distribution', () => {
       expect(maxAge).toBeLessThanOrEqual(60 * 60 * 24 * 90);
       expect(maxAge).toBeGreaterThan(0);
     }
+  });
+
+  test('base Caddyfile carries NO Apps-hosting wildcard block or on_demand_tls', () => {
+    // Default (no Apps hosting): byte-for-byte the embedded base file, so a
+    // stack without Apps hosting never emits an empty `*.` site address.
+    const base = renderCaddyfile();
+    expect(base).toBe(kortixRuntimeAssets.Caddyfile);
+    expect(base).toBe(renderCaddyfile({ appsHostingConfigured: false }));
+    expect(base).not.toContain('KORTIX_APPS_BASE_DOMAIN');
+    expect(base).not.toContain('on_demand_tls');
+    expect(base).not.toContain('on_demand');
+    expect(base).not.toContain('tls-check');
+  });
+
+  test('Apps hosting adds a wildcard *.<apps base domain> block with per-App on_demand TLS, only when configured', () => {
+    const caddyfile = renderCaddyfile({ appsHostingConfigured: true });
+
+    // The wildcard site address + per-App on-demand TLS.
+    expect(caddyfile).toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+    expect(caddyfile).toMatch(/tls \{\s*on_demand\s*\}/);
+
+    // The global on_demand_tls `ask` that bounds ACME issuance to real App
+    // hosts, pointing at the internal kortix-api tls-check route.
+    expect(caddyfile).toContain('on_demand_tls {');
+    expect(caddyfile).toContain('ask http://kortix-api:8008/v1/apps/edge/tls-check');
+    // Exactly one global options block (Caddy allows only one) — the `ask` is
+    // injected INTO the existing block, not appended as a second one.
+    expect(caddyfile.match(/on_demand_tls \{/g)?.length).toBe(1);
+
+    // The Apps block reverse-proxies to kortix-api the same way the api block
+    // does (dynamic a upstream + active health check), and preserves the
+    // inbound Host so the API's resolveAppHost(Host) names the right App.
+    const appsBlock = caddyfile.slice(caddyfile.indexOf('*.{$KORTIX_APPS_BASE_DOMAIN} {'));
+    expect(appsBlock).toContain('name kortix-api');
+    expect(appsBlock).toContain('port 8008');
+    expect(appsBlock).toContain('health_uri /v1/health');
+    expect(appsBlock).toContain('dynamic a');
+    expect(appsBlock).toContain('fail_duration');
+    // Caddy passes Host through and sets X-Forwarded-Proto by default; assert
+    // neither is overridden (an explicit header_up X-Forwarded-Proto warns
+    // "Unnecessary" under `caddy validate`, and header_up Host would break
+    // resolveAppHost).
+    expect(appsBlock).not.toContain('header_up');
+    // HSTS on the Apps block too, consistent with the other site blocks.
+    expect(appsBlock).toContain('Strict-Transport-Security "max-age=2592000"');
+  });
+
+  test('writeKortixRuntimeAssets writes the Apps block only when Apps hosting is configured', () => {
+    const withApps = mkdtempSync(join(tmpdir(), 'kortix-caddy-apps-'));
+    const without = mkdtempSync(join(tmpdir(), 'kortix-caddy-noapps-'));
+    try {
+      writeKortixRuntimeAssets(withApps, { appsHostingConfigured: true });
+      writeKortixRuntimeAssets(without);
+      expect(readFileSync(join(withApps, 'Caddyfile'), 'utf8')).toContain('*.{$KORTIX_APPS_BASE_DOMAIN} {');
+      expect(readFileSync(join(without, 'Caddyfile'), 'utf8')).toBe(kortixRuntimeAssets.Caddyfile);
+    } finally {
+      rmSync(withApps, { recursive: true, force: true });
+      rmSync(without, { recursive: true, force: true });
+    }
+  });
+
+  test('caddy service passes KORTIX_APPS_BASE_DOMAIN into its container env', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(document.services.caddy?.environment).toMatchObject({
+      KORTIX_DOMAIN: '${KORTIX_DOMAIN}',
+      KORTIX_API_DOMAIN: '${KORTIX_API_DOMAIN}',
+      KORTIX_APPS_BASE_DOMAIN: '${KORTIX_APPS_BASE_DOMAIN}',
+    });
   });
 
   test('every service in the rendered stack has bounded, rotated logging', () => {

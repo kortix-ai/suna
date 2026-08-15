@@ -291,6 +291,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   CLOUDFLARE_TUNNEL_TOKEN: ['cloudflared'],
   CLOUDFLARE_TUNNEL_HOSTNAME: ['cloudflared'],
 
+  // Apps hosting — kortix-api reads both to derive/serve App hostnames, and
+  // caddy must restart to reload the rewritten Caddyfile (the wildcard
+  // App-serving block is added/removed by KORTIX_APPS_BASE_DOMAIN; Caddy does
+  // not hot-reload a bind-mounted config on its own).
+  KORTIX_APPS_BASE_DOMAIN: ['kortix-api', 'caddy'],
+  KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
+
   // Internal tokens
   GATEWAY_INTERNAL_TOKEN: ['kortix-api', 'llm-gateway'],
   INTERNAL_SERVICE_KEY: ['kortix-api'],
