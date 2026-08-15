@@ -961,6 +961,17 @@ async function runWarmSeedMode(
 //      messages yet) — never re-running a task whose side effects already ran.
 // It also reports the canonical root to apps/api so the durable DB pin is set
 // server-side at bootstrap, with no dependency on a browser ever opening it.
+//
+// T12: (1) and (3) above both trusted a message-list read that can
+// itself fail — non-2xx, or the 5s timeout a cold post-resume opencode
+// routinely hits — collapsing "could not tell" into "no messages", which
+// re-delivers `prompt` into a live conversation. `RootInspection.known` closes
+// that: an unconfirmed read never delivers and never counts as orphaned (see
+// `initialPromptAlreadyDelivered`, `isTurnStillOrphaned`). Separately, a
+// `waitForRootList` timeout with a prior pin no longer falls through to
+// creating (and pinning) a brand-new root — see `resolveExistingRoot`'s
+// `defer` outcome — which was the SAME spinner-incident shape one layer up:
+// timeout read as "no roots" instead of "opencode is just slow".
 async function maybeCreateInitialOpencodeSession(
   opencode: Opencode,
   bootState: SandboxBootState,
@@ -989,8 +1000,23 @@ async function maybeCreateInitialOpencodeSession(
   //   opencode-session-created (existing) → first prompt delivered
   // A big opencode-answering means the fix is in the image (pre-booted
   // opencode); a big root-ready means it's our bootstrap.
-  let existing = await resolveExistingRoot(baseUrl, workspace)
+  const resolved = await resolveExistingRoot(baseUrl, workspace)
   bootMark('opencode-answering')
+  if (resolved.status === 'defer') {
+    // opencode never answered the root list within the deadline, and a prior
+    // root IS pinned — see `resolveExistingRoot`'s `defer` outcome. Creating
+    // (and pinning) a fresh root here would risk orphaning that conversation
+    // under a competing one — the exact 2026-06-15 spinner-incident shape (see
+    // the comment above this function). Leave `bootState.initialOpenCodeSessionId`
+    // unset and return: boot falls through to the `waitForOpencodeReady`
+    // fallback path below instead of the initial-session fast path, and
+    // nothing here touches the existing root or delivers `prompt` anywhere.
+    logger.warn(
+      '[boot] deferring initial opencode session setup — opencode did not answer in time and a prior root is pinned',
+    )
+    return
+  }
+  let existing = resolved.status === 'found' ? resolved.root : null
   // Warm-fork de-collision: a CoW-forked sandbox inherits the snapshot's single
   // pinned root, so `existing` here is the SHARED seed root — every fork would
   // otherwise resolve the same opencode session id and their chats bleed together
@@ -1007,16 +1033,21 @@ async function maybeCreateInitialOpencodeSession(
   let alreadyDelivered = false
   if (existing) {
     sessionId = existing.id
-    alreadyDelivered = existing.hasMessages
+    alreadyDelivered = initialPromptAlreadyDelivered(existing)
     logger.info('[boot] reusing existing opencode root', {
       sessionId,
       alreadyDelivered,
+      known: existing.known,
       lastTurnIncomplete: existing.lastTurnIncomplete,
+      lastTurnHasError: existing.lastTurnHasError,
     })
     // A turn interrupted by the restart left a part stuck "running"; finalize it
-    // so a client streaming this root sees the turn end instead of spinning.
+    // so a client streaming this root sees the turn end instead of spinning. A
+    // turn that already carries `info.error` was already finalized by a prior
+    // abort (see `isTurnStillOrphaned`) — re-aborting it here is exactly the
+    // repeated-abort-on-every-boot bug this guard exists to prevent.
     if (
-      existing.lastTurnIncomplete &&
+      isTurnStillOrphaned(existing) &&
       (await confirmTurnOrphaned(baseUrl, workspace, sessionId, existing))
     ) {
       await abortOpencodeTurn(baseUrl, workspace, sessionId)
@@ -1103,7 +1134,17 @@ export async function finalizeOrphanedTurn(
   sessionId: string,
 ): Promise<boolean> {
   const inspection = await inspectRoot(baseUrl, workspace, sessionId)
-  if (!inspection.lastTurnIncomplete) return false
+  if (!inspection.known) {
+    // Could not read this root's message state at all — see
+    // `RootInspection.known`. Never treat "could not tell" as orphaned.
+    logger.warn('[boot] could not read root message state; not treating turn as orphaned', { sessionId })
+    return false
+  }
+  // Covers both "the turn already finished" and "the turn already carries an
+  // error from a prior finalize" — see `isTurnStillOrphaned`. The latter is
+  // what makes this idempotent across repeated boots/respawns over the same
+  // stuck turn: an already-errored turn is never re-aborted.
+  if (!isTurnStillOrphaned(inspection)) return false
   // Never abort a turn that is merely still being written — see
   // confirmTurnOrphaned. This is the difference between closing a turn its
   // opencode took to the grave and interrupting one that was about to finish.
@@ -1171,35 +1212,96 @@ interface ExistingRoot {
   id: string
   hasMessages: boolean
   lastTurnIncomplete: boolean
+  /** See `RootInspection.lastTurnHasError` — an errored turn is already
+   *  finalized and must not be re-aborted. */
+  lastTurnHasError: boolean
   /** Carried through so the orphan re-check can tell the same unfinished turn
    *  from a different one that started since. */
   lastMessageId: string | null
+  /** See `RootInspection.known` — false when the read that produced the rest
+   *  of this shape failed. `hasMessages`/`lastTurnIncomplete`/`lastTurnHasError`
+   *  are meaningless in that case (all defaulted `false`); callers must branch
+   *  on `known` before trusting them. */
+  known: boolean
 }
+
+/** What `resolveExistingRoot` learned, and what the caller may safely do about
+ *  it — see the function doc for the three outcomes. Exported for tests. */
+export type ExistingRootResult =
+  | { status: 'found'; root: ExistingRoot }
+  | { status: 'create' }
+  | { status: 'defer' }
 
 /**
  * Resolve a usable existing canonical root for this workspace so a restart
  * reuses it instead of creating a duplicate. Prefers the pinned id (if it still
- * exists as a root), else the most-recently-active root. Returns null when
- * opencode is unreachable or holds no root yet (the caller then creates one).
+ * exists as a root), else the most-recently-active root.
+ *
+ * Three outcomes:
+ *   - `found`  — a root exists. `root.known` says whether its message state
+ *     could actually be read (see `ExistingRoot.known`).
+ *   - `create` — opencode answered and genuinely holds no root, OR opencode
+ *     never answered within the deadline AND nothing is pinned (a pinless
+ *     cold boot — there is no conversation to orphan). Safe to create the
+ *     first root, same as before.
+ *   - `defer`  — opencode never answered the root list within the deadline
+ *     AND a prior root IS pinned. Creating (and pinning) a fresh root here
+ *     would risk orphaning that conversation under a competing one — opencode
+ *     may just be slow (a cold post-resume opencode routinely takes longer
+ *     than this deadline). The caller must not create or pin anything; see
+ *     the 2026-06-15 spinner-incident comment above
+ *     `maybeCreateInitialOpencodeSession`. T12.
+ *
+ * `priorPin`/`rootListDeadlineMs` default to the real pin file / 20s deadline
+ * in production and are overridable so tests can exercise the `defer` branch
+ * without a 20s wait or a real pin file — same pattern as
+ * `opencodeTurnInFlight` in opencode-turn-state.ts.
  */
-async function resolveExistingRoot(baseUrl: string, workspace: string): Promise<ExistingRoot | null> {
+async function resolveExistingRoot(
+  baseUrl: string,
+  workspace: string,
+  priorPin: string | null = readPinnedOpencodeSessionId(),
+  rootListDeadlineMs = 20_000,
+): Promise<ExistingRootResult> {
   // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
   // boot as "no roots" would create a duplicate on restart — the exact bug we're
   // killing — so only conclude "create a fresh root" once opencode has actually
-  // answered with an empty list (or never answers within the deadline).
-  const roots = await waitForRootList(baseUrl, workspace)
-  if (!roots || roots.length === 0) return null
-  const pinned = readPinnedOpencodeSessionId()
-  const chosen = (pinned && roots.find((r) => r.id === pinned)) || pickMostRecentRoot(roots)
-  if (!chosen) return null
+  // answered with an empty list (or never answers within the deadline, and
+  // there is no prior pin to protect — see `defer` above).
+  const roots = await waitForRootList(baseUrl, workspace, rootListDeadlineMs)
+  if (!roots) {
+    if (priorPin) {
+      logger.warn(
+        '[boot] opencode did not answer the root list within the deadline; a prior root is pinned — deferring instead of creating a competing root',
+        { priorPin },
+      )
+      return { status: 'defer' }
+    }
+    return { status: 'create' }
+  }
+  if (roots.length === 0) return { status: 'create' }
+  const pinned = priorPin ? roots.find((r) => r.id === priorPin) : undefined
+  const chosen = pinned || pickMostRecentRoot(roots)
+  if (!chosen) return { status: 'create' }
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
   return {
-    id: chosen.id,
-    hasMessages: inspection.hasMessages,
-    lastTurnIncomplete: inspection.lastTurnIncomplete,
-    lastMessageId: inspection.lastMessageId,
+    status: 'found',
+    root: {
+      id: chosen.id,
+      hasMessages: inspection.hasMessages,
+      lastTurnIncomplete: inspection.lastTurnIncomplete,
+      lastTurnHasError: inspection.lastTurnHasError,
+      lastMessageId: inspection.lastMessageId,
+      known: inspection.known,
+    },
   }
 }
+// Exported (via a trailing statement, not an inline `export` keyword) so the
+// text `async function resolveExistingRoot(` stays intact for
+// orphan-finalize-error-idempotent.test.ts's source-text assertion, which
+// locates `maybeCreateInitialOpencodeSession`'s body by searching for exactly
+// that string.
+export { resolveExistingRoot }
 
 interface RootLite { id: string; created: number; updated: number }
 
@@ -1207,8 +1309,12 @@ interface RootLite { id: string; created: number; updated: number }
  *  returning the roots it holds (possibly `[]`). Null only if opencode never
  *  became reachable within the deadline — so the caller never mistakes a slow
  *  boot for an empty workspace and creates a duplicate root. */
-async function waitForRootList(baseUrl: string, workspace: string): Promise<RootLite[] | null> {
-  const deadline = Date.now() + 20_000
+async function waitForRootList(
+  baseUrl: string,
+  workspace: string,
+  deadlineMs = 20_000,
+): Promise<RootLite[] | null> {
+  const deadline = Date.now() + deadlineMs
   while (Date.now() < deadline) {
     const roots = await listOpencodeRoots(baseUrl, workspace)
     if (roots !== null) return roots
@@ -1258,9 +1364,65 @@ function pickMostRecentRoot(roots: RootLite[]): RootLite | null {
 interface RootInspection {
   hasMessages: boolean
   lastTurnIncomplete: boolean
+  /** `info.error` is present on the last message. A prior `/abort` (or opencode
+   *  itself) already stamped this turn with an AbortError/MessageAbortedError
+   *  without ever stamping `time.completed` — so it is already finalized, not
+   *  orphaned. Re-aborting it would only re-emit the same `message.updated`/
+   *  `session.error` to every client watching, re-rendering "Interrupted" for a
+   *  turn that already ended. See `isTurnStillOrphaned`. */
+  lastTurnHasError: boolean
   /** Identity of the last message, so a re-check can tell "same turn, still
    *  unfinished" from "a different turn has since started". */
   lastMessageId: string | null
+  /**
+   * False when the read failed — opencode unreachable, non-2xx, the 5s
+   * timeout a cold post-resume opencode routinely hits, or an unparseable
+   * response. Mirrors `RootInspection.known` in opencode-turn-state.ts (same
+   * shape, same reason): without it, "genuinely no messages" and "could not
+   * tell" are indistinguishable. Collapsing the second into the first either
+   * re-delivers the initial prompt into a live conversation (boot's
+   * reused-root path) or re-aborts a turn nobody actually confirmed was dead
+   * (`finalizeOrphanedTurn`). Every other field on this shape is meaningless
+   * when `known` is false — callers must check `known` first. See T12.
+   */
+  known: boolean
+}
+
+/**
+ * Single source of truth for "is this turn still eligible to be aborted as
+ * orphaned?" — incomplete AND not already carrying an error. Every finalize
+ * path (boot's reused-root check, `finalizeOrphanedTurn`'s unplanned-respawn
+ * check, and the settle re-check inside `confirmTurnOrphaned`) must route
+ * through this instead of reading `lastTurnIncomplete` directly, so the error
+ * guard cannot drift out of sync between them.
+ *
+ * `known: false` (the read failed) is never orphaned. We could not confirm
+ * anything, so we must not abort a turn that might still be running — the
+ * gate every caller here relies on. See `RootInspection.known`.
+ */
+function isTurnStillOrphaned(inspection: {
+  lastTurnIncomplete: boolean
+  lastTurnHasError: boolean
+  known: boolean
+}): boolean {
+  if (!inspection.known) return false
+  return inspection.lastTurnIncomplete && !inspection.lastTurnHasError
+}
+
+/**
+ * Has the initial prompt already reached this root — or must we assume so?
+ *
+ * `known: false` means the read that would answer this failed (see
+ * `RootInspection.known`). Treating that as "no messages" — the bug this
+ * closes — reads as "never delivered" and re-delivers `prompt` into a
+ * conversation that may already have it. Assuming delivered instead costs at
+ * most one skipped bootstrap prompt on a root that turns out to be genuinely
+ * empty, which is always safe to retry from outside: nothing observable ran
+ * yet to redo. See T12.
+ */
+export function initialPromptAlreadyDelivered(existing: { known: boolean; hasMessages: boolean }): boolean {
+  if (!existing.known) return true
+  return existing.hasMessages
 }
 
 /**
@@ -1288,22 +1450,35 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
       { signal: AbortSignal.timeout(5_000) },
     )
-    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    // Non-2xx (opencode answering but unhappy — e.g. mid-restart) is a read
+    // failure, not "no messages": `known: false`.
+    if (!res.ok) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    }
     const msgs = (await res.json()) as Array<{
-      info?: { id?: string; role?: string; time?: { completed?: number } }
+      info?: { id?: string; role?: string; error?: unknown; time?: { completed?: number } }
     }>
-    if (!Array.isArray(msgs) || msgs.length === 0) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    // An unparseable shape is also a read failure, not a genuinely empty root
+    // — only an actual `[]` counts as a confirmed-empty root.
+    if (!Array.isArray(msgs)) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    }
+    if (msgs.length === 0) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: true }
     }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
     return {
       hasMessages: true,
       lastTurnIncomplete: Boolean(incomplete),
+      lastTurnHasError: Boolean(last?.info?.error),
       lastMessageId: last?.info?.id ?? null,
+      known: true,
     }
   } catch {
-    return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    // Unreachable, or the 5s AbortSignal.timeout above fired — the exact "cold
+    // post-resume opencode" hazard this whole tri-state exists for.
+    return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
   }
 }
 
@@ -1325,8 +1500,23 @@ async function confirmTurnOrphaned(
 ): Promise<boolean> {
   await new Promise((r) => setTimeout(r, ORPHAN_SETTLE_MS))
   const second = await inspectRoot(baseUrl, workspace, sessionId)
+  if (!second.known) {
+    // The settle re-check itself could not read the root. Do NOT abort on the
+    // strength of the FIRST read alone — that would abort turns we can no
+    // longer confirm are still incomplete now.
+    logger.warn('[boot] could not confirm turn state during settle re-check; not aborting', { sessionId })
+    return false
+  }
   if (!second.lastTurnIncomplete) {
     logger.info('[boot] turn completed on its own; not aborting', { sessionId })
+    return false
+  }
+  if (second.lastTurnHasError) {
+    // A prior abort (or opencode itself) already stamped this turn with an
+    // error without ever stamping `time.completed`. It is already finalized —
+    // re-aborting it would only re-emit the same message.updated/session.error
+    // to every client watching, re-rendering "Interrupted" on every boot.
+    logger.info('[boot] turn already carries an error; already finalized, not aborting', { sessionId })
     return false
   }
   if (first.lastMessageId && second.lastMessageId !== first.lastMessageId) {
