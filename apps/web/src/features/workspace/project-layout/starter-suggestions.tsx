@@ -106,7 +106,7 @@ export function StarterSuggestions({
               'hover:bg-muted/60 transition-colors duration-150 active:scale-[0.99]',
             )}
           >
-            {Icon ? <Icon className="text-muted-foreground size-4 shrink-0" /> : null}
+            {Icon ? <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden /> : null}
             <span className="text-foreground/90 line-clamp-1 text-sm leading-snug">
               {item.label}
             </span>
