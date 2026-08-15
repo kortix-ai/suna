@@ -26,6 +26,12 @@ const StarterSuggestionItemSchema = z.object({
   label: z.string(),
   prompt: z.string(),
   action: z.enum(SUGGESTION_ACTIONS).optional(),
+  // Enriched, generator-set only — see the two-stage design note on
+  // `StarterSuggestionItem` (`../starter-suggestions/sanitize.ts`). Never
+  // present on the static `STARTER_PROMPT_FALLBACKS` pool below.
+  connector: z
+    .object({ slug: z.string(), name: z.string(), img_src: z.string().nullable() })
+    .optional(),
 });
 
 const StarterSuggestionsResponseSchema = z.object({

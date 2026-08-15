@@ -358,4 +358,115 @@ describe('parseSuggestions', () => {
     expect(result).not.toBe(null);
     expect(Object.keys(result?.[0] ?? {}).sort()).toEqual(['id', 'label', 'prompt']);
   });
+
+  describe('connector_slug (raw, shape-validated only)', () => {
+    it('keeps a valid connector_slug as connectorSlug on the item', () => {
+      const input = JSON.stringify([
+        {
+          label: 'Connect Slack',
+          prompt: 'Connect Slack to post daily standup updates',
+          action: 'connectors',
+          connector_slug: 'slack',
+        },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result).not.toBe(null);
+      expect(result?.[0]).toEqual({
+        id: 'gen-0',
+        label: 'Connect Slack',
+        prompt: 'Connect Slack to post daily standup updates',
+        action: 'connectors',
+        connectorSlug: 'slack',
+      });
+    });
+
+    it('trims a connector_slug with surrounding whitespace', () => {
+      const input = JSON.stringify([
+        { label: 'Connect Slack', prompt: 'Connect Slack to post updates', connector_slug: '  slack  ' },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result?.[0].connectorSlug).toBe('slack');
+    });
+
+    it('strips a connector_slug that is empty after trimming, keeps the item', () => {
+      const input = JSON.stringify([
+        { label: 'Label 1', prompt: 'This is a valid prompt text here', connector_slug: '   ' },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result).not.toBe(null);
+      expect(result?.[0]).not.toHaveProperty('connectorSlug');
+    });
+
+    it('strips a connector_slug over 100 chars, keeps the item', () => {
+      const overSize = 'x'.repeat(101);
+      const input = JSON.stringify([
+        { label: 'Label 1', prompt: 'This is a valid prompt text here', connector_slug: overSize },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result).not.toBe(null);
+      expect(result?.[0]).not.toHaveProperty('connectorSlug');
+    });
+
+    it('keeps a connector_slug at exactly 100 chars', () => {
+      const exact = 'x'.repeat(100);
+      const input = JSON.stringify([
+        { label: 'Label 1', prompt: 'This is a valid prompt text here', connector_slug: exact },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result?.[0].connectorSlug).toBe(exact);
+    });
+
+    it('strips a non-string connector_slug, keeps the item', () => {
+      const input = JSON.stringify([
+        { label: 'Label 1', prompt: 'This is a valid prompt text here', connector_slug: 123 },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result).not.toBe(null);
+      expect(result?.[0]).not.toHaveProperty('connectorSlug');
+    });
+
+    it('omits connectorSlug entirely when connector_slug is absent from input', () => {
+      const input = JSON.stringify([
+        { label: 'Label 1', prompt: 'This is a valid prompt text here' },
+        { label: 'Label 2', prompt: 'Another prompt text for testing purposes' },
+        { label: 'Label 3', prompt: 'Third prompt with enough characters' },
+        { label: 'Label 4', prompt: 'Fourth prompt for the validation' },
+        { label: 'Label 5', prompt: 'Fifth prompt is also valid here now' },
+        { label: 'Label 6', prompt: 'Sixth prompt needs to be long enough' },
+      ]);
+      const result = parseSuggestions(input);
+      expect(result).not.toBe(null);
+      expect(Object.keys(result?.[0] ?? {}).sort()).toEqual(['id', 'label', 'prompt']);
+    });
+  });
 });

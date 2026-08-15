@@ -9,6 +9,7 @@ import {
   type StarterSuggestionItem,
 } from './sanitize';
 import {
+  enrichConnectorItems,
   type GenerateStarterSuggestionsOptions,
   type StarterSuggestionsCache,
   STARTER_SUGGESTIONS_TTL_MS,
@@ -69,6 +70,17 @@ describe('suggestionsCompletionBody', () => {
     expect(userContent).toMatch(/"action"[^.]*\boptional\b/i);
     expect(userContent).toMatch(/at most 2 of the 9/i);
     expect(userContent).toMatch(/short, specific action phrase/i);
+  });
+
+  it('instructs connector_slug to be chosen only from the offered Available connectors list', () => {
+    const body = JSON.parse(suggestionsCompletionBody('glm-5.2', 'some workspace signal text'));
+    const userContent = body.messages[1].content as string;
+
+    expect(userContent).toContain('connector_slug');
+    expect(userContent).toMatch(/"connector_slug"/);
+    expect(userContent).toMatch(/Available connectors/);
+    expect(userContent).toMatch(/never invent/i);
+    expect(userContent).toMatch(/at most 2/i);
   });
 });
 
@@ -158,6 +170,101 @@ describe('readSuggestionsCache', () => {
       }),
     ).toBeNull();
   });
+
+  // v1.1 cache-compat: a cache written before the enriched `connector` field
+  // existed (action present, no connector key at all) must still read back
+  // unchanged.
+  it('reads a v1.1-shaped cache (action, no connector key) unchanged', () => {
+    const generatedAt = new Date().toISOString();
+    const items: StarterSuggestionItem[] = [
+      { id: 'gen-0', label: 'Connect Slack', prompt: 'Connect Slack to post updates', action: 'connectors' },
+      { id: 'gen-1', label: 'Do X', prompt: 'Please do X for me' },
+    ];
+    const cache = readSuggestionsCache({
+      starter_suggestions: { generated_at: generatedAt, model: 'glm-5.2', items },
+    });
+    expect(cache).toEqual({ generated_at: generatedAt, model: 'glm-5.2', items });
+    expect(cache?.items[0]).not.toHaveProperty('connector');
+  });
+
+  it('reads a well-formed cache with an enriched connector, preserving it', () => {
+    const generatedAt = new Date().toISOString();
+    const items: StarterSuggestionItem[] = [
+      {
+        id: 'gen-0',
+        label: 'Connect Slack',
+        prompt: 'Connect Slack to post updates',
+        action: 'connectors',
+        connector: { slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' },
+      },
+      { id: 'gen-1', label: 'Do X', prompt: 'Please do X for me' },
+    ];
+    const cache = readSuggestionsCache({
+      starter_suggestions: { generated_at: generatedAt, model: 'glm-5.2', items },
+    });
+    expect(cache).toEqual({ generated_at: generatedAt, model: 'glm-5.2', items });
+  });
+
+  it('accepts a connector with a null img_src', () => {
+    const generatedAt = new Date().toISOString();
+    const items: StarterSuggestionItem[] = [
+      {
+        id: 'gen-0',
+        label: 'Connect Notion',
+        prompt: 'Connect Notion to sync docs',
+        connector: { slug: 'notion', name: 'Notion', img_src: null },
+      },
+    ];
+    const cache = readSuggestionsCache({
+      starter_suggestions: { generated_at: generatedAt, model: 'glm-5.2', items },
+    });
+    expect(cache).toEqual({ generated_at: generatedAt, model: 'glm-5.2', items });
+  });
+
+  it('returns null when connector.slug is missing or not a string', () => {
+    expect(
+      readSuggestionsCache({
+        starter_suggestions: {
+          generated_at: new Date().toISOString(),
+          model: 'glm-5.2',
+          items: [
+            { id: 'gen-0', label: 'x', prompt: 'valid prompt text', connector: { name: 'Slack', img_src: null } },
+          ],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when connector.img_src is neither a string nor null', () => {
+    expect(
+      readSuggestionsCache({
+        starter_suggestions: {
+          generated_at: new Date().toISOString(),
+          model: 'glm-5.2',
+          items: [
+            {
+              id: 'gen-0',
+              label: 'x',
+              prompt: 'valid prompt text',
+              connector: { slug: 'slack', name: 'Slack', img_src: 123 },
+            },
+          ],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when connector is not an object', () => {
+    expect(
+      readSuggestionsCache({
+        starter_suggestions: {
+          generated_at: new Date().toISOString(),
+          model: 'glm-5.2',
+          items: [{ id: 'gen-0', label: 'x', prompt: 'valid prompt text', connector: 'slack' }],
+        },
+      }),
+    ).toBeNull();
+  });
 });
 
 describe('isSuggestionsCacheStale', () => {
@@ -195,6 +302,71 @@ describe('isSuggestionsCacheStale', () => {
   it('is stale when generated_at is unparseable', () => {
     const cache: StarterSuggestionsCache = { generated_at: 'not-a-date', model: 'glm-5.2', items: [] };
     expect(isSuggestionsCacheStale(cache, now)).toBe(true);
+  });
+});
+
+describe('enrichConnectorItems', () => {
+  const offer = [
+    { slug: 'slack', name: 'Slack' },
+    { slug: 'notion', name: 'Notion' },
+  ];
+
+  function baseItem(over: Partial<StarterSuggestionItem> = {}): StarterSuggestionItem {
+    return { id: 'gen-0', label: 'Connect Slack', prompt: 'Connect Slack to post updates', ...over };
+  }
+
+  it('enriches a connectorSlug that matches the offer, dropping the raw slug', async () => {
+    const items = [baseItem({ action: 'connectors', connectorSlug: 'slack' })];
+    const result = await enrichConnectorItems(items, offer, async (slug) =>
+      slug === 'slack' ? 'https://example.test/slack.png' : null,
+    );
+    expect(result).toEqual([
+      {
+        id: 'gen-0',
+        label: 'Connect Slack',
+        prompt: 'Connect Slack to post updates',
+        action: 'connectors',
+        connector: { slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' },
+      },
+    ]);
+    expect(result[0]).not.toHaveProperty('connectorSlug');
+  });
+
+  it('sets img_src to null when the icon lookup finds nothing', async () => {
+    const items = [baseItem({ connectorSlug: 'slack' })];
+    const result = await enrichConnectorItems(items, offer, async () => null);
+    expect(result[0]?.connector).toEqual({ slug: 'slack', name: 'Slack', img_src: null });
+  });
+
+  it('drops an unknown connectorSlug (not in the offer) but keeps the item as a plain suggestion', async () => {
+    const items = [baseItem({ action: 'connectors', connectorSlug: 'jira' })];
+    const result = await enrichConnectorItems(items, offer, async () => 'https://example.test/jira.png');
+    expect(result).toEqual([{ id: 'gen-0', label: 'Connect Slack', prompt: 'Connect Slack to post updates', action: 'connectors' }]);
+    expect(result[0]).not.toHaveProperty('connector');
+    expect(result[0]).not.toHaveProperty('connectorSlug');
+  });
+
+  it('drops every connectorSlug when the offer for this run is empty', async () => {
+    const items = [baseItem({ connectorSlug: 'slack' })];
+    const result = await enrichConnectorItems(items, [], async () => 'https://example.test/slack.png');
+    expect(result[0]).not.toHaveProperty('connector');
+    expect(result[0]).not.toHaveProperty('connectorSlug');
+  });
+
+  it('leaves items with no connectorSlug untouched', async () => {
+    const items = [baseItem({ connectorSlug: undefined })];
+    const result = await enrichConnectorItems(items, offer, async () => 'https://example.test/slack.png');
+    expect(result).toEqual([baseItem()]);
+  });
+
+  it('passes plain items through unchanged alongside enriched ones', async () => {
+    const items = [
+      baseItem({ action: 'connectors', connectorSlug: 'notion' }),
+      { id: 'gen-1', label: 'Do X', prompt: 'Please do X for me' },
+    ];
+    const result = await enrichConnectorItems(items, offer, async () => null);
+    expect(result[1]).toEqual({ id: 'gen-1', label: 'Do X', prompt: 'Please do X for me' });
+    expect(result[0]?.connector?.slug).toBe('notion');
   });
 });
 
@@ -236,6 +408,7 @@ describe('generateStarterSuggestions', () => {
         (async (projectId, cache) => {
           persisted.push({ projectId, cache });
         }),
+      lookupConnectorIcon: over.lookupConnectorIcon,
       timeoutMs: over.timeoutMs,
     };
     return {
@@ -263,6 +436,62 @@ describe('generateStarterSuggestions', () => {
     expect(new Date(cache.generated_at).toISOString()).toBe(cache.generated_at);
     expect(h.minted).toEqual(['k']);
     expect(h.revoked).toEqual(['key-1']);
+  });
+
+  it('end to end: a connector_slug matching this run\'s offer persists as an enriched connector', async () => {
+    const h = harness({
+      collect: async () => ({
+        text: 'workspace signals here',
+        hasSignals: true,
+        availableConnectors: [{ slug: 'slack', name: 'Slack' }],
+      }),
+      generate: async () => {
+        const items: Array<Record<string, unknown>> = nineRawItems();
+        items[0] = {
+          label: 'Connect Slack',
+          prompt: 'Connect Slack to post daily standup updates',
+          action: 'connectors',
+          connector_slug: 'slack',
+        };
+        return JSON.stringify(items);
+      },
+      lookupConnectorIcon: async (slug) => (slug === 'slack' ? 'https://example.test/slack.png' : null),
+    });
+    await generateStarterSuggestions({ ...input, projectId: 'proj-connector' }, h.options);
+
+    expect(h.persisted).toHaveLength(1);
+    const item = h.persisted[0]!.cache.items[0]!;
+    expect(item.action).toBe('connectors');
+    expect(item.connector).toEqual({ slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' });
+    expect(item).not.toHaveProperty('connectorSlug');
+  });
+
+  it('end to end: a connector_slug NOT in this run\'s offer is dropped, item survives as a plain suggestion', async () => {
+    const h = harness({
+      collect: async () => ({
+        text: 'workspace signals here',
+        hasSignals: true,
+        availableConnectors: [{ slug: 'notion', name: 'Notion' }],
+      }),
+      generate: async () => {
+        const items: Array<Record<string, unknown>> = nineRawItems();
+        items[0] = {
+          label: 'Connect Jira',
+          prompt: 'Connect Jira to track issues automatically',
+          action: 'connectors',
+          connector_slug: 'jira',
+        };
+        return JSON.stringify(items);
+      },
+      lookupConnectorIcon: async () => 'https://example.test/jira.png',
+    });
+    await generateStarterSuggestions({ ...input, projectId: 'proj-connector-invalid' }, h.options);
+
+    expect(h.persisted).toHaveLength(1);
+    const item = h.persisted[0]!.cache.items[0]!;
+    expect(item.label).toBe('Connect Jira');
+    expect(item).not.toHaveProperty('connector');
+    expect(item).not.toHaveProperty('connectorSlug');
   });
 
   it('unparseable model output: persist is never called, key still revoked', async () => {

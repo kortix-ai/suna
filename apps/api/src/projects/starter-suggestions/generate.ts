@@ -99,8 +99,11 @@ export function suggestionsCompletionBody(model: string, signals: string): strin
     'agent, grounded in the workspace context above. "action" is optional and, when present, ' +
     `must be exactly one of: ${actionEnumList}. Use "action" only when the best suggestion is ` +
     'a setup step rather than a prompt to run — e.g. "Connect Slack to post updates" -> ' +
-    '"connectors". At most 2 of the 9 objects may carry "action". No prose, no markdown ' +
-    'fence, no extra keys.';
+    '"connectors". At most 2 of the 9 objects may carry "action". When "action" is ' +
+    '"connectors", also include "connector_slug": the exact slug of ONE app from the ' +
+    '"## Available connectors" list above — never invent a slug that is not listed there, ' +
+    'and omit "connector_slug" entirely if no listed app fits. At most 2 of the 9 objects ' +
+    'may carry "connector_slug". No prose, no markdown fence, no extra keys.';
   return JSON.stringify({
     model,
     stream: false,
@@ -151,11 +154,51 @@ async function loadProjectRow(projectId: string): Promise<ProjectRow | null> {
 
 async function defaultCollect(
   projectId: string,
-): Promise<{ text: string; hasSignals: boolean } | null> {
+): Promise<{ text: string; hasSignals: boolean; availableConnectors: Array<{ slug: string; name: string }> } | null> {
   const row = await loadProjectRow(projectId);
   if (!row) return null;
   const sources = await collectSignalSources(row);
-  return renderSignalBundle(sources);
+  return { ...renderSignalBundle(sources), availableConnectors: sources.availableConnectors };
+}
+
+/** Real `img_src` lookup, lazily importing the connectors module — same
+ *  lazy-load rationale as `internalGateway` above: importing `generate.ts`
+ *  must not drag in the whole connectors/Pipedream stack for every consumer. */
+async function defaultLookupConnectorIcon(slug: string): Promise<string | null> {
+  const { pipedreamConnectorIcon } = await import('../../connectors/pipedream');
+  return pipedreamConnectorIcon(slug);
+}
+
+/**
+ * Post-parse connector enrichment: validates each item's raw `connectorSlug`
+ * against `availableConnectors` — the EXACT offer collected for this run
+ * (the same `{ slug, name }` pairs rendered into the "## Available
+ * connectors" prompt section) — and either:
+ *   - replaces it with the enriched `connector: { slug, name, img_src }`
+ *     (name from the offer; img_src from `lookupIcon`, null if unavailable), or
+ *   - drops the slug and keeps the item as a plain suggestion, when it
+ *     doesn't match anything offered this run (hallucinated, stale, or no
+ *     offer was made at all).
+ *
+ * `connectorSlug` never survives this step either way — see the two-stage
+ * design note on `StarterSuggestionItem` in `sanitize.ts`.
+ */
+export async function enrichConnectorItems(
+  items: StarterSuggestionItem[],
+  availableConnectors: Array<{ slug: string; name: string }>,
+  lookupIcon: (slug: string) => Promise<string | null>,
+): Promise<StarterSuggestionItem[]> {
+  const offerBySlug = new Map(availableConnectors.map((c) => [c.slug, c] as const));
+  return Promise.all(
+    items.map(async (item) => {
+      const { connectorSlug, ...rest } = item;
+      if (!connectorSlug) return rest;
+      const offer = offerBySlug.get(connectorSlug);
+      if (!offer) return rest; // invalid/unknown -> drop the slug, keep the item
+      const img_src = await lookupIcon(offer.slug);
+      return { ...rest, connector: { slug: offer.slug, name: offer.name, img_src } };
+    }),
+  );
 }
 
 /** The platform default, probed for servability — the ONLY candidate this
@@ -280,18 +323,42 @@ export function readSuggestionsCache(
   const validated: StarterSuggestionItem[] = [];
   for (const item of items) {
     if (!item || typeof item !== 'object') return null;
-    const { id, label, prompt, action } = item as Record<string, unknown>;
+    const { id, label, prompt, action, connector } = item as Record<string, unknown>;
     if (typeof id !== 'string' || typeof label !== 'string' || typeof prompt !== 'string') {
       return null;
     }
-    if (action === undefined) {
-      validated.push({ id, label, prompt });
-      continue;
+
+    let validatedAction: SuggestionAction | undefined;
+    if (action !== undefined) {
+      if (typeof action !== 'string' || !(SUGGESTION_ACTIONS as readonly string[]).includes(action)) {
+        return null;
+      }
+      validatedAction = action as SuggestionAction;
     }
-    if (typeof action !== 'string' || !(SUGGESTION_ACTIONS as readonly string[]).includes(action)) {
-      return null;
+
+    // v1.1 caches carry no `connector` key at all — `undefined` is the
+    // common case and reads back unchanged (see the v1.1 cache-compat test).
+    let validatedConnector: { slug: string; name: string; img_src: string | null } | undefined;
+    if (connector !== undefined) {
+      if (!connector || typeof connector !== 'object' || Array.isArray(connector)) return null;
+      const c = connector as Record<string, unknown>;
+      if (
+        typeof c.slug !== 'string' ||
+        typeof c.name !== 'string' ||
+        (c.img_src !== null && typeof c.img_src !== 'string')
+      ) {
+        return null;
+      }
+      validatedConnector = { slug: c.slug, name: c.name, img_src: c.img_src as string | null };
     }
-    validated.push({ id, label, prompt, action: action as SuggestionAction });
+
+    validated.push({
+      id,
+      label,
+      prompt,
+      ...(validatedAction ? { action: validatedAction } : {}),
+      ...(validatedConnector ? { connector: validatedConnector } : {}),
+    });
   }
 
   return { generated_at: generatedAt, model, items: validated };
@@ -315,7 +382,18 @@ export interface GenerateStarterSuggestionsInput {
 
 /** Injectable seams so unit tests run without process-global module mocks. */
 export interface GenerateStarterSuggestionsOptions {
-  collect?: (projectId: string) => Promise<{ text: string; hasSignals: boolean } | null>;
+  collect?: (projectId: string) => Promise<
+    | {
+        text: string;
+        hasSignals: boolean;
+        /** The exact connector offer rendered into this run's prompt — see
+         *  `enrichConnectorItems`. Optional so existing test doubles that
+         *  predate connector support keep compiling unchanged; treated as
+         *  `[]` when absent. */
+        availableConnectors?: Array<{ slug: string; name: string }>;
+      }
+    | null
+  >;
   generate?: (model: string, authorization: string, signals: string) => Promise<string | null>;
   mintKey?: (
     accountId: string,
@@ -325,6 +403,9 @@ export interface GenerateStarterSuggestionsOptions {
   revokeKey?: (projectId: string, keyId: string) => Promise<void>;
   persist?: (projectId: string, cache: StarterSuggestionsCache) => Promise<void>;
   resolveModel?: (input: GenerateStarterSuggestionsInput) => Promise<string | null>;
+  /** `img_src` lookup for a validated connector slug — injected so tests
+   *  never reach the real Pipedream catalog. */
+  lookupConnectorIcon?: (slug: string) => Promise<string | null>;
   timeoutMs?: number;
 }
 
@@ -349,6 +430,7 @@ export async function generateStarterSuggestions(
   const mint = options.mintKey ?? defaultMintKey;
   const revoke = options.revokeKey ?? defaultRevokeKey;
   const persist = options.persist ?? persistSuggestions;
+  const lookupConnectorIcon = options.lookupConnectorIcon ?? defaultLookupConnectorIcon;
   const timeoutMs = options.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS;
 
   try {
@@ -397,13 +479,23 @@ export async function generateStarterSuggestions(
       await revoke(input.projectId, minted.keyId).catch(() => {});
     }
 
-    const items = parseSuggestions(raw);
-    if (!items) {
+    const parsedItems = parseSuggestions(raw);
+    if (!parsedItems) {
       appLogger.warn('[starter-suggestions] model output failed validation', {
         projectId: input.projectId,
       });
       return;
     }
+
+    // Validate each raw `connectorSlug` against THIS run's exact offer
+    // (`collected.availableConnectors` — the same list rendered into the
+    // prompt) and replace a match with the enriched `connector` field. See
+    // `enrichConnectorItems`'s doc comment for the full contract.
+    const items = await enrichConnectorItems(
+      parsedItems,
+      collected.availableConnectors ?? [],
+      lookupConnectorIcon,
+    );
 
     const cache: StarterSuggestionsCache = {
       generated_at: new Date().toISOString(),

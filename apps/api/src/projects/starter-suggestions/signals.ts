@@ -10,6 +10,8 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { connectorConnections, connectors, projectSessions } from '@kortix/db';
+import { getPipedreamCatalogApps, pipedreamConfigured } from '../../connectors/pipedream';
+import { compareByProminence, type CatalogApp } from '../../connectors/pipedream-search';
 import { db } from '../../shared/db';
 import { withProjectGitAuth } from '../lib/git';
 import type { ProjectRow } from '../lib/serializers';
@@ -30,6 +32,15 @@ export interface SignalSources {
   agents: Array<{ name: string; description?: string }>;
   skills: Array<{ name: string; description?: string }>;
   connectors: string[];
+  /**
+   * Real, connectable catalog apps the project has NOT already connected —
+   * an offer list for the generator, not a workspace signal. Populated from
+   * the in-process Pipedream catalog snapshot (`getPipedreamCatalogApps`),
+   * fail-open to `[]` when Pipedream isn't configured, the snapshot is still
+   * warming, or the read throws. See `renderSignalBundle`: this field is
+   * deliberately excluded from `hasSignals`.
+   */
+  availableConnectors: Array<{ slug: string; name: string }>;
 }
 
 /** Per-section + whole-bundle caps for `renderSignalBundle` (chars unless noted). */
@@ -38,7 +49,13 @@ export const README_CAP = 1500;
 export const FILE_PATHS_MAX_ENTRIES = 100;
 export const SESSIONS_CAP = 1500;
 export const AGENTS_SKILLS_CAP = 1000;
+export const AVAILABLE_CONNECTORS_CAP = 600;
 export const BUNDLE_CAP = 8000;
+
+/** Cap on how many catalog apps `selectAvailableConnectors` offers per run —
+ *  keeps the rendered section (and the prompt's connector_slug choices)
+ *  bounded regardless of catalogue size. */
+export const MAX_AVAILABLE_CONNECTORS = 20;
 
 function truncate(text: string, cap: number): string {
   return text.length <= cap ? text : text.slice(0, cap);
@@ -115,6 +132,18 @@ export function renderSignalBundle(s: SignalSources): { text: string; hasSignals
   const connectorsHasContent = connectorNames.length > 0;
   if (connectorsHasContent) {
     sections.push(`## Connectors\n${connectorNames.join(', ')}`);
+  }
+
+  // NOT a workspace signal — an offer list the generator may point a
+  // connector-setup suggestion at. Rendered so the model has real slugs to
+  // choose from, but deliberately excluded from `hasSignals` below: a project
+  // with an empty workspace and zero connected connectors must still fall
+  // back to static suggestions rather than "personalizing" off nothing but
+  // the catalogue.
+  const availableConnectorsHasContent = s.availableConnectors.length > 0;
+  if (availableConnectorsHasContent) {
+    const combined = s.availableConnectors.map((c) => `${c.name} (${c.slug})`).join('\n');
+    sections.push(`## Available connectors\n${truncate(combined, AVAILABLE_CONNECTORS_CAP)}`);
   }
 
   const hasSignals =
@@ -243,6 +272,44 @@ async function readSessions(
   }
 }
 
+/**
+ * Pure catalog-offer selection: apps from the snapshot the project has NOT
+ * already connected (matched by name, case-insensitively — connector names
+ * and catalog app names come from different sources and casing isn't a
+ * meaningful distinction here), ordered popular/featured-first
+ * (`compareByProminence`, the same resting order the snapshot itself uses),
+ * capped to `MAX_AVAILABLE_CONNECTORS`, and stripped to exactly the
+ * `{ slug, name }` shape `SignalSources.availableConnectors` carries.
+ *
+ * `catalogApps === null` (snapshot missing/warming) fails open to `[]` —
+ * unit-tested directly here since `readAvailableConnectors` below, like every
+ * other IO sub-read in this module, is not.
+ */
+export function selectAvailableConnectors(
+  catalogApps: CatalogApp[] | null,
+  connectedNames: string[],
+): Array<{ slug: string; name: string }> {
+  if (!catalogApps || catalogApps.length === 0) return [];
+  const connected = new Set(connectedNames.map((name) => name.toLowerCase()));
+  return [...catalogApps]
+    .filter((app) => !connected.has(app.name.toLowerCase()))
+    .sort(compareByProminence)
+    .slice(0, MAX_AVAILABLE_CONNECTORS)
+    .map((app) => ({ slug: app.slug, name: app.name }));
+}
+
+/** Only when Pipedream is configured — an unconfigured deployment has no
+ *  catalog to offer, same gating as `listPipedreamApps` (`db-deps.ts`). */
+function readAvailableConnectors(connectedNames: string[]): Array<{ slug: string; name: string }> {
+  if (!pipedreamConfigured()) return [];
+  try {
+    return selectAvailableConnectors(getPipedreamCatalogApps(), connectedNames);
+  } catch {
+    // Catalog read failed — no available-connectors signal.
+    return [];
+  }
+}
+
 async function readConnectors(projectId: string): Promise<string[]> {
   try {
     const rows = await db
@@ -286,6 +353,13 @@ export async function collectSignalSources(projectRow: ProjectRow): Promise<Sign
     readConnectors(projectRow.projectId),
   ]);
 
+  // Sequenced after `connectorNames` (not folded into the `Promise.all`
+  // above) because the offer must exclude apps this project already
+  // connected — it needs that result, not just the project id. The read
+  // itself is synchronous/non-blocking (an in-process snapshot lookup), so
+  // there's no IO cost to paying for it after the rest lands.
+  const availableConnectors = readAvailableConnectors(connectorNames);
+
   return {
     onboarding,
     memory,
@@ -295,5 +369,6 @@ export async function collectSignalSources(projectRow: ProjectRow): Promise<Sign
     agents: config.agents,
     skills: config.skills,
     connectors: connectorNames,
+    availableConnectors,
   };
 }

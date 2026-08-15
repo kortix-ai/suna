@@ -47,7 +47,13 @@ function db(): Database {
 }
 
 async function seedCache(
-  items: Array<{ id: string; label: string; prompt: string; action?: string }>,
+  items: Array<{
+    id: string;
+    label: string;
+    prompt: string;
+    action?: string;
+    connector?: { slug: string; name: string; img_src: string | null };
+  }>,
   generatedAt: string,
 ) {
   const { metadataMergeSubtree } = await import('../lib/metadata-merge');
@@ -142,6 +148,7 @@ describeWithDb('GET /v1/projects/:projectId/starter-suggestions — real Postgre
     );
     for (const item of body.items as Array<Record<string, unknown>>) {
       expect(item).not.toHaveProperty('action');
+      expect(item).not.toHaveProperty('connector');
     }
   });
 
@@ -162,6 +169,27 @@ describeWithDb('GET /v1/projects/:projectId/starter-suggestions — real Postgre
     const generatedAt = new Date().toISOString();
     const items = [
       { id: 'z', label: 'Connect Slack', prompt: 'Connect Slack to post daily updates.', action: 'connectors' },
+    ];
+    await seedCache(items, generatedAt);
+
+    const r = await get(token);
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { source: string; generated_at: string | null; items: unknown[] };
+    expect(body.source).toBe('personalized');
+    expect(body.generated_at).toBe(generatedAt);
+    expect(body.items).toEqual(items);
+  });
+
+  test('a cached item carrying an enriched connector round-trips it verbatim', async () => {
+    const generatedAt = new Date().toISOString();
+    const items = [
+      {
+        id: 'w',
+        label: 'Connect Slack',
+        prompt: 'Connect Slack to post daily standup updates.',
+        action: 'connectors',
+        connector: { slug: 'slack', name: 'Slack', img_src: 'https://example.test/slack.png' },
+      },
     ];
     await seedCache(items, generatedAt);
 
