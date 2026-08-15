@@ -5618,7 +5618,6 @@
       "tokensIn": "Tokens in",
       "tokensOut": "Tokens out",
       "treeMessages": "messages",
-      "detailContextLimit": "Context limit",
       "detailInput": "Input tokens",
       "detailOutput": "Output tokens",
       "detailReasoning": "Reasoning tokens",

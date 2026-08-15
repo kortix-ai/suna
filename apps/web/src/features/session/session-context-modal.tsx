@@ -30,7 +30,6 @@ import {
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Close } from '@/features/icon/icons/close';
-import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
@@ -781,78 +780,64 @@ function SessionContextModalBody({
       </ModalHeader>
 
       <ModalBody className="space-y-6">
-        {/* Overview + technical detail — one flat panel. Hairline dividers come
-            from a 1px grid gap over a border-colored background, which stays
-            correct wherever the grid wraps (divide-x/y would not). */}
-        <div className="bg-popover overflow-hidden rounded-md border">
-          <div className="bg-border grid grid-cols-2 gap-px lg:grid-cols-4">
-            <div className="bg-popover flex min-w-0 items-center gap-3 px-4 py-3">
-              {ctx?.message ? (
-                <ProviderLogo
-                  providerID={ctx.message.providerID}
-                  name={ctx.providerLabel}
-                  size="small"
-                />
-              ) : null}
-              <div className="min-w-0 flex-1">
-                <OverviewStat
-                  label={t.raw('statModel')}
-                  value={ctx?.modelLabel ?? '—'}
-                  meta={ctx?.providerLabel}
-                />
-              </div>
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <OverviewStat
-                label={t.raw('statContextUsed')}
-                value={fmt.percent(ctx?.usage)}
-                valueClassName={usageTone}
-                meta={
-                  ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
-                }
-              />
-            </div>
+        {/* Overview + technical detail — one uniform borderless grid: always
+            2-up on mobile and 4-up on desktop, so every row lines up. Hairline
+            dividers come from a 1px grid gap over a border-colored background;
+            cells paint bg-sidebar to match ModalContent's default variant, so
+            only the internal lines show — no outer border. */}
+        <div className="bg-border/70 grid grid-cols-2 gap-px lg:grid-cols-4">
+          <div className="bg-sidebar px-4 py-3">
+            <OverviewStat
+              label={t.raw('statModel')}
+              value={ctx?.modelLabel ?? '—'}
+              meta={ctx?.providerLabel}
+            />
           </div>
-          <div className="bg-border border-border grid grid-cols-2 gap-px border-t lg:grid-cols-3">
-            <div className="bg-popover px-4 py-3">
-              <Stat label={t.raw('detailContextLimit')} value={fmt.number(ctx?.limit)} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat
-                label={t.raw('detailCache')}
-                value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
-              />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat
-                label={t.raw('detailAssistantMessages')}
-                value={counts.assistant.toLocaleString()}
-              />
-            </div>
-            <div className="bg-popover px-4 py-3">
-              <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
-            </div>
-            <div className="bg-popover px-4 py-3 max-lg:col-span-2">
-              <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
-            </div>
+          <div className="bg-sidebar px-4 py-3">
+            <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <OverviewStat
+              label={t.raw('statContextUsed')}
+              value={fmt.percent(ctx?.usage)}
+              valueClassName={usageTone}
+              meta={
+                ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
+              }
+            />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat
+              label={t.raw('detailCache')}
+              value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
+            />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat
+              label={t.raw('detailAssistantMessages')}
+              value={counts.assistant.toLocaleString()}
+            />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
+          </div>
+          <div className="bg-sidebar px-4 py-3">
+            <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
           </div>
         </div>
 

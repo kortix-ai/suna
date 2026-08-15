@@ -5554,7 +5554,6 @@
       "tokensIn": "Tokens eingehend",
       "tokensOut": "Tokens ausgehend",
       "treeMessages": "Nachrichten",
-      "detailContextLimit": "Kontextlimit",
       "detailInput": "Input-Tokens",
       "detailOutput": "Output-Tokens",
       "detailReasoning": "Reasoning-Tokens",

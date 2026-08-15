@@ -5554,7 +5554,6 @@
       "tokensIn": "输入令牌",
       "tokensOut": "输出令牌",
       "treeMessages": "条消息",
-      "detailContextLimit": "上下文上限",
       "detailInput": "输入令牌",
       "detailOutput": "输出令牌",
       "detailReasoning": "推理令牌",

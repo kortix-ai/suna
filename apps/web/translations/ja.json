@@ -5554,7 +5554,6 @@
       "tokensIn": "入力トークン",
       "tokensOut": "出力トークン",
       "treeMessages": "件のメッセージ",
-      "detailContextLimit": "コンテキスト上限",
       "detailInput": "入力トークン",
       "detailOutput": "出力トークン",
       "detailReasoning": "推論トークン",
