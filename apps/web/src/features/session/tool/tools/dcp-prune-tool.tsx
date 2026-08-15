@@ -1,18 +1,14 @@
 'use client';
-import { STATUS_TEXT } from '@/components/ui/status';
 import Loading from '@/components/ui/loading';
 import {
   BasicTool,
-  isErrorOutput,
   partInput,
   partOutput,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { cn } from '@/lib/utils';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
@@ -25,11 +21,11 @@ export function DCPPruneTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className={cn('size-3.5 shrink-0', STATUS_TEXT.warning)} />}
+      icon={<Scissors className="text-muted-foreground/50 size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">Prune</span>
-          <span className={cn('text-xs font-medium whitespace-nowrap', STATUS_TEXT.warning)}>
+          <span className="text-muted-foreground/50 text-xs font-medium whitespace-nowrap">
             DCP
           </span>
           {reason && <span className="text-muted-foreground/70 truncate text-xs">{reason}</span>}
@@ -40,13 +36,7 @@ export function DCPPruneTool({ part }: ToolProps) {
         </div>
       }
     >
-      {isErrorOutput(output) ? (
-        <ToolOutputFallback output={output} toolName="prune" />
-      ) : output ? (
-        <div className="p-2">
-          <OutputBlock text={output} />
-        </div>
-      ) : null}
+      {output ? <ToolOutputFallback output={output} toolName="prune" /> : null}
     </BasicTool>
   );
 }

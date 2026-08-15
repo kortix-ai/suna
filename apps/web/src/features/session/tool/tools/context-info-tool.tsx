@@ -1,11 +1,9 @@
 'use client';
 import {
   BasicTool,
-  isErrorOutput,
   partOutput,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
@@ -31,13 +29,7 @@ export function ContextInfoTool({ part }: ToolProps) {
         </div>
       }
     >
-      {isErrorOutput(output) ? (
-        <ToolOutputFallback output={output} toolName="context_info" />
-      ) : (
-        <div className="p-2">
-          <OutputBlock text={output} className="scrollbar-hide max-h-32" />
-        </div>
-      )}
+      <ToolOutputFallback output={output} toolName="context_info" />
     </BasicTool>
   );
 }

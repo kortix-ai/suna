@@ -18,6 +18,7 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolSection } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import {
@@ -61,38 +62,34 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="p-2.5">
-        {connectors.length > 0 ? (
-          <div className="space-y-0.5">
-            {connectors.map((c, i) => (
-              <div key={String(c.slug ?? i)} className="flex items-center gap-2 px-2 py-1 text-xs">
-                <Plug className="text-muted-foreground/50 size-3 shrink-0" />
-                <span className="text-foreground truncate font-medium">
-                  {String(c.name || c.slug || '')}
-                </span>
-                <span className="text-muted-foreground/60 font-mono">
-                  {String(c.provider ?? '')}
-                </span>
-                <span className="text-muted-foreground/50 ml-auto">
-                  {String(c.tools ?? 0)} tools
-                </span>
-                <span
-                  className={cn(
-                    'text-[10px] font-semibold uppercase',
-                    c.status === 'active' ? STATUS_TEXT.success : 'text-muted-foreground/60',
-                  )}
-                >
-                  {String(c.status ?? '')}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : output ? (
-          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="connectors" />
-        ) : (
+      {connectors.length > 0 ? (
+        <ToolResultCard bodyClassName="space-y-0.5">
+          {connectors.map((c, i) => (
+            <div key={String(c.slug ?? i)} className="flex items-center gap-2 px-2 py-1 text-xs">
+              <Plug className="text-muted-foreground/50 size-3 shrink-0" />
+              <span className="text-foreground truncate font-medium">
+                {String(c.name || c.slug || '')}
+              </span>
+              <span className="text-muted-foreground/60 font-mono">{String(c.provider ?? '')}</span>
+              <span className="text-muted-foreground/50 ml-auto">{String(c.tools ?? 0)} tools</span>
+              <span
+                className={cn(
+                  'text-[10px] font-semibold uppercase',
+                  c.status === 'active' ? STATUS_TEXT.success : 'text-muted-foreground/60',
+                )}
+              >
+                {String(c.status ?? '')}
+              </span>
+            </div>
+          ))}
+        </ToolResultCard>
+      ) : output ? (
+        <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="connectors" />
+      ) : (
+        <ToolResultCard>
           <ToolEmptyState message={isStreaming ? 'Loading connectors…' : 'No connectors.'} />
-        )}
-      </div>
+        </ToolResultCard>
+      )}
     </BasicTool>
   );
 }
@@ -128,33 +125,35 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="p-2.5">
-        {outputIsError ? (
-          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
-        ) : matches.length > 0 ? (
-          <div className="space-y-1.5">
-            {matches.map((m, i) => (
-              <div key={String(m.tool ?? i)} className="px-2 py-1 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-foreground truncate font-mono">{String(m.tool ?? '')}</span>
-                  <ConnectorRiskBadge risk={m.risk} />
-                </div>
-                {m.description ? (
-                  <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
-                    {String(m.description)}
-                  </p>
-                ) : null}
+      {outputIsError ? (
+        <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
+      ) : matches.length > 0 ? (
+        <ToolResultCard bodyClassName="space-y-1.5">
+          {matches.map((m, i) => (
+            <div key={String(m.tool ?? i)} className="px-2 py-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-foreground truncate font-mono">{String(m.tool ?? '')}</span>
+                <ConnectorRiskBadge risk={m.risk} />
               </div>
-            ))}
-          </div>
-        ) : parsed ? (
+              {m.description ? (
+                <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
+                  {String(m.description)}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </ToolResultCard>
+      ) : parsed ? (
+        <ToolResultCard>
           <ToolEmptyState message={isStreaming ? 'Searching…' : `No tools match "${query}".`} />
-        ) : output ? (
-          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
-        ) : (
+        </ToolResultCard>
+      ) : output ? (
+        <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
+      ) : (
+        <ToolResultCard>
           <ToolEmptyState message={isStreaming ? 'Searching…' : 'No results yet.'} />
-        )}
-      </div>
+        </ToolResultCard>
+      )}
     </BasicTool>
   );
 }
@@ -185,34 +184,32 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="space-y-2.5 p-2.5">
-        {outputIsError ? (
-          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
-        ) : parsed ? (
-          <>
-            <div className="flex items-center gap-2">
-              <span className="text-foreground font-mono text-xs">{tool}</span>
-              <ConnectorRiskBadge risk={parsed.risk} />
-            </div>
-            {parsed.description ? (
-              <p className="text-muted-foreground text-xs leading-relaxed">
-                {String(parsed.description)}
-              </p>
-            ) : null}
-            <ToolSection
-              label={tI18nHardcoded.raw(
-                'autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6',
-              )}
-            >
-              <ConnectorJson value={parsed.inputSchema ?? EMPTY_INPUT_SCHEMA} />
-            </ToolSection>
-          </>
-        ) : output ? (
-          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
-        ) : (
+      {outputIsError ? (
+        <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
+      ) : parsed ? (
+        <ToolResultCard bodyClassName="space-y-2.5 p-2">
+          <div className="flex items-center gap-2">
+            <span className="text-foreground font-mono text-xs">{tool}</span>
+            <ConnectorRiskBadge risk={parsed.risk} />
+          </div>
+          {parsed.description ? (
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {String(parsed.description)}
+            </p>
+          ) : null}
+          <ToolSection
+            label={tI18nHardcoded.raw('autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6')}
+          >
+            <ConnectorJson value={parsed.inputSchema ?? EMPTY_INPUT_SCHEMA} />
+          </ToolSection>
+        </ToolResultCard>
+      ) : output ? (
+        <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
+      ) : (
+        <ToolResultCard>
           <ToolEmptyState message={isStreaming ? 'Loading schema…' : 'No schema yet.'} />
-        )}
-      </div>
+        </ToolResultCard>
+      )}
     </BasicTool>
   );
 }
@@ -271,39 +268,43 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="space-y-2.5 p-2.5">
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-foreground font-mono">{ref}</span>
-          <ConnectorRiskBadge risk={parsed?.risk} />
-          {outcome && (
-            <span className={cn('ml-auto text-[10px] font-semibold uppercase', outcome.tint)}>
-              {outcome.label}
-            </span>
-          )}
-        </div>
-
-        {Object.keys(args).length > 0 && (
-          <ToolSection label="Request">
-            <ConnectorJson value={args} />
-          </ToolSection>
-        )}
-
-        {outputIsError ? (
-          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
-        ) : parsed ? (
-          <ToolSection label="Response">
-            {parsed.reason && !ok ? (
-              <p className="text-destructive font-mono text-xs">{String(parsed.reason)}</p>
-            ) : (
-              <ConnectorJson value={'data' in parsed ? parsed.data : parsed} />
+      <>
+        <ToolResultCard bodyClassName="space-y-2.5 p-2">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-foreground font-mono">{ref}</span>
+            <ConnectorRiskBadge risk={parsed?.risk} />
+            {outcome && (
+              <span className={cn('ml-auto text-[10px] font-semibold uppercase', outcome.tint)}>
+                {outcome.label}
+              </span>
             )}
-          </ToolSection>
-        ) : output ? (
+          </div>
+
+          {Object.keys(args).length > 0 && (
+            <ToolSection label="Request">
+              <ConnectorJson value={args} />
+            </ToolSection>
+          )}
+
+          {!outputIsError && parsed ? (
+            <ToolSection label="Response">
+              {parsed.reason && !ok ? (
+                <p className="text-destructive font-mono text-xs">{String(parsed.reason)}</p>
+              ) : (
+                <ConnectorJson value={'data' in parsed ? parsed.data : parsed} />
+              )}
+            </ToolSection>
+          ) : output ? null : (
+            <ToolEmptyState message={isStreaming ? 'Running…' : 'No result yet.'} />
+          )}
+        </ToolResultCard>
+
+        {/* The fallback draws its own card, so it stacks below rather than
+            nesting — a card inside a card double-borders. */}
+        {(outputIsError || (!parsed && output)) && (
           <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
-        ) : (
-          <ToolEmptyState message={isStreaming ? 'Running…' : 'No result yet.'} />
         )}
-      </div>
+      </>
     </BasicTool>
   );
 }

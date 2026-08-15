@@ -4,15 +4,13 @@ import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { parseImageOutput } from '@/features/session/image-output-path';
 import {
   BasicTool,
-  isErrorOutput,
   isLocalSandboxFilePath,
   partInput,
   partOutput,
-  partStatus,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
@@ -29,7 +27,6 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
-  const status = partStatus(part);
   const prompt = input.prompt as string | undefined;
   const action = input.action as string | undefined;
 
@@ -71,12 +68,12 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       locked={locked}
     >
       {imagePath || directUrl ? (
-        <div className="p-2">
+        <ToolResultCard bodyClassName="p-1">
           {displayImageSrc ? (
             <img
               src={displayImageSrc}
               alt={String(prompt || 'Generated image')}
-              className="max-h-64 object-contain"
+              className="max-h-64 rounded-sm object-contain"
             />
           ) : isImageLoading ? (
             <div className="px-2 py-1.5 text-xs">
@@ -91,13 +88,9 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               {imagePath}
             </div>
           )}
-        </div>
-      ) : isErrorOutput(output) ? (
-        <ToolOutputFallback output={output} toolName="image_gen" />
+        </ToolResultCard>
       ) : output ? (
-        <div className="p-2">
-          <OutputBlock text={output} />
-        </div>
+        <ToolOutputFallback output={output} toolName="image_gen" />
       ) : null}
     </BasicTool>
   );
