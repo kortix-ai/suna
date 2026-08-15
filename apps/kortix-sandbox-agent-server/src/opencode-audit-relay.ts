@@ -7,6 +7,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  truncateSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -396,10 +397,16 @@ export function sanitizeOpenCodeEvent(
   };
 }
 
+export interface AuditDurabilityHealth {
+  status: 'ok' | 'degraded';
+  error: string | null;
+}
+
 export interface AuditRelay {
   enqueue(raw: { type?: string; properties?: unknown }): void;
   flush(): Promise<void>;
   stop(options?: { flush?: boolean }): Promise<void>;
+  getDurability(): AuditDurabilityHealth;
 }
 
 const DEFAULT_MAX_SPOOL_BYTES = 64 * 1024 * 1024;
@@ -501,6 +508,339 @@ function applyLineage(
   };
 }
 
+type AuditJournalRecordKind = 'snapshot' | 'enqueue' | 'ack';
+
+interface AuditJournalRecordCore {
+  version: 3;
+  sequence: number;
+  kind: AuditJournalRecordKind;
+  payload: unknown;
+}
+
+interface AuditJournalRecord extends AuditJournalRecordCore {
+  checksum: string;
+}
+
+interface LoadedAuditJournal {
+  queue: OpenCodeAuditEvent[];
+  lineage: SessionLineage[];
+  nextSequence: number;
+  bytes: number;
+  legacy: boolean;
+}
+
+const JOURNAL_RECORD_FIELDS = new Set(['version', 'sequence', 'kind', 'payload', 'checksum']);
+const SOURCE_REVISION_RE = /^[0-9a-f-]{36}$/i;
+
+function auditStateBytes(queue: OpenCodeAuditEvent[], lineage: SessionLineage[]): number {
+  return Buffer.byteLength(JSON.stringify({ version: 3, queue, lineage }), 'utf8');
+}
+
+function deterministicLegacyRevision(event: unknown, index: number): string {
+  const digest = createHash('sha256').update(stableJson({ event, index })).digest('hex');
+  const variant = ((Number.parseInt(digest[16] ?? '0', 16) & 0x3) | 0x8).toString(16);
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
+function normalizeLegacyEvent(value: unknown, index: number): OpenCodeAuditEvent | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const event = value as Record<string, unknown>;
+  const normalized = {
+    correlation_id: null,
+    causation_id: null,
+    ...event,
+    source_revision: SOURCE_REVISION_RE.test(String(event.source_revision ?? ''))
+      ? event.source_revision
+      : deterministicLegacyRevision(event, index),
+  };
+  return isPersistedOpenCodeAuditEvent(normalized) ? normalized : null;
+}
+
+function parseLegacySpool(serialized: string, spoolPath: string): AuditSpoolV2 | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    return null;
+  }
+  const parsedObject =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  if (
+    parsedObject?.version === 2 &&
+    Object.keys(parsedObject).some(
+      (key) => key !== 'version' && key !== 'queue' && key !== 'lineage',
+    )
+  ) {
+    throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
+  }
+  const rawQueue = Array.isArray(parsed)
+    ? parsed
+    : parsedObject?.version === 2
+      ? parsedObject.queue
+      : null;
+  if (!Array.isArray(rawQueue)) return null;
+  const queue = rawQueue.map(normalizeLegacyEvent);
+  if (queue.some((event) => event === null)) {
+    throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
+  }
+  const rawLineage = Array.isArray(parsed) ? [] : parsedObject?.lineage;
+  if (
+    !Array.isArray(rawLineage) ||
+    rawLineage.length > 100_000 ||
+    rawLineage.some((entry) => !isSessionLineage(entry))
+  ) {
+    throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
+  }
+  return {
+    version: 2,
+    queue: queue as OpenCodeAuditEvent[],
+    lineage: rawLineage as SessionLineage[],
+  };
+}
+
+function journalChecksum(core: AuditJournalRecordCore): string {
+  return createHash('sha256').update(stableJson(core)).digest('hex');
+}
+
+function encodeJournalRecord(
+  sequence: number,
+  kind: AuditJournalRecordKind,
+  payload: unknown,
+): string {
+  const core: AuditJournalRecordCore = { version: 3, sequence, kind, payload };
+  return `${JSON.stringify({ ...core, checksum: journalChecksum(core) })}\n`;
+}
+
+function parseJournalRecord(
+  line: string,
+  lineNumber: number,
+  spoolPath: string,
+): AuditJournalRecord {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    throw new Error(`invalid OpenCode audit journal record ${lineNumber}: ${spoolPath}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`invalid OpenCode audit journal record ${lineNumber}: ${spoolPath}`);
+  }
+  const record = parsed as Record<string, unknown>;
+  if (
+    Object.keys(record).some((key) => !JOURNAL_RECORD_FIELDS.has(key)) ||
+    record.version !== 3 ||
+    !Number.isSafeInteger(record.sequence) ||
+    Number(record.sequence) < 1 ||
+    !['snapshot', 'enqueue', 'ack'].includes(String(record.kind)) ||
+    !SHA256_RE.test(String(record.checksum ?? ''))
+  ) {
+    throw new Error(`invalid OpenCode audit journal record ${lineNumber}: ${spoolPath}`);
+  }
+  const core: AuditJournalRecordCore = {
+    version: 3,
+    sequence: Number(record.sequence),
+    kind: record.kind as AuditJournalRecordKind,
+    payload: record.payload,
+  };
+  if (journalChecksum(core) !== record.checksum) {
+    throw new Error(
+      `OpenCode audit journal checksum mismatch at record ${lineNumber}: ${spoolPath}`,
+    );
+  }
+  return { ...core, checksum: String(record.checksum) };
+}
+
+function validateSnapshotPayload(
+  payload: unknown,
+  spoolPath: string,
+): { queue: OpenCodeAuditEvent[]; lineage: SessionLineage[] } {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(`invalid OpenCode audit journal snapshot: ${spoolPath}`);
+  }
+  const snapshot = payload as Record<string, unknown>;
+  if (
+    Object.keys(snapshot).some((key) => key !== 'queue' && key !== 'lineage') ||
+    !Array.isArray(snapshot.queue) ||
+    snapshot.queue.some((event) => !isPersistedOpenCodeAuditEvent(event)) ||
+    !Array.isArray(snapshot.lineage) ||
+    snapshot.lineage.length > 100_000 ||
+    snapshot.lineage.some((entry) => !isSessionLineage(entry))
+  ) {
+    throw new Error(`invalid OpenCode audit journal snapshot: ${spoolPath}`);
+  }
+  return {
+    queue: snapshot.queue as OpenCodeAuditEvent[],
+    lineage: snapshot.lineage as SessionLineage[],
+  };
+}
+
+function truncatePartialJournalTail(spoolPath: string, bytes: number): void {
+  truncateSync(spoolPath, bytes);
+  const fd = openSync(spoolPath, 'r+');
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function loadAuditJournal(spoolPath: string, maxStateBytes: number): LoadedAuditJournal {
+  if (!existsSync(spoolPath)) {
+    return { queue: [], lineage: [], nextSequence: 1, bytes: 0, legacy: false };
+  }
+  const serialized = readFileSync(spoolPath, 'utf8');
+  const serializedBytes = Buffer.byteLength(serialized, 'utf8');
+  const maxJournalReadBytes = Math.max(maxStateBytes * 4, 1024 * 1024);
+  if (serializedBytes > maxJournalReadBytes) {
+    throw new Error(
+      `OpenCode audit journal capacity exceeded: ${serializedBytes} > ${maxJournalReadBytes} bytes`,
+    );
+  }
+
+  const legacy = parseLegacySpool(serialized, spoolPath);
+  if (legacy) {
+    if (auditStateBytes(legacy.queue, legacy.lineage) > maxStateBytes) {
+      throw new Error(`OpenCode audit spool capacity exceeded: ${spoolPath}`);
+    }
+    return {
+      queue: legacy.queue,
+      lineage: legacy.lineage,
+      nextSequence: 1,
+      bytes: serializedBytes,
+      legacy: true,
+    };
+  }
+
+  const completeCharacters = serialized.endsWith('\n')
+    ? serialized.length
+    : Math.max(0, serialized.lastIndexOf('\n') + 1);
+  const complete = serialized.slice(0, completeCharacters);
+  const completeBytes = Buffer.byteLength(complete, 'utf8');
+  const lines = complete.split('\n').filter((line) => line.length > 0);
+  let expectedSequence = 1;
+  let queue: OpenCodeAuditEvent[] = [];
+  const sessions = new Map<string, SessionLineage>();
+  const revisions = new Set<string>();
+
+  for (const [index, line] of lines.entries()) {
+    const record = parseJournalRecord(line, index + 1, spoolPath);
+    if (record.sequence !== expectedSequence) {
+      throw new Error(
+        `OpenCode audit journal sequence mismatch at record ${index + 1}: expected ${expectedSequence}, got ${record.sequence}`,
+      );
+    }
+    expectedSequence += 1;
+    if (record.kind === 'snapshot') {
+      if (record.sequence !== 1) {
+        throw new Error(`OpenCode audit journal snapshot must be the first record: ${spoolPath}`);
+      }
+      const snapshot = validateSnapshotPayload(record.payload, spoolPath);
+      queue = [];
+      revisions.clear();
+      sessions.clear();
+      for (const event of snapshot.queue) {
+        if (revisions.has(event.source_revision)) continue;
+        revisions.add(event.source_revision);
+        queue.push(event);
+      }
+      for (const entry of snapshot.lineage) sessions.set(entry.session_id, entry);
+      continue;
+    }
+    if (!record.payload || typeof record.payload !== 'object' || Array.isArray(record.payload)) {
+      throw new Error(`invalid OpenCode audit journal ${record.kind} payload: ${spoolPath}`);
+    }
+    const payload = record.payload as Record<string, unknown>;
+    if (record.kind === 'enqueue') {
+      if (
+        Object.keys(payload).some((key) => key !== 'event' && key !== 'lineage') ||
+        !isPersistedOpenCodeAuditEvent(payload.event) ||
+        (payload.lineage !== null && !isSessionLineage(payload.lineage))
+      ) {
+        throw new Error(`invalid OpenCode audit journal enqueue payload: ${spoolPath}`);
+      }
+      const event = payload.event;
+      if (!revisions.has(event.source_revision)) {
+        revisions.add(event.source_revision);
+        queue.push(event);
+      }
+      if (payload.lineage) {
+        const lineage = payload.lineage as SessionLineage;
+        sessions.set(lineage.session_id, lineage);
+      }
+      continue;
+    }
+    if (
+      Object.keys(payload).some((key) => key !== 'source_revisions') ||
+      !Array.isArray(payload.source_revisions) ||
+      payload.source_revisions.length > 10_000 ||
+      payload.source_revisions.some((revision) => !SOURCE_REVISION_RE.test(String(revision)))
+    ) {
+      throw new Error(`invalid OpenCode audit journal ack payload: ${spoolPath}`);
+    }
+    const acknowledged = new Set(payload.source_revisions as string[]);
+    queue = queue.filter((event) => !acknowledged.has(event.source_revision));
+    for (const revision of acknowledged) revisions.delete(revision);
+  }
+
+  if (completeBytes !== serializedBytes) truncatePartialJournalTail(spoolPath, completeBytes);
+  const lineage = [...sessions.values()];
+  if (auditStateBytes(queue, lineage) > maxStateBytes) {
+    throw new Error(`OpenCode audit spool capacity exceeded: ${spoolPath}`);
+  }
+  return {
+    queue,
+    lineage,
+    nextSequence: expectedSequence,
+    bytes: completeBytes,
+    legacy: false,
+  };
+}
+
+function writeJournalSnapshot(
+  spoolPath: string,
+  queue: OpenCodeAuditEvent[],
+  lineage: SessionLineage[],
+): { nextSequence: number; bytes: number } {
+  const directory = dirname(spoolPath);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const temporary = `${spoolPath}.${process.pid}.${randomUUID()}.tmp`;
+  const line = encodeJournalRecord(1, 'snapshot', { queue, lineage });
+  try {
+    const fd = openSync(temporary, 'wx', 0o600);
+    try {
+      writeFileSync(fd, line, 'utf8');
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporary, spoolPath);
+    const directoryFd = openSync(directory, 'r');
+    try {
+      fsyncSync(directoryFd);
+    } finally {
+      closeSync(directoryFd);
+    }
+  } catch (error) {
+    if (existsSync(temporary)) unlinkSync(temporary);
+    throw error;
+  }
+  return { nextSequence: 2, bytes: Buffer.byteLength(line, 'utf8') };
+}
+
+function appendJournalRecord(spoolPath: string, line: string): number {
+  mkdirSync(dirname(spoolPath), { recursive: true, mode: 0o700 });
+  const fd = openSync(spoolPath, 'a', 0o600);
+  try {
+    writeFileSync(fd, line, 'utf8');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  return Buffer.byteLength(line, 'utf8');
+}
+
 /** The ingestion route accepts only the sandbox credential. The session PAT is
  * intentionally excluded even when both credentials exist in the runtime. */
 export function auditRelayToken(env: NodeJS.ProcessEnv): string | null {
@@ -515,6 +855,9 @@ export function createAuditRelay(
     retryMs?: number;
     spoolPath?: string;
     maxSpoolBytes?: number;
+    compactAfterBytes?: number;
+    initialDurabilityError?: string;
+    onDurabilityChange?: (health: AuditDurabilityHealth) => void;
   } = {},
 ): AuditRelay {
   const batchSize = options.batchSize ?? 50;
@@ -522,86 +865,83 @@ export function createAuditRelay(
   const retryMs = options.retryMs ?? 1_000;
   const spoolPath = options.spoolPath?.trim() || null;
   const maxSpoolBytes = options.maxSpoolBytes ?? DEFAULT_MAX_SPOOL_BYTES;
+  const compactAfterBytes = options.compactAfterBytes ?? Math.max(64 * 1024, maxSpoolBytes / 2);
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
     throw new Error('audit relay batchSize must be a positive integer');
   }
   if (!Number.isSafeInteger(maxSpoolBytes) || maxSpoolBytes < 1) {
     throw new Error('audit relay maxSpoolBytes must be a positive integer');
   }
-  let spoolWrite = 0;
+  if (!Number.isSafeInteger(compactAfterBytes) || compactAfterBytes < 1) {
+    throw new Error('audit relay compactAfterBytes must be a positive integer');
+  }
+
+  let durability: AuditDurabilityHealth = options.initialDurabilityError
+    ? { status: 'degraded', error: options.initialDurabilityError.slice(0, 400) }
+    : { status: 'ok', error: null };
+  const setDurability = (next: AuditDurabilityHealth) => {
+    if (durability.status === next.status && durability.error === next.error) return;
+    durability = next;
+    options.onDurabilityChange?.({ ...next });
+  };
+  const durabilityFailure = (error: unknown) => {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 400);
+    setDurability({ status: 'degraded', error: message });
+  };
+  const durabilityRecovered = () => setDurability({ status: 'ok', error: null });
+
+  const loaded = spoolPath
+    ? loadAuditJournal(spoolPath, maxSpoolBytes)
+    : { queue: [], lineage: [], nextSequence: 1, bytes: 0, legacy: false };
+  let nextSequence = loaded.nextSequence;
+  let journalBytes = loaded.bytes;
+  if (spoolPath && loaded.legacy) {
+    const migrated = writeJournalSnapshot(spoolPath, loaded.queue, loaded.lineage);
+    nextSequence = migrated.nextSequence;
+    journalBytes = migrated.bytes;
+  }
+
   const sessions = new Map<string, SessionLineage>();
-  const persist = () => {
+  for (const entry of loaded.lineage) sessions.set(entry.session_id, entry);
+  const queue: OpenCodeAuditEvent[] = loaded.queue;
+  let journalNeedsReload = false;
+
+  const persistRecord = (kind: AuditJournalRecordKind, payload: unknown) => {
     if (!spoolPath) return;
-    const spool: AuditSpoolV2 = { version: 2, queue, lineage: [...sessions.values()] };
-    const serialized = JSON.stringify(spool);
-    const bytes = Buffer.byteLength(serialized, 'utf8');
-    if (bytes > maxSpoolBytes) {
-      throw new Error(`OpenCode audit spool capacity exceeded: ${bytes} > ${maxSpoolBytes} bytes`);
-    }
-    const spoolDirectory = dirname(spoolPath);
-    mkdirSync(spoolDirectory, { recursive: true, mode: 0o700 });
-    const temporary = `${spoolPath}.${process.pid}.${spoolWrite++}.tmp`;
-    const fd = openSync(temporary, 'wx', 0o600);
-    try {
-      writeFileSync(fd, serialized, 'utf8');
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
+    const lineage = [...sessions.values()];
+    const stateBytes = auditStateBytes(queue, lineage);
+    if (stateBytes > maxSpoolBytes) {
+      throw new Error(
+        `OpenCode audit spool capacity exceeded: ${stateBytes} > ${maxSpoolBytes} bytes`,
+      );
     }
     try {
-      renameSync(temporary, spoolPath);
-      const directoryFd = openSync(spoolDirectory, 'r');
-      try {
-        fsyncSync(directoryFd);
-      } finally {
-        closeSync(directoryFd);
+      if (journalNeedsReload) {
+        // Validate and truncate any partial tail before replacing it. The
+        // in-memory queue is authoritative while local storage is degraded, so
+        // snapshot the WHOLE queue here—including events whose append failed—
+        // rather than persisting only the newest operation.
+        loadAuditJournal(spoolPath, maxSpoolBytes);
+        const recovered = writeJournalSnapshot(spoolPath, queue, lineage);
+        nextSequence = recovered.nextSequence;
+        journalBytes = recovered.bytes;
+        journalNeedsReload = false;
+        return;
+      }
+      const line = encodeJournalRecord(nextSequence, kind, payload);
+      journalBytes += appendJournalRecord(spoolPath, line);
+      nextSequence += 1;
+      if (journalBytes >= compactAfterBytes) {
+        const compacted = writeJournalSnapshot(spoolPath, queue, lineage);
+        nextSequence = compacted.nextSequence;
+        journalBytes = compacted.bytes;
       }
     } catch (error) {
-      if (existsSync(temporary)) unlinkSync(temporary);
+      journalNeedsReload = true;
       throw error;
     }
   };
-  const load = (): AuditSpoolV2 => {
-    if (!spoolPath || !existsSync(spoolPath)) return { version: 2, queue: [], lineage: [] };
-    const serialized = readFileSync(spoolPath, 'utf8');
-    const bytes = Buffer.byteLength(serialized, 'utf8');
-    if (bytes > maxSpoolBytes) {
-      throw new Error(`OpenCode audit spool capacity exceeded: ${bytes} > ${maxSpoolBytes} bytes`);
-    }
-    const parsed: unknown = JSON.parse(serialized);
-    // V1 spools were arrays. Accept them so an in-place relay upgrade never
-    // discards an already sanitized, unsent event.
-    if (Array.isArray(parsed)) {
-      const queue = parsed.map((event) =>
-        event && typeof event === 'object' && !Array.isArray(event)
-          ? { correlation_id: null, causation_id: null, ...event }
-          : event,
-      );
-      if (queue.some((event) => !isPersistedOpenCodeAuditEvent(event))) {
-        throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
-      }
-      return { version: 2, queue: queue as OpenCodeAuditEvent[], lineage: [] };
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
-    }
-    const spool = parsed as Record<string, unknown>;
-    if (
-      spool.version !== 2 ||
-      Object.keys(spool).some((key) => !['version', 'queue', 'lineage'].includes(key)) ||
-      !Array.isArray(spool.queue) ||
-      spool.queue.some((event) => !isPersistedOpenCodeAuditEvent(event)) ||
-      !Array.isArray(spool.lineage) ||
-      spool.lineage.length > 100_000 ||
-      spool.lineage.some((entry) => !isSessionLineage(entry))
-    ) {
-      throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
-    }
-    return spool as unknown as AuditSpoolV2;
-  };
-  const recovered = load();
-  const queue: OpenCodeAuditEvent[] = recovered.queue;
-  for (const entry of recovered.lineage) sessions.set(entry.session_id, entry);
+
   let flushing: Promise<void> | null = null;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -622,8 +962,23 @@ export function createAuditRelay(
       try {
         await send(batch);
         queue.splice(0, batch.length);
-        persist();
+        try {
+          persistRecord('ack', {
+            source_revisions: batch.map((event) => event.source_revision),
+          });
+        } catch (error) {
+          // The server already ingested this batch. Its source_revision makes
+          // replay idempotent if the local ack could not be recorded.
+          durabilityFailure(error);
+        }
+        // Successful central ingestion is a durability recovery even when the
+        // local journal remains unavailable: the event now has an authoritative
+        // durable copy, and a stale local replay is deduplicated by source_revision.
+        durabilityRecovered();
       } catch (error) {
+        // With no local journal, a failed central delivery leaves the batch
+        // only in memory. Surface that loss-of-durability until a retry lands.
+        if (!spoolPath) durabilityFailure(error);
         schedule(retryMs);
         throw error;
       } finally {
@@ -655,14 +1010,15 @@ export function createAuditRelay(
       const event = applyLineage(sanitized, sessions);
       queue.push(event);
       try {
-        persist();
+        persistRecord('enqueue', {
+          event,
+          lineage: sessionId ? (sessions.get(sessionId) ?? null) : null,
+        });
+        durabilityRecovered();
       } catch (error) {
-        queue.pop();
-        if (update && sessionId) {
-          if (previous) sessions.set(sessionId, previous);
-          else sessions.delete(sessionId);
-        }
-        throw error;
+        // Keep the event and lineage in memory. Local durability is secondary;
+        // direct central delivery must continue while the filesystem is sick.
+        durabilityFailure(error);
       }
       if (queue.length >= batchSize) void flush().catch(() => {});
       else schedule();
@@ -675,7 +1031,11 @@ export function createAuditRelay(
       if (stopOptions.flush === false) return;
       while (queue.length > 0) await flush();
     },
+    getDurability() {
+      return { ...durability };
+    },
   };
+  options.onDurabilityChange?.({ ...durability });
   schedule();
   return relay;
 }

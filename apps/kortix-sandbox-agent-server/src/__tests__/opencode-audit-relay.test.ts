@@ -1,8 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  type AuditDurabilityHealth,
   type OpenCodeAuditEvent,
   auditRelayToken,
   createAuditRelay,
@@ -283,12 +291,14 @@ describe('OpenCode canonical audit relay', () => {
     await relay.stop();
   });
 
-  test('recovers an unsent redacted batch from the atomic spool after restart', async () => {
+  test('recovers an unsent redacted batch from the append-only journal after restart', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-spool-'));
     const spoolPath = join(directory, 'events.json');
     try {
+      const attemptedRevisions: string[] = [];
       const first = createAuditRelay(
-        async () => {
+        async (events) => {
+          attemptedRevisions.push(...events.map((event) => event.source_revision));
           throw new Error('offline');
         },
         { flushMs: 60_000, retryMs: 60_000, spoolPath },
@@ -318,27 +328,44 @@ describe('OpenCode canonical audit relay', () => {
       await Bun.sleep(20);
       expect(delivered).toHaveLength(1);
       expect(delivered[0]?.[0]?.opencode_session_id).toBe('ses_spool');
-      expect(JSON.parse(readFileSync(spoolPath, 'utf8'))).toMatchObject({
-        version: 2,
-        queue: [],
-      });
+      expect(delivered[0]?.[0]?.source_revision).toBe(attemptedRevisions[0]);
       await recovered.stop();
+
+      const replayed: OpenCodeAuditEvent[][] = [];
+      const verifier = createAuditRelay(
+        async (events) => {
+          replayed.push(events);
+        },
+        {
+          flushMs: 60_000,
+          spoolPath,
+        },
+      );
+      await verifier.flush();
+      expect(replayed).toHaveLength(0);
+      await verifier.stop({ flush: false });
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
   });
 
-  test('rejects a new event before replacing a full durable spool', async () => {
+  test('keeps and directly delivers an event when the local journal reaches capacity', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-spool-capacity-'));
     const spoolPath = join(directory, 'events.json');
     try {
-      const relay = createAuditRelay(async () => {}, {
-        flushMs: 60_000,
-        spoolPath,
-        maxSpoolBytes: 1_100,
-      });
+      const delivered: OpenCodeAuditEvent[][] = [];
+      const relay = createAuditRelay(
+        async (events) => {
+          delivered.push(events);
+        },
+        {
+          batchSize: 2,
+          flushMs: 60_000,
+          spoolPath,
+          maxSpoolBytes: 1_100,
+        },
+      );
       relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_kept' } });
-      const persisted = readFileSync(spoolPath, 'utf8');
       expect(() =>
         relay.enqueue({
           type: 'tool.execute.after',
@@ -347,9 +374,266 @@ describe('OpenCode canonical audit relay', () => {
             path: 'x'.repeat(512),
           },
         }),
-      ).toThrow('audit spool capacity exceeded');
-      expect(readFileSync(spoolPath, 'utf8')).toBe(persisted);
+      ).not.toThrow();
+      expect(relay.getDurability()).toMatchObject({ status: 'degraded' });
+      await Bun.sleep(5);
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]).toHaveLength(2);
+      expect(relay.getDurability()).toEqual({ status: 'ok', error: null });
       await relay.stop({ flush: false });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('ignores and truncates a partial final journal record while replaying all preceding records', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-journal-partial-'));
+    const spoolPath = join(directory, 'events.json');
+    try {
+      const first = createAuditRelay(async () => {}, { flushMs: 60_000, spoolPath });
+      first.enqueue({ type: 'session.created', properties: { sessionID: 'ses_before_partial' } });
+      await first.stop({ flush: false });
+      appendFileSync(spoolPath, '{"version":3,"sequence":2');
+
+      const delivered: OpenCodeAuditEvent[][] = [];
+      const recovered = createAuditRelay(
+        async (events) => {
+          delivered.push(events);
+        },
+        {
+          flushMs: 60_000,
+          spoolPath,
+        },
+      );
+      expect(readFileSync(spoolPath, 'utf8')).toEndWith('\n');
+      await recovered.flush();
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]?.[0]?.opencode_session_id).toBe('ses_before_partial');
+      await recovered.stop({ flush: false });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('fails closed on a checksum mismatch in a completed journal record', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-journal-checksum-'));
+    const spoolPath = join(directory, 'events.json');
+    try {
+      const relay = createAuditRelay(async () => {}, { flushMs: 60_000, spoolPath });
+      relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_checksum' } });
+      await relay.stop({ flush: false });
+      const record = JSON.parse(readFileSync(spoolPath, 'utf8')) as Record<string, unknown>;
+      record.checksum = '0'.repeat(64);
+      writeFileSync(spoolPath, `${JSON.stringify(record)}\n`, 'utf8');
+      expect(() => createAuditRelay(async () => {}, { spoolPath })).toThrow('checksum mismatch');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('migrates V1 and V2 JSON spools into the checksummed journal without event loss', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-journal-migrate-'));
+    try {
+      const event = sanitizeOpenCodeEvent({
+        type: 'session.created',
+        properties: { sessionID: 'ses_migrated' },
+      });
+      if (!event) throw new Error('expected a sanitized event');
+      const { source_revision: _legacyRevision, ...v1Event } = event;
+      const fixtures = [
+        [v1Event],
+        {
+          version: 2,
+          queue: [event],
+          lineage: [
+            {
+              session_id: 'ses_migrated',
+              parent_id: null,
+              agent_id: 'root',
+              agent_name: 'root',
+            },
+          ],
+        },
+      ];
+
+      for (const [index, fixture] of fixtures.entries()) {
+        const spoolPath = join(directory, `events-${index}.json`);
+        writeFileSync(spoolPath, JSON.stringify(fixture), 'utf8');
+        const delivered: OpenCodeAuditEvent[][] = [];
+        const relay = createAuditRelay(
+          async (events) => {
+            delivered.push(events);
+          },
+          {
+            flushMs: 60_000,
+            spoolPath,
+          },
+        );
+        const firstRecord = JSON.parse(readFileSync(spoolPath, 'utf8')) as {
+          version: number;
+          kind: string;
+        };
+        expect(firstRecord).toMatchObject({ version: 3, kind: 'snapshot' });
+        await relay.flush();
+        expect(delivered).toHaveLength(1);
+        expect(delivered[0]?.[0]?.opencode_session_id).toBe('ses_migrated');
+        expect(delivered[0]?.[0]?.source_revision).toMatch(/^[0-9a-f-]{36}$/i);
+        await relay.stop({ flush: false });
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps an event in memory, attempts direct delivery, and recovers after local persistence returns', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-journal-degraded-'));
+    const blocker = join(directory, 'not-a-directory');
+    const spoolPath = join(blocker, 'events.json');
+    writeFileSync(blocker, 'block journal creation', 'utf8');
+    try {
+      let serverAvailable = false;
+      const attempts: string[][] = [];
+      const transitions: string[] = [];
+      const relay = createAuditRelay(
+        async (events) => {
+          attempts.push(events.map((event) => event.source_revision));
+          if (!serverAvailable) throw new Error('central API unavailable');
+        },
+        {
+          batchSize: 1,
+          flushMs: 60_000,
+          retryMs: 60_000,
+          spoolPath,
+          onDurabilityChange: (health) => transitions.push(health.status),
+        },
+      );
+
+      expect(() =>
+        relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_degraded' } }),
+      ).not.toThrow();
+      await Bun.sleep(5);
+      expect(attempts).toHaveLength(1);
+      expect(relay.getDurability()).toMatchObject({ status: 'degraded' });
+
+      rmSync(blocker);
+      mkdirSync(blocker);
+      relay.enqueue({ type: 'session.updated', properties: { sessionID: 'ses_degraded' } });
+      await Bun.sleep(5);
+      expect(relay.getDurability()).toEqual({ status: 'ok', error: null });
+      expect(transitions).toContain('degraded');
+      expect(transitions.at(-1)).toBe('ok');
+      await relay.stop({ flush: false });
+
+      serverAvailable = true;
+      const replayed: OpenCodeAuditEvent[][] = [];
+      const recovered = createAuditRelay(
+        async (events) => {
+          replayed.push(events);
+        },
+        { batchSize: 10, flushMs: 60_000, spoolPath },
+      );
+      await recovered.flush();
+      expect(replayed).toHaveLength(1);
+      expect(replayed[0]).toHaveLength(2);
+      expect(replayed[0]?.[0]?.source_revision).toBe(attempts[0]?.[0]);
+      await recovered.stop({ flush: false });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('tracks memory-only durability across direct delivery failure and recovery', async () => {
+    let serverAvailable = false;
+    const durability: AuditDurabilityHealth[] = [];
+    const relay = createAuditRelay(
+      async () => {
+        if (!serverAvailable) throw new Error('central API unavailable');
+      },
+      {
+        batchSize: 1,
+        retryMs: 60_000,
+        initialDurabilityError: 'journal checksum mismatch',
+        onDurabilityChange: (health) => durability.push(health),
+      },
+    );
+
+    relay.enqueue({ type: 'session.updated', properties: { sessionID: 'ses_memory_only' } });
+    await Bun.sleep(5);
+    expect(relay.getDurability()).toEqual({
+      status: 'degraded',
+      error: 'central API unavailable',
+    });
+
+    serverAvailable = true;
+    await relay.flush();
+    expect(relay.getDurability()).toEqual({ status: 'ok', error: null });
+    expect(durability.at(0)).toEqual({
+      status: 'degraded',
+      error: 'journal checksum mismatch',
+    });
+    expect(durability.at(-1)).toEqual({ status: 'ok', error: null });
+    await relay.stop({ flush: false });
+  });
+
+  test('compaction preserves the pending queue and session lineage across restart', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-journal-compact-'));
+    const spoolPath = join(directory, 'events.json');
+    try {
+      const first = createAuditRelay(async () => {}, {
+        batchSize: 100,
+        flushMs: 60_000,
+        spoolPath,
+        compactAfterBytes: 1,
+      });
+      first.enqueue({
+        type: 'session.created',
+        properties: { sessionID: 'ses_root', info: { id: 'ses_root', agent: 'root' } },
+      });
+      first.enqueue({
+        type: 'session.created',
+        properties: {
+          sessionID: 'ses_child',
+          info: { id: 'ses_child', parentID: 'ses_root', agent: 'researcher' },
+        },
+      });
+      await first.stop({ flush: false });
+
+      const delivered: OpenCodeAuditEvent[][] = [];
+      const recovered = createAuditRelay(
+        async (events) => {
+          delivered.push(events);
+        },
+        {
+          batchSize: 100,
+          flushMs: 60_000,
+          spoolPath,
+          compactAfterBytes: 1,
+        },
+      );
+      recovered.enqueue({
+        type: 'message.part.updated',
+        properties: {
+          sessionID: 'ses_child',
+          part: {
+            id: 'part_after_compaction',
+            sessionID: 'ses_child',
+            messageID: 'msg_after_compaction',
+            type: 'tool',
+            callID: 'call_after_compaction',
+            tool: 'bash',
+            state: { status: 'running', input: { command: 'private' } },
+          },
+        },
+      });
+      await recovered.flush();
+      expect(delivered[0]).toHaveLength(3);
+      expect(delivered[0]?.[2]).toMatchObject({
+        correlation_id: 'ses_root',
+        causation_id: 'ses_root',
+        delegation_depth: 1,
+        agent_id: 'researcher',
+      });
+      await recovered.stop({ flush: false });
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -359,16 +643,20 @@ describe('OpenCode canonical audit relay', () => {
     const directory = mkdtempSync(join(tmpdir(), 'kortix-audit-spool-invalid-'));
     const spoolPath = join(directory, 'events.json');
     try {
-      const relay = createAuditRelay(async () => {}, { flushMs: 60_000, spoolPath });
-      relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_safe' } });
-      await relay.stop({ flush: false });
-      const spool = JSON.parse(readFileSync(spoolPath, 'utf8')) as {
-        queue: Array<Record<string, unknown>>;
-      };
-      const queued = spool.queue[0];
-      if (!queued) throw new Error('expected one queued audit event');
-      queued.prompt = 'raw prompt must not be relayed';
-      writeFileSync(spoolPath, JSON.stringify(spool), 'utf8');
+      const event = sanitizeOpenCodeEvent({
+        type: 'session.created',
+        properties: { sessionID: 'ses_safe' },
+      });
+      if (!event) throw new Error('expected a sanitized event');
+      writeFileSync(
+        spoolPath,
+        JSON.stringify({
+          version: 2,
+          queue: [{ ...event, prompt: 'raw prompt must not be relayed' }],
+          lineage: [],
+        }),
+        'utf8',
+      );
       expect(() => createAuditRelay(async () => {}, { spoolPath })).toThrow(
         'invalid OpenCode audit spool',
       );

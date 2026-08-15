@@ -52,7 +52,7 @@ export type SandboxBootState = {
   initialOpenCodeSessionId?: string | null
   /** Boot-time OpenCode session creation failure. */
   initialOpenCodeSessionError?: string | null
-  /** Fatal local persistence failure in the OpenCode audit relay. */
+  /** Recoverable local persistence degradation in the OpenCode audit relay. */
   auditRelayError?: string | null
 }
 
@@ -108,12 +108,11 @@ export function createHealthRouter(
       repoReady &&
       !bootState.repoMaterializationError &&
       !initialSessionError &&
-      !auditRelayError &&
       opencodeState === 'ok' &&
       initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError || auditRelayError
+      : bootState.repoMaterializationError || initialSessionError
         ? 'error'
         : opencodeState
 
@@ -121,6 +120,11 @@ export function createHealthRouter(
       daemon: 'ok',
       status,
       runtimeReady,
+      // Audit durability is deliberately secondary to OpenCode readiness. A
+      // local journal failure is visible and recoverable, but must not disable
+      // a healthy primary runtime or block direct central delivery.
+      audit_durability: auditRelayError ? 'degraded' : 'ok',
+      audit_durability_error: auditRelayError,
       // Which boot path this daemon took. An agent binary that predates
       // monitor mode omits the field entirely, which is exactly what the
       // monitor-box reconciler uses to detect a stale-agent box and recreate
@@ -162,7 +166,7 @@ export function createHealthRouter(
             ),
           }
         : {}),
-      boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
+      boot_error: bootState.repoMaterializationError ?? initialSessionError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can

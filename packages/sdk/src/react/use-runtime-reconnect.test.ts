@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  advanceUnhealthyPollBackoff,
   classifyProbeResult,
   computeFailureStatus,
   FAIL_THRESHOLD_FIRST,
@@ -10,6 +11,7 @@ import {
   nextPollDelay,
   POLL_CONNECTED,
   POLL_FAILING,
+  POLL_FAILING_MAX,
   POLL_UNREACHABLE,
   type ProbeResultLike,
 } from './use-runtime-reconnect';
@@ -42,9 +44,22 @@ describe('computeFailureStatus — first connection', () => {
 
 describe('manual runtime reconnect', () => {
   test('clears stale unreachable state and emits an immediate-retry signal', () => {
-    useSandboxConnectionStore.setState({ status: 'unreachable', healthy: false, failCount: 7, runtimeError: 'stale', disconnectedAt: 123, manualRetryNonce: 4 });
+    useSandboxConnectionStore.setState({
+      status: 'unreachable',
+      healthy: false,
+      failCount: 7,
+      runtimeError: 'stale',
+      disconnectedAt: 123,
+      manualRetryNonce: 4,
+    });
     requestRuntimeReconnect();
-    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null, failCount: 0, runtimeError: null, manualRetryNonce: 5 });
+    expect(useSandboxConnectionStore.getState()).toMatchObject({
+      status: 'connecting',
+      healthy: null,
+      failCount: 0,
+      runtimeError: null,
+      manualRetryNonce: 5,
+    });
   });
 });
 
@@ -91,6 +106,12 @@ describe('nextPollDelay', () => {
     expect(nextPollDelay('connected', false)).toBe(POLL_FAILING);
   });
 
+  test('uses bounded exponential backoff for repeated identical unhealthy responses', () => {
+    expect(
+      [1, 2, 3, 4, 5, 6, 7, 8].map((streak) => nextPollDelay('connected', false, streak)),
+    ).toEqual([150, 300, 600, 1_200, 2_400, 4_800, POLL_FAILING_MAX, POLL_FAILING_MAX]);
+  });
+
   test('polls at the unreachable cadence once confirmed down', () => {
     expect(nextPollDelay('unreachable', null)).toBe(POLL_UNREACHABLE);
     expect(nextPollDelay('unreachable', false)).toBe(POLL_UNREACHABLE);
@@ -98,6 +119,25 @@ describe('nextPollDelay', () => {
 
   test('polls fast while still connecting (initial phase)', () => {
     expect(nextPollDelay('connecting', null)).toBe(POLL_FAILING);
+  });
+});
+
+describe('unhealthy poll backoff state', () => {
+  test('increments only for identical failures and resets on transition or recovery', () => {
+    const starting = { status: 'starting', runtimeReady: false };
+    const errored = { status: 'error', runtimeReady: false, boot_error: 'same failure' };
+    const first = advanceUnhealthyPollBackoff({ signature: null, streak: 0 }, starting, false);
+    const second = advanceUnhealthyPollBackoff(first, starting, false);
+    expect(second.streak).toBe(2);
+
+    const transitioned = advanceUnhealthyPollBackoff(second, errored, false);
+    expect(transitioned.streak).toBe(1);
+    expect(transitioned.signature).not.toBe(second.signature);
+
+    expect(advanceUnhealthyPollBackoff(transitioned, { runtimeReady: true }, true)).toEqual({
+      signature: null,
+      streak: 0,
+    });
   });
 });
 

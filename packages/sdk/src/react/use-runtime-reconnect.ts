@@ -39,6 +39,7 @@ export const POLL_CONNECTED = 30_000; // 30s when healthy
 // is already ready. 150ms keeps the healthy flip (and the session-list start)
 // tracking actual daemon readiness tightly; the health probe is a cheap GET.
 export const POLL_FAILING = 150;
+export const POLL_FAILING_MAX = 5_000;
 export const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 export const CHECK_TIMEOUT = 20_000;
@@ -96,7 +97,10 @@ export function classifyProbeResult(result: ProbeResultLike): ProbeOutcome {
   }
 
   if (!result.ok) {
-    return { kind: 'failure', immediateOffline: isImmediateOfflineSignal(result.status, result.body) };
+    return {
+      kind: 'failure',
+      immediateOffline: isImmediateOfflineSignal(result.status, result.body),
+    };
   }
 
   return { kind: 'healthy', health: result.health };
@@ -128,14 +132,52 @@ export function computeFailureStatus(
  * pair — fast while anything is unresolved or unhealthy, slow once truly
  * settled into "connected and healthy".
  */
-export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean | null): number {
-  if (status === 'connected' && healthy === false) return POLL_FAILING;
+export function nextPollDelay(
+  status: SandboxConnectionStatus,
+  healthy: boolean | null,
+  identicalUnhealthyStreak = 0,
+): number {
+  if (status === 'connected' && healthy === false) {
+    const exponent = Math.max(0, Math.min(identicalUnhealthyStreak - 1, 16));
+    return Math.min(POLL_FAILING_MAX, POLL_FAILING * 2 ** exponent);
+  }
   if (status === 'connected') return POLL_CONNECTED;
   if (status === 'unreachable') return POLL_UNREACHABLE;
   // Initial "connecting" phase (sandbox just went active, opencode still
   // booting) — poll fast so the runtime appears the moment it's healthy
   // instead of waiting out a long interval.
-  return POLL_FAILING;
+  const exponent = Math.max(0, Math.min(identicalUnhealthyStreak - 1, 16));
+  return Math.min(POLL_FAILING_MAX, POLL_FAILING * 2 ** exponent);
+}
+
+export interface UnhealthyPollBackoff {
+  signature: string | null;
+  streak: number;
+}
+
+function unhealthyProbeSignature(health: SessionHealthResponse | null): string {
+  return JSON.stringify([
+    health?.status ?? null,
+    health?.runtimeReady ?? null,
+    health?.opencode ?? null,
+    health?.boot_error ?? null,
+    health?.reason ?? null,
+    health?.message ?? null,
+  ]);
+}
+
+/** Track only repeated IDENTICAL resolved-but-unhealthy responses. A state
+ * transition or a healthy response resets the backoff immediately. */
+export function advanceUnhealthyPollBackoff(
+  previous: UnhealthyPollBackoff,
+  health: SessionHealthResponse | null,
+  runtimeReady: boolean,
+): UnhealthyPollBackoff {
+  if (runtimeReady) return { signature: null, streak: 0 };
+  const signature = unhealthyProbeSignature(health);
+  return signature === previous.signature
+    ? { signature, streak: previous.streak + 1 }
+    : { signature, streak: 1 };
 }
 
 /**
@@ -160,11 +202,13 @@ export function useRuntimeReconnect() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isMountRef = useRef(true);
+  const unhealthyBackoffRef = useRef<UnhealthyPollBackoff>({ signature: null, streak: 0 });
 
   useEffect(() => {
     // Reading the generation inside the effect makes the dependency explicit:
     // each manual retry tears down the in-flight probe and starts a fresh one.
     void manualRetryNonce;
+    unhealthyBackoffRef.current = { signature: null, streak: 0 };
     const isFirstMount = isMountRef.current;
     isMountRef.current = false;
 
@@ -214,12 +258,20 @@ export function useRuntimeReconnect() {
             break;
           }
           case 'booting': {
+            unhealthyBackoffRef.current = advanceUnhealthyPollBackoff(
+              unhealthyBackoffRef.current,
+              outcome.health,
+              false,
+            );
             resetSandboxFail();
             setSandboxStatus('connected');
             setOpenCodeHealth(
               false,
               outcome.health?.version,
-              outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
+              outcome.health?.boot_error ??
+                outcome.health?.message ??
+                outcome.health?.reason ??
+                null,
             );
             if (outcome.health?.version) {
               setSandboxVersion(outcome.health.version);
@@ -227,17 +279,27 @@ export function useRuntimeReconnect() {
             break;
           }
           case 'failure': {
+            unhealthyBackoffRef.current = { signature: null, streak: 0 };
             failed = true;
             immediateOffline = outcome.immediateOffline;
             break;
           }
           case 'healthy': {
+            const runtimeReady = isRuntimeReady(outcome.health);
+            unhealthyBackoffRef.current = advanceUnhealthyPollBackoff(
+              unhealthyBackoffRef.current,
+              outcome.health,
+              runtimeReady,
+            );
             resetSandboxFail();
             setSandboxStatus('connected');
             setOpenCodeHealth(
-              isRuntimeReady(outcome.health),
+              runtimeReady,
               outcome.health?.version,
-              outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
+              outcome.health?.boot_error ??
+                outcome.health?.message ??
+                outcome.health?.reason ??
+                null,
             );
             if (outcome.health?.version) {
               setSandboxVersion(outcome.health.version);
@@ -252,6 +314,7 @@ export function useRuntimeReconnect() {
         if (!alive) return;
         failed = true;
         immediateOffline = false;
+        unhealthyBackoffRef.current = { signature: null, streak: 0 };
       } finally {
         if (failed) {
           incrementSandboxFail();
@@ -280,7 +343,10 @@ export function useRuntimeReconnect() {
       if (!alive) return;
       if (timerRef.current) clearTimeout(timerRef.current);
       const { status, healthy } = useSandboxConnectionStore.getState();
-      timerRef.current = setTimeout(check, nextPollDelay(status, healthy));
+      timerRef.current = setTimeout(
+        check,
+        nextPollDelay(status, healthy, unhealthyBackoffRef.current.streak),
+      );
     }
 
     check();

@@ -23,6 +23,8 @@ export type SessionHealthResponse = {
   version?: string;
   opencode?: string | boolean;
   boot_error?: string | null;
+  audit_durability?: 'ok' | 'degraded';
+  audit_durability_error?: string | null;
   reason?: string | null;
   message?: string | null;
 };
@@ -41,13 +43,8 @@ export interface SessionHealthResult {
 export function isRuntimeReady(health: SessionHealthResponse | null): boolean {
   if (!health) return false;
   if (health.runtimeReady !== undefined) return health.runtimeReady === true;
-  if (health.opencode !== undefined)
-    return health.opencode === 'ok' || health.opencode === true;
-  return (
-    health.status !== 'starting' &&
-    health.status !== 'down' &&
-    health.status !== 'error'
-  );
+  if (health.opencode !== undefined) return health.opencode === 'ok' || health.opencode === true;
+  return health.status !== 'starting' && health.status !== 'down' && health.status !== 'error';
 }
 
 /**
