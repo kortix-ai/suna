@@ -10,11 +10,7 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Disclosure,
-  DisclosureContent,
-  DisclosureTrigger,
-} from '@/components/ui/disclosure';
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Label } from '@/components/ui/label';
 import {
   Modal,
@@ -26,6 +22,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Close } from '@/features/icon/icons/close';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
@@ -41,7 +38,7 @@ import {
   CopyIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
 // Context metrics
@@ -374,7 +371,10 @@ const RawMessage = memo(function RawMessage({
   formatTime: Formatter['time'];
 }) {
   return (
-    <AccordionItem value={message.id} className="border-b-0">
+    <AccordionItem
+      value={message.id}
+      className="border-b-0 [contain-intrinsic-size:auto_37px] [content-visibility:auto]"
+    >
       <AccordionTrigger className="hover:bg-muted/40 rounded-md px-3 py-2 text-xs hover:no-underline">
         <div className="flex w-full items-center justify-between gap-2 pr-2">
           <div className="min-w-0 truncate font-mono">
@@ -594,6 +594,15 @@ function SessionContextModalBody({
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
   const [rawVisibleCount, setRawVisibleCount] = useState(RAW_PAGE_SIZE);
+  const [rawOpen, setRawOpen] = useState(false);
+  // Sticky: once true, the row list stays mounted so reopening is instant.
+  const [rawMounted, setRawMounted] = useState(false);
+  const handleRawOpenChange = useCallback((open: boolean) => {
+    setRawOpen(open);
+    // Mount the heavy row list in a non-urgent render so the trigger's own
+    // state flip paints first and the click never feels stuck.
+    if (open) startTransition(() => setRawMounted(true));
+  }, []);
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -678,58 +687,79 @@ function SessionContextModalBody({
       </ModalHeader>
 
       <ModalBody className="space-y-6">
-        {/* Overview — the four numbers everyone understands. The row itself is
-            the disclosure trigger; expanding it reveals the technical detail. */}
-        <Disclosure variant="outline" className="overflow-hidden">
-          <DisclosureTrigger variant="outline">
-            <button
-              type="button"
-              className="bg-popover hover:bg-muted/40 w-full cursor-pointer px-4 py-4 text-left transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
-                  <OverviewStat
-                    label={t.raw('statModel')}
-                    value={ctx?.modelLabel ?? '—'}
-                    meta={ctx?.providerLabel}
-                  />
-                  <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
-                  <OverviewStat
-                    label={t.raw('statMessages')}
-                    value={counts.all.toLocaleString()}
-                  />
-                  <OverviewStat
-                    label={t.raw('statContextUsed')}
-                    value={fmt.percent(ctx?.usage)}
-                    meta={
-                      ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
-                    }
-                  />
-                </div>
-                <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+        {/* Overview + technical detail — one flat panel. Hairline dividers come
+            from a 1px grid gap over a border-colored background, which stays
+            correct wherever the grid wraps (divide-x/y would not). */}
+        <div className="bg-popover overflow-hidden rounded-md border">
+          <div className="bg-border grid grid-cols-2 gap-px lg:grid-cols-4">
+            <div className="bg-popover flex min-w-0 items-center gap-3 px-4 py-3">
+              {ctx?.message ? (
+                <ProviderLogo
+                  providerID={ctx.message.providerID}
+                  name={ctx.providerLabel}
+                  size="small"
+                />
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <OverviewStat
+                  label={t.raw('statModel')}
+                  value={ctx?.modelLabel ?? '—'}
+                  meta={ctx?.providerLabel}
+                />
               </div>
-            </button>
-          </DisclosureTrigger>
-          <DisclosureContent variant="outline" contentClassName="border-border border-t">
-            <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-3">
+            </div>
+            <div className="bg-popover px-4 py-3">
+              <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
+            </div>
+            <div className="bg-popover px-4 py-3">
+              <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
+            </div>
+            <div className="bg-popover px-4 py-3">
+              <OverviewStat
+                label={t.raw('statContextUsed')}
+                value={fmt.percent(ctx?.usage)}
+                meta={
+                  ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
+                }
+              />
+            </div>
+          </div>
+          <div className="bg-border border-border grid grid-cols-2 gap-px border-t lg:grid-cols-3">
+            <div className="bg-popover px-4 py-3">
               <Stat label={t.raw('detailContextLimit')} value={fmt.number(ctx?.limit)} />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat
                 label={t.raw('detailCache')}
                 value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
               />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat
                 label={t.raw('detailAssistantMessages')}
                 value={counts.assistant.toLocaleString()}
               />
+            </div>
+            <div className="bg-popover px-4 py-3">
               <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
+            </div>
+            <div className="bg-popover px-4 py-3 max-lg:col-span-2">
               <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
             </div>
-          </DisclosureContent>
-        </Disclosure>
+          </div>
+        </div>
 
         {/* Context composition — segmented bar + plain-language legend */}
         {breakdown.length > 0 && (
@@ -798,8 +828,17 @@ function SessionContextModalBody({
           </section>
         )}
 
-        {/* Raw message data — collapsed by default, paginated */}
-        <Disclosure variant="outline" className="overflow-hidden">
+        {/* Raw message data — collapsed by default, paginated. The content is a
+            plain hidden div rather than an animated DisclosureContent: animating
+            height over 30 fresh accordion rows is what caused the open lag, and
+            keeping the rows mounted after the first open makes reopening a pure
+            display flip. */}
+        <Disclosure
+          variant="outline"
+          className="overflow-hidden"
+          open={rawOpen}
+          onOpenChange={handleRawOpenChange}
+        >
           <DisclosureTrigger variant="outline">
             <Button
               variant="popover"
@@ -814,34 +853,40 @@ function SessionContextModalBody({
               <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
             </Button>
           </DisclosureTrigger>
-          <DisclosureContent variant="outline" contentClassName="border-border border-t">
-            <p className="text-muted-foreground px-4 pt-3 text-xs">{t.raw('rawDescription')}</p>
-            <Accordion type="multiple" className="px-2 py-2">
-              {visibleRawMessages.map((msg) => (
-                <RawMessage
-                  key={msg.info.id}
-                  message={msg.info}
-                  parts={msg.parts}
-                  formatTime={fmt.time}
-                />
-              ))}
-            </Accordion>
-            {remainingRawMessages > 0 && (
-              <div className="px-4 pb-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setRawVisibleCount((count) => count + RAW_PAGE_SIZE)}
-                >
-                  {t.raw('showMore')}
-                  <span className="text-muted-foreground tabular-nums">
-                    ({remainingRawMessages})
-                  </span>
-                </Button>
-              </div>
-            )}
-          </DisclosureContent>
+          <div hidden={!rawOpen} className="border-border border-t">
+            {rawMounted ? (
+              <>
+                <p className="text-muted-foreground px-4 pt-3 text-xs">
+                  {t.raw('rawDescription')}
+                </p>
+                <Accordion type="multiple" className="px-2 py-2">
+                  {visibleRawMessages.map((msg) => (
+                    <RawMessage
+                      key={msg.info.id}
+                      message={msg.info}
+                      parts={msg.parts}
+                      formatTime={fmt.time}
+                    />
+                  ))}
+                </Accordion>
+                {remainingRawMessages > 0 && (
+                  <div className="px-4 pb-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setRawVisibleCount((count) => count + RAW_PAGE_SIZE)}
+                    >
+                      {t.raw('showMore')}
+                      <span className="text-muted-foreground tabular-nums">
+                        ({remainingRawMessages})
+                      </span>
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
         </Disclosure>
       </ModalBody>
     </>
@@ -871,7 +916,7 @@ export function SessionContextModal({
 }: SessionContextModalProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="max-h-[85vh] lg:max-w-4xl" showCloseButton={false}>
+      <ModalContent className="max-h-[85vh] lg:max-w-3xl" showCloseButton={false}>
         <SessionContextModalBody
           messages={messages}
           session={session}
