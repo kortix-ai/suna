@@ -19,11 +19,13 @@ import { Label } from '@/components/ui/label';
 import {
   Modal,
   ModalBody,
+  ModalClose,
   ModalContent,
   ModalDescription,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { Close } from '@/features/icon/icons/close';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
@@ -377,7 +379,7 @@ const RawMessage = memo(function RawMessage({
         <div className="flex w-full items-center justify-between gap-2 pr-2">
           <div className="min-w-0 truncate font-mono">
             <Badge
-              variant={message.role === 'user' ? 'info' : 'muted'}
+              variant={message.role === 'user' ? 'info' : 'success'}
               size="sm"
               className="mr-2 font-semibold uppercase"
             >
@@ -653,44 +655,87 @@ function SessionContextModalBody({
 
   return (
     <>
-      {/* pr-40 clears the absolutely-positioned Copy + Close buttons (top-3 right-3) */}
-      <ModalHeader className="pr-40">
-        <ModalTitle>{t.raw('title')}</ModalTitle>
-        <ModalDescription>{t.raw('description')}</ModalDescription>
+      <ModalHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-0.5">
+            <ModalTitle>{t.raw('title')}</ModalTitle>
+            <ModalDescription>{t.raw('description')}</ModalDescription>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <CopyAllButton
+              messages={messages}
+              copyLabel={t.raw('copyJson')}
+              copiedLabel={t.raw('copied')}
+            />
+            <ModalClose asChild>
+              <Button variant="ghost" className="size-8 p-0">
+                <Close className="text-primary size-4 stroke-1" />
+                <span className="sr-only">Close</span>
+              </Button>
+            </ModalClose>
+          </div>
+        </div>
       </ModalHeader>
 
       <ModalBody className="space-y-6">
-        {/* Overview — the four numbers everyone understands */}
-        <div className="bg-popover rounded-md border px-4 py-4">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
-            <OverviewStat
-              label={t.raw('statModel')}
-              value={ctx?.modelLabel ?? '—'}
-              meta={ctx?.providerLabel}
-            />
-            <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
-            <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
-            <OverviewStat
-              label={t.raw('statContextUsed')}
-              value={fmt.percent(ctx?.usage)}
-              meta={
-                ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
-              }
-            />
-          </div>
-        </div>
-
-        {/* What is in the context — segmented bar + plain-language legend */}
-        {breakdown.length > 0 && (
-          <section className="space-y-3">
-            <div className="space-y-1">
-              <Label>{t.raw('contextSectionLabel')}</Label>
-              <p className="text-muted-foreground text-xs">
-                {t.raw('contextSectionDescription')}
-              </p>
+        {/* Overview — the four numbers everyone understands. The row itself is
+            the disclosure trigger; expanding it reveals the technical detail. */}
+        <Disclosure variant="outline" className="overflow-hidden">
+          <DisclosureTrigger variant="outline">
+            <button
+              type="button"
+              className="bg-popover hover:bg-muted/40 w-full cursor-pointer px-4 py-4 text-left transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
+                  <OverviewStat
+                    label={t.raw('statModel')}
+                    value={ctx?.modelLabel ?? '—'}
+                    meta={ctx?.providerLabel}
+                  />
+                  <OverviewStat label={t.raw('statCost')} value={formatCost(metrics.totalCost)} />
+                  <OverviewStat
+                    label={t.raw('statMessages')}
+                    value={counts.all.toLocaleString()}
+                  />
+                  <OverviewStat
+                    label={t.raw('statContextUsed')}
+                    value={fmt.percent(ctx?.usage)}
+                    meta={
+                      ctx?.limit ? `${fmt.number(ctx.total)} / ${fmt.number(ctx.limit)}` : undefined
+                    }
+                  />
+                </div>
+                <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+              </div>
+            </button>
+          </DisclosureTrigger>
+          <DisclosureContent variant="outline" contentClassName="border-border border-t">
+            <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-3">
+              <Stat label={t.raw('detailContextLimit')} value={fmt.number(ctx?.limit)} />
+              <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
+              <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
+              <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
+              <Stat
+                label={t.raw('detailCache')}
+                value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
+              />
+              <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
+              <Stat
+                label={t.raw('detailAssistantMessages')}
+                value={counts.assistant.toLocaleString()}
+              />
+              <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
+              <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
             </div>
+          </DisclosureContent>
+        </Disclosure>
+
+        {/* Context composition — segmented bar + plain-language legend */}
+        {breakdown.length > 0 && (
+          <section>
             <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-              <div className="bg-muted flex h-2.5 w-full gap-px overflow-hidden rounded-sm">
+              <div className="bg-muted flex h-2.5 w-full gap-px overflow-hidden rounded-full">
                 {breakdown.map((segment) => (
                   <div
                     key={segment.key}
@@ -752,40 +797,6 @@ function SessionContextModalBody({
             </div>
           </section>
         )}
-
-        {/* Technical details — collapsed by default */}
-        <Disclosure variant="outline" className="overflow-hidden">
-          <DisclosureTrigger variant="outline">
-            <Button
-              variant="popover"
-              className="flex w-full items-center justify-between rounded-none px-4"
-            >
-              <span className="text-sm font-medium">{t.raw('detailsLabel')}</span>
-              <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-            </Button>
-          </DisclosureTrigger>
-          <DisclosureContent variant="outline" contentClassName="border-border border-t">
-            <div className="grid grid-cols-2 gap-4 px-4 py-4 lg:grid-cols-3">
-              <Stat label={t.raw('detailProvider')} value={ctx?.providerLabel ?? '—'} />
-              <Stat label={t.raw('detailModel')} value={ctx?.modelLabel ?? '—'} />
-              <Stat label={t.raw('detailContextLimit')} value={fmt.number(ctx?.limit)} />
-              <Stat label={t.raw('detailInput')} value={fmt.number(ctx?.input)} />
-              <Stat label={t.raw('detailOutput')} value={fmt.number(ctx?.output)} />
-              <Stat label={t.raw('detailReasoning')} value={fmt.number(ctx?.reasoning)} />
-              <Stat
-                label={t.raw('detailCache')}
-                value={`${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}`}
-              />
-              <Stat label={t.raw('detailUserMessages')} value={counts.user.toLocaleString()} />
-              <Stat
-                label={t.raw('detailAssistantMessages')}
-                value={counts.assistant.toLocaleString()}
-              />
-              <Stat label={t.raw('detailStarted')} value={fmt.time(session?.time?.created)} />
-              <Stat label={t.raw('detailLastReply')} value={fmt.time(ctx?.message?.time?.created)} />
-            </div>
-          </DisclosureContent>
-        </Disclosure>
 
         {/* Raw message data — collapsed by default, paginated */}
         <Disclosure variant="outline" className="overflow-hidden">
@@ -858,20 +869,9 @@ export function SessionContextModal({
   providers,
   allSessions,
 }: SessionContextModalProps) {
-  const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
-
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent
-        className="max-h-[85vh] lg:max-w-5xl"
-        closeButtonChildren={
-          <CopyAllButton
-            messages={messages}
-            copyLabel={t.raw('copyJson')}
-            copiedLabel={t.raw('copied')}
-          />
-        }
-      >
+      <ModalContent className="max-h-[85vh] lg:max-w-4xl" showCloseButton={false}>
         <SessionContextModalBody
           messages={messages}
           session={session}
