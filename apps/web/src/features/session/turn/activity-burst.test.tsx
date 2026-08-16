@@ -19,6 +19,7 @@ import {
   burstIsRunning,
 } from './activity-burst';
 import { ActivityStep, iconFor } from './activity-step';
+import { isAnsweredQuestionPart } from './answered-question-step';
 import { mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
 
@@ -1063,5 +1064,72 @@ describe('chain alignment', () => {
     expect(markup).toContain('ml-[var(--tool-indent,1.375rem)]');
     // The old constant must not survive anywhere, or the two drift again.
     expect(markup).not.toContain('ml-5.5');
+  });
+});
+
+describe('answered question step', () => {
+  const done = (id: string, name: string, input: Record<string, unknown> = {}) =>
+    tool(id, name, { status: 'completed', output: 'ok', input, time: { start: 1, end: 2 } });
+
+  /** A `question` call the user already answered — questions in `input`,
+   *  answers in `metadata`, exactly as the session store settles them. */
+  const answered = (id: string) =>
+    tool(id, 'question', {
+      status: 'completed',
+      input: {
+        questions: [
+          { question: 'What should the presentation cover?' },
+          { question: 'Who is the presentation for?' },
+        ],
+      },
+      metadata: { answers: [['Serbia and Mumbai'], ['General audience']] },
+      time: { start: 1, end: 2 },
+    });
+
+  const renderBurst = (parts: Part[], { working = false, isTrailing = false } = {}) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <ActivityBurst
+            parts={parts}
+            sessionId="session-1"
+            working={working}
+            isTrailing={isTrailing}
+            disableNavigation
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('an answered question is a chain row, not the generic tool card', () => {
+    // The regression this pins: answered questions used to be forced standalone,
+    // which split the burst in two and dropped an outlined card between the
+    // halves. Inside the burst the row reads "Questions · N answered".
+    const markup = renderBurst([answered('q'), done('1', 'bash'), done('2', 'bash')], {
+      working: true,
+      isTrailing: true,
+    });
+    expect(markup).toContain('Questions');
+    expect(markup).toContain('2 answered');
+    // It is counted as a step of the burst like any other call.
+    expect(markup).toContain('Working · 3 steps');
+    // The QuestionTool card's own label must not leak in beside the row.
+    expect(markup).not.toContain('data-component="tool-trigger"');
+  });
+
+  test('a lone answered question is a bare row without the summary line', () => {
+    const markup = renderBurst([answered('q')]);
+    expect(markup).not.toContain('Completed 1 step');
+    expect(markup).toContain('Questions');
+    expect(markup).toContain('2 answered');
+  });
+
+  test('a question without answers stays off the answered-question row', () => {
+    expect(
+      isAnsweredQuestionPart(
+        tool('q', 'question', { status: 'running', input: { questions: [{ question: 'x' }] } }),
+      ),
+    ).toBe(false);
+    expect(isAnsweredQuestionPart(answered('q'))).toBe(true);
   });
 });

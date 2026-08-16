@@ -1205,12 +1205,12 @@ function SessionTurnImpl({
   };
 
   // Parts with a pending permission need a visible, actionable surface — they
-  // must never fold into a collapsed burst. Answered questions get the same
-  // standalone treatment for a different reason: they record a decision the
-  // USER made, not agent activity, so the "collapse the agent's work into one
-  // row" goal doesn't apply to them (they render via AnsweredQuestionCard, not
-  // ToolPartRenderer — see the standalone branch below). Pending/dismissed
-  // questions are deliberately NOT standalone: the real, actionable prompt for
+  // must never fold into a collapsed burst. Answered questions are NOT
+  // standalone: they are a step of the turn (the agent asked, the user
+  // answered, the work continued), so they render inside the activity burst as
+  // their own chain row (`AnsweredQuestionStep` in turn/answered-question-step)
+  // instead of a card that force-splits the burst around it. Pending/dismissed
+  // questions are not standalone either: the real, actionable prompt for
   // a pending question lives in the composer (SessionChatInput's questionSlot),
   // which has the answer-reply plumbing this component doesn't; surfacing an
   // inert, answer-less card here would only be a confusing duplicate. Those
@@ -1225,11 +1225,8 @@ function SessionTurnImpl({
         ids.add(permission.tool.callID);
       }
     }
-    for (const { part } of answeredQuestionParts) {
-      ids.add(part.callID);
-    }
     return ids;
-  }, [permissions, answeredQuestionParts, sessionId]);
+  }, [permissions, sessionId]);
 
   /**
    * The turn's parts, cut into bursts / standalone tools / text.
@@ -1259,7 +1256,17 @@ function SessionTurnImpl({
               return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
             }
             return true;
-          }),
+          })
+          // A kept question rides into its burst as the ANSWERED part — the
+          // one from answeredQuestionParts, possibly synthetic with
+          // optimistically-cached or output-parsed answers the raw store part
+          // does not carry yet. Without this substitution the burst row would
+          // show "0 answered" until the server confirms.
+          .map((part) =>
+            isToolPart(part) && part.tool === 'question'
+              ? (answeredQuestionPartsById.get(part.id) ?? part)
+              : part,
+          ),
         { standaloneCallIds },
       ),
     [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds],
@@ -1390,10 +1397,12 @@ function SessionTurnImpl({
 			    - `todowrite` — the plan card beneath the user message is now
 			      the single canonical todo surface; showing the same checklist
 			      again inside a burst would just duplicate it.
-			    - `question`: only answered questions are kept. Pending and
-			      dismissed questions are dropped entirely. Additionally,
-			      answered questions are dropped when rendering inline content
-			      (below), since that mode shows them already, in natural order. */}
+			    - `question`: only answered questions are kept — they fold into
+			      their burst as a "Questions · N answered" chain row
+			      (turn/answered-question-step.tsx). Pending and dismissed
+			      questions are dropped entirely. Additionally, answered
+			      questions are dropped when rendering inline content (below),
+			      since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-3">
           {segments.map((segment, index) => {
@@ -1413,14 +1422,6 @@ function SessionTurnImpl({
 
             if (segment.kind === 'standalone') {
               if (!shouldShowToolPart(segment.part)) return null;
-              // Render answered questions via AnsweredQuestionCard instead of
-              // ToolPartRenderer to avoid the "Question(s)" label and badge
-              // from QuestionTool; answered cards show "Questions · N answered" instead.
-              // Use the part from the map (may contain optimistically-cached answers).
-              if (answeredQuestionPartsById.has(segment.part.id)) {
-                const part = answeredQuestionPartsById.get(segment.part.id)!;
-                return <AnsweredQuestionCard key={segment.part.id} part={part} />;
-              }
               return (
                 <ToolPartRenderer
                   key={segment.part.id}

@@ -33,6 +33,7 @@ import type { Step } from '../action-panel/shared/group-steps';
 import { normalizeActivityToolName } from '../session-activity-groups';
 import { ActivityFileChipStep, isFileChipPart } from './activity-file-chips';
 import { ActivityStep, iconFor } from './activity-step';
+import { AnsweredQuestionStep, isAnsweredQuestionPart } from './answered-question-step';
 import { burstSummary, burstSummaryLabel } from './burst-summary';
 import { flattenThought, mergeBurstSteps, reasoningIsRunning } from './merge-steps';
 import { samePartsList } from './same-parts';
@@ -359,7 +360,19 @@ function ActivityBurstImpl({
     setOpen(autoExpand && running);
   }, [running, autoExpand]);
 
-  const steps = useMemo(() => mergeBurstSteps(parts, (p) => stepLabel(p).tier), [parts]);
+  const steps = useMemo(() => {
+    const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
+    // An answered question owns its row's disclosure (`AnsweredQuestionStep`
+    // binds trigger + content to the step's own `Disclosure`), so it can never
+    // share a group row with siblings — `groupSteps` buckets `question` into
+    // the `ask` family, and two disclosures in one step means one is silently
+    // dropped. Split such a group back into individual part rows.
+    return merged.flatMap((step) =>
+      step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
+        ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
+        : [step],
+    );
+  }, [parts]);
   const summary = useMemo(() => burstSummary(parts), [parts]);
   // The summary goes through unchanged: `burstSummaryLabel` already ignores
   // failures while running, so the "no failure count mid-flight" rule lives in
@@ -399,6 +412,11 @@ function ActivityBurstImpl({
           disableNavigation={disableNavigation}
         />
       );
+    }
+    // An answered question renders as its own chain row — "Questions · N
+    // answered", opening in place — never as the generic tool card.
+    if (isAnsweredQuestionPart(step.part)) {
+      return <AnsweredQuestionStep part={step.part} bare={bareRow} />;
     }
     // A run of one read is unwrapped into a flat row by `mergeBurstSteps`, which
     // is right for a shell command and wrong here: one file is still a file.
