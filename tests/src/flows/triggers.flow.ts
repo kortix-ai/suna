@@ -679,3 +679,147 @@ flow(
     });
   },
 );
++flow(
+  'TRG-14',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/accounts/:accountId/iam/groups',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const teammate = await team.addMember('member');
+    const teammateUserId = teammate.userId;
+    if (!teammateUserId) throw new Error('trigger access teammate fixture has no user id');
+    await team.grantProjectRole(project.id, teammateUserId, 'user');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const groupResponse = await owner.post(
+      '/v1/accounts/:accountId/iam/groups',
+      { name: ctx.fixtures.name('trigger-access-group') },
+      { params: { accountId: team.id } },
+    );
+    groupResponse.status(201);
+    const groupId = groupResponse.json<{ group_id: string }>().group_id;
+
+    await ctx.step('omitted session_access defaults to private', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        {
+          name: 'Access policy target',
+          type: 'cron',
+          cron: '0 0 3 * * *',
+          timezone: 'UTC',
+          prompt_template: 'x',
+        },
+        { params: { projectId: project.id } },
+      );
+      r.status(201);
+      const access = r.json<{
+        triggers: Array<{
+          session_access: { mode: string; memberIds: string[]; groupIds: string[] };
+        }>;
+      }>().triggers[0]?.session_access;
+      if (
+        JSON.stringify(access) !== JSON.stringify({ mode: 'private', memberIds: [], groupIds: [] })
+      ) {
+        throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
+      }
+    });
+
+    await ctx.step('selected members and groups persist with duplicate ids removed', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: [teammateUserId, teammateUserId],
+            groupIds: [groupId, groupId],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(200);
+      const access = r.json<{
+        triggers: Array<{
+          session_access: { mode: string; memberIds: string[]; groupIds: string[] };
+        }>;
+      }>().triggers[0]?.session_access;
+      if (
+        access?.mode !== 'members' ||
+        JSON.stringify(access.memberIds) !== JSON.stringify([teammateUserId]) ||
+        JSON.stringify(access.groupIds) !== JSON.stringify([groupId])
+      ) {
+        throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
+      }
+    });
+
+    await ctx.step('explicit project access persists', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        { session_access: { mode: 'project', memberIds: [], groupIds: [] } },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(200).body().has('triggers[0].session_access.mode', 'project');
+    });
+
+    await ctx.step('empty selected access normalizes to private', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        { session_access: { mode: 'members', memberIds: [], groupIds: [] } },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(200).body().has('triggers[0].session_access.mode', 'private');
+    });
+
+    await ctx.step('unknown member is rejected', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: ['00000000-0000-4000-8000-000000000001'],
+            groupIds: [],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step('cross-account member is rejected', async () => {
+      if (!ctx.P.NONMEMBER.userId) throw new Error('NONMEMBER fixture has no user id');
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: [ctx.P.NONMEMBER.userId],
+            groupIds: [],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step('unknown group is rejected', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: [],
+            groupIds: ['00000000-0000-4000-8000-000000000002'],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(400);
+    });
+  },
+);

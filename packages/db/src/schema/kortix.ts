@@ -1130,6 +1130,9 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // Account-local sharing policy for sessions created by this trigger. The
+    // portable manifest cannot contain member/group ids from one account.
+    sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
     // The project member this trigger's automated sessions provision AS (the
     // "owner") — the secret-visibility subject and provisioning actor for
     // cron/webhook/manual fires. NULL = fall back to the account owner
@@ -1175,6 +1178,33 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/** Member/group allow-list for a trigger's future and prior created sessions. */
+export const projectTriggerSessionAccessGrants = kortixSchema.table(
+  'project_trigger_session_access_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId, table.slug],
+      foreignColumns: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      name: 'project_trigger_session_access_grants_trigger_fk',
+    }).onDelete('cascade'),
+    index('idx_trigger_session_access_grants_trigger').on(table.projectId, table.slug),
+    uniqueIndex('idx_trigger_session_access_grants_unique').on(
+      table.projectId,
+      table.slug,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 

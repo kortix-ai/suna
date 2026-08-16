@@ -25,6 +25,7 @@ import {
 } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
@@ -935,6 +936,12 @@ async function applyPostCreateActions(input: {
         if (outcome !== 'delivered') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };
         }
+      } else if (action.type === 'apply_trigger_session_access') {
+        await applyTriggerSessionAccess({
+          projectId: input.projectId,
+          sessionId: input.sessionId,
+          triggerSlug: action.triggerSlug,
+        });
       }
     }
     return { ok: true };

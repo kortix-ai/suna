@@ -34,6 +34,13 @@ export type ProjectMonitorMode = 'poll' | 'stream';
  */
 export type ProjectTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
 
+/** Who may open sessions created by this trigger. The trigger agent remains the owner. */
+export interface TriggerSessionAccess {
+  mode: 'private' | 'project' | 'members';
+  memberIds: string[];
+  groupIds: string[];
+}
+
 /** Parsed trigger spec — what the listing endpoint returns. */
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
@@ -90,6 +97,8 @@ export interface ProjectTrigger {
    * when unfiltered.
    */
   filter: Record<string, string> | null;
+  /** Access policy applied to every session this trigger creates. */
+  session_access: TriggerSessionAccess;
   last_fired_at: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
@@ -167,6 +176,8 @@ export interface CreateProjectTriggerInput {
   session_key?: string | null;
   /** Payload paths mapped to the value they must equal for the trigger to fire. */
   filter?: Record<string, string> | null;
+  /** Defaults to private. This is account-local runtime state, not manifest config. */
+  session_access?: TriggerSessionAccess;
 }
 
 export interface UpdateProjectTriggerInput {
@@ -198,6 +209,8 @@ export interface UpdateProjectTriggerInput {
   session_key?: string | null;
   /** null or {} clears the filter. */
   filter?: Record<string, string> | null;
+  /** Replaces the policy and updates prior sessions created by this trigger. */
+  session_access?: TriggerSessionAccess;
 }
 
 export async function listProjectTriggers(projectId: string) {

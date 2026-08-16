@@ -148,6 +148,12 @@ import { childIdleGraceMs, shortenSandboxDeadlineOnTurnEnd } from '../sandbox-de
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  parseTriggerSessionAccess,
+  setTriggerSessionAccess,
+  validateTriggerSessionAccessPrincipals,
+} from '../trigger-session-access';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 
@@ -1080,6 +1086,16 @@ projectsApp.openapi(
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
+    const parsedAccess =
+      body.session_access === undefined
+        ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
+        : parseTriggerSessionAccess(body.session_access);
+    if (!parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+    const accessValidationError = await validateTriggerSessionAccessPrincipals(
+      loaded.row.accountId,
+      parsedAccess.access,
+    );
+    if (accessValidationError) return c.json({ error: accessValidationError }, 400);
 
     // A `pinned` trigger may only target a session that belongs to THIS project —
     // never a nonexistent or another project's session.
@@ -1125,6 +1141,12 @@ projectsApp.openapi(
     }
     if (!committedManifest) throw new Error('trigger create completed without a manifest');
     await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+    await setTriggerSessionAccess({
+      projectId,
+      accountId: loaded.row.accountId,
+      slug: draft.slug,
+      access: parsedAccess.access,
+    });
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -1228,6 +1250,16 @@ projectsApp.openapi(
     // Only commit the repo manifest when a manifest field actually changed; a
     // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
+    const parsedAccess =
+      body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
+    if (parsedAccess && !parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+    if (parsedAccess?.ok) {
+      const accessValidationError = await validateTriggerSessionAccessPrincipals(
+        loaded.row.accountId,
+        parsedAccess.access,
+      );
+      if (accessValidationError) return c.json({ error: accessValidationError }, 400);
+    }
     let committedManifest: ParsedManifest | undefined;
     const result = await mutateManifestWithRetry(
       loaded.row,
@@ -1283,6 +1315,14 @@ projectsApp.openapi(
     if (touchesManifest) {
       if (!committedManifest) throw new Error('trigger update completed without a manifest');
       await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+    }
+    if (parsedAccess?.ok) {
+      await setTriggerSessionAccess({
+        projectId,
+        accountId: loaded.row.accountId,
+        slug,
+        access: parsedAccess.access,
+      });
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));

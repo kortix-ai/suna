@@ -45,6 +45,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import {
   type ProjectTrigger,
@@ -298,6 +299,13 @@ export function ScheduleDetailSheet({
           />
 
           <MemoryPanel
+            projectId={projectId}
+            trigger={trigger}
+            canWrite={canWrite}
+            onMutated={onMutated}
+          />
+
+          <AccessPanel
             projectId={projectId}
             trigger={trigger}
             canWrite={canWrite}
@@ -882,6 +890,99 @@ function MemoryPanel({
         sessionsLoading={sessions.isLoading}
         disabled={save.isPending}
       />
+    </PanelSection>
+  );
+}
+
+function accessSummary(access: ProjectTrigger['session_access']): string {
+  if (access.mode === 'project') return 'Every project member can open trigger-created sessions.';
+  if (access.mode === 'members') {
+    const count = access.memberIds.length + access.groupIds.length;
+    return `${count} selected ${count === 1 ? 'member or group can' : 'members or groups can'} open trigger-created sessions.`;
+  }
+  return 'Only the trigger agent can open trigger-created sessions.';
+}
+
+function AccessPanel({
+  projectId,
+  trigger,
+  canWrite,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  canWrite: boolean;
+  onMutated: () => void;
+}) {
+  const [selection, setSelection] = useState<SharingSelection>(trigger.session_access);
+
+  useEffect(() => {
+    setSelection(trigger.session_access);
+  }, [trigger.session_access]);
+
+  const save = useMutation({
+    mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { session_access: selection }),
+    onSuccess: () => {
+      successToast('Session access updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Could not update session access'),
+  });
+
+  if (!canWrite) {
+    return (
+      <PanelSection
+        title="Session access"
+        description="Who can open sessions created by this trigger."
+      >
+        <p className="text-foreground text-sm">{accessSummary(trigger.session_access)}</p>
+        {trigger.session_mode === 'pinned' ? (
+          <p className="text-muted-foreground text-xs">
+            The pinned session keeps its own sharing settings.
+          </p>
+        ) : null}
+      </PanelSection>
+    );
+  }
+
+  const dirty =
+    selection.mode !== trigger.session_access.mode ||
+    selection.memberIds.join(',') !== trigger.session_access.memberIds.join(',') ||
+    selection.groupIds.join(',') !== trigger.session_access.groupIds.join(',');
+
+  return (
+    <PanelSection
+      title="Session access"
+      description="Who can open sessions created by this trigger. Saving also updates its prior sessions."
+      action={<SaveButton dirty={dirty} pending={save.isPending} onSave={() => save.mutate()} />}
+    >
+      <SharingPicker
+        projectId={projectId}
+        value={selection}
+        onChange={setSelection}
+        showHeading={false}
+        copy={{
+          heading: 'Who can access sessions created by this trigger',
+          private: {
+            label: 'Only the trigger agent',
+            desc: 'No teammates can open these sessions unless you add them.',
+          },
+          members: {
+            label: 'Selected teammates',
+            desc: 'Choose members and groups that can open these sessions.',
+          },
+          project: {
+            label: 'Whole project',
+            desc: 'Every project member can open these sessions.',
+          },
+        }}
+      />
+      {trigger.session_mode === 'pinned' ? (
+        <InfoBanner tone="info" className="text-xs">
+          The pinned session keeps its own sharing settings. This policy applies if the trigger
+          creates a fallback session.
+        </InfoBanner>
+      ) : null}
     </PanelSection>
   );
 }

@@ -49,6 +49,10 @@ import {
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  loadTriggerSessionAccessMap,
+} from '../trigger-session-access';
 import { drainMonitorEvents } from './monitor-observer';
 import {
   type ProjectRow,
@@ -1056,9 +1060,9 @@ export async function fireGitTrigger(input: {
     userId: actor,
     requestingPrincipalType: 'human',
     enforceAccountCap: false,
-    // Trigger sessions are project automation, not the actor's personal chat —
-    // make them project-visible so the whole team can find them.
-    visibility: 'project',
+    // Fail closed until the post-create action resolves the trigger's current
+    // account-local policy. Queued creates resolve it when the worker runs.
+    visibility: 'private',
     request: input.request,
     queuePolicy: 'on_backpressure',
     idempotencyKey: input.idempotencyKey ?? null,
@@ -1087,6 +1091,12 @@ export async function fireGitTrigger(input: {
       ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       payload_summary: summarizeTriggerPayload(payload),
     },
+    postCreate: [
+      {
+        type: 'apply_trigger_session_access',
+        triggerSlug: spec.slug,
+      },
+    ],
   });
 
   if (sessionResult.status === 'queued' || sessionResult.status === 'pending') {
@@ -1405,6 +1415,8 @@ export async function loadTriggersForResponse(
           .from(projectTriggerRuntime)
           .where(eq(projectTriggerRuntime.projectId, projectId));
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
+  const sessionAccessBySlug =
+    specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
 
   return {
     triggers: specs.map((spec) => ({
@@ -1428,6 +1440,7 @@ export async function loadTriggersForResponse(
       session_id: spec.pinnedSessionId,
       session_key: spec.sessionKey,
       filter: spec.filter,
+      session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
