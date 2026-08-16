@@ -17,6 +17,7 @@ import {
   ActivityGroupStep,
   burstFailureCount,
   burstIsRunning,
+  sameActivityGroupStepProps,
 } from './activity-burst';
 import { ActivityStep, iconFor } from './activity-step';
 import { isAnsweredQuestionPart } from './answered-question-step';
@@ -188,6 +189,82 @@ describe('ActivityGroupStep', () => {
     // `bg-clip-text` is `TextShimmer`'s signature — the same "still going"
     // treatment the tool rows one level down already use.
     expect(markup).toContain('bg-clip-text');
+  });
+});
+
+describe('sameActivityGroupStepProps', () => {
+  // ONE shared `parts` array/elements — re-running `mergeBurstSteps` on it is
+  // exactly what a re-render does while an UNRELATED part streams elsewhere
+  // in the burst: `parts` (the burst's own prop) keeps its element identities,
+  // `mergeBurstSteps`'s `useMemo` still re-runs because the ARRAY reference
+  // changed (see `same-parts.ts`), and `finalize` mints a new `Step` + a new
+  // `parts` array around these same two elements every time.
+  const sharedParts: Part[] = [
+    tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+    tool('2', 'read', { status: 'completed', input: { filePath: '/workspace/beta.ts' } }),
+  ];
+
+  const freshGroup = (parts: Part[] = sharedParts) => {
+    const steps = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    return steps[0].step;
+  };
+
+  const props = (step: ReturnType<typeof freshGroup>) => ({
+    step,
+    sessionId: 'session-1',
+    running: false,
+    disableNavigation: true,
+  });
+
+  test('two independently-built Step objects for the same content compare equal', () => {
+    // The regression: `mergeBurstSteps` -> `groupSteps` -> `finalize` mints a
+    // NEW `step` object (and a NEW `parts` array around the SAME `ToolPart`
+    // elements) on every call, so object identity always fails here — that is
+    // exactly why a shallow-compare `memo` never held for this row.
+    const a = freshGroup();
+    const b = freshGroup();
+    expect(a).not.toBe(b);
+    expect(a.parts).not.toBe(b.parts);
+    expect(sameActivityGroupStepProps(props(a), props(b))).toBe(true);
+  });
+
+  test('a status change (a member starts running) is caught', () => {
+    const a = freshGroup();
+    const running: Part[] = [
+      tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+      tool('2', 'read', { status: 'running', input: { filePath: '/workspace/beta.ts' } }),
+    ];
+    const steps = mergeBurstSteps(running, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    expect(sameActivityGroupStepProps(props(a), props(steps[0].step))).toBe(false);
+  });
+
+  test('a member swapped for a different file is caught even though status/label hold', () => {
+    const a = freshGroup();
+    const swapped: Part[] = [
+      tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+      tool('3', 'read', { status: 'completed', input: { filePath: '/workspace/gamma.ts' } }),
+    ];
+    const steps = mergeBurstSteps(swapped, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    const b = steps[0].step;
+    // Same status and label ("Read 2 files"), different membership.
+    expect(b.status).toBe(a.status);
+    expect(b.label).toBe(a.label);
+    expect(sameActivityGroupStepProps(props(a), props(b))).toBe(false);
+  });
+
+  test('sessionId, running, and disableNavigation are each load-bearing', () => {
+    const a = freshGroup();
+    const b = freshGroup();
+    expect(sameActivityGroupStepProps({ ...props(a), sessionId: 'session-2' }, props(b))).toBe(
+      false,
+    );
+    expect(sameActivityGroupStepProps({ ...props(a), running: true }, props(b))).toBe(false);
+    expect(
+      sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b)),
+    ).toBe(false);
   });
 });
 

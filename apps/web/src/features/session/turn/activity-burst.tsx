@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 import type { ConversationDensity } from '@/stores/user-preferences-store';
 import { isReasoningPart, isToolPart, type Part } from '@/ui';
 import { CaretRightIcon, CircleDashedIcon } from '@phosphor-icons/react';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Step } from '../action-panel/shared/group-steps';
 import { normalizeActivityToolName } from '../session-activity-groups';
 import { ActivityFileChipStep, isFileChipPart } from './activity-file-chips';
@@ -59,10 +59,37 @@ const THOUGHT_MAX_H = 'max-h-54';
 function ThoughtStepBody({ texts, running }: { texts: ReadonlyArray<string>; running: boolean }) {
   const text = flattenThought(texts);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pinRaf = useRef<number | null>(null);
 
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el && running) el.scrollTop = el.scrollHeight;
+  // One rAF per frame, not one forced-synchronous layout per SSE token.
+  //
+  // `el.scrollHeight` is a layout read — answering it while the model is
+  // still streaming means flushing whatever layout work React's commit has
+  // pending RIGHT NOW, synchronously, once per text delta. A `useLayoutEffect`
+  // that reads it runs inside React's commit phase, ahead of the browser's own
+  // paint, which is exactly the moment nothing else has forced that flush yet.
+  // Scheduling the read+write inside `requestAnimationFrame` instead moves it
+  // to the point the browser is already about to compute layout for that
+  // frame's paint — the same information, at the point it was free.
+  //
+  // Multiple text deltas can land in the same frame (several SSE messages,
+  // one React commit each) — cancelling any not-yet-run rAF before scheduling
+  // a new one collapses them to the single measurement the frame actually
+  // paints, rather than measuring and writing `scrollTop` once per delta.
+  useEffect(() => {
+    if (!running) return;
+    if (pinRaf.current !== null) cancelAnimationFrame(pinRaf.current);
+    pinRaf.current = requestAnimationFrame(() => {
+      pinRaf.current = null;
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => {
+      if (pinRaf.current !== null) {
+        cancelAnimationFrame(pinRaf.current);
+        pinRaf.current = null;
+      }
+    };
   }, [running, text]);
 
   return (
@@ -620,16 +647,69 @@ function ActivityBurstImpl({
  * while a turn streams its segments are rebuilt each frame: the ARRAY is always
  * new, its contents almost never are. See `same-parts.ts`.
  *
- * `ActivityGroupStep` and `ThoughtChainStep` take a memoised `step` / `texts`
- * from `mergeBurstSteps`, so the default shallow compare would hold for the
- * group; `texts` is a fresh array per merge, so the thought needs the same
- * element-wise rule.
+ * `ActivityGroupStep` and `ThoughtChainStep` do NOT get a memoised `step` /
+ * `texts` from `mergeBurstSteps` — the default shallow compare does NOT hold
+ * for either, and both need their own element-wise comparator:
+ *
+ *   `mergeBurstSteps`'s `useMemo` above is keyed on `[parts]`, and `parts` is a
+ *   fresh array on every SSE delta of the streaming turn (see `same-parts.ts`).
+ *   That re-runs `mergeBurstSteps` → `groupSteps` → `finalize` for every group
+ *   in the burst, tools that already settled included, and `finalize` builds a
+ *   brand-new `Step` object (and a brand-new `parts` array around the same
+ *   `ToolPart` elements) every time it runs. So `step` is a new object identity
+ *   per delta even when nothing in that particular group changed — the default
+ *   shallow compare fails on `step` alone, and every open group row re-renders
+ *   on every token of an unrelated streaming tool call in the same burst.
+ *   Comparing `step` by its actual content — `status`, `label`, and the
+ *   underlying `parts` element-wise (`samePartsList`, since `finalize` rebuilds
+ *   that array too but reuses the same `ToolPart` objects inside it) — is what
+ *   makes the boundary real. `texts` is exactly the same shape of problem one
+ *   level up: `mergeBurstSteps` pushes a fresh `texts` array per thought run
+ *   on every call, so `ThoughtChainStep` needs the same element-wise rule.
+ *
+ * `ActivityStep` (`activity-step.tsx`) is the one row in this chain where the
+ * default shallow compare DOES hold: it takes `part` directly off the burst's
+ * own `parts` prop — for an unwrapped run of one, `mergeBurstSteps` hands it
+ * `step.parts[0]`, the very `Part` reference from the input array, never a
+ * rebuilt copy. The session store only replaces the ONE part that actually
+ * changed on a given SSE delta and keeps every sibling reference stable, so a
+ * settled tool row's `part` prop keeps its identity across deltas that touch a
+ * different part — `React.memo`'s reference check is correct there without a
+ * custom comparator.
  *
  * `ChainOfThought` and `ChainOfThoughtStep` are deliberately NOT memoised: they
  * take `children`, which is a new element on every parent render, so a boundary
  * there can never hold and would only add a failed comparison.
  */
-export const ActivityGroupStep = memo(ActivityGroupStepImpl);
+type ActivityGroupStepProps = {
+  step: Step;
+  sessionId: string;
+  running: boolean;
+  disableNavigation?: boolean;
+};
+
+/**
+ * `ActivityGroupStep`'s memo comparator, exported so the boundary itself is
+ * unit-tested rather than only exercised indirectly through a render.
+ *
+ * `step` is compared by content, not identity — see the memo-boundaries
+ * comment above for why identity never holds across an SSE delta.
+ */
+export function sameActivityGroupStepProps(
+  a: ActivityGroupStepProps,
+  b: ActivityGroupStepProps,
+): boolean {
+  return (
+    a.sessionId === b.sessionId &&
+    a.running === b.running &&
+    a.disableNavigation === b.disableNavigation &&
+    a.step.status === b.step.status &&
+    a.step.label === b.step.label &&
+    samePartsList(a.step.parts, b.step.parts)
+  );
+}
+
+export const ActivityGroupStep = memo(ActivityGroupStepImpl, sameActivityGroupStepProps);
 ActivityGroupStep.displayName = 'ActivityGroupStep';
 
 const ThoughtChainStep = memo(
