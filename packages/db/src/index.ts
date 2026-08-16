@@ -46,6 +46,7 @@ export {
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
   projectTriggerRuntime,
+  projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
   projectMonitorEvents,
   projectMonitorBoxes,

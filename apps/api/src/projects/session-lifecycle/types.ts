@@ -35,6 +35,11 @@ export type SessionLifecyclePostCreateAction =
       source: SessionInvocationSource;
       text: string;
       userId?: string | null;
+    }
+  | {
+      /** Resolve at execution time so queued creates never capture stale access. */
+      type: 'apply_trigger_session_access';
+      triggerSlug: string;
     };
 
 export type SessionLifecycleStatus =
