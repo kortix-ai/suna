@@ -19,8 +19,9 @@
  * and the `/start` poll for `(projectId, sessionId)`.
  */
 
+import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   beginSessionPromptObservation,
@@ -28,9 +29,13 @@ import {
 } from '../browser/session-sync/session-sync-registry';
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
-import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
+import {
+  markRuntimeReadyVerified,
+  setOpenCodeHealth,
+  setSandboxStatus,
+} from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
-import { useSyncStore } from '../browser/stores/sync-store';
+import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
 import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
@@ -42,12 +47,7 @@ import {
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
-import {
-  type SessionRewindState,
-  commitSessionRewind,
-  messagesBeforeRewind,
-  reconcileCommittedSessionRewind,
-} from '../core/session/rewind';
+import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
@@ -56,7 +56,10 @@ import type { ModelKey } from './use-model-store';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import { formatModelString } from './use-opencode-local';
 import {
+  type AbortSettlement,
   type PromptPart,
+  abortInFlightDeliveries,
+  awaitAbortSettlement,
   rejectQuestion as rejectQuestionApi,
   replyToPermission,
   replyToQuestion,
@@ -77,6 +80,13 @@ import { useVisibleAgents } from './use-visible-agents';
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
+
+// `useLayoutEffect` warns during SSR ("useLayoutEffect does nothing on the
+// server"). This file is always `'use client'`, but Next.js still runs an
+// initial SSR pass before hydration — fall back to `useEffect` there. See the
+// mount-time `markRuntimeReadyVerified` seed below for why this hook needs a
+// LAYOUT effect specifically (ordering, not paint timing).
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 // Grace window for the optimistic create-vs-start race: how long /start keeps
 // retrying a 404 for a freshly-minted session before treating it as terminal.
@@ -267,6 +277,70 @@ export function computeStartSettled(input: {
 }
 
 /**
+ * How long a `ready` /start result stays fresh enough that a REMOUNT renders
+ * it straight from the TanStack Query cache with zero network `/start` before
+ * first paint — the "user just left this exact session and came right back"
+ * case (tab switch, back button, re-opening the same session from the
+ * project's session list), which otherwise re-POSTs `/start` (and re-waits
+ * its up-to-`waitMs` server long-poll) on every single mount even though the
+ * box never went anywhere.
+ *
+ * The server parks an idle sandbox after ~15 minutes (see the `/start` route
+ * this hook drives, in `session-sandbox.ts`), so this window is nowhere near
+ * long enough to promise anything about a sandbox that has genuinely been
+ * idle — it only needs to outlast the sub-second "switch thrash" case, not
+ * survive a real absence. 30s comfortably covers that without risking a
+ * materially stale "ready" read surviving into a box the server already
+ * parked: `sessionStartStaleTime` only skips the IMMEDIATE refetch, it never
+ * cancels one — a background refetch still fires once the cached entry ages
+ * past this window (stale-while-revalidate), so a parked box still converges
+ * to `stopped` on the very next look.
+ */
+export const SESSION_START_FRESH_MS = 30_000;
+
+/**
+ * OUTCOME-AWARE `staleTime` for the `/start` query (TanStack's function
+ * form). Only a `stage==='ready'` result may be served from cache without an
+ * immediate refetch — every other stage (`provisioning`/`starting`/
+ * `stopped`/`failed`, or no cached data yet) represents an in-flight or
+ * terminal state that must keep converging on server truth, so it stays
+ * maximally stale (`0`, i.e. TanStack's "always refetch on mount") —
+ * unchanged from this query's behavior before this staleTime existed.
+ *
+ * This does NOT change `refetchInterval` (`SESSION_START_POLL_OPTIONS`,
+ * below, untouched): a `ready` result already stops that poll
+ * (`shouldPollSessionStart`), so this only governs remount behavior, never
+ * steady-state polling.
+ */
+export function sessionStartStaleTime(query: {
+  state: { data: SessionStartResult | null | undefined };
+}): number {
+  return query.state.data?.stage === 'ready' ? SESSION_START_FRESH_MS : 0;
+}
+
+/**
+ * Whether a cached `/start` query STATE (as sitting in the TanStack Query
+ * cache the moment a session starts mounting) already says `stage==='ready'`
+ * — independent of staleness/age: React Query serves whatever is cached
+ * synchronously on every mount regardless of `staleTime` (`staleTime` only
+ * gates whether a background refetch ALSO fires, never whether the cached
+ * data renders) — so a session left seconds or minutes ago can make
+ * `switched` true well before this mount's own effects have a chance to run.
+ *
+ * Pure so the mount-time `markRuntimeReadyVerified()` decision it feeds (the
+ * `useIsomorphicLayoutEffect` in {@link useSession}, right after the /start
+ * query below) is unit-testable without rendering the hook — this package has
+ * no hook-render harness, so pure predicates like this ARE the test surface
+ * for effect-gated logic (see `computeStartSettled`/`nextInconclusiveSince`
+ * above for the established pattern).
+ */
+export function cachedStartResultIsReady(
+  cachedState: { data?: SessionStartResult | null } | undefined,
+): boolean {
+  return cachedState?.data?.stage === 'ready';
+}
+
+/**
  * TanStack Query pauses interval fetches while the document is hidden unless
  * this option is true. Session readiness must continue because it gates the
  * runtime switch, event stream, and queued-prompt replay.
@@ -358,7 +432,7 @@ const RUNTIME_NOT_READY_MARKER = 'Server URL not ready';
  *
  * A no-op when the parts carry no ids or belong to no optimistic message.
  */
-function markDispatchedForPartIds(sessionId: string, parts: PromptPart[]): void {
+export function markDispatchedForPartIds(sessionId: string, parts: PromptPart[]): void {
   const partIds = new Set(
     parts
       .map((p) => (p as { id?: unknown }).id)
@@ -372,6 +446,57 @@ function markDispatchedForPartIds(sessionId: string, parts: PromptPart[]): void 
     const owns = (store.parts[message.id] ?? []).some((p) => partIds.has(p.id));
     if (owns) store.markOptimisticDispatched(sessionId, message.id);
   }
+}
+
+/**
+ * Optimistically add the user's message for a plain-text `send()` call, and
+ * mint the SAME part id onto both the optimistic part AND the outgoing wire
+ * part `send()` goes on to POST.
+ *
+ * T15 — "one user bubble": `send()` used to build its outgoing part
+ * as `{ type: 'text', text }` with no id at all, so — even where a host paired
+ * it with its own optimistic add — nothing correlated the two. The sync
+ * store's `message.updated` handler matches an incoming echo to an optimistic
+ * message primarily by EXACT part id (opencode preserves a client-supplied
+ * part id on echo); only when that fails does it fall back to "the oldest
+ * DISPATCHED optimistic message" (`markDispatchedForPartIds`, called
+ * unconditionally by `sendParts` below, marks it — but only once the part ids
+ * actually match, same root cause). With no id on the wire, neither path can
+ * ever fire, and the user's text stayed doubled on screen until the next
+ * idle sweep (`clearOptimisticMessages`).
+ *
+ * Mirrors `beginOptimisticSend` (`use-session-send.ts`) exactly — same store
+ * calls, same stub-message shape, same "skip parts for empty/whitespace text"
+ * rule — kept as a sibling here rather than imported, since
+ * `use-session-send.ts` already imports FROM this module (`classifySendError`)
+ * and a reverse import would make the two files mutually dependent.
+ */
+export function beginOptimisticPlainTextSend(
+  sessionId: string,
+  text: string,
+): { messageId: string; parts: PromptPart[] } {
+  const messageId = ascendingId('msg');
+  const partId = ascendingId('prt');
+  const optimisticParts: Part[] = text.trim()
+    ? [
+        {
+          id: partId,
+          sessionID: sessionId,
+          messageID: messageId,
+          type: 'text' as const,
+          text,
+        },
+      ]
+    : [];
+  const info = {
+    id: messageId,
+    sessionID: sessionId,
+    role: 'user',
+    time: { created: Date.now() },
+  } as Message;
+  useSyncStore.getState().optimisticAdd(sessionId, info, optimisticParts);
+  useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+  return { messageId, parts: [{ type: 'text', text, id: partId }] };
 }
 
 /** The error body, wherever the transport parked it. */
@@ -697,6 +822,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       isSessionStartError(error) && error.status === 404
         ? FRESH_START_404_RETRY_DELAY_MS
         : Math.min(1000 * 2 ** failureCount, 5000),
+    staleTime: sessionStartStaleTime,
     ...SESSION_START_POLL_OPTIONS,
   });
   const startData = start.data ?? null;
@@ -705,6 +831,42 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
+
+  // T8 defect 1 — `useRuntimeReconnect`'s first-mount
+  // `resetForServerSwitch()` (a plain `useEffect`) unconditionally seeds
+  // `status:'connecting', healthy:null` UNLESS `markRuntimeReadyVerified()`
+  // already told it the server proved this session ready. Task A's staleTime
+  // (above) means a remount can render `stage==='ready'` on its VERY FIRST
+  // render — before ANY effect, this hook's own switch/health-seed effects
+  // included, has had a chance to run — so whichever effect happens to fire
+  // first is not something to gamble on.
+  //
+  // `useLayoutEffect` is what makes this deterministic regardless of
+  // component-tree shape: React runs EVERY layout effect, tree-wide, before
+  // ANY passive effect (`useEffect`) fires — so this always wins the race
+  // against `useRuntimeReconnect`'s reset, whether that hook lives in a
+  // parent, a child, or a sibling of this one.
+  //
+  // Gated on `[projectId, sessionId]` (session identity), not `[startReady]`:
+  // it must only ever answer "was this session ALREADY proven ready at the
+  // moment I started mounting" — never "did it become ready later". A real
+  // network `/start` completing seconds after this mount's own reset has
+  // ALREADY run (and cleared whatever the flag held) would just leave a
+  // stale "ready" flag sitting in sessionStorage for the NEXT, unrelated
+  // session's first mount to wrongly consume. That later-ready case needs no
+  // help from this flag anyway: the health-seed effect (step 3, below)
+  // writes the connection store directly once `switched` flips, and
+  // `resetForServerSwitch()` never runs a second time to undo it — see
+  // `use-runtime-reconnect.test.ts`'s "mount-time ordering" tests for both
+  // orderings converging.
+  useIsomorphicLayoutEffect(() => {
+    if (!startEnabled) return;
+    const cached = queryClient.getQueryState<SessionStartResult>(
+      sessionStartKey(projectId, sessionId),
+    );
+    if (cachedStartResultIsReady(cached)) markRuntimeReadyVerified();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, sessionId]);
 
   // Track how long /start has been returning nothing usable — no data, no
   // error — so `computeStartSettled` can bound the "given up" case (see
@@ -835,24 +997,29 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
-  const [restRewind, setRestRewind] = useState<SessionRewindState | null>(null);
+  // T22 — the revert record lives in the sync store, not component state.
+  // Component state made the boundary math wrong in two ways at once: it
+  // reset on every remount (stranding an invisible staged revert after a
+  // reload — the server still held the pointer, nothing here knew), and it
+  // was the ONLY thing to mirror server truth, so a `.staged`/`.cleared`/
+  // `.committed` wire event or another tab's action never reached this
+  // session's view at all. The store is the single place all of those
+  // sources (this hook's own `rewind()`/`restoreRewind()`, the three wire
+  // events via `handle-event.ts`, and a `Session.revert` field read on
+  // reload) converge — see `sync-store.ts`'s `sessionRevert` doc comment.
+  const restRewind = useSyncStore((s) => s.sessionRevert[ocSessionId] ?? null);
   const [rewindPending, setRewindPending] = useState(false);
   const [rewindError, setRewindError] = useState<KortixSendError | null>(null);
   const rewindMessageId = restRewind?.staged ? restRewind.messageId : null;
   const messages = useMemo(
-    () => messagesBeforeRewind(sync.messages, restRewind?.messageId ?? null),
-    [sync.messages, restRewind?.messageId],
+    () => messagesBeforeRewind(sync.messages, restRewind),
+    [sync.messages, restRewind],
   );
 
   useEffect(() => {
-    setRestRewind(null);
     setRewindPending(false);
     setRewindError(null);
   }, [sessionId, ocSessionId]);
-
-  useEffect(() => {
-    setRestRewind((current) => reconcileCommittedSessionRewind(sync.messages, current));
-  }, [sync.messages]);
 
   // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store) — see
@@ -979,7 +1146,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
       }),
     );
-    setRestRewind(commitSessionRewind);
+    useSyncStore.getState().commitSessionRevert(ocSessionId);
   };
 
   const send = (
@@ -993,7 +1160,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!runtimeActionReady) return;
     pendingBaseCount.current = userMsgCount;
     setSendState(sendStateOnStart(text));
-    void sendParts([{ type: 'text', text }], override).catch((error) => {
+    // T15 — one user bubble: the optimistic message and the outgoing
+    // part share one minted id, so the server's echo can be correlated back
+    // to it instead of leaving both on screen until the idle sweep.
+    const { messageId, parts } = beginOptimisticPlainTextSend(ocSessionId, text);
+    void sendParts(parts, override).catch((error) => {
+      // The send never reached (or was refused by) the server — nothing to
+      // rehydrate, so drop the optimistic message outright rather than leave
+      // it stranded forever (mirrors `abandonOptimisticSend`).
+      // `sendRestPromptWithObservation` already dropped busy on this path.
+      useSyncStore.getState().optimisticRemove(ocSessionId, messageId);
       setSendState(sendStateOnError(error));
     });
   };
@@ -1020,7 +1196,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindError(null);
     try {
       await rewindOpenCodeSession(ocSessionId, messageId);
-      setRestRewind({ messageId, staged: true });
+      useSyncStore.getState().stageSessionRevert(ocSessionId, messageId);
     } catch (error) {
       const classified = classifySendError(error);
       setRewindError(classified);
@@ -1037,7 +1213,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindError(null);
     try {
       await restoreOpenCodeSessionRewind(ocSessionId);
-      setRestRewind(null);
+      useSyncStore.getState().clearSessionRevert(ocSessionId);
     } catch (error) {
       const classified = classifySendError(error);
       setRewindError(classified);
@@ -1047,15 +1223,28 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     }
   };
 
-  // The one true cancel: abort the run AND drop any pending prompt + open prompts.
-  const cancel = () => {
+  // The one true cancel: abort the run AND drop any pending prompt + open
+  // prompts. Returns a promise that settles once the abort is acknowledged —
+  // the mutation resolved (and, per `abortOpenCodeSession`, the session's
+  // status was re-read to confirm idle), the mutation failed after its own
+  // retries, or a bounded ~5s timeout elapsed. See `AbortSettlement`.
+  //
+  // T9: `abortInFlightDeliveries` runs FIRST, synchronously — a prompt
+  // still retrying its boot/wake backoff when the user hits Stop must never
+  // land after this point and run against the old text. The optimistic UI
+  // (busy → idle, questions/permissions cleared) still updates instantly;
+  // only the returned promise is new — a caller that never awaits it sees
+  // exactly the same synchronous effects as before.
+  const cancel = (): Promise<AbortSettlement> => {
     if (runtimeActionReady) {
       endRestPromptObservation(ocSessionId);
-      abortMutation.mutate(ocSessionId);
+      abortInFlightDeliveries(ocSessionId);
     }
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
     setSendState(IDLE_SEND_STATE);
+    if (!runtimeActionReady) return Promise.resolve({ status: 'skipped' });
+    return awaitAbortSettlement(() => abortMutation.mutateAsync(ocSessionId));
   };
 
   const runtimeSessionError = canonicalSession.error;

@@ -30,10 +30,20 @@ const DEFAULTS = {
   baseDelayMs: 250,
   maxDelayMs: 8_000,
   jitter: true,
-  timeoutMs: 120_000,
-  // ~2 attempts' worth — bounds total server time well under the old
-  // 3 × 120s = 6-minute worst case while leaving slow single attempts alone.
-  deadlineMs: 240_000,
+  // Per-attempt budget. On the STREAMING path this only bounds time-to-headers
+  // (the transport returns as soon as the Response exists, so the race below
+  // settles and the timer is cleared long before the body finishes). On the
+  // NON-STREAMING path it bounds the whole completion — and 120s was far too
+  // small for that: a Claude Fable 5 request emitting its 128,000-token ceiling
+  // at 50 tok/s needs 2,560s (42m40s) before the single JSON body comes back.
+  // 90 minutes clears that with room to spare and is never reached by a
+  // healthy request, because a healthy request finishes when it finishes.
+  timeoutMs: 90 * 60_000,
+  // Total wall clock across all attempts. Kept above the per-attempt budget so
+  // one full-length attempt can still be followed by a retry after a FAST
+  // failure (a 500/timeout that returns in milliseconds), which is the only
+  // case where retrying a request this long is useful.
+  deadlineMs: 120 * 60_000,
 };
 
 export function backoffDelay(

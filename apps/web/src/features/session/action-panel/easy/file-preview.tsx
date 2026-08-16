@@ -45,7 +45,6 @@ import {
   ArrowsInSimpleIcon as Minimize2,
   PresentationIcon as Presentation,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { DownloadButton, FileViewer, OpenInNewTabButton, isSvg } from './file-viewer';
@@ -193,7 +192,6 @@ function PreviewShell({
  */
 function CopyImageButton({ mimeType, base64 }: { mimeType: string; base64: string }) {
   const [copied, setCopied] = useState(false);
-  const reduce = useReducedMotion();
   if (typeof ClipboardItem === 'undefined') return null;
 
   const handleCopy = async () => {
@@ -230,27 +228,7 @@ function CopyImageButton({ mimeType, base64 }: { mimeType: string; base64: strin
         onClick={() => void handleCopy()}
         className="size-7 active:scale-[0.96]"
       >
-        {/* One box, two icons, cross-faded — the design system's icon-swap rule
-            (`kortix-design-system` → "Button icon-swap"): scale 0.25 → 1,
-            opacity 0 → 1, blur 4px → 0 on a `bounce: 0` spring. A hard
-            `{copied ? … : …}` swap blinked one glyph out and another in, which
-            on a 28px control reads as a flicker rather than a confirmation.
-            `initial={false}` keeps the toolbar still on first paint, and
-            reduced motion collapses the spring to a state change. */}
-        <span className="relative inline-flex size-3.5 shrink-0 items-center justify-center">
-          <AnimatePresence initial={false} mode="popLayout">
-            <m.span
-              key={copied ? 'check' : 'copy'}
-              initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-              exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-              transition={reduce ? { duration: 0 } : { type: 'spring', duration: 0.3, bounce: 0 }}
-              className="absolute inset-0 inline-flex items-center justify-center"
-            >
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            </m.span>
-          </AnimatePresence>
-        </span>
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       </Button>
     </Hint>
   );

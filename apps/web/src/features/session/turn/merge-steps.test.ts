@@ -39,16 +39,10 @@ function settledReasoning(id: string, text: string): Part {
 
 const isRunning = (step: BurstStep) => (step as Extract<BurstStep, { kind: 'thought' }>).running;
 
-/**
- * A memory LOOKUP and a compaction are machinery; everything else is real work.
- *
- * The stub deliberately names the two tools production also calls plumbing —
- * `memory` (the editor) is not one of them since W8, and a stub that still
- * taught otherwise would drift from the pipeline these rules run in.
- */
+/** Anything named `memory` is machinery; everything else is real work. */
 const tierOf = (part: Part): StepTier => {
   const name = (part as { tool?: string }).tool;
-  if (name === 'get_mem' || name === 'dcp_compress') return 'plumbing';
+  if (name === 'memory' || name === 'dcp_compress') return 'plumbing';
   return part.type === 'reasoning' ? 'reasoning' : 'primary';
 };
 
@@ -71,7 +65,7 @@ describe('mergeBurstSteps', () => {
   });
 
   test('plumbing is dropped entirely', () => {
-    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'get_mem'), tool('t2', 'bash')], tierOf);
+    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'memory'), tool('t2', 'bash')], tierOf);
 
     expect(steps.map((s) => s.kind)).toEqual(['part', 'part']);
     expect(coveredParts(steps).map((p) => p.id)).toEqual(['t1', 't2']);
@@ -79,7 +73,7 @@ describe('mergeBurstSteps', () => {
 
   test('plumbing between two thoughts does NOT split the run', () => {
     const steps = mergeBurstSteps(
-      [reasoning('r1', 'a'), tool('m1', 'get_mem'), reasoning('r2', 'b')],
+      [reasoning('r1', 'a'), tool('m1', 'memory'), reasoning('r2', 'b')],
       tierOf,
     );
 
@@ -95,9 +89,7 @@ describe('mergeBurstSteps', () => {
   });
 
   test('a burst of only plumbing yields no rows', () => {
-    expect(mergeBurstSteps([tool('m1', 'get_mem'), tool('m2', 'dcp_compress')], tierOf)).toEqual(
-      [],
-    );
+    expect(mergeBurstSteps([tool('m1', 'memory'), tool('m2', 'dcp_compress')], tierOf)).toEqual([]);
   });
 
   test('keys are stable and unique', () => {
@@ -158,7 +150,7 @@ describe('mergeBurstSteps — which thought is still live', () => {
   test('dropped plumbing after a thought does not settle it', () => {
     // Plumbing renders no row, so it is not evidence the model stopped
     // thinking — and it must not be treated as a later step.
-    const steps = mergeBurstSteps([reasoning('r1', 'a'), tool('m1', 'get_mem')], tierOf);
+    const steps = mergeBurstSteps([reasoning('r1', 'a'), tool('m1', 'memory')], tierOf);
     expect(steps).toHaveLength(1);
     expect(isRunning(steps[0])).toBe(true);
   });
@@ -215,7 +207,7 @@ describe('mergeBurstSteps — grouping', () => {
   });
 
   test('plumbing between two calls does NOT split the group', () => {
-    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'get_mem'), tool('t2')], tierOf);
+    const steps = mergeBurstSteps([tool('t1'), tool('m1', 'memory'), tool('t2')], tierOf);
 
     expect(steps).toHaveLength(1);
     expect((steps[0] as Extract<BurstStep, { kind: 'group' }>).step.parts.map((p) => p.id)).toEqual(
@@ -279,49 +271,6 @@ describe('mergeBurstSteps — grouping', () => {
     // `prune` is context-engine machinery: not counted in the title, not rendered.
     expect(counted).toEqual(['r1', 'r2', 'b1', 'w1', 's1', 'g1']);
     expect(rendered).toEqual(counted);
-  });
-});
-
-/**
- * W8, on the REAL tier function — the split only means anything if the shipped
- * `stepLabel` makes it, so none of these use the stub above.
- */
-describe('mergeBurstSteps — memory: updates are visible, lookups are not', () => {
-  const realTier = (p: Part) => stepLabel(p).tier;
-
-  test('a memory EDITOR call gets its own row', () => {
-    const steps = mergeBurstSteps([tool('m1', 'memory')], realTier);
-
-    expect(steps.map((s) => s.kind)).toEqual(['part']);
-    expect(coveredParts(steps).map((p) => p.id)).toEqual(['m1']);
-  });
-
-  test('memory LOOKUPS render nothing at all', () => {
-    // `get_mem` and `memory_search` are the agent consulting itself; the row
-    // they would draw is one the reader cannot act on.
-    const steps = mergeBurstSteps([tool('l1', 'get_mem'), tool('l2', 'memory_search')], realTier);
-
-    expect(steps).toEqual([]);
-  });
-
-  test('a lookup between two memory writes neither shows nor splits the group', () => {
-    const steps = mergeBurstSteps(
-      [tool('m1', 'memory'), tool('l1', 'get_mem'), tool('m2', 'memory')],
-      realTier,
-    );
-
-    expect(steps).toHaveLength(1);
-    expect((steps[0] as Extract<BurstStep, { kind: 'group' }>).step.parts.map((p) => p.id)).toEqual(
-      ['m1', 'm2'],
-    );
-  });
-
-  test('a burst of only memory writes is real work, not housekeeping', () => {
-    // The regression this guards: with `memory` in PLUMBING_TOOLS a turn that
-    // did nothing but record what it learned rendered zero rows.
-    const steps = mergeBurstSteps([tool('m1', 'memory'), tool('l1', 'memory_search')], realTier);
-
-    expect(coveredParts(steps).map((p) => p.id)).toEqual(['m1']);
   });
 });
 

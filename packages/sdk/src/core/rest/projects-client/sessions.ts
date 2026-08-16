@@ -308,6 +308,18 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   return session;
 }
 
+export interface EnsureWarmProjectSessionOptions {
+  /**
+   * The id of a warm session this call must NOT reuse — typically the one the
+   * caller just took for a send. The server's reuse lookup skips it even
+   * though its `metadata.warm` marker is still set (it only drops when the
+   * first prompt reaches the preview proxy, seconds after take), so a
+   * replenish fired in that window creates a FRESH session instead of handing
+   * the just-taken one straight back.
+   */
+  excludeSessionId?: string;
+}
+
 /**
  * Pre-create the session a present user is about to start.
  *
@@ -318,13 +330,24 @@ export async function createProjectSession(projectId: string, input?: CreateProj
  * be read — out of the global error sink, where it became a toast on an ordinary
  * project page view.
  */
-export async function ensureWarmProjectSession(projectId: string) {
+export async function ensureWarmProjectSession(
+  projectId: string,
+  options?: EnsureWarmProjectSessionOptions,
+) {
+  const body = options?.excludeSessionId
+    ? { exclude_session_id: options.excludeSessionId }
+    : {};
   const result = unwrap(
-    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, {}, {
+    await backendApi.post<WarmProjectSessionResult>(`/projects/${projectId}/sessions/warm`, body, {
       showErrors: false,
     }),
   );
-  markSessionFresh(result.session.session_id);
+  // A REUSED session is, by definition, not fresh: it is the same session a
+  // previous take (or a previous tab) already consumed, possibly with turns
+  // already in flight. Marking it fresh painted the resumed session as an
+  // instant typeable EMPTY shell, hiding exactly the mis-delivery this whole
+  // exclusion mechanism exists to prevent.
+  if (!result.reused) markSessionFresh(result.session.session_id);
   return result;
 }
 

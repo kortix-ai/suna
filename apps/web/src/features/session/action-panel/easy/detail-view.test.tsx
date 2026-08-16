@@ -1,10 +1,7 @@
+import { describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { ToolPart } from '@/ui';
-import { describe, expect, test } from 'bun:test';
-import { type ReactElement, type ReactNode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { ToolPartRenderer } from '../../tool/tool-renderers';
 import {
   CROSSFADE_TRANSITION,
   detailCardVariants,
@@ -13,7 +10,6 @@ import {
   type PersistentLayer,
   SLIDE_TRANSITION,
   terminalLayerMotion,
-  ToolParts,
 } from './detail-view';
 
 describe('DetailLayer a11y (W6)', () => {
@@ -266,72 +262,5 @@ describe('DetailSidebarToggle (F3v2)', () => {
     } finally {
       useKortixComputerStore.setState({ isExpanded: false });
     }
-  });
-});
-
-function part(tool: string, status: 'completed' | 'error' = 'completed'): ToolPart {
-  return {
-    type: 'tool',
-    tool,
-    callID: `c-${tool}-${Math.random()}`,
-    state: { status },
-  } as unknown as ToolPart;
-}
-
-/**
- * `ToolParts` holds no hooks — safe to call directly as a plain function, the
- * same harness `context-card.test.tsx` uses for `ContextCard`. That sidesteps
- * fully rendering `ToolPartRenderer` (it needs a `QueryClientProvider` +
- * `NextIntlClientProvider` tree this test has no reason to stand up) while
- * still proving the summary line's presence and its position relative to the
- * failure banner and the raw tool views.
- */
-function toolPartsChildren(props: {
-  parts: ToolPart[];
-  sessionId: string;
-  summary?: string;
-}): ReactElement[] {
-  const provider = ToolParts(props) as ReactElement<{
-    children: ReactElement<{ children?: ReactNode }>;
-  }>;
-  const raw = provider.props.children.props.children;
-  return (Array.isArray(raw) ? raw : [raw])
-    .flat()
-    .filter((c): c is ReactElement => !!c && typeof c === 'object' && 'type' in c);
-}
-
-describe('ToolParts summary line (W3, opt-in)', () => {
-  test('with `summary` set, a muted plain-language line renders above the failure banner and the tool views', () => {
-    const children = toolPartsChildren({
-      parts: [part('bash', 'error')],
-      sessionId: 's1',
-      summary: 'Ran a command',
-    });
-
-    const summaryIndex = children.findIndex((c) => c.type === 'p');
-    const bannerIndex = children.findIndex(
-      (c) =>
-        c.type === 'div' &&
-        (c.props as { children?: ReactNode }).children ===
-          'This step hit a problem — the details below show what happened.',
-    );
-    const toolIndex = children.findIndex((c) => c.type === ToolPartRenderer);
-
-    expect(summaryIndex).toBe(0);
-    const summaryEl = children[summaryIndex] as ReactElement<{
-      children: string;
-      className: string;
-    }>;
-    expect(summaryEl.props.children).toBe('Ran a command');
-    expect(summaryEl.props.className).toContain('text-muted-foreground');
-    expect(summaryEl.props.className).toContain('text-sm');
-    expect(summaryEl.props.className).toContain('text-pretty');
-    expect(bannerIndex).toBeGreaterThan(summaryIndex);
-    expect(toolIndex).toBeGreaterThan(summaryIndex);
-  });
-
-  test('without `summary` (the default StepDetailBody uses), no summary line renders', () => {
-    const children = toolPartsChildren({ parts: [part('bash')], sessionId: 's1' });
-    expect(children.some((c) => c.type === 'p')).toBe(false);
   });
 });

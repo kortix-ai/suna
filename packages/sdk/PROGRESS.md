@@ -36,6 +36,869 @@ SHA, and Dev behavior.
 
 **SDK package shippable to production: NOT YET.**
 
+### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
+
+**Files:** `packages/sdk/src/core/session/rewind.ts` (+`.test.ts`),
+`packages/sdk/src/browser/stores/sync-store.ts` (+`.test.ts`),
+`packages/sdk/src/browser/stores/sync-store/types.ts`,
+`packages/sdk/src/react/use-session.ts` (rewind region only),
+`packages/sdk/src/react/use-opencode-events/handle-event.ts` (+`.test.ts`),
+`packages/sdk/src/public-surface.snapshot.json`,
+`packages/sdk/src/public-type-surface.snapshot.json`,
+`apps/web/src/features/session/message-queue-boundary.ts` (+`.test.ts`),
+`apps/web/src/features/session/use-message-queue-drain.ts`,
+`apps/web/src/features/session/session-chat.tsx` (rewind + queue-gate regions
+only). Did NOT touch `apps/kortix-sandbox-agent-server/*` or
+`apps/api/src/projects/session-lifecycle/*` — sibling session's concurrent
+server half of the same JAY-600/T22 spec. No git commands run (shared
+worktree).
+
+**Problem (verified claims from the investigation, re-checked against
+current HEAD).** `session.revert` is a STAGED server pointer — nothing is
+deleted until the next prompt commits it; `unrevert` restores it while
+staged. The client boundary lived in `use-session.ts` component state
+(`restRewind`, a `useState`): `messagesBeforeRewind` sliced the transcript at
+the boundary MESSAGE INDEX, hiding everything from the boundary onward —
+including messages minted AFTER staging. Sending the replacement prompt
+produced a NEWER message that sorted above the boundary exactly like the
+hidden ones, so it vanished too until an unrelated remount flooded the whole
+transcript back, interleaved. `reconcileCommittedSessionRewind` was dead code
+on any live mount: `hydrate` is (deliberately) additive-only and never
+deletes, so the boundary message it checked for never disappeared on its own.
+Component state also meant a page reload lost all knowledge of a staged
+revert — the server still held the pointer, the UI didn't. Separately, the
+web's message queue (`localStorage`) survived a rewind untouched:
+`handleConfirmRewind` cleared nothing, and `QueueDrainGates` had no revert
+awareness — worse, the OTHER gates (`hasIncompleteAssistant`, `isServerBusy`)
+read WRONG (open, not closed) during a staged revert, because the local hide
+window removed the very messages that would have kept them closed.
+
+**Fix — four parts, matching the settled design:**
+
+1. **Watermark-bounded hide window (`core/session/rewind.ts`).**
+   `SessionRewindState` gained `watermark: string` — the newest message id
+   known AT STAGE TIME, frozen once, never recomputed. `messagesBeforeRewind`
+   now hides only `[messageId, watermark]` (both inclusive), so anything
+   minted after staging always renders. `stageSessionRewind(messages,
+   messageId)` computes the watermark as `newestMessageId(messages) ??
+   messageId` (max-by-VALUE scan, not "last element" — robust against an
+   out-of-order optimistic append). `commitSessionRewind` unchanged in shape
+   (flips `staged` false, keeps the hide window). Removed
+   `reconcileCommittedSessionRewind` — superseded by (3): deletion and
+   record-clearing now happen atomically in one store action, so there is no
+   window left for a "boundary vanished, reconcile" pass to catch that the
+   atomic action doesn't already cover.
+2. **Server mirror, not component state (`sync-store.ts`).** New
+   `sessionRevert: Record<sessionId, SessionRewindState | null>` plus four
+   actions: `stageSessionRevert` (idempotent per boundary id — a redundant
+   restage of the SAME `messageId`, e.g. the local REST caller racing the
+   wire's own `.staged` echo, is a no-op so neither can widen an
+   already-frozen watermark; a DIFFERENT `messageId` replaces the record with
+   a fresh one), `commitSessionRevert`, `clearSessionRevert`, and
+   `applyCommittedRevert(sessionId, boundaryId, watermark)`. `useSession`'s
+   `restRewind` is now `useSyncStore((s) => s.sessionRevert[ocSessionId])`
+   instead of local state; `rewind()`/`restoreRewind()`/`sendParts()` call
+   the store actions directly after their REST calls succeed.
+3. **Committed revert deletes — explicit, not via `hydrate`.**
+   `applyCommittedRevert` is the first thing this store deletes outside
+   `removeMessage`/`clearSession`: it filters `messages[sessionId]` and
+   `parts` for ids inside `[boundaryId, watermark]`, in the SAME `set()` call
+   that clears the local record — so the two can never observe an
+   inconsistent middle state. Wired to the wire's
+   `session.next.revert.staged/.cleared/.committed` (three new `applyEvent`
+   cases; `Event` already included these three variants in
+   `@opencode-ai/sdk`, confirmed by reading `v2/gen/types.gen.d.ts`, no SDK
+   dependency bump needed). `.committed` prefers the LOCALLY TRACKED
+   watermark (frozen at stage time) and only falls back to "current known
+   tip" when nothing was tracked (a client that missed `.staged` — a
+   reconnect gap). `hydrate`'s additive invariant is untouched — a dedicated
+   test (`sync-store.test.ts`) pins that a session with no local messages, or
+   nothing in range, still clears the record without deleting anything it
+   shouldn't.
+4. **Reload/cross-tab recovery, best-effort.** New store action
+   `syncSessionRevertFromInfo(sessionId, revert)`, called from
+   `handle-event.ts`'s existing `session.created`/`session.updated` cases off
+   `readSessionInfo(event).revert` (OpenCode's own `Session.revert` field,
+   confirmed present in the SDK's `Session` type). Deliberately asymmetric: a
+   PRESENT `revert.messageID` seeds a fresh record (idempotent, same as (2));
+   an ABSENT one never clears an existing one — the three wire events remain
+   the sole authority for transitions, so a stale/momentarily-absent snapshot
+   can't race ahead of them. **Caveat, stated plainly:** this only recovers
+   state the moment a `session.created`/`session.updated` event next fires
+   for the session — it is not a guaranteed "read on mount" (that would
+   require either `SessionStartResult` (`session-sandbox.ts`, NOT in this
+   session's exclusive file list — plausibly the sibling server half's
+   surface to add a `.revert` field to) or an explicit `client.session.get()`
+   call I chose not to add speculatively into `use-session.ts`'s rewind
+   region without confirming the server half's shape first). A reload that
+   never receives a fresh `session.updated`/`.created` event stays unaware of
+   a pre-existing staged revert until one does. Flagging as a known gap
+   rather than silently claiming full reload coverage.
+5. **The web never prompts across a staged revert
+   (`message-queue-boundary.ts`, `use-message-queue-drain.ts`,
+   `session-chat.tsx`).** `QueueDrainGates` gained `revertStaged: boolean`;
+   `canDrainQueue` hard-closes on it, independent of every other gate —
+   necessary because the OTHER gates read wrong (open) during a staged
+   revert for the reason above. `session-chat.tsx`'s `queueGates` memo wires
+   `revertStaged: !!sessionState?.rewindMessageId` (already exactly "staged,
+   not committed"). `handleConfirmRewind` additionally calls
+   `useMessageQueueStore.getState().clearSession(sessionId)` after a
+   successful `rewind()` — the queued messages belong to the abandoned
+   trajectory, not merely a turn that hasn't started, so they are dropped
+   outright (not paused: a pause needs an explicit resume, and nothing
+   should auto-resend text the user may not want once they see the rewound
+   transcript).
+
+**TDD, RED confirmed before every GREEN** (real failures, right reason, not
+inferred):
+- `rewind.test.ts` — 15 tests, all new/rewritten around the new
+  `SessionRewindState`/watermark shape; RED via missing exports before
+  implementation.
+- `sync-store.test.ts` — 19 new tests (`stageSessionRevert` idempotency +
+  watermark capture, `commitSessionRevert`/`clearSessionRevert`,
+  `applyCommittedRevert` deletion + record-clear + empty-session safety, the
+  three `applyEvent` wire cases including the missed-`.staged` fallback,
+  `syncSessionRevertFromInfo`'s seed/no-op/never-clears-on-absence
+  semantics, `clearSession`/`reset` cleanup) — RED via `TypeError: ... is not
+  a function` on every new action before implementation.
+- `handle-event.test.ts` — 4 new tests (`session.created`/`.updated` seeding
+  off `info.revert`, absence never clearing) — RED (`toEqual` diff:
+  `sessionRevert.ses_new` was `undefined`) before wiring `handle-event.ts`.
+- `message-queue-boundary.test.ts` — 3 new tests (`revertStaged` closes
+  `canDrainQueue`, resumes once cleared, holds `stepDrainMachine` at zero) —
+  RED (`Expected: false, Received: true`) before adding the field + the
+  `canDrainQueue` clause.
+- One incidental RED not part of the plan: the isomorphic tripwire
+  (`index.isomorphic.test.ts`) flagged `core/session/rewind.ts:45` for a bare
+  `window.` — a false positive from a doc-comment line starting with `/**`
+  rather than `*` (the tripwire's comment-skip only recognizes lines starting
+  literally with `*`/`//`, a pre-existing gap in the tripwire itself, out of
+  this task's scope to fix). Reworded the comment ("hide window." → "hide
+  range —") rather than touch the tripwire.
+
+**Verified — real commands, real output:**
+
+```
+pnpm --filter @kortix/sdk typecheck
+  → clean (tsc --noEmit + examples/tsconfig.json), 0 errors
+
+pnpm --filter @kortix/sdk test
+  → baseline (measured before this session's edits, matching this task's own
+    "≥2038 pass" hint): 2038 pass, 0 fail, 147 files
+  → after: 2073 pass, 0 fail, 7593 expect() calls, 147 files
+    (net +35 tests, +0 files — 12 in rewind.test.ts, 19 in
+    sync-store.test.ts, 4 in handle-event.test.ts)
+
+pnpm --filter @kortix/sdk run smoke:install
+  → "OK: @kortix/sdk and @kortix/executor-sdk import and construct from
+    packed tarballs" — ✔ install smoke test passed
+
+cd apps/web && bun test src/features/session
+  → 2036 pass, 0 fail, 4158 expect() calls, 157 files
+
+cd apps/web && bun test src
+  → 7319 pass, 0 fail, 24194 expect() calls, 586 files (the
+    maintenance-store.test.ts warn-level console noise is documented
+    pre-existing expected test output, not a failure)
+
+cd apps/web && npx tsc --noEmit
+  → 15 errors, all in the 3 documented baseline files
+    (template-url.test.ts, preview-fit.test.tsx, easy-panel-logic.test.ts) —
+    exact count matches the documented baseline, 0 new errors
+
+cd apps/web && npx eslint src/features/session/session-chat.tsx \
+  src/features/session/message-queue-boundary.ts \
+  src/features/session/message-queue-boundary.test.ts \
+  src/features/session/use-message-queue-drain.ts \
+  src/stores/message-queue-store.ts
+  → 0 errors, 38 warnings (all pre-existing react-hooks/refs, all outside
+    the touched line ranges — confirmed by cross-referencing warning line
+    numbers against the diff's edited regions)
+```
+
+Public surface snapshots re-recorded (`UPDATE_TYPE_SURFACE_SNAPSHOT=1`,
+`UPDATE_SURFACE_SNAPSHOT=1`) — **purely additive, 2 insertions, 0 removals**:
+`SessionRewindState` type added to `./sync-store` and `./internal/sync-store`
+(both already carry `MessageError`/`MessageWithParts` the same way — internal
+machinery per `AGENTS.md`'s browser-only-tier note, not exposed on
+`window.Kortix`). `public-surface.snapshot.json` (value-level) had NO diff —
+no new value export, only a type.
+
+**Discovered, not fixed (append to Backlog if this needs its own row):** the
+isomorphic tripwire's comment-skip (`index.isomorphic.test.ts` — lines
+starting with `*`/`//` after trimStart) does not recognize a `/** ... */`
+block comment's OPENING line (`/** text */` does not start with `*`), so a
+bare-global-shaped substring inside prose on that exact line is flagged as
+real code. Worked around by rewording; the tripwire itself is unaudited by
+this session.
+
+**Shippable to production: YES**, with one named caveat.
+- **Verified:** SDK typecheck/test/smoke:install all green against a
+  re-derived session baseline; apps/web `features/session` and full `bun
+  test src` green; apps/web tsc shows the exact pre-existing 15-error
+  baseline and nothing new; eslint clean of errors on every touched file;
+  every new behavior RED-proven before GREEN; both public-surface snapshots
+  re-recorded and reviewed as purely additive.
+- **Unverified:** no live browser/E2E pass driving a real staged-rewind →
+  edit → resend → commit round trip against a running sandbox (unit +
+  store-level coverage only, per this task's own verification list, which
+  named unit tests, not a browser drive). No live proof of the reload
+  recovery path specifically (item 4) beyond its unit tests — see the named
+  caveat below.
+- **Risk, concretely:** (a) reload recovery (item 4) only fires on the NEXT
+  `session.created`/`session.updated` event for the session, not
+  synchronously on mount — a reload that receives neither before the user
+  acts stays unaware of a pre-existing staged revert until one does; closing
+  that gap for real needs either a `SessionStartResult.revert` field (likely
+  the sibling server-half's surface — `session-sandbox.ts` is not in this
+  session's file list) or an explicit `client.session.get()` call added to
+  `use-session.ts`, deliberately not added speculatively this session. (b) a
+  concurrent second tab/session sending DURING another tab's staged window is
+  an acknowledged, out-of-scope race — the committed watermark could then
+  undercount what the server actually truncates; noted, not solved.
+
+---
+
+### 2026-08-15 — session `session-middle-stop` — T13: durable prompt idempotency across wake — DONE
+
+**Files:** `apps/api/src/sandbox-proxy/prompt-dedupe.ts` (+`.test.ts`),
+`apps/api/src/projects/session-lifecycle/deliver.ts`,
+`apps/api/src/projects/session-lifecycle/engine.ts` (delivery-retry region:
+`executeQueuedContinue` doc + `postPrompt` doc — no behavior change there),
+`packages/sdk/src/react/use-opencode-sessions/messages.ts` (doc-only:
+header block + `clientMessageId` doc comment — no behavior change).
+
+**Problem:** the proxy's prompt dedupe (`prompt-dedupe.ts`) was per-pod,
+60s-TTL, keyed by body sha256. A wake from auto-stop routinely exceeds 60s, so
+a genuine retry (SDK boot/wake retry, or the API's own queued
+`continue_session` re-drain) landed un-deduped past that window — a double
+delivery. Separately, keying purely on body bytes meant a genuinely NEW
+submission with byte-identical text (user sends "continue" twice on purpose)
+risked colliding with an unrelated prior delivery.
+
+**Fix — three parts, all additive:**
+
+1. **`promptDeliveryKey` precedence, extended.** Was: `Idempotency-Key` header
+   → content hash. Now: `Idempotency-Key` → wire `messageID` extracted from
+   the body (new `extractWireMessageId`, JSON-parses `/prompt_async` and
+   `/message` bodies; `/command` bodies have no such field and fall through
+   unchanged) → content hash. The messageID is the DURABLE identity: opencode
+   itself is the id-order arbiter, so keying on it means a retry (same
+   messageID, body possibly re-serialized) still collides, while two
+   different submissions with identical text never do — even if their bodies
+   are byte-identical. Scoped by `sandboxId\0sessionId\0messageID`, same
+   scoping as the hash, so a rotated sandbox never inherits a stale claim.
+2. **TTL: 60s → 10 minutes (`DEDUPE_TTL_MS`).** Chosen to match this system's
+   own existing bound for "how stale can a retry be and still count as the
+   same delivery" — `UNDELIVERED_PROMPT_STARVATION_MS` in
+   `session-lifecycle/undelivered-prompts.ts`, already 10 minutes. Comfortably
+   outlives the SDK's ~30s boot/wake backoff window and the API's own
+   `deliverWithRetry` 45s deadline + the scheduler's ~60s drain tick.
+3. **No-blind-repost mechanism documented + pinned, not re-invented.**
+   `engine.ts`'s `postPrompt` (the API's own delivery, used for
+   Slack/email/trigger follow-ups) deliberately sends NO `messageID` field —
+   minting a wire-format id server-side requires placing it correctly in
+   opencode's id-ordered transcript, which this call site cannot cheaply
+   verify, and a wrongly-ordered id silently drops the turn (see
+   `mintPromptMessageId`'s own warning in `messages.ts`). Inventing that here
+   was assessed as higher-risk than the gap it would close. Instead,
+   `postPrompt`'s body (`sessionId`+`text`, unchanged across every retry of
+   ONE queued row) collides on the content-hash key exactly as a shared
+   messageID would — same guarantee, different key. Documented on
+   `executeQueuedContinue` (why a re-drained 'pending' command is safe to
+   re-post) and on `postPrompt` (why it sends no messageID on purpose); pinned
+   in `prompt-dedupe.test.ts` with a test using `postPrompt`'s EXACT body
+   shape (`{"parts":[{"type":"text","text":…}]}`) at a 90s gap (past the OLD
+   60s TTL, inside the NEW 10-min one).
+
+**SDK side (design point 1 — already correct, verified not re-implemented):**
+`submissionWireId`/`mintPromptMessageId` (messages.ts ~290-380) already mint
+one wire messageID per `clientMessageId` and reuse it on retry; a different
+`clientMessageId` always mints a different id. This contract was ALREADY
+comprehensively tested (`messages.test.ts:299-465`, `describe('promptOpenCodeMessage
+messageID')` — "a HOST retry of one submission reuses its messageID" /
+"two calls with no clientMessageId always get two different ids"), so no new
+SDK behavior or test was needed — verified by reading the existing coverage,
+not assumed. Audited (read-only, apps/web is another session's exclusive
+file) every `clientMessageId` call site
+(`apps/web/src/stores/message-queue-store.ts`, `queued-batch.ts`,
+`queued-message-restore.ts`, `session-chat.tsx`): a brand-new `enqueue()`
+always mints a fresh id (`nextId('cm')`); Undo-restore of a removed entry
+mints fresh (own test: `restored.clientMessageId).not.toBe(failed.clientMessageId)`);
+only an explicit retry of an existing queue entry reuses its id. No call site
+re-dispatches a new logical send with a stale id. Strengthened the doc
+comment on `SendOpenCodeMessageArgs.clientMessageId` to state the contract
+explicitly ("same id = same logical send, retry-safe; new logical send = new
+id") since the design doc asked for it in those words.
+
+**Found, not fixed (Backlog B50):** `applyPostCreateActions`'s `deliver_prompt`
+action shares the same `postPrompt`/`continueSession` call and is therefore
+already covered by this fix in practice, but has no doc comment or pinning
+test of its own at that second call site — out of scope (task named
+`executeQueuedContinue`/`postPrompt`, not the create-session post-actions
+branch).
+
+**Verified:**
+
+```
+apps/api: bun test --isolate --env-file=scripts/test.env \
+  src/sandbox-proxy/prompt-dedupe.test.ts \
+  src/projects/session-lifecycle/__tests__/deliver.test.ts \
+  src/projects/session-lifecycle/__tests__/continue-session-runtime-env.test.ts
+  → 34 pass, 0 fail, 5069 expect() calls, 3 files
+
+apps/api: bun test --isolate --env-file=scripts/test.env src/projects/session-lifecycle
+  → 73 pass, 0 fail, 15 files
+
+apps/api: bun run typecheck → clean (tsc --noEmit, 0 errors)
+
+apps/api: bash scripts/test.sh (full gate)
+  → 6873 pass, 74 skip, 0 fail, 25387 expect() calls, 6947 tests across 614 files
+
+SDK baseline before edits: pnpm --filter @kortix/sdk test
+  → 2030 pass, 0 fail, 7539 expect() calls, 147 files — matches this doc's
+    stated expectation, re-derived fresh, not trusted from the number above.
+
+SDK after edits (doc-only changes to messages.ts):
+  typecheck  → clean (tsc --noEmit + examples/tsconfig.json)
+  test       → 2030 pass, 0 fail, 147 files (unchanged from baseline — expected,
+               no behavior changed)
+  smoke:install → "OK: @kortix/sdk and @kortix/executor-sdk import and
+               construct from packed tarballs" — passed
+```
+
+RED confirmed before GREEN for the two new behaviors in `prompt-dedupe.test.ts`
+(messageID precedence, 10-min TTL) — both failed for the expected reason
+(`hash:` key returned instead of `msgid:`; `claimPromptDelivery('k1', 60_001)`
+returned `true` instead of `false`) before implementation, then passed after.
+
+**Shippable to production: YES** for the proxy dedupe fix
+(`prompt-dedupe.ts`) — it is additive-only (new precedence branch, existing
+branches unchanged in shape), fully unit-tested at the boundary, and both the
+targeted and full API suites are green. The SDK/engine/deliver touches are
+documentation-only (no runtime behavior changed there this session) and carry
+zero regression risk by construction — full SDK gates green, full API gate
+green. **Unverified:** no live end-to-end wake simulation against a real
+sandbox (the fix is proven at the unit boundary — `claimPromptDelivery`'s own
+TTL clock — not by actually waiting out a real 10-minute sandbox wake in this
+session). **Risk:** a retry starved past the new 10-minute TTL still
+double-delivers — accepted and documented, matching this system's own
+existing 10-minute bound elsewhere (`undelivered-prompts.ts`).
+
+---
+
+### 2026-08-15 — session `session-middle-stop` claim — T9 + T15: cancel() cancels in-flight delivery + one user bubble — DONE
+
+**Files:** `packages/sdk/src/react/use-opencode-sessions/messages.ts` (+`.test.ts`),
+`packages/sdk/src/react/use-session.ts` (+`.test.ts`),
+`packages/sdk/src/react/use-session-send.ts`,
+`packages/sdk/src/public-surface.snapshot.json`,
+`packages/sdk/src/public-type-surface.snapshot.json`. Did NOT touch
+`browser/stores/sync-store.ts` / `core/stream/event-stream.ts` (sibling
+session's concurrent work; read-only — coded against their existing exported
+surface, in particular `applyEvent`'s `message.updated` correlation logic and
+`SyncState.reset`).
+
+**Task A (T9).** `promptOpenCodeMessage`'s boot/wake retry loop
+(`messages.ts`) had no `AbortSignal` — a prompt still retrying its ~30s
+backoff when the user hit Stop landed AFTER the abort and ran the stale text.
+`useAbortOpenCodeSession`'s `retry:2, retryDelay:300, onError:()=>{}` also
+silently swallowed a genuine abort failure while the UI had already flipped
+idle optimistically.
+
+- New per-session in-flight-delivery registry in `messages.ts`
+  (`inFlightDeliveries: Map<sessionId, Set<AbortController>>`), scoped so
+  aborting one session never touches another's concurrent send. Each
+  `promptOpenCodeMessage` call registers its own `AbortController`, checks
+  `signal.aborted` before every attempt, passes `{ signal }` as the generated
+  client's second arg to `client.session.promptAsync` (the `@opencode-ai/sdk`
+  v2 client's `Config` extends `RequestInit`, so this reaches the real
+  `fetch`), and awaits backoff sleeps through a new `abortableDelay` that
+  rejects immediately on abort instead of waiting out the remaining delay.
+  Unregisters in a `finally` so a settled delivery is never reachable by a
+  later abort call.
+- New export **`abortInFlightDeliveries(sessionId): number`** — aborts every
+  in-flight delivery for a session, returns the count aborted (0 = nothing in
+  flight, not an error).
+- `useAbortOpenCodeSession`'s mutationFn extracted to a plain, directly
+  testable **`abortOpenCodeSession(sessionId): Promise<void>`** (same pattern
+  as `promptOpenCodeMessage` vs. `useSendOpenCodeMessage`). `retry:2,
+  retryDelay:300, onError:()=>{}` kept on the `useMutation` wrapper unchanged
+  — apps/web's `session-chat.tsx` still calls `.mutate(sessionId)`
+  fire-and-forget at two call sites outside this task's scope, and `onError`
+  is a side-effect callback only; it does not prevent `mutateAsync`'s
+  returned promise from rejecting, which is what the new settlement path
+  reads.
+- New export **`awaitAbortSettlement(runAbort, timeoutMs = 5000):
+  Promise<AbortSettlement>`** — pure, races the abort call against a bounded
+  timeout; `type AbortSettlement = {status:'aborted'} | {status:'failed',
+  error} | {status:'timed-out'} | {status:'skipped'}`. Never rejects.
+- `useSession().cancel()` (use-session.ts) and `useSessionSend().stop()`
+  (use-session-send.ts) both: call `abortInFlightDeliveries` FIRST
+  (synchronously, before the abort request even goes out), keep every prior
+  synchronous side effect unchanged (clear questions/permissions,
+  `setSendState(IDLE)`, `applyOptimisticAbort`), and now **return**
+  `Promise<AbortSettlement>` via `awaitAbortSettlement(() =>
+  abortMutation.mutateAsync(sessionId))` instead of firing `.mutate()` and
+  discarding the result. `{status:'skipped'}` when there was nothing to abort
+  (no active runtime / no session / a previous abort still in flight for
+  `stop()`).
+- **Return-type decision:** widened `cancel`/`stop` in place from `void` to
+  `Promise<AbortSettlement>` rather than adding a parallel `cancelAndWait()`.
+  Justification per AGENTS.md's safe/breaking table: neither name is
+  independently exported (both are inferred via `UseSessionResult =
+  ReturnType<typeof useSession>` / `UseSessionSendResult`), so this is a
+  return-type widen, not a rename. Every known caller
+  (`apps/web/src/features/session/session-chat.tsx:2851,3434` —
+  `sessionState.cancel();`, both bare statement expressions) is unaffected at
+  both runtime (JS discards an unused return value) and compile time
+  (TypeScript's own void-return compatibility rule lets ANY function be
+  assigned where `() => void` is expected); `no-floating-promises` /
+  `no-misused-promises` are not configured anywhere in this repo's `eslint`
+  configs (checked), so no new lint surface either. `useSessionSend().stop()`
+  has zero current callers in `apps/web`/`apps/mobile`/`apps/whitelabel-demo`
+  (grepped) — even lower risk.
+
+**Task B (T15).** `useSession().send()`'s plain-text convenience path
+built its outgoing part as `{ type: 'text', text }` — no `id`.
+`markDispatchedForPartIds` (called unconditionally by `sendParts`, which
+`send()` calls) correlates by part id and was a guaranteed no-op for this
+path. The sync store's `message.updated` handler's PRIMARY correlation is
+exact part-id match (`byPartId`); its FALLBACK — "the oldest DISPATCHED
+optimistic user message", used because at live `message.updated` time the
+confirmed message usually has no parts populated yet (`message.part.updated`
+lands separately) — requires `isDispatched`, which never became true. Result:
+the optimistic message was never eligible for either correlation path, and
+the user's text rendered twice until the session went idle and
+`clearOptimisticMessages` swept it.
+
+- Also confirmed `send()` was the ONLY internal path with this gap
+  (`grep -n "type: 'text'" src/react/*.ts src/react/**/*.ts`):
+  `use-session-send.ts`'s `beginOptimisticSend` already mints
+  `partIds?.[0] ?? ascendingId('prt')`, and `PromptPart`'s text variant
+  already declares `id?: string` (`use-opencode-sessions/keys.ts:69`) — the
+  wire format has supported this all along, `send()` simply never used it.
+- New `use-session.ts` function **`beginOptimisticPlainTextSend(sessionId,
+  text): { messageId, parts }`** — mints ONE part id (`ascendingId('prt')`,
+  same format as `beginOptimisticSend`) shared by BOTH the optimistic
+  `useSyncStore.getState().optimisticAdd(...)` call and the returned outgoing
+  `PromptPart[]`. Mirrors `beginOptimisticSend`'s exact store calls and
+  empty/whitespace-text convention (no optimistic parts, but the wire part is
+  still sent) rather than importing it — `use-session-send.ts` already
+  imports `classifySendError` FROM `use-session.ts`, so a reverse import
+  would make the two files mutually dependent; verified this stays a
+  non-issue by grep (no other cross-file coupling attempted). `send()`'s
+  catch now also drops the optimistic message via
+  `useSyncStore.getState().optimisticRemove` on failure (previously nothing
+  cleaned it up — with no optimistic add before, there was nothing to clean;
+  now there is).
+- `markDispatchedForPartIds` and `beginOptimisticPlainTextSend` both promoted
+  from file-private to `export`ed (directly testable, matching this file's
+  established pattern of exporting pure decision functions rather than
+  rendering the hook) — but NOT added to `react/index.ts`'s curated barrel,
+  so neither is reachable from `@kortix/sdk/react` and the public-surface
+  snapshots do not change for this half of the work (confirmed by the
+  snapshot diff below — only Task A's three names appear).
+
+**No hook-render harness** (same known limitation as T6 above): the
+`cancel`/`stop`/`send` closures themselves are not directly unit-tested here.
+Every decision each makes is a pure, exported, directly-tested function
+(`abortInFlightDeliveries`, `abortOpenCodeSession`, `awaitAbortSettlement`,
+`beginOptimisticPlainTextSend`, `markDispatchedForPartIds`); the glue was
+verified by reading + the full `apps/web` suite passing unchanged — matches
+this file's pre-existing convention (`sendParts`/`send`/original `cancel`
+also had zero direct tests before this change, only their constituent pure
+helpers did).
+
+**RED first, each confirmed by breaking the implementation and re-running:**
+- `messages.test.ts` — before `abortInFlightDeliveries` existed:
+  `SyntaxError: Export named 'awaitAbortSettlement' not found`. New describes:
+  `abortInFlightDeliveries` (5 tests — mid-backoff abort, mid-`getClient()`-retry
+  abort, no-op on nothing-in-flight, session isolation, unregister-on-settle),
+  `abortOpenCodeSession` (4 tests — POST shape, force-refresh-status-when-busy,
+  failure propagates, a status-recheck failure is non-fatal),
+  `awaitAbortSettlement` (4 tests — resolves only once the abort call
+  resolves, bounded timeout on a hang, failure settles distinctly rather than
+  throwing, timer is cleared on early settlement).
+- `use-session.test.ts` — reverted `beginOptimisticPlainTextSend` to the
+  pre-fix shape (`{ type: 'text', text }`, no `id`): 4 tests failed for the
+  right reason, including the supersession test going from 1 to **2**
+  messages (`Expected length: 1, Received length: 2`) — the exact "one user
+  bubble" defect. Restored → all 65 pass. New describes:
+  `beginOptimisticPlainTextSend` (4 tests) and `send() supersession:
+  optimistic + server echo → one user message` (2 tests — the fix path, and a
+  regression pin of the pre-fix no-id shape reproducing the double-render).
+
+**Gates, real output.** Baseline this session (re-run clean before starting,
+matches T2's end state above): **2011 pass** (`pnpm --filter
+@kortix/sdk test`; one `sync-store.test.ts` failure observed on a SEPARATE run
+was a flaky/order-dependent pre-existing issue in the sibling session's file,
+not reproduced on a clean re-run — not mine, not touched).
+
+```
+$ pnpm --filter @kortix/sdk typecheck
+tsc --noEmit && tsc --noEmit -p examples/tsconfig.json   → clean
+$ pnpm --filter @kortix/sdk test   (bun test --isolate src)
+2030 pass, 0 fail, 7539 expect() calls, 147 files
+$ pnpm --filter @kortix/sdk run smoke:install
+✔ install smoke test passed
+$ cd apps/web && bun test src/features/session
+2019 pass, 0 fail, 4136 expect() calls, 155 files
+$ cd apps/web && bun test src
+7270 pass, 0 fail, 24108 expect() calls, 581 files
+$ cd apps/web && npx tsc --noEmit
+15 errors — IDENTICAL to the documented pre-existing @types/bun `test.each`
+baseline (3 files: template-url.test.ts, preview-fit.test.tsx,
+easy-panel-logic.test.ts). No new errors.
+```
+
+apps/web counts are IDENTICAL to T5+T8's and T6's
+recorded numbers above — no apps/web source change was needed or made; T10
+(web-side `waitForSessionIdle` rewiring onto this settlement primitive) is
+tracked separately as **T10, explicitly NOT this task**.
+
+**Public surface: purely additive**, re-recorded
+(`UPDATE_SURFACE_SNAPSHOT=1 UPDATE_TYPE_SURFACE_SNAPSHOT=1`): value snapshot
++3 (`abortInFlightDeliveries`, `abortOpenCodeSession`, `awaitAbortSettlement`
+— all from `messages.ts`'s existing `export * from './messages'` chain into
+`@kortix/sdk/react`), type snapshot +4 (the same three plus `AbortSettlement`).
+Nothing removed or renamed. `beginOptimisticPlainTextSend` /
+`markDispatchedForPartIds` do NOT appear in either diff (not barrel-exported,
+see above).
+
+**Status:** COMPLETE. Shippable to production: **YES** for the SDK change —
+verified: SDK typecheck/test/smoke:install all green against this session's
+own re-derived baseline (2011→2030, net +19 tests, 0 removed/weakened);
+apps/web `src/features/session` and full `bun test src` green, unchanged
+counts; apps/web `tsc` shows only the documented pre-existing baseline.
+Unverified / explicitly out of scope: no browser/E2E pass driving a real
+Stop-mid-retry through a live sandbox (unit + store-level coverage only, per
+this task's verification list); `cancel`/`stop`'s own closures are not
+hook-rendered (no harness exists in this package — see above); **T10 (web
+composer waiting on this settlement instead of the optimistic store flip) is
+T10 and remains**, along with any apps/web UI surfacing of a `'failed'`
+or `'timed-out'` settlement (today nothing in apps/web reads `cancel()`'s new
+return value at all — it is purely additive until T10 wires it up).
+
+---
+
+### 2026-08-15 — session `session-middle-stop` claim — T6: transcript paints from the persisted pin before /start resolves — DONE
+
+**Done.** Files: `packages/sdk/src/react/initial-session-pin.ts` (+`.test.ts`),
+`packages/sdk/src/react/use-canonical-opencode-session.ts`. Did NOT touch
+`sync-store.ts` / `event-stream.ts` (a sibling session's concurrent work,
+read-only) or `use-session-sync.ts` / `session-cache-ownership.ts` (studied,
+unchanged — their existing per-session-id retain/hydrate/ownership machinery
+already does the right thing once fed a correct id sooner). `use-session.ts`
+and `apps/web`'s `page.tsx` needed NO changes — `canMountSessionChat` already
+mounts chat off any truthy `opencodeSessionId`, so making `rootSessionId`
+resolve synchronously was sufficient on its own.
+
+**Problem.** `useCanonicalOpenCodeSession` resolves `pinFromStart ?? initialPin
+?? persistedPin`, where the old `persistedPin` came ONLY from `useProjectSession`
+— a REST round trip. `apps/web` only hands over `initialPin` when its own
+React-Query session list is already warm. So a cold navigation (no warm list,
+`/start` not answered yet) rendered `rootSessionId: null` for at least one
+network RTT, even when the session's full transcript was already sitting in
+this browser's IDB cache under an id we simply hadn't looked up yet.
+
+**Fix — a synchronous local mirror of the persisted pin.** New in
+`initial-session-pin.ts`:
+
+- `sessionPinStorageKey(projectId, sessionId)` → `kortix:pin:<projectId>/<sessionId>`.
+- `readPersistedSessionPin` / `writePersistedSessionPin` — plain `localStorage`,
+  synchronous, try/catch-guarded exactly like `use-session-picks.ts` /
+  `use-model-store.ts`'s existing local-storage helpers. `write` never persists
+  a falsy id (an unresolved pin must not clobber a good one).
+- `resolvePersistedPin({ networkPin, cachedPin })` → `networkPin ?? cachedPin`.
+  The REST value always wins once loaded (more authoritative); the local mirror
+  only fills the gap before it does.
+
+**Read side** (`use-canonical-opencode-session.ts`): `cachedPin` starts `null`
+(matches what a server render sees — no `localStorage`), then a
+`useIsomorphicLayoutEffect` (same technique as T5's
+`markRuntimeReadyVerified`, for the same reason: it commits before the browser
+paints, so hydration never disagrees with the server-rendered HTML and the
+corrected value is on screen on frame one, not one visible frame later) sets it
+from `readPersistedSessionPin`. `persistedPin` fed into `resolveSessionPin` is
+now `resolvePersistedPin({ networkPin, cachedPin })` instead of the bare REST
+value. Net precedence: `pinFromStart ?? initialPin ?? networkPin ?? cachedPin`
+— `/start` and the host's warm-list pin still always win; the REST read still
+corrects a stale local mirror as soon as it lands (faster than waiting on
+`/start`); the local mirror only ever wins for the render(s) before either
+network read has answered.
+
+**Write side:** `freshPin = pinFromStart ?? initialPin ?? null`; a
+`useEffect` persists it whenever truthy. Deliberately scoped to those two
+AUTHORITATIVE, resolved-this-render sources only (never to `pin`/`networkPin`
+directly) — writing `pin` back would just echo `cachedPin` onto its own key on
+every render this session is cold, and both `pinFromStart` and the REST value
+are the same server column anyway, so `/start` catches every case the REST
+read would too. This is also the write half of stale-pin convergence: a
+re-pinned session's fresh `/start` id overwrites whatever a previous visit
+left behind, so the session AFTER this one reads the corrected value.
+
+**Stale-pin convergence.** `resolveSessionPin`'s existing precedence already
+does the work — `startPin` always outranks `persistedPin` regardless of what
+the local mirror or the REST read hold, so a re-pin converges the moment
+`/start` (or the REST read, whichever answers first) reports the real id.
+Nothing in `session-cache-ownership.ts` needed to change: `useSessionSync` is
+keyed by the resolved `sessionId` itself, so a pin swap is just "the argument
+changed" to it — the OLD id's cached data was never associated with the NEW
+id's store key, so there is no bleed-through to guard against, only an empty
+first paint for the new id until its own cache/network hydration lands. Tests
+prove this at the precedence layer (`resolveSessionPin`/`resolvePersistedPin`)
+and at the storage layer (a later `writePersistedSessionPin` for the same key
+overwrites the earlier one, so the NEXT mount never reads the stale value
+again) — see `initial-session-pin.test.ts`'s "stale-pin convergence" and
+"a later write... overwrites the earlier one" tests.
+
+**No hook-render harness** (per this package's known limitation — see the T8
+entry below): the `useIsomorphicLayoutEffect`/`useState` wiring in
+`use-canonical-opencode-session.ts` itself is not directly unit-testable here.
+Every DECISION it makes is a pure, tested function
+(`resolvePersistedPin`, `resolveSessionPin`, `readPersistedSessionPin`/
+`writePersistedSessionPin`'s storage round trip); the glue was verified by
+reasoning (traced against React's documented layout-effect-before-paint
+ordering, matching T5's identical technique in the same file family)
+and by the full `apps/web` test suite passing unchanged.
+
+RED first: `bun test src/react/initial-session-pin.test.ts` failed with
+`Export named 'readPersistedSessionPin' not found` before the implementation
+existed.
+
+Baseline this session (re-run clean before starting): **1977 pass, 0 fail,
+147 files** (`pnpm --filter @kortix/sdk test`, no `--isolate` — matches the
+prior session's own recorded end state).
+
+```
+$ pnpm --filter @kortix/sdk typecheck
+tsc --noEmit && tsc --noEmit -p examples/tsconfig.json   → clean
+$ bun test --isolate src   (the package's actual `test` script)
+1995 pass, 0 fail, 7477 expect() calls, 147 files
+$ pnpm --filter @kortix/sdk run smoke:install
+✔ install smoke test passed
+$ cd apps/web && bun test src/features/session
+2019 pass, 0 fail, 4136 expect() calls, 155 files
+$ cd apps/web && bun test src
+7270 pass, 0 fail, 24108 expect() calls, 581 files
+```
+
+apps/web counts (2019/155, 7270/581) are IDENTICAL to the numbers this same
+session recorded for T5+T8 above — apps/web needed no source
+change for this task, only the SDK's `@kortix/sdk` workspace source resolution
+(no rebuild step required).
+
+Public surface: no diff (`initial-session-pin.ts` is not re-exported from
+`react/index.ts`, so nothing here is reachable from a public entry point).
+
+**Not touched / explicitly out of scope:** `page.tsx` (verified, not edited —
+`canMountSessionChat` and `hasTranscript` already key off `session.opencodeSessionId`
+/ `session.messages`, which this change feeds earlier; no predicate there
+needed to change), `session-load-state.ts` (not my exclusive file; unchanged),
+`sync-store.ts`, `event-stream.ts` (sibling session's concurrent work).
+
+**Status:** COMPLETE. Shippable to production: **YES** for the SDK change
+(green typecheck/test/smoke-install, unchanged apps/web suite). The one
+genuinely unverified surface is a live browser hydration check (no SSR-mismatch
+console warning on a real cold Next.js render) — not exercised this session; the
+`useIsomorphicLayoutEffect` + `useState(null)`-initial pattern is copied
+verbatim from T5's already-shipped, already-reasoned-through use in
+the same file family, so the risk is low but not directly observed here.
+
+---
+
+### 2026-08-15 — session `session-middle-stop` claim — T5 + T8: /start staleTime + readiness-reset ordering + scoped client eviction — DONE
+
+**Done.** Two sequential, file-sharing tasks from the same kickoff, owned together:
+`packages/sdk/src/react/use-session.ts`, `use-runtime-reconnect.ts`,
+`use-opencode-events/index.ts` (+ `helpers.ts`), `core/runtime/client.ts` (read
+only — unchanged), `core/session/current-runtime.ts` (read only — unchanged),
+`core/rest/projects-client/session-sandbox.ts` (read only — unchanged).
+
+**T5 — `/start` staleTime.** `useQuery(sessionStartKey(...))` had no
+`staleTime`, so every remount re-POSTed `/start` and waited its long-poll RTT
+even for a session left seconds ago. Added `sessionStartStaleTime` — TanStack's
+function form of `staleTime`, OUTCOME-AWARE: only `stage==='ready'` grants
+`SESSION_START_FRESH_MS` (30s); every other stage (including no data) stays
+`0`, i.e. unchanged always-refetch. 30s reasoning: the server parks an idle box
+after ~15 minutes, so this window only needs to survive "switch thrash" (tab
+switch, back button, re-opening the same session from the list), not promise
+anything about a genuinely idle sandbox — a background refetch still fires
+once an entry ages past 30s (stale-while-revalidate), so a box the server
+parked in the meantime still converges to `stopped` on the next look via the
+UNCHANGED `derivePhase`/`terminal` computation (`use-session-phase.ts` not
+touched, exports not touched). `refetchInterval` (`SESSION_START_POLL_OPTIONS`)
+untouched — a `ready` result already stops that poll.
+
+**T8 — three defects, same readiness-reset area.**
+
+1. *Ordering race.* `useRuntimeReconnect`'s first-mount `resetForServerSwitch()`
+   (a plain `useEffect`) unconditionally seeds `connecting/null` UNLESS
+   `markRuntimeReadyVerified()` already told it the server proved readiness —
+   T5's staleTime makes `stage==='ready'` visible on a remount's VERY FIRST
+   render, before ANY effect (including `useSession`'s own switch/health-seed
+   effects) has run, so which effect fires first across the host's component
+   tree is not something to gamble on. Fixed with a `useIsomorphicLayoutEffect`
+   in `use-session.ts` that calls `markRuntimeReadyVerified()` the moment a
+   FRESH cache hit is visible — layout effects, tree-wide, always run before
+   ANY passive effect, so this deterministically wins regardless of whether
+   `useRuntimeReconnect` sits in a parent, child, or sibling component. Gated
+   on session identity (`[projectId, sessionId]`), not `[startReady]`,
+   specifically so a session that becomes ready LATER (real network `/start`,
+   well after this mount's own reset already ran-and-cleared the flag) never
+   sets the flag — that would leak a stale "ready" flag into the NEXT,
+   unrelated session's first mount. The later-ready case needs no help from
+   this flag anyway: the health-seed effect (step 3, unchanged) writes the
+   store directly once `switched` flips, and `resetForServerSwitch()` never
+   runs a second time to undo it. New pure predicate
+   `cachedStartResultIsReady` feeds the decision (unit-tested; this package has
+   no hook-render harness, so pure predicates are the test surface for
+   effect-gated logic here, matching `computeStartSettled`/
+   `nextInconclusiveSince`'s existing pattern). Both orderings
+   (seed-then-reset, reset-then-seed) proven to converge to
+   `connected+healthy` at the store level in
+   `use-runtime-reconnect.test.ts`.
+2. *Global client wipe.* `resetClient()` cleared the ENTIRE per-URL opencode
+   client cache (`clientsByUrl.clear()`) on every runtime switch, defeating its
+   own multi-session design (several open sessions are meant to stay connected
+   to their own runtimes at once). `use-opencode-events/index.ts` now calls the
+   already-existing `dropClientForUrl(url)` instead, scoped to the ONE url
+   being replaced, via a new pure `resolveClientEvictionUrl` (moved to
+   `helpers.ts` — that file's exports are NOT swept into the public surface,
+   unlike `index.ts`'s `export *` re-export from `opencode.ts`; this keeps the
+   public-surface snapshot diff-free). `core/runtime/client.ts` itself is
+   UNCHANGED — `resetClient()` keeps its full-clear semantics for its
+   legitimate use (e.g. a token rotation invalidating every cached client).
+3. *`markRuntimeReadyVerified` dead code.* Had zero call sites. WIRED UP (not
+   removed) — it is now exactly the mechanism defect 1's fix depends on (see
+   above). Its existing `resetForServerSwitch()` reader logic
+   (`sandbox-connection-store.ts`, unchanged) needed no edits.
+
+**Not touched:** `use-session-send.ts`, `use-session-sync.ts`,
+`use-opencode-events/handle-event.ts`, `use-event-stream-refs.ts`,
+`sync-store.ts`, `sandbox-connection-store.ts` (imported from only),
+`use-session-phase.ts` (read for `derivePhase`'s contract, exports unchanged),
+`page.tsx` / `session-load-state.ts` / `session-terminal-state.ts` (other
+agents' concurrent work) — none of these needed a change for this fix.
+
+RED first: new tests in `use-session.test.ts` (`sessionStartStaleTime`,
+`cachedStartResultIsReady`), `use-opencode-events/helpers.test.ts`
+(`resolveClientEvictionUrl`), and `use-runtime-reconnect.test.ts` (the two
+mount-time-ordering convergence tests) all confirmed failing before their
+implementations existed (`Export named '...' not found`). The ordering tests
+additionally needed the same `sessionStorage` `MemoryStorage` shim
+`session-start-stash.test.ts` already uses — this bun test environment has a
+`window` shim but no `sessionStorage`, so `markRuntimeReadyVerified()`/
+`resetForServerSwitch()` silently no-op without it (caught into their own
+try/catch), which is why the FIRST run of those two tests failed for a
+different, environment reason before the real fix — logged per the "keep
+going, never touch the test" rule; the shim was the correct fix, not the
+assertion.
+
+Self-derived baseline this session (re-run clean before starting): **1964
+pass, 0 fail, 147 files.**
+
+```
+$ pnpm --filter @kortix/sdk typecheck
+tsc --noEmit && tsc --noEmit -p examples/tsconfig.json   → clean
+$ pnpm --filter @kortix/sdk test
+1977 pass, 0 fail, 7446 expect() calls, 147 files   (baseline 1964/147 + 13 new tests, 0 file-count change)
+$ pnpm --filter @kortix/sdk run smoke:install
+✔ install smoke test passed
+$ cd apps/web && bun test src/features/session
+2019 pass, 0 fail, 4136 expect() calls, 155 files
+$ cd apps/web && bun test src
+7270 pass, 0 fail, 24108 expect() calls, 581 files
+```
+
+Public surface snapshots: no diff (`resolveClientEvictionUrl`/
+`ClientEvictionInput` deliberately kept out of the public barrel by living in
+`helpers.ts`, not `index.ts`'s `export *`-swept surface; the new `use-session.ts`
+exports follow that file's existing curated-barrel pattern — `react/index.ts`
+re-exports `use-session.ts` by an explicit named list, not `export *`, so
+`SESSION_START_FRESH_MS`/`sessionStartStaleTime`/`cachedStartResultIsReady`
+join `computeStartSettled` et al. as testable-but-not-barreled, same as
+before this change).
+
+**Unverified this turn:** no live browser/dev-stack run (the task's stated
+constraint was NO git commands and unit-level TDD verification; a real
+component-tree effect-ordering trace was reasoned through from the current
+`apps/web` `page.tsx`/`use-sandbox-connection.ts` wiring but not observed live
+— `useLayoutEffect` tree-wide-before-passive-effects is documented React
+behavior, not something re-verified in a browser here).
+
+**SDK package shippable to production: YES.**
+
+---
+
+### 2026-08-15 — session `session-middle-stop` claim — T4: one abort classifier — DONE
+
+**Done.** Four divergent abort detectors existed for "was this turn aborted by
+the user": an identity read in `apps/web/session-chat.tsx` (`name ===
+'AbortError'`, missing the real opencode wire name `MessageAbortedError`), a
+prose sniff with its own pattern lists in `session-error-banner.tsx`, a
+duck-typed check in this package's `react/use-opencode-events/helpers.ts`
+(`looksLikeAbortError`), and a loose `/abort/i` regex in
+`apps/web/action-panel/shared/run-outcome.ts`.
+
+Added one public classifier, root barrel (`isomorphic-core` tier, no new
+subpath needed — plain named exports from the existing `.` entry point):
+
+- `isAbortError(error: unknown): boolean` — `packages/sdk/src/core/http/abort-error.ts`.
+  Identity first (`name === 'AbortError' | 'MessageAbortedError'`, covering
+  both the client-synthesized `SyntheticAbortError` and the real opencode wire
+  `AssistantMessage.error` union member). Falls back to a documented,
+  disqualifier-guarded text sniff (ported from the banner's old pattern lists)
+  ONLY when identity doesn't resolve it — a bare string (last-resort callers)
+  or a structured error whose `name` doesn't match but whose nested
+  `data.message` reads as an abort anyway.
+- `abortErrorReason(error: unknown): string | undefined` — surfaces
+  `data.reason` when a producer sends one. No current producer does; designed
+  ahead of that follow-up so callers have one place to read it from later.
+
+All four sites now route through it:
+`apps/web/src/features/session/session-chat.tsx` (`turnErrorIsAbort`, and the
+previously-unwired `commandError` render site now passes
+`isAbort={isAbortError(commandError.cause)}`), `session-error-banner.tsx`
+(`isAbort ?? isAbortError(text)`, local `ABORT_PATTERNS` /
+`TRANSPORT_FAILURE_PATTERNS` / `looksLikeAbortText` deleted),
+`action-panel/shared/run-outcome.ts` (`isAbortErrorLike` + `/abort/i` deleted),
+and `packages/sdk/src/react/use-opencode-events/handle-event.ts` (import swap
+only — `looksLikeAbortError` deleted from `helpers.ts`, local var renamed
+`aborted` to avoid shadowing the new import).
+
+RED first: `packages/sdk/src/core/http/abort-error.test.ts`, 13 cases,
+confirmed failing on `Cannot find module './abort-error'` before the
+implementation existed.
+
+`apps/web/src/features/session/interrupted-label.test.ts` asserted raw source
+text against the retired wiring (`'isAbort ?? looksLikeAbortText(text)'`, the
+literal `AbortError` string-compare) — updated minimally to pin the new
+wiring per the task's instruction (a later task replaces it with behavior
+tests).
+
+Gates:
+
+```
+$ pnpm --filter @kortix/sdk test
+1955 pass, 0 fail, 7406 expect() calls, 146 files (baseline this session: 1940 pass / 145 files)
+$ pnpm --filter @kortix/sdk typecheck
+tsc --noEmit && tsc --noEmit -p examples/tsconfig.json   → clean
+$ pnpm --filter @kortix/sdk run smoke:install
+✔ install smoke test passed
+$ cd apps/web && bun test src
+7254 pass, 0 fail, 24076 expect() calls, 581 files
+```
+
+Public surface snapshots regenerated (`UPDATE_SURFACE_SNAPSHOT=1` /
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1`) — diff is additive-only: `+abortErrorReason`,
+`+isAbortError` on the `.` entry, nothing removed or renamed.
+
+**SDK package shippable to production: YES.**
+
+---
+
 ### 2026-08-13 — session `warm-index` — warm-session decline must not toast
 
 **Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
@@ -149,7 +1012,6 @@ Gates:
 - `bun run smoke:install` — `install smoke test passed`, exit 0.
 
 Shippable to production: YES.
-
 
 ### 2026-08-13 — session `latest-managed-models`
 
@@ -2373,6 +3235,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B47 | **A reload reported success while the agent kept running the old prompt.** `SessionReloadResult` exposed `applied` (the compiled config was pushed) but nothing about whether the agent files opencode actually READS were updated — and those came apart in production. Verified on dev: marker present in `~/.config/kortix-opencode.json`, absent from opencode's `/config` and `/agent`, because `OPENCODE_CONFIG_DIR` points into the session's working tree and its `.md` files win. | Additive: `config_dir_synced?: boolean | null` and `config_dir_reason?: string` on `SessionReloadResult`. Tri-state on purpose — `false` is a deliberate refusal (the session edited its own agent files), `null` is an older daemon that could not say. | **DONE 2026-08-03** — session `stale-session-ui`; typecheck exit 0; full suite 1419 pass / 1 fail across 117 files (the failure, `fetchCostExportCsv`, is PRE-EXISTING — passes in isolation, fails identically on a clean tree); packed-install smoke pass; type snapshot re-recorded and reviewed as **purely additive, 0 removals** |
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 | B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
+| B50 | **`applyPostCreateActions`'s `deliver_prompt` action shares `postPrompt`/`continueSession` with `executeQueuedContinue` but has no equivalent no-blind-repost protection at the call-site level for its OWN retry path.** A `create_session` command whose post-create actions fail (`postCreate.ok === false`) is re-queued `retryable: true` (`engine.ts` `drainSessionLifecycleQueue`, the `create_session` branch); the NEXT drain sees `row.sessionId` already set, returns the existing session immediately, then re-runs `applyPostCreateActions` — including `deliver_prompt` — from scratch. The re-post is protected by the SAME prompt-dedupe TTL fix landed in T13 (identical `sessionId`+`text` on retry → identical content-hash key → collides), so it is NOT currently broken, but nothing documents or pins that shared guarantee at this second call site the way `executeQueuedContinue`'s doc comment now does. | `engine.ts` `drainSessionLifecycleQueue` create-session branch (~lines 513-535 pre-edit) → `applyPostCreateActions` → `continueSession` with `action.source`/`action.text`, same `postPrompt` as the continue_session path. Out of scope for T13 (task named `engine.ts`'s "delivery-retry region" as `executeQueuedContinue`/`postPrompt`, not the create-session post-actions branch). | OPEN — same fix already covers it in practice; needs its own doc comment + pinning test if this path is ever revisited. |
 
 ## DISCOVERED THIS SESSION — append freely
 
@@ -2405,6 +3268,8 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-08-10 | `activity-burst`         | **A shell failure is invisible to every host.** `shellViewModel` read `<exit_code>` privately, and nothing exported it — so a host that renders bash rows off `ToolPart` (as `apps/web` does) could not tell a build that exited 1 from one that exited 0. `partOutcome`-style heuristics cannot recover it: a failing test run prints to stdout exactly like a passing one, and the `Error:`-prefix check bails above 500 chars. Fixed additively this session (`shellExitCode`, exported, snapshot re-recorded — 4 added lines, no removals). **Not fixed:** `apps/web` strips the same tags with its OWN regex in `partOutput` (`infrastructure.tsx:514-515`), a second copy of `stripInternalTagTail`'s job that will drift. | `packages/sdk/src/core/turns/view-model.ts:179-198`, `apps/web/src/features/session/tool/shared/infrastructure.tsx:514` |
 | 2026-08-10 | `activity-burst`         | **Two `apps/web` ShowTool tests are order-dependent and fail in isolation at clean HEAD** — `content-only inline show exposes/omits Preview…` assert on a `viewBox="0 0 38 64"` occurrence count that comes back `undefined` when the file runs alone. Not an SDK issue and not caused by this session; adding any new test file to `src/features/session/tool/tools/` reshuffles execution order and surfaces it. Consistent with the known global mock-registry leak in `apps/web`. | `apps/web/src/features/session/tool/tools/show-tool.test.tsx:110,126` |
 | 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/connectors/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
+| 2026-08-15 | `session-middle-stop` (T14 + T16) | **`upsertPart`'s prefix-growth-reject branch (`bridgeCleared` handling) is dead code, independent of this session's changes.** Whenever `bridgedPartIds` is tracked, `list` is set to `[]` before the `Binary.search(list, part.id, …)` call a few lines down — so `result.found` can never be `true` in that same call, and the `if (!bridgeCleared) return s; … next[result.index] = prev; …` branch inside `if (result.found) {…}` (guarded on `bridgeCleared`) is unreachable. Pre-existing before this session (the bridge-retirement fix here only changed WHEN `list = []` fires, not that it always makes `result.found` false in that call). Not fixed — outside this task's three named defects. | `packages/sdk/src/browser/stores/sync-store.ts` (`upsertPart`, the `bridgeCleared`/prefix-growth-reject block) |
+| 2026-08-16 | `session-middle-stop` (F1–F5 review findings) | **F2's new `sessionRevertNeedsTailReconcile` store signal has no consumer.** The fix stops an untracked `session.next.revert.committed` from guess-deleting a possibly-live replacement prompt, but the natural consumer (`reconcileSessionTail` via `use-opencode-events/handle-event.ts`'s existing `reconcileTail` plumbing, already wired for `'compaction'`/`'session-error'`) lives outside this session's exclusive file list and was left untouched. Until wired, an untracked `.committed` stops corrupting state but does not yet auto-fetch the real truncation — it waits for the next unrelated reconcile/hydrate. | `packages/sdk/src/browser/stores/sync-store.ts` (`markSessionRevertNeedsTailReconcile`/`clearSessionRevertNeedsTailReconcile`, the `session.next.revert.committed` case in `applyEvent`); consumer seam: `packages/sdk/src/react/use-opencode-events/handle-event.ts`, `packages/sdk/src/browser/session-sync/session-sync-registry.ts` |
 
 ---
 
@@ -8787,132 +9652,445 @@ entry's `clientMessageId` in `overrides`, preserving the branch's retry-dedupe
 guarantee through the batch path; `session-chat.tsx` `sendQueuedBatch` =
 command dispatch (batch of one, guaranteed by `claimBatch`) + merged text send.
 
-## Session `starter-suggestions` — project starter-suggestions query surface (2026-08-15)
+## Session `session-middle-stop` — T2: infra aborts are typed and never render as "Interrupted" (2026-08-15)
 
-**Task 6** of `docs/superpowers/sdd/plan-personalized-starter-prompts/`
-(external plan, not this file's own Now chain). Consumes the already-merged API
-route `GET /v1/projects/:id/starter-suggestions` on branch
-`personalization-recommendation`.
+**Why.** Two client producers both patched a bare `{ name: 'AbortError' }`
+onto a message, indistinguishable from a real user Stop: `applyOptimisticAbort`
+(`react/use-session-send.ts`, a REAL user stop) and `markSessionAbortedLocally`
+(`react/use-opencode-events/use-event-stream-refs.ts`, invoked from the
+`server.instance.disposed` handler in `handle-event.ts` for EVERY non-idle
+session — pure infrastructure: OpenCode disposed/respawned mid-stream). apps/web
+rendered both as the same muted "Interrupted" checkpoint row, so an infra
+respawn scarred the transcript exactly like a genuine user stop.
 
-**Added, additive only:**
-- `StarterSuggestionsResponse` (type) + `getProjectStarterSuggestions(projectId)`
-  — `core/rest/projects-client/starter-suggestions.ts`, same `unwrap`/`backendApi`
-  shape as the `files.ts` exemplar. Re-exported from the barrel.
-- `qk.project.starterSuggestions(id)` — `[...scope(id), 'starter-suggestions']`,
-  sibling of `triggers`/`files`, guarded in `query-keys.test.ts` (never a prefix
-  of, never prefixed by, either).
-- `FRESHNESS.starterSuggestions = 'config'` — same tier as `triggers`/`files`;
-  no out-of-band writer needs sub-minute freshness.
-- `useProjectStarterSuggestions(projectId)` — `react/use-project-starter-suggestions.ts`,
-  gated `enabled: !!projectId`, `contract('config')`.
+**Claimed SDK scope, `core/http/abort-error.ts`:**
+- New `AbortReason` type + `ABORT_REASONS` (`'user' | 'runtime-disposed' |
+  'orphan-finalized' | 'wake'`) + `ABORT_REASONS_NOT_YET_EMITTED`
+  (`'orphan-finalized'`, `'wake'`) — mirrors
+  `apps/api/src/projects/stop-reason.ts`'s `STOP_REASONS_NOT_YET_EMITTED`
+  pattern. `orphan-finalized` is reserved for the sandbox daemon's
+  `finalizeOrphanedTurn`/`abortOpencodeTurn`
+  (`apps/kortix-sandbox-agent-server/src/main.ts`) — confirmed it aborts
+  through OpenCode's OWN `/session/{id}/abort` REST call (bare POST, no body),
+  so the resulting `MessageAbortedError` is opencode's wire shape with no hook
+  to inject a reason. A genuine wire abort stays reason-less on purpose,
+  documented in `abortErrorReason`'s doc comment.
+- `abortErrorReason`'s doc comment updated: producers now set `data.reason`
+  (`applyOptimisticAbort` → `'user'`, `markSessionAbortedLocally` →
+  `'runtime-disposed'`).
+- `browser/stores/sync-store/types.ts`: `SyntheticAbortError.data` gained
+  optional `reason?: AbortReason`.
+- `react/use-session-send.ts` `applyOptimisticAbort` patches
+  `data.reason: 'user'`. `react/use-opencode-events/use-event-stream-refs.ts`
+  `markSessionAbortedLocally` patches `data.reason: 'runtime-disposed'`. Which
+  sessions either targets is UNCHANGED — only the patched shape changed.
+- `browser/stores/sync-store.ts`'s `session.error` handler needed no code
+  change — it already copies the whole `error` object verbatim, so
+  `data.reason` rides through untouched. Pinned with new passthrough tests.
 
-**TDD:** RED confirmed per-file before implementation (module-not-found for the
-fn/hook, `undefined` tier for the contract, `TypeError: … is not a function` for
-the key). GREEN after implementation.
+**Additive only.** No name renamed or removed, no optional field made
+required, no subpath added, `version` untouched.
 
-**Gates:**
-- `pnpm --filter @kortix/sdk typecheck`: exit 0.
-- `pnpm --filter @kortix/sdk test`: session baseline `1940 pass`, `2 skip`,
-  `0 fail`, `145` files. After: `1950 pass`, `2 skip`, `0 fail`, `147` files
-  (+10 tests, +2 files: `starter-suggestions.test.ts`,
-  `use-project-starter-suggestions.test.ts`).
-- `pnpm --filter @kortix/sdk run smoke:install`: passed (tarball packs,
-  installs, imports).
-- `pnpm test -- --sdk-only` (repo root): `1952 pass`, `0 fail`.
+**RED first**, each confirmed by temporarily reverting the implementation and
+re-running:
+- `use-session-send.test.ts` — existing `applyOptimisticAbort` assertion broke
+  on the new `reason: 'user'` field (a deliberate, documented test update, not
+  a weakened one) + a new dedicated reason-tag test.
+- New `react/use-opencode-events/use-event-stream-refs.test.ts` — RED:
+  `expect(assistant?.error).toEqual(...)` diffed on the missing `reason:
+  'runtime-disposed'` field. GREEN after restoring the patch. (No prior test
+  file existed for this hook; renders it via `renderToStaticMarkup` +
+  `createElement`, the same no-DOM-needed pattern
+  `session-agent-name-guard.test.ts` uses for `useModelStore`.)
+- `sync-store.test.ts` — 2 new passthrough tests (reasoned + untagged abort
+  survive `applyEvent` unchanged).
+- `abort-error.test.ts` — 3 new tests pinning `ABORT_REASONS` /
+  `ABORT_REASONS_NOT_YET_EMITTED` / reading a value off the closed union.
 
-**Surface snapshots** (both re-recorded deliberately, diff reviewed — additive
-only, 4 new names across `.` and `./react`): `getProjectStarterSuggestions` (x2,
-runtime `.`/`./react` barrels), `useProjectStarterSuggestions` (x2),
-`StarterSuggestionsResponse` (type-surface only, x2). No name removed or
-renamed.
+**Gates, real output:**
+- `pnpm --filter @kortix/sdk typecheck` — clean (`tsc --noEmit` + examples).
+- `pnpm --filter @kortix/sdk test` — `1964 pass`, `0 fail`, `7423 expect()`
+  calls across `147` files. Session baseline measured before the change:
+  `1955 pass`, `0 fail`, `146` files (net +9 tests, +1 file).
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test
+  passed`.
 
-Commit: `feat(sdk): project starter-suggestions query`. No SDK subpath change —
-`starter-suggestions.ts` lives inside the existing `projects-client` barrel and
-`./react`, so the three-synchronized-edits rule for NEW subpaths does not apply
-here.
+**Snapshots re-recorded, both purely additive** (`UPDATE_SURFACE_SNAPSHOT=1`,
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1`): `public-surface.snapshot.json` +2
+(`ABORT_REASONS`, `ABORT_REASONS_NOT_YET_EMITTED` on `.`),
+`public-type-surface.snapshot.json` +3 (same two plus the `AbortReason` type).
+The type-surface tool's own drift report labelled all three `← added —
+additive, fine`. Nothing removed, nothing renamed.
 
-## Session `starter-suggestions-action` — v1.1: optional `action` on suggestion items (2026-08-15)
+**Host side (apps/web, not SDK, recorded for context):**
+- `features/session/session-chat.tsx`: new `turnErrorAbortReason` (derived via
+  the SDK's `abortErrorReason`, gated on `turnErrorIsAbort`), passed as
+  `abortReason={turnErrorAbortReason}` alongside `isAbort={turnErrorIsAbort}`
+  at both `TurnErrorDisplay` render sites (shell-mode row + the full
+  transcript).
+- `features/session/session-error-banner.tsx`: `TurnErrorDisplay` gained an
+  optional `abortReason?: string` prop. Inside the existing `isAbort` branch:
+  `if (abortReason && abortReason !== 'user') return null;` — before the
+  Interrupted `<CheckpointLabel>`, so it never falls through to the generic
+  ERROR banner branch either.
+- **Rendering decision table:** `reason: 'user'` → Interrupted row (unchanged).
+  Untagged abort (`undefined` — a real user Stop caught only by identity, or a
+  genuine wire `MessageAbortedError`) → Interrupted row, once (T1 made
+  re-aborts impossible). `reason: 'runtime-disposed'` (or any future non-user
+  reason) → nothing: no Interrupted row, no error banner.
+- `features/session/interrupted-label.test.ts` (source-text wiring pin) and
+  `features/session/session-error-banner-abort.test.tsx` (real
+  `renderToStaticMarkup` render, existing file) both updated — RED confirmed
+  by temporarily reverting the banner's reason guard, then restored to GREEN.
+- `handle-event.ts`'s abort special-casing (skip-rehydrate, `session.error`
+  case) needed no change: it only reads `isAbortError(error)` (`.name`
+  identity), never `.data.reason`, and neither producer's synthetic event
+  flows through that switch (`markSessionAbortedLocally` calls the injected
+  `applySyncEvent` ref directly, bypassing `handleEvent`). Verified by
+  reading, not by a new test — no behavior in that file is reason-dependent.
+- `bun test src/features/session` — `2014 pass`, `0 fail`, `4124 expect()`
+  calls across `155` files. Full `bun test src` — `7265 pass`, `0 fail`,
+  `24096 expect()` calls across `581` files (pre-existing, unrelated failures:
+  none; pre-existing `maintenance-store.test.ts` warn-level console noise is
+  expected test output, not a failure).
+- `npx tsc --noEmit` (apps/web) — no new errors; only the documented baseline
+  15 `@types/bun` `test.each` errors in the 3 known files.
+- `npx eslint` on touched files — 0 errors, 4 pre-existing unrelated
+  `react-hooks/refs` warnings in `session-chat.tsx` (part of the repo's
+  documented ~455-warning baseline, not introduced by this change).
 
-v1.1 amendment to the already-merged starter-suggestions feature (see the
-`starter-suggestions` session above). Server-side (`apps/api`) gained an
-optional per-item `action` enum (`'connectors' | 'skills' | 'schedules' |
-'agent' | 'members' | 'channels'`) so a suggestion can point at a setup step
-instead of a plain prompt. This session's SDK slice: widen
-`StarterSuggestionsResponse['items'][number]` to carry the same optional
-field.
+**Shippable to production: YES.**
+- Verified: SDK typecheck/test/smoke:install all green against session
+  baseline; apps/web `src/features/session` and full `bun test src` green;
+  apps/web tsc/eslint show no new issues.
+- Unverified: no browser/E2E pass driving a live disposed-runtime respawn
+  end-to-end (out of scope per this task's verification list — unit +
+  component-render coverage only).
+- Risk: none identified. The change is additive at the type level and the
+  rendering branch is a single early `return null` gated on an optional
+  string field that only two producers ever set.
 
-**Added, additive only:**
-- `StarterSuggestionAction` (new exported type, `core/rest/projects-client/starter-suggestions.ts`)
-  — mirrors the API's `SuggestionAction` union.
-- `StarterSuggestionsResponse['items'][number].action?: StarterSuggestionAction`
-  — widened an existing interface field (optional add, not a rename, not a
-  required field).
+## Session `session-middle-stop` — T14 (part-delta idempotency) + T16 (stub/merge hygiene) (2026-08-15)
 
-**TDD:** RED first — `getProjectStarterSuggestions passes through an optional
-action field on an item` failed `tsc --noEmit` (`TS2339: Property 'action'
-does not exist`) before the type change; GREEN after.
+**Scope.** Two sequential scoped tasks sharing files, one session, one
+sitting: `packages/sdk/src/browser/stores/sync-store.ts` (+ its test file)
+and `packages/sdk/src/core/stream/event-stream.ts` (+ its test file) only. A
+concurrent sibling session owned `use-session.ts`, `use-session-sync.ts`,
+`initial-session-pin.ts`, and web `page.tsx` — read-only, untouched here. No
+git commands run (shared worktree). Built on the uncommitted baseline that
+already had `SyntheticAbortError.data.reason` (T2, logged above) —
+kept as-is.
 
-**Gates:**
-- `pnpm --filter @kortix/sdk typecheck`: exit 0.
-- `pnpm --filter @kortix/sdk test`: session baseline `1952 pass`, `0 fail`,
-  `147` files (via `bun test --isolate src`, matching `package.json`'s `test`
-  script — plain `bun test src` without `--isolate` is NOT the baseline, it
-  shows spurious cross-file failures). After: `1953 pass`, `0 fail`, `147`
-  files (+1 test, no new file).
-- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
-- `pnpm test -- --sdk-only` (repo root): `1953 pass`, `0 fail`.
+### T14 — part-delta idempotency
 
-**Surface snapshots:** `public-type-surface.snapshot.json` re-recorded
-deliberately, diff reviewed — `+2` (`StarterSuggestionAction` on `.` and
-`./projects-client`), nothing removed or renamed. `public-surface.snapshot.json`
-(runtime) untouched — a type-only export is invisible there by design.
+**Problem.** `applyPartDelta` was `existing + delta` with no identity
+consulted anywhere — a duplicate `message.part.delta` delivery doubled
+streamed text. `getCoalesceKey` deliberately excludes part events from
+coalescing, so this is a real gap, not something the flush batching already
+covers.
 
-No SDK subpath change — `starter-suggestions.ts` lives inside the existing
-`projects-client` barrel and `./react`, so the three-synchronized-edits rule
-for new subpaths does not apply.
+**Mechanism chosen — wire event identity, not content.** Inspected
+`@opencode-ai/sdk`'s `v2/gen/types.gen.d.ts`: `EventMessagePartDelta` (the
+non-V2 `Event` union member this SDK actually uses — matches
+`event-stream.ts`'s `Event as OpenCodeSdkEvent` import) carries a top-level
+`id: string` — NOT inside `properties`. Two independently-broadcast SSE
+readers of the SAME published event (a stacked retry-loop connection, a
+second mounted subscriber — the two duplicate sources named for this task)
+both receive the identical event object and therefore the identical `id`.
+That makes event identity the correct dedupe key. Content-based fingerprint
+dedupe (e.g. "reject a delta whose text matches the last one applied at this
+length") was considered and rejected: it false-positives on legitimately
+repeated content — streaming `"..."` one identical character at a time would
+wrongly reject the 2nd/3rd period. A dedicated test
+(`two GENUINELY distinct deltas with identical content both apply`) pins
+this design decision.
 
-Commit: `feat(sdk): action field on starter-suggestion items`.
+- `applyEvent`'s `case "message.part.delta"` now threads `event.id` (read off
+  `event`, not `props`) into `applyPartDelta` as a new optional trailing
+  `eventID` param — additive arity change (the doc comment already flagged
+  this action as "technically part of the published surface" from a prior
+  breaking-arity change; appending an optional param is not breaking).
+- New module state `deltaEventTails: Map<sessionID, Map<"msgID:partID:field",
+  Set<eventID>>>` — a full SET per key, not just the last-applied id: a
+  stacked duplicate connection can redeliver a whole tail of the stream (a
+  reconnect-and-resume replaying several recent events), not just the single
+  most-recent one, which a "compare against last-applied only" design (the
+  task brief's own suggested fallback shape) misses — proven by an actual RED
+  test failure during implementation (`"Hello worldHello world"` on a
+  replayed 3-delta stream) before switching from "last id" to "id set".
+  Cleared per-session on `session.idle`/`session.error` (new turns use new
+  part ids) and released wholesale by `forgetSessionIds`/`reset()`, matching
+  the file's existing `deltaActiveParts` pattern. A delta with no `eventID`
+  gets no protection — identical to pre-change behavior, not a regression.
 
-## Session `starter-suggestions-connector` — v1.2: connector field on suggestion items (2026-08-15)
+**Single-live-stream invariant, `event-stream.ts`.** `openEventStream` now
+keys a `WeakMap<EventStreamClient, EventStreamHandle>` (`liveStreamsByClient`)
+by client object identity. `getClientForUrl` (`core/runtime/client.ts`)
+caches one client per resolved runtime URL, so two `openEventStream()` calls
+for the SAME runtime always share the identical client reference — the
+natural "scope" key, requiring no new param and no caller changes
+(`kortix.ts`'s `session.stream()` and `use-opencode-events/index.ts` both
+already resolve their client via `getClientForUrl`). A second concurrent open
+for a client with a live stream tears the first down (`.close()`) before
+starting. `close()` only clears its OWN registry entry (`liveStreamsByClient.get(client)
+=== handle` guard) so a stream torn down BY a newer open can't clobber that
+newer stream's registration.
 
-v1.2 amendment to the same starter-suggestions feature (see the
-`starter-suggestions` and `starter-suggestions-action` sessions above).
-Server-side (`apps/api`) gained an enriched, generator-set-only per-item
-`connector: { slug, name, img_src }` field — set only when the model named a
-real catalog app that was actually offered for that run (validated against
-`availableConnectors` collected for the run). This session's SDK slice:
-widen `StarterSuggestionsResponse['items'][number]` to carry the same
-optional field.
+### T16 — stub and merge hygiene (three defects)
 
-**Added, additive only:**
-- `StarterSuggestionsResponse['items'][number].connector?: { slug: string; name: string; img_src: string | null }`
-  — widened an existing interface field (optional add, not a rename, not a
-  required field). No new exported type name — the connector shape is an
-  inline object type, not a standalone export (unlike `action`'s
-  `StarterSuggestionAction`), so the type-surface snapshot has nothing new to
-  record for it.
+1. **`session.error` stub reconciliation.** New `stubAssistantIds` map
+   (session-scoped, same shape as the file's other tracking maps) marks a
+   `session.error` stub at creation. `hydrate` now drops every tracked stub
+   for a session the moment the incoming snapshot contains ANY real assistant
+   message — the reconciliation the stub's own comment always claimed but
+   nothing performed. A snapshot with no assistant message yet leaves the
+   stub untouched (nothing to reconcile against).
+2. **Extras merge dedupe.** An existing part absent from an incoming hydrate
+   snapshot ("extra") is now dropped, instead of always kept, when it is
+   text-like, non-empty, and its own text is a prefix of (or equal to) some
+   incoming text-like part of the SAME type — i.e. the server re-issued the
+   same content under a new id. Conservative by construction: non-text-like
+   extras (tool/permission/file/step/…) are never filtered by content at all,
+   and an empty-text extra is never treated as "contained" (an empty string
+   is a prefix of everything, which would wrongly drop it against ANY
+   incoming part).
+3. **Bridge retirement.** `upsertPart` now retires an optimistic bridge on
+   ANY real part arrival for that message — text, non-text, or empty-text —
+   instead of only a non-empty real text part. The server has started
+   sending real parts for the message either way, so the bridge's job is
+   done.
 
-**TDD:** RED first — `getProjectStarterSuggestions passes through an optional
-connector field on an item` failed `tsc --noEmit` (`TS2769`/`TS2339`,
-`connector` does not exist on the items type) before the type change; GREEN
+**Discovered, not fixed (logged above in Discovered-this-session):**
+`upsertPart`'s `bridgeCleared`/prefix-growth-reject branch is dead code —
+`list` is always `[]` right before the `Binary.search` a few lines down
+whenever the bridge branch fires, so `result.found` can never be `true`
+there. Pre-existing, independent of this session's changes, out of scope
+(not one of the three named T16 defects).
+
+**TDD.** Every fix RED-proven by temporarily disabling it (a `false &&` guard
+or reverting to the old condition) and re-running the specific new
+describe/test block, confirming failure for the right reason, then
+restoring:
+- Delta idempotency: 3/6 new tests went RED (`"Hello"` → `"Hellolo"`,
+  `"Hello world"` → `"Hello worldHello world"`, `"Hello"` → `"HelloHello"`).
+- Single-live-stream: 1/4 new tests went RED (`firstDispatched` received the
+  stale event instead of `[]`).
+- Stub reconciliation: RED (`ids` still contained the stub id after a
+  real-assistant hydrate).
+- Extras dedupe: RED (`["prt_new"]` → `["prt_new", "prt_old"]`).
+- Bridge retirement: 2/3 new tests went RED (`["prt_step"]` →
+  `["prt_bridge", "prt_step"]`; `["prt_real"]` → `["prt_bridge", "prt_real"]`).
+
+**Gates, real output:**
+- `pnpm --filter @kortix/sdk typecheck` — clean (`tsc --noEmit` + examples).
+- `pnpm --filter @kortix/sdk test` — `2011 pass`, `0 fail`, `7501 expect()`
+  calls across `147` files. (This session's own additions: +20 tests, +0
+  files — 4 new in `event-stream.test.ts`, 16 new in `sync-store.test.ts`,
+  both existing files. The concurrent sibling session — untouched files here
+  — accounts for the rest of the delta from the 1964/147 baseline logged by
+  the prior `session-middle-stop` entry above; 0 failures in this run, so no
+  flake/sibling-conflict investigation was needed per this task's brief.)
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test
+  passed`.
+- `cd apps/web && bun test src` — `7270 pass`, `0 fail`, `24108 expect()`
+  calls across `581` files (the `maintenance-store.test.ts` console warn
+  noise is documented pre-existing expected test output, not a failure).
+- No public-surface or public-type-surface snapshot diff — `applyPartDelta`'s
+  new `eventID` param is an interface-method arity change, not a new/removed
+  export name, and the full suite (which includes both snapshot tests) ran
+  green with no `UPDATE_*_SNAPSHOT` needed.
+
+**Shippable to production: YES.**
+- Verified: SDK typecheck/test/smoke:install all green; apps/web `bun test
+  src` green; every fix RED-proven before GREEN; no snapshot drift.
+- Unverified: no browser/E2E pass driving a real stacked-SSE-connection or a
+  live duplicate-delivery scenario end-to-end — unit-level coverage only, per
+  this task's verification list. React StrictMode's actual mount/unmount
+  ordering was not driven in a browser to confirm the single-live-stream
+  invariant helps there in practice (it is exercised only via direct
+  `openEventStream()` calls in the test harness).
+- Risk: low. All four changes are additive at the type/export level. The
+  delta-idempotency and single-live-stream mechanisms are new safety nets
+  layered on top of existing behavior (a delta/stream with no id/registry
+  collision behaves exactly as before). The extras-dedupe and bridge-
+  retirement fixes change existing merge/render behavior but are scoped by
+  design to the specific defect shapes described in the task, with negative
+  tests (`distinct non-text parts are never dropped`, `unrelated content is
+  kept`) guarding against over-matching.
+
+## Session `session-middle-stop` — five CONFIRMED review findings (F1–F5) (2026-08-16)
+
+**Scope.** Fixed five reviewer-confirmed defects on top of the T2/T14/T16
+work logged above, same shared files, same session, no git commands (shared
+worktree): `packages/sdk/src/browser/stores/sync-store.ts` (+ its test file),
+`packages/sdk/src/core/stream/event-stream.ts` (+ its test file),
+`packages/sdk/src/core/http/abort-error.ts` (+ its test file). `rewind.ts`
+was read but not touched — no fix required it. Baseline re-derived at session
+start: **2086 pass, 0 fail, 149 files.**
+
+**F1 — extras prefix-dedupe dropped a LIVE streaming part.** T16's extras
+filter (`hydrate`, the `survivingExtras` filter) dropped an existing part
+whose accumulated text happened to be a PREFIX of another part's text of the
+same type in the same message — even when that part was still ACTIVELY
+streaming (tracked in `deltaActiveParts`), not an abandoned SSE twin.
+Dropping it also poisoned `deltaEventTails` for its later deltas via a
+second, independent bug: `applyPartDelta` recorded the wire event id as
+"applied" BEFORE `set()` even checked whether the target part existed, so a
+delta on a not-found part permanently blocked a later legitimate redelivery
+of that same event id once the part did exist. Fixed both: the extras filter
+now exempts any part tracked in `deltaActiveParts` outright; `applyPartDelta`
+now records the event id only inside the actual-apply branch, after the
+list/found checks pass. RED-proven: two new tests reproduce each half
+independently (`an actively-streaming extra survives…`, `a delta that finds
+no target part does not consume the event id…`).
+
+**F2 — committed-revert fallback could delete a replacement prompt.**
+`session.next.revert.committed` with no tracked local `sessionRevert` record
+(fresh mount, or a second tab that never saw `.staged`) used to fall back to
+`watermark = newestMessageId(local messages)` — which can be the user's own
+REPLACEMENT prompt if its `message.updated` raced ahead of the `.committed`
+event, deleting the replacement and its answer. Fixed: with no tracked
+record, `applyCommittedRevert` is no longer called at all — nothing is
+deleted. Instead the store additively exposes
+`sessionRevertNeedsTailReconcile: Record<sessionId, boolean>` plus
+`markSessionRevertNeedsTailReconcile`/`clearSessionRevertNeedsTailReconcile`,
+so a consumer (the existing sync controller / `use-opencode-events`, both
+OUTSIDE this session's exclusive files) can fetch the server's real,
+already-truncated transcript instead of guessing locally. **Not wired to a
+consumer this session** — see Discovered-this-session below; the signal is
+additive-only and inert until something reads it. The pre-existing test
+`.committed with NO locally tracked record falls back to the current known
+tip as watermark` asserted the OLD (buggy) delete-by-guess behavior; it was
+rewritten (not weakened) to assert the new no-delete + flag behavior, with
+the reasoning inline in the test's own comment — a deliberate "the test
+encoded a wrong expectation" case, not a mid-loop edit. RED-proven by
+temporarily restoring the exact old fallback logic and re-running the new
+tests: both `does NOT delete anything` and `does not delete a replacement
+prompt that raced ahead of it` failed for the right reason (msg_2/msg_3, and
+msg_4, were deleted) before the fix was restored.
+
+**F3 — stale `session.updated` re-staged a tombstoned (committed/cleared)
+revert.** `syncSessionRevertFromInfo` never consulted the store's own `null`
+tombstone (set by `applyCommittedRevert`/`clearSessionRevert`) — a stale
+`session.updated` still carrying the OLD `info.revert` pointer would
+re-stage it with a fresh watermark, hiding every post-rewind message behind
+a phantom Restore offer. Fixed: `if (current === null) return` added as the
+first check. The escape hatch stays open exactly as specified —
+`stageSessionRevert` (the real `.staged` wire event's handler) already
+overwrites unconditionally regardless of `current`, so a genuinely fresh
+revert still clears the tombstone normally; pinned by a regression test that
+was already GREEN pre-fix (documented as such, not claimed as RED-proven).
+Two new RED tests (committed-then-stale-update, cleared-then-stale-update)
+both failed pre-fix (record re-staged) and pass post-fix.
+
+**F4 — `abortErrorReason` returned unvalidated strings.** The doc comment
+promised a closed union (`AbortReason`), but the implementation returned any
+non-empty `data.reason` string verbatim, typed as bare `string`. `apps/web`
+renders "Interrupted" only for `reason === 'user'` and nothing for any other
+value — so an unknown/typo'd reason silently suppressed the whole error UI
+instead of falling back safely. Fixed: return type narrowed to
+`AbortReason | undefined`; membership validated against `ABORT_REASONS`; an
+unrecognized string now returns `undefined` (renders like a reason-less real
+wire abort, the documented safe default) instead of propagating unfiltered.
+Return-type narrowing on an export added this branch (never published) —
+safe per the "narrowing a return type" row in `AGENTS.md`'s safety table;
+confirmed via the public-surface/public-type-surface snapshots, both
+unchanged (`abortErrorReason` was already listed by name only — no shape
+diff). RED-proven: new test asserts `undefined` for `reason:
+'not-a-real-reason'`, failed pre-fix (returned the raw string) as expected.
+
+**F5 — a second `openEventStream()` on the same client silently killed the
+first subscriber.** T14's single-live-stream invariant closed subscriber #1
+with no signal the moment subscriber #2 opened for the same client — an
+unannounced behavior change on a published, programmatic surface (React
+hosts open exactly one stream per client in practice and were unaffected;
+a direct SDK consumer opening two handles for the same runtime was not).
+Fixed via full fan-out, not the minimal "same handle" alternative — the
+per-client registry (`liveStreamsByClient`) now holds a `LiveStream`
+(`{ subscribers: Set<StreamSubscriber>, teardown }`) instead of an
+`EventStreamHandle`. The FIRST `openEventStream()` call for a client creates
+the underlying connect/reconnect loop via the new `createLiveStream` (owning
+`timers`/`connectTimeoutMs`/`heartbeatTimeoutMs`/`maxConsecutiveHardFailures`
+from that first caller's `opts` only — a later joiner's values for those
+fields are not consulted, documented as a deliberate simplification: there
+is one wire connection to configure). Every later `openEventStream()` call
+for the SAME client joins the SAME `LiveStream` and gets its own independent
+`EventStreamHandle`; `close()` removes just that subscriber and only tears
+the shared connection down (`abort()` + clear the flush timer) when the
+LAST subscriber leaves. `onEvent`/`onGapRehydrate`/`onParked` dispatch
+through a shared `dispatchToSubscribers` helper that catches per-subscriber
+(one throwing handler can't break the others or the stream). `signal` stays
+per-subscriber — an external abort on one caller's own signal only closes
+that caller's handle, not the shared connection (unless it was the last
+one). Delta-dedupe safety is now BETTER than before, not merely preserved:
+every event crosses the wire exactly once and fans out to N subscribers
+exactly once each, so no subscriber needs deduping against a genuinely
+duplicated delivery. RED-proven: the whole `openEventStream single-live-
+stream invariant` describe block was rewritten to
+`openEventStream shared-stream fan-out (F5)` (old tests asserted the exact
+behavior being fixed — "a second open... tears the first stream down" — so
+they could not simply stay); 5 of 8 new tests failed against the pre-fix
+code for the right reason (only 1 wire connection expected vs. 2 observed;
+0 events fanned to a second subscriber; etc.) before the fix, all 8 pass
 after.
 
-**Gates:**
-- `pnpm --filter @kortix/sdk typecheck`: exit 0.
-- `pnpm --filter @kortix/sdk test`: session baseline `1953 pass`, `0 fail`,
-  `147` files. After: `1955 pass`, `0 fail`, `147` files (+2 tests, no new
-  file).
-- `pnpm --filter @kortix/sdk run smoke:install`: `✔ install smoke test passed`.
-- `pnpm test -- --sdk-only` (repo root): `1955 pass`, `0 fail`.
+**Gates, real output (this session, on top of the 2086/149 baseline):**
+- `pnpm --filter @kortix/sdk typecheck` — clean, no output (tsc --noEmit +
+  examples), exit 0.
+- `pnpm --filter @kortix/sdk test` — `2102 pass`, `0 fail`, `7686 expect()`
+  calls across `149` files (+16 tests, +0 files — all new tests added to the
+  three existing files above).
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test
+  passed`.
+- `cd apps/web && bun test src` — `7343 pass`, `0 fail`, `24242 expect()`
+  calls across `588` files (exceeds the ≥7335 floor noted for this session;
+  the human's uncommitted cosmetic edits to `session-chat.tsx`/
+  `question-prompt.tsx`/`inline-code.tsx` were left untouched, per scope).
+- No public-surface or public-type-surface snapshot diff (`git status
+  --short` on both snapshot files: empty). All five fixes are either
+  behavior-only (F1, F2, F3, F5 — no exported name/shape changed) or a
+  return-type NARROWING on an export added this branch, never published (F4).
 
-**Surface snapshots:** ran `UPDATE_TYPE_SURFACE_SNAPSHOT=1 bun test
-src/public-type-surface.test.ts` deliberately — `git status` showed the
-snapshot file **unchanged**. Expected: `connector`'s shape is inline, not a
-new exported symbol, so there is nothing for the export-name snapshot to
-diff. `public-surface.snapshot.json` (runtime) also untouched — type-only
-change.
+**Discovered, not fixed (out of this task's five named findings, logged
+per protocol):**
+- F2's `sessionRevertNeedsTailReconcile` signal is additive-only and
+  **inert** — nothing in this session's exclusive files consumes it. The
+  natural consumer is `reconcileSessionTail`
+  (`packages/sdk/src/browser/session-sync/session-sync-registry.ts`) via
+  `packages/sdk/src/react/use-opencode-events/handle-event.ts`'s existing
+  `reconcileTail` plumbing (already wired for `'compaction'`/
+  `'session-error'` reasons) — both files are OUTSIDE this session's
+  exclusive file list (`sync-store.ts`/`event-stream.ts`/`abort-error.ts`/
+  `rewind.ts` + tests only) and were left untouched. Until a follow-up wires
+  `handle-event.ts`'s `session.next.revert.committed` handling (or an
+  equivalent seam) to read this flag and call `reconcileTail(sessionID,
+  'revert-committed')`, the fix's practical effect for an untracked
+  `.committed` is "stop deleting the wrong thing" without yet "show the
+  correct truncation automatically" — a real improvement (no data loss) but
+  not the full fix the reviewer's note implied. Needs its own follow-up task
+  in a session that owns `use-opencode-events/`.
+- Pre-existing dead code noted by the prior T14/T16 session-log entry
+  (`upsertPart`'s `bridgeCleared`/prefix-growth-reject branch) is still
+  present and still out of scope — not one of F1–F5.
 
-No SDK subpath change — same `projects-client`/`./react` barrels as the prior
-two sessions.
-
-Commit: `feat(sdk): connector field on starter-suggestion items`.
+**Shippable to production: YES**, with the one caveat above named
+explicitly (F2's signal has no consumer yet — additive and inert, not a
+regression risk, but not yet a complete UX fix for the untracked-`.committed`
+case).
+- Verified: SDK typecheck/test/smoke:install all green; apps/web `bun test
+  src` green; every one of the five fixes RED-proven (F2 and F3 by
+  temporarily restoring old logic and re-running new tests; F1/F4/F5 by
+  writing the test first against the actual pre-fix code); no snapshot
+  drift.
+- Unverified: no browser/E2E pass driving a real second-tab committed-revert
+  race, a real stacked-subscriber `openEventStream()` call from a
+  programmatic (non-React) consumer, or a real unknown-abort-reason payload
+  from a live wire event — unit-level coverage only, per this task's
+  verification list.
+- Risk: low for F1/F3/F4/F5 (all either exempt an existing safety net from a
+  narrow over-match, add a validation-only narrowing, or are internal
+  registry/dispatch mechanics with no public shape change). F2 carries the
+  one real residual risk named above: an untracked `.committed` no longer
+  corrupts local state, but a consumer must still be wired to make the
+  truncation appear promptly instead of only on the next unrelated
+  reconcile/hydrate.

@@ -222,11 +222,6 @@ export const qk = {
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
 
-    /** `getProjectStarterSuggestions` — `GET /projects/:id/starter-suggestions`,
-     *  the personalized-or-static prompt-chip set shown before a project's
-     *  first message. Sibling of `triggers`/`files`, not nested under either. */
-    starterSuggestions: (id: string) => [...qk.project.scope(id), 'starter-suggestions'] as const,
-
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the
      * Customize config-entity viewer. Unrelated to the much larger Git file

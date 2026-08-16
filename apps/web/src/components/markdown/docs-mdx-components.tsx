@@ -182,7 +182,7 @@ export const docsMdxComponents = {
     </blockquote>
   ),
 
-  hr: () => <hr className="border-border/60 my-6 h-px border-0 border-t" />,
+  hr: () => <hr className="border-border my-6 h-px border-0 border-t" />,
 
   // `not-prose` opts the whole table out of fumadocs' prose styles, which
   // give the <table> its own border + radius — doubled against this wrapper.

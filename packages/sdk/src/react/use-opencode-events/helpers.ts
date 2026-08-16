@@ -19,6 +19,42 @@ let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
  * or created another session). Read both shapes — same fix the mobile client
  * shipped (apps/mobile commit 7f31102fe "fix: session title updates").
  */
+export interface ClientEvictionInput {
+  isFirstMount: boolean;
+  isServerSwitch: boolean;
+  didServerUrlChange: boolean;
+  previousServerUrl: string | null;
+  activeServerUrl: string | null;
+}
+
+/**
+ * T8 defect 2 — which single cached opencode client (if any)
+ * `useOpenCodeEventStream`'s runtime-tracking effect should drop, given this
+ * tick's outcome. Scoped to the ONE url actually being replaced — never the
+ * whole `clientsByUrl` cache (`resetClient()`, `core/runtime/client.ts`),
+ * which would force every OTHER concurrently-open session's client to be
+ * recreated just because THIS session's runtime switched. `clientsByUrl` is
+ * deliberately keyed per url so several session sandboxes can stay connected
+ * at once.
+ *
+ * Pure so the eviction decision is unit-testable without rendering the hook
+ * — this package has no hook-render harness.
+ */
+export function resolveClientEvictionUrl(input: ClientEvictionInput): string | null {
+  if (input.isFirstMount) {
+    // No "previous" url exists for a fresh mount — but a stale/broken client
+    // for the CURRENT url may still be cached from a provider that unmounted
+    // without cleanly closing (navigate away, then back to the same
+    // session). Force a fresh client for the url about to be used; a
+    // first-ever mount with nothing cached for it is a harmless no-op.
+    return input.activeServerUrl;
+  }
+  if (input.isServerSwitch || input.didServerUrlChange) {
+    return input.previousServerUrl;
+  }
+  return null;
+}
+
 export function readSessionInfo(event: OpenCodeEvent): Session | undefined {
   const props: unknown = event.properties;
   if (!props || typeof props !== 'object') return undefined;
@@ -32,25 +68,6 @@ export function readSessionInfo(event: OpenCodeEvent): Session | undefined {
  *  which request shape produced them. */
 export function asStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
-}
-
-/**
- * Some servers emit an "AbortError"-shaped `session.error` whose `name`/message
- * live wherever the server put them — not part of the SDK's typed error union
- * (`ProviderAuthError | UnknownError | ... | ApiError`). Duck-type via
- * `unknown` rather than assuming a shape; checks `.name`, `.data.message`, and
- * a top-level `.message` for a case-insensitive "abort" substring.
- */
-export function looksLikeAbortError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const rec = error as Record<string, unknown>;
-  if (rec.name === 'AbortError') return true;
-  const data = rec.data;
-  const dataMessage =
-    data && typeof data === 'object' ? (data as Record<string, unknown>).message : undefined;
-  return String(dataMessage ?? rec.message ?? '')
-    .toLowerCase()
-    .includes('abort');
 }
 
 export function reserveMessageRehydrate(sessionID: string): boolean {

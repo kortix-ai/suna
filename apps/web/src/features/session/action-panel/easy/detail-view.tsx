@@ -757,28 +757,12 @@ export function collapseSnapshots(parts: ToolPart[]): ToolPart[] {
 }
 
 /** The real tool views for a set of calls — the escape hatch's payload. */
-export function ToolParts({
-  parts,
-  sessionId,
-  summary,
-}: {
-  parts: ToolPart[];
-  sessionId: string;
-  /**
-   * A plain-language sentence to show above the raw tool views (W3) — e.g.
-   * "Read 3 files". Opt-in: only the Context card's tool-group rows
-   * (`context-card.tsx`) pass one, built by reusing `narrateStep`/
-   * `narrateFailedStep` over the group's own `parts`. `StepDetailBody` leaves
-   * this unset — a Progress step's narration already sits in the detail's
-   * own header, and repeating it here would just say the same line twice.
-   */
-  summary?: string;
-}) {
+export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: string }) {
   const visible = collapseSnapshots(parts);
   // A step's own icon already went red for this (StepIcon, ContextCard) — but
-  // that glance lives on the panel's home, one screen back. Once the user has
-  // actually opened the failed step, the detail must say so too, not just show
-  // a tool view that looks the same as a success (failed-call aggregation).
+  // that badge is one glance from the panel's home. Once the user has actually
+  // opened the failed step, the detail must say so too, not just show a tool
+  // view that looks the same as a success (W7).
   const failed = visible.some(
     (part) => (part.state as { status?: string } | undefined)?.status === 'error',
   );
@@ -796,7 +780,6 @@ export function ToolParts({
           '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
         )}
       >
-        {summary && <p className="text-muted-foreground text-sm text-pretty">{summary}</p>}
         {failed && (
           <div className="border-kortix-red/30 bg-kortix-red/5 text-foreground rounded-md border px-3 py-2 text-sm">
             This step hit a problem — the details below show what happened.

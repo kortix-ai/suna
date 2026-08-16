@@ -12,7 +12,7 @@ import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/comp
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
-import type { GatewayErrorDetails } from '@kortix/sdk';
+import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
   WarningCircleIcon as AlertCircle,
@@ -20,69 +20,6 @@ import {
   WarningCircleIcon,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
-
-// ============================================================================
-// Abort detection — user-initiated stops get a lowkey treatment
-// ============================================================================
-
-/**
- * Phrases that mean a HUMAN stopped this, not that a connection died.
- *
- * The list used to include bare `'abort'` and `'aborted'`, and its own comment
- * predicted the consequence: any message that merely mentions the word renders
- * as a muted "Interrupted" and the real error is never shown. That prediction
- * came true. A proxy hop that severs a live turn reports
- * `upstream unreachable … The operation was aborted` — a transport failure,
- * shown to the user as though they had pressed stop. Users saw a message go
- * quiet with no explanation, immediately after sending the next one.
- *
- * Phrases, never bare words: "aborted" is a substring of every one of those
- * transport messages, and a substring is not evidence of intent.
- */
-const ABORT_PATTERNS = [
-  'operation was aborted',
-  'aborted by user',
-  'interrupted by user',
-  'cancelled by user',
-  'canceled by user',
-  'request was cancelled',
-  'request was canceled',
-  'aborterror',
-];
-
-/**
- * Words that mean the TRANSPORT failed. Their presence disqualifies the sniff
- * outright, however abort-ish the rest of the prose reads — an aborted fetch
- * against an unreachable upstream is a failure with a cause worth showing, and
- * `'operation was aborted'` is exactly how such a fetch describes itself.
- */
-const TRANSPORT_FAILURE_PATTERNS = [
-  'unreachable',
-  'upstream',
-  'econnreset',
-  'econnrefused',
-  'socket hang up',
-  'network',
-  'fetch failed',
-  'timed out',
-  'timeout',
-  'gateway',
-  '502',
-  '503',
-  '504',
-];
-
-/**
- * LAST RESORT ONLY — a substring sniff over arbitrary error prose.
- *
- * Callers that can determine this properly pass `isAbort` instead; this only
- * covers the send-failure path, where all we have is a message.
- */
-function looksLikeAbortText(text: string): boolean {
-  const lower = text.toLowerCase();
-  if (TRANSPORT_FAILURE_PATTERNS.some((p) => lower.includes(p))) return false;
-  return ABORT_PATTERNS.some((p) => lower.includes(p));
-}
 
 // ============================================================================
 // Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
@@ -242,9 +179,24 @@ interface TurnErrorDisplayProps {
    * somewhere in the prose — which mislabels genuine failures as user
    * interruptions and hides what actually went wrong.
    *
-   * Undefined means "caller could not tell"; the text sniff is used then.
+   * Undefined means "caller could not tell"; the SDK's `isAbortError` last-resort
+   * text sniff (over `text`) is used then.
    */
   isAbort?: boolean;
+  /**
+   * The machine-readable WHY behind `isAbort` (the SDK's `AbortReason` —
+   * `core/http/abort-error.ts`), when the caller can read one off the
+   * message (`abortErrorReason(error)`).
+   *
+   * `undefined` covers "no abort", "reason: 'user'" (a real user Stop), and
+   * a genuine wire abort (opencode's own `MessageAbortedError`, which is
+   * never tagged) — all three render the "Interrupted" row exactly as
+   * before. Any OTHER value — currently only `'runtime-disposed'`, stamped
+   * when a runtime disposes/respawns mid-stream — is pure infrastructure,
+   * not a cut turn, and renders nothing at all: no Interrupted row, no error
+   * banner. A respawn that recovers cleanly must not scar the transcript.
+   */
+  abortReason?: string;
   className?: string;
 }
 
@@ -259,6 +211,7 @@ export function TurnErrorDisplay({
   errorDetails,
   error,
   isAbort,
+  abortReason,
   className,
 }: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
@@ -273,8 +226,14 @@ export function TurnErrorDisplay({
   if (error?.kind === 'connector') return null;
 
   // Abort/cancelled → tiny muted note, no card. Identity when the caller knows
-  // it, prose only when it does not.
-  if (isAbort ?? looksLikeAbortText(text)) {
+  // it, prose only when it does not — both routed through the SDK's single
+  // `isAbortError` classifier (see `@kortix/sdk` `core/http/abort-error.ts`).
+  if (isAbort ?? isAbortError(text)) {
+    // A reasoned, non-user abort (currently only `'runtime-disposed'`) is
+    // pure infrastructure — a runtime that disposed and respawned, not a cut
+    // turn. Render NOTHING: no Interrupted row, no error banner. `undefined`
+    // (no reason, or `'user'`) falls through to the row exactly as before.
+    if (abortReason && abortReason !== 'user') return null;
     return (
       <Checkpoint className={className}>
         <CheckpointIcon>

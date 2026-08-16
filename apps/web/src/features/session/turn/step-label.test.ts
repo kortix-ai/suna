@@ -61,30 +61,10 @@ describe('stepLabel', () => {
     });
   });
 
-  test('memory LOOKUPS are tier plumbing (W8)', () => {
-    // The agent consulting itself. Nothing changed, so nothing is owed a row.
+  test('memory tools are tier plumbing', () => {
+    expect(stepLabel(tool('memory')).tier).toBe('plumbing');
     expect(stepLabel(tool('get_mem')).tier).toBe('plumbing');
     expect(stepLabel(tool('memory_search')).tier).toBe('plumbing');
-    // Every spelling of the lookup, or the policy contradicts itself: the same
-    // read renders as a chat step or not depending on which name the model
-    // emitted. `narration.ts` puts all four in the one `memory` family.
-    expect(stepLabel(tool('mem_search')).tier).toBe('plumbing');
-    expect(stepLabel(tool('ltm_search')).tier).toBe('plumbing');
-    // …and they read as recalls, not as a raw tool name under "Used".
-    expect(stepLabel(tool('mem_search')).verb).toBe('Recalled');
-    expect(stepLabel(tool('ltm_search', { query: 'deploy checklist' })).object).toBe(
-      'deploy checklist',
-    );
-  });
-
-  test('the memory EDITOR is primary — an update the reader must be able to see', () => {
-    // `memory` create/insert/str_replace/rename/delete change what the agent
-    // remembers in every later turn. It was plumbing, which made the most
-    // consequential thing a session can do invisible in chat.
-    expect(stepLabel(tool('memory')).tier).toBe('primary');
-    // Tool granularity: `view` rides along rather than adding a second copy of
-    // the command table to this pipeline. The row names which it was.
-    expect(stepLabel(tool('memory', { command: 'view' })).tier).toBe('primary');
   });
 
   test('dcp and context tools are tier plumbing', () => {

@@ -212,6 +212,7 @@ export function useMessageQueueDrain({
     gates.pendingPermissionCount,
     gates.isPaused,
     gates.readOnly,
+    gates.revertStaged,
   ]);
 
   // Re-evaluate when the queue itself changes — a new message on an already

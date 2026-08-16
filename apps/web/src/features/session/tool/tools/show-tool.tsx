@@ -30,7 +30,8 @@ import {
   ShowContentRenderer,
   showDomain,
   ShowFileActions,
-  showTypeIcon,
+  ShowHeaderAvatars,
+  ShowHeaderIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -315,8 +316,15 @@ export function ShowTool({ part, sessionId }: ToolProps) {
         <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
           {running && !type && !items ? (
             <Loading className="text-muted-foreground size-4 shrink-0" />
+          ) : isCarousel && items!.length > 1 ? (
+            <ShowHeaderAvatars items={items!} />
           ) : (
-            showTypeIcon(headerIcon)
+            <ShowHeaderIcon
+              type={headerIcon}
+              path={activePath || undefined}
+              url={activeUrl || undefined}
+              title={displayTitle}
+            />
           )}
           <span className="min-w-0 truncate" title={displayTitle}>
             {displayTitle}

@@ -5,6 +5,7 @@ import { create as createStore } from 'zustand';
 
 import {
   ensureWarmProjectSession,
+  type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
 
@@ -18,8 +19,10 @@ import {
  * A warm session is NOT a species of session. It is an ORDINARY session, created
  * by the same server path the New Session button uses, that the user has not
  * typed into yet. The send path therefore does not "claim" anything: it navigates
- * to the session it already has and prompts it. No claim call, no 409 vocabulary,
- * no client state beyond the id.
+ * to the session it already has and prompts it. No claim call, no 409
+ * vocabulary, no claim PROTOCOL state — `WarmSession` caches the server row
+ * itself (JAY-599/T21) purely so the taker can seed a cache with it, not as
+ * negotiation state of any kind.
  *
  * CREATES at exactly three moments, no timers: on mount (or project change), on
  * regaining visibility, and to replenish after one is used. Holding an id
@@ -64,6 +67,15 @@ export interface WarmSession {
   /** RESOLVED, as the server stored it — never the `default` sentinel. */
   agentName: string | null;
   sandboxSlug: string;
+  /**
+   * The full server row `ensureWarmProjectSession` returned when this session
+   * was created. Carried so `takeWarmSessionEntry`'s caller (`use-new-project-
+   * session.ts`) can seed the sessions-list cache with it at adoption time,
+   * without a second fetch — see `warm-session-seed.ts`. Still shows
+   * `metadata.warm: true` at this point; the server only drops that once
+   * THIS take's own `/start` call lands (`apps/api/.../routes/r8.ts`).
+   */
+  session: ProjectSession;
 }
 
 /**
@@ -96,10 +108,25 @@ interface WarmSessionState {
   creating: Record<string, true>;
   /** The created, still-unused session per project. */
   ready: Record<string, WarmSession>;
+  /**
+   * Every session id THIS TAB has taken via `takeReady`. Defense in depth for
+   * JAY-596 / T20: the server's own warm marker only drops on the first
+   * prompt, seconds after a take, so a replenish racing that window can get
+   * the just-taken session back. `excludeSessionId` (see `createWarmSession`)
+   * stops a FIXED server from offering it; this set stops a server WITHOUT
+   * the fix (or any other race) from ever landing it back in `ready`, no
+   * matter how it got produced.
+   */
+  takenSessionIds: Record<string, true>;
   /** Reserve the create slot. False when one is in flight or one is ready. */
   beginCreate: (projectId: string) => boolean;
-  /** Release the create slot, recording the session it produced. */
-  settleCreate: (projectId: string, session: WarmSession | null) => void;
+  /**
+   * Release the create slot, recording the session it produced — UNLESS that
+   * session id was already taken this tab, in which case it is dropped on the
+   * floor. Returns whether the session was actually filed as ready, so the
+   * caller (`createWarmSession`) knows whether to retry.
+   */
+  settleCreate: (projectId: string, session: WarmSession | null) => boolean;
   /** Read AND consume the ready session, so it is handed out once. */
   takeReady: (projectId: string) => WarmSession | null;
 }
@@ -113,26 +140,34 @@ interface WarmSessionState {
 export const useWarmSessionStore = createStore<WarmSessionState>((set, get) => ({
   creating: {},
   ready: {},
+  takenSessionIds: {},
   beginCreate: (projectId) => {
     const state = get();
     if (state.creating[projectId] || state.ready[projectId]) return false;
     set((current) => ({ creating: { ...current.creating, [projectId]: true } }));
     return true;
   },
-  settleCreate: (projectId, session) =>
-    set((state) => {
-      const creating = { ...state.creating };
-      delete creating[projectId];
-      if (!session) return { creating };
-      return { creating, ready: { ...state.ready, [projectId]: session } };
-    }),
+  settleCreate: (projectId, session) => {
+    const state = get();
+    const creating = { ...state.creating };
+    delete creating[projectId];
+    if (!session || state.takenSessionIds[session.sessionId]) {
+      set({ creating });
+      return false;
+    }
+    set({ creating, ready: { ...state.ready, [projectId]: session } });
+    return true;
+  },
   takeReady: (projectId) => {
     const session = get().ready[projectId];
     if (!session) return null;
     set((state) => {
       const ready = { ...state.ready };
       delete ready[projectId];
-      return { ready };
+      return {
+        ready,
+        takenSessionIds: { ...state.takenSessionIds, [session.sessionId]: true },
+      };
     });
     return session;
   },
@@ -144,20 +179,37 @@ export const useWarmSessionStore = createStore<WarmSessionState>((set, get) => (
  * which is process-wide in this monorepo and a hazard for sibling suites.
  */
 export type WarmSessionClient = {
-  create: (projectId: string) => Promise<WarmSession>;
+  create: (projectId: string, excludeSessionId?: string) => Promise<WarmSession>;
 };
 
 const defaultClient: WarmSessionClient = {
-  create: async (projectId) => {
-    const { session } = await ensureWarmProjectSession(projectId);
+  create: async (projectId, excludeSessionId) => {
+    const { session } = await ensureWarmProjectSession(
+      projectId,
+      excludeSessionId ? { excludeSessionId } : undefined,
+    );
     return {
       sessionId: session.session_id,
       agentName: session.agent_name,
       sandboxSlug:
         typeof session.metadata?.sandbox_slug === 'string' ? session.metadata.sandbox_slug : '',
+      session,
     };
   },
 };
+
+export interface CreateWarmSessionOptions {
+  /** Forwarded to the client — see `ensureWarmProjectSession`'s option of the
+   *  same name. Set by `takeWarmSession`'s replenish to the id it just took. */
+  excludeSessionId?: string;
+  /**
+   * Retries left after the store rejects a produced session as already-taken
+   * (see `WarmSessionState.settleCreate`). Internal — callers never set this;
+   * it bounds the loop to exactly one retry per take so a server that keeps
+   * echoing the excluded id cannot spin forever.
+   */
+  retriesLeft?: number;
+}
 
 /**
  * Create this project's warm session unless it already has one.
@@ -165,14 +217,28 @@ const defaultClient: WarmSessionClient = {
  * Non-blocking and failure-silent by contract: nothing about the composer waits
  * on it, and a failure leaves the user on the ordinary create path with no
  * visible difference.
+ *
+ * If the produced session is one this tab already took (the store's
+ * `settleCreate` refuses to file it), this retries EXACTLY ONCE — a server
+ * without the exclusion fix, or a race, can otherwise echo the same id back
+ * forever and this must not become a busy loop.
  */
 export async function createWarmSession(
   projectId: string,
   client: WarmSessionClient = defaultClient,
+  options: CreateWarmSessionOptions = {},
 ): Promise<void> {
   if (!useWarmSessionStore.getState().beginCreate(projectId)) return;
+  const retriesLeft = options.retriesLeft ?? 1;
   try {
-    useWarmSessionStore.getState().settleCreate(projectId, await client.create(projectId));
+    const session = await client.create(projectId, options.excludeSessionId);
+    const accepted = useWarmSessionStore.getState().settleCreate(projectId, session);
+    if (!accepted && retriesLeft > 0) {
+      void createWarmSession(projectId, client, {
+        excludeSessionId: options.excludeSessionId,
+        retriesLeft: retriesLeft - 1,
+      });
+    }
   } catch {
     // Invisible on purpose. A warm session is an optimization; the create path
     // is unchanged and still the authority on every gate.
@@ -208,10 +274,18 @@ export interface TakeWarmSessionOptions {
  * A warm session that does not fit is CONSUMED, not kept: the user changed their
  * mind about the agent, so it will not fit the next send either.
  */
-export function takeWarmSession(
+/**
+ * Take this project's warm session for a send, or null to create normally —
+ * the FULL entry (id, agent, sandbox, and the server row itself), not just
+ * the id. `takeWarmSession` below is the historical id-only surface every
+ * existing caller and test uses; `use-new-project-session.ts` calls this one
+ * so it can seed the sessions-list cache with `.session` at adoption time
+ * (`warm-session-seed.ts`) — see JAY-599 / T21.
+ */
+export function takeWarmSessionEntry(
   projectId: string,
   options: TakeWarmSessionOptions = {},
-): string | null {
+): WarmSession | null {
   const warm = useWarmSessionStore.getState().takeReady(projectId);
   if (!warm) return null;
 
@@ -220,10 +294,21 @@ export function takeWarmSession(
   // leave a fresh billed box behind. The navigation this triggers stays on a
   // project route, so tab visibility is the live signal here.
   // Fire-and-forget — the caller is mid-navigation and must not wait on it.
+  //
+  // excludeSessionId: warm.sessionId — see JAY-596 / T20. Without it, the
+  // server's reuse lookup can find THIS session (its warm marker only drops on
+  // the first prompt, seconds from now) and hand it straight back.
   if (options.replenish !== false && (options.isPresent ?? tabIsVisible)()) {
-    void createWarmSession(projectId, options.client);
+    void createWarmSession(projectId, options.client, { excludeSessionId: warm.sessionId });
   }
-  return warmSessionFitsSend(warm, options.create) ? warm.sessionId : null;
+  return warmSessionFitsSend(warm, options.create) ? warm : null;
+}
+
+export function takeWarmSession(
+  projectId: string,
+  options: TakeWarmSessionOptions = {},
+): string | null {
+  return takeWarmSessionEntry(projectId, options)?.sessionId ?? null;
 }
 
 /** Is the user actually looking at this tab right now? */

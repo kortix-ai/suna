@@ -126,7 +126,12 @@ export function failureChainMetadata(
     codes: chain.map((failure) => String(failure.code)),
     providers: chain.map((failure) => failure.provider),
     contextRejected: chain.some((failure) => failure.code === 'context_length_exceeded'),
-    probeTimedOut: chain.some((failure) => failure.code === 'stream_probe_timeout'),
+    // NOTE: there is deliberately no `probeTimedOut` here any more. A probe
+    // timeout stopped being a failure when the deadline became a commit point
+    // (see handler.ts), so it can never appear in a failure chain — the field
+    // was permanently false and reported "no probe timeouts happened" whether
+    // or not any had. Reintroduce it only alongside a failure mode that can
+    // actually produce the code.
   };
 }
 

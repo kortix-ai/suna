@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from './session-terminal-state';
@@ -75,5 +76,58 @@ describe('isDormantSessionWithoutRuntime', () => {
     expect(
       isDormantSessionWithoutRuntime({ ...base, stage: 'stopped', hasStartError: true }),
     ).toBe(false);
+  });
+});
+
+describe('canRenderCachedTranscriptWhileSandboxDown', () => {
+  // The four-way matrix: {stopped, error} x {cache, no cache}.
+  test('stopped + cached content renders the transcript', () => {
+    expect(
+      canRenderCachedTranscriptWhileSandboxDown({
+        sandboxStatus: 'stopped',
+        hasCachedContent: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('stopped + no cached content keeps the terminal card', () => {
+    expect(
+      canRenderCachedTranscriptWhileSandboxDown({
+        sandboxStatus: 'stopped',
+        hasCachedContent: false,
+      }),
+    ).toBe(false);
+  });
+
+  test('error + cached content renders the transcript', () => {
+    expect(
+      canRenderCachedTranscriptWhileSandboxDown({
+        sandboxStatus: 'error',
+        hasCachedContent: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('error + no cached content keeps the terminal card', () => {
+    expect(
+      canRenderCachedTranscriptWhileSandboxDown({
+        sandboxStatus: 'error',
+        hasCachedContent: false,
+      }),
+    ).toBe(false);
+  });
+
+  // Every other sandbox status is out of scope for this override — the route's
+  // `fatal` gate never reaches this function for them, but the decision stays
+  // correct in isolation regardless of what calls it.
+  test('a non-terminal sandbox status never overrides, cache or not', () => {
+    for (const sandboxStatus of ['active', 'provisioning', null, undefined]) {
+      expect(canRenderCachedTranscriptWhileSandboxDown({ sandboxStatus, hasCachedContent: true })).toBe(
+        false,
+      );
+      expect(
+        canRenderCachedTranscriptWhileSandboxDown({ sandboxStatus, hasCachedContent: false }),
+      ).toBe(false);
+    }
   });
 });

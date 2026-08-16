@@ -33,6 +33,8 @@ import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp }
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { continueSession, restartSession, startSession, stopSession } from '../session-lifecycle';
+import { isWarmProjectSession } from '../lib/warm-sessions';
+import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
@@ -71,6 +73,16 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
+    // stops being speculative the instant a user's tab calls /start on it —
+    // see dropWarmSessionMarkerOnAdopt for why this is safe unconditionally.
+    // Independent of billing/provisioning below: it is a metadata fact about
+    // this row, not a spend, so it lands even if the billing gate rejects the
+    // resume that follows.
+    if (isWarmProjectSession(visible.row.metadata)) {
+      await dropWarmSessionMarkerOnAdopt(sessionId);
+    }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);

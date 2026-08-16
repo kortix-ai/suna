@@ -3,11 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
 import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
 import type { ToolPart } from '@/ui';
 
-import { BashTool, bashRowTitle } from './bash-tool';
+import { BashTool } from './bash-tool';
 
 // Regression guard for `code.slice is not a function`.
 //
@@ -32,38 +31,13 @@ function withProviders(node: ReactNode) {
   );
 }
 
-function makePart(command: string, output: string, description?: string): ToolPart {
+function makePart(command: string, output: string): ToolPart {
   return {
     type: 'tool',
     tool: 'bash',
     callID: 'call-1',
-    state: {
-      status: 'completed',
-      input: description === undefined ? { command } : { command, description },
-      output,
-      metadata: {},
-    },
+    state: { status: 'completed', input: { command }, output, metadata: {} },
   } as unknown as ToolPart;
-}
-
-/**
- * The settled row's leading words, sliced out of the markup.
- *
- * The trigger's title is the FIRST span inside the title row (the one carrying
- * `min-w-0 truncate`), so every title assertion below is anchored to that
- * element rather than to bare text — a `toContain('Ran command')` over the
- * whole document would also pass if the phrase landed anywhere else, and the
- * command's own mono line sits two spans away.
- *
- * The marker doubles as the pin on the title's own geometry: the title span
- * must stay shrinkable (`min-w-0 truncate`) now that it can hold a sentence,
- * and a `shrink-0` regression returns '' here and fails every case below.
- */
-function triggerTitle(html: string): string {
-  const marker = html.indexOf('class="min-w-0 truncate ');
-  if (marker < 0) return '';
-  const start = html.lastIndexOf('<span', marker);
-  return html.slice(start, html.indexOf('</span>', marker) + '</span>'.length);
 }
 
 // `hasStructuredContent` fires on a Python traceback.
@@ -167,32 +141,6 @@ describe('BashTool command card geometry', () => {
   test('the highlighted command inherits the 12px type size', () => {
     expect(html).toContain('_code]:text-xs');
   });
-
-  // NEW CONTRACT (spec W9): one line height across the whole card. The two
-  // panes carried the arbitrary `leading-[1.65]`; both now carry the
-  // `leading-relaxed` token, and the pre also overrides it onto the
-  // highlighted `<code>`. That last clause is the load-bearing one:
-  // `HighlightedCode` hardcodes `text-sm leading-[1.65]` on its own element,
-  // so — exactly like the `[&_code]:text-xs` fight above — the pane's leading
-  // only reaches the command through a `[&_code]:` variant. `iam/audit-tab.tsx`
-  // pairs the same two overrides for the same reason.
-  test('both panes share one line-height, and the command follows the pane not Shiki', () => {
-    expect(html.match(/font-mono text-xs leading-relaxed/g)?.length).toBe(2);
-    expect(html).toContain('_code]:leading-relaxed');
-  });
-
-  test('the empty state stands where a line of output would', () => {
-    // `text-xs` alone is a flat 16px line, so the "No output" region used to
-    // sit 3.5px shorter than the region it speaks for and the card twitched
-    // between a silent command and a one-line one.
-    const empty = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('mkdir -p build', '')} defaultOpen />),
-    );
-    const marker = empty.indexOf('No output');
-    const openTag = empty.slice(empty.lastIndexOf('<p', marker), marker);
-
-    expect(openTag).toContain('p-3 text-xs leading-relaxed');
-  });
 });
 
 // The indent lines a card up with the trigger row's TEXT column, which exists
@@ -260,174 +208,6 @@ describe('BashTool reports whether the command actually worked', () => {
     );
 
     expect(html).not.toContain('Exit code');
-  });
-});
-
-// NEW CONTRACT (spec W9), replacing "every settled bash row is titled 'Ran
-// command'": when the model wrote a `description` for its own call, that
-// sentence IS the row's title, and the command stays beside it as the mono
-// secondary line. The fallback is untouched — no description means "Ran
-// command", and nothing is ever derived from the command text, so a row can
-// only claim a purpose the model actually stated.
-//
-// The failure tests above are deliberately left as they were: their fixtures
-// carry no description, so they now pin the fallback path too. The verdict's
-// precedence over a description gets its own case here.
-describe('bashRowTitle — the row says what the command was for (W9)', () => {
-  test('a description becomes the title, with only its opener lifted', () => {
-    expect(bashRowTitle('install the workspace dependencies', false)).toBe(
-      'Install the workspace dependencies',
-    );
-  });
-
-  test('an opener that is already capital is left exactly alone', () => {
-    // Sentence-casing the whole string would read "Run ci on the release
-    // branch" — worse than the capitals it replaced.
-    expect(bashRowTitle('Run CI on the release branch', false)).toBe(
-      'Run CI on the release branch',
-    );
-    expect(bashRowTitle('CI smoke test', false)).toBe('CI smoke test');
-  });
-
-  test('a multi-line description collapses onto one line', () => {
-    // A trigger row is one line whatever the input does.
-    expect(bashRowTitle('  run the\n  unit suite  ', false)).toBe('Run the unit suite');
-  });
-
-  test('a long description is cut at 60 with no space stranded before the ellipsis', () => {
-    const title = bashRowTitle(
-      'rebuild the search index and reconcile every stale document row from the mirror',
-      false,
-    );
-
-    expect(title).toBe('Rebuild the search index and reconcile every stale document…');
-    // The 60-character cut lands right after "document ", which is exactly the
-    // case a plain character-count truncate gets wrong: it would keep that
-    // space and render "document …". The trimmed tail is why this is 60 and
-    // not 61 characters.
-    expect(title.length).toBe(60);
-    expect(title).not.toContain(' …');
-  });
-
-  test('a description of exactly the limit keeps every character', () => {
-    const sixty = 'a'.repeat(60);
-
-    expect(bashRowTitle(sixty, false)).toBe(`A${'a'.repeat(59)}`);
-    expect(bashRowTitle(sixty, false)).not.toContain('…');
-  });
-
-  test('no usable description falls back to exactly the old wording', () => {
-    expect(bashRowTitle(undefined, false)).toBe('Ran command');
-    expect(bashRowTitle('', false)).toBe('Ran command');
-    expect(bashRowTitle('   \n  ', false)).toBe('Ran command');
-    // Inputs arrive as unvalidated JSON; a non-string is not a summary.
-    expect(bashRowTitle(42, false)).toBe('Ran command');
-  });
-
-  test('a failure keeps its verdict however good the description is', () => {
-    // The one thing a friendly title must never soften.
-    expect(bashRowTitle('install the workspace dependencies', true)).toBe('Command failed');
-    expect(bashRowTitle(undefined, true)).toBe('Command failed');
-  });
-});
-
-describe('BashTool trigger renders the title the helper answers (W9)', () => {
-  test('a described call leads with the description and keeps the command beside it', () => {
-    const html = renderToStaticMarkup(
-      withProviders(
-        <BashTool part={makePart('pnpm install', 'done', 'install the workspace dependencies')} />,
-      ),
-    );
-
-    expect(triggerTitle(html)).toBe(
-      '<span class="min-w-0 truncate text-foreground">Install the workspace dependencies</span>',
-    );
-    // The command is not replaced by the summary, only demoted.
-    expect(html).toContain('font-mono">pnpm install</span>');
-    expect(html).not.toContain('Ran command');
-  });
-
-  test('a call with no description still reads "Ran command"', () => {
-    const html = renderToStaticMarkup(withProviders(<BashTool part={makePart('ls -la', 'out')} />));
-
-    expect(triggerTitle(html)).toBe(
-      '<span class="min-w-0 truncate text-foreground">Ran command</span>',
-    );
-  });
-
-  test('a failed call stays red and refuses the description', () => {
-    const html = renderToStaticMarkup(
-      withProviders(
-        <BashTool
-          part={makePart(
-            'bun test',
-            'FAIL 3 tests\n<exit_code>1</exit_code>',
-            'run the unit suite',
-          )}
-        />,
-      ),
-    );
-
-    expect(triggerTitle(html)).toBe(
-      '<span class="min-w-0 truncate text-kortix-red">Command failed</span>',
-    );
-    // Neither as written nor sentence-cased.
-    expect(html).not.toContain('run the unit suite');
-    expect(html).not.toContain('Run the unit suite');
-    // The failure's own command still shows, so the row is not just a verdict.
-    expect(html).toContain('font-mono">bun test</span>');
-  });
-
-  test('a RUNNING call is unchanged — the description titles a settled row only', () => {
-    // Mid-flight the row already shimmers the live command under "Running
-    // command"; swapping in a past-tense summary would report a result the
-    // call has not returned.
-    const running = {
-      type: 'tool',
-      tool: 'bash',
-      callID: 'call-1',
-      state: {
-        status: 'running',
-        input: { command: 'pnpm install', description: 'install the workspace dependencies' },
-        metadata: {},
-      },
-    } as unknown as ToolPart;
-    const html = renderToStaticMarkup(
-      withProviders(
-        <ToolRunningContext.Provider value>
-          <BashTool part={running} />
-        </ToolRunningContext.Provider>,
-      ),
-    );
-
-    expect(html).toContain('Running command');
-    expect(html).not.toContain('Install the workspace dependencies');
-  });
-
-  test('an ORPHANED running call — no ToolRunningContext — falls back to the description title', () => {
-    // `running` comes from context, not from `state.status`, so a `running`
-    // part rendered outside a provider (a replayed transcript, a dev-tools
-    // one-off, the panel's own detail views) takes the SETTLED branch and is
-    // titled by its description. Pinned so a future change to that fallback is
-    // a deliberate one: the alternatives (shimmer without a live stream, or a
-    // bare "Ran command" on a call that has not returned) are both worse, but
-    // neither is currently guarded by anything.
-    const orphaned = {
-      type: 'tool',
-      tool: 'bash',
-      callID: 'call-1',
-      state: {
-        status: 'running',
-        input: { command: 'pnpm install', description: 'install the workspace dependencies' },
-        metadata: {},
-      },
-    } as unknown as ToolPart;
-    const html = renderToStaticMarkup(withProviders(<BashTool part={orphaned} />));
-
-    expect(triggerTitle(html)).toBe(
-      '<span class="min-w-0 truncate text-foreground">Install the workspace dependencies</span>',
-    );
-    expect(html).not.toContain('Running command');
   });
 });
 

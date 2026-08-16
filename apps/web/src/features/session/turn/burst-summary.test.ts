@@ -83,7 +83,7 @@ describe('burstSummary counting', () => {
     const summary = burstSummary([
       tool('1', 'read'),
       failedTool('p1', 'prune'),
-      failedTool('p2', 'get_mem'),
+      failedTool('p2', 'memory'),
     ]);
     expect(summary).toEqual({ total: 1, failed: 0, completed: 1, hasPlumbing: true });
   });
@@ -155,13 +155,7 @@ describe('burstSummaryLabel', () => {
   });
 
   test('a settled burst of only plumbing reads as housekeeping', () => {
-    expect(settledLabel([tool('1', 'dcp_prune'), tool('2', 'get_mem')])).toBe('Housekeeping');
-  });
-
-  test('a memory WRITE is a counted step, not housekeeping (W8)', () => {
-    // The memory editor left `PLUMBING_TOOLS`, so a turn that only recorded
-    // what it learned reports the work it did instead of "Housekeeping".
-    expect(settledLabel([tool('1', 'memory')])).toBe('Completed 1 step');
+    expect(settledLabel([tool('1', 'dcp_prune'), tool('2', 'memory')])).toBe('Housekeeping');
   });
 
   test('a settled empty burst returns a neutral label, not an empty string', () => {

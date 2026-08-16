@@ -169,13 +169,6 @@ export interface SessionChatInputProps {
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
   } | null;
-  /**
-   * A fresh (never-before-seen) value asks the composer to open its attach
-   * (file-picker) flow — the empty Context card's "Add context" button.
-   * Id-keyed exactly like `prefill.id`: a repeat request bumps to a new id
-   * so the effect below fires again even if the composer never unmounted.
-   */
-  attachRequestId?: number | null;
 
   providers?: ProviderListResponse;
   threadContext?: {
@@ -218,7 +211,6 @@ export interface SessionChatInputProps {
   slashMenuPlacement?: 'above' | 'below';
 
   cardClassName?: string;
-  dockClassName?: string;
 
   replyTo?: { text: string } | null;
   onClearReply?: () => void;
@@ -358,7 +350,6 @@ function ComposerImpl({
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
-  attachRequestId = null,
   providers,
   threadContext,
   onContextClick,
@@ -366,8 +357,7 @@ function ComposerImpl({
   toolbarSlot,
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
-  dockClassName,
-    cardClassName,
+  cardClassName,
   replyTo,
   onClearReply,
   lockForQuestion = false,
@@ -439,15 +429,6 @@ function ComposerImpl({
   const handleAttachClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
-
-  // "Add context" (Task 5): a fresh `attachRequestId` opens the same file
-  // picker `handleAttachClick` opens for a manual click or the `/attach-file`
-  // command — see `session-composer-prefill-store.ts` for the held/id-keyed
-  // handoff this consumes.
-  useEffect(() => {
-    if (attachRequestId == null) return;
-    handleAttachClick();
-  }, [attachRequestId, handleAttachClick]);
 
   const dragHasFiles = useCallback((e: React.DragEvent<HTMLElement>) => {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files');
@@ -1076,7 +1057,8 @@ function ComposerImpl({
    * the strip's padded, bordered shell rendered as an empty rounded sliver
    * floating above the notice bar whenever the queue was empty.
    */
-  const queueHasRows = (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
+  const queueHasRows =
+    (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
   const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
 
   return (
@@ -1132,19 +1114,19 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem] empty:hidden">
+            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
               <QueuedMessages
-                messages={queuedMessages ?? EMPTY_QUEUE}
-                failed={failedQueuedMessages}
-                inFlightIds={queueInFlightIds}
-                paused={queuePaused}
-                isRunning={queueIsRunning}
-                onRemove={onRemoveQueuedMessage}
-                onEdit={onEditQueuedMessage}
-                onReorder={onReorderQueuedMessage}
-                onSendNow={onSendQueuedMessageNow}
-                onRetry={onRetryQueuedMessage}
-              />
+                  messages={queuedMessages ?? EMPTY_QUEUE}
+                  failed={failedQueuedMessages}
+                  inFlightIds={queueInFlightIds}
+                  paused={queuePaused}
+                  isRunning={queueIsRunning}
+                  onRemove={onRemoveQueuedMessage}
+                  onEdit={onEditQueuedMessage}
+                  onReorder={onReorderQueuedMessage}
+                  onSendNow={onSendQueuedMessageNow}
+                  onRetry={onRetryQueuedMessage}
+                />
 
               {threadContext && (
                 <button
@@ -1222,7 +1204,8 @@ function ComposerImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border pt-3',
+          'bg-sidebar shadow-card border-border relative isolate z-10 w-full rounded-xl border shadow-xl',
+          'pt-3 shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
           'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
           'motion-reduce:transition-none',
           cardClassName,
@@ -1435,7 +1418,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className={cn("absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1", dockClassName)} />
+        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-3.5 z-99" />
       )}
     </div>
   );

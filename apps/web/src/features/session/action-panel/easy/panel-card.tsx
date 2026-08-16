@@ -15,7 +15,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { Empty, EmptyContent, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
+import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
@@ -30,11 +30,6 @@ export interface PanelCardProps {
   /** Soft placeholder art shown above `emptyText` — the "promise" state. */
   emptyArt?: ReactNode;
   emptyText?: string;
-  /** Extra content under `emptyText` — the empty Context card's "Add
-   *  context" / "Connect apps" row (Task 5). Full-width, not the `Empty`
-   *  primitive's own `max-w-sm` prose cap, since a connector strip needs the
-   *  card's whole width to lay out its rows. */
-  emptyActions?: ReactNode;
   isEmpty: boolean;
   defaultExpanded?: boolean;
   /** Override the body padding — a full-bleed list (Progress) wants none. */
@@ -108,7 +103,6 @@ export function PanelCard({
   children,
   emptyArt,
   emptyText,
-  emptyActions,
   isEmpty,
   defaultExpanded = false,
   contentClassName = 'border-border border-t p-4',
@@ -185,7 +179,6 @@ export function PanelCard({
           <Empty className="flex-none gap-3 rounded-none border-none p-0 text-center">
             {emptyArt && <EmptyMedia className="mb-0">{emptyArt}</EmptyMedia>}
             {emptyText && <EmptyDescription className="text-pretty">{emptyText}</EmptyDescription>}
-            {emptyActions && <EmptyContent className="w-full max-w-none">{emptyActions}</EmptyContent>}
           </Empty>
         ) : (
           children

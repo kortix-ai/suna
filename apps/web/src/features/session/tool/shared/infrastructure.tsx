@@ -1189,6 +1189,7 @@ export function BasicTool({
   locked,
   onSubtitleClick,
   badge,
+  rightAccessory,
   onClick,
   className,
   durationMs: durationMsProp,

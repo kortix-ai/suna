@@ -3,14 +3,18 @@
 import {
   BellIcon as Bell,
   RobotIcon as Bot,
+  CalendarDotsIcon as CalendarClock,
   ShippingContainerIcon as Container,
   FileCodeIcon as FileCode,
   PackageIcon as Package,
   SidebarSimpleIcon as PanelLeft,
+  SparkleIcon as SparklesSolid,
+  UsersThreeIcon as UsersGroupSolid,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,20 +28,33 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { useSidebar } from '@/components/ui/sidebar';
+import { Kortix } from '@/features/icon/icons/kortix';
+import { Slack } from '@/features/icon/icons/slack';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
+  CAPABILITY_TABS,
+  capabilityTabHref,
+  type CapabilityTab,
+} from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
-import { StarterSuggestions } from '@/features/workspace/project-layout/starter-suggestions';
+import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
+import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { listProjectAccessRequests, listProjectSandboxes, type SandboxTemplate } from '@kortix/sdk';
+import {
+  type SandboxTemplate,
+  listProjectAccessRequests,
+  listProjectSandboxes,
+} from '@kortix/sdk';
 import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
-import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
+import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
+import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
@@ -200,8 +217,6 @@ export function ProjectHome({
             clearOnSend={false}
             autoFocus
             cardClassName="rounded-xl"
-            parentClassName="px-0 md:px-0"
-            dockClassName="right-0 left-0 md:right-0"
             // A hero composer floating mid-page has no column for a second
             // rail to align to, so the attach/agent/context controls ride on
             // the toolbar itself, ahead of the model selector. The session
@@ -283,21 +298,61 @@ export function ProjectHomeWelcomeBody({
   return (
     <div className="relative z-10 flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="m-auto flex w-full max-w-2xl flex-col items-center gap-8 px-2 py-8 sm:px-4">
-          <h1 className="text-muted-foreground w-full text-left text-2xl leading-[1.2] tracking-tight text-balance">
-            What would you like to do?
+        <div className="m-auto flex w-full max-w-[52rem] flex-col items-center gap-8 px-2 py-8 sm:px-4">
+          <h1 className="text-muted-foreground max-w-2xl text-center text-4xl leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+            Give <span className="text-foreground">{displayName}</span>{' '}
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+            )}
           </h1>
 
           {composer || onPickSuggestion ? (
             <div className="flex w-full flex-col items-center space-y-4">
               {composer}
-              {onPickSuggestion ? (
-                <StarterSuggestions projectId={projectId} onPick={onPickSuggestion} />
-              ) : null}
+              {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
             </div>
           ) : null}
         </div>
       </div>
+
+      <div className="flex shrink-0 justify-center px-4 pb-6">
+        <ProjectHomeSections projectId={projectId} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Starter prompt suggestions rendered as a centered, wrapping row of quiet
+ * pills directly above the composer (Perplexity-style). All prompts are
+ * visible at once — no scroll machinery; small screens show the first four.
+ */
+export function StarterPromptChips({ onPick }: { onPick: (text: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      {STARTER_PROMPTS.map((p, i) => {
+        const ChipIcon = p.icon;
+        const chalk = chalkColors(p.label);
+        return (
+          <Button
+            key={p.id}
+            onClick={() => onPick(p.prompt)}
+            variant="outline"
+            size="sm"
+            className={cn(
+              'bg-background/60 shrink-0 gap-1.5 rounded-md backdrop-blur-sm',
+              i >= 4 && 'max-sm:hidden',
+            )}
+          >
+            <ChipIcon
+              className="size-3.5 shrink-0"
+              style={{ color: chalk.foreground }}
+              aria-hidden
+            />
+            {p.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }
@@ -411,5 +466,94 @@ function SandboxPicker({
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+type SetupTile = {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  desc: string;
+  // Agents, Connectors and Skills graduated out of Settings into their own
+  // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
+  // carry a capability tab key instead of a SettingsTab and navigate
+  // there directly.
+  section: SettingsTab | CapabilityTab['key'];
+};
+
+const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
+  CAPABILITY_TABS.some((tab) => tab.key === section);
+
+/** Static navigation does not fetch counts before the user opens Customize. */
+const PROJECT_SETUP_TILES: SetupTile[] = [
+  {
+    icon: HiOutlineViewGrid,
+    title: 'Connectors',
+    desc: 'Connect tools your agent can act in.',
+    section: 'connectors',
+  },
+  {
+    icon: CalendarClock,
+    title: 'Scheduled tasks',
+    desc: 'Run work on a schedule or from an event.',
+    section: 'schedules',
+  },
+  {
+    icon: SparklesSolid,
+    title: 'Skills',
+    desc: 'Repeatable workflows your agent reuses.',
+    section: 'skills',
+  },
+  {
+    icon: Slack,
+    title: 'Slack',
+    desc: 'Run this project right from chat.',
+    section: 'channels',
+  },
+  {
+    icon: UsersGroupSolid,
+    title: 'Your team',
+    desc: 'Invite people to run and review work.',
+    section: 'members',
+  },
+  {
+    icon: Kortix,
+    title: 'Agent',
+    desc: 'Shape how your agent thinks and acts.',
+    // 'agent' (the route segment), not the old 'agents' overlay section —
+    // `isCapabilityTabKey` matches on the key, so the wrong spelling would
+    // silently fall through to `openSettings('agents')` and open nothing.
+    section: 'agent',
+  },
+];
+
+function ProjectHomeSections({ projectId }: { projectId: string }) {
+  const openSettings = useSettingsPanelStore((s) => s.openSettings);
+  const router = useRouter();
+  const tiles = PROJECT_SETUP_TILES;
+
+  return (
+    <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
+      {tiles.map((tile) => {
+        const { icon: TileIcon, title, desc, section } = tile;
+
+        return (
+          <Hint key={section} label={desc} side="top">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                isCapabilityTabKey(section)
+                  ? router.push(capabilityTabHref(projectId, section))
+                  : openSettings(section)
+              }
+              className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
+            >
+              <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
+              {title}
+            </Button>
+          </Hint>
+        );
+      })}
+    </div>
   );
 }

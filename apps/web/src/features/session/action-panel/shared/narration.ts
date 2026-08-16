@@ -142,34 +142,6 @@ export function humanizeToolName(toolName: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/**
- * The label a Context row wears for a tool, in plain language.
- *
- * Keyed on FAMILY, never on the tool name. A second per-tool table would be
- * exactly the duplication `FAMILY_BY_TOOL` exists to prevent, and it would
- * drift the moment another spelling of an existing tool lands. Two families
- * earn an override; every other one keeps `humanizeToolName`, where the tool's
- * own name is still the most truthful thing to call it.
- *
- * - `run` — `bash` humanizes to "Bash", the name of a shell. A reader who has
- *   never opened one still knows what a terminal is.
- * - `memory` — `memory`, `memory_search`, `mem_search`, `ltm_search` and
- *   `get_mem` are five spellings of ONE thing. Humanized per tool they split
- *   into "Memory", "Memory Search", "Get Mem", … as separate rows sitting
- *   beside each other; `deriveContext` folds by label, so one label is what
- *   makes them one row.
- */
-const CONTEXT_LABEL_BY_FAMILY: Partial<Record<StepFamily, string>> = {
-  run: 'Terminal',
-  memory: 'Memory',
-};
-
-export function contextLabelForTool(toolName: string): string {
-  const family = familyForTool(toolName);
-  const label = family === 'hidden' ? undefined : CONTEXT_LABEL_BY_FAMILY[family];
-  return label ?? humanizeToolName(toolName);
-}
-
 function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }

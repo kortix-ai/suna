@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { isSessionFresh } from '../../http/fresh-sessions';
+import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
 import type { CreateProjectSessionInput, ProjectSession } from './sessions';
 import {
   createProjectSession,
@@ -184,6 +184,52 @@ test('ensureWarmProjectSession POSTs the server-owned warm-session request', asy
   expect(last().body).toEqual({});
   expect(result.session.session_id).toBe('WARM-1');
   expect(result.reused).toBe(true);
+});
+
+test('ensureWarmProjectSession does NOT mark a REUSED session fresh — a reused session is by definition not fresh', async () => {
+  clearSessionFresh('WARM-REUSED-1');
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-REUSED-1' },
+      reused: true,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  await ensureWarmProjectSession('P1');
+  expect(isSessionFresh('WARM-REUSED-1')).toBe(false);
+});
+
+test('ensureWarmProjectSession marks a freshly-created session fresh (reused: false)', async () => {
+  clearSessionFresh('WARM-NEW-1');
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-NEW-1' },
+      reused: false,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  await ensureWarmProjectSession('P1');
+  expect(isSessionFresh('WARM-NEW-1')).toBe(true);
+});
+
+test('ensureWarmProjectSession forwards exclude_session_id in the request body when given', async () => {
+  nextResponse = {
+    status: 200,
+    body: { session: { session_id: 'WARM-2' }, reused: false, workspace_refresh: { status: 'skipped' } },
+  };
+  await ensureWarmProjectSession('P1', { excludeSessionId: 'JUST-TAKEN-1' });
+  expect(last().body).toEqual({ exclude_session_id: 'JUST-TAKEN-1' });
+});
+
+test('ensureWarmProjectSession omits exclude_session_id when not given', async () => {
+  nextResponse = {
+    status: 200,
+    body: { session: { session_id: 'WARM-3' }, reused: false, workspace_refresh: { status: 'skipped' } },
+  };
+  await ensureWarmProjectSession('P1', {});
+  expect(last().body).toEqual({});
 });
 
 test('ensureWarmProjectSession keeps a declined warm session out of the global error sink', async () => {

@@ -14,4 +14,3 @@ export * from "./project-glyphs";
 export * from "./meta-agent";
 export * from "./environment-secret";
 export * from "./utils/format-relative";
-export * from "./starter-prompts";

@@ -23,6 +23,7 @@ const CLEAR: QueueDrainGates = {
   isPaused: false,
   readOnly: false,
   runtimeReady: true,
+  revertStaged: false,
 };
 
 describe('canDrainQueue', () => {
@@ -371,5 +372,36 @@ describe('runtimeReady gate', () => {
     expect(
       shouldQueueInsteadOfSend({ isBusy: true, pendingCount: 0, hasInFlight: false }),
     ).toBe(true);
+  });
+});
+
+/**
+ * T22 — the web must never prompt across a staged session rewind. A staged
+ * revert's local hide window can hide the ONLY thing making other gates
+ * (`hasIncompleteAssistant`, `isServerBusy`) read true, so relying on those
+ * alone would let the drain open SOONER during a staged revert, not later —
+ * exactly backwards. This gate hard-closes the drain independent of every
+ * other signal, for as long as `rewindMessageId` is non-null (staged, not
+ * yet committed) on the session.
+ */
+describe('revertStaged gate', () => {
+  test('a staged revert blocks the drain even with every other gate clear', () => {
+    expect(canDrainQueue({ ...CLEAR, revertStaged: true })).toBe(false);
+  });
+
+  test('the drain resumes once the revert is no longer staged (cleared or committed)', () => {
+    expect(canDrainQueue({ ...CLEAR, revertStaged: true })).toBe(false);
+    expect(canDrainQueue({ ...CLEAR, revertStaged: false })).toBe(true);
+  });
+
+  test('a staged revert holds the settle machine at zero, never dispatching', () => {
+    const gates = { ...CLEAR, revertStaged: true };
+    let machine = createDrainMachine();
+    for (const now of [0, 1_000, 10_000, 60_000]) {
+      const step = stepDrainMachine(machine, gates, now);
+      machine = step.machine;
+      expect(step.dispatch).toBe(false);
+    }
+    expect(machine.clearSince).toBeNull();
   });
 });
