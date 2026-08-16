@@ -161,10 +161,39 @@ OpenTelemetry spans expose `kortix.failure_count`, `kortix.failure_codes`,
 gateway trace, provider attempt, and session retry.
 
 The standalone and in-process hosts reject request bodies above 8 MiB with
-`413 request_too_large`. A new streaming response gets a 30-second first-byte
-budget. Aster/GLM gets at least 45 seconds. Large requests add 15 seconds per
-MiB, capped at 120 seconds. `GATEWAY_STREAM_PROBE_TIMEOUT_MS` replaces this
-adaptive policy with an exact positive override; `0` keeps the adaptive policy.
+`413 request_too_large`.
+
+### Streaming timeouts
+
+A new streaming response gets a 30-second first-byte **commit deadline** — one
+value for every provider, model, and request size.
+
+Exceeding it does not fail the request. The stream is committed to the relay,
+which sends response headers downstream and emits a `: keep-alive` SSE comment
+every 10 seconds while the model works. The only thing the deadline decides is
+how long the gateway holds the response back so it can still fail over to
+another candidate; a slow candidate is not a broken one. Every other
+content-free probe outcome — a structured error frame, a transport read
+failure, a stream that closes without output — still fails over.
+
+Once committed, a stream may go silent for up to 90 minutes before it is
+declared dead. That is a **gap** budget measured from the last byte and reset by
+every chunk, so it never truncates a long response: a Claude Fable 5 turn
+emitting its full 128,000-token ceiling at 50 tok/s runs 42m40s end to end and
+is never at risk from it.
+
+`GATEWAY_STREAM_PROBE_TIMEOUT_MS` overrides the commit deadline with an exact
+positive value; `0` keeps the default. `GATEWAY_UPSTREAM_TIMEOUT_MS` (default 90
+minutes) bounds time-to-headers when streaming and the whole completion when
+not.
+
+> Do not reintroduce a request-size-scaled first-byte budget. The retired
+> version was `30_000 + ceil((bytes - 64KiB) / 1MiB) * 15_000` capped at
+> `120_000`, which handed every body between 3,211,776 and 4,259,840 bytes a
+> budget of exactly 90,000 ms and killed healthy large-context reasoning turns
+> with `upstream stream probe timeout exceeded (90000ms with no bytes)`. Scaling
+> the budget moves the cliff; it cannot remove it, because the same growth in
+> context that raises the budget raises the model's prefill time by more.
 
 ## Live e2e
 
