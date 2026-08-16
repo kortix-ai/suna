@@ -176,6 +176,13 @@ another candidate; a slow candidate is not a broken one. Every other
 content-free probe outcome — a structured error frame, a transport read
 failure, a stream that closes without output — still fails over.
 
+The 30 seconds is bounded from above by the edge, not by taste. The live
+`kortix.com` zone reports `proxy_read_timeout = 125` seconds with
+`editable: false` (Free plan), so an origin that produces nothing for longer
+than that gets a Cloudflare 524 regardless of what the gateway does. The same
+125 seconds applies to gaps between bytes after headers are sent, which is why
+the relay's 10-second heartbeat is load-bearing rather than cosmetic.
+
 Once committed, a stream may go silent for up to 90 minutes before it is
 declared dead. That is a **gap** budget measured from the last byte and reset by
 every chunk, so it never truncates a long response: a Claude Fable 5 turn

@@ -132,8 +132,12 @@ const PROBE_MAX_BYTES = 64 * 1024;
  * could not remove it. Committing instead of failing removes it.
  *
  * It must also stay well under the downstream first-byte deadline: nothing has
- * been written to the client yet while the probe runs, and Cloudflare gives an
- * origin 100s to produce a response before it serves a 524.
+ * been written to the client yet while the probe runs, and the edge will serve
+ * a 524 if the origin takes too long to respond. Measured on the live
+ * kortix.com zone (2026-08-16): `proxy_read_timeout = 125` seconds, and
+ * `editable: false` on the Free plan, so it cannot be raised. 30s leaves ~95s
+ * of headroom. Raising this budget past ~125s cannot work — the client would
+ * get a Cloudflare 524 before the gateway ever reached its own deadline.
  */
 const PROBE_COMMIT_DEADLINE_MS = 30_000;
 
