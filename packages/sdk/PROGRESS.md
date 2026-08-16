@@ -875,6 +875,26 @@ Public surface snapshots regenerated (`UPDATE_SURFACE_SNAPSHOT=1` /
 
 ---
 
+||||||| parent of 82d5808ccc (chore(sdk): claim trigger session access work)
+### 2026-08-16 — session `trigger-access-scope` claim
+
+No **Now** task claimed. This is user-directed trigger-session authorization work.
+
+Claimed SDK scope, additive only:
+
+- Expose each trigger's default-private session access policy.
+- Accept project-wide or selected member/group access on trigger create and update.
+- Preserve every existing exported name and leave the package `version` unchanged.
+- Add failing REST client coverage before implementation.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+The required `tdd` skill is unavailable in this session. This work will use the
+required RED, GREEN, and REFACTOR sequence directly.
+
+**Status:** IN PROGRESS.
+
+---
+
 ### 2026-08-13 — session `warm-index` — warm-session decline must not toast
 
 **Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
