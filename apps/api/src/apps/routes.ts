@@ -12,7 +12,7 @@ import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
-import { getProvider } from '../platform/providers';
+import { tryGetProvider } from '../platform/providers';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
 import {
@@ -602,7 +602,14 @@ projectsApp.openapi(
       .where(eq(appDeployments.appId, appId));
     for (const item of runtimes) {
       const runtime = item.app_runtimes;
-      await getProvider(runtime.provider as SandboxProviderName).remove(runtime.externalId).catch(() => {});
+      // Best-effort remote teardown. A legacy runtime can name a provider this
+      // box has since disabled or retired (e.g. platinum after switching to
+      // e2b-only); tryGetProvider returns null there instead of throwing, so a
+      // dead provider never blocks the delete. pauseComputeSession runs
+      // unconditionally — it stops billing and must not depend on the provider
+      // being reachable.
+      const provider = tryGetProvider(runtime.provider);
+      if (provider) await provider.remove(runtime.externalId).catch(() => {});
       await pauseComputeSession(runtime.runtimeId).catch(() => {});
     }
     await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
