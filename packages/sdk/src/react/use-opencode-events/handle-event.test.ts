@@ -85,6 +85,7 @@ function buildHandler(
     messagesImpl?: () => Promise<{ data?: unknown }>;
     getImpl?: () => Promise<{ data?: unknown }>;
     projectId?: string;
+    reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -125,6 +126,7 @@ function buildHandler(
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
+    reconcileSessionTail: overrides.reconcileSessionTail,
   });
 
   return {
@@ -1003,5 +1005,43 @@ describe('remaining event kinds — smoke coverage', () => {
       properties: { serverID: 'srv_1', path: 'src/app.ts' },
     });
     expect(fetchLspDiagnosticsDebounced.calls.length).toBe(1);
+  });
+});
+
+describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)', () => {
+  // The store's applyEvent refuses to guess-delete when this tab never saw
+  // the staging and raises `sessionRevertNeedsTailReconcile` instead.
+  // handle-event is the one consumer: it must fetch the server's truncated
+  // tail and clear the flag. applySyncEvent is a spy in this harness, so the
+  // flag is seeded directly — exactly the state the store leaves behind.
+  test('consumes the needs-reconcile flag: fetches the tail, clears the flag', () => {
+    useSyncStore.getState().markSessionRevertNeedsTailReconcile('ses_rw');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([['ses_rw', 'manual']]);
+    expect(useSyncStore.getState().sessionRevertNeedsTailReconcile['ses_rw']).toBeUndefined();
+  });
+
+  test('no flag (tracked-revert tab) → no reconcile fetch', () => {
+    useSyncStore.getState().clearSessionRevertNeedsTailReconcile('ses_rw2');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([]);
   });
 });

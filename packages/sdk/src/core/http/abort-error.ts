@@ -175,11 +175,21 @@ export const ABORT_REASONS_NOT_YET_EMITTED = [
  * cut turn, not a fabricated marker, and callers render it as "Interrupted"
  * exactly like a `reason: 'user'` abort. Returns `undefined` when absent,
  * never a guess.
+ *
+ * Validated against `ABORT_REASONS`, not merely typed as `string`: a
+ * renderer branches on this value (`'user'` → "Interrupted", anything else →
+ * nothing), so an unrecognized/typo'd string previously reached that branch
+ * unfiltered and silently suppressed the error UI. An unknown value now
+ * returns `undefined` — the same safe default as a reason-less real wire
+ * abort — instead of propagating an unvalidated string.
  */
-export function abortErrorReason(error: unknown): string | undefined {
+export function abortErrorReason(error: unknown): AbortReason | undefined {
   if (!error || typeof error !== 'object') return undefined;
   const data = (error as Record<string, unknown>).data;
   if (!data || typeof data !== 'object') return undefined;
   const reason = (data as Record<string, unknown>).reason;
-  return typeof reason === 'string' && reason ? reason : undefined;
+  if (typeof reason !== 'string' || !reason) return undefined;
+  return (ABORT_REASONS as readonly string[]).includes(reason)
+    ? (reason as AbortReason)
+    : undefined;
 }

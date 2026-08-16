@@ -474,10 +474,19 @@ function waitForSessionIdle(sessionId: string): Promise<void> {
 export interface StopThenSendNowDeps {
   /** True when a turn is currently running and must be stopped first. */
   isRunning: () => boolean;
+  /** The still-pending `AbortSettlement` for a stop already issued by someone
+   *  else (e.g. a direct click on the Stop button), if one exists. Checked
+   *  BEFORE `isRunning()`: `applyOptimisticAbort` flips the store `isRunning`
+   *  reads to idle SYNCHRONOUSLY, before that earlier stop's settlement
+   *  arrives, so `isRunning()` alone cannot see an in-flight stop issued
+   *  outside this call. Returns `undefined` when no stop is currently
+   *  pending for this session. */
+  pendingSettlement: () => Promise<AbortSettlement> | undefined;
   /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
    *  stop produced no trackable settlement (defensive fallback only — see
-   *  `waitIdle`). Called only when `isRunning()` is true. Never expected to
-   *  reject — `AbortSettlement`-producing paths (`sessionState.cancel()`,
+   *  `waitIdle`). Called only when `pendingSettlement()` is `undefined` and
+   *  `isRunning()` is true. Never expected to reject —
+   *  `AbortSettlement`-producing paths (`sessionState.cancel()`,
    *  `awaitAbortSettlement`) never do. */
   stop: () => Promise<AbortSettlement | null>;
   /** Fallback wait, used only when `stop()` resolves `null`. */
@@ -504,11 +513,25 @@ export interface StopThenSendNowDeps {
  * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
  * the client to race even without a server acknowledgement.
  *
- * When nothing is running, `stop()`/`waitIdle()` are never called and the
- * send is not delayed at all.
+ * When nothing is running and no stop is pending, `stop()`/`waitIdle()` are
+ * never called and the send is not delayed at all.
+ *
+ * T10 (settlement race): a stop can already be in flight when this runs —
+ * e.g. the user clicked Stop directly, which ran `applyOptimisticAbort` and
+ * flipped the store `isRunning()` reads to idle SYNCHRONOUSLY, well before
+ * that stop's `AbortSettlement` arrives from the server. Gating on
+ * `isRunning()` alone would then see "idle" and dispatch immediately,
+ * racing the still-in-flight abort. `pendingSettlement()` is consulted
+ * FIRST for exactly this reason: if a settlement is already pending for this
+ * session, it is awaited (and `stop()` is NOT called again — a stop was
+ * already issued) before resuming/dispatching, regardless of what
+ * `isRunning()` reports.
  */
 export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> {
-  if (deps.isRunning()) {
+  const pending = deps.pendingSettlement();
+  if (pending) {
+    await pending;
+  } else if (deps.isRunning()) {
     const settlement = await deps.stop();
     if (settlement === null) await deps.waitIdle();
   }
@@ -3574,6 +3597,7 @@ export function SessionChat({
           const status = useSessionStateStore.getState().sessionStatus[sessionId];
           return status?.type === 'busy' || status?.type === 'retry';
         },
+        pendingSettlement: () => pendingAbortSettlementRef.current.get(sessionId),
         stop: () => {
           handleStop();
           return pendingAbortSettlementRef.current.get(sessionId) ?? Promise.resolve(null);

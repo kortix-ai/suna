@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
@@ -1014,6 +1014,10 @@ async function maybeCreateInitialOpencodeSession(
   // Captured BEFORE this boot writes its own pin below, so it reflects only
   // what a PRIOR boot of this sandbox left behind — see the T22 note above.
   const priorPin = readPinnedOpencodeSessionId()
+  // F1: likewise captured BEFORE this boot could possibly write its own
+  // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
+  // boot's successful delivery, never this one's own pending write.
+  const priorDeliveredMarker = readInitialPromptDeliveredMarker()
   const resolved = await resolveExistingRoot(baseUrl, workspace, priorPin)
   bootMark('opencode-answering')
   if (resolved.status === 'defer') {
@@ -1047,7 +1051,7 @@ async function maybeCreateInitialOpencodeSession(
   let alreadyDelivered = false
   if (existing) {
     sessionId = existing.id
-    alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin)
+    alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin, priorDeliveredMarker)
     logger.info('[boot] reusing existing opencode root', {
       sessionId,
       alreadyDelivered,
@@ -1118,6 +1122,10 @@ async function maybeCreateInitialOpencodeSession(
       workspace,
       buildInitialPromptBody(prompt),
     )
+    // F1: written ONLY after delivery actually succeeded (an exception above
+    // skips this line) — the durable receipt `reusedRootAlreadyDelivered`
+    // trusts unconditionally on every later boot of this sandbox.
+    markInitialPromptDelivered()
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
     logger.info('[boot] initial prompt already delivered to reused root; not re-running', { sessionId })
@@ -1175,6 +1183,45 @@ function pinOpencodeSessionFile(sessionId: string): void {
     writeOpenCodeSessionPin(sessionId)
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
+  }
+}
+
+/**
+ * F1: durable proof that `deliverInitialOpenCodePrompt` actually SUCCEEDED —
+ * not just that boot intended to deliver it. `OPENCODE_SESSION_PIN_PATH` is
+ * written BEFORE delivery (see `pinOpencodeSessionFile` above, called ahead
+ * of the delivery call at this function's call site), with an up-to-10s
+ * `eventLoopConnected` wait in between. A daemon crash in that window leaves
+ * the pin behind but never delivers — a bare-pin check alone would then read
+ * every future boot as "already delivered" and silence the session forever
+ * (see `reusedRootAlreadyDelivered`). This marker is written ONLY after
+ * `deliverInitialOpenCodePrompt` returns successfully, right next to the pin,
+ * so its mere existence is the delivery receipt the pin alone can't provide.
+ */
+const OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH = join(
+  dirname(OPENCODE_SESSION_PIN_PATH),
+  'opencode-initial-prompt-delivered',
+)
+
+/** Best-effort read of the F1 delivery marker. False (never true-by-accident)
+ *  on any read failure — the same "unknown reads never skip delivery" bias as
+ *  the rest of this gate; see `reusedRootAlreadyDelivered`. */
+function readInitialPromptDeliveredMarker(): boolean {
+  try {
+    return existsSync(OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH)
+  } catch {
+    return false
+  }
+}
+
+/** Best-effort write of the F1 delivery marker. Directory already exists by
+ *  the time this runs — `pinOpencodeSessionFile` (called earlier in the same
+ *  boot) already created it. */
+function markInitialPromptDelivered(): void {
+  try {
+    writeFileSync(OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH, '1', { encoding: 'utf8', mode: 0o600 })
+  } catch (err) {
+    logger.warn('[boot] failed to write initial-prompt-delivered marker', err)
   }
 }
 
@@ -1441,7 +1488,7 @@ export function initialPromptAlreadyDelivered(existing: { known: boolean; hasMes
 }
 
 /**
- * T22 — the initial-prompt gate for a REUSED root, one layer above
+ * T22/F1 — the initial-prompt gate for a REUSED root, one layer above
  * `initialPromptAlreadyDelivered`. OpenCode's `session.revert` is a STAGED
  * pointer; nothing is deleted until the next prompt — from ANY producer —
  * commits the truncation. A commit can truncate the reused root all the way
@@ -1449,22 +1496,34 @@ export function initialPromptAlreadyDelivered(existing: { known: boolean; hasMes
  * exactly like "never delivered" — re-running `prompt` (the original task
  * kickoff) into a session the user was mid-rewind on.
  *
- * A prior pin for this sandbox outranks that message-count read: it proves
- * `maybeCreateInitialOpencodeSession` already reached a delivery decision on
- * this box once before, so an empty transcript behind an existing pin means
- * truncation, not "never delivered". `priorPin` must be read BEFORE this
- * boot writes its own pin (see the call site) so it reflects only what a
- * PRIOR boot left behind — never this one's own pending write.
+ * F1: a bare prior pin is NOT proof of delivery — the pin is written BEFORE
+ * `deliverInitialOpenCodePrompt` runs (see the call site), so a crash in that
+ * window leaves a pin behind with nothing ever delivered. Treating any prior
+ * pin as proof (the old T22 rule) then silences the session forever: every
+ * later boot sees the pin and skips delivery. The durable delivery marker
+ * (`readInitialPromptDeliveredMarker`, written only AFTER a successful
+ * delivery) is the only unconditional proof. Short of that, a prior pin is
+ * trusted ONLY when it also matches the root we actually reused AND that
+ * root's transcript is confirmed non-empty — i.e. genuine reuse of a root
+ * that plainly already has the conversation, not merely "some pin exists".
  *
- * Only the PINLESS case (no prior boot ever pinned anything on this sandbox)
- * falls through to `initialPromptAlreadyDelivered`'s message-count read —
- * unchanged from T12.
+ * `priorPin` must be read BEFORE this boot writes its own pin (see the call
+ * site) so it reflects only what a PRIOR boot left behind — never this one's
+ * own pending write. `deliveredMarkerExists` must likewise be read before
+ * this boot's own (possible) marker write.
+ *
+ * Falls through to `initialPromptAlreadyDelivered`'s message-count read
+ * (unchanged from T12) whenever neither the marker nor the matching-pin case
+ * applies — covering both the pinless cold-reuse case and the crash-window
+ * case (pin present, no marker, transcript confirmed empty: deliver).
  */
 export function reusedRootAlreadyDelivered(
-  existing: { known: boolean; hasMessages: boolean },
+  existing: { id: string; known: boolean; hasMessages: boolean },
   priorPin: string | null,
+  deliveredMarkerExists: boolean,
 ): boolean {
-  if (priorPin !== null) return true
+  if (deliveredMarkerExists) return true
+  if (priorPin !== null && existing.id === priorPin && existing.known && existing.hasMessages) return true
   return initialPromptAlreadyDelivered(existing)
 }
 

@@ -91,7 +91,16 @@ export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boole
 // starvation reconciler's boundary expire at the same moment, instead of the
 // dedupe window silently expiring first and leaving the starvation path to
 // double-deliver into a fresh cache entry.
-const DEDUPE_TTL_MS = 10 * 60_000;
+// F3: exported so `session-lifecycle/undelivered-prompts.ts` can derive its
+// own starvation window FROM this value instead of independently hardcoding
+// the same number — see `UNDELIVERED_PROMPT_STARVATION_MS` there. The
+// no-blind-repost guarantee documented above requires
+// `DEDUPE_TTL_MS >= UNDELIVERED_PROMPT_STARVATION_MS`; deriving one from the
+// other makes that an invariant instead of a comment two files have to stay
+// in sync by hand. `session-lifecycle` already imports from `sandbox-proxy`
+// (engine.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
+// SAME existing module-boundary direction rather than opening a new one.
+export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;
 
 const seen = new Map<string, number>(); // key -> expiresAt (ms epoch)

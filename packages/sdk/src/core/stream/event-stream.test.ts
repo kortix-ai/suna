@@ -1166,8 +1166,17 @@ describe('openEventStream gap rehydrate', () => {
   });
 });
 
-describe('openEventStream single-live-stream invariant', () => {
-  test('a second open for the SAME client tears the first stream down', async () => {
+describe('openEventStream shared-stream fan-out (F5)', () => {
+  // F5 review finding: the previous single-live-stream invariant SILENTLY
+  // KILLED subscriber #1 the moment subscriber #2 opened a stream for the
+  // same client — an unannounced behavior change for any programmatic
+  // consumer that opens more than one `openEventStream()` for the same
+  // runtime (React hosts are single-subscriber-per-client in practice and
+  // unaffected). Fixed: a second open for the same client SHARES the live
+  // stream instead — one wire connection, refcounted, events fan out to
+  // every subscriber. `close()` decrements the refcount; the underlying
+  // connection tears down only when the last subscriber leaves.
+  test('a second open for the SAME client SHARES the live stream — only one wire connection', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
     const firstDispatched: OpenCodeEvent[] = [];
@@ -1183,33 +1192,50 @@ describe('openEventStream single-live-stream invariant', () => {
     const second = openEventStream({ client, onEvent: (e) => secondDispatched.push(e), timers: clock });
     await tick();
 
-    // The FIRST connection's underlying attempt is torn down (aborted) — no
-    // new fetch happens for it, and the first attempt's channel is dead —
-    // while the second opens its own fresh connection.
-    expect(channels.length).toBe(2);
+    // No second connect — the existing connection is shared, not replaced.
+    expect(channels.length).toBe(1);
 
-    // An event delivered on the (now-dead) first channel must never reach
-    // either onEvent callback — the first stream is fully torn down, not
-    // just logically superseded.
-    channels[0].push(partUpdated('stale'));
+    // A single event on the wire fans out to BOTH subscribers, exactly once
+    // each — one real delivery, not a duplicate SSE connection.
+    channels[0].push(partUpdated('p1'));
     await tick();
     await clock.advance(16);
-    expect(firstDispatched).toEqual([]);
-    expect(secondDispatched).toEqual([]);
-
-    // An event on the second (live) channel delivers normally, exactly once,
-    // only to the second subscriber.
-    channels[1].push(partUpdated('p1'));
-    await tick();
-    await clock.advance(16);
-    expect(firstDispatched).toEqual([]);
+    expect(firstDispatched).toHaveLength(1);
     expect(secondDispatched).toHaveLength(1);
+    expect((firstDispatched[0].properties as any).part.id).toBe('p1');
+    expect((secondDispatched[0].properties as any).part.id).toBe('p1');
 
     first.close();
     second.close();
   });
 
-  test("closing the FIRST (already-superseded) handle does not clobber the second stream's registration", async () => {
+  test('closing ONE of two subscribers does not tear down the shared connection — the other keeps receiving', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const firstDispatched: OpenCodeEvent[] = [];
+    const secondDispatched: OpenCodeEvent[] = [];
+
+    const first = openEventStream({ client, onEvent: (e) => firstDispatched.push(e), timers: clock });
+    await tick();
+    const second = openEventStream({ client, onEvent: (e) => secondDispatched.push(e), timers: clock });
+    await tick();
+
+    first.close();
+    await tick();
+
+    // Still the SAME connection — closing one subscriber must not abort the
+    // shared stream while another subscriber remains.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    expect(channels.length).toBe(1);
+    expect(firstDispatched).toEqual([]);
+    expect(secondDispatched).toHaveLength(1);
+
+    second.close();
+  });
+
+  test('closing the LAST subscriber tears the shared connection down for good', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
     const dispatched: OpenCodeEvent[] = [];
@@ -1219,21 +1245,92 @@ describe('openEventStream single-live-stream invariant', () => {
     const second = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();
 
-    // Calling close() on the handle that was ALREADY torn down by the second
-    // open must be a safe no-op — in particular it must not delete the
-    // second stream's live registration, which would let a THIRD open skip
-    // tearing the second one down.
     first.close();
-
-    channels[1].push(partUpdated('p1'));
-    await tick();
-    await clock.advance(16);
-    expect(dispatched).toHaveLength(1);
-
     second.close();
+    await tick();
+
+    // No further dispatch, and no reconnect attempt — the underlying
+    // connection is genuinely gone, not merely unsubscribed.
+    channels[0].push(partUpdated('after-close'));
+    await tick();
+    await clock.advance(60_000);
+    expect(dispatched).toEqual([]);
+    expect(channels.length).toBe(1);
   });
 
-  test('two DIFFERENT clients never collide — both stay live', async () => {
+  test('a THIRD open after full teardown opens a genuinely fresh connection', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    first.close();
+    await tick();
+
+    const third = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+
+    expect(channels.length).toBe(2);
+    third.close();
+  });
+
+  test('onGapRehydrate fans out to every live subscriber', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const gapsA: number[] = [];
+    const gapsB: number[] = [];
+
+    const a = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gap) => gapsA.push(gap),
+      timers: clock,
+    });
+    await tick();
+    const b = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gap) => gapsB.push(gap),
+      timers: clock,
+    });
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    await clock.advance(6000);
+    channels[0].end();
+    await tick();
+
+    expect(gapsA).toEqual([6000]);
+    expect(gapsB).toEqual([6000]);
+
+    a.close();
+    b.close();
+  });
+
+  test('onParked fans out to every live subscriber, exactly once each', async () => {
+    const clock = createFakeClock();
+    const { client } = createDeadSandboxClient();
+    const parkedA: unknown[] = [];
+    const parkedB: unknown[] = [];
+
+    const a = openEventStream({ client, onEvent: () => {}, onParked: (r) => parkedA.push(r), timers: clock });
+    await tick();
+    const b = openEventStream({ client, onEvent: () => {}, onParked: (r) => parkedB.push(r), timers: clock });
+    await tick();
+
+    await clock.advance(200_000);
+    await tick();
+
+    expect(parkedA).toHaveLength(1);
+    expect(parkedB).toHaveLength(1);
+
+    a.close();
+    b.close();
+  });
+
+  test('two DIFFERENT clients never collide — both stay live and independently connected', async () => {
     const clock = createFakeClock();
     const a = createConnectableClient();
     const b = createConnectableClient();
@@ -1259,7 +1356,7 @@ describe('openEventStream single-live-stream invariant', () => {
     handleB.close();
   });
 
-  test('close() after a supersede is idempotent', async () => {
+  test('close() is idempotent for every subscriber, shared or not', async () => {
     const clock = createFakeClock();
     const { client } = createConnectableClient();
 

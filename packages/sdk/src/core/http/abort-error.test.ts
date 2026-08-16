@@ -99,6 +99,20 @@ describe('abortErrorReason', () => {
       abortErrorReason({ name: 'AbortError', data: { message: 'x', reason: 123 } }),
     ).toBeUndefined();
   });
+
+  // F4 review finding: the doc comment promises a closed union, but the old
+  // implementation returned ANY non-empty string verbatim — an unknown/
+  // typo'd reason would silently reach a renderer that branches on
+  // `reason === 'user'` and suppress the "Interrupted" row for every other
+  // value, including one nobody ever intended. Membership must be validated
+  // against `ABORT_REASONS`; an unrecognized string is not "a new reason
+  // that happens to work", it's a bug upstream, and the safe default is
+  // `undefined` (renders like a reason-less real wire abort).
+  test('rejects a reason string that is not a member of the closed ABORT_REASONS union', () => {
+    expect(
+      abortErrorReason({ name: 'AbortError', data: { message: 'x', reason: 'not-a-real-reason' } }),
+    ).toBeUndefined();
+  });
 });
 
 // T2: the closed reason union both real producers stamp into

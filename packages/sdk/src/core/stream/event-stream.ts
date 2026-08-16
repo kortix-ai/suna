@@ -205,9 +205,25 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
   return { promise, cleanup: () => signal.removeEventListener('abort', handler) };
 }
 
+/** One `openEventStream()` caller's callbacks, held by the shared connection
+ *  for the lifetime of its subscription — see `LiveStream` below. */
+interface StreamSubscriber {
+  onEvent: (event: OpenCodeEvent) => void;
+  onGapRehydrate?: (gapMs: number) => void;
+  onParked?: (reason: EventStreamParkedInfo) => void;
+}
+
+/** The shared underlying connection for one client — see `liveStreamsByClient`. */
+interface LiveStream {
+  subscribers: Set<StreamSubscriber>;
+  /** Aborts the connection and releases its timers. Called once, when the
+   *  LAST subscriber leaves. */
+  teardown: () => void;
+}
+
 /**
- * Enforces "one live stream per client" — see the single-live-stream
- * invariant in `openEventStream` below.
+ * Fans out ONE live SSE connection per client to every open subscriber — see
+ * the shared-stream fan-out invariant documented on `openEventStream` below.
  *
  * Keyed by `EventStreamClient` object identity. `getClientForUrl`
  * (`core/runtime/client.ts`) caches exactly one client per resolved runtime
@@ -221,45 +237,49 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
  * `WeakMap` so a client that falls out of scope (its sandbox torn down, no
  * live handle referencing it) is never pinned by this module.
  */
-const liveStreamsByClient = new WeakMap<EventStreamClient, EventStreamHandle>();
+const liveStreamsByClient = new WeakMap<EventStreamClient, LiveStream>();
 
 /**
- * Connects to the opencode SSE event stream and keeps it alive: heartbeat
- * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
- * and exponential-backoff reconnect. Framework-free — safe to call from any
- * host (the React wrapper calls this once per effect run; a non-React host can
- * call it directly).
- *
- * **Single-live-stream invariant.** A second concurrent open for a client
- * that already has a live stream (see `liveStreamsByClient`) tears the first
- * one down — aborts it, releases its timers — before this one starts.
- * Realistic sources of a stacked duplicate: a second mounted subscriber
- * opening its own stream for the same runtime without closing an existing
- * one (e.g. an out-of-order remount), or a caller that opens a fresh stream
- * after a reconnect without discarding its previous handle. Without this,
- * two live readers of the same SSE connection deliver every event twice to
- * every `onEvent` callback — the exact failure mode `sync-store.ts`'s
- * `applyPartDelta` separately guards against for `message.part.delta`, but
- * this closes it at the transport instead of relying on every consumer to be
- * idempotent.
+ * Opens (or joins) the underlying connect/reconnect loop for `client` and
+ * fans its events out to every subscriber in `subscribers`. Only ever called
+ * once per client, by whichever `openEventStream()` call finds no existing
+ * `LiveStream` — every later caller for the same client joins the SAME
+ * `LiveStream` instead (see `openEventStream`). The FIRST caller's `opts`
+ * (timers, connect/heartbeat timeouts, `maxConsecutiveHardFailures`) govern
+ * the shared connection for its whole lifetime; a later joiner's values for
+ * those fields are not consulted — there is only one wire connection to
+ * configure, and re-configuring it mid-flight for a joiner would be
+ * ambiguous. Every subscriber's `onEvent`/`onGapRehydrate`/`onParked` is
+ * still called independently, in full.
  */
-export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
-  const { client, onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
+function createLiveStream(
+  client: EventStreamClient,
+  opts: OpenEventStreamOptions,
+  subscribers: Set<StreamSubscriber>,
+): LiveStream {
   const t = opts.timers ?? realTimers;
   const connectTimeoutMs = opts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
   const heartbeatTimeoutMs = opts.heartbeatTimeoutMs ?? HEARTBEAT_MS;
   const maxConsecutiveHardFailures =
     opts.maxConsecutiveHardFailures ?? MAX_CONSECUTIVE_HARD_FAILURES;
 
-  // Tear down any existing live stream for this exact client BEFORE starting
-  // a new one — see `liveStreamsByClient`.
-  liveStreamsByClient.get(client)?.close();
-
   const abortController = new AbortController();
-  const onExternalAbort = () => abortController.abort();
-  if (externalSignal) {
-    if (externalSignal.aborted) abortController.abort();
-    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+
+  /** Calls `fn` on every current subscriber. A throwing subscriber must
+   *  never break dispatch to the others or crash the host. */
+  function dispatchToSubscribers<A extends unknown[]>(
+    pick: (sub: StreamSubscriber) => ((...a: A) => void) | undefined,
+    ...args: A
+  ): void {
+    for (const sub of subscribers) {
+      const fn = pick(sub);
+      if (!fn) continue;
+      try {
+        fn(...args);
+      } catch (e) {
+        console.warn('[opencode-events] subscriber handler threw, skipping', e);
+      }
+    }
   }
 
   // Track last stream activity (connect or event) to gate reconnect hydration.
@@ -288,16 +308,13 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
 
     for (const item of events) {
       if (!item) continue;
-      try {
-        onEvent(item.event);
-      } catch (e) {
-        // A single event handler must never break the stream OR crash the
-        // host. e.g. a handler calls getClient() before the sandbox URL is
-        // pinned (during a session switch) — that throw used to escape to the
-        // route error boundary. Swallow + log; the next events + retries
-        // recover.
-        console.warn('[opencode-events] event handler threw, skipping', e);
-      }
+      // A single subscriber's handler must never break the stream OR crash
+      // the host, and must never stop the OTHER subscribers from receiving
+      // this event — `dispatchToSubscribers` catches per-subscriber. e.g. a
+      // handler calls getClient() before the sandbox URL is pinned (during a
+      // session switch) — that throw used to escape to the route error
+      // boundary. Swallow + log; the next events + retries recover.
+      dispatchToSubscribers((sub) => sub.onEvent, item.event);
     }
   };
 
@@ -551,13 +568,14 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
           consecutiveFailures: consecutiveHardFailures,
           lastError: String(attemptError),
         });
-        try {
-          onParked?.({ consecutiveFailures: consecutiveHardFailures, lastError: attemptError });
-        } catch (parkedHandlerErr) {
-          // A host's park handler must never crash the (already-terminal)
-          // stream machine.
-          console.warn('[opencode-events] onParked handler threw', parkedHandlerErr);
-        }
+        // A subscriber's park handler must never crash the (already-
+        // terminal) stream machine, and must never stop another
+        // subscriber's from firing — `dispatchToSubscribers` catches per
+        // subscriber.
+        dispatchToSubscribers((sub) => sub.onParked, {
+          consecutiveFailures: consecutiveHardFailures,
+          lastError: attemptError,
+        });
         break;
       }
 
@@ -567,7 +585,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
       // the user manually refreshes.
       const gap = t.now() - lastStreamActivityTime;
       if (gap > GAP_REHYDRATE_MS) {
-        onGapRehydrate?.(gap);
+        dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
       }
 
       if (stableConnection) {
@@ -597,20 +615,82 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
     }
   })();
 
-  let handle: EventStreamHandle;
-  handle = {
-    close: () => {
+  return {
+    subscribers,
+    teardown: () => {
       abortController.abort();
-      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
       if (flushTimer) t.clearTimeout(flushTimer);
-      // Only clear the registry if WE are still the registered live stream
-      // for this client — a stream torn down BY a newer open (see the top of
-      // this function) must not clobber that newer stream's own registration.
-      if (liveStreamsByClient.get(client) === handle) liveStreamsByClient.delete(client);
     },
   };
-  liveStreamsByClient.set(client, handle);
-  return handle;
+}
+
+/**
+ * Connects to the opencode SSE event stream and keeps it alive: heartbeat
+ * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
+ * and exponential-backoff reconnect. Framework-free — safe to call from any
+ * host (the React wrapper calls this once per effect run; a non-React host can
+ * call it directly).
+ *
+ * **Shared-stream fan-out.** A second concurrent open for a client that
+ * already has a live stream (see `liveStreamsByClient`) does NOT tear the
+ * first one down — it SHARES it. Realistic sources of a stacked open:
+ * a second mounted subscriber opening its own stream for the same runtime
+ * without closing an existing one (e.g. an out-of-order remount), or a
+ * programmatic consumer that opens more than one handle for the same
+ * runtime on purpose. Each `openEventStream()` call gets its own
+ * independent `EventStreamHandle`; `close()` decrements a refcount on the
+ * shared connection, and the underlying connection (and its timers) tears
+ * down only once the LAST subscriber closes. Every subscriber's
+ * `onEvent`/`onGapRehydrate`/`onParked` still fires for every event —
+ * exactly once each, off the single underlying wire connection, so no
+ * subscriber has to be idempotent against a duplicate delivery the way
+ * `sync-store.ts`'s `applyPartDelta` separately guards against.
+ *
+ * Only the FIRST caller's `connectTimeoutMs`/`heartbeatTimeoutMs`/
+ * `maxConsecutiveHardFailures`/`timers` govern the shared connection — a
+ * later joiner's values for those fields are not consulted (see
+ * `createLiveStream`'s doc comment). `signal` is per-subscriber: aborting a
+ * caller's own signal only closes THAT caller's handle, not the shared
+ * connection (unless it was the last one standing).
+ */
+export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
+  const { client, onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
+  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked };
+
+  let liveStream = liveStreamsByClient.get(client);
+  if (!liveStream) {
+    const subscribers = new Set<StreamSubscriber>([subscriber]);
+    liveStream = createLiveStream(client, opts, subscribers);
+    liveStreamsByClient.set(client, liveStream);
+  } else {
+    liveStream.subscribers.add(subscriber);
+  }
+  const stream = liveStream;
+
+  let closed = false;
+  const leave = () => {
+    if (closed) return;
+    closed = true;
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    stream.subscribers.delete(subscriber);
+    if (stream.subscribers.size === 0) {
+      stream.teardown();
+      // Only clear the registry if this stream is STILL the registered live
+      // stream for this client — defensive, though under refcounting a
+      // newer stream can never exist for a client while an older one still
+      // has this client mapped (a fresh `LiveStream` for the same client is
+      // only ever created after `liveStreamsByClient.get(client)` reports
+      // none live).
+      if (liveStreamsByClient.get(client) === stream) liveStreamsByClient.delete(client);
+    }
+  };
+  const onExternalAbort = () => leave();
+  if (externalSignal) {
+    if (externalSignal.aborted) leave();
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
+  return { close: leave };
 }
 
 // The curated chat-event union built on top of this stream's `OpenCodeEvent` —

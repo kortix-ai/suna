@@ -499,6 +499,32 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
 	});
 
+	// F1 review finding: the event-id was recorded as "applied" BEFORE the
+	// `set()` callback even checked whether the target part existed — so a
+	// delta that hit the not-found path (e.g. the extra was dropped by the
+	// hydrate extras-filter, or simply arrived before the part was created)
+	// still poisoned `deltaEventTails` for that event id. A later, LEGITIMATE
+	// redelivery of the identical event (a stacked reconnect resuming the
+	// stream) then hit the duplicate-no-op branch and was silently dropped —
+	// even though nothing had ever actually been applied.
+	test("a delta that finds no target part does not consume the event id — a later redelivery once the part exists still applies", () => {
+		const store = useSyncStore.getState();
+		// The part does not exist yet under msg_1 — this delta's target is
+		// not found, so `set()` bails via its `!result.found` branch.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hello", "evt_1");
+		expect(useSyncStore.getState().parts.msg_1).toBeUndefined();
+
+		// The part is created afterward (e.g. a repair/upsert).
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+
+		// The SAME event id is redelivered (a stacked reconnect resuming the
+		// stream) — it must actually apply now, not no-op against a tail
+		// entry recorded when nothing was ever applied.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hello", "evt_1");
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
 	test("clearSession releases a session's delta-tail tracking — a reused (message,part,eventID) after a fresh lifetime applies normally", () => {
 		const store = useSyncStore.getState();
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
@@ -941,6 +967,36 @@ describe("useSyncStore — hydrate extras dedupe by content identity", () => {
 		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
 		expect(ids).toContain("prt_empty");
 		expect(ids).toContain("prt_new");
+	});
+
+	// F1 review finding: the prefix-containment heuristic assumes an "extra"
+	// whose text is a prefix of an incoming sibling is always the ABANDONED
+	// SSE-accumulated twin of a server re-issue. That is false for a part
+	// that is still ACTIVELY streaming (tracked in `deltaActiveParts`) — a
+	// live delta target is never a stale twin, no matter what it coincidentally
+	// prefixes. Dropping it here doesn't just lose the row: `applyPartDelta`'s
+	// not-found path (see the F1 test below) then permanently swallows every
+	// later delta for it too, because the wire event ids were already
+	// recorded as applied.
+	test("an actively-streaming extra survives even when its text happens to prefix a completed sibling part", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		// A COMPLETED part with the full text.
+		store.upsertPart("msg_a", textPart("prt_a", "msg_a", "Let me check the file."));
+		// A DIFFERENT part in the SAME message, still receiving live deltas.
+		// Its accumulated text is coincidentally a PREFIX of prt_a's — NOT
+		// because the server re-issued prt_a's content under this new id.
+		store.upsertPart("msg_a", textPart("prt_b", "msg_a", "Let me c"));
+		store.applyPartDelta("ses_1", "msg_a", "prt_b", "text", "heck", "evt_1");
+
+		// A hydrate snapshot arrives carrying only the completed part — prt_b
+		// hasn't persisted server-side yet, it's still in flight.
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_a", "msg_a", "Let me check the file.")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_b");
 	});
 });
 
@@ -2121,7 +2177,15 @@ describe("useSyncStore — applyEvent(session.next.revert.staged/.cleared/.commi
 		expect(state.sessionRevert.ses_1).toBeNull();
 	});
 
-	test(".committed with NO locally tracked record falls back to the current known tip as watermark", () => {
+	// F2 review finding: this fallback used to guess a watermark off
+	// `newestMessageId(local messages)` when nothing was tracked locally —
+	// dangerous, because "the newest local message" can be the user's own
+	// REPLACEMENT prompt (and its answer) if its `message.updated` raced
+	// ahead of this `.committed` event. That guess then deleted the very
+	// message the user just typed. Fixed: with no tracked local record, do
+	// NOT guess-and-delete. Leave messages alone and flag the session for a
+	// tail reconcile instead — see the two tests below.
+	test(".committed with NO locally tracked record does NOT delete anything — it flags a tail reconcile instead", () => {
 		const store = useSyncStore.getState();
 		store.hydrate("ses_1", [
 			{ info: userMessage("msg_1"), parts: [] },
@@ -2129,7 +2193,8 @@ describe("useSyncStore — applyEvent(session.next.revert.staged/.cleared/.commi
 			{ info: assistantMessage("msg_3"), parts: [] },
 		]);
 		// No prior stageSessionRevert — simulates a client that missed .staged
-		// (reconnect gap) and only observes .committed.
+		// (reconnect gap, fresh mount, or a second tab) and only observes
+		// .committed.
 
 		store.applyEvent({
 			id: "evt_4",
@@ -2137,7 +2202,95 @@ describe("useSyncStore — applyEvent(session.next.revert.staged/.cleared/.commi
 			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
 		} as never);
 
-		expect(useSyncStore.getState().messages.ses_1?.map((m) => m.id)).toEqual(["msg_1"]);
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_3"]);
+		expect(state.sessionRevertNeedsTailReconcile.ses_1).toBe(true);
+	});
+
+	test(".committed with NO locally tracked record does not delete a replacement prompt that raced ahead of it", () => {
+		// The exact danger scenario: the user edits an earlier message, the
+		// server stages then commits the rewind, and the replacement
+		// prompt's `message.updated` (msg_4) lands in THIS tab BEFORE the
+		// `.committed` event — e.g. a fresh mount / second tab that never
+		// observed `.staged` at all. The removed newest-message-id fallback
+		// would have computed a watermark of `msg_4` and deleted it (and
+		// everything from `msg_2` onward) as if it were part of the
+		// abandoned trajectory.
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.upsertMessage("ses_1", userMessage("msg_4")); // the replacement prompt, already visible
+
+		store.applyEvent({
+			id: "evt_5",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		expect(useSyncStore.getState().messages.ses_1?.map((m) => m.id)).toEqual([
+			"msg_1",
+			"msg_2",
+			"msg_3",
+			"msg_4",
+		]);
+	});
+
+	test(".committed WITH a tracked local record still deletes using its watermark, unaffected by F2", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2"); // watermark frozen at msg_3
+
+		store.applyEvent({
+			id: "evt_6",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1"]);
+		expect(state.sessionRevertNeedsTailReconcile.ses_1).toBeUndefined();
+	});
+});
+
+describe("useSyncStore — sessionRevertNeedsTailReconcile (F2 consumer signal)", () => {
+	test("markSessionRevertNeedsTailReconcile is idempotent and clearSessionRevertNeedsTailReconcile removes it", () => {
+		const store = useSyncStore.getState();
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile.ses_1).toBe(true);
+
+		store.clearSessionRevertNeedsTailReconcile("ses_1");
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile.ses_1).toBeUndefined();
+	});
+
+	test("clearing an unset session is a safe no-op", () => {
+		const store = useSyncStore.getState();
+		expect(() => store.clearSessionRevertNeedsTailReconcile("ses_never_flagged")).not.toThrow();
+	});
+
+	test("clearSession drops a pending reconcile flag for that session", () => {
+		const store = useSyncStore.getState();
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+
+		store.clearSession("ses_1");
+
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile.ses_1).toBeUndefined();
+	});
+
+	test("reset clears every session's reconcile flag", () => {
+		const store = useSyncStore.getState();
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+
+		store.reset();
+
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile).toEqual({});
 	});
 });
 
@@ -2180,6 +2333,59 @@ describe("useSyncStore — syncSessionRevertFromInfo (reload / cross-tab recover
 		store.syncSessionRevertFromInfo("ses_1", undefined);
 
 		expect(useSyncStore.getState().sessionRevert.ses_1).not.toBeNull();
+	});
+
+	// F3 review finding: `syncSessionRevertFromInfo` ignored the store's OWN
+	// null tombstone. `null` means "committed or cleared, deliberately" (set
+	// by `applyCommittedRevert`/`clearSessionRevert`) — not "nothing tracked
+	// yet" (which is `undefined`, the record simply absent). A stale
+	// `session.updated` that raced the commit and still carries the OLD
+	// `info.revert` pointer used to re-stage it with a FRESH watermark,
+	// hiding every post-rewind message behind a phantom Restore offer.
+	test("a stale session.updated does not re-stage an already-committed revert (tombstone wins)", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+		store.applyCommittedRevert("ses_1", "msg_2", "msg_2");
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+
+		// A stale `session.updated` — read off a request that raced the
+		// commit — still carries the OLD (now-committed) revert pointer.
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_2" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test("a stale session.updated does not re-stage a CLEARED (unrevert) revert either", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+		store.clearSessionRevert("ses_1");
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_1" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	// The escape hatch the tombstone must still allow: a genuinely NEW revert
+	// arrives through the real `.staged` wire event (`stageSessionRevert`
+	// directly, not through this info-snapshot recovery path), which
+	// overwrites unconditionally and so clears any prior tombstone normally.
+	test("a fresh .staged event (stageSessionRevert) still clears a prior tombstone normally", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+		store.clearSessionRevert("ses_1");
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toMatchObject({
+			messageId: "msg_2",
+			staged: true,
+		});
 	});
 });
 

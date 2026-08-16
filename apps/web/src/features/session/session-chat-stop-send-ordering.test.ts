@@ -28,6 +28,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 function baseDeps(overrides: Partial<StopThenSendNowDeps> = {}): StopThenSendNowDeps {
   return {
     isRunning: () => false,
+    pendingSettlement: () => undefined,
     stop: async () => null,
     waitIdle: async () => {},
     resumeQueue: () => {},
@@ -158,6 +159,44 @@ describe('stopThenSendNow', () => {
     );
 
     expect(calls).toEqual(['stop', 'waitIdle', 'resumeQueue', 'dispatch']);
+  });
+
+  test('stop already issued (settlement pending, store already idle): send-now awaits the pending settlement instead of trusting isRunning()', async () => {
+    // Reproduces the reported race: `handleStop` runs `applyOptimisticAbort`,
+    // which flips the sync store to idle SYNCHRONOUSLY, then stashes the real
+    // `AbortSettlement` in `pendingAbortSettlementRef`. If the user then clicks
+    // "Send now" on a queued row, `isRunning()` reads idle (false) — but a
+    // stop is still in flight. `stopThenSendNow` must consult the pending
+    // settlement FIRST, not `isRunning()`, and must NOT call `stop()` again
+    // (that would issue a second, redundant cancel).
+    const calls: string[] = [];
+    const settlement = deferred<AbortSettlement>();
+
+    const runPromise = stopThenSendNow(
+      baseDeps({
+        isRunning: () => false,
+        pendingSettlement: () => settlement.promise,
+        stop: async () => {
+          calls.push('stop');
+          return { status: 'aborted' };
+        },
+        resumeQueue: () => calls.push('resumeQueue'),
+        dispatch: async () => {
+          calls.push('dispatch');
+        },
+      }),
+    );
+
+    // Give the microtask queue a turn — if `dispatch` were reachable before
+    // the pending settlement resolves, it would have run by now.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual([]);
+
+    settlement.resolve({ status: 'aborted' });
+    await runPromise;
+
+    expect(calls).toEqual(['resumeQueue', 'dispatch']);
   });
 
   test('a real (non-null) settlement never falls back to waitIdle', async () => {

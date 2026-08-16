@@ -255,6 +255,22 @@ export function createEventHandler(deps: {
         break;
       }
 
+      // ---- Rewind commit in a view that never saw the staging ----
+      case 'session.next.revert.committed': {
+        // The store's `applyEvent` refuses to guess-delete when this tab has
+        // no tracked revert record (second tab / fresh mount) — guessing a
+        // watermark from the local tip can delete the user's REPLACEMENT
+        // prompt. It raises `sessionRevertNeedsTailReconcile` instead; this
+        // is the one consumer: fetch the server's already-truncated tail so
+        // truth arrives by read, not by guess.
+        const { sessionID } = event.properties as { sessionID?: string };
+        if (sessionID && useSyncStore.getState().sessionRevertNeedsTailReconcile[sessionID]) {
+          useSyncStore.getState().clearSessionRevertNeedsTailReconcile(sessionID);
+          void reconcileTail(sessionID, 'manual');
+        }
+        break;
+      }
+
       // ---- Session status ----
       case 'session.status': {
         const { sessionID, status } = event.properties;

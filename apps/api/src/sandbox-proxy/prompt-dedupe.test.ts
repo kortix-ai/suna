@@ -176,6 +176,55 @@ describe('promptDeliveryKey', () => {
       expect(claimPromptDelivery(retryAfterWake, 90_000)).toBe(false);
     });
 
+    // F2 — `postPrompt` (session-lifecycle/engine.ts) now sends
+    // `Idempotency-Key: <row.commandId>` on every continue_session delivery.
+    // These pin the two halves of that guarantee directly against the real
+    // dedupe cache, one layer below the engine.ts-level proof in
+    // `postprompt-idempotency-key.test.ts`.
+    describe('F2 — Idempotency-Key outranks the content hash for postPrompt deliveries', () => {
+      const postPromptBody = (text: string) =>
+        new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] })).buffer;
+
+      test('same commandId retried → deduped (second claim is short-circuited)', () => {
+        const key = promptDeliveryKey({
+          idempotencyKey: 'cmd-1',
+          sandboxId: 'ext-1',
+          sessionId: 'sess-1',
+          body: postPromptBody('please approve and continue'),
+        });
+        const retryKey = promptDeliveryKey({
+          idempotencyKey: 'cmd-1',
+          sandboxId: 'ext-1',
+          sessionId: 'sess-1',
+          body: postPromptBody('please approve and continue'),
+        });
+        expect(key).toBe(retryKey);
+        expect(claimPromptDelivery(key, 0)).toBe(true);
+        expect(claimPromptDelivery(retryKey, 1_000)).toBe(false);
+      });
+
+      test('two DIFFERENT commandIds, identical body → BOTH deliver (independent claims)', () => {
+        // Exactly the F2 hazard: two distinct queued continues whose text
+        // happens to match. Before F2 these shared the same content-hash key
+        // and the second was silently swallowed as a duplicate.
+        const keyA = promptDeliveryKey({
+          idempotencyKey: 'cmd-a',
+          sandboxId: 'ext-1',
+          sessionId: 'sess-1',
+          body: postPromptBody('please approve and continue'),
+        });
+        const keyB = promptDeliveryKey({
+          idempotencyKey: 'cmd-b',
+          sandboxId: 'ext-1',
+          sessionId: 'sess-1',
+          body: postPromptBody('please approve and continue'),
+        });
+        expect(keyA).not.toBe(keyB);
+        expect(claimPromptDelivery(keyA, 0)).toBe(true);
+        expect(claimPromptDelivery(keyB, 0)).toBe(true);
+      });
+    });
+
     test('a non-string, empty, or malformed messageID falls back to the content hash', () => {
       const numericId = new TextEncoder().encode('{"parts":[],"messageID":123}').buffer;
       const blankId = new TextEncoder().encode('{"parts":[],"messageID":"   "}').buffer;

@@ -14,7 +14,6 @@ import { create } from "zustand";
 import {
 	commitSessionRewind,
 	isWithinRewindWindow,
-	newestMessageId,
 	stageSessionRewind,
 } from "../../core/session/rewind";
 import { ascendingId } from "./sync-store/ascending-id";
@@ -69,6 +68,19 @@ interface SyncState {
 	 * path, since a hard reload observes neither of the other two).
 	 */
 	sessionRevert: Record<string, SessionRewindState | null>;
+	/**
+	 * F2 — set when a `session.next.revert.committed` event arrives for a
+	 * session with NO tracked local `sessionRevert` record (a fresh mount, or
+	 * a second tab that never observed `.staged`). The store deliberately
+	 * does not guess a watermark and delete a range in that case — see
+	 * `markSessionRevertNeedsTailReconcile`'s doc comment for why — so this
+	 * is the signal a consumer (the sync controller / `use-opencode-events`)
+	 * reads to know it must fetch the session's real transcript instead of
+	 * trusting local messages. `true` means "reconcile owed"; absent or
+	 * `false` means nothing is owed. Cleared by
+	 * `clearSessionRevertNeedsTailReconcile` once a consumer has acted on it.
+	 */
+	sessionRevertNeedsTailReconcile: Record<string, boolean>;
 
 	// ---- Actions ----
 	applyEvent: (event: OpenCodeEvent) => void;
@@ -155,6 +167,24 @@ interface SyncState {
 	 * safely clears the record and does nothing else.
 	 */
 	applyCommittedRevert: (sessionId: string, boundaryId: string, watermark: string) => void;
+	/**
+	 * F2 — mark `sessionId` as owing a tail reconcile: a
+	 * `session.next.revert.committed` event arrived with no tracked local
+	 * `sessionRevert` record to source a trustworthy watermark from. The
+	 * REMOVED fallback (`newestMessageId(local messages)`) could be the
+	 * user's own REPLACEMENT prompt — if its `message.updated` happened to
+	 * arrive before this `.committed` event, that fallback deleted the
+	 * replacement and its answer along with the abandoned range. Deliberately
+	 * does NOT touch `messages`/`parts`/`sessionRevert` — the server's own
+	 * transcript (fetched by whatever the flagged consumer's reconcile reads)
+	 * is the only trustworthy source of the real truncation here, not a
+	 * local guess.
+	 */
+	markSessionRevertNeedsTailReconcile: (sessionId: string) => void;
+	/** Consumer-side ack for {@link markSessionRevertNeedsTailReconcile} — call
+	 *  once the flagged session's tail has actually been reconciled against
+	 *  the server. */
+	clearSessionRevertNeedsTailReconcile: (sessionId: string) => void;
 	/**
 	 * Reconcile the local revert record against a `Session.revert` field read
 	 * off a `session.created`/`session.updated` event's `info` — the reload
@@ -663,6 +693,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	diffs: {},
 	todos: {},
 	sessionRevert: {},
+	sessionRevertNeedsTailReconcile: {},
 
 	// Compat alias
 	get statuses() {
@@ -820,30 +851,37 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
 		trackId(deltaActiveParts, sessionID, partID);
-		// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
-		// when the caller supplied an event id (every real wire delta does);
-		// a delta with no id gets no protection here, same as before this
-		// change.
-		if (eventID) {
-			const tailKey = `${messageID}:${partID}:${field}`;
-			let sessionTails = deltaEventTails.get(sessionID);
-			if (!sessionTails) {
-				sessionTails = new Map();
-				deltaEventTails.set(sessionID, sessionTails);
-			}
-			let appliedIds = sessionTails.get(tailKey);
-			if (appliedIds?.has(eventID)) return;
-			if (!appliedIds) {
-				appliedIds = new Set();
-				sessionTails.set(tailKey, appliedIds);
-			}
-			appliedIds.add(eventID);
-		}
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
 			const result = Binary.search(list, partID, (p) => p.id);
 			if (!result.found) return s;
+			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
+			// when the caller supplied an event id (every real wire delta does);
+			// a delta with no id gets no protection here, same as before this
+			// change. Checked and RECORDED here, inside the actual-apply
+			// branch (after the list/found checks above), not before `set()`
+			// runs at all: recording it earlier marked an event id "applied"
+			// even on the not-found path — a delta whose target part doesn't
+			// exist yet (or was dropped) — which then permanently blocked a
+			// later LEGITIMATE redelivery of that same event once the part
+			// did exist. See "a delta that finds no target part does not
+			// consume the event id" in the test file.
+			if (eventID) {
+				const tailKey = `${messageID}:${partID}:${field}`;
+				let sessionTails = deltaEventTails.get(sessionID);
+				if (!sessionTails) {
+					sessionTails = new Map();
+					deltaEventTails.set(sessionID, sessionTails);
+				}
+				let appliedIds = sessionTails.get(tailKey);
+				if (appliedIds?.has(eventID)) return s;
+				if (!appliedIds) {
+					appliedIds = new Set();
+					sessionTails.set(tailKey, appliedIds);
+				}
+				appliedIds.add(eventID);
+			}
 			const next = [...list];
 			const part = { ...next[result.index] };
 			const existing = (part as Record<string, unknown>)[field] as
@@ -920,9 +958,39 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			};
 		}),
 
+	markSessionRevertNeedsTailReconcile: (sessionId) =>
+		set((s) => {
+			if (s.sessionRevertNeedsTailReconcile[sessionId]) return s;
+			return {
+				sessionRevertNeedsTailReconcile: {
+					...s.sessionRevertNeedsTailReconcile,
+					[sessionId]: true,
+				},
+			};
+		}),
+
+	clearSessionRevertNeedsTailReconcile: (sessionId) =>
+		set((s) => {
+			if (!s.sessionRevertNeedsTailReconcile[sessionId]) return s;
+			const { [sessionId]: _, ...rest } = s.sessionRevertNeedsTailReconcile;
+			return { sessionRevertNeedsTailReconcile: rest };
+		}),
+
 	syncSessionRevertFromInfo: (sessionId, revert) => {
 		if (!revert?.messageID) return;
 		const current = get().sessionRevert[sessionId];
+		// F3 review finding: `null` is a deliberate tombstone — this store's
+		// own record of "committed or cleared, on purpose" (set by
+		// `applyCommittedRevert`/`clearSessionRevert`) — distinct from
+		// `undefined` ("nothing ever tracked here"). A `session.updated` that
+		// raced one of those two events can still carry the OLD `info.revert`
+		// pointer; re-staging off it here would hide every post-rewind
+		// message behind a phantom Restore. The tombstone wins until a
+		// genuinely fresh revert arrives through the real `.staged` wire
+		// event (`stageSessionRevert`, called directly, which overwrites
+		// unconditionally and so clears the tombstone normally) — never
+		// through this best-effort info-snapshot recovery path.
+		if (current === null) return;
 		if (current?.messageId === revert.messageID) return;
 		get().stageSessionRevert(sessionId, revert.messageID);
 	},
@@ -1020,6 +1088,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
 				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
+				sessionRevertNeedsTailReconcile: (() => {
+					const { [sessionID]: _, ...rest } = s.sessionRevertNeedsTailReconcile;
+					return rest;
+				})(),
 			};
 		}),
 
@@ -1333,7 +1405,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// permission, file, step, …) are never dropped by content — they carry
 				// distinct identity per id and a coincidental text match doesn't apply
 				// to them at all.
+				//
+				// F1 review finding: an extra still tracked in `deltaActiveParts` (this
+				// session is actively applying deltas to it right now) is EXEMPT from
+				// this filter regardless of what it prefixes. The heuristic above
+				// assumes a text-prefix match means the server re-issued the SAME
+				// content under a new id and the extra is an abandoned twin — but a
+				// live streaming target is never abandoned, and dropping it here also
+				// permanently blocks its later deltas (their event ids would already
+				// be recorded as applied — see `applyPartDelta`'s not-found path).
 				const survivingExtras = extras.filter((extra) => {
+					if (hasTrackedId(deltaActiveParts, sessionID, extra.id)) return true;
 					if (!isTextLikePart(extra) || extra.text.length === 0) return true;
 					return !inParts.some(
 						(inP) =>
@@ -1374,6 +1456,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			diffs: {},
 			todos: {},
 			sessionRevert: {},
+			sessionRevertNeedsTailReconcile: {},
 		});
 	},
 
@@ -1757,11 +1840,22 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				const props = event.properties as { sessionID: string; messageID: string };
 				if (props.sessionID && props.messageID) {
 					const tracked = get().sessionRevert[props.sessionID];
-					const watermark =
-						tracked?.watermark ??
-						newestMessageId(get().getMessages(props.sessionID)) ??
-						props.messageID;
-					store.applyCommittedRevert(props.sessionID, props.messageID, watermark);
+					if (tracked) {
+						store.applyCommittedRevert(props.sessionID, props.messageID, tracked.watermark);
+					} else {
+						// F2 — no tracked local record (fresh mount / second tab that
+						// never saw `.staged`). The REMOVED fallback guessed a
+						// watermark from `newestMessageId(local messages)`, which can
+						// be the user's own REPLACEMENT prompt if its
+						// `message.updated` arrived before this `.committed` event —
+						// deleting the replacement and its answer. Do not guess: flag
+						// this session for a tail reconcile (see
+						// `markSessionRevertNeedsTailReconcile`'s doc comment) and
+						// leave messages alone. The server's actual (already-
+						// truncated) transcript arrives through whatever reads that
+						// flag.
+						store.markSessionRevertNeedsTailReconcile(props.sessionID);
+					}
 				}
 				return;
 			}

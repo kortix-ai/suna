@@ -3245,6 +3245,7 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-08-10 | `activity-burst`         | **Two `apps/web` ShowTool tests are order-dependent and fail in isolation at clean HEAD** — `content-only inline show exposes/omits Preview…` assert on a `viewBox="0 0 38 64"` occurrence count that comes back `undefined` when the file runs alone. Not an SDK issue and not caused by this session; adding any new test file to `src/features/session/tool/tools/` reshuffles execution order and surfaces it. Consistent with the known global mock-registry leak in `apps/web`. | `apps/web/src/features/session/tool/tools/show-tool.test.tsx:110,126` |
 | 2026-07-21 | `profile-owned-bindings` | The existing computer-connector integration's unknown-slug assertion depends on its arbitrary local project's Git manifest being readable. When GitHub returns 422, `getConnectorPoliciesFromManifest` returns `{ policies: [] }` before proving the slug exists, so the test reports **7 pass / 1 fail** instead of the earlier **8 / 0**. This branch does not touch that path.                                                                                                                                                                                                                     | `apps/api/src/connectors/manifest-crud.ts:393`, `apps/api/src/__tests__/integration-computer-connector.test.ts:157` |
 | 2026-08-15 | `session-middle-stop` (T14 + T16) | **`upsertPart`'s prefix-growth-reject branch (`bridgeCleared` handling) is dead code, independent of this session's changes.** Whenever `bridgedPartIds` is tracked, `list` is set to `[]` before the `Binary.search(list, part.id, …)` call a few lines down — so `result.found` can never be `true` in that same call, and the `if (!bridgeCleared) return s; … next[result.index] = prev; …` branch inside `if (result.found) {…}` (guarded on `bridgeCleared`) is unreachable. Pre-existing before this session (the bridge-retirement fix here only changed WHEN `list = []` fires, not that it always makes `result.found` false in that call). Not fixed — outside this task's three named defects. | `packages/sdk/src/browser/stores/sync-store.ts` (`upsertPart`, the `bridgeCleared`/prefix-growth-reject block) |
+| 2026-08-16 | `session-middle-stop` (F1–F5 review findings) | **F2's new `sessionRevertNeedsTailReconcile` store signal has no consumer.** The fix stops an untracked `session.next.revert.committed` from guess-deleting a possibly-live replacement prompt, but the natural consumer (`reconcileSessionTail` via `use-opencode-events/handle-event.ts`'s existing `reconcileTail` plumbing, already wired for `'compaction'`/`'session-error'`) lives outside this session's exclusive file list and was left untouched. Until wired, an untracked `.committed` stops corrupting state but does not yet auto-fetch the real truncation — it waits for the next unrelated reconcile/hydrate. | `packages/sdk/src/browser/stores/sync-store.ts` (`markSessionRevertNeedsTailReconcile`/`clearSessionRevertNeedsTailReconcile`, the `session.next.revert.committed` case in `applyEvent`); consumer seam: `packages/sdk/src/react/use-opencode-events/handle-event.ts`, `packages/sdk/src/browser/session-sync/session-sync-registry.ts` |
 
 ---
 
@@ -10022,3 +10023,180 @@ restoring:
   design to the specific defect shapes described in the task, with negative
   tests (`distinct non-text parts are never dropped`, `unrelated content is
   kept`) guarding against over-matching.
+
+## Session `session-middle-stop` — five CONFIRMED review findings (F1–F5) (2026-08-16)
+
+**Scope.** Fixed five reviewer-confirmed defects on top of the T2/T14/T16
+work logged above, same shared files, same session, no git commands (shared
+worktree): `packages/sdk/src/browser/stores/sync-store.ts` (+ its test file),
+`packages/sdk/src/core/stream/event-stream.ts` (+ its test file),
+`packages/sdk/src/core/http/abort-error.ts` (+ its test file). `rewind.ts`
+was read but not touched — no fix required it. Baseline re-derived at session
+start: **2086 pass, 0 fail, 149 files.**
+
+**F1 — extras prefix-dedupe dropped a LIVE streaming part.** T16's extras
+filter (`hydrate`, the `survivingExtras` filter) dropped an existing part
+whose accumulated text happened to be a PREFIX of another part's text of the
+same type in the same message — even when that part was still ACTIVELY
+streaming (tracked in `deltaActiveParts`), not an abandoned SSE twin.
+Dropping it also poisoned `deltaEventTails` for its later deltas via a
+second, independent bug: `applyPartDelta` recorded the wire event id as
+"applied" BEFORE `set()` even checked whether the target part existed, so a
+delta on a not-found part permanently blocked a later legitimate redelivery
+of that same event id once the part did exist. Fixed both: the extras filter
+now exempts any part tracked in `deltaActiveParts` outright; `applyPartDelta`
+now records the event id only inside the actual-apply branch, after the
+list/found checks pass. RED-proven: two new tests reproduce each half
+independently (`an actively-streaming extra survives…`, `a delta that finds
+no target part does not consume the event id…`).
+
+**F2 — committed-revert fallback could delete a replacement prompt.**
+`session.next.revert.committed` with no tracked local `sessionRevert` record
+(fresh mount, or a second tab that never saw `.staged`) used to fall back to
+`watermark = newestMessageId(local messages)` — which can be the user's own
+REPLACEMENT prompt if its `message.updated` raced ahead of the `.committed`
+event, deleting the replacement and its answer. Fixed: with no tracked
+record, `applyCommittedRevert` is no longer called at all — nothing is
+deleted. Instead the store additively exposes
+`sessionRevertNeedsTailReconcile: Record<sessionId, boolean>` plus
+`markSessionRevertNeedsTailReconcile`/`clearSessionRevertNeedsTailReconcile`,
+so a consumer (the existing sync controller / `use-opencode-events`, both
+OUTSIDE this session's exclusive files) can fetch the server's real,
+already-truncated transcript instead of guessing locally. **Not wired to a
+consumer this session** — see Discovered-this-session below; the signal is
+additive-only and inert until something reads it. The pre-existing test
+`.committed with NO locally tracked record falls back to the current known
+tip as watermark` asserted the OLD (buggy) delete-by-guess behavior; it was
+rewritten (not weakened) to assert the new no-delete + flag behavior, with
+the reasoning inline in the test's own comment — a deliberate "the test
+encoded a wrong expectation" case, not a mid-loop edit. RED-proven by
+temporarily restoring the exact old fallback logic and re-running the new
+tests: both `does NOT delete anything` and `does not delete a replacement
+prompt that raced ahead of it` failed for the right reason (msg_2/msg_3, and
+msg_4, were deleted) before the fix was restored.
+
+**F3 — stale `session.updated` re-staged a tombstoned (committed/cleared)
+revert.** `syncSessionRevertFromInfo` never consulted the store's own `null`
+tombstone (set by `applyCommittedRevert`/`clearSessionRevert`) — a stale
+`session.updated` still carrying the OLD `info.revert` pointer would
+re-stage it with a fresh watermark, hiding every post-rewind message behind
+a phantom Restore offer. Fixed: `if (current === null) return` added as the
+first check. The escape hatch stays open exactly as specified —
+`stageSessionRevert` (the real `.staged` wire event's handler) already
+overwrites unconditionally regardless of `current`, so a genuinely fresh
+revert still clears the tombstone normally; pinned by a regression test that
+was already GREEN pre-fix (documented as such, not claimed as RED-proven).
+Two new RED tests (committed-then-stale-update, cleared-then-stale-update)
+both failed pre-fix (record re-staged) and pass post-fix.
+
+**F4 — `abortErrorReason` returned unvalidated strings.** The doc comment
+promised a closed union (`AbortReason`), but the implementation returned any
+non-empty `data.reason` string verbatim, typed as bare `string`. `apps/web`
+renders "Interrupted" only for `reason === 'user'` and nothing for any other
+value — so an unknown/typo'd reason silently suppressed the whole error UI
+instead of falling back safely. Fixed: return type narrowed to
+`AbortReason | undefined`; membership validated against `ABORT_REASONS`; an
+unrecognized string now returns `undefined` (renders like a reason-less real
+wire abort, the documented safe default) instead of propagating unfiltered.
+Return-type narrowing on an export added this branch (never published) —
+safe per the "narrowing a return type" row in `AGENTS.md`'s safety table;
+confirmed via the public-surface/public-type-surface snapshots, both
+unchanged (`abortErrorReason` was already listed by name only — no shape
+diff). RED-proven: new test asserts `undefined` for `reason:
+'not-a-real-reason'`, failed pre-fix (returned the raw string) as expected.
+
+**F5 — a second `openEventStream()` on the same client silently killed the
+first subscriber.** T14's single-live-stream invariant closed subscriber #1
+with no signal the moment subscriber #2 opened for the same client — an
+unannounced behavior change on a published, programmatic surface (React
+hosts open exactly one stream per client in practice and were unaffected;
+a direct SDK consumer opening two handles for the same runtime was not).
+Fixed via full fan-out, not the minimal "same handle" alternative — the
+per-client registry (`liveStreamsByClient`) now holds a `LiveStream`
+(`{ subscribers: Set<StreamSubscriber>, teardown }`) instead of an
+`EventStreamHandle`. The FIRST `openEventStream()` call for a client creates
+the underlying connect/reconnect loop via the new `createLiveStream` (owning
+`timers`/`connectTimeoutMs`/`heartbeatTimeoutMs`/`maxConsecutiveHardFailures`
+from that first caller's `opts` only — a later joiner's values for those
+fields are not consulted, documented as a deliberate simplification: there
+is one wire connection to configure). Every later `openEventStream()` call
+for the SAME client joins the SAME `LiveStream` and gets its own independent
+`EventStreamHandle`; `close()` removes just that subscriber and only tears
+the shared connection down (`abort()` + clear the flush timer) when the
+LAST subscriber leaves. `onEvent`/`onGapRehydrate`/`onParked` dispatch
+through a shared `dispatchToSubscribers` helper that catches per-subscriber
+(one throwing handler can't break the others or the stream). `signal` stays
+per-subscriber — an external abort on one caller's own signal only closes
+that caller's handle, not the shared connection (unless it was the last
+one). Delta-dedupe safety is now BETTER than before, not merely preserved:
+every event crosses the wire exactly once and fans out to N subscribers
+exactly once each, so no subscriber needs deduping against a genuinely
+duplicated delivery. RED-proven: the whole `openEventStream single-live-
+stream invariant` describe block was rewritten to
+`openEventStream shared-stream fan-out (F5)` (old tests asserted the exact
+behavior being fixed — "a second open... tears the first stream down" — so
+they could not simply stay); 5 of 8 new tests failed against the pre-fix
+code for the right reason (only 1 wire connection expected vs. 2 observed;
+0 events fanned to a second subscriber; etc.) before the fix, all 8 pass
+after.
+
+**Gates, real output (this session, on top of the 2086/149 baseline):**
+- `pnpm --filter @kortix/sdk typecheck` — clean, no output (tsc --noEmit +
+  examples), exit 0.
+- `pnpm --filter @kortix/sdk test` — `2102 pass`, `0 fail`, `7686 expect()`
+  calls across `149` files (+16 tests, +0 files — all new tests added to the
+  three existing files above).
+- `pnpm --filter @kortix/sdk run smoke:install` — `✔ install smoke test
+  passed`.
+- `cd apps/web && bun test src` — `7343 pass`, `0 fail`, `24242 expect()`
+  calls across `588` files (exceeds the ≥7335 floor noted for this session;
+  the human's uncommitted cosmetic edits to `session-chat.tsx`/
+  `question-prompt.tsx`/`inline-code.tsx` were left untouched, per scope).
+- No public-surface or public-type-surface snapshot diff (`git status
+  --short` on both snapshot files: empty). All five fixes are either
+  behavior-only (F1, F2, F3, F5 — no exported name/shape changed) or a
+  return-type NARROWING on an export added this branch, never published (F4).
+
+**Discovered, not fixed (out of this task's five named findings, logged
+per protocol):**
+- F2's `sessionRevertNeedsTailReconcile` signal is additive-only and
+  **inert** — nothing in this session's exclusive files consumes it. The
+  natural consumer is `reconcileSessionTail`
+  (`packages/sdk/src/browser/session-sync/session-sync-registry.ts`) via
+  `packages/sdk/src/react/use-opencode-events/handle-event.ts`'s existing
+  `reconcileTail` plumbing (already wired for `'compaction'`/
+  `'session-error'` reasons) — both files are OUTSIDE this session's
+  exclusive file list (`sync-store.ts`/`event-stream.ts`/`abort-error.ts`/
+  `rewind.ts` + tests only) and were left untouched. Until a follow-up wires
+  `handle-event.ts`'s `session.next.revert.committed` handling (or an
+  equivalent seam) to read this flag and call `reconcileTail(sessionID,
+  'revert-committed')`, the fix's practical effect for an untracked
+  `.committed` is "stop deleting the wrong thing" without yet "show the
+  correct truncation automatically" — a real improvement (no data loss) but
+  not the full fix the reviewer's note implied. Needs its own follow-up task
+  in a session that owns `use-opencode-events/`.
+- Pre-existing dead code noted by the prior T14/T16 session-log entry
+  (`upsertPart`'s `bridgeCleared`/prefix-growth-reject branch) is still
+  present and still out of scope — not one of F1–F5.
+
+**Shippable to production: YES**, with the one caveat above named
+explicitly (F2's signal has no consumer yet — additive and inert, not a
+regression risk, but not yet a complete UX fix for the untracked-`.committed`
+case).
+- Verified: SDK typecheck/test/smoke:install all green; apps/web `bun test
+  src` green; every one of the five fixes RED-proven (F2 and F3 by
+  temporarily restoring old logic and re-running new tests; F1/F4/F5 by
+  writing the test first against the actual pre-fix code); no snapshot
+  drift.
+- Unverified: no browser/E2E pass driving a real second-tab committed-revert
+  race, a real stacked-subscriber `openEventStream()` call from a
+  programmatic (non-React) consumer, or a real unknown-abort-reason payload
+  from a live wire event — unit-level coverage only, per this task's
+  verification list.
+- Risk: low for F1/F3/F4/F5 (all either exempt an existing safety net from a
+  narrow over-match, add a validation-only narrowing, or are internal
+  registry/dispatch mechanics with no public shape change). F2 carries the
+  one real residual risk named above: an untracked `.committed` no longer
+  corrupts local state, but a consumer must still be wired to make the
+  truncation appear promptly instead of only on the next unrelated
+  reconcile/hydrate.

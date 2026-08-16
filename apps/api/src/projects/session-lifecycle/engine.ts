@@ -6,6 +6,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { mayRequeueFailedCreate } from './requeue-policy';
@@ -234,6 +235,7 @@ export async function createSession(
       projectId: command.project.projectId,
       sessionId: result.sessionId,
       actions: command.postCreate,
+      commandId: claimed.row.commandId,
     });
     if (!postCreate.ok) {
       await markCommandFailed(claimed.row.commandId, postCreate.error, {
@@ -332,8 +334,21 @@ export async function startSession(command: StartSessionCommand) {
 
 export async function continueSession(
   command: ContinueSessionCommand,
+  // F2: the queued `continue_session` row's stable identity, when this
+  // delivery originates from the durable queue (`executeQueuedContinue`,
+  // `applyPostCreateActions`'s `deliver_prompt` action). Sent to `postPrompt`
+  // as the `Idempotency-Key` — see the note there for why this must be
+  // STABLE across every retry of ONE command and DISTINCT across different
+  // commands, even when their prompt text is byte-identical. Callers with no
+  // durable row of their own (direct API/channel delivery) get a fresh
+  // `randomUUID()` per call instead — still stable across THIS call's own
+  // internal `deliverWithRetry` retries (computed once, below, outside that
+  // loop), just not across separate invocations, which those callers never
+  // rely on for dedupe.
+  commandId?: string,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
+  const idempotencyKey = commandId ?? randomUUID();
   const [session] = await db
     .select({
       accountId: projectSessions.accountId,
@@ -482,7 +497,7 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: (externalId, runtimeId) =>
-      postPrompt(externalId, runtimeId, text, userId, sessionId),
+      postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey),
   });
 }
 
@@ -525,6 +540,7 @@ export async function drainSessionLifecycleQueue(
         projectId: row.projectId,
         sessionId: result.sessionId,
         actions: payload.postCreate,
+        commandId: row.commandId,
       });
       if (!postCreate.ok) {
         await markCommandFailed(row.commandId, postCreate.error, {
@@ -725,12 +741,19 @@ export async function executeQueuedContinue(
   }
 
   try {
-    const delivery = await continueSession({
-      source: row.source as SessionInvocationSource,
-      sessionId: row.sessionId,
-      text,
-      userId: row.actorUserId,
-    });
+    const delivery = await continueSession(
+      {
+        source: row.source as SessionInvocationSource,
+        sessionId: row.sessionId,
+        text,
+        userId: row.actorUserId,
+      },
+      // F2: stable across every drain-and-retry of THIS row — see
+      // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
+      // `commandId`s) with identical text now deliver independently instead
+      // of the second silently deduping against the first.
+      row.commandId,
+    );
     if (delivery === 'delivered') {
       await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       return 'succeeded';
@@ -880,6 +903,13 @@ async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
+  // F2: the CREATE command's own commandId, when this create can be retried
+  // against the same row (the idempotency-key and queued-create paths — see
+  // call sites). Forwarded to `continueSession` so `postPrompt`'s
+  // `Idempotency-Key` stays stable across those retries. Omitted by the
+  // one-shot, non-retryable create path, which falls back to a fresh
+  // `randomUUID()` per call inside `continueSession`.
+  commandId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!input.actions?.length) return { ok: true };
   try {
@@ -893,12 +923,15 @@ async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
         });
       } else if (action.type === 'deliver_prompt') {
-        const outcome = await continueSession({
-          source: action.source,
-          sessionId: input.sessionId,
-          text: action.text,
-          userId: action.userId ?? undefined,
-        });
+        const outcome = await continueSession(
+          {
+            source: action.source,
+            sessionId: input.sessionId,
+            text: action.text,
+            userId: action.userId ?? undefined,
+          },
+          input.commandId,
+        );
         if (outcome !== 'delivered') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };
         }
@@ -941,11 +974,21 @@ function isProviderName(value: string | null): value is ProviderName {
  * `mintPromptMessageId`), which requires reading that transcript's current
  * state; this call site has no cheap way to do that server-side, and a
  * wrongly-ordered id silently drops the turn instead of merely losing dedupe
- * precision. So this delivery relies on `prompt-dedupe.ts`'s content-hash
- * fallback instead: `sessionId` + `text` are identical across every retry of
- * ONE queued command (same row, same payload), so the hash key collides on a
- * retry exactly as a shared `messageID` would — see the guarantee documented
- * on `executeQueuedContinue` above and pinned in `prompt-dedupe.test.ts`.
+ * precision.
+ *
+ * F2: without a messageID, `prompt-dedupe.ts`'s precedence used to fall all
+ * the way to its content-hash fallback — `sessionId` + `text` only. That is
+ * sound across retries of ONE command (identical body by construction, see
+ * `executeQueuedContinue`'s guarantee above), but unsound across TWO
+ * different commands that happen to carry byte-identical text (two approvals
+ * of one `actionPath`, a fixed-text trigger firing twice inside the TTL):
+ * both hash to the SAME key, so the second is answered `200
+ * {"deduplicated":true}` — which this function reads as delivered — and its
+ * turn silently never runs. `idempotencyKey` closes this: it outranks the
+ * content hash (`promptDeliveryKey`'s precedence, `prompt-dedupe.ts`), is
+ * STABLE across every retry of one command (the caller passes the same value
+ * every time — see `continueSession`), and is DISTINCT across different
+ * commands even when their text matches exactly.
  */
 async function postPrompt(
   externalId: string,
@@ -955,6 +998,9 @@ async function postPrompt(
   /** The session this prompt is FOR. Passed as the caller binding so the
    *  isolation guard proves the target matches, rather than being waived. */
   callerSessionId: string,
+  /** F2: per-command identity forwarded as `Idempotency-Key` — see the note
+   *  above. */
+  idempotencyKey: string,
 ): Promise<boolean> {
   const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
   try {
@@ -965,7 +1011,7 @@ async function postPrompt(
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       `?directory=${encodeURIComponent(WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json' }),
+      new Headers({ 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );

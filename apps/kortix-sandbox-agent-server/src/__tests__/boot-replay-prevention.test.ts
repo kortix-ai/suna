@@ -202,7 +202,9 @@ describe('the boot path is wired to the defer outcome, not just resolveExistingR
     const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
     const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
     const body = SRC.slice(start, end)
-    expect(body).toContain('alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin)')
+    expect(body).toContain(
+      'alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin, priorDeliveredMarker)',
+    )
     // T22: `priorPin` must be captured BEFORE `resolveExistingRoot` runs, so it
     // reflects only what a PRIOR boot pinned — never this boot's own pending
     // write (see `pinOpencodeSessionFile` further down the same function).
@@ -212,30 +214,95 @@ describe('the boot path is wired to the defer outcome, not just resolveExistingR
     expect(priorPinReadAt).toBeGreaterThan(-1)
     expect(priorPinReadAt).toBeLessThan(resolveCallAt)
     expect(priorPinReadAt).toBeLessThan(pinWriteAt)
+    // F1: `priorDeliveredMarker` must likewise be captured before delivery —
+    // it must reflect only a PRIOR boot's successful delivery, never this
+    // boot's own (possible) marker write further down the same function.
+    const priorMarkerReadAt = body.indexOf('const priorDeliveredMarker = readInitialPromptDeliveredMarker()')
+    const markerWriteAt = body.indexOf('markInitialPromptDelivered()')
+    expect(priorMarkerReadAt).toBeGreaterThan(-1)
+    expect(priorMarkerReadAt).toBeLessThan(resolveCallAt)
+    expect(priorMarkerReadAt).toBeLessThan(markerWriteAt)
+  })
+
+  test('F1: the delivery marker is written only AFTER deliverInitialOpenCodePrompt, never before', () => {
+    const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
+    const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
+    const body = SRC.slice(start, end)
+    const deliverCallAt = body.indexOf('await deliverInitialOpenCodePrompt(')
+    const markerWriteAt = body.indexOf('markInitialPromptDelivered()')
+    expect(deliverCallAt).toBeGreaterThan(-1)
+    expect(markerWriteAt).toBeGreaterThan(deliverCallAt)
   })
 })
 
-describe('reusedRootAlreadyDelivered — the T22 staged-revert boot guard', () => {
-  test('a prior pin overrides an empty (revert-truncated) transcript', () => {
-    // Same shape a committed revert leaves behind: the read succeeded
-    // (`known: true`) but found zero messages — exactly what
-    // `initialPromptAlreadyDelivered` alone would read as "never delivered".
-    expect(reusedRootAlreadyDelivered({ known: true, hasMessages: false }, 'ses_prior_pin')).toBe(
-      true,
-    )
+describe('reusedRootAlreadyDelivered — F1: bare pin is no longer proof of delivery', () => {
+  test('F1 RED: crash-window boot — pin exists, NO marker, transcript confirmed empty → delivers', () => {
+    // The exact shape a crash between the pin write and delivery leaves
+    // behind: `resolveExistingRoot` re-finds the pinned root (chosen.id ===
+    // priorPin), the read succeeded (known: true) and found zero messages,
+    // because nothing was ever delivered. The old T22 rule ("any prior pin
+    // proves delivery") would return true here and silence the session
+    // forever. F1 requires this to deliver.
+    expect(
+      reusedRootAlreadyDelivered(
+        { id: 'ses_prior_pin', known: true, hasMessages: false },
+        'ses_prior_pin',
+        false,
+      ),
+    ).toBe(false)
   })
 
-  test('a prior pin overrides an unreadable transcript too', () => {
-    expect(reusedRootAlreadyDelivered({ known: false, hasMessages: false }, 'ses_prior_pin')).toBe(
-      true,
-    )
+  test('F1: truncated-after-delivery — marker present → never redelivers (T22 intent, now via the marker)', () => {
+    // Same transcript shape as the crash-window case (revert emptied it),
+    // but this time the marker proves delivery genuinely happened once.
+    expect(
+      reusedRootAlreadyDelivered(
+        { id: 'ses_prior_pin', known: true, hasMessages: false },
+        'ses_prior_pin',
+        true,
+      ),
+    ).toBe(true)
+  })
+
+  test('F1: marker alone is sufficient even with no prior pin at all', () => {
+    expect(
+      reusedRootAlreadyDelivered({ id: 'ses_new_root', known: true, hasMessages: false }, null, true),
+    ).toBe(true)
+  })
+
+  test('F1 RED: different-root case — chosen root != priorPin, no marker → delivers', () => {
+    // The pinned root is gone; `resolveExistingRoot` fell through to a
+    // DIFFERENT, never-prompted root. The old gate skipped delivery here too
+    // (any prior pin, regardless of which root was chosen). F1 requires the
+    // chosen root to match the pin before trusting it.
+    expect(
+      reusedRootAlreadyDelivered(
+        { id: 'ses_different_root', known: true, hasMessages: false },
+        'ses_prior_pin',
+        false,
+      ),
+    ).toBe(false)
+  })
+
+  test('a prior pin overrides an unreadable transcript too (unknown reads never redeliver — unchanged from T12)', () => {
+    expect(
+      reusedRootAlreadyDelivered(
+        { id: 'ses_prior_pin', known: false, hasMessages: false },
+        'ses_prior_pin',
+        false,
+      ),
+    ).toBe(true)
   })
 
   test('pinless + has messages: still delivered (unchanged from T12)', () => {
-    expect(reusedRootAlreadyDelivered({ known: true, hasMessages: true }, null)).toBe(true)
+    expect(
+      reusedRootAlreadyDelivered({ id: 'ses_new_root', known: true, hasMessages: true }, null, false),
+    ).toBe(true)
   })
 
   test('pinless + genuinely empty: not yet delivered, deliver now (unchanged from T12)', () => {
-    expect(reusedRootAlreadyDelivered({ known: true, hasMessages: false }, null)).toBe(false)
+    expect(
+      reusedRootAlreadyDelivered({ id: 'ses_new_root', known: true, hasMessages: false }, null, false),
+    ).toBe(false)
   })
 })
