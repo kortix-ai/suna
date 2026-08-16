@@ -12,10 +12,11 @@
 
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
-import { ChatCircleIcon as MessageCircle, XIcon as X } from '@phosphor-icons/react';
+import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Close } from '../icon/icons/close';
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown renderer for question text (no Shiki/KaTeX/Mermaid)
@@ -281,9 +282,8 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     // -----------------------------------------------------------------------
 
     return (
-      <div className="border-border/40 bg-muted/40 overflow-hidden rounded-2xl border">
-        {/* Header row */}
-        <div className="flex w-full items-center gap-2 px-3 py-1.5">
+      <div className="relative isolate z-10 w-full">
+        <div className="flex w-full items-center gap-2 p-2 py-1.5">
           <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
             {isSingle ? '' : `${questions.length} questions \u00B7 `}
@@ -300,7 +300,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
             }}
             className="text-muted-foreground/40 hover:text-foreground hover:bg-muted inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
           >
-            <X className="size-3" />
+            <Close className="size-3" />
           </span>
         </div>
 

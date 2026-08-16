@@ -377,7 +377,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <Button
           type="button"
           variant="popover"
-          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
         >
           <span className="text-foreground text-xs font-medium">Questions</span>
           <span className="text-muted-foreground text-xs tabular-nums">
@@ -392,12 +392,12 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         </Button>
       </DisclosureTrigger>
       <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-4 px-4 py-2.5">
+        <div className="space-y-2 px-3.5 py-2">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
             const answerText = answer.join(', ') || 'No answer';
             return (
-              <div key={i} className="space-y-1">
+              <div key={i} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
                   <UnifiedMarkdown content={q.question} />
                 </div>
@@ -3947,7 +3947,7 @@ export function SessionChat({
         {renderedQuestion ? (
           <div
             className={cn(
-              'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+              'overflow-hidden w-full transition-[max-height,opacity,transform] ease-in-out',
               questionPromptVisible
                 ? 'max-h-130 translate-y-0 opacity-100 duration-300'
                 : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
