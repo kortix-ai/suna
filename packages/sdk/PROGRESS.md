@@ -12,6 +12,30 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-16 — session `apps-hosting-backends` claim
+
+No **Now** task claimed. This is the user-directed provider-agnostic Apps Hosting
+refactor and AWS Lightsail implementation.
+
+Claimed SDK scope:
+
+- Add an additive `hosting` request contract that separates the hosting backend
+  from sandbox provider selection.
+- Keep the existing `provider` field as a deprecated sandbox shorthand.
+- Preserve every existing Apps export name and the release-managed package
+  version.
+- Add failing contract tests before implementation.
+- Update both public-surface snapshots only for intentional additive names.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+Required platform proof includes the real API, CLI, browser, AWS Lightsail
+Container Services, direct-origin denial, cleanup, merge, Deploy Dev, deployed
+SHA, and Dev behavior.
+
+**Status:** IN PROGRESS.
+
+**SDK package shippable to production: NOT YET.**
+
 ### 2026-08-13 — session `warm-index` — warm-session decline must not toast
 
 **Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
