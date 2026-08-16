@@ -38,7 +38,12 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
-import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import {
+  auditRelayToken,
+  createAuditRelay,
+  type AuditDurabilityHealth,
+  type OpenCodeAuditEvent,
+} from './opencode-audit-relay'
 import {
   OPENCODE_SESSION_PIN_PATH,
   resolveOpenCodeAuditSpoolPath,
@@ -412,26 +417,51 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
-  const auditRelay = createAuditRelay(
-    async (events) => {
-      const ctx = sandboxRelayContext(auditRelayToken(process.env))
-      if (!ctx) throw new Error('audit relay context is unavailable')
-      const response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
-          body: JSON.stringify({ events }),
-          signal: AbortSignal.timeout(15_000),
-        },
-      )
-      if (!response.ok) {
-        const body = await response.text().catch(() => '')
-        throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
-      }
-    },
-    { spoolPath: resolveOpenCodeAuditSpoolPath(process.env) },
-  )
+  const sendAuditEvents = async (events: OpenCodeAuditEvent[]) => {
+    const ctx = sandboxRelayContext(auditRelayToken(process.env))
+    if (!ctx) throw new Error('audit relay context is unavailable')
+    const response = await fetch(
+      `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
+        body: JSON.stringify({ events }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    )
+    if (!response.ok) {
+      const body = await response.text().catch(() => '')
+      throw new Error(`audit batch rejected: ${response.status} ${body.slice(0, 200)}`)
+    }
+  }
+  const onDurabilityChange = (health: AuditDurabilityHealth) => {
+    const previous = bootState.auditRelayError ?? null
+    bootState.auditRelayError = health.error
+    if (health.status === 'degraded' && health.error !== previous) {
+      logger.warn('[opencode-events] audit durability degraded; direct delivery continues', {
+        err: health.error,
+      })
+    } else if (health.status === 'ok' && previous) {
+      logger.info('[opencode-events] audit durability recovered')
+    }
+  }
+  let auditRelay: ReturnType<typeof createAuditRelay>
+  try {
+    auditRelay = createAuditRelay(sendAuditEvents, {
+      spoolPath: resolveOpenCodeAuditSpoolPath(process.env),
+      onDurabilityChange,
+    })
+  } catch (error) {
+    const loadError = (error instanceof Error ? error.message : String(error)).slice(0, 400)
+    bootState.auditRelayError = loadError
+    logger.error('[opencode-events] audit journal unavailable at startup; direct delivery continues', {
+      err: loadError,
+    })
+    auditRelay = createAuditRelay(sendAuditEvents, {
+      initialDurabilityError: loadError,
+      onDurabilityChange,
+    })
+  }
   const flushAuditRelay = () => {
     void auditRelay.stop().catch((error) =>
       logger.warn('[opencode-events] audit relay shutdown flush failed', {
@@ -447,7 +477,7 @@ async function startSessionRuntime(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       bootState.auditRelayError = message
-      logger.error('[opencode-events] audit relay persistence failed; runtime is unhealthy', {
+      logger.error('[opencode-events] unexpected audit relay failure', {
         err: message,
       })
     }

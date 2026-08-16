@@ -407,6 +407,34 @@ describe('daemon proxy auth gate', () => {
     expect(body.auth).toBe('unconfigured')
   })
 
+  it('keeps a healthy OpenCode runtime ready while audit durability degrades and recovers', async () => {
+    const bootState = {
+      repoMaterializationError: null,
+      timeline: [],
+      auditRelayError: 'EUCLEAN: audit journal append failed' as string | null,
+    }
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
+
+    const degraded = await app.request('/kortix/health')
+    expect(degraded.status).toBe(200)
+    expect(await degraded.json()).toMatchObject({
+      status: 'ok',
+      runtimeReady: true,
+      audit_durability: 'degraded',
+      audit_durability_error: 'EUCLEAN: audit journal append failed',
+      boot_error: null,
+    })
+
+    bootState.auditRelayError = null
+    const recovered = await app.request('/kortix/health')
+    expect(await recovered.json()).toMatchObject({
+      status: 'ok',
+      runtimeReady: true,
+      audit_durability: 'ok',
+      audit_durability_error: null,
+    })
+  })
+
   it('reports runtime not ready and blocks OpenCode proxy when repo materialization failed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-repo-failed-'))
     try {
