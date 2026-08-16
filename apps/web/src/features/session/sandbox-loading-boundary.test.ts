@@ -61,6 +61,9 @@ describe('session navigation loading boundaries', () => {
     expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');
-    expect(projectHomeSource).toContain('const PROJECT_SETUP_TILES');
+    // Project home renders its own starter content (StarterSuggestions replaced
+    // the old PROJECT_SETUP_TILES in #6467), so a members query is never the
+    // thing that gates the first paint.
+    expect(projectHomeSource).toContain('StarterSuggestions');
   });
 });
