@@ -212,10 +212,6 @@ export async function probeStream(
   const inactivityTimeoutMs = options.inactivityTimeoutMs ?? PROBE_COMMIT_DEADLINE_MS;
   let buffer = '';
   let bytes = 0;
-  // Exactly one read is kept in flight across loop turns. Hoisted out of the
-  // race so a timeout can hand the still-pending read to the relay instead of
-  // orphaning it — see StreamProbeResult.pendingRead.
-  let pending: PendingRead | null = null;
 
   for (;;) {
     const mayContainSoftFailure =
@@ -236,8 +232,12 @@ export async function probeStream(
     ) {
       return { hasContent: true, reader, chunks };
     }
-    const inFlight: PendingRead = pending ?? reader.read();
-    pending = inFlight;
+    // Bound to a local rather than inlined into the race: the timeout branch
+    // below returns this exact promise to the caller (`pendingRead`) so the
+    // relay can adopt the read that is still in flight. Every other branch is
+    // reached only after it has settled, so no loop turn ever carries one over
+    // — the read is always fresh here.
+    const inFlight: PendingRead = reader.read();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const outcome = await Promise.race([
       inFlight.then(
@@ -266,8 +266,6 @@ export async function probeStream(
         pendingRead: inFlight,
       };
     }
-    // The awaited read settled — the next loop turn must issue a fresh one.
-    pending = null;
     if (outcome.kind === 'error') {
       const err = outcome.error;
       const message = boundedErrorMessage(err);
