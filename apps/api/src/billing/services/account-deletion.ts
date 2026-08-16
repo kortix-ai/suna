@@ -1,10 +1,12 @@
-import { and, eq } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { appRuntimes, sessionSandboxes } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { isAlreadyNotRunning, reconcileSandboxStoppedByExternalId } from '../../projects/sandbox-reaper';
+import { AppHostingService, appRuntimeTarget } from '../../apps/hosting-service';
+import { pauseComputeSession } from './compute-metering';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
 import {
@@ -158,8 +160,54 @@ async function stopAccountSandboxes(accountId: string): Promise<void> {
   }
 }
 
+async function removeAccountAppRuntimes(accountId: string): Promise<void> {
+  try {
+    const rows = await db.select({
+      runtimeId: appRuntimes.runtimeId,
+      hostingType: appRuntimes.hostingType,
+      provider: appRuntimes.provider,
+      externalId: appRuntimes.externalId,
+    }).from(appRuntimes).where(and(
+      eq(appRuntimes.accountId, accountId),
+      // A previous deletion attempt already completed these rows.
+      // Every other state can still own a provider-side resource.
+      sql`${appRuntimes.status} <> 'deleted'`,
+    ));
+    const hosting = new AppHostingService();
+    for (let i = 0; i < rows.length; i += STOP_CONCURRENCY) {
+      await Promise.all(rows.slice(i, i + STOP_CONCURRENCY).map(async (runtime) => {
+        try {
+          await hosting.remove(appRuntimeTarget(runtime));
+        } catch (error) {
+          console.error(
+            `[AccountDeletion] Failed to remove App runtime ${runtime.runtimeId} for ${accountId}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+        const stoppedAt = new Date();
+        await pauseComputeSession(runtime.runtimeId, stoppedAt).catch(() => {});
+        await db.update(appRuntimes).set({
+          status: 'deleted',
+          stoppedAt,
+          updatedAt: stoppedAt,
+        }).where(eq(appRuntimes.runtimeId, runtime.runtimeId)).catch(() => {});
+      }));
+    }
+  } catch (error) {
+    // The environment-scoped managed-hosting reaper remains the recovery path.
+    // Account deletion must not strand the remaining billing cleanup.
+    console.error(
+      `[AccountDeletion] App runtime teardown failed for ${accountId}:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 async function performDeletion(accountId: string) {
-  await stopAccountSandboxes(accountId);
+  await Promise.all([
+    stopAccountSandboxes(accountId),
+    removeAccountAppRuntimes(accountId),
+  ]);
 
   const account = await getCreditAccount(accountId);
 

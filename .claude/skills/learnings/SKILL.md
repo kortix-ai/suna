@@ -431,3 +431,28 @@ the resolver returns one constant, so no size can reproduce 90,000 again.
 metric that counted it. `kortix.probe_timeout` was left pinned to false on
 every span — a dashboard built on it looks healthy by construction.
 *Incident:* PR #6473, merged `7e8a56badaef80374a189e0e427a08eb06b44697`.
+
+### Provider contracts need literal schema and price boundary tests (2026-08-17)
+
+**When:** adding a provider discriminator, machine catalogue, or fixed monthly
+provider price.
+
+Do not size a database field from the current shortest enum value. The Apps
+hosting migration used `varchar(16)`, but `managed_container` has 17 characters.
+The first real HTTP request failed with PostgreSQL `22001`. Do not derive a
+fixed provider price from CPU, memory, or another resource rate. Lightsail sells
+named powers at exact monthly prices. A linear resource formula overcharged
+`nano`, `micro`, and `small`.
+
+**Rules:** (1) test every discriminator's literal length against the database
+column; (2) test every provider catalogue row, not only the default machine;
+(3) keep fixed provider prices as an explicit table; (4) run one real route
+through migration, persistence, read-back, and cleanup.
+
+**Enforcement:** the Apps database schema test covers `managed_container`; the
+hosting backend test covers all six Lightsail powers and monthly floors; flow
+`APP-5` covers default sandbox, explicit Lightsail, budget rejection, persisted
+read-back, App deletion, and fixture cleanup.
+
+*Near-miss:* Apps managed-container hosting local E2E, branch
+`apps-hosting-backends`.

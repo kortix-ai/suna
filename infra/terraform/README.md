@@ -26,6 +26,20 @@ table is the source of truth for which root it drives.
 Every root above, applied or not, is planned nightly by the `drift detection`
 matrix in `terraform-ci.yml`, so an unapplied change still shows up as drift.
 
+## Apps Lightsail hosting
+
+The `dev`, `staging`, and `prod` roots instantiate
+`modules/apps-lightsail-hosting`. Each environment receives a private S3 build
+bucket, immutable ECR repository, CodeBuild project, build log group, and an ECS
+task-role policy. The roots enable the additive `aws_lightsail` Apps backend.
+Sandbox hosting remains the product default.
+
+The module does not create an always-running Container Service. The API creates
+one service per active Lightsail App runtime. Stop and delete remove that
+service. The API's database-aware reaper deletes orphaned services, build
+contexts, and deployment images after the configured grace period. See
+`modules/apps-lightsail-hosting/README.md` for the IAM and retention contract.
+
 `environments/preview` is the one remaining manual root, by design: it declares
 `postgres_egress_cidrs` with no default and a validation that rejects
 `0.0.0.0/0`, so the operator states the allowed CIDRs on a reviewed plan. It is

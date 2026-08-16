@@ -22,6 +22,7 @@ import {
   uploadAppArtifactArchive,
   type AppDeployment,
   type AppAccessMode,
+  type AppHostingBackend,
   type AppHostingProvider,
   type UpdateAppAccessInput,
 } from './apps';
@@ -61,6 +62,16 @@ const last = () => calls.at(-1)!;
 test('AppHostingProvider is exactly the supported hosted provider set', () => {
   const exactProviderSet: Equal<AppHostingProvider, 'daytona' | 'platinum' | 'e2b'> = true;
   expect(exactProviderSet).toBe(true);
+});
+
+test('AppHostingBackend separates sandbox selection from managed container hosting', () => {
+  const sandbox: AppHostingBackend = { type: 'sandbox', provider: 'platinum' };
+  const implicitSandbox: AppHostingBackend = { type: 'sandbox' };
+  const lightsail: AppHostingBackend = {
+    type: 'managed_container',
+    provider: 'aws_lightsail',
+  };
+  expect([sandbox, implicitSandbox, lightsail]).toHaveLength(3);
 });
 
 test('AppDeployment exposes the immutable deploying actor', () => {
@@ -223,6 +234,21 @@ test('artifact registration, finalization, and deployment preserve the wire spec
     provider: 'daytona',
     environment: { NODE_ENVIRONMENT: 'production' },
     secrets: { DATABASE_URL: 'database-primary' },
+  });
+
+  responses.push({ status: 202, body: { deployment_id: 'deployment-2', status: 'queued' } });
+  await createAppDeployment('project-1', 'app-1', {
+    artifact_id: 'artifact-1',
+    source: {
+      kind: 'oci_image',
+      image: 'ghcr.io/kortix/demo:1',
+      command: ['node', 'server.js'],
+      port: 3000,
+    },
+    hosting: { type: 'managed_container', provider: 'aws_lightsail' },
+  });
+  expect(last().body).toMatchObject({
+    hosting: { type: 'managed_container', provider: 'aws_lightsail' },
   });
 });
 

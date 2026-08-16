@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
@@ -54,14 +55,16 @@ import {
   GlobeIcon,
   LockKeyIcon,
   PauseIcon,
+  PencilSimpleIcon,
   PlayIcon,
+  PlusIcon,
   TerminalWindowIcon,
   TrashIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 
 function deploymentTone(
   status: AppDeployment['status'],
@@ -202,6 +205,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
   // fresh row instead of a stale copy captured at click time.
   const [openAppId, setOpenAppId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
 
   useEffect(() => {
@@ -223,6 +227,12 @@ export function AppsView({ projectId }: { projectId: string }) {
       docs="/docs/sdk/apps"
       className="max-w-5xl"
       showSidebarToggleButton
+      action={appsGate.enabled && canWrite ? (
+        <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)}>
+          <PlusIcon className="size-4 shrink-0" />
+          New App
+        </Button>
+      ) : null}
     >
       {appsGate.isLoading ? (
         <ul className="space-y-2">
@@ -320,7 +330,160 @@ export function AppsView({ projectId }: { projectId: string }) {
           }}
         />
       ) : null}
+      {createOpen ? (
+        <AppFormModal
+          projectId={projectId}
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+        />
+      ) : null}
     </CustomizeSectionWrapper>
+  );
+}
+
+type AppFormState = {
+  name: string;
+  slug: string;
+  cpu: string;
+  memoryGb: string;
+  diskGb: string;
+  idleTimeoutSeconds: string;
+  monthlyBudgetUsd: string;
+};
+
+function AppFormModal({
+  projectId,
+  app,
+  open,
+  onOpenChange,
+}: {
+  projectId: string;
+  app?: App;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const inventory = useProjectApps(projectId);
+  const editing = Boolean(app);
+  const [form, setForm] = useState<AppFormState>(() => ({
+    name: app?.name ?? '',
+    slug: app?.slug ?? '',
+    cpu: String(app?.machine.cpu ?? 1),
+    memoryGb: String(app?.machine.memory_gb ?? 2),
+    diskGb: String(app?.machine.disk_gb ?? 10),
+    idleTimeoutSeconds: String(app?.idle_timeout_seconds ?? 300),
+    monthlyBudgetUsd: String(app?.monthly_budget_usd ?? 5),
+  }));
+  const pending = editing ? inventory.update.isPending : inventory.create.isPending;
+  const set = (key: keyof AppFormState) => (event: ChangeEvent<HTMLInputElement>) => {
+    setForm((current) => ({ ...current, [key]: event.target.value }));
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const settings = {
+      name: form.name.trim(),
+      cpu: Number(form.cpu),
+      memory_gb: Number(form.memoryGb),
+      disk_gb: Number(form.diskGb),
+      idle_timeout_seconds: Number(form.idleTimeoutSeconds),
+      monthly_budget_usd: Number(form.monthlyBudgetUsd),
+    };
+    try {
+      if (app) {
+        await inventory.update.mutateAsync({ appId: app.app_id, input: settings });
+        successToast(`${settings.name} updated`);
+      } else {
+        await inventory.create.mutateAsync({ ...settings, slug: form.slug.trim() });
+        successToast(`${settings.name} created`);
+      }
+      onOpenChange(false);
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : `Failed to ${editing ? 'update' : 'create'} App`);
+    }
+  };
+
+  return (
+    <Modal open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{editing ? 'Edit App' : 'Create App'}</ModalTitle>
+          <ModalDescription>
+            {editing
+              ? 'Update the App name, machine, idle timeout, and monthly budget.'
+              : 'Create a stable App URL. Deploy source from the CLI when you are ready.'}
+          </ModalDescription>
+        </ModalHeader>
+        <form onSubmit={submit}>
+          <ModalBody className="max-h-[65vh] overflow-y-auto">
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+              <Field className="sm:col-span-2">
+                <FieldLabel htmlFor={`${editing ? 'edit' : 'create'}-app-name`}>Name</FieldLabel>
+                <Input
+                  id={`${editing ? 'edit' : 'create'}-app-name`}
+                  value={form.name}
+                  onChange={set('name')}
+                  required
+                  maxLength={200}
+                />
+              </Field>
+              {!editing ? (
+                <Field className="sm:col-span-2">
+                  <FieldLabel htmlFor="create-app-slug">Slug</FieldLabel>
+                  <Input
+                    id="create-app-slug"
+                    value={form.slug}
+                    onChange={set('slug')}
+                    required
+                    pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+                    maxLength={63}
+                  />
+                </Field>
+              ) : null}
+              <AppNumberField id="app-cpu" label="CPU cores" value={form.cpu} onChange={set('cpu')} min={1} max={32} />
+              <AppNumberField id="app-memory" label="Memory (GB)" value={form.memoryGb} onChange={set('memoryGb')} min={1} max={128} />
+              <AppNumberField id="app-disk" label="Disk (GB)" value={form.diskGb} onChange={set('diskGb')} min={1} max={500} />
+              <AppNumberField id="app-idle" label="Idle timeout (seconds)" value={form.idleTimeoutSeconds} onChange={set('idleTimeoutSeconds')} min={120} max={86400} />
+              <Field className="sm:col-span-2">
+                <FieldLabel htmlFor="app-budget">Monthly budget (USD)</FieldLabel>
+                <Input id="app-budget" type="number" value={form.monthlyBudgetUsd} onChange={set('monthlyBudgetUsd')} min={0} max={100000} step="0.01" required />
+              </Field>
+            </FieldGroup>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
+            <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending || !form.name.trim() || (!editing && !form.slug.trim())}>
+              {pending ? <Loading className="size-4 shrink-0" /> : null}
+              {editing ? 'Save changes' : 'Create App'}
+            </Button>
+          </ModalFooter>
+        </form>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function AppNumberField({
+  id,
+  label,
+  value,
+  onChange,
+  min,
+  max,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  min: number;
+  max: number;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input id={id} type="number" value={value} onChange={onChange} min={min} max={max} required />
+    </Field>
   );
 }
 
@@ -418,6 +581,7 @@ function AppDetailModal({
   const access = useAppAccess(projectId, app.app_id, { policy: canWrite });
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const latest = deployments.data?.[0];
   const deployed = Boolean(app.active_deployment_id);
@@ -486,6 +650,18 @@ function AppDetailModal({
             </div>
 
             <ButtonGroup>
+              {canWrite ? (
+                <Hint label="Edit App">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    aria-label="Edit App"
+                    onClick={() => setEditOpen(true)}
+                  >
+                    <PencilSimpleIcon className="size-4 shrink-0" />
+                  </Button>
+                </Hint>
+              ) : null}
               {canDeploy ? (
                 <Hint label={running ? 'Suspend App' : 'Wake App'}>
                   <Button
@@ -540,6 +716,18 @@ function AppDetailModal({
                   </a>
                 </Button>
               </Hint>
+              {canWrite ? (
+                <Hint label="Delete App">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    aria-label="Delete App"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <TrashIcon className="text-destructive size-4 shrink-0" weight="fill" />
+                  </Button>
+                </Hint>
+              ) : null}
               <Hint label="Close">
                 <Button
                   size="icon"
@@ -572,17 +760,6 @@ function AppDetailModal({
                   <Hint label="Copy deploy command">
                     <CopyButton code={appCommand(app)} size="md" />
                   </Hint>
-                  {canWrite ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="text-destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <TrashIcon className="size-3.5 shrink-0" />
-                      Delete App
-                    </Button>
-                  ) : null}
                 </div>
               </div>
               {deployments.isLoading ? (
@@ -636,6 +813,14 @@ function AppDetailModal({
           }
         }}
       />
+      {editOpen ? (
+        <AppFormModal
+          projectId={projectId}
+          app={app}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      ) : null}
       {accessOpen ? (
         <AppAccessModal
           projectId={projectId}

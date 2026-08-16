@@ -59,6 +59,16 @@ function dependencies() {
 }
 
 describe('AppHostingProvider', () => {
+  test('reports provider lifecycle status without calling appd', async () => {
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => ({
+        getStatus: async (externalId: string) => externalId === 'box-1' ? 'running' : 'removed',
+      }) as never,
+    });
+
+    await expect(hosting.providerStatus('platinum', 'box-1')).resolves.toBe('running');
+  });
+
   test('derives a stable non-reversible control token hash', () => {
     const first = appControlToken('runtime-1', secret);
     expect(first).toBe(appControlToken('runtime-1', secret));

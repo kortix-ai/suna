@@ -126,7 +126,7 @@ func TestChildExitErrorHandlesSuccessfulExit(t *testing.T) {
 
 func TestDynamicCaddyConfigRestoresPublicHost(t *testing.T) {
 	spec := appSpec{Command: []string{"server"}, TargetPort: 3000}
-	config, err := renderCaddyfile(spec)
+	config, err := renderCaddyfile(spec, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestDynamicCaddyConfigRestoresPublicHost(t *testing.T) {
 
 func TestStaticCaddyConfigSupportsSPAWithoutProxy(t *testing.T) {
 	spec := appSpec{StaticRoot: "/srv", SPA: true}
-	config, err := renderCaddyfile(spec)
+	config, err := renderCaddyfile(spec, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +157,23 @@ func TestStaticCaddyConfigSupportsSPAWithoutProxy(t *testing.T) {
 	}
 	if strings.Contains(config, "reverse_proxy") {
 		t.Fatalf("static Caddyfile must not proxy:\n%s", config)
+	}
+}
+
+func TestManagedOriginAuthenticationGuardsHTTPAndWebSockets(t *testing.T) {
+	config, err := renderCaddyfile(appSpec{Command: []string{"server"}, TargetPort: 3000}, "origin-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"/__kortix/health",
+		"header X-Kortix-Origin-Token origin-secret",
+		"respond @origin_denied 403",
+		"header_up -X-Kortix-Origin-Token",
+	} {
+		if !strings.Contains(config, expected) {
+			t.Fatalf("missing %q in managed Caddyfile:\n%s", expected, config)
+		}
 	}
 }
 

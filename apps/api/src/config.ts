@@ -517,6 +517,20 @@ const envSchema = z.object({
   E2B_DOMAIN: optStrDefault('e2b.dev'),
   E2B_TEMPLATE: optStr,
 
+  // ── Kortix Apps managed-container hosting (optional) ───────────────────
+  // Sandbox Apps remain the default. These values activate only the additive
+  // hosting.type=managed_container/provider=aws_lightsail path. ECS supplies
+  // AWS credentials through its task role; no static AWS key is accepted here.
+  KORTIX_APPS_LIGHTSAIL_ENABLED: optBoolFalse,
+  KORTIX_APPS_AWS_REGION: optStrDefault('us-west-2'),
+  KORTIX_APPS_BUILD_BUCKET: optStr,
+  KORTIX_APPS_ECR_REPOSITORY_URI: optStr,
+  KORTIX_APPS_CODEBUILD_PROJECT: optStr,
+  KORTIX_APPS_HOSTING_REAPER_ENABLED: optBoolTrue,
+  KORTIX_APPS_HOSTING_REAPER_INTERVAL_MS: optInt(15 * 60_000),
+  KORTIX_APPS_HOSTING_REAPER_GRACE_MS: optInt(60 * 60_000),
+  KORTIX_APPS_HOSTING_REAPER_MAX_DELETES: optInt(25),
+
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
@@ -1078,6 +1092,16 @@ export const config = {
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,
+  // ─── Apps managed-container hosting ─────────────────────────────────
+  KORTIX_APPS_LIGHTSAIL_ENABLED: env.KORTIX_APPS_LIGHTSAIL_ENABLED,
+  KORTIX_APPS_AWS_REGION: env.KORTIX_APPS_AWS_REGION,
+  KORTIX_APPS_BUILD_BUCKET: env.KORTIX_APPS_BUILD_BUCKET,
+  KORTIX_APPS_ECR_REPOSITORY_URI: env.KORTIX_APPS_ECR_REPOSITORY_URI,
+  KORTIX_APPS_CODEBUILD_PROJECT: env.KORTIX_APPS_CODEBUILD_PROJECT,
+  KORTIX_APPS_HOSTING_REAPER_ENABLED: env.KORTIX_APPS_HOSTING_REAPER_ENABLED,
+  KORTIX_APPS_HOSTING_REAPER_INTERVAL_MS: env.KORTIX_APPS_HOSTING_REAPER_INTERVAL_MS,
+  KORTIX_APPS_HOSTING_REAPER_GRACE_MS: env.KORTIX_APPS_HOSTING_REAPER_GRACE_MS,
+  KORTIX_APPS_HOSTING_REAPER_MAX_DELETES: env.KORTIX_APPS_HOSTING_REAPER_MAX_DELETES,
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,

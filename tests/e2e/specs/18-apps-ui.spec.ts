@@ -39,7 +39,7 @@ interface AppResponse {
 }
 
 test.describe('18 — Kortix Apps UI', () => {
-  test('gates Apps on its flag, enables it in place, and renders a read-only deployment index', async ({
+  test('gates Apps on its flag and completes App create, read, update, and confirmed delete', async ({
     context,
     page,
   }, testInfo) => {
@@ -161,61 +161,92 @@ test.describe('18 — Kortix Apps UI', () => {
       });
       await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
 
-      const seeded = await api<AppResponse>(
-        session.access_token,
-        'POST',
-        `/projects/${project.id}/apps`,
-        { slug: `seed-${runId}`, name: 'Seed App' },
-        201,
+      await expect(page.getByRole('button', { name: 'New App' })).toBeVisible();
+      await page.getByRole('button', { name: 'New App' }).click();
+      const createDialog = page.getByRole('dialog', { name: 'Create App' });
+      await expect(createDialog).toBeVisible();
+      await createDialog.getByLabel('Name').fill('UI App');
+      await createDialog.getByLabel('Slug').fill(`ui-${runId}`);
+      await createDialog.getByLabel('CPU cores').fill('2');
+      await createDialog.getByLabel('Memory (GB)').fill('4');
+      await createDialog.getByLabel('Disk (GB)').fill('20');
+      await createDialog.getByLabel('Idle timeout (seconds)').fill('600');
+      await createDialog.getByLabel('Monthly budget (USD)').fill('25');
+      const createRequest = page.waitForRequest(
+        (request) => request.method() === 'POST' &&
+          request.url().endsWith(`/v1/projects/${project.id}/apps`),
       );
-      const seededUrl = new URL(seeded.url);
+      const createResponse = page.waitForResponse(
+        (response) => response.request().method() === 'POST' &&
+          response.url().endsWith(`/v1/projects/${project.id}/apps`),
+      );
+      await createDialog.getByRole('button', { name: 'Create App' }).click();
+      expect((await createRequest).postDataJSON()).toEqual({
+        name: 'UI App', slug: `ui-${runId}`, cpu: 2, memory_gb: 4, disk_gb: 20,
+        idle_timeout_seconds: 600, monthly_budget_usd: 25,
+      });
+      const createdResponse = await createResponse;
+      expect(createdResponse.status()).toBe(201);
+      const created = (await createdResponse.json()) as AppResponse;
+      const createdUrl = new URL(created.url);
       if (env.target === 'local') {
-        expect(seededUrl.hostname).toMatch(/\.apps\.localhost$/);
+        expect(createdUrl.hostname).toMatch(/\.apps\.localhost$/);
       } else {
         const environmentPrefix = env.target === 'prod' ? 'prod' : env.target;
-        expect(seededUrl.hostname).toMatch(
+        expect(createdUrl.hostname).toMatch(
           new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
         );
       }
-
-      const listResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'GET' &&
-          response.url().endsWith(`/v1/projects/${project.id}/apps`),
-      );
-      await page.goto(`/projects/${project.id}/apps`, {
-        waitUntil: 'domcontentloaded',
-      });
-      expect((await listResponse).status()).toBe(200);
-
-      // First-run onboarding can remount after the feature mutation.
-      await dismissOnboarding(page);
-
-      await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await expect(createDialog).toBeHidden();
+      await expect(page.getByText('UI App', { exact: true })).toBeVisible();
       await expect(page.getByText('Deploy from a terminal', { exact: true })).toBeVisible();
-      await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toHaveCount(0);
       await expect(page.getByText('kortix apps deploy .', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
-      await expect(page.getByRole('dialog', { name: 'Create App' })).toHaveCount(0);
 
       // The card is ONE control now: the live preview is its hero and every
       // action moved into the detail modal, so there are no nested hit areas.
       // Same assertions as before — they just live where the controls do.
-      const seededCard = page.getByRole('button', { name: 'Open Seed App' });
-      await expect(seededCard).toBeVisible();
-      await expect(seededCard.getByText(seeded.url, { exact: true })).toBeVisible();
-      await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
+      const createdCard = page.getByRole('button', { name: 'Open UI App' });
+      await expect(createdCard).toBeVisible();
+      await expect(createdCard.getByText(created.url, { exact: true })).toBeVisible();
+      await expect(createdCard.getByText('Deploy to see a live preview.')).toBeVisible();
       // Never deployed, so it must not claim to be running.
-      await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
+      await expect(createdCard.getByText('Not deployed', { exact: true })).toBeVisible();
 
       // Opening an App happens IN PLACE — no new tab, no navigation.
-      await seededCard.click();
-      const appModal = page.getByRole('dialog', { name: 'Seed App App' });
+      await createdCard.click();
+      let appModal = page.getByRole('dialog', { name: 'UI App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
       await expect(appModal.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
       await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
+      await expect(appModal.getByRole('button', { name: 'Edit App' })).toBeVisible();
+      await expect(appModal.getByRole('button', { name: 'Delete App' })).toBeVisible();
+
+      await appModal.getByRole('button', { name: 'Edit App' }).click();
+      const editDialog = page.getByRole('dialog', { name: 'Edit App' });
+      await editDialog.getByLabel('Name').fill('Updated App');
+      await editDialog.getByLabel('CPU cores').fill('1');
+      await editDialog.getByLabel('Memory (GB)').fill('2');
+      await editDialog.getByLabel('Disk (GB)').fill('10');
+      await editDialog.getByLabel('Idle timeout (seconds)').fill('300');
+      await editDialog.getByLabel('Monthly budget (USD)').fill('40');
+      const updateRequest = page.waitForRequest(
+        (request) => request.method() === 'PATCH' &&
+          request.url().endsWith(`/v1/projects/${project.id}/apps/${created.app_id}`),
+      );
+      const updateResponse = page.waitForResponse(
+        (response) => response.request().method() === 'PATCH' &&
+          response.url().endsWith(`/v1/projects/${project.id}/apps/${created.app_id}`),
+      );
+      await editDialog.getByRole('button', { name: 'Save changes' }).click();
+      expect((await updateRequest).postDataJSON()).toEqual({
+        name: 'Updated App', cpu: 1, memory_gb: 2, disk_gb: 10,
+        idle_timeout_seconds: 300, monthly_budget_usd: 40,
+      });
+      expect((await updateResponse).status()).toBe(200);
+      await expect(editDialog).toBeHidden();
+      appModal = page.getByRole('dialog', { name: 'Updated App App' });
+      await expect(appModal).toBeVisible();
 
       await appModal.getByRole('button', { name: 'Show versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeVisible();
@@ -225,7 +256,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await expect(appModal.getByRole('button', { name: 'Copied' })).toBeVisible();
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-        .toBe(`kortix apps deploy . --app ${seeded.app_id}`);
+        .toBe(`kortix apps deploy . --app ${created.app_id}`);
 
       await appModal.getByRole('button', { name: 'Close' }).click();
       await expect(appModal).toBeHidden();
@@ -233,7 +264,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.evaluate(() => localStorage.setItem('theme', 'light'));
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('html')).toHaveClass(/light/);
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await expect(page.getByText('Updated App', { exact: true })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath('apps-light.png'),
         fullPage: true,
@@ -242,7 +273,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.evaluate(() => localStorage.setItem('theme', 'dark'));
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('html')).toHaveClass(/dark/);
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await expect(page.getByText('Updated App', { exact: true })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath('apps-dark.png'),
         fullPage: true,
@@ -250,8 +281,8 @@ test.describe('18 — Kortix Apps UI', () => {
 
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
-      await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'New App' })).toBeVisible();
+      await expect(page.getByText('Updated App', { exact: true })).toBeVisible();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
       ).toBe(true);
@@ -260,9 +291,28 @@ test.describe('18 — Kortix Apps UI', () => {
         fullPage: true,
       });
 
+      await page.getByRole('button', { name: 'Open Updated App' }).click();
+      appModal = page.getByRole('dialog', { name: 'Updated App App' });
+      const deleteRequest = page.waitForRequest(
+        (request) => request.method() === 'DELETE' &&
+          request.url().endsWith(`/v1/projects/${project.id}/apps/${created.app_id}`),
+      );
+      const deleteResponse = page.waitForResponse(
+        (response) => response.request().method() === 'DELETE' &&
+          response.url().endsWith(`/v1/projects/${project.id}/apps/${created.app_id}`),
+      );
+      await appModal.getByRole('button', { name: 'Delete App' }).click();
+      const confirm = page.getByRole('alertdialog', { name: 'Delete App' });
+      await confirm.getByRole('button', { name: 'Delete' }).click();
+      await deleteRequest;
+      expect((await deleteResponse).status()).toBe(200);
+      await expect(appModal).toBeHidden();
+      await expect(page.getByText('Updated App', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
+
       expect(pageErrors).toEqual([]);
       expect(appsServerErrors).toEqual([]);
-      expect(appsCreateRequests).toEqual([]);
+      expect(appsCreateRequests).toHaveLength(1);
     } finally {
       if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});

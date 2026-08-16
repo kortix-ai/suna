@@ -25,7 +25,12 @@ Cloudflare (proxied, Full strict)
 
 Modules: `network` (VPC + public/private subnets + NAT), `acm-cloudflare` (ACM
 cert validated via Cloudflare DNS), `ecs-api` (cluster + ALB + service +
-autoscaling), `cloudflare-dns` (the `dev-api` CNAME → ALB).
+autoscaling), `cloudflare-dns` (the `dev-api` CNAME → ALB), and
+`apps-lightsail-hosting` (S3, ECR, CodeBuild, logs, and API task permissions).
+
+The Apps Lightsail module enables the explicit `aws_lightsail` hosting backend.
+Sandbox hosting remains the default. Terraform creates shared build resources.
+The API creates and deletes per-App Lightsail Container Services at runtime.
 
 ## Apply
 

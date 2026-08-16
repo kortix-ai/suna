@@ -77,6 +77,31 @@ chore: init kortix project
 Then it's yours. Add a remote, push, open in your coding agent of choice —
 or run `kortix ship` to create the cloud project and push in one step.
 
+## Apps
+
+`kortix apps deploy` creates or updates one App identity and queues an immutable
+deployment. Hosting defaults to the server-selected sandbox backend. Use
+`--provider daytona|platinum|e2b` only for the deprecated sandbox preference.
+
+Select AWS Lightsail Container Services explicitly:
+
+```sh
+kortix apps deploy . --slug api --type dockerfile \
+  --command '["node","server.js"]' --port 3000 \
+  --hosting aws-lightsail --cpu 1 --memory 2 --disk 10 --budget 40
+```
+
+Deploy accepts `--cpu`, `--memory`, `--disk`, `--idle-timeout`, and `--budget`.
+It applies supplied values to a new or selected App before deployment. Lightsail
+uses exact fixed-price powers: `0.25/0.5/$7`, `0.25/1/$10`, `0.5/1/$15`,
+`1/2/$40`, `2/4/$80`, and `4/8/$160` for vCPU, GB memory, and monthly budget.
+The command rejects a lower budget. It never raises the App safety limit.
+
+Use `kortix apps create`, `list`, `show`, and `delete --yes` for App identity
+CRUD. Use `start`, `stop`, `rollback`, `logs`, `access`, and `access-link` for
+the lifecycle. Lightsail stop deletes the provider service. The next authorized
+request recreates it from the immutable deployment image.
+
 ## Self-host
 
 One command surface manages two deployment targets. `docker` ("this machine")

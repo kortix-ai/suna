@@ -6,10 +6,12 @@ import type { AppBlockV2 } from '@kortix/manifest-schema';
 import type {
   App,
   AppDeployment,
+  AppHostingBackend,
   AppHostingProvider,
   AppAccessMode,
   AppSource,
   ProjectHandle,
+  UpdateAppInput,
 } from '@kortix/sdk';
 import ignore from 'ignore';
 import * as tar from 'tar';
@@ -54,6 +56,12 @@ Subcommands:
     --build-command <command>       Bundle build command.
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
+    --cpu <cores>                   App CPU allocation.
+    --memory <gb>                   App memory allocation.
+    --disk <gb>                     App disk allocation.
+    --idle-timeout <seconds>        App idle timeout.
+    --budget <usd>                  App monthly compute budget.
+    --hosting <type>                sandbox (default) or aws-lightsail.
     --provider <name>               daytona, platinum, or e2b.
     --access <mode>                 private (default), project, restricted, public, or password.
     --password <value>              Required for new password-protected Apps.
@@ -307,7 +315,13 @@ interface DeployFlags {
   buildCommand?: string;
   readinessPath?: string;
   spa?: boolean;
+  cpu?: number;
+  memoryGb?: number;
+  diskGb?: number;
+  idleTimeoutSeconds?: number;
+  monthlyBudgetUsd?: number;
   provider?: AppHostingProvider;
+  hosting?: AppHostingBackend;
   wait: boolean;
   waitSeconds: number;
   includeNodeModules: boolean;
@@ -328,6 +342,16 @@ function deployFlags(rest: string[]): DeployFlags {
   if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
     throw new Error('--provider must be daytona, platinum, or e2b');
   }
+  const hostingValue = takeFlagValue(rest, ['--hosting']);
+  if (hostingValue && !['sandbox', 'aws-lightsail'].includes(hostingValue)) {
+    throw new Error('--hosting must be sandbox or aws-lightsail');
+  }
+  if (hostingValue && provider) throw new Error('Use --hosting or --provider, not both');
+  const hosting: AppHostingBackend | undefined = hostingValue === 'sandbox'
+    ? { type: 'sandbox' }
+    : hostingValue === 'aws-lightsail'
+      ? { type: 'managed_container', provider: 'aws_lightsail' }
+      : undefined;
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
   if (accessMode && !['private', 'project', 'restricted', 'public', 'password'].includes(accessMode)) {
     throw new Error('--access must be private, project, restricted, public, or password');
@@ -354,7 +378,16 @@ function deployFlags(rest: string[]): DeployFlags {
     buildCommand: takeFlagValue(rest, ['--build-command']),
     readinessPath: takeFlagValue(rest, ['--readiness-path']),
     spa: spa ? true : noSpa ? false : undefined,
+    cpu: positiveInteger(takeFlagValue(rest, ['--cpu']), '--cpu'),
+    memoryGb: positiveInteger(takeFlagValue(rest, ['--memory']), '--memory'),
+    diskGb: positiveInteger(takeFlagValue(rest, ['--disk']), '--disk'),
+    idleTimeoutSeconds: positiveInteger(
+      takeFlagValue(rest, ['--idle-timeout']),
+      '--idle-timeout',
+    ),
+    monthlyBudgetUsd: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
     provider,
+    hosting,
     wait: !takeFlagBool(rest, ['--no-wait']),
     waitSeconds,
     includeNodeModules: takeFlagBool(rest, ['--include-node-modules']),
@@ -370,6 +403,64 @@ interface ManifestAppDefaults {
   name: string;
   root: string;
   block: AppBlockV2;
+}
+
+const DEFAULT_APP_MACHINE = { cpu: 1, memory_gb: 2, disk_gb: 10 } as const;
+const DEFAULT_APP_MONTHLY_BUDGET_USD = 5;
+const LIGHTSAIL_MONTHLY_USD_BY_MACHINE = new Map([
+  ['0.25/0.5', 7],
+  ['0.25/1', 10],
+  ['0.5/1', 15],
+  ['1/2', 40],
+  ['2/4', 80],
+  ['4/8', 160],
+]);
+
+function deployAppSettings(flags: DeployFlags, block?: AppBlockV2): UpdateAppInput {
+  return {
+    ...((flags.cpu ?? block?.resources?.cpu) !== undefined
+      ? { cpu: flags.cpu ?? block?.resources?.cpu }
+      : {}),
+    ...((flags.memoryGb ?? block?.resources?.memory_gb) !== undefined
+      ? { memory_gb: flags.memoryGb ?? block?.resources?.memory_gb }
+      : {}),
+    ...((flags.diskGb ?? block?.resources?.disk_gb) !== undefined
+      ? { disk_gb: flags.diskGb ?? block?.resources?.disk_gb }
+      : {}),
+    ...((flags.idleTimeoutSeconds ?? block?.idle_timeout_seconds) !== undefined
+      ? { idle_timeout_seconds: flags.idleTimeoutSeconds ?? block?.idle_timeout_seconds }
+      : {}),
+    ...((flags.monthlyBudgetUsd ?? block?.monthly_budget_usd) !== undefined
+      ? { monthly_budget_usd: flags.monthlyBudgetUsd ?? block?.monthly_budget_usd }
+      : {}),
+  };
+}
+
+function assertLightsailAppSettings(
+  hosting: AppHostingBackend | undefined,
+  current: Pick<App, 'machine' | 'monthly_budget_usd'>,
+  settings: UpdateAppInput,
+): void {
+  if (hosting?.type !== 'managed_container') return;
+  const cpu = settings.cpu ?? current.machine.cpu;
+  const memoryGb = settings.memory_gb ?? current.machine.memory_gb;
+  const monthlyBudgetUsd = settings.monthly_budget_usd ?? current.monthly_budget_usd;
+  const requiredMonthlyUsd = LIGHTSAIL_MONTHLY_USD_BY_MACHINE.get(`${cpu}/${memoryGb}`);
+  if (requiredMonthlyUsd === undefined) {
+    throw new Error(`AWS Lightsail does not support ${cpu} vCPU and ${memoryGb} GB memory`);
+  }
+  if (monthlyBudgetUsd < requiredMonthlyUsd) {
+    throw new Error(
+      `AWS Lightsail requires at least $${requiredMonthlyUsd.toFixed(2)} per month for ${cpu} vCPU and ${memoryGb} GB memory; pass --budget ${requiredMonthlyUsd}`,
+    );
+  }
+}
+
+function defaultAppForValidation(): Pick<App, 'machine' | 'monthly_budget_usd'> {
+  return {
+    machine: DEFAULT_APP_MACHINE,
+    monthly_budget_usd: DEFAULT_APP_MONTHLY_BUDGET_USD,
+  };
 }
 
 export function loadManifestAppDefaults(
@@ -551,29 +642,31 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
   if (!ctx) return 1;
   return scoped(ctx, async () => {
     let app: App;
+    const settings = deployAppSettings(flags, manifestBlock);
     if (flags.app) {
       app = await resolveApp(ctx.apps, flags.app);
+      assertLightsailAppSettings(flags.hosting, app, settings);
+      if (Object.keys(settings).length > 0) {
+        app = await ctx.apps.update(app.app_id, settings);
+      }
     } else if (manifestDefaults) {
       const manifestSlug = slugFrom(flags.slug ?? manifestDefaults.name);
       const existing = (await ctx.apps.list()).find((row) => row.slug === manifestSlug);
-      const settings = {
-        ...(manifestBlock?.resources?.cpu !== undefined ? { cpu: manifestBlock.resources.cpu } : {}),
-        ...(manifestBlock?.resources?.memory_gb !== undefined ? { memory_gb: manifestBlock.resources.memory_gb } : {}),
-        ...(manifestBlock?.resources?.disk_gb !== undefined ? { disk_gb: manifestBlock.resources.disk_gb } : {}),
-        ...(manifestBlock?.idle_timeout_seconds !== undefined ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds } : {}),
-        ...(manifestBlock?.monthly_budget_usd !== undefined ? { monthly_budget_usd: manifestBlock.monthly_budget_usd } : {}),
-      };
+      assertLightsailAppSettings(flags.hosting, existing ?? defaultAppForValidation(), settings);
       app = existing
-        ? await ctx.apps.update(existing.app_id, settings)
+        ? Object.keys(settings).length > 0
+          ? await ctx.apps.update(existing.app_id, settings)
+          : existing
         : await ctx.apps.create({
-            slug: manifestSlug,
-            name: flags.name ?? manifestDefaults.name,
-            ...settings,
-          });
+          slug: manifestSlug,
+          name: flags.name ?? manifestDefaults.name,
+          ...settings,
+        });
     } else {
       const inferred = flags.image ? flags.image.split('/').pop()!.split(':')[0]! : basename(sourcePath!);
       const slug = slugFrom(flags.slug ?? inferred);
-      app = await ctx.apps.create({ slug, name: flags.name ?? slug });
+      assertLightsailAppSettings(flags.hosting, defaultAppForValidation(), settings);
+      app = await ctx.apps.create({ slug, name: flags.name ?? slug, ...settings });
     }
 
     if (flags.accessMode) {
@@ -628,6 +721,7 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
       let deployment = await ctx.apps.deployments.create(app.app_id, {
         artifact_id: artifactId,
         source,
+        ...(flags.hosting ? { hosting: flags.hosting } : {}),
         ...(flags.provider ? { provider: flags.provider } : {}),
         ...(manifestBlock?.env ? { environment: manifestBlock.env } : {}),
         ...(manifestBlock?.secrets ? { secrets: manifestBlock.secrets } : {}),
@@ -636,7 +730,8 @@ async function deployCommand(rest: string[], options: ContextOptions, json: bool
       const currentApp = flags.wait ? await ctx.apps.get(app.app_id) : app;
       if (json) emitJson({ app: currentApp, deployment });
       else {
-        process.stdout.write(`\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n\n`);
+        const hosting = `${deployment.hosting_type}/${deployment.hosting_provider ?? 'policy'}`;
+        process.stdout.write(`\n  ${status.ok(`deployment ${deployment.status}`)}\n  hosting ${hosting}\n  ${currentApp.url}\n\n`);
       }
       return 0;
     } finally {

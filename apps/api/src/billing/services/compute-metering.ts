@@ -34,7 +34,10 @@ import {
   type SandboxWorkloadType,
   getProvider,
 } from '../../platform/providers';
-import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
+import {
+  getProviderComputeRateCard,
+  type ComputeProviderName,
+} from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
 import {
   type SandboxSpec,
@@ -58,11 +61,14 @@ import {
   clampComputeRateMultiplier,
 } from './entitlement-overrides';
 import { accountMetersCompute } from './tiers';
+import { AppHostingService, appRuntimeTarget } from '../../apps/hosting-service';
+import { lightsailMonthlyCostForMachine } from '../../apps/hosting-backends';
 
 /** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
 const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
+const THIRTY_DAY_MONTH_SECONDS = 30 * 24 * 60 * 60;
 // Bounded like every other periodic sweep in this codebase (REAP_BATCH_SIZE in
 // sandbox-reaper.ts, findStaleActiveSessions' default) so one pass can never
 // stampede a large backlog of reconcile candidates into a burst of provider/DB
@@ -74,7 +80,7 @@ export interface StartComputeOpts {
   accountId: string;
   sessionId?: string | null;
   actorUserId?: string | null;
-  provider?: ProviderName;
+  provider?: ComputeProviderName;
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
   /**
@@ -103,10 +109,18 @@ export interface StartComputeOpts {
 export function calculateComputeCost(
   spec: SandboxSpec,
   durationSeconds: number,
-  provider: ProviderName = 'daytona',
+  provider: ComputeProviderName = 'daytona',
   rateMultiplier: number = DEFAULT_COMPUTE_RATE_MULTIPLIER,
 ): number {
   if (durationSeconds <= 0) return 0;
+  if (provider === 'aws_lightsail') {
+    return (
+      lightsailMonthlyCostForMachine(spec)
+      * durationSeconds
+      / THIRTY_DAY_MONTH_SECONDS
+      * clampComputeRateMultiplier(rateMultiplier)
+    );
+  }
   const rate = getProviderComputeRateCard(provider);
   const cpuCost = spec.cpuCores * rate.cpuPerCoreSecond * durationSeconds;
   const memCost = spec.memoryGb * rate.memoryPerGbSecond * durationSeconds;
@@ -165,7 +179,8 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     sandboxId: opts.sandboxId,
     sessionId: opts.sessionId ?? null,
     actorUserId: opts.actorUserId ?? null,
-    provider: opts.provider ?? 'daytona',
+    provider: opts.provider === 'aws_lightsail' ? 'daytona' : (opts.provider ?? 'daytona'),
+    computeProvider: opts.provider ?? 'daytona',
     cpuCores: opts.spec.cpuCores,
     memoryGb: opts.spec.memoryGb,
     diskGb: opts.spec.diskGb,
@@ -232,7 +247,7 @@ async function settleComputeWindow(
   const windowCost = calculateComputeCost(
     spec,
     durationSeconds,
-    row.provider as ProviderName,
+    (row.computeProvider ?? row.provider) as ComputeProviderName,
     rateMultiplier,
   );
   // CLAIM BEFORE DEBITING. The order is the whole fix.
@@ -520,6 +535,7 @@ export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATC
       sandboxId: appRuntimes.runtimeId,
       accountId: appRuntimes.accountId,
       provider: appRuntimes.provider,
+      hostingType: appRuntimes.hostingType,
       externalId: appRuntimes.externalId,
       cpuCores: apps.cpuCores,
       memoryGb: apps.memoryGb,
@@ -562,6 +578,7 @@ export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATC
 
 export async function reconcileMissingAppComputeSessions(
   limit = RECONCILE_MISSING_BATCH_SIZE,
+  hosting = new AppHostingService(),
 ): Promise<ReconcileMissingComputeResult> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { checked: 0, reconciled: 0, errors: 0 };
 
@@ -570,12 +587,18 @@ export async function reconcileMissingAppComputeSessions(
   let errors = 0;
   for (const row of rows) {
     try {
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      const target = appRuntimeTarget({
+        hostingType: row.hostingType,
+        provider: row.provider,
+        runtimeId: row.sandboxId,
+        externalId: row.externalId,
+      });
+      const status = await hosting.status(target);
       if (status !== 'running') continue;
       const opened = await startComputeSession({
         sandboxId: row.sandboxId,
         accountId: row.accountId,
-        provider: row.provider as ProviderName,
+        provider: target.provider,
         spec: {
           cpuCores: row.cpuCores,
           memoryGb: row.memoryGb,

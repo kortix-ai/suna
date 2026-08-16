@@ -1,4 +1,3 @@
-import { createHash, createHmac } from 'node:crypto';
 import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import {
@@ -13,6 +12,9 @@ import {
   type BuildLogTap,
   type SandboxProviderAdapter,
 } from '../snapshots/providers';
+import { appControlToken, appControlTokenHash } from './hosting-auth';
+
+export { appControlToken, appControlTokenHash } from './hosting-auth';
 
 export const APP_CONTROL_PORT = 7331;
 export const APP_INGRESS_PORT = 8080;
@@ -84,19 +86,6 @@ function defaultDependencies(): HostingDependencies {
  * The database stores only this hash. The API reconstructs the bearer from the
  * stable runtime id and a server secret after process restarts.
  */
-export function appControlToken(runtimeId: string, secret: string): string {
-  if (!runtimeId) throw new Error('runtimeId is required');
-  if (secret.length < 16) throw new Error('App control secret must contain at least 16 characters');
-  return createHmac('sha256', secret)
-    .update('kortix-appd-control:v1\0')
-    .update(runtimeId)
-    .digest('base64url');
-}
-
-export function appControlTokenHash(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
-
 export class AppHostingProvider {
   private readonly dependencies: HostingDependencies;
 
@@ -248,6 +237,13 @@ export class AppHostingProvider {
       port: APP_INGRESS_PORT,
       transport,
     });
+  }
+
+  async providerStatus(
+    provider: SandboxProviderName,
+    externalId: string,
+  ) {
+    return this.dependencies.runtimeProvider(provider).getStatus(externalId);
   }
 
   async status(

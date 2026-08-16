@@ -32,9 +32,31 @@ Required platform proof includes the real API, CLI, browser, AWS Lightsail
 Container Services, direct-origin denial, cleanup, merge, Deploy Dev, deployed
 SHA, and Dev behavior.
 
-**Status:** IN PROGRESS.
+**Local status:** COMPLETE. AWS Lightsail and self-host verification remain.
 
-**SDK package shippable to production: NOT YET.**
+**Verified locally on 2026-08-17:**
+
+- `pnpm test` — `374/374` REST and CLI flows, SDK, flow-runner, route
+  coverage, and `99/99` worktree tests passed.
+- `pnpm test -- --browser-only` — `13` passed, `7` documented
+  provider-dependent skips, `0` failed. The Apps journey verified real create,
+  read, update, and confirmed-delete requests and visible state.
+- `pnpm test -- --full` — all `7` lanes passed in `255.6s`; browser passed in
+  `67.2s` and package-quality passed in `118.7s`.
+- `pnpm --filter @kortix/sdk typecheck` — passed.
+- `pnpm --filter @kortix/sdk test` — `2,094` passed, `0` failed, `7,629`
+  expectations across `147` files.
+- `pnpm --filter @kortix/sdk run smoke:install` — packed install and Node ESM
+  import passed.
+- All five changed Terraform roots passed `terraform validate`.
+
+The user requires this branch and PR to remain standalone. Merge and Deploy
+Dev are intentionally deferred until explicit approval.
+
+**SDK package shippable to production: YES.**
+
+**Complete Apps platform shippable to production: NOT YET.** Real AWS
+Lightsail and `kortix-self-host` proof remain.
 
 ### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
 

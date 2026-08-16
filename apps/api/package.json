@@ -19,6 +19,10 @@
     "test:all": "bash scripts/test.sh && bash scripts/test.sh integration"
   },
   "dependencies": {
+    "@aws-sdk/client-codebuild": "3.1111.0",
+    "@aws-sdk/client-ecr": "3.1111.0",
+    "@aws-sdk/client-lightsail": "3.1111.0",
+    "@aws-sdk/client-s3": "3.1111.0",
     "@aws-sdk/credential-provider-node": "3.972.62",
     "@daytonaio/sdk": "^0.184.0",
     "@hono/zod-openapi": "^0.19.10",

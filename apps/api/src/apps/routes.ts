@@ -11,8 +11,7 @@ import { and, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../config';
-import { tryGetProvider } from '../platform/providers';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
 import {
@@ -21,7 +20,11 @@ import {
   MAX_ARCHIVE_BYTES,
 } from './artifacts';
 import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-worker';
-import { AppHostingProvider } from './hosting';
+import { AppHostingService, appRuntimeTarget } from './hosting-service';
+import {
+  resolveAppHostingSelection,
+  validateAppHostingConfiguration,
+} from './hosting-backends';
 import { deploymentEventsAsLogs } from './logs';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
@@ -90,6 +93,17 @@ const SecretMappingsSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().regex(APP_SECRET_IDENTIFIER),
 ).refine((value) => Object.keys(value).length <= 128, 'secrets supports at most 128 entries');
+
+const HostingSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('sandbox'),
+    provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
+  }),
+  z.object({
+    type: z.literal('managed_container'),
+    provider: z.literal('aws_lightsail'),
+  }),
+]);
 
 const SourceSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -554,15 +568,14 @@ projectsApp.openapi(
         idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
       }) } } },
     },
-    responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
+    responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404) },
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
     const loaded = await authorizedProject(c, projectId, 'write');
     if (loaded instanceof Response) return loaded;
-    if (!(await visibleApp(projectId, appId, loaded.userId))) {
-      return c.json({ error: 'Not found' }, 404);
-    }
+    const current = await visibleApp(projectId, appId, loaded.userId);
+    if (!current) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
     try {
       assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
@@ -571,6 +584,39 @@ projectsApp.openapi(
       const refusal = appLimitResponse(c, error);
       if (refusal) return refusal;
       throw error;
+    }
+    if (current.activeDeploymentId) {
+      const [activeDeployment] = await db.select().from(appDeployments)
+        .where(eq(appDeployments.deploymentId, current.activeDeploymentId))
+        .limit(1);
+      if (activeDeployment?.hostingType === 'managed_container') {
+        const machine = {
+          cpuCores: body.cpu ?? current.cpuCores,
+          memoryGb: body.memory_gb ?? current.memoryGb,
+          diskGb: body.disk_gb ?? current.diskGb,
+        };
+        let validation;
+        try {
+          validation = validateAppHostingConfiguration(
+            { type: 'managed_container', provider: 'aws_lightsail' },
+            machine,
+            body.monthly_budget_usd ?? Number(current.monthlyBudgetUsd),
+          );
+        } catch (error) {
+          return c.json({
+            error: error instanceof Error ? error.message : String(error),
+            code: 'app_hosting_machine_unsupported',
+          }, 400);
+        }
+        if (!validation.ok) {
+          return c.json({
+            error: validation.message,
+            code: validation.code,
+            required_monthly_usd: validation.requiredMonthlyUsd,
+            budget_usd: validation.budgetUsd,
+          }, 402);
+        }
+      }
     }
     const [row] = await db.update(apps).set({
       ...(body.name !== undefined ? { name: body.name.trim() } : {}),
@@ -600,16 +646,12 @@ projectsApp.openapi(
     const runtimes = await db.select().from(appRuntimes)
       .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
       .where(eq(appDeployments.appId, appId));
+    const hosting = new AppHostingService();
     for (const item of runtimes) {
       const runtime = item.app_runtimes;
-      // Best-effort remote teardown. A legacy runtime can name a provider this
-      // box has since disabled or retired (e.g. platinum after switching to
-      // e2b-only); tryGetProvider returns null there instead of throwing, so a
-      // dead provider never blocks the delete. pauseComputeSession runs
-      // unconditionally — it stops billing and must not depend on the provider
-      // being reachable.
-      const provider = tryGetProvider(runtime.provider);
-      if (provider) await provider.remove(runtime.externalId).catch(() => {});
+      // Remote teardown is best-effort. Billing closure is unconditional.
+      // A disabled or retired backend must not prevent resource deletion.
+      await hosting.remove(appRuntimeTarget(runtime)).catch(() => {});
       await pauseComputeSession(runtime.runtimeId).catch(() => {});
     }
     await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
@@ -626,12 +668,14 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: z.object({
         artifact_id: z.string().uuid(),
         source: SourceSchema,
+        hosting: HostingSchema.optional(),
+        /** @deprecated Sandbox shorthand. */
         provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
         environment: EnvironmentSchema.optional(),
         secrets: SecretMappingsSchema.optional(),
       }) } } },
     },
-    responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 403, 404, 409) },
+    responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 402, 403, 404, 409) },
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
@@ -640,6 +684,30 @@ projectsApp.openapi(
     const app = await visibleApp(projectId, appId, loaded.userId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
+    let hosting;
+    try {
+      hosting = resolveAppHostingSelection({ provider: body.provider, hosting: body.hosting });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+    let validation;
+    try {
+      validation = validateAppHostingConfiguration(hosting, {
+        cpuCores: app.cpuCores,
+        memoryGb: app.memoryGb,
+        diskGb: app.diskGb,
+      }, Number(app.monthlyBudgetUsd));
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+    if (!validation.ok) {
+      return c.json({
+        error: validation.message,
+        code: validation.code,
+        required_monthly_usd: validation.requiredMonthlyUsd,
+        budget_usd: validation.budgetUsd,
+      }, 402);
+    }
     const [artifact] = await db.select().from(appArtifacts).where(and(
       eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
     )).limit(1);
@@ -655,7 +723,9 @@ projectsApp.openapi(
       const version = Number(versionRow?.value ?? 0) + 1;
       const [row] = await tx.insert(appDeployments).values({
         appId, artifactId: artifact.artifactId, version, status: 'queued',
-        sourceKind: source.kind, hostingProvider: body.provider ?? null,
+        sourceKind: source.kind,
+        hostingType: hosting.type,
+        hostingProvider: hosting.provider,
         createdBy: loaded.userId,
         sourceSessionId: callerKortixSessionId(c),
         actorType: appDeploymentActorType(c),
@@ -755,7 +825,11 @@ projectsApp.openapi(
       return c.json(await eventFallback());
     }
     try {
-      const logs = await new AppHostingProvider().logs(row.provider as SandboxProviderName, row.externalId, row.runtimeId, Number(c.req.query('after')) || 0, Number(c.req.query('limit')) || 200);
+      const logs = await new AppHostingService().logs(
+        appRuntimeTarget(row),
+        Number(c.req.query('after')) || 0,
+        Number(c.req.query('limit')) || 200,
+      );
       return c.json(logs);
     } catch (error) {
       console.warn(`[apps] logs unavailable for runtime ${row.runtimeId}:`, error);
@@ -785,7 +859,7 @@ for (const action of ['start', 'stop'] as const) {
           inArray(appRuntimes.status, ['starting', 'running']),
         )).orderBy(desc(appRuntimes.createdAt)).limit(1);
         if (runtime) {
-          await new AppHostingProvider().stop(runtime.provider as SandboxProviderName, runtime.externalId);
+          await new AppHostingService().stop(appRuntimeTarget(runtime));
           const now = new Date();
           await db.update(appRuntimes).set({
             status: 'stopped',
@@ -802,7 +876,7 @@ for (const action of ['start', 'stop'] as const) {
         const loaded = await loadPublicApp(app.routeKey);
         if (!loaded) return c.json({ error: 'Active deployment has no runtime' }, 409);
         try {
-          await ensureAppRuntimeRunning(loaded, new AppHostingProvider());
+          await ensureAppRuntimeRunning(loaded, new AppHostingService());
         } catch (error) {
           await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
             .where(eq(apps.appId, appId));
@@ -847,7 +921,7 @@ projectsApp.openapi(
       .set({ desiredState: 'running', updatedAt: new Date() })
       .where(eq(apps.appId, appId))
       .returning();
-    const hosting = new AppHostingProvider();
+    const hosting = new AppHostingService();
     try {
       await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
     } catch (error) {
@@ -883,7 +957,7 @@ projectsApp.openapi(
         .orderBy(desc(appRuntimes.createdAt))
         .limit(1);
       if (previousRuntime) {
-        await hosting.stop(previousRuntime.provider as SandboxProviderName, previousRuntime.externalId);
+        await hosting.stop(appRuntimeTarget(previousRuntime));
         const stoppedAt = new Date();
         await db.update(appRuntimes)
           .set({ status: 'stopped', stoppedAt, updatedAt: stoppedAt })

@@ -25,3 +25,11 @@ output "extra_api_hostnames" {
   description = "Unlocked public API hostnames pointing at the new ALB."
   value       = var.extra_api_hostnames
 }
+
+output "apps_lightsail_hosting" {
+  value = {
+    build_bucket       = module.apps_lightsail_hosting.build_bucket
+    ecr_repository_uri = module.apps_lightsail_hosting.ecr_repository_uri
+    codebuild_project  = module.apps_lightsail_hosting.codebuild_project
+  }
+}

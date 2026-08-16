@@ -1,6 +1,6 @@
 /**
  * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
- * deployment lifecycle boundaries. Maps to spec section 28 (APP-1..2).
+ * deployment lifecycle boundaries. Maps to spec section 28 (APP-1..5).
  */
 import { flow } from "../core/flow";
 
@@ -599,6 +599,180 @@ flow(
     await ctx.step("delete the test App", async () => {
       const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
         params: { ...projectParams, appId },
+      });
+      response.status(200).body().has("$.ok", true);
+    });
+  },
+);
+
+flow(
+  "APP-5",
+  {
+    domain: "apps",
+    routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/artifacts",
+      "POST /v1/projects/:projectId/apps/:appId/deployments",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    let appId = "";
+    let artifactId = "";
+
+    await ctx.step("enable the apps flag", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
+
+    await ctx.step("create an App whose machine and budget support Lightsail medium", async () => {
+      const slug = ctx.fixtures
+        .name("hosting")
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .slice(0, 63);
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps",
+        {
+          slug,
+          name: "ke2e hosting selection",
+          cpu: 1,
+          memory_gb: 2,
+          disk_gb: 10,
+          monthly_budget_usd: 40,
+        },
+        { params: projectParams },
+      );
+      response.status(201);
+      appId = response.json<any>().app_id;
+    });
+
+    await ctx.step("register one immutable OCI artifact for hosting selection checks", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/artifacts",
+        { kind: "oci_image", image: "docker.io/library/nginx:alpine" },
+        { params: projectParams },
+      );
+      response.status(201).body().has("$.artifact.status", "ready");
+      artifactId = response.json<any>().artifact.artifact_id;
+    });
+
+    const appParams = () => ({ ...projectParams, appId });
+    const deploymentBody = (extra: Record<string, unknown> = {}) => ({
+      artifact_id: artifactId,
+      source: {
+        kind: "oci_image",
+        image: "docker.io/library/nginx:alpine",
+        command: ["nginx", "-g", "daemon off;"],
+        port: 80,
+      },
+      ...extra,
+    });
+
+    await ctx.step("omitting hosting preserves the sandbox backend default", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        deploymentBody(),
+        { params: appParams() },
+      );
+      response
+        .status(202)
+        .body()
+        .has("$.hosting_type", "sandbox")
+        .has("$.hosting_provider", null);
+    });
+
+    await ctx.step("an explicit sandbox backend persists its selected provider", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        deploymentBody({ hosting: { type: "sandbox", provider: "e2b" } }),
+        { params: appParams() },
+      );
+      response
+        .status(202)
+        .body()
+        .has("$.hosting_type", "sandbox")
+        .has("$.hosting_provider", "e2b");
+    });
+
+    await ctx.step("legacy provider and the new hosting object cannot conflict", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        deploymentBody({
+          provider: "daytona",
+          hosting: { type: "sandbox", provider: "platinum" },
+        }),
+        { params: appParams() },
+      );
+      response.status(400).body().has("$.error", "provider cannot be combined with hosting");
+    });
+
+    await ctx.step("an explicit AWS Lightsail backend persists as managed_container", async () => {
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        deploymentBody({
+          hosting: { type: "managed_container", provider: "aws_lightsail" },
+        }),
+        { params: appParams() },
+      );
+      response
+        .status(202)
+        .body()
+        .has("$.hosting_type", "managed_container")
+        .has("$.hosting_provider", "aws_lightsail");
+    });
+
+    await ctx.step("Lightsail rejects a valid generic machine that has no exact power", async () => {
+      const resized = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { memory_gb: 3, monthly_budget_usd: 100 },
+        { params: appParams() },
+      );
+      resized.status(200);
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        deploymentBody({
+          hosting: { type: "managed_container", provider: "aws_lightsail" },
+        }),
+        { params: appParams() },
+      );
+      response.status(400).body().has("$.error", "AWS Lightsail does not support 1 vCPU and 3 GB memory");
+    });
+
+    await ctx.step("Lightsail rejects a monthly budget below the selected power price", async () => {
+      const resized = await owner.patch(
+        "/v1/projects/:projectId/apps/:appId",
+        { memory_gb: 2, monthly_budget_usd: 5 },
+        { params: appParams() },
+      );
+      resized.status(200);
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps/:appId/deployments",
+        deploymentBody({
+          hosting: { type: "managed_container", provider: "aws_lightsail" },
+        }),
+        { params: appParams() },
+      );
+      response
+        .status(402)
+        .body()
+        .has("$.code", "app_hosting_budget_too_low")
+        .has("$.required_monthly_usd", 40)
+        .has("$.budget_usd", 5);
+    });
+
+    await ctx.step("delete the App after every hosting selection check", async () => {
+      const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        params: appParams(),
       });
       response.status(200).body().has("$.ok", true);
     });

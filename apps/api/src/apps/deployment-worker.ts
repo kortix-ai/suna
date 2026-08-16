@@ -17,7 +17,13 @@ import { db } from '../shared/db';
 import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
-import { AppHostingProvider } from './hosting';
+import type { AppMachineSpec } from './hosting';
+import {
+  AppHostingService,
+  appRuntimeTarget,
+  type AppRuntimeCreateInput,
+} from './hosting-service';
+import type { AppHostingSelection } from './hosting-backends';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
@@ -198,6 +204,25 @@ function selectedProvider(value: string | null): SandboxProviderName {
   return provider;
 }
 
+function selectedHosting(deployment: ClaimedDeployment): AppHostingSelection {
+  if (deployment.hostingType === 'managed_container') {
+    if (deployment.hostingProvider !== 'aws_lightsail') {
+      throw new PermanentAppDeploymentError(
+        `Managed-container provider ${deployment.hostingProvider ?? 'missing'} is unsupported`,
+        'provider_unsupported',
+      );
+    }
+    return { type: 'managed_container', provider: 'aws_lightsail' };
+  }
+  if (deployment.hostingType !== 'sandbox') {
+    throw new PermanentAppDeploymentError(
+      `Hosting backend ${deployment.hostingType} is unsupported`,
+      'hosting_backend_unsupported',
+    );
+  }
+  return { type: 'sandbox', provider: selectedProvider(deployment.hostingProvider) };
+}
+
 async function deploymentContext(deploymentId: string) {
   const [deployment] = await db
     .select()
@@ -262,7 +287,7 @@ async function activateDeployment(input: {
 }
 
 async function stopPreviousRuntime(
-  hosting: AppHostingProvider,
+  hosting: AppHostingService,
   previousDeploymentId: string | null,
 ): Promise<void> {
   if (!previousDeploymentId) return;
@@ -277,7 +302,7 @@ async function stopPreviousRuntime(
     )
     .limit(1);
   if (!runtime) return;
-  await hosting.stop(runtime.provider as SandboxProviderName, runtime.externalId);
+  await hosting.stop(appRuntimeTarget(runtime));
   const now = new Date();
   await db
     .update(appRuntimes)
@@ -289,7 +314,7 @@ async function stopPreviousRuntime(
 export async function driveAppDeployment(
   claimed: ClaimedDeployment,
   owner: string,
-  hosting = new AppHostingProvider(),
+  hosting = new AppHostingService(),
 ): Promise<void> {
   const heartbeat = setInterval(() => {
     void renewLease(claimed.deploymentId, owner).catch((error) => {
@@ -301,14 +326,22 @@ export async function driveAppDeployment(
   }, HEARTBEAT_MS);
   let runtimeId: string | null = null;
   let runtimeExternalId: string | null = null;
-  let runtimeProvider: SandboxProviderName | null = null;
+  let runtimeTarget: ReturnType<typeof appRuntimeTarget> | null = null;
   let temporaryRoot: string | null = null;
   try {
     const context = await deploymentContext(claimed.deploymentId);
-    const provider = selectedProvider(context.deployment.hostingProvider);
-    runtimeProvider = provider;
+    const selection = selectedHosting(context.deployment);
+    try {
+      hosting.assertAvailable(selection);
+    } catch (error) {
+      throw new PermanentAppDeploymentError(
+        error instanceof Error ? error.message : String(error),
+        'provider_not_configured',
+      );
+    }
     await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
-      hostingProvider: provider,
+      hostingType: selection.type,
+      hostingProvider: selection.provider,
       error: null,
       errorCode: null,
     });
@@ -410,15 +443,15 @@ export async function driveAppDeployment(
       providerBuildId: snapshotName,
     });
     await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
-      data: { provider },
+      data: { hosting: selection },
     });
     const requestedMachine = {
       cpuCores: context.app.cpuCores,
       memoryGb: context.app.memoryGb,
       diskGb: context.app.diskGb,
     };
-    await hosting.buildImage({
-      provider,
+    const built = await hosting.buildImage(selection, {
+      deploymentId: claimed.deploymentId,
       snapshotName,
       slug: context.app.slug,
       sourceDir: normalized.sourceDir,
@@ -431,9 +464,13 @@ export async function driveAppDeployment(
         },
       },
     });
-    await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
+    await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning', {
+      providerBuildId: built.buildId,
+    });
+    await event(claimed.deploymentId, 'build_ready', 'App image is ready', {
+      data: { hosting: selection, imageReference: built.imageReference },
+    });
 
-    await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning');
     const [existingRuntime] = await db
       .select()
       .from(appRuntimes)
@@ -444,33 +481,40 @@ export async function driveAppDeployment(
         ),
       )
       .limit(1);
+    const runtimeName = `app-${context.app.routeKey}-v${context.deployment.version}`;
+    const runtimeInput = (id: string): AppRuntimeCreateInput => ({
+      runtimeId: id,
+      deploymentId: claimed.deploymentId,
+      accountId: context.app.accountId,
+      userId: context.deployment.createdBy,
+      name: runtimeName,
+      snapshotName,
+      imageReference: built.imageReference,
+      machine: requestedMachine,
+      envVars: runtimeEnvironment.env,
+    });
     if (existingRuntime) {
       runtimeId = existingRuntime.runtimeId;
       runtimeExternalId = existingRuntime.externalId;
-      runtimeProvider = existingRuntime.provider as SandboxProviderName;
-      await hosting.start(runtimeProvider, runtimeExternalId);
+      runtimeTarget = appRuntimeTarget(existingRuntime);
+      await hosting.start(runtimeTarget, runtimeInput(runtimeId));
     } else {
       runtimeId = randomUUID();
-      const handle = await hosting.createRuntime({
-        provider,
-        runtimeId,
-        accountId: context.app.accountId,
-        userId: context.deployment.createdBy,
-        name: `app-${context.app.routeKey}-v${context.deployment.version}`,
-        snapshotName,
-        machine: requestedMachine,
-        envVars: runtimeEnvironment.env,
-      });
+      const handle = await hosting.createRuntime(selection, runtimeInput(runtimeId));
       runtimeExternalId = handle.externalId;
+      runtimeTarget = handle;
       const now = new Date();
       await db.insert(appRuntimes).values({
         runtimeId,
         deploymentId: claimed.deploymentId,
         accountId: context.app.accountId,
-        provider,
+        hostingType: handle.hostingType,
+        provider: handle.provider,
         externalId: handle.externalId,
         status: 'starting',
+        controlPort: handle.hostingType === 'sandbox' ? 7331 : null,
         controlTokenHash: handle.controlTokenHash,
+        originTokenHash: handle.originTokenHash,
         idleDeadlineAt: new Date(now.getTime() + context.app.idleTimeoutSeconds * 1000),
         startedAt: now,
         metadata: {
@@ -483,7 +527,7 @@ export async function driveAppDeployment(
       // so charging this App's disk_gb there would bill storage nobody
       // provisioned. Tell the operator when the two differ instead of silently
       // accepting a specification the provider ignored.
-      const effectiveMachine = hosting.effectiveMachine(provider, requestedMachine);
+      const effectiveMachine = hosting.effectiveMachine(selection, requestedMachine);
       if (
         effectiveMachine.cpuCores !== requestedMachine.cpuCores
         || effectiveMachine.memoryGb !== requestedMachine.memoryGb
@@ -492,7 +536,7 @@ export async function driveAppDeployment(
         await event(
           claimed.deploymentId,
           'machine_provider_adjusted',
-          `${provider} does not enforce the full machine specification; billing meters what it allocates`,
+          `${selection.provider ?? selection.type} does not enforce the full machine specification; billing meters what it allocates`,
           {
             runtimeId,
             level: 'warn',
@@ -504,7 +548,7 @@ export async function driveAppDeployment(
         sandboxId: runtimeId,
         accountId: context.app.accountId,
         actorUserId: context.deployment.createdBy,
-        provider,
+        provider: handle.provider,
         spec: { ...effectiveMachine, gpuCount: 0 },
         workloadType: 'app',
         appRuntimeId: runtimeId,
@@ -512,12 +556,13 @@ export async function driveAppDeployment(
       });
       await event(claimed.deploymentId, 'runtime_created', 'App runtime created', {
         runtimeId,
-        data: { provider, externalId: handle.externalId },
+        data: { hosting: selection, externalId: handle.externalId },
       });
     }
 
     await setDeploymentStatus(claimed.deploymentId, owner, 'checking');
-    await hosting.waitUntilReady(runtimeProvider, runtimeExternalId, runtimeId);
+    if (!runtimeTarget) throw new Error('App runtime target was not initialized');
+    await hosting.waitUntilReady(runtimeTarget);
     const previous = await activateDeployment({
       appId: context.app.appId,
       deploymentId: claimed.deploymentId,
@@ -550,8 +595,8 @@ export async function driveAppDeployment(
         .catch(() => {});
       await pauseComputeSession(runtimeId).catch(() => {});
     }
-    if (runtimeProvider && runtimeExternalId) {
-      await hosting.remove(runtimeProvider, runtimeExternalId).catch(() => {});
+    if (runtimeTarget && runtimeExternalId) {
+      await hosting.remove(runtimeTarget).catch(() => {});
     }
     const terminal = permanent || attempt >= MAX_ATTEMPTS;
     await db

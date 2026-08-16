@@ -1,9 +1,8 @@
 import { appRuntimes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { type SandboxProviderName } from '../config';
 import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
-import { AppHostingProvider } from './hosting';
+import { AppHostingService, appRuntimeTarget } from './hosting-service';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { AppBudgetExceededError } from './budget';
 import {
@@ -58,7 +57,7 @@ async function stampActivity(runtimeId: string, idleTimeoutSeconds: number): Pro
 export interface AppWsUpgradeDependencies {
   loadPublicApp: typeof loadPublicApp;
   authorizeAppRequest: typeof authorizeAppRequest;
-  createHosting: () => AppHostingProvider;
+  createHosting: () => AppHostingService;
   ensureAppRuntimeRunning: typeof ensureAppRuntimeRunning;
   enqueueCurrentAppRuntime: typeof enqueueCurrentAppRuntime;
   stampActivity: typeof stampActivity;
@@ -67,7 +66,7 @@ export interface AppWsUpgradeDependencies {
 const DEFAULT_WS_UPGRADE_DEPENDENCIES: AppWsUpgradeDependencies = {
   loadPublicApp,
   authorizeAppRequest,
-  createHosting: () => new AppHostingProvider(),
+  createHosting: () => new AppHostingService(),
   ensureAppRuntimeRunning,
   enqueueCurrentAppRuntime,
   stampActivity,
@@ -99,11 +98,7 @@ export async function prepareAppWsUpgrade(
     }
     const runtime = await dependencies.ensureAppRuntimeRunning(loaded, hosting);
     await dependencies.stampActivity(runtime.runtimeId, loaded.app.idleTimeoutSeconds);
-    const ingress = await hosting.ingress(
-      runtime.provider as SandboxProviderName,
-      runtime.externalId,
-      'websocket',
-    );
+    const ingress = await hosting.ingress(appRuntimeTarget(runtime), 'websocket');
     const headers = appUpstreamHeaders(request, ingress.headers, matched.publicHost);
     const headerObject = Object.fromEntries(headers.entries());
     return {

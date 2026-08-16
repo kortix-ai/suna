@@ -5,13 +5,14 @@ description: "Deploy and operate provider-neutral Kortix Apps through the pre-au
 
 # Kortix Apps
 
-Kortix Apps turns one source tree or image into an immutable serverless
-deployment with a stable URL. Kortix selects and operates the sandbox provider.
+Kortix Apps turns one source tree or image into an immutable deployment with a
+stable URL. Sandbox hosting is the default. Kortix selects Daytona, Platinum,
+or E2B unless the operator requests a provider.
 
-Every current source kind uses the sandbox hosting backend. Do not promise or
-select Cloudflare, Deno Deploy, Vercel, Cloud Run, or another managed hosting
-backend. Those options are deferred architecture. `--provider` selects only a
-supported sandbox provider and should remain omitted unless an operator asks.
+AWS Lightsail Container Services is the supported managed-container backend.
+Select it with `--hosting aws-lightsail`. Cloudflare, Deno Deploy, Vercel, Cloud
+Run, and other managed backends remain future designs. `--provider` selects
+only a sandbox provider. Never combine `--provider` and `--hosting`.
 
 ## Preflight
 
@@ -82,6 +83,20 @@ The command waits for `ready` for up to 1200 seconds. Use `--no-wait` only when
 another process owns status tracking. Provider selection is optional. Omit
 `--provider` unless an operator explicitly requests a hosting provider.
 
+Deploy on AWS Lightsail only when the operator requests it:
+
+```bash
+kortix apps deploy . --slug api --type dockerfile \
+  --command '["node","server.js"]' --port 3000 \
+  --hosting aws-lightsail --cpu 1 --memory 2 --disk 10 --budget 40
+```
+
+Lightsail accepts exact vCPU/memory pairs with these monthly App budget floors:
+`0.25/0.5/$7`, `0.25/1/$10`, `0.5/1/$15`, `1/2/$40`, `2/4/$80`, and
+`4/8/$160`. Pass `--cpu`, `--memory`, `--disk`, `--idle-timeout`, and
+`--budget` to set the App before deployment. Never raise a budget without the
+operator's instruction.
+
 Use `--app <id-or-slug>` for every later immutable version of the same App.
 Never create a new slug for a normal update.
 
@@ -147,7 +162,8 @@ Do not stop at a `ready` status.
 6. For non-public Apps, fetch the stable URL without credentials and confirm it
    returns `401` before testing authorized access.
 7. Run `kortix apps stop <slug> --json`. The command returns only after the
-   provider stop call and runtime-state write complete. Confirm
+   provider stop call and runtime-state write complete. Lightsail deletes the
+   Container Service because it has no zero-scale stop state. Confirm
    `desired_state` is `stopped`. Request the stable URL with the existing
    App-host cookie without running `start`.
    Poll for up to 120 seconds until the final response is `200`. A machine
@@ -212,8 +228,9 @@ kortix apps delete <slug> --yes
 ```
 
 `stop` suspends compute immediately. The next authorized request wakes the App.
-Rollback accepts only a ready immutable deployment. Delete is destructive and
-removes the stable identity and its runtimes.
+Rollback accepts only a ready immutable deployment. Delete is destructive. It
+removes the stable identity and its runtimes. A Lightsail delete also deletes
+the Container Service.
 
 On every cold start, Kortix compares the active deployment's App supervisor
 version with the current platform version. Kortix queues at most one immutable

@@ -179,6 +179,13 @@ resource "aws_iam_role_policy" "ses_send" {
   })
 }
 
+resource "aws_iam_role_policy" "additional_task" {
+  count  = var.additional_task_role_policy_json != "" ? 1 : 0
+  name   = "${local.name}-additional-task"
+  role   = aws_iam_role.task.id
+  policy = var.additional_task_role_policy_json
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"

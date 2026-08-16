@@ -77,12 +77,15 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(gate).not.toContain('useMutation');
 });
 
-test('Apps UI is operational only and has no creation action or modal', () => {
+test('Apps UI exposes App identity create, edit, and confirmed delete actions', () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
-  expect(view).not.toContain('CreateAppModal');
-  expect(view).not.toContain('New App');
-  expect(view).not.toContain('Create App');
+  expect(view).toContain('New App');
+  expect(view).toContain("editing ? 'Edit App' : 'Create App'");
+  expect(view).toContain('aria-label="Edit App"');
+  expect(view).toContain('aria-label="Delete App"');
+  expect(view).toContain('title="Delete App"');
+  expect(view).toContain('await apps.remove.mutateAsync(app.app_id)');
   expect(view).toContain('kortix apps deploy .');
   expect(view).toContain('<iframe');
   expect(view).toContain('className="max-w-5xl"');

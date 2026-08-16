@@ -10,7 +10,8 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import type { AppHostingProvider, AppdStatus } from './hosting';
+import type { AppdStatus } from './hosting';
+import type { AppHostingService } from './hosting-service';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
@@ -153,7 +154,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
         return releaseReadiness.promise;
       },
       stop: async () => {},
-    } as unknown as AppHostingProvider;
+      effectiveMachine: (_selection: unknown, machine: unknown) => machine,
+    } as unknown as AppHostingService;
 
     const first = ensureAppRuntimeRunning(loaded, hosting);
     await readinessStarted.promise;
@@ -182,7 +184,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       },
       waitUntilReady: async () => readyStatus(),
       stop: async () => {},
-    } as unknown as AppHostingProvider;
+      effectiveMachine: (_selection: unknown, machine: unknown) => machine,
+    } as unknown as AppHostingService;
 
     const runtime = await ensureAppRuntimeRunning(loaded, hosting);
 
@@ -201,7 +204,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       ensureRunning: async () => { ensureCalls += 1; },
       waitUntilReady: async () => readyStatus(),
       stop: async () => {},
-    } as unknown as AppHostingProvider;
+      effectiveMachine: (_selection: unknown, machine: unknown) => machine,
+    } as unknown as AppHostingService;
 
     const runtime = await ensureAppRuntimeRunning(loaded, hosting, { forceProviderStart: true });
 
@@ -224,7 +228,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       stop: async () => {
         stopCalls += 1;
       },
-    } as unknown as AppHostingProvider;
+      effectiveMachine: (_selection: unknown, machine: unknown) => machine,
+    } as unknown as AppHostingService;
 
     const wake = ensureAppRuntimeRunning(loaded, hosting).catch((error) => error);
     await readinessStarted.promise;
