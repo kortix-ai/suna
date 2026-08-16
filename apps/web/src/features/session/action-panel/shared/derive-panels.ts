@@ -22,7 +22,12 @@ import { humanizeSearchQuery } from '../../tool/shared/search-query';
 import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
-import { createArtifactKind, familyForTool, humanizeToolName } from './narration';
+import {
+  contextLabelForTool,
+  createArtifactKind,
+  familyForTool,
+  humanizeToolName,
+} from './narration';
 
 interface OutputItemBase {
   callID: string;
@@ -74,6 +79,10 @@ export interface ContextItem {
   /** The real URL a `web` item points at — never rendered as the label
    * itself, only as a title attribute / link target for the row. */
   url?: string;
+  /** The real on-disk path a `file` item points at — set only for
+   * `kind: 'file'`. It is what lets the Context card open the file in the
+   * viewer. */
+  path?: string;
   /** Every call behind a `tool` item, so the UI can show what the tool
    * actually did (its real tool views) when the user opens the chip. */
   parts?: ToolPart[];
@@ -514,7 +523,7 @@ export function deriveContext(parts: ToolPart[]): {
       const path = filePathOf(part) ?? getToolPrimaryArg(part);
       if (!path || seenFiles.has(path)) continue;
       seenFiles.add(path);
-      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file' });
+      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file', path });
       continue;
     }
 
@@ -547,7 +556,13 @@ export function deriveContext(parts: ToolPart[]): {
     // Everything else is recorded once, by name, as "a tool that was used".
     // Every call to that tool rides along on `parts` so the UI can show what
     // the tool actually did when the user asks — one chip, all its calls.
-    const label = humanizeToolName(part.tool);
+    //
+    // The name comes from `contextLabelForTool`, not `humanizeToolName`: a
+    // family whose tools have several spellings (memory / memory_search /
+    // get_mem / mem_search / ltm_search) must fold into ONE row, and the
+    // by-label `seenTools` map below is what folds it — so the fold is only
+    // as good as the label. `narration.ts` owns that mapping, keyed on family.
+    const label = contextLabelForTool(part.tool);
     const seen = seenTools.get(label);
     if (seen) {
       (seen.parts ??= []).push(part);

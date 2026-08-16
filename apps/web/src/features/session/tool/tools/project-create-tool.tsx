@@ -9,7 +9,7 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { CaretRightIcon as ChevronRight, PlusIcon as Plus } from '@phosphor-icons/react';
+import { PlusIcon as Plus } from '@phosphor-icons/react';
 import { useCallback, useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
@@ -53,7 +53,6 @@ export function ProjectCreateTool({ part }: ToolProps) {
         subtitle: displayName,
       }}
       onClick={navigationEnabled ? handleOpenWorkspace : undefined}
-      rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
     />
   );
 }

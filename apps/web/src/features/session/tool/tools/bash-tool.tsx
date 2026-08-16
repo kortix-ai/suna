@@ -34,6 +34,45 @@ import { shellExitCode, stripAnsi } from '@/ui';
 import { CodeSimpleIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 
+/** The row title never runs past this; a trigger is one line, not a sentence. */
+const TITLE_MAX = 60;
+
+/**
+ * The words a settled row leads with.
+ *
+ * The bash tool's input carries a `description` — the one-line summary the
+ * model writes for its own call ("Install the workspace dependencies"). The
+ * SDK already reads it as this tool's subtitle (`core/turns/parts.ts`, case
+ * `'bash'`), so the row promotes a source it had been dropping rather than
+ * inventing one. A reader scanning a turn wants to know what a command was
+ * FOR, and `pnpm -w install --frozen-lockfile` answers that only if they read
+ * shell.
+ *
+ * Three rules, in order:
+ * - A failure keeps its verdict. "Command failed" is the one thing a friendly
+ *   summary must never soften, so it outranks any description.
+ * - No description → exactly today's "Ran command". Nothing is ever derived
+ *   from the command text: a classifier answering "Installed dependencies" to
+ *   `npm i` would put a claim in the model's mouth that it never made.
+ * - Sentence case only lifts a lower-case opener. Lowering the rest would turn
+ *   "Run CI on the release branch" into "Run ci on the release branch".
+ */
+export function bashRowTitle(description: unknown, failed: boolean): string {
+  if (failed) return 'Command failed';
+
+  // Collapsed, because a description arrives as free text and may carry a
+  // newline; a trigger row renders it on one line either way.
+  const summary = typeof description === 'string' ? description.replace(/\s+/g, ' ').trim() : '';
+  if (!summary) return 'Ran command';
+
+  const cased = /^[a-z]/.test(summary) ? summary[0].toUpperCase() + summary.slice(1) : summary;
+  if (cased.length <= TITLE_MAX) return cased;
+  // Trim the tail before the ellipsis. `truncate` in `lib/utils/string` cuts on
+  // the character count alone, which strands a space in front of the ellipsis
+  // whenever the cut lands just after a word.
+  return `${cased.slice(0, TITLE_MAX).trimEnd()}…`;
+}
+
 /**
  * The command, syntax-highlighted, with its output beneath a hairline.
  *
@@ -43,6 +82,21 @@ import { useContext, useMemo } from 'react';
  * multi-line pipeline no structure at all. Highlighting spends that space on
  * the command instead, so a `curl … | python3 -c "…"` reads as the two stages
  * it is.
+ *
+ * One frame, one type rhythm: `border bg-popover rounded-md` around content
+ * panes that share a 12px inset and one `leading-relaxed` line height. That
+ * pairing — `[&_code]:text-xs [&_code]:leading-relaxed` over a 12px pane — is
+ * the same override `iam/audit-tab.tsx` uses to pull `HighlightedCode` down to
+ * a small pane: the component hardcodes `text-sm leading-[1.65]` on its own
+ * `<code>`, and a `[&_code]:` variant is one specificity step above it. The
+ * size half was already here; without the leading half the highlighted command
+ * kept a line height 0.3px off the output it sits above.
+ *
+ * The empty state takes that leading too, so a command that printed nothing
+ * stands exactly where one line of output would instead of collapsing 3.5px
+ * shorter than the region it speaks for (`text-xs` alone is a flat 16px line).
+ * The exit-code strip keeps its shorter 8px vertical inset: it is metadata
+ * about the card, not a third pane of content.
  */
 function CommandBlock({
   command,
@@ -65,7 +119,7 @@ function CommandBlock({
     <div className="border-border bg-popover relative rounded-md border">
       <div data-scrollable className="max-h-64 overflow-auto">
         <div className="relative">
-          <pre className="text-foreground/90 p-3 pr-11 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
+          <pre className="text-foreground/90 p-3 pr-11 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
             <HighlightedCode code={command} language="bash">
               {command}
             </HighlightedCode>
@@ -83,7 +137,7 @@ function CommandBlock({
           ) : output ? (
             <div className="relative">
               <div data-scrollable className="max-h-80 overflow-auto">
-                <div className="text-muted-foreground p-3 pr-11 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap">
+                <div className="text-muted-foreground p-3 pr-11 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                   {output}
                 </div>
               </div>
@@ -95,7 +149,7 @@ function CommandBlock({
               </div>
             </div>
           ) : (
-            <p className="text-muted-foreground/50 p-3 text-xs">No output</p>
+            <p className="text-muted-foreground/50 p-3 text-xs leading-relaxed">No output</p>
           )}
         </div>
       )}
@@ -158,6 +212,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return shellExitCode(part.state.output ?? '');
   }, [part.state]);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
+  const title = bashRowTitle(input.description, failed);
 
   const { commandPreview, extraLines } = useMemo(() => {
     const lines = command.split('\n');
@@ -189,8 +244,14 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               </>
             ) : (
               <span className="flex min-w-0 items-center gap-2 text-xs" title={command}>
-                <span className={cn('shrink-0', failed ? 'text-kortix-red' : 'text-foreground')}>
-                  {failed ? 'Command failed' : 'Ran command'}
+                {/* `truncate`, not `shrink-0`: a description title is a
+                    sentence, and on a narrow row a rigid one would be clipped
+                    mid-word by the trigger's `overflow-hidden` instead of
+                    ending in an ellipsis. */}
+                <span
+                  className={cn('min-w-0 truncate', failed ? 'text-kortix-red' : 'text-foreground')}
+                >
+                  {title}
                 </span>
                 <span className="text-muted-foreground/60 min-w-0 truncate font-mono">
                   {commandPreview}

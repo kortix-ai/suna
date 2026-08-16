@@ -80,7 +80,6 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
         subtitle: showDomainSubtitle ? domain : undefined,
         args: format ? [format] : undefined,
       }}
-      rightAccessory={safeUrl ? <ExternalLink /> : undefined}
       onSubtitleClick={safeUrl ? openUrl : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}

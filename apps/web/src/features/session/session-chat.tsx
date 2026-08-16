@@ -117,6 +117,7 @@ import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import {
+  useAttachRequest,
   useSessionComposerPrefillStore,
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
@@ -1859,6 +1860,16 @@ export function SessionChat({
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
   }, [sessionPrefill, sessionId]);
+  // "Add context" (Task 5) — the empty Context card's button asks the
+  // composer to open its attach flow. Same held/id-keyed handoff as the
+  // prefill above, cleared the same way once the composer's own id-keyed
+  // effect has acted on it.
+  const attachRequestId = useAttachRequest(sessionId);
+  useEffect(() => {
+    if (attachRequestId != null) {
+      useSessionComposerPrefillStore.getState().clearAttachRequest(sessionId);
+    }
+  }, [attachRequestId, sessionId]);
   // Map of user message IDs → command info, so UserMessage can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<
@@ -4271,6 +4282,7 @@ export function SessionChat({
                         ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
                         : null
                 }
+                attachRequestId={attachRequestId}
                 isBusy={isBusy}
                 rewind={composerRewind}
                 queuedMessages={queuedMessages}
