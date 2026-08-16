@@ -6,9 +6,8 @@ import {
   projectSessions,
   projectTriggerRuntime,
   projectTriggerSessionAccessGrants,
-  projects,
 } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { resolveAgentRunAttribution } from './session-lifecycle/actor';
 import {
@@ -171,6 +170,8 @@ export async function setTriggerSessionAccess(input: {
   accountId: string;
   slug: string;
   access: TriggerSessionAccess;
+  /** The active pinned target keeps its own session-level sharing policy. */
+  pinnedSessionId?: string | null;
 }): Promise<void> {
   const validationError = await validateTriggerSessionAccessPrincipals(
     input.accountId,
@@ -178,7 +179,7 @@ export async function setTriggerSessionAccess(input: {
   );
   if (validationError) throw new Error(validationError);
 
-  const sessions = await db
+  const existingSessions = await db
     .select({
       sessionId: projectSessions.sessionId,
       agentName: projectSessions.agentName,
@@ -189,11 +190,12 @@ export async function setTriggerSessionAccess(input: {
         eq(projectSessions.projectId, input.projectId),
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${input.slug}`,
+        input.pinnedSessionId ? ne(projectSessions.sessionId, input.pinnedSessionId) : undefined,
       ),
     );
   const attributionByAgent = new Map<string, string>();
   const agentNames = new Set(
-    sessions
+    existingSessions
       .map((row) => row.agentName)
       .filter((agentName): agentName is string => Boolean(agentName)),
   );
@@ -206,8 +208,11 @@ export async function setTriggerSessionAccess(input: {
     if (serviceAccountId) attributionByAgent.set(agentName, serviceAccountId);
   }
   const triggerGrants = grantsFor(input.access);
-  const sessionIds = sessions.map((session) => session.sessionId);
   await db.transaction(async (tx) => {
+    // Updating the runtime row serializes policy edits with create-time
+    // application. The action below locks this same row before it reads the
+    // grants. A concurrent session therefore receives either the complete old
+    // policy or the complete new policy, never a stale mix after propagation.
     await tx
       .update(projectTriggerRuntime)
       .set({
@@ -237,6 +242,21 @@ export async function setTriggerSessionAccess(input: {
         })),
       );
     }
+    const sessions = await tx
+      .select({
+        sessionId: projectSessions.sessionId,
+        agentName: projectSessions.agentName,
+      })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+          sql`${projectSessions.metadata} ->> 'trigger_slug' = ${input.slug}`,
+          input.pinnedSessionId ? ne(projectSessions.sessionId, input.pinnedSessionId) : undefined,
+        ),
+      );
+    const sessionIds = sessions.map((session) => session.sessionId);
     if (sessionIds.length) {
       await tx
         .update(projectSessions)
@@ -281,11 +301,10 @@ export async function applyTriggerSessionAccess(input: {
 }): Promise<void> {
   const [row] = await db
     .select({
-      accountId: projects.accountId,
+      accountId: projectSessions.accountId,
       agentName: projectSessions.agentName,
     })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(
       and(
         eq(projectSessions.projectId, input.projectId),
@@ -300,9 +319,46 @@ export async function applyTriggerSessionAccess(input: {
     agentName: row.agentName,
   });
   if (!serviceAccountId) throw new Error('Trigger agent service account is unavailable');
-  const access = await loadTriggerSessionAccess(input.projectId, input.triggerSlug);
-  const grants = grantsFor(access);
   await db.transaction(async (tx) => {
+    const [runtime] = await tx
+      .select({ sessionAccessMode: projectTriggerRuntime.sessionAccessMode })
+      .from(projectTriggerRuntime)
+      .where(
+        and(
+          eq(projectTriggerRuntime.projectId, input.projectId),
+          eq(projectTriggerRuntime.slug, input.triggerSlug),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    const mode = publicMode(runtime?.sessionAccessMode ?? 'private');
+    const triggerGrantRows = runtime
+      ? await tx
+          .select({
+            principalType: projectTriggerSessionAccessGrants.principalType,
+            principalId: projectTriggerSessionAccessGrants.principalId,
+          })
+          .from(projectTriggerSessionAccessGrants)
+          .where(
+            and(
+              eq(projectTriggerSessionAccessGrants.projectId, input.projectId),
+              eq(projectTriggerSessionAccessGrants.slug, input.triggerSlug),
+            ),
+          )
+      : [];
+    const access: TriggerSessionAccess =
+      mode === 'members'
+        ? {
+            mode,
+            memberIds: triggerGrantRows
+              .filter((grant) => grant.principalType === 'member')
+              .map((grant) => grant.principalId),
+            groupIds: triggerGrantRows
+              .filter((grant) => grant.principalType === 'group')
+              .map((grant) => grant.principalId),
+          }
+        : { mode, memberIds: [], groupIds: [] };
+    const grants = grantsFor(access);
     await tx
       .update(projectSessions)
       .set({

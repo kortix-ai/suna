@@ -1146,6 +1146,7 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       slug: draft.slug,
       access: parsedAccess.access,
+      pinnedSessionId: draft.pinnedSessionId,
     });
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
@@ -1261,13 +1262,17 @@ projectsApp.openapi(
       if (accessValidationError) return c.json({ error: accessValidationError }, 400);
     }
     let committedManifest: ParsedManifest | undefined;
+    let effectivePinnedSessionId: string | null = null;
     const result = await mutateManifestWithRetry(
       loaded.row,
       `trigger ${slug} was being updated`,
       async (manifest) => {
         const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
         if (!current) return { ok: false, error: 'Not found', status: 404 };
-        if (!touchesManifest) return { ok: true, commitMessage: null };
+        if (!touchesManifest) {
+          effectivePinnedSessionId = current.pinnedSessionId;
+          return { ok: true, commitMessage: null };
+        }
 
         // Merge the patch onto the current spec so callers can send partial bodies
         // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
@@ -1281,6 +1286,7 @@ projectsApp.openapi(
         if (patchesKey && !patchesMode) delete base.session_mode;
         const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
         if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+        effectivePinnedSessionId = draft.pinnedSessionId;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
@@ -1322,6 +1328,7 @@ projectsApp.openapi(
         accountId: loaded.row.accountId,
         slug,
         access: parsedAccess.access,
+        pinnedSessionId: effectivePinnedSessionId,
       });
     }
 

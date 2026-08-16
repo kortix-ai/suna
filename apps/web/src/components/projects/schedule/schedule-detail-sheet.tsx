@@ -306,6 +306,12 @@ export function ScheduleDetailSheet({
           />
 
           <AccessPanel
+            key={[
+              trigger.slug,
+              trigger.session_access.mode,
+              trigger.session_access.memberIds.join(','),
+              trigger.session_access.groupIds.join(','),
+            ].join(':')}
             projectId={projectId}
             trigger={trigger}
             canWrite={canWrite}
@@ -915,10 +921,6 @@ function AccessPanel({
   onMutated: () => void;
 }) {
   const [selection, setSelection] = useState<SharingSelection>(trigger.session_access);
-
-  useEffect(() => {
-    setSelection(trigger.session_access);
-  }, [trigger.session_access]);
 
   const save = useMutation({
     mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { session_access: selection }),

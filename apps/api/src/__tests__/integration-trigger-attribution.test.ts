@@ -5,17 +5,16 @@
  * `triggers.ts` TODO (docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.2 "runtime attribution").
  *
- * `attributeFiredTriggerSession` is exercised directly (rather than the full
- * `fireGitTrigger`, which needs a real git-backed manifest + sandbox
- * provisioning) — it's the exact post-creation fixup `fireGitTrigger` runs
- * right after `createSession` returns a fresh session row.
+ * `attributeFiredTriggerSession` remains a compatibility helper for callers
+ * outside the durable trigger create-session action. The action owns the live
+ * path and applies attribution with the complete access policy.
  */
-import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq, sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { projectSessions, serviceAccounts } from '@kortix/db';
-import { db } from '../shared/db';
-import { attributeFiredTriggerSession } from '../projects/lib/triggers';
+import { and, eq, sql } from 'drizzle-orm';
 import type { ProjectRow } from '../projects/lib/serializers';
+import { attributeFiredTriggerSession } from '../projects/lib/triggers';
+import { db } from '../shared/db';
 
 let ctx: { projectId: string; accountId: string } | null = null;
 const SESSION_ID = `e2e-trigger-attr-${crypto.randomUUID()}`;
@@ -59,7 +58,7 @@ afterAll(async () => {
 });
 
 describe('attributeFiredTriggerSession — trigger runs attributed to the agent SA', () => {
-  test('created_by moves off the human stand-in onto the firing agent\'s service account; billing (account_id) untouched', async () => {
+  test("created_by moves off the human stand-in onto the firing agent's service account; billing (account_id) untouched", async () => {
     if (!ctx) {
       console.warn('[integration] no project in local DB — skipping');
       return;

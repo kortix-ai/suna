@@ -875,7 +875,6 @@ Public surface snapshots regenerated (`UPDATE_SURFACE_SNAPSHOT=1` /
 
 ---
 
-||||||| parent of 82d5808ccc (chore(sdk): claim trigger session access work)
 ### 2026-08-16 — session `trigger-access-scope` claim
 
 No **Now** task claimed. This is user-directed trigger-session authorization work.
@@ -891,7 +890,23 @@ Claimed SDK scope, additive only:
 The required `tdd` skill is unavailable in this session. This work will use the
 required RED, GREEN, and REFACTOR sequence directly.
 
-**Status:** IN PROGRESS.
+Completed additive trigger session-access support. The SDK exposes the
+default-private policy and accepts project-wide or selected member/group access
+on trigger create and update. Existing exports remain unchanged. The package
+`version` remains unchanged.
+
+Gates:
+
+```
+$ pnpm --filter @kortix/sdk test
+2093 pass, 0 fail
+$ pnpm --filter @kortix/sdk typecheck
+tsc --noEmit && tsc --noEmit -p examples/tsconfig.json   → clean
+$ pnpm --filter @kortix/sdk run smoke:install
+✔ install smoke test passed
+```
+
+**SDK package shippable to production: YES.**
 
 ---
 

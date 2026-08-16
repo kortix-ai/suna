@@ -91,6 +91,7 @@ mock.module('../../lib/sessions', () => ({
 }));
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => 'automation-user-1',
+  resolveAgentRunAttribution: async () => null,
 }));
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),

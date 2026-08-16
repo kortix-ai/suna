@@ -688,10 +688,10 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  * authorization actor (concurrency cap, secret-visibility subject, the
  * standing-role fallback an unactivated agent SA relies on — see
  * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
- * run's recorded identity: see `attributeFiredTriggerSession` below, which
- * overwrites `project_sessions.created_by` to the agent's own service account
- * right after the row exists — "attribution and authorization stop sharing
- * one field" (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
+ * run's recorded identity. The create-session action applies the trigger's
+ * access policy and records the agent's service account after the row exists.
+ * This keeps attribution and authorization on separate fields
+ * (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
  * What a run can actually ACCESS is governed by the AGENT's declared scope in
  * kortix.yaml's `agents:` map (secrets + connectors), applied when the session
  * env is built — not by this stand-in.
@@ -701,28 +701,10 @@ export async function resolveTriggerActor(project: ProjectRow): Promise<string |
 }
 
 /**
- * Re-attribute a freshly created trigger-fired session to the firing agent's
- * standing-identity service account: `created_by` (session identity/audit —
- * NOT the visibility gate, which is `visibility: 'project'` for every trigger
- * session regardless of owner) moves off the arbitrary account-owner stand-in
- * `resolveTriggerActor` returns and onto the agent itself. Closes the TODO
- * that lived here: "resolve to the agent's SERVICE ACCOUNT so per-user
- * connectors + secrets bind to the AGENT itself, with no human userId at all."
- *
- * Deliberately a POST-creation fixup rather than changing what `fireGitTrigger`
- * passes as `userId` into `createSession`: that value also drives provisioning
- * (concurrency cap, secret-share subject) and is the fallback identity IAM
- * v2 authorizes as when the agent's SA has no role bound yet (unactivated —
- * the default state for an auto-provisioned agent). Swapping it for the SA
- * there would make every un-activated trigger agent authorize as a bare,
- * role-less service account and lose that fallback outright — see
- * `resolveActingActor` in iam/engine-v2.ts. The authorization path stays
- * exactly as it is today; only the audit-facing owner changes.
- *
- * Best-effort: failures are logged and swallowed — a session that already
- * fired must not be reported as failed over a cosmetic attribution miss.
- * No-op for the `session_mode = "reuse"` path (the reused session's
- * `created_by` was already fixed up the first time it was created).
+ * Preserve the internal attribution helper for callers that create trigger
+ * sessions outside the durable create-session action. The primary trigger
+ * fire path does not call this helper. Its action applies attribution and the
+ * complete access policy in one transaction.
  */
 export async function attributeFiredTriggerSession(input: {
   project: ProjectRow;
@@ -1115,19 +1097,6 @@ export async function fireGitTrigger(input: {
     };
   }
   const firedSessionId = sessionResult.sessionId ?? sessionResult.row?.sessionId;
-  // Re-attribute the run to the agent's own service account (see
-  // attributeFiredTriggerSession's docblock). `row.agentName` is the RESOLVED
-  // name `createProjectSession` actually persisted (default-sentinel/
-  // project-default fallbacks already applied) — using it here means this
-  // never re-derives that resolution logic. Best-effort: this must not turn an
-  // already-fired session into a failed trigger result.
-  if (firedSessionId && sessionResult.row?.agentName) {
-    await attributeFiredTriggerSession({
-      project,
-      sessionId: firedSessionId,
-      agentName: sessionResult.row.agentName,
-    }).catch(() => {});
-  }
   return {
     status: 'fired',
     sessionId: firedSessionId,

@@ -109,6 +109,27 @@ export async function createDatabaseProject(
   return { id: projectId, name: input.name };
 }
 
+export async function setDatabaseEnterpriseDemo(
+  env: Env,
+  accountId: string,
+  enabled: boolean,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise demo for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.credit_accounts (account_id, demo_enterprise)
+       VALUES ($1::uuid, $2)
+       ON CONFLICT (account_id)
+       DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
+      [accountId, enabled],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 export async function mergeDatabaseProjectMetadata(
   env: Env,
   projectId: string,

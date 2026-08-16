@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
-  accounts,
   accountGroups,
   accountMembers,
+  accounts,
   projectSessionGrants,
   projectSessions,
   projectTriggerRuntime,
@@ -10,11 +10,11 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '../shared/db';
 import {
   applyTriggerSessionAccess,
   setTriggerSessionAccess,
 } from '../projects/trigger-session-access';
+import { db } from '../shared/db';
 
 const context = {
   projectId: crypto.randomUUID(),
@@ -80,7 +80,9 @@ beforeAll(async () => {
       status: 'provisioning',
       createdBy: context.memberId,
       visibility: 'project',
-      metadata: {},
+      // A session created by this trigger can later become its pinned target.
+      // Matching trigger metadata must not make policy propagation overwrite it.
+      metadata: { trigger_kind: 'git', trigger_slug: slug },
       updatedAt: new Date(),
     },
   ]);
@@ -101,6 +103,7 @@ describe('trigger session access — migrated database', () => {
         memberIds: [context.memberId],
         groupIds: [context.groupId],
       },
+      pinnedSessionId,
     });
 
     const [runtime] = await db
@@ -176,6 +179,32 @@ describe('trigger session access — migrated database', () => {
         .from(projectSessionGrants)
         .where(eq(projectSessionGrants.sessionId, freshSessionId)),
     ).toHaveLength(2);
+
+    await Promise.all([
+      setTriggerSessionAccess({
+        projectId: context.projectId,
+        accountId: context.accountId,
+        slug,
+        access: { mode: 'project', memberIds: [], groupIds: [] },
+        pinnedSessionId,
+      }),
+      applyTriggerSessionAccess({
+        projectId: context.projectId,
+        sessionId: freshSessionId,
+        triggerSlug: slug,
+      }),
+    ]);
+    const [concurrentFinal] = await db
+      .select({ visibility: projectSessions.visibility })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, freshSessionId));
+    expect(concurrentFinal?.visibility).toBe('project');
+    expect(
+      await db
+        .select()
+        .from(projectSessionGrants)
+        .where(eq(projectSessionGrants.sessionId, freshSessionId)),
+    ).toHaveLength(0);
 
     await db
       .delete(projectTriggerRuntime)

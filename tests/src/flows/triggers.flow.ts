@@ -679,7 +679,7 @@ flow(
     });
   },
 );
-+flow(
+flow(
   'TRG-14',
   {
     domain: 'triggers',
@@ -687,6 +687,7 @@ flow(
       'POST /v1/projects/:projectId/triggers',
       'PATCH /v1/projects/:projectId/triggers/:slug',
       'GET /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/files/history',
       'POST /v1/accounts/:accountId/iam/groups',
     ],
   },
@@ -705,6 +706,7 @@ flow(
     );
     groupResponse.status(201);
     const groupId = groupResponse.json<{ group_id: string }>().group_id;
+    let manifestCommitHashes: string[] = [];
 
     await ctx.step('omitted session_access defaults to private', async () => {
       const r = await owner.post(
@@ -729,34 +731,56 @@ flow(
       ) {
         throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
       }
+      const history = await owner.get('/v1/projects/:projectId/files/history', {
+        params: { projectId: project.id },
+        query: { path: 'kortix.yaml' },
+      });
+      history.status(200);
+      manifestCommitHashes = history
+        .json<{ commits: Array<{ hash: string }> }>()
+        .commits.map((commit) => commit.hash);
     });
 
-    await ctx.step('selected members and groups persist with duplicate ids removed', async () => {
-      const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
-        {
-          session_access: {
-            mode: 'members',
-            memberIds: [teammateUserId, teammateUserId],
-            groupIds: [groupId, groupId],
+    await ctx.step(
+      'policy-only PATCH persists selected access without committing kortix.yaml',
+      async () => {
+        const r = await owner.patch(
+          '/v1/projects/:projectId/triggers/:slug',
+          {
+            session_access: {
+              mode: 'members',
+              memberIds: [teammateUserId, teammateUserId],
+              groupIds: [groupId, groupId],
+            },
           },
-        },
-        { params: { projectId: project.id, slug: 'access-policy-target' } },
-      );
-      r.status(200);
-      const access = r.json<{
-        triggers: Array<{
-          session_access: { mode: string; memberIds: string[]; groupIds: string[] };
-        }>;
-      }>().triggers[0]?.session_access;
-      if (
-        access?.mode !== 'members' ||
-        JSON.stringify(access.memberIds) !== JSON.stringify([teammateUserId]) ||
-        JSON.stringify(access.groupIds) !== JSON.stringify([groupId])
-      ) {
-        throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
-      }
-    });
+          { params: { projectId: project.id, slug: 'access-policy-target' } },
+        );
+        r.status(200);
+        const access = r.json<{
+          triggers: Array<{
+            session_access: { mode: string; memberIds: string[]; groupIds: string[] };
+          }>;
+        }>().triggers[0]?.session_access;
+        if (
+          access?.mode !== 'members' ||
+          JSON.stringify(access.memberIds) !== JSON.stringify([teammateUserId]) ||
+          JSON.stringify(access.groupIds) !== JSON.stringify([groupId])
+        ) {
+          throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
+        }
+        const history = await owner.get('/v1/projects/:projectId/files/history', {
+          params: { projectId: project.id },
+          query: { path: 'kortix.yaml' },
+        });
+        history.status(200);
+        const currentHashes = history
+          .json<{ commits: Array<{ hash: string }> }>()
+          .commits.map((commit) => commit.hash);
+        if (JSON.stringify(currentHashes) !== JSON.stringify(manifestCommitHashes)) {
+          throw new Error('policy-only PATCH created a kortix.yaml commit');
+        }
+      },
+    );
 
     await ctx.step('explicit project access persists', async () => {
       const r = await owner.patch(
