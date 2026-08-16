@@ -161,7 +161,7 @@ describe('probeStream', () => {
     expect(result.hasContent).toBe(false);
   });
 
-  test('times out and cancels a stream that opens but produces no bytes', async () => {
+  test('leaves a slow stream OPEN on timeout so the caller can commit it', async () => {
     const up = controllableUpstream();
     const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
 
@@ -170,7 +170,24 @@ describe('probeStream', () => {
       message: 'upstream stream probe timeout exceeded (20ms with no bytes)',
       code: 'stream_probe_timeout',
     });
-    expect(up.cancelled).toBe(true);
+    // The whole point of the commit path: a still-prefilling upstream must not
+    // be cancelled. Cancelling here is what killed healthy large-context turns.
+    expect(up.cancelled).toBe(false);
+    expect(result.pendingRead).toBeDefined();
+  });
+
+  test('hands the in-flight read to the caller so no post-timeout chunk is lost', async () => {
+    const up = controllableUpstream();
+    const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
+    expect(result.pendingRead).toBeDefined();
+
+    // The chunk the model finally produces resolves the read that was already
+    // in flight when the deadline expired. A caller that issued a fresh
+    // reader.read() instead would queue behind this promise and never see it.
+    up.push('data: {"choices":[{"delta":{"content":"late but real"}}]}\n\n');
+    const first = await result.pendingRead!;
+    expect(first.done).toBe(false);
+    expect(new TextDecoder().decode(first.value)).toContain('late but real');
   });
 
   test('holds and classifies the production soft rate-limit completion before relaying bytes', async () => {
@@ -243,24 +260,40 @@ describe('resolveStreamProbeTimeoutMs', () => {
     ).toBe(30_000);
   });
 
-  test('gives a two-megabyte prompt 60 seconds to produce its first byte', () => {
+  test('does not scale with request size — a 2MiB prompt gets the same deadline', () => {
     expect(
       resolveStreamProbeTimeoutMs({
         requestBytes: 2_023_225,
         provider: 'aster',
         model: 'glm-5.2',
       }),
-    ).toBe(60_000);
+    ).toBe(30_000);
   });
 
-  test('gives slow-first-byte GLM requests at least 45 seconds even when small', () => {
+  test('does not special-case a provider or model', () => {
     expect(
       resolveStreamProbeTimeoutMs({
         requestBytes: 64_000,
         provider: 'aster',
         model: 'glm-5.2',
       }),
-    ).toBe(45_000);
+    ).toBe(30_000);
+  });
+
+  // Regression lock. The retired ladder was
+  // `30_000 + ceil((bytes - 64KiB) / 1MiB) * 15_000`, capped at 120_000, so
+  // every request body between 3,211,776 and 4,259,840 bytes resolved to
+  // exactly 90_000 — the deadline that deterministically killed healthy
+  // large-context Fable turns. No request size may ever produce it again.
+  test('no request size can resolve to the 90-second cliff again', () => {
+    for (let bytes = 0; bytes <= 16 * 1024 * 1024; bytes += 64 * 1024) {
+      const resolved = resolveStreamProbeTimeoutMs({
+        requestBytes: bytes,
+        provider: 'anthropic',
+        model: 'claude-fable-5',
+      });
+      expect(resolved).toBe(30_000);
+    }
   });
 
   test('an explicit operator timeout remains an exact override', () => {
@@ -274,7 +307,7 @@ describe('resolveStreamProbeTimeoutMs', () => {
     ).toBe(12_345);
   });
 
-  test('zero keeps the adaptive policy', () => {
+  test('zero keeps the default deadline', () => {
     expect(
       resolveStreamProbeTimeoutMs({
         requestBytes: 64_000,
@@ -282,17 +315,17 @@ describe('resolveStreamProbeTimeoutMs', () => {
         model: 'glm-5.2',
         configuredTimeoutMs: 0,
       }),
-    ).toBe(45_000);
+    ).toBe(30_000);
   });
 
-  test('caps an extreme request at two minutes', () => {
+  test('an extreme request is not given a longer deadline', () => {
     expect(
       resolveStreamProbeTimeoutMs({
         requestBytes: 50 * 1024 * 1024,
         provider: 'openrouter',
         model: 'x',
       }),
-    ).toBe(120_000);
+    ).toBe(30_000);
   });
 });
 

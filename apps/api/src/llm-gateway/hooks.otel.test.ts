@@ -167,9 +167,9 @@ describe('emitGatewayGenAiSpan', () => {
             provider: 'aster',
             routeModel: 'glm-5.2',
             resolvedModel: 'glm-5.2',
-            stage: 'stream_probe',
-            code: 'stream_probe_timeout',
-            message: 'probe timed out',
+            stage: 'completion_validation',
+            code: 'empty_completion',
+            message: 'Upstream stream closed before producing usable content',
           },
         ],
       }),
@@ -178,10 +178,12 @@ describe('emitGatewayGenAiSpan', () => {
     const span = lastSpan();
     expect(attrScalar(span, 'kortix.failure_count')).toBe('2');
     expect(attrScalar(span, 'kortix.failure_codes')).toBe(
-      'context_length_exceeded,stream_probe_timeout',
+      'context_length_exceeded,empty_completion',
     );
     expect(attrScalar(span, 'kortix.context_rejected')).toBe(true);
-    expect(attrScalar(span, 'kortix.probe_timeout')).toBe(true);
+    // `kortix.probe_timeout` is gone — a probe timeout commits the stream
+    // rather than failing it, so the attribute could only ever report false.
+    expect(attrScalar(span, 'kortix.probe_timeout')).toBeUndefined();
     expect(attrScalar(span, 'kortix.fallback_recovered')).toBe(false);
 
     await emitAndFlush(
