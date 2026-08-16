@@ -31,8 +31,43 @@ const EDGE_SIGNATURE_HEADER = 'x-kortix-app-signature';
 const EDGE_MAX_SKEW_MS = 5 * 60_000;
 const WAKE_LEASE_MS = 2 * 60_000;
 const ACTIVITY_LEASE_MS = 60_000;
-const APP_FRAME_ANCESTORS =
-  "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*";
+// The `frame-ancestors` directive for App responses. It decides which origins
+// may embed an App in an iframe — the dashboard's App preview does exactly this.
+// Managed cloud embeds from kortix.com; a SELF-HOST box embeds from the
+// operator's OWN frontend origin (e.g. https://essentia.kortix.cloud), which is
+// NOT kortix.com, so the browser would block the preview. Build the allowlist
+// dynamically to ALWAYS include the configured frontend origin (config.FRONTEND_URL)
+// plus a wildcard for its domain, so the preview frames reliably on any
+// self-host domain. Falls back to the managed base list if FRONTEND_URL is
+// unset/invalid.
+function appFrameAncestors(): string {
+  const parts = new Set<string>([
+    "'self'",
+    'https://kortix.com',
+    'https://*.kortix.com',
+    'http://localhost:*',
+    'http://127.0.0.1:*',
+  ]);
+  try {
+    const u = new URL(config.FRONTEND_URL);
+    const host = u.hostname.toLowerCase();
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    // localhost/127.0.0.1 are already covered by the wildcard entries above; only
+    // a real self-host domain needs adding.
+    if ((u.protocol === 'https:' || u.protocol === 'http:') && !isLocal) {
+      parts.add(u.origin);
+      // Also allow any sibling subdomain of the operator's registrable-ish
+      // domain (drop the leftmost label): essentia.kortix.cloud -> *.kortix.cloud.
+      const labels = host.split('.');
+      if (labels.length >= 3 && !/^\d+$/.test(labels[labels.length - 1])) {
+        parts.add(`${u.protocol}//*.${labels.slice(1).join('.')}`);
+      }
+    }
+  } catch {
+    // FRONTEND_URL missing/invalid — the managed base list above still applies.
+  }
+  return 'frame-ancestors ' + [...parts].join(' ');
+}
 
 function appWakeSupersededResponse(): Response {
   return Response.json({
@@ -191,7 +226,7 @@ export function appPublicStatusResponse(
   const headers = new Headers({
     'cache-control': 'no-store',
     'content-security-policy':
-      "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+      `default-src 'none'; style-src 'unsafe-inline'; ${appFrameAncestors()}`,
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
   });
@@ -329,7 +364,7 @@ function appAccessResponse(
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
-      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; ${APP_FRAME_ANCESTORS}`,
+      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; ${appFrameAncestors()}`,
       'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',
     },
@@ -725,7 +760,7 @@ export function appPublicResponseHeaders(upstreamHeaders: Headers): Headers {
   headers.delete('x-frame-options');
 
   const enforced = withoutFrameAncestors(headers.get('content-security-policy') || '');
-  headers.set('content-security-policy', [...enforced, APP_FRAME_ANCESTORS].join('; '));
+  headers.set('content-security-policy', [...enforced, appFrameAncestors()].join('; '));
 
   const reportOnlyKey = 'content-security-policy-report-only';
   const reportOnly = headers.get(reportOnlyKey);

@@ -20,6 +20,7 @@ const {
   verifyAppEdgeRequest,
 } = await import('./public-proxy');
 const { createAppAccessToken } = await import('./access');
+const { config } = await import('../config');
 
 describe('Apps public edge', () => {
   test('public Apps bypass browser authentication', async () => {
@@ -429,6 +430,41 @@ describe('Apps public edge', () => {
       "default-src 'self'; script-src 'self'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
     );
     expect(result.get('content-security-policy-report-only')).toBe("img-src 'self'");
+  });
+
+  test('allows a self-host frontend origin to frame its own App previews', () => {
+    const original = config.FRONTEND_URL;
+    try {
+      config.FRONTEND_URL = 'https://essentia.kortix.cloud';
+      const result = appPublicResponseHeaders(
+        new Headers({ 'content-security-policy': "default-src 'self'; frame-ancestors 'none'" }),
+      );
+      const csp = result.get('content-security-policy') || '';
+      // The operator's own frontend origin — and a wildcard for its domain — must
+      // appear, or the dashboard preview iframe is blocked on self-host.
+      expect(csp).toContain('https://essentia.kortix.cloud');
+      expect(csp).toContain('https://*.kortix.cloud');
+      // Managed cloud + localhost stay allowed too.
+      expect(csp).toContain('https://kortix.com');
+      expect(csp).toContain('http://localhost:*');
+      // Upstream frame-ancestors is stripped, ours wins.
+      expect(csp).not.toContain("frame-ancestors 'none'");
+    } finally {
+      config.FRONTEND_URL = original;
+    }
+  });
+
+  test('does not duplicate localhost when FRONTEND_URL is a dev origin', () => {
+    const original = config.FRONTEND_URL;
+    try {
+      config.FRONTEND_URL = 'http://localhost:3000';
+      const result = appPublicResponseHeaders(new Headers());
+      expect(result.get('content-security-policy')).toBe(
+        "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+      );
+    } finally {
+      config.FRONTEND_URL = original;
+    }
   });
 
   test('renders a branded, auto-refreshing browser page while an App is building', async () => {
