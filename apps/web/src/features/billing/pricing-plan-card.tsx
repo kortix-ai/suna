@@ -1,9 +1,8 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import type { PricingPlan } from '@/features/billing/pricing-plans';
 import { cn } from '@/lib/utils';
-import { CheckIcon as Check } from '@phosphor-icons/react';
+import { CheckCircleIcon } from '@phosphor-icons/react';
 
 interface PricingPlanCardProps {
   plan: PricingPlan;
@@ -25,21 +24,16 @@ export function PricingPlanCard({
   return (
     <div
       className={cn(
-        'flex h-full flex-col gap-5 rounded-md border p-6',
+        'flex h-full w-full flex-col gap-5 rounded-lg border p-6',
         compact && 'gap-4 p-5',
-        plan.highlight && 'bg-card dark:bg-card relative border shadow-xs',
+        plan.highlight && 'bg-accent border-ring/80 ring-ring/30 relative border-[0.5px] ring-2',
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-lg font-medium tracking-tight">{plan.name}</div>
-          <div className="text-muted-foreground mt-1 text-sm text-balance">{plan.note}</div>
+          <div className="text-muted-foreground text-md mt-1 text-balance">{plan.note}</div>
         </div>
-        {badge && (
-          <Badge variant="update" className="rounded">
-            {badge}
-          </Badge>
-        )}
       </div>
 
       <div className="flex min-w-0 items-baseline gap-2">
@@ -49,25 +43,23 @@ export function PricingPlanCard({
         {plan.unit && <span className="text-muted-foreground text-sm">{plan.unit}</span>}
       </div>
 
-      <div className="mt-auto space-y-5">
-        {action}
+      <ul className="flex flex-col space-y-3 text-left text-sm">
+        {plan.features.map((feature) => (
+          <li key={feature} className="flex items-start justify-start gap-2 first:font-medium">
+            <CheckCircleIcon weight="fill" className="text-foreground mt-0.5 size-4 shrink-0" />
+            <span>
+              <span>{feature}</span>
+              {plan.featureDetails?.[feature] ? (
+                <span className="text-muted-foreground mt-0.5 block text-xs leading-relaxed font-normal">
+                  {plan.featureDetails[feature]}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
 
-        <ul className="flex flex-col space-y-3 text-left text-sm">
-          {plan.features.map((feature) => (
-            <li key={feature} className="flex items-start justify-start gap-2 first:font-medium">
-              <Check className="text-foreground mt-0.5 size-4 shrink-0" />
-              <span>
-                <span>{feature}</span>
-                {plan.featureDetails?.[feature] ? (
-                  <span className="text-muted-foreground mt-0.5 block text-xs leading-relaxed font-normal">
-                    {plan.featureDetails[feature]}
-                  </span>
-                ) : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <div className="mt-auto w-full">{action}</div>
     </div>
   );
 }
