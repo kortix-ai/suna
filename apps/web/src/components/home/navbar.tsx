@@ -6,17 +6,9 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import {
-  Disclosure,
-  DisclosureBody,
-  DisclosureContent,
-  DisclosureTrigger,
-} from '@/components/ui/disclosure';
 import { Button, marketingButtonVariants } from '@/components/ui/marketing/button';
 import {
   NavigationMenu,
@@ -26,6 +18,7 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { ChatGPT } from '@/features/icon/icons/chat-gpt';
 import { Claude } from '@/features/icon/icons/claude';
@@ -41,13 +34,17 @@ import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import {
-  CaretDownIcon,
+  ArrowRightIcon,
+  DiscordLogoIcon,
+  DownloadSimpleIcon as Download,
+  GithubLogoIcon,
   StackIcon as Layers,
+  LinkedinLogoIcon,
   ListIcon as Menu,
   TextTIcon as Type,
   XIcon as X,
+  XLogoIcon,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -95,50 +92,25 @@ function drawerSubLinks(item: NavLink): NavSubLink[] {
   return typeof item.href === 'string' ? [] : item.href;
 }
 
-const drawerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      duration: 0.2,
-      staggerChildren: 0.05,
-      delayChildren: 0.1,
-    },
-  },
-  exit: {
-    opacity: 0,
-    transition: { duration: 0.15 },
-  },
-};
+/**
+ * The drawer is deliberately static: tapping the menu button swaps it in the
+ * same frame, with no enter motion, no level pushes, no stagger. Rows keep a
+ * `py` tall enough for a 40px+ hit area at this type size.
+ */
+const DRAWER_ROW = 'flex items-center py-2 text-lg font-medium transition-colors';
 
-const drawerMenuContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.06,
-    },
-  },
-};
-
-const drawerMenuVariants = {
-  hidden: { opacity: 0, x: -10 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: {
-      duration: 0,
-      ease: 'easeOut' as const,
-    },
-  },
-};
+const DRAWER_SOCIALS = [
+  { label: 'X', href: 'https://x.com/kortix', icon: XLogoIcon },
+  { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', icon: LinkedinLogoIcon },
+  { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', icon: DiscordLogoIcon },
+  { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', icon: GithubLogoIcon },
+] as const;
 
 interface NavbarProps {
   isAbsolute?: boolean;
 }
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -158,6 +130,24 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`),
     [pathname],
   );
+
+  // "Brandmark" is the symbol, "Logomark" is the wordmark (the brandkit's own
+  // naming). The copied color follows the active theme so pasting into a
+  // matching canvas is legible immediately.
+  const copyBrandSvg = async (kind: 'symbol' | 'wordmark') => {
+    const color = document.documentElement.classList.contains('dark') ? 'White' : 'Black';
+    const path =
+      kind === 'symbol'
+        ? `/brandkit/Logo/Brandmark/SVG/Brandmark ${color}.svg`
+        : `/brandkit/Logo/Logomark/SVG/Logomark ${color}.svg`;
+    try {
+      const svg = await (await fetch(path)).text();
+      await navigator.clipboard.writeText(svg);
+      successToast(tHardcodedUi.raw('componentsHomeNavbar.svgCopied'));
+    } catch {
+      errorToast(tHardcodedUi.raw('componentsHomeNavbar.copyFailed'));
+    }
+  };
 
   const compareIcon = (slug: string) => {
     switch (slug) {
@@ -201,149 +191,97 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     };
   }, [isDrawerOpen]);
 
-  // The drawer expands one section at a time, seeded with the one holding the
-  // current page. An accordion is what keeps it from outgrowing a phone screen:
-  // every menu open at once is three groups of up to nine links.
-  useEffect(() => {
-    if (!isDrawerOpen) return;
-    const active = filteredNavLinks.find((item) =>
-      drawerSubLinks(item).some((link) => isNavActive(link.href)),
-    );
-    setOpenDrawerMenu(active ? active.id : null);
-  }, [isDrawerOpen, filteredNavLinks, isNavActive]);
-
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
 
-  const barTopPad = hasScrolled ? BAR_TOP_PAD.compact : BAR_TOP_PAD.rest;
-  const barRowHeight = hasScrolled ? BAR_ROW_HEIGHT.compact : BAR_ROW_HEIGHT.rest;
+  // Anchor links scroll in place on the home page; everything else navigates.
+  // Either way the sheet closes.
+  const handleDrawerNavClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
+    const anchor = href.startsWith('#')
+      ? href.slice(1)
+      : href.startsWith('/#')
+        ? href.slice(2)
+        : null;
+
+    if (!anchor) {
+      setIsDrawerOpen(false);
+      return;
+    }
+    e.preventDefault();
+    if (pathname !== '/') {
+      router.push(`/#${anchor}`);
+      setIsDrawerOpen(false);
+      return;
+    }
+    const element = document.getElementById(anchor);
+    element?.scrollIntoView({ behavior: 'smooth' });
+    window.history.replaceState(null, '', `/#${anchor}`);
+    setIsDrawerOpen(false);
+  };
+
+  // One flat drawer: links that navigate directly, then one labelled group per
+  // menu (Product, Company) — no second level to push into.
+  const directDrawerLinks = filteredNavLinks.filter(
+    (item): item is Extract<NavLink, { href: string }> =>
+      !('menu' in item) && typeof item.href === 'string',
+  );
+  const groupedDrawerLinks = filteredNavLinks.filter((item) => drawerSubLinks(item).length > 0);
 
   return (
     <>
       <header
         className={cn(
-          'relative w-full',
-          'transition-[padding] duration-300 ease-out motion-reduce:transition-none',
-          isAbsolute ? '' : 'sticky top-0 z-50',
-          barTopPad,
-          hasScrolled && 'pb-1.5',
+          'border-border-default bg-background fixed relative inset-x-0 top-0 z-50 flex h-16 w-full flex-col items-center justify-between border-b transition-all duration-300 ease-out motion-reduce:transition-none',
         )}
       >
         <div
-          aria-hidden
-          className={cn(
-            'pointer-events-none absolute inset-x-0 top-0 -bottom-6',
-            'bg-background/55 backdrop-blur-xl',
-            BAR_VEIL_MASK,
-            'transition-opacity duration-500 ease-out motion-reduce:transition-none',
-            hasScrolled ? 'opacity-100' : 'opacity-0',
-          )}
-        />
-        <div
           className={cn(
             CONTENT_MEASURE,
-            'relative flex items-center justify-between',
+            'relative flex h-full w-full items-center justify-between',
             'transition-[height] duration-300 ease-out motion-reduce:transition-none',
-            barRowHeight,
           )}
         >
           <div className="flex flex-1 items-center gap-8">
             <ContextMenu>
-              <ContextMenuTrigger asChild>
+              <ContextMenuTrigger asChild className="group/kortix-logo">
                 <Link
                   href="/"
                   aria-label="Kortix home"
-                  className="hit-area-4 flex shrink-0 items-center"
+                  className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
                 >
-                  <KortixLogo size={18} variant="logomark" />
+                  <KortixLogo size={15} variant="logomark" />
                 </Link>
               </ContextMenuTrigger>
-              <ContextMenuContent className="w-64">
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger className="gap-2 text-sm">
-                    <KortixLogo size={14} variant="symbol" className="text-foreground" />
-                    {tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}
-                  </ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-40">
-                    {[
-                      {
-                        label: 'Black · SVG',
-                        href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg',
-                        file: 'kortix-symbol-black.svg',
-                      },
-                      {
-                        label: 'Black · PNG',
-                        href: '/brandkit/Logo/Brandmark/PNG/Brandmark Black.png',
-                        file: 'kortix-symbol-black.png',
-                      },
-                      {
-                        label: 'White · SVG',
-                        href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg',
-                        file: 'kortix-symbol-white.svg',
-                      },
-                      {
-                        label: 'White · PNG',
-                        href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png',
-                        file: 'kortix-symbol-white.png',
-                      },
-                    ].map((d) => (
-                      <ContextMenuItem
-                        key={d.file}
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = d.href;
-                          a.download = d.file;
-                          a.click();
-                        }}
-                        className="cursor-pointer text-sm"
-                      >
-                        {d.label}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
-                <ContextMenuSub>
-                  <ContextMenuSubTrigger className="gap-2 text-sm">
-                    <Type className="size-3.5 shrink-0" />
-                    {tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}
-                  </ContextMenuSubTrigger>
-                  <ContextMenuSubContent className="w-40">
-                    {[
-                      {
-                        label: 'Black · SVG',
-                        href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
-                        file: 'kortix-logo-black.svg',
-                      },
-                      {
-                        label: 'Black · PNG',
-                        href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
-                        file: 'kortix-logo-black.png',
-                      },
-                      {
-                        label: 'White · SVG',
-                        href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
-                        file: 'kortix-logo-white.svg',
-                      },
-                      {
-                        label: 'White · PNG',
-                        href: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
-                        file: 'kortix-logo-white.png',
-                      },
-                    ].map((d) => (
-                      <ContextMenuItem
-                        key={d.file}
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = d.href;
-                          a.download = d.file;
-                          a.click();
-                        }}
-                        className="cursor-pointer text-sm"
-                      >
-                        {d.label}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuSubContent>
-                </ContextMenuSub>
+              {/* Interfere-style brand menu: three flat actions, no submenus.
+                  Copy puts the theme-matching SVG source on the clipboard;
+                  download hands over the whole brandkit as one zip. */}
+              <ContextMenuContent className="w-56">
+                <ContextMenuItem
+                  onClick={() => copyBrandSvg('symbol')}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <KortixLogo size={14} variant="symbol" className="text-foreground" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.copySymbolSvg')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => copyBrandSvg('wordmark')}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <Type className="size-3.5 shrink-0" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.copyWordmarkSvg')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = '/brandkit/kortix-brand-assets.zip';
+                    a.download = 'kortix-brand-assets.zip';
+                    a.click();
+                  }}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <Download className="size-3.5 shrink-0" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.downloadBrandAssets')}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
                 <ContextMenuItem
                   onClick={() => router.push('/design-system')}
                   className="cursor-pointer gap-2 text-sm"
@@ -354,7 +292,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </ContextMenuContent>
             </ContextMenu>
 
-            <nav className="hidden items-center justify-center gap-2 md:flex">
+            <nav className="hidden items-center justify-center gap-1 md:flex">
               {filteredNavLinks.map((item) => {
                 if ('menu' in item) {
                   return (
@@ -374,10 +312,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     size="sm"
                     asChild
                     className={cn(
-                      'font-medium',
+                      'h-8 px-3 font-medium [&>svg]:hidden',
+                      'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
                       isNavActive(item.href)
-                        ? 'text-foreground'
-                        : 'text-foreground/90 hover:text-foreground',
+                        ? 'bg-secondary text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
                     <Link href={item.href}>{item.name}</Link>
@@ -389,10 +328,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         <NavigationMenuTrigger
                           className={cn(
                             marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-                            'font-medium',
+                            'h-8 px-3 font-medium [&>svg]:hidden',
+                            'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
                             item.href.some((link) => isNavActive(link.href))
-                              ? 'text-foreground'
-                              : 'text-foreground/90 hover:text-foreground data-[state=open]:text-foreground',
+                              ? 'bg-secondary text-foreground'
+                              : 'text-muted-foreground hover:text-foreground',
                           )}
                         >
                           {item.name}
@@ -422,19 +362,19 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </nav>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-2">
             {/* `stars`, not `formattedStars`: the formatter returns an en dash
                 for a missing count, so keying on it printed a GitHub chip
                 reading "–" whenever /api/github-stars failed. No number, no
                 chip. */}
             {stars !== null && !starsLoading && (
-              <Button variant="ghost" asChild className="hidden rounded-md sm:flex">
+              <Button variant="ghost" size="sm" asChild className="hidden sm:flex">
                 <Link
                   href="https://github.com/kortix-ai/suna"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Github className="size-3.5" />
+                  <Github className="size-4" />
                   <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
                     {formattedStars}
                   </span>
@@ -442,13 +382,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </Button>
             )}
 
-            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => openDemo()}>
-              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
-            </Button>
             {user ? (
-              <Button onClick={() => router.push(latestProjectPath(user.id))}>Projects</Button>
+              <Button size="sm" onClick={() => router.push(latestProjectPath(user.id))}>
+                Projects
+              </Button>
             ) : (
               <Button
+                size="sm"
                 onClick={() => {
                   trackCtaSignup();
                   router.push(CTA_LINK);
@@ -461,8 +401,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <Button
               onClick={toggleDrawer}
               variant="ghost"
-              size="icon"
-              className="rounded-full md:hidden"
+              size="icon-sm"
+              className="md:hidden"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
             >
               <Menu className="size-5" />
@@ -470,183 +410,138 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </div>
         </div>
       </header>
-      <AnimatePresence>
-        {isDrawerOpen && isMobile && (
-          <m.div
-            className="bg-background fixed inset-0 z-50 flex flex-col md:hidden"
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            variants={drawerVariants}
+      {/* Static full-screen drawer: appears and disappears in the same frame
+          as the tap — no scrim, no card inset, no motion. */}
+      {isDrawerOpen && isMobile && (
+        <div className="bg-background fixed inset-0 z-50 flex flex-col md:hidden">
+          {/* Header mirrors the bar: logo left, close where the menu button was. */}
+          <div
+            className={cn(CONTENT_MEASURE, 'flex h-16 shrink-0 items-center justify-between pr-4')}
           >
-            {/* The drawer reuses the bar's live measure, padding and row height,
-                so the close button opens exactly on top of the menu button it
-                replaces — whether the bar is at rest or compacted. */}
-            <div
-              className={cn('bg-background flex min-h-dvh flex-1 flex-col px-6 pb-5', barTopPad)}
+            <Link
+              href="/"
+              aria-label="Kortix home"
+              onClick={() => setIsDrawerOpen(false)}
+              className="flex items-center"
             >
-              <div className={cn('flex items-center justify-end', barRowHeight)}>
-                <Button
-                  onClick={toggleDrawer}
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu',
+              <KortixLogo size={15} variant="logomark" />
+            </Link>
+            <Button
+              onClick={toggleDrawer}
+              variant="ghost"
+              size="icon"
+              className="rounded-full"
+              aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
+            >
+              <X className="size-5" />
+            </Button>
+          </div>
+
+          {/* One flat list: direct links first, then a labelled group per menu. */}
+          <nav className="min-h-0 flex-1 overflow-y-auto px-6">
+            <ul className="flex flex-col">
+              <li>
+                <Link
+                  href="/"
+                  onClick={handleDrawerNavClick('/')}
+                  className={cn(
+                    DRAWER_ROW,
+                    isNavActive('/')
+                      ? 'text-foreground'
+                      : 'text-muted-foreground active:text-foreground',
                   )}
                 >
-                  <X className="size-5" />
-                </Button>
-              </div>
-
-              {/* A scroll region, not a growing column: with three menus open-
-                  able the link list can exceed a phone screen, and the CTA below
-                  must stay reachable. */}
-              <m.nav
-                className="min-h-0 flex-1 space-y-6 overflow-y-auto p-2"
-                variants={drawerMenuContainerVariants}
-              >
-                <ul className="flex flex-col gap-6">
-                  {filteredNavLinks.map((item) => {
-                    const handleDrawerNavClick =
-                      (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
-                        const anchor = href.startsWith('#')
-                          ? href.slice(1)
-                          : href.startsWith('/#')
-                            ? href.slice(2)
-                            : null;
-
-                        if (!anchor) {
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        e.preventDefault();
-                        if (pathname !== '/') {
-                          router.push(`/#${anchor}`);
-                          setIsDrawerOpen(false);
-                          return;
-                        }
-                        const element = document.getElementById(anchor);
-                        element?.scrollIntoView({ behavior: 'smooth' });
-                        window.history.replaceState(null, '', `/#${anchor}`);
-                        setIsDrawerOpen(false);
-                      };
-
-                    const staticHref =
-                      'menu' in item ? null : typeof item.href === 'string' ? item.href : null;
-
-                    if (staticHref) {
-                      return (
-                        <m.li key={item.id} variants={drawerMenuVariants}>
-                          {/* A row that navigates carries no glyph. Only the
-                              rows that expand get an affordance, so the caret
-                              always means "opens here". */}
-                          <Link
-                            href={staticHref}
-                            onClick={handleDrawerNavClick(staticHref)}
-                            className={cn(
-                              'flex items-center text-2xl',
-                              isNavActive(staticHref)
-                                ? 'text-foreground'
-                                : 'text-muted-foreground hover:text-foreground',
-                            )}
-                          >
-                            {item.name}
-                          </Link>
-                        </m.li>
-                      );
-                    }
-
-                    const subLinks: NavSubLink[] = drawerSubLinks(item);
-
-                    return (
-                      <m.li key={item.id} variants={drawerMenuVariants}>
-                        <Disclosure
-                          className="group w-full"
-                          open={openDrawerMenu === item.id}
-                          onOpenChange={(next) => setOpenDrawerMenu(next ? item.id : null)}
-                        >
-                          <DisclosureTrigger>
-                            <button
-                              type="button"
-                              className={cn(
-                                'group/trigger flex w-full items-center justify-between text-2xl',
-                                subLinks.some((link) => isNavActive(link.href))
-                                  ? 'text-foreground'
-                                  : 'text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              {item.name}
-                              {/* One caret, and it points down: this row opens
-                                  in place, it does not go anywhere. */}
-                              <CaretDownIcon className="text-muted-foreground size-5 shrink-0 transition-transform duration-200 group-aria-expanded/trigger:rotate-180 motion-reduce:transition-none" />
-                            </button>
-                          </DisclosureTrigger>
-                          <DisclosureContent>
-                            <DisclosureBody className="p-0 pt-4">
-                              <ul className="flex flex-col gap-4">
-                                {subLinks.map((link) => (
-                                  <li key={link.href}>
-                                    <Link
-                                      href={link.href}
-                                      onClick={handleDrawerNavClick(link.href)}
-                                      className={cn(
-                                        'flex items-center text-xl',
-                                        isNavActive(link.href)
-                                          ? 'text-foreground'
-                                          : 'text-muted-foreground hover:text-foreground',
-                                      )}
-                                    >
-                                      {link.name}
-                                    </Link>
-                                  </li>
-                                ))}
-                              </ul>
-                            </DisclosureBody>
-                          </DisclosureContent>
-                        </Disclosure>
-                      </m.li>
-                    );
-                  })}
-                </ul>
-              </m.nav>
-
-              <m.div
-                className="mt-auto flex flex-col gap-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3, duration: 0.3 }}
-              >
-                {user ? (
-                  <Button
-                    size="xl"
-                    className="w-full text-lg"
-                    onClick={() => {
-                      setIsDrawerOpen(false);
-                      router.push(latestProjectPath(user.id));
-                    }}
+                  {tHardcodedUi.raw('componentsHomeNavbar.home')}
+                </Link>
+              </li>
+              {directDrawerLinks.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    href={item.href}
+                    onClick={handleDrawerNavClick(item.href)}
+                    className={cn(
+                      DRAWER_ROW,
+                      isNavActive(item.href)
+                        ? 'text-foreground'
+                        : 'text-muted-foreground active:text-foreground',
+                    )}
                   >
-                    Projects
-                  </Button>
-                ) : (
-                  <Button asChild size="xl" className="w-full text-lg">
-                    <Link
-                      href={CTA_LINK}
-                      onClick={() => {
-                        trackCtaSignup();
-                        setIsDrawerOpen(false);
-                      }}
-                      suppressHydrationWarning
-                    >
-                      {tI18nHardcoded.raw('autoComponentsHomeNavbarJsxTextLaunchKortix5c2db556')}
-                    </Link>
-                  </Button>
-                )}
-              </m.div>
-            </div>
-          </m.div>
-        )}
-      </AnimatePresence>
+                    {item.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {groupedDrawerLinks.map((item) => (
+              <div key={item.id} className="mt-6">
+                <p className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
+                  {item.name}
+                </p>
+                <ul className="mt-1 flex flex-col">
+                  {drawerSubLinks(item).map((link) => (
+                    <li key={link.href}>
+                      <Link
+                        href={link.href}
+                        onClick={handleDrawerNavClick(link.href)}
+                        {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                        className={cn(
+                          DRAWER_ROW,
+                          isNavActive(link.href)
+                            ? 'text-foreground'
+                            : 'text-muted-foreground active:text-foreground',
+                        )}
+                      >
+                        {link.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
+
+          {/* Footer: demo pill, hairline, socials, login. */}
+          <div className="shrink-0 space-y-3 px-6 pb-6">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                setIsDrawerOpen(false);
+                openDemo();
+              }}
+            >
+              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
+            </Button>
+
+            {user ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  router.push(latestProjectPath(user.id));
+                }}
+                className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
+              >
+                Projects
+                <ArrowRightIcon className="size-4" />
+              </button>
+            ) : (
+              <Button size="lg" className="w-full" asChild>
+                <Link
+                  href={CTA_LINK}
+                  onClick={() => {
+                    trackCtaSignup();
+                    setIsDrawerOpen(false);
+                  }}
+                  className="w-full"
+                >
+                  {tHardcodedUi.raw('componentsHomeNavbar.logIn')}
+                </Link>
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

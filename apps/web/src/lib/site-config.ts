@@ -4,6 +4,12 @@ export type NavSubLink = {
   description?: string;
   /** Absolute destination off kortix.com — opens in a new tab. */
   external?: boolean;
+  /**
+   * Icon slug rendered as a leading tile in the desktop dropdown. A string, not
+   * a component: this module is imported by server code and the icon components
+   * are client-only, so the slug→icon map lives in `product-menu.tsx`.
+   */
+  icon?: string;
 };
 
 export type NavMenuColumn = {
@@ -36,11 +42,13 @@ export const productMenu: NavMenu = {
           name: 'Agent Computer',
           href: '/agent-computer',
           description: 'An isolated cloud computer for every session',
+          icon: 'desktop',
         },
         {
           name: 'Company as Code',
           href: '/company-as-code',
           description: 'Agents, skills and memory as git files you own',
+          icon: 'git-branch',
         },
         {
           name: 'Self-hosted',
@@ -48,16 +56,19 @@ export const productMenu: NavMenu = {
           // ACCURACY: never "air-gapped" — `self-host start` pulls images from
           // docker.io, so a fully disconnected install is not shipped.
           description: 'Your own VPC or your own on-prem network',
+          icon: 'hard-drives',
         },
         {
           name: 'Security',
           href: '/security',
           description: 'Isolation, credentials, permissions and audit',
+          icon: 'shield',
         },
         {
           name: 'Enterprise',
           href: '/enterprise',
           description: 'SSO, RBAC, audit trails and approval gates',
+          icon: 'buildings',
         },
       ],
     },
@@ -68,21 +79,25 @@ export const productMenu: NavMenu = {
           name: 'Connectors',
           href: '/connectors',
           description: '3,000+ apps through one scoped token',
+          icon: 'plugs',
         },
         {
           name: 'Automations',
           href: '/automations',
           description: 'Cron schedules and signed webhooks',
+          icon: 'clock',
         },
         {
           name: 'Channels',
           href: '/channels',
           description: 'Slack threads that start real sessions',
+          icon: 'chats',
         },
         {
           name: 'Agents & Skills',
           href: '/agents-and-skills',
           description: 'A workforce that compounds what it learns',
+          icon: 'users',
         },
       ],
     },

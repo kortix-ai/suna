@@ -11,9 +11,38 @@ import {
 } from '@/components/ui/navigation-menu';
 import type { NavMenu } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
+import type { Icon } from '@phosphor-icons/react';
+import {
+  ArrowUpRightIcon,
+  BuildingsIcon,
+  ChatsCircleIcon,
+  ClockClockwiseIcon,
+  DesktopIcon,
+  GitBranchIcon,
+  HardDrivesIcon,
+  PlugsConnectedIcon,
+  ShieldCheckIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+
+/**
+ * Resolves the `icon` slugs carried by nav links in `site-config.ts`. The
+ * config stays a plain data module (it is imported by server code), so the
+ * client-only icon components are looked up here instead of stored there.
+ */
+const LINK_ICONS: Record<string, Icon> = {
+  desktop: DesktopIcon,
+  'git-branch': GitBranchIcon,
+  'hard-drives': HardDrivesIcon,
+  shield: ShieldCheckIcon,
+  buildings: BuildingsIcon,
+  plugs: PlugsConnectedIcon,
+  clock: ClockClockwiseIcon,
+  chats: ChatsCircleIcon,
+  users: UsersThreeIcon,
+};
 
 /**
  * Radix keys its menu state and generated ids off this value. Both the Product
@@ -87,10 +116,11 @@ export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
             onFocus={handleTriggerFocus}
             className={cn(
               marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-              'font-medium',
+              'h-8 px-3 font-medium [&>svg]:hidden',
+              'data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:hover:bg-secondary text-md',
               hasActiveLink
-                ? 'text-foreground'
-                : 'text-foreground/90 hover:text-foreground data-[state=open]:text-foreground',
+                ? 'bg-secondary text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {name}
@@ -98,44 +128,48 @@ export function ProductMenu({ name, menu, isNavActive }: ProductMenuProps) {
           <NavigationMenuContent className="[&>div]:bg-transparent [&>div]:p-0">
             {/* A single-column menu is a short list, so it gets a narrow panel;
                 only the two-column product menu earns the full width. */}
-            <div className={cn('max-w-[calc(100vw-2.5rem)]', isWide ? 'w-[38rem]' : 'w-[15rem]')}>
-              <div className={cn('grid gap-x-4 p-2', isWide && 'grid-cols-2')}>
+            <div className={cn('max-w-[calc(100vw-2.5rem)] rounded-xl', isWide ? 'w-2xl' : 'w-60')}>
+              <div className={cn('grid gap-x-3 p-1', isWide && 'grid-cols-2')}>
                 {menu.columns.map((column) => (
-                  <div key={column.title} className="flex flex-col">
-                    {/* A lone column repeats the trigger's own label, so it is
-                        only worth a heading when there is a second column to
-                        tell it apart from. */}
-                    {isWide && (
-                      <p className="text-muted-foreground px-2 pt-1.5 pb-2 text-[11px] font-medium tracking-wider uppercase">
-                        {column.title}
-                      </p>
-                    )}
-                    {column.links.map((link) => (
-                      <NavigationMenuLink key={link.href} asChild active={isNavActive(link.href)}>
-                        <Link
-                          href={link.href}
-                          {...(link.external
-                            ? { target: '_blank', rel: 'noreferrer noopener' }
-                            : {})}
-                          className="gap-0.5 rounded-sm px-2 py-1.5"
-                        >
-                          <span className="text-foreground flex items-center gap-1.5 text-sm leading-tight font-medium">
-                            {link.name}
-                            {link.external && (
-                              <ArrowUpRightIcon
-                                className="text-muted-foreground size-3"
-                                aria-hidden
-                              />
+                  <div key={column.title} className="flex flex-col gap-0.5">
+                    {column.links.map((link) => {
+                      const LinkIcon = link.icon ? LINK_ICONS[link.icon] : undefined;
+                      return (
+                        <NavigationMenuLink key={link.href} asChild active={isNavActive(link.href)}>
+                          <Link
+                            href={link.href}
+                            {...(link.external
+                              ? { target: '_blank', rel: 'noreferrer noopener' }
+                              : {})}
+                            className="flex-row items-center gap-3 rounded-sm p-2"
+                          >
+                            {/* Leading tile only when the link declares an
+                                icon; the plain Company list stays a text list. */}
+                            {LinkIcon && (
+                              <span className="bg-foreground/5 text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm">
+                                <LinkIcon className="size-4" aria-hidden weight="fill" />
+                              </span>
                             )}
-                          </span>
-                          {link.description && (
-                            <span className="text-muted-foreground text-xs leading-snug">
-                              {link.description}
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span className="text-foreground flex items-center gap-1.5 text-sm leading-tight font-medium">
+                                {link.name}
+                                {link.external && (
+                                  <ArrowUpRightIcon
+                                    className="text-muted-foreground size-3"
+                                    aria-hidden
+                                  />
+                                )}
+                              </span>
+                              {link.description && (
+                                <span className="text-muted-foreground truncate text-xs leading-snug">
+                                  {link.description}
+                                </span>
+                              )}
                             </span>
-                          )}
-                        </Link>
-                      </NavigationMenuLink>
-                    ))}
+                          </Link>
+                        </NavigationMenuLink>
+                      );
+                    })}
                   </div>
                 ))}
               </div>

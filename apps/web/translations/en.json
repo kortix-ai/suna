@@ -4291,7 +4291,15 @@
       "line301JsxTextRequestDemo": "Request demo",
       "line312JsxTextGetStarted": "Get started",
       "line322JsxAttrAriaLabelOpenMenu": "Open menu",
-      "line348JsxAttrAriaLabelCloseMenu": "Close menu"
+      "line348JsxAttrAriaLabelCloseMenu": "Close menu",
+      "copySymbolSvg": "Copy symbol as SVG",
+      "copyWordmarkSvg": "Copy wordmark as SVG",
+      "downloadBrandAssets": "Download brand assets",
+      "svgCopied": "SVG copied to clipboard",
+      "copyFailed": "Copy failed",
+      "home": "Home",
+      "logIn": "Log in",
+      "back": "Back"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "Toggle theme"

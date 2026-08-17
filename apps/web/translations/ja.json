@@ -4227,7 +4227,15 @@
       "line301JsxTextRequestDemo": "デモをリクエスト",
       "line312JsxTextGetStarted": "始める",
       "line322JsxAttrAriaLabelOpenMenu": "メニューを開く",
-      "line348JsxAttrAriaLabelCloseMenu": "メニューを閉じる"
+      "line348JsxAttrAriaLabelCloseMenu": "メニューを閉じる",
+      "copySymbolSvg": "シンボルをSVGでコピー",
+      "copyWordmarkSvg": "ワードマークをSVGでコピー",
+      "downloadBrandAssets": "ブランドアセットをダウンロード",
+      "svgCopied": "SVGをクリップボードにコピーしました",
+      "copyFailed": "コピーに失敗しました",
+      "home": "ホーム",
+      "logIn": "ログイン",
+      "back": "戻る"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "テーマを切り替え"
