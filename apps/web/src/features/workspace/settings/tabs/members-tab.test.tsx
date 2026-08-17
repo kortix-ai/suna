@@ -409,41 +409,31 @@ describe('MembersTabView', () => {
     expect(out).toContain('invite-dialog-marker');
   });
 
-  test('the Access tab holds the three rehomed slots, in that order', () => {
+  test('the Access tab holds the resource-access slot', () => {
+    // Only one slot now — group role assignment and custom-role binding were
+    // removed outright (not rehomed, not hidden): both duplicated a proper
+    // account-level home that already existed (a group's own "Projects" tab,
+    // the account Roles page's PolicyAssignments). See members-tab.tsx's
+    // header comment.
     const out = renderToStaticMarkup(
       <MembersTabView
         section="access"
         members={[member({})]}
-        groupGrantsSlot={<div>group-grants-marker</div>}
         resourceAccessSlot={<div>resource-access-marker</div>}
-        roleAssignmentsSlot={<div>role-assignments-marker</div>}
       />,
     );
-    expect(out).toContain('group-grants-marker');
     expect(out).toContain('resource-access-marker');
-    expect(out).toContain('role-assignments-marker');
-    // Rehomed in their existing order (members-view.tsx's own composition
-    // order: ProjectGroupGrantsCard, ResourceAccessCard,
-    // ProjectRoleAssignmentsCard) — see members-tab.tsx's header comment.
-    expect(out.indexOf('group-grants-marker')).toBeLessThan(out.indexOf('resource-access-marker'));
-    expect(out.indexOf('resource-access-marker')).toBeLessThan(
-      out.indexOf('role-assignments-marker'),
-    );
   });
 
-  test('the access slots are NOT on the People tab — the table stands alone there', () => {
+  test('the access slot is NOT on the People tab — the table stands alone there', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
         members={[member({})]}
-        groupGrantsSlot={<div>group-grants-marker</div>}
         resourceAccessSlot={<div>resource-access-marker</div>}
-        roleAssignmentsSlot={<div>role-assignments-marker</div>}
       />,
     );
     expect(out).toContain('<table');
-    expect(out).not.toContain('group-grants-marker');
     expect(out).not.toContain('resource-access-marker');
-    expect(out).not.toContain('role-assignments-marker');
   });
 
   test('an Access tab with no slots shows an empty state, not a blank panel', () => {

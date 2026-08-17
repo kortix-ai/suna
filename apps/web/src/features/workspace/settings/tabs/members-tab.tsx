@@ -63,7 +63,11 @@
  * dropped — `ProjectGroupGrantsCard` (bulk group-access grants),
  * `ResourceAccessCard` (per-agent/skill scoping) and
  * `ProjectRoleAssignmentsCard` (custom-role bindings) were moved into this
- * file (cut, not copied — see their slots below), and
+ * file (cut, not copied — see their slots below). Of those three,
+ * `ProjectGroupGrantsCard` and `ProjectRoleAssignmentsCard` were later
+ * removed outright (not just this move) — see the header comment further
+ * down, right above where they used to live, for why; `ResourceAccessCard`
+ * is the only one left. And
  * `consumeMembersTabIntent` moved to `members-tab-intent.ts` beside its only
  * caller. `PermissionsHelpPopover` keeps a live mount here as this tab's own
  * header action, independent of `accounts/[id]/page.tsx`'s.
@@ -356,9 +360,20 @@
  * - **Invites** — everyone waiting to get in: the project invites, the account
  *   invites, and the access requests, each retitled to say who is waiting and
  *   for what. See "Plain titles" below.
- * - **Access** — `groupGrantsSlot` / `resourceAccessSlot` /
- *   `roleAssignmentsSlot`, in the same order, behind the same gates the
- *   container already passed them under. Out of the way until wanted.
+ * - **Access** — `resourceAccessSlot` only: which members/groups can USE
+ *   which agent, the one project-scoped concern this page owns. Assigning a
+ *   project ROLE to a whole group at once, and binding a custom role, both
+ *   moved out — they were never a resource concern (Groups attached a plain
+ *   ProjectRole, the same op the People tab does per-member; Custom roles
+ *   bound an account-defined role) and both already have a proper home:
+ *   a group's own detail page's "Projects" tab
+ *   (`accounts/[id]/groups/[groupId]`'s `GroupProjectGrantsCard`) and the
+ *   account Roles page's `PolicyAssignments`, which can target ANY project,
+ *   not just the one you happen to be viewing. Keeping a second, narrower
+ *   copy of each on every individual project's Access tab was pure
+ *   duplication — and, for the vast majority of accounts with zero groups
+ *   and zero custom roles, a permanently-empty "go create one elsewhere"
+ *   card that only added noise.
  *
  * **Plain titles.** The three waiting lists were renamed for a non-technical
  * reader; each is a display string with no other consumer (verified with
@@ -455,28 +470,15 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import {
-  createPolicy,
-  deletePolicy,
-  listAgentIdentities,
-  listGroups,
-  listPolicies,
-  listRoles,
-  type AccountGroup,
-  type IamPolicy,
-  type PrincipalType,
-} from '@/lib/iam-client';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { usePermission } from '@/lib/use-permission';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   approveProjectAccessRequest,
-  attachGroupToProject,
   cancelAccountInvite,
   createProjectResourceGrant,
   deleteProjectResourceGrant,
-  detachGroupFromProject,
   getAccount,
   getProject,
   inviteAccountMember,
@@ -487,7 +489,6 @@ import {
   listPendingProjectInvites,
   listProjectAccess,
   listProjectAccessRequests,
-  listProjectGroupGrants,
   listProjectResourceGrants,
   rejectProjectAccessRequest,
   removeAccountMember,
@@ -497,20 +498,17 @@ import {
   revokeProjectAccess,
   updateAccountMemberRole,
   updateProjectAccess,
-  updateProjectGroupGrant,
   type AccountInvitation,
   type AccountRole,
   type PendingProjectInvite,
   type ProjectAccessMember,
   type ProjectAccessRequest,
-  type ProjectGroupGrant,
   type ProjectResourceGrant,
   type ProjectRole,
   type ResourceGrantType,
 } from '@kortix/sdk';
 import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import {
-  RobotIcon as Bot,
   CheckIcon as Check,
   ClockIcon as Clock,
   ArrowElbowDownRightIcon as CornerDownRight,
@@ -520,7 +518,6 @@ import {
   PlugIcon as Plug,
   PlusIcon as Plus,
   ArrowClockwiseIcon as RefreshCw,
-  UserIcon as User,
   UsersIcon as Users,
   XIcon as X,
 } from '@phosphor-icons/react';
@@ -600,21 +597,13 @@ export interface MembersTabViewProps {
   /** `InviteMemberDialog` — see this file's header comment for why it's a
    *  slot. */
   inviteDialogSlot?: ReactNode;
-  /** `ProjectGroupGrantsCard`, moved (cut, not copied) from
-   *  `members-view.tsx` — see this file's header comment, "Rehomed from
-   *  MembersView". Owns its own `useQuery`/`useMutation` (and
-   *  `useTranslations`), so it's a slot. The container renders it only when
-   *  `project?.account_id` is known — same gate `members-view.tsx` used at
-   *  its own mount site, preserved exactly, not re-derived. */
-  groupGrantsSlot?: ReactNode;
   /** `ResourceAccessCard`, moved from `members-view.tsx`. The container
    *  renders it only when `project?.account_id && canManage` — same gate
    *  `members-view.tsx` used, preserved exactly (manager-only DATA: the
-   *  grants list route denies non-managers). */
+   *  grants list route denies non-managers). The only slot the Access tab
+   *  renders now — group-role and custom-role assignment moved out to their
+   *  proper account-level homes, see this file's header comment. */
   resourceAccessSlot?: ReactNode;
-  /** `ProjectRoleAssignmentsCard`, moved from `members-view.tsx`. Same gate
-   *  as `resourceAccessSlot` (manager-only DATA). */
-  roleAssignmentsSlot?: ReactNode;
   /** `<PermissionsHelpPopover />` — see this file's header comment for why
    *  it's a slot (it calls `useTranslations`, which throws with no
    *  `NextIntlClientProvider`). Carries `ACCOUNT_ROLE_DESCRIPTORS`'
@@ -761,9 +750,7 @@ export function MembersTabView({
   onOpenInvite = () => {},
   inviteDialogSlot,
   permissionsHelpSlot,
-  groupGrantsSlot,
   resourceAccessSlot,
-  roleAssignmentsSlot,
   pendingInvites = [],
   isPendingInvitesLoading = false,
   pendingInviteBusyIds = new Set(),
@@ -838,7 +825,7 @@ export function MembersTabView({
   // The Access tab is exactly the three rehomed slots. The container decides
   // whether each one exists at all (its gate, unchanged); this only decides
   // whether the tab shows them or one muted row instead of a blank panel.
-  const showAccessCards = !!(groupGrantsSlot || resourceAccessSlot || roleAssignmentsSlot);
+  const showAccessCards = !!resourceAccessSlot;
   // Everyone waiting to get in, counted once for the Invites tab's own count.
   const waitingCount =
     pendingInvites.length + accessRequests.length + (accountId ? accountInvites.length : 0);
@@ -1431,26 +1418,24 @@ export function MembersTabView({
         </TabsContent>
 
         {/* ── Access ────────────────────────────────────────────────────── */}
-        {/* The three rehomed cards, in their existing order and behind the
-            gates the container already passed them under — see this file's
-            header comment, "Rehomed from MembersView". Nothing is re-derived
-            here; this tab only decides where they sit. */}
+        {/* Who can USE which agent — the one project-scoped resource concern
+            this tab owns. Nothing is re-derived here; this tab only decides
+            where the card sits, behind the same gate the container already
+            passed it under. See this file's header comment for why group
+            role assignment and custom-role binding live on their account-
+            level pages instead of a second copy here. */}
         <TabsContent value="access" className="space-y-8">
           {showAccessCards ? (
-            <>
-              {groupGrantsSlot}
-              {resourceAccessSlot}
-              {roleAssignmentsSlot}
-            </>
+            resourceAccessSlot
           ) : (
-            /* The same muted row the three cards use when their own list is
-               empty — not a second, illustrated way of saying "nothing here".
-               A viewer who can see no access card at all reads one row, in the
+            /* The same muted row the card uses when its own list is empty —
+               not a second, illustrated way of saying "nothing here". A
+               viewer who can see no access card at all reads one row, in the
                same bordered group, at the same height. */
             <SettingsRowGroup>
               <SettingsEmptyRow
                 label="No extra access rules"
-                description="Group access, agent assignments, and custom roles for this workspace appear here."
+                description="Agent assignments for this workspace appear here."
               />
             </SettingsRowGroup>
           )}
@@ -2051,32 +2036,14 @@ function MembersTabInner({
           onInvited={invalidateAccess}
         />
       }
-      // Rehomed from `members-view.tsx` — gates preserved EXACTLY as that
-      // file passed them at its own mount site (see this file's header
-      // comment). `ProjectGroupGrantsCard` gates on `project?.account_id`
-      // alone; the other two additionally require `canManage`.
-      groupGrantsSlot={
-        project?.account_id ? (
-          <ProjectGroupGrantsCard
-            projectId={projectId}
-            accountId={project.account_id}
-            canManage={!!canManage}
-          />
-        ) : undefined
-      }
+      // Gate preserved EXACTLY as `members-view.tsx` passed it at its own
+      // mount site (see this file's header comment): manager-only DATA, the
+      // grants list route denies non-managers. Group-role assignment and
+      // custom-role binding used to render here too — removed, not hidden;
+      // see this file's header comment for where they live now.
       resourceAccessSlot={
         project?.account_id && canManage ? (
           <ResourceAccessCard projectId={projectId} canManage={!!canManage} />
-        ) : undefined
-      }
-      roleAssignmentsSlot={
-        project?.account_id && canManage ? (
-          <ProjectRoleAssignmentsCard
-            projectId={projectId}
-            accountId={project.account_id}
-            canManage={!!canManage}
-            members={accessQuery.data?.members ?? []}
-          />
         ) : undefined
       }
       accountId={accountId}
@@ -2417,26 +2384,24 @@ function InviteToAccountDialog({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Rehomed from `members-view.tsx` (moved, not copied — a copy leaves two
-// implementations to drift). `ProjectGroupGrantsCard`, `FilterChips`,
-// `ScopeLine`, `BlastRadiusPreview`, `ResourceAccessCard`, and
-// `ProjectRoleAssignmentsCard` are UNMODIFIED below apart from using this
-// file's own `MEMBER_ROW`/`formatDate`/`userLabel` (byte-identical
-// definitions already declared above) instead of re-declaring them. Each
-// card is mounted as a slot from `MembersTabInner` with its gate preserved
-// EXACTLY as `members-view.tsx` passed it at its own mount site — see
-// `MembersTabViewProps.groupGrantsSlot`/`resourceAccessSlot`/
-// `roleAssignmentsSlot`'s doc comments and `MembersTabInner`'s own comment
-// next to `canManage`.
-//
-// Their PRESENTATION is now the panel's own: each card is a
-// `SettingsSubsectionHeader` over one `SettingsRowGroup`, one `SettingsRow`
-// per item. Before this pass the three of them had three different bespoke
-// list shapes and — with the tab's own fallback — four different ways to say
-// "there is nothing here" (an illustrated `EmptyState` with a `Users` icon,
-// two bare `<p>`s, and a second illustrated `EmptyState`), while
-// `SettingsRowGroup` appeared in this file zero times. Behaviour, gates,
-// queries and mutations are untouched; only the markup around them changed.
+// Originally rehomed from `members-view.tsx` (moved, not copied) as three
+// cards: `ProjectGroupGrantsCard`, `ResourceAccessCard`, and
+// `ProjectRoleAssignmentsCard`. The group and custom-role cards are gone —
+// removed, not hidden — once it became clear they were never a resource
+// concern (Groups attached a plain ProjectRole, the exact op the People tab
+// already does per-member; Custom roles bound an account-defined role) and
+// both duplicated a proper account-level home that already existed: a
+// group's own detail page's "Projects" tab
+// (`accounts/[id]/groups/[groupId]`'s `GroupProjectGrantsCard`) and the
+// account Roles page's `PolicyAssignments`, which can target ANY project,
+// not just the one you happen to be on. `FilterChips`, `ScopeLine`,
+// `BlastRadiusPreview`, and `ResourceAccessCard` below are what's left —
+// mounted as a slot from `MembersTabInner` with its gate preserved EXACTLY
+// as `members-view.tsx` passed it at its own mount site, using this file's
+// own `MEMBER_ROW`/`formatDate`/`userLabel` (byte-identical definitions
+// already declared above) instead of re-declaring them. Its PRESENTATION is
+// the panel's own: a `SettingsSubsectionHeader` over one `SettingsRowGroup`,
+// one `SettingsRow` per item.
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
@@ -2498,368 +2463,6 @@ function SettingsEmptyRow({ label, description }: { label: string; description?:
       label={<span className="text-muted-foreground font-normal">{label}</span>}
       description={description}
     />
-  );
-}
-
-function ProjectGroupGrantsCard({
-  projectId,
-  accountId,
-  canManage,
-}: {
-  projectId: string;
-  accountId: string;
-  canManage: boolean;
-}) {
-  // Switches the panel's tab rather than navigating away — Groups is a tab
-  // in this same panel now, not a separate account page.
-  const { navigate } = useSettingsNav();
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const queryClient = useQueryClient();
-  const grantsKey = qk.project.groupGrants(projectId);
-
-  const grantsQuery = useQuery({
-    queryKey: grantsKey,
-    queryFn: () => listProjectGroupGrants(projectId),
-    ...contract('inventory'),
-  });
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId),
-    enabled: canManage,
-    staleTime: 60_000,
-  });
-  // Custom-role policies bound to a GROUP on this project. A group that has BOTH
-  // a built-in grant (this list) AND a custom-role policy hits the union trap:
-  // allow-only/highest-wins means the built-in role WINS and silently overrides
-  // the custom role's restrictions. We flag those rows so it isn't a silent gotcha.
-  // qk.project.policies — the IAM role-policy family, NOT
-  // qk.project.executorPolicies (the unrelated sandbox tool-rule family
-  // PoliciesPanel reads). Both used to share the literal ['project-policies',
-  // id] pre-migration, which meant whichever fetch resolved last clobbered
-  // the other's cache entry with an incompatible shape.
-  const policiesQuery = useQuery({
-    queryKey: qk.project.policies(projectId),
-    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
-    enabled: canManage,
-    ...contract('config'),
-  });
-  const groupsWithCustomRole = useMemo(() => {
-    const ids = new Set<string>();
-    for (const p of toArray(policiesQuery.data)) {
-      if (p.principal_type === 'group' && p.scope_type === 'project' && p.scope_id === projectId) {
-        ids.add(p.principal_id);
-      }
-    }
-    return ids;
-  }, [policiesQuery.data, projectId]);
-
-  const grants = useMemo(() => {
-    const raw = toArray(grantsQuery.data?.grants);
-    return [...raw].sort((a, b) => {
-      const t = a.created_at.localeCompare(b.created_at);
-      return t !== 0 ? t : a.group_id.localeCompare(b.group_id);
-    });
-  }, [grantsQuery.data]);
-  const groups: AccountGroup[] = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
-  const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
-  const available = useMemo(
-    () => groups.filter((g) => !attachedIds.has(g.group_id)),
-    [groups, attachedIds],
-  );
-
-  const [pickerGroupId, setPickerGroupId] = useState<string>('');
-  const [pickerRole, setPickerRole] = useState<ProjectRole>('member');
-  const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(() => new Set());
-  const markPending = (id: string) => setPendingGroupIds((prev) => new Set(prev).add(id));
-  const clearPending = (id: string) =>
-    setPendingGroupIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  const [detachTarget, setDetachTarget] = useState<ProjectGroupGrant | null>(null);
-
-  function invalidate() {
-    queryClient.invalidateQueries({ queryKey: grantsKey });
-    queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
-    queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
-  }
-
-  const attachMutation = useMutation({
-    mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
-    onMutate: () => {
-      markPending(pickerGroupId);
-      return { groupId: pickerGroupId };
-    },
-    onSettled: (_data, _error, _vars, ctx) => clearPending(ctx!.groupId),
-    onSuccess: () => {
-      successToast('Group attached');
-      setPickerGroupId('');
-      setPickerRole('editor');
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to attach group'),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: (input: { groupId: string; role: ProjectRole }) =>
-      updateProjectGroupGrant(projectId, input.groupId, input.role),
-    onMutate: (input) => markPending(input.groupId),
-    onSettled: (_data, _error, input) => clearPending(input.groupId),
-    onSuccess: () => {
-      successToast('Role updated');
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
-  });
-
-  const detachMutation = useMutation({
-    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
-    onMutate: (groupId) => markPending(groupId),
-    onSettled: (_data, _error, groupId) => clearPending(groupId),
-    onSuccess: () => {
-      successToast('Group detached');
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to detach group'),
-  });
-
-  // Progressive disclosure: this card is a role-assignment shortcut for a
-  // GROUP (the same operation the People tab does per-member — see
-  // attachMutation's `role: ProjectRole` above), not a resource concern. For
-  // the overwhelming majority of accounts that have never created a group,
-  // it is a permanently-empty "go create one elsewhere" teaching card that
-  // only adds noise to a page about THIS project's access. Hide it entirely
-  // once loaded with nothing to show; a project with an existing grant (even
-  // an orphaned one, pointing at a since-deleted group) keeps the card, since
-  // that grant still needs to be manageable/removable.
-  const groupsLoaded = !grantsQuery.isLoading && !groupsQuery.isLoading;
-  if (groupsLoaded && groups.length === 0 && grants.length === 0) return null;
-
-  return (
-    <>
-      <section className="space-y-3">
-        {/* Was "Group access" / "Attach an account group to this project…"
-            routed through auto-generated i18n keys. Plain words, written
-            here: nobody thinks of it as "attaching" anything. */}
-        <SettingsSubsectionHeader
-          title={
-            <>
-              Groups
-              {grants.length > 0 ? (
-                <span className="text-muted-foreground ml-1.5 font-normal tabular-nums">
-                  {grants.length}
-                </span>
-              ) : null}
-            </>
-          }
-          description="Give a whole group access here at once. Everyone in the group gets the role you pick."
-          action={
-            canManage && available.length > 0 ? (
-              <form
-                className="flex shrink-0 items-center gap-1.5"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!pickerGroupId || attachMutation.isPending) return;
-                  attachMutation.mutate();
-                }}
-              >
-                <Select
-                  value={pickerGroupId}
-                  onValueChange={setPickerGroupId}
-                  disabled={attachMutation.isPending}
-                >
-                  <SelectTrigger className="h-8 w-44 text-xs">
-                    <SelectValue
-                      placeholder={tHardcodedUi.raw(
-                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrPlaceholderPickf0432525',
-                      )}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {available.map((g) => (
-                      <SelectItem key={g.group_id} value={g.group_id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={pickerRole}
-                  onValueChange={(v) => setPickerRole(v as ProjectRole)}
-                  disabled={attachMutation.isPending}
-                >
-                  <SelectTrigger className="h-8 w-28 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <ProjectRoleSelectItem role="member" />
-                    <ProjectRoleSelectItem role="editor" />
-                    <ProjectRoleSelectItem role="manager" />
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="outline"
-                  disabled={!pickerGroupId || attachMutation.isPending}
-                >
-                  Attach
-                </Button>
-              </form>
-            ) : null
-          }
-        />
-
-        <SettingsRowGroup>
-          {grantsQuery.isLoading ? (
-            <>
-              <SettingsRowSkeleton />
-              <SettingsRowSkeleton />
-            </>
-          ) : grants.length === 0 ? (
-            <SettingsEmptyRow
-              label="No groups yet"
-              description={
-                canManage && groups.length === 0 ? (
-                  <>
-                    {/* Was an <a> to `/accounts/{id}` — the page the settings
-                        panel replaced. Groups now live in this same panel, so
-                        this switches tabs instead of navigating away: no
-                        reload, and the panel stays open where the user already
-                        is. `/settings/groups` remains a real URL for anyone
-                        linking in from outside. */}
-                    Create one in{' '}
-                    <button
-                      type="button"
-                      onClick={() => navigate('groups')}
-                      className="hover:text-foreground cursor-pointer underline underline-offset-2"
-                    >
-                      Groups
-                    </button>
-                    .
-                  </>
-                ) : canManage && available.length === 0 && groups.length > 0 ? (
-                  'Every group already has access to this project.'
-                ) : (
-                  'Nobody reaches this project through a group.'
-                )
-              }
-            />
-          ) : (
-            grants.map((g: ProjectGroupGrant) => {
-              const busy = pendingGroupIds.has(g.group_id);
-              return (
-                <SettingsRow
-                  key={g.group_id}
-                  label={g.group_name}
-                  description={
-                    <RowMeta>
-                      <span>Attached {formatDate(g.created_at)}</span>
-                      {typeof g.member_count === 'number' && (
-                        <span>
-                          {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
-                        </span>
-                      )}
-                      {typeof g.override_count === 'number' && g.override_count > 0 && (
-                        <span
-                          className="text-kortix-orange"
-                          title={tHardcodedUi.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
-                          )}
-                        >
-                          {g.override_count} of {g.member_count}{' '}
-                          {tHardcodedUi.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
-                          )}
-                        </span>
-                      )}
-                      {groupsWithCustomRole.has(g.group_id) && (
-                        <span
-                          className="text-kortix-orange font-medium"
-                          title="This group also has a custom role assigned on this project. Built-in role grants WIN over custom roles (allow-only / highest-wins), so this grant overrides the custom role's limits. Detach it to let the custom role apply."
-                        >
-                          ⚠ overrides an assigned custom role
-                        </span>
-                      )}
-                    </RowMeta>
-                  }
-                >
-                  {busy ? (
-                    <Loading className="text-muted-foreground shrink-0" />
-                  ) : canManage ? (
-                    <>
-                      <Select
-                        value={g.role}
-                        onValueChange={(v) =>
-                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-28 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <ProjectRoleSelectItem role="member" />
-                          <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setDetachTarget(g)}
-                      >
-                        Detach
-                      </Button>
-                    </>
-                  ) : (
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {g.role}
-                    </Badge>
-                  )}
-                </SettingsRow>
-              );
-            })
-          )}
-        </SettingsRowGroup>
-      </section>
-
-      <ConfirmDialog
-        open={detachTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDetachTarget(null);
-        }}
-        title={tHardcodedUi.raw(
-          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleDetach8e4cbc87',
-        )}
-        description={
-          detachTarget ? (
-            <span>
-              <strong>{detachTarget.group_name}</strong>{' '}
-              {tHardcodedUi.raw(
-                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillNob7c4fd05',
-              )}
-              <strong>{detachTarget.role}</strong>{' '}
-              {tHardcodedUi.raw(
-                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccessUnless520e90ca',
-              )}
-            </span>
-          ) : null
-        }
-        confirmLabel={tHardcodedUi.raw(
-          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelDetache64492d2',
-        )}
-        confirmVariant="destructive"
-        isPending={detachMutation.isPending}
-        onConfirm={() => {
-          if (!detachTarget) return;
-          const target = detachTarget;
-          setDetachTarget(null);
-          detachMutation.mutate(target.group_id);
-        }}
-      />
-    </>
   );
 }
 
@@ -3378,514 +2981,3 @@ function ResourceAccessCard({
   );
 }
 
-/**
- * Custom-role assignments for THIS project — the project-level view of the
- * account Roles page's bindings. Custom roles are DEFINED on the account Roles
- * page; here a manager grants one (to a member / group / agent) scoped to
- * this project, so a project's full access picture lives in one place.
- */
-function ProjectRoleAssignmentsCard({
-  projectId,
-  accountId,
-  canManage,
-  members,
-}: {
-  projectId: string;
-  accountId: string;
-  canManage: boolean;
-  members: ProjectAccessMember[];
-}) {
-  // Same reason as ProjectGroupGrantsCard: Roles is a tab in this panel.
-  const { navigate } = useSettingsNav();
-  const queryClient = useQueryClient();
-  // qk.project.policies — the IAM role-policy family. See
-  // ProjectGroupGrantsCard's policiesQuery above for why this is NOT
-  // qk.project.executorPolicies (a different endpoint/shape both used to
-  // share the literal ['project-policies', id] with, pre-migration).
-  const policiesKey = qk.project.policies(projectId);
-
-  const policiesQuery = useQuery({
-    queryKey: policiesKey,
-    // Gated like every sibling below: the account-IAM policies route asserts
-    // policy.read, which a non-manager doesn't hold — firing it anyway just
-    // 403s for data this card can never show them.
-    enabled: canManage,
-    queryFn: () => listPolicies(accountId, { scopeId: projectId }),
-    ...contract('config'),
-  });
-  const rolesQuery = useQuery({
-    queryKey: ['iam-roles', accountId],
-    queryFn: () => listRoles(accountId),
-    enabled: canManage,
-    staleTime: 60_000,
-  });
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId),
-    enabled: canManage,
-    staleTime: 60_000,
-  });
-  const agentsQuery = useQuery({
-    queryKey: ['iam-agent-identities', accountId],
-    queryFn: () => listAgentIdentities(accountId),
-    enabled: canManage,
-    staleTime: 60_000,
-  });
-
-  // Only project-scoped bindings for THIS project (account-wide custom roles
-  // apply too, but they're managed on the account page, not per-project).
-  const policies = useMemo(
-    () =>
-      toArray(policiesQuery.data).filter(
-        (p) => p.scope_type === 'project' && p.scope_id === projectId,
-      ),
-    [policiesQuery.data, projectId],
-  );
-  const customRoles = useMemo(
-    () => toArray(rolesQuery.data).filter((r) => !r.is_system),
-    [rolesQuery.data],
-  );
-  const groups = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
-  const projectAgents = useMemo(
-    () => toArray(agentsQuery.data).filter((a) => a.project_id === projectId),
-    [agentsQuery.data, projectId],
-  );
-
-  const roleNameById = useMemo(
-    () => new Map(toArray(rolesQuery.data).map((r) => [r.role_id, r.name])),
-    [rolesQuery.data],
-  );
-  const memberLabelById = useMemo(
-    () => new Map(members.map((m) => [m.user_id, userLabel(m)])),
-    [members],
-  );
-  const groupNameById = useMemo(() => new Map(groups.map((g) => [g.group_id, g.name])), [groups]);
-  const agentLabelById = useMemo(
-    () =>
-      new Map(toArray(agentsQuery.data).map((a) => [a.service_account_id, a.agent_name ?? a.name])),
-    [agentsQuery.data],
-  );
-
-  function principalLabel(p: IamPolicy): { kind: string; label: string; missing: boolean } {
-    if (p.principal_type === 'group') {
-      return {
-        kind: 'Group',
-        label: groupNameById.get(p.principal_id) ?? p.principal_id,
-        missing: false,
-      };
-    }
-    if (p.principal_type === 'token') {
-      // Agent SAs resolve from the account-wide identity list; a miss means the
-      // agent was deleted/renamed, so the binding is stale. Show a short id and
-      // flag it rather than a bare 36-char UUID.
-      const name = agentLabelById.get(p.principal_id);
-      return { kind: 'Agent', label: name ?? `${p.principal_id.slice(0, 8)}…`, missing: !name };
-    }
-    return {
-      kind: 'Member',
-      label: memberLabelById.get(p.principal_id) ?? p.principal_id,
-      missing: false,
-    };
-  }
-
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [subjectType, setSubjectType] = useState<PrincipalType | ''>(''); // step 1
-  // Step 2, multi-select — bind the same role to several members/groups/agents
-  // of the chosen type in one action, instead of one binding per dialog open.
-  const [subjectIds, setSubjectIds] = useState<string[]>([]);
-  const [roleId, setRoleId] = useState('');
-  const [policyFilter, setPolicyFilter] = useState<'all' | PrincipalType>('all');
-  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
-  const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
-  const clearPending = (id: string) =>
-    setPendingIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-
-  function invalidate() {
-    queryClient.invalidateQueries({ queryKey: policiesKey });
-  }
-
-  // Step 1 of the assign flow: pick the SUBJECT type. Only offer types that
-  // have someone to assign (no empty "Agent" list when the project has none).
-  const subjectOptions = useMemo(
-    () =>
-      (
-        [
-          {
-            type: 'member',
-            label: 'Member',
-            Icon: User,
-            items: members.map((m) => ({ id: m.user_id, name: userLabel(m) })),
-          },
-          {
-            type: 'group',
-            label: 'Group',
-            Icon: Users,
-            items: groups.map((g) => ({ id: g.group_id, name: g.name })),
-          },
-          {
-            type: 'token',
-            label: 'Agent',
-            Icon: Bot,
-            items: projectAgents.map((a) => ({
-              id: a.service_account_id,
-              name: a.agent_name ?? a.name,
-            })),
-          },
-        ] as const
-      ).filter((o) => o.items.length > 0),
-    [members, groups, projectAgents],
-  );
-  // Step 2 options: only the subjects of the chosen type.
-  const activeSubjects = subjectOptions.find((o) => o.type === subjectType)?.items ?? [];
-
-  function resetAssignForm() {
-    setSubjectType('');
-    setSubjectIds([]);
-    setRoleId('');
-  }
-  function onSubjectTypeChange(t: PrincipalType) {
-    setSubjectType(t);
-    setSubjectIds([]); // the previous picks belong to a different subject type
-  }
-  function toggleSubject(id: string) {
-    setSubjectIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-
-  const createMutation = useMutation({
-    mutationFn: async () => {
-      const results = await Promise.allSettled(
-        subjectIds.map((principalId) =>
-          createPolicy(accountId, {
-            principalType: subjectType as PrincipalType,
-            principalId,
-            scopeType: 'project',
-            scopeId: projectId,
-            roleId,
-          }),
-        ),
-      );
-      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-      return { total: subjectIds.length, failed };
-    },
-    onSuccess: ({ total, failed }) => {
-      const ok = total - failed.length;
-      if (failed.length === 0) {
-        successToast(total === 1 ? 'Role assigned' : `Role assigned to ${total}`);
-        resetAssignForm();
-        setDialogOpen(false);
-      } else if (ok > 0) {
-        errorToast(
-          `Assigned to ${ok} of ${total} — ${failed.length} failed. Remove the assigned ones and retry the rest.`,
-        );
-      } else {
-        errorToast(
-          failed[0]?.reason instanceof Error ? failed[0].reason.message : 'Failed to assign role',
-        );
-      }
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to assign role'),
-  });
-
-  function onDialogOpenChange(next: boolean) {
-    if (createMutation.isPending) return;
-    if (next) {
-      resetAssignForm();
-      setSubjectType(subjectOptions[0]?.type ?? '');
-    }
-    setDialogOpen(next);
-  }
-
-  const removeMutation = useMutation({
-    mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
-    onMutate: (policyId) => markPending(policyId),
-    onSettled: (_d, _e, policyId) => clearPending(policyId),
-    onSuccess: () => {
-      successToast('Assignment removed');
-      invalidate();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to remove assignment'),
-  });
-
-  // List filter (below): segment a long mixed binding list by subject type.
-  const policyCounts = useMemo(() => {
-    const c: Record<string, number> = { member: 0, group: 0, token: 0 };
-    for (const p of policies) c[p.principal_type] = (c[p.principal_type] ?? 0) + 1;
-    return c;
-  }, [policies]);
-  const policyFilterOptions = useMemo(() => {
-    const opts: { value: 'all' | PrincipalType; label: string; count: number }[] = [
-      { value: 'all', label: 'All', count: policies.length },
-    ];
-    if (policyCounts.member)
-      opts.push({ value: 'member', label: 'Members', count: policyCounts.member });
-    if (policyCounts.group)
-      opts.push({ value: 'group', label: 'Groups', count: policyCounts.group });
-    if (policyCounts.token)
-      opts.push({ value: 'token', label: 'Agents', count: policyCounts.token });
-    return opts;
-  }, [policies.length, policyCounts]);
-  const visiblePolicies = useMemo(
-    () =>
-      policyFilter === 'all' ? policies : policies.filter((p) => p.principal_type === policyFilter),
-    [policies, policyFilter],
-  );
-
-  const canSubmit =
-    !!subjectType && subjectIds.length > 0 && !!roleId && !createMutation.isPending;
-
-  // Progressive disclosure — see ProjectGroupGrantsCard's identical comment.
-  // Custom roles are defined on the account Roles page; an account that has
-  // never made one gets a permanently-empty "go create one elsewhere" card
-  // here. Hide it once loaded with nothing to show; keep it if there is an
-  // existing project-scoped binding to manage/remove, even one whose role
-  // was since deleted.
-  const rolesLoaded = !policiesQuery.isLoading && !rolesQuery.isLoading;
-  if (rolesLoaded && customRoles.length === 0 && policies.length === 0) return null;
-
-  return (
-    <>
-      <section className="space-y-3">
-        <SettingsSubsectionHeader
-          title={
-            <>
-              Custom roles
-              {policies.length > 0 ? (
-                <span className="text-muted-foreground ml-1.5 font-normal tabular-nums">
-                  {policies.length}
-                </span>
-              ) : null}
-            </>
-          }
-          description="Grant a custom role to a member, group, or agent on this project. Custom roles are defined on the account Roles page; here you bind them for this project only."
-          action={
-            canManage && customRoles.length > 0 ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0 gap-1.5"
-                onClick={() => onDialogOpenChange(true)}
-              >
-                <Plus className="size-3.5 shrink-0" />
-                Assign role
-              </Button>
-            ) : null
-          }
-        />
-
-        {!policiesQuery.isLoading && policies.length > 0 && policyFilterOptions.length > 2 && (
-          <FilterChips
-            value={policyFilter}
-            onChange={setPolicyFilter}
-            options={policyFilterOptions}
-          />
-        )}
-
-        <SettingsRowGroup>
-          {policiesQuery.isLoading ? (
-            <SettingsRowSkeleton />
-          ) : policies.length === 0 ? (
-            <SettingsEmptyRow
-              label="No custom roles here"
-              description={
-                customRoles.length === 0 ? (
-                  <>
-                    {/* Same replacement as the Groups link above: `/accounts/{id}
-                        ?tab=roles` is the page this panel replaced, and Roles is
-                        a tab in this very panel. */}
-                    Create one in{' '}
-                    <button
-                      type="button"
-                      onClick={() => navigate('roles')}
-                      className="hover:text-foreground cursor-pointer underline underline-offset-2"
-                    >
-                      Roles
-                    </button>
-                    , then apply it here.
-                  </>
-                ) : (
-                  'Assign one to give a member, group, or agent a custom role on this project.'
-                )
-              }
-            />
-          ) : (
-            visiblePolicies.map((p) => {
-              const busy = pendingIds.has(p.policy_id);
-              const { kind, label, missing } = principalLabel(p);
-              return (
-                <SettingsRow
-                  key={p.policy_id}
-                  label={
-                    <>
-                      <span className="min-w-0">{roleNameById.get(p.role_id) ?? p.role_id}</span>
-                      <Badge variant="outline" size="sm">
-                        Custom
-                      </Badge>
-                    </>
-                  }
-                  description={
-                    <RowMeta>
-                      <span className="flex items-center gap-1.5">
-                        {kind}: {label}
-                        {missing && (
-                          <Badge
-                            variant="outline"
-                            size="sm"
-                            className="border-kortix-orange/30 text-kortix-orange"
-                            title="This agent no longer exists (deleted or renamed). The binding is stale — remove it or re-assign the current agent."
-                          >
-                            removed
-                          </Badge>
-                        )}
-                      </span>
-                      {p.expires_at ? <span>Expires {formatDate(p.expires_at)}</span> : null}
-                    </RowMeta>
-                  }
-                >
-                  {busy ? (
-                    <Loading className="text-muted-foreground shrink-0" />
-                  ) : canManage ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeMutation.mutate(p.policy_id)}
-                    >
-                      Remove
-                    </Button>
-                  ) : (
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {kind}
-                    </Badge>
-                  )}
-                </SettingsRow>
-              );
-            })
-          )}
-        </SettingsRowGroup>
-      </section>
-
-      <Modal open={dialogOpen} onOpenChange={onDialogOpenChange}>
-        <ModalContent className="sm:max-w-md">
-          <ModalHeader>
-            <ModalTitle>Assign a custom role</ModalTitle>
-            <ModalDescription>
-              Bind a custom role to a member, group, or agent on this project only.
-            </ModalDescription>
-          </ModalHeader>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!canSubmit) return;
-              createMutation.mutate();
-            }}
-          >
-            <ModalBody className="space-y-4">
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs font-medium">1. Assign to</span>
-                <div className="flex gap-1.5">
-                  {subjectOptions.map(({ type, label, Icon }) => (
-                    <Button
-                      key={type}
-                      type="button"
-                      size="sm"
-                      variant={subjectType === type ? 'default' : 'outline'}
-                      className="flex-1 gap-1.5"
-                      onClick={() => onSubjectTypeChange(type)}
-                    >
-                      <Icon className="size-3.5 shrink-0" />
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs font-medium">
-                  2.{' '}
-                  {subjectType === 'group'
-                    ? 'Groups'
-                    : subjectType === 'token'
-                      ? 'Agents'
-                      : 'Members'}
-                  {subjectIds.length > 0 ? (
-                    <span className="ml-1 tabular-nums">({subjectIds.length})</span>
-                  ) : null}
-                </span>
-                {/* Multi-select: bind the same role to several subjects of this
-                    type in one action. `activeSubjects` is already
-                    type-filtered by step 1, so this is a plain checklist —
-                    no search needed for a project's own member/group/agent
-                    count. */}
-                {subjectType ? (
-                  <div className="border-border max-h-56 overflow-y-auto rounded-md border p-1">
-                    {activeSubjects.length === 0 ? (
-                      <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                        None available.
-                      </p>
-                    ) : (
-                      activeSubjects.map((s) => (
-                        <Checkbox
-                          key={s.id}
-                          label={s.name}
-                          checked={subjectIds.includes(s.id)}
-                          onCheckedChange={() => toggleSubject(s.id)}
-                          disabled={createMutation.isPending}
-                        />
-                      ))
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground border-border rounded-md border border-dashed px-3 py-6 text-center text-xs">
-                    Pick a type first.
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs font-medium">3. Custom role</span>
-                <Select
-                  value={roleId}
-                  onValueChange={setRoleId}
-                  disabled={createMutation.isPending}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customRoles.map((r) => (
-                      <SelectItem key={r.role_id} value={r.role_id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </ModalBody>
-
-            <ModalFooter className="sm:justify-between">
-              <Button
-                type="button"
-                variant="outline-ghost"
-                size="sm"
-                onClick={() => onDialogOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={!canSubmit}>
-                {createMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                {subjectIds.length > 1 ? `Assign role to ${subjectIds.length}` : 'Assign role'}
-              </Button>
-            </ModalFooter>
-          </form>
-        </ModalContent>
-      </Modal>
-    </>
-  );
-}
