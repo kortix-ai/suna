@@ -40,9 +40,12 @@ export const heroEyebrow = {
 export const cta = {
   badge: 'Get started',
   title: 'Run your whole company from one repo you own.',
-  // ACCURACY: the price is the one in `features/billing/pricing-plans.ts` —
-  // Team is $40 / seat / mo. This line said $20 and was wrong by 2x.
-  sub: 'Start with one job, connect the tools it needs, and let your team reach it from Slack, the web, or the CLI. Self-host for free, or managed cloud at $40 / seat / mo + usage.',
+  // ONE IDEA ONLY. This line is the invitation, nothing else. Pricing, hosting
+  // and channels each pulled the reader somewhere different and belong on their
+  // own pages. If a price ever comes back here it must match
+  // `features/billing/pricing-plans.ts` ($40 / seat / mo, per seat PLUS usage) —
+  // it once said $20 and was wrong by 2x.
+  sub: 'Start with one job and grow from there.',
   trust: 'Open source · SSO, RBAC & on-prem · Any model, your keys · No lock-in',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Request demo',

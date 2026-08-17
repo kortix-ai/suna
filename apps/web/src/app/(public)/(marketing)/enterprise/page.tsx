@@ -4,7 +4,6 @@ import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
-import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { cn } from '@/lib/utils';
@@ -353,45 +352,6 @@ const EnterprisePage = () => {
             </div>
           </Reveal>
         </section>
-
-        <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 lg:px-0">
-          <Reveal>
-            <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
-              <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-                <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
-                  <div className="space-y-2">
-                    <Badge variant="kortix" className="rounded">
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9',
-                      )}
-                    </Badge>
-                    <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                      {t('closingTitle')}
-                    </h2>
-
-                    <span className="text-muted-foreground text-sm leading-relaxed">
-                      {t('closingDescription')}
-                    </span>
-                  </div>
-
-                  <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button size="lg" className="w-full" onClick={() => setCalOpen(true)}>
-                      {t('talkToSalesCta')}
-                    </Button>
-                    <Button asChild size="lg" className="w-full" variant="secondary">
-                      <Link href="/pricing">{t('comparePlansCta')}</Link>
-                    </Button>
-                  </div>
-                </div>
-                <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
-                  <KortixGrid count={58} seed={4228} />
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </section>
-
-        <div className="h-24 sm:h-28" />
       </div>
 
       <DemoQualifierModal

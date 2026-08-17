@@ -3,9 +3,7 @@
 import { FaqSection } from '@/features/marketing/faq';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
-import { CtaSection } from '@/features/marketing/landing/cta-section';
 import { LogoStrip } from '@/features/marketing/landing/logo-strip';
-import { ScrollCtaPill } from '@/features/marketing/landing/scroll-cta-pill';
 import { TrustSection } from '@/features/marketing/landing/trust-section';
 import { UseCaseWheel } from '@/features/marketing/landing/use-case-wheel';
 import { OpenSourceSection } from '@/features/marketing/open-source/open-source-section';
@@ -57,8 +55,6 @@ export default function Home() {
 
       {/* Close, standing on its own */}
       {/* <CtaSection /> */}
-
-      <ScrollCtaPill />
     </div>
   );
 }

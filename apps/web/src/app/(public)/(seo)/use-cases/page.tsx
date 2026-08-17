@@ -5,10 +5,9 @@ import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
-import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
-import { getAllUseCases } from '@/lib/use-cases';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
+import { getAllUseCases } from '@/lib/use-cases';
 
 const TITLE = 'Use Cases';
 const EYEBROW = 'Loop Engineering';
@@ -105,9 +104,6 @@ export default function UseCasesIndexPage() {
           <UseCasesBrowser posts={useCases} />
         </div>
       </section>
-
-      <UseCasesCta />
-      <div className="h-16 sm:h-24" />
     </main>
   );
 }

@@ -1,6 +1,5 @@
 import { AuditSection } from '@/features/marketing/connectors/audit-section';
 import { BrokerSection } from '@/features/marketing/connectors/broker-section';
-import { CloseSection } from '@/features/marketing/connectors/close-section';
 import { ConnectSection } from '@/features/marketing/connectors/connect-section';
 import { ConnectorsHero } from '@/features/marketing/connectors/hero';
 import { PolicySection } from '@/features/marketing/connectors/policy-section';
@@ -49,8 +48,6 @@ export default async function ConnectorsPage({
       <BrokerSection />
       <ScopeSection />
       <AuditSection />
-      <CloseSection />
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }

@@ -1151,66 +1151,6 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 lg:px-0">
-        <Reveal>
-          <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
-            <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-              <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
-                <div className="space-y-2">
-                  <Badge variant="update" className="rounded">
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextStartBuilding83387fa7',
-                    )}
-                  </Badge>
-                  <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextShipYourFirst187209c6',
-                    )}
-                  </h2>
-
-                  <span className="text-muted-foreground text-sm leading-relaxed">
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextInstallTheCLIbd0e41b0',
-                    )}{' '}
-                    <span className="text-foreground font-mono text-sm">
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
-                      )}
-                    </span>
-                    {tI18nHardcoded.raw(
-                      'autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670',
-                    )}
-                  </span>
-                </div>
-
-                <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Button size="lg" asChild className="w-full">
-                    <Link href={DOCS_URL}>
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextReadTheDocs7dfe8373',
-                      )}
-                      <HiArrowRight className="size-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild size="lg" className="w-full" variant="secondary">
-                    <Link href={GITHUB_URL}>
-                      {tI18nHardcoded.raw(
-                        'autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178',
-                      )}
-                      <Github />
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-              <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
-                <KortixGrid count={58} seed={4228} />
-              </div>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }

@@ -25,7 +25,6 @@ import { UseTemplateButton } from '@/components/use-cases/template-install-dialo
 import { UseCaseCard, UseCaseCover } from '@/components/use-cases/use-case-card';
 import { UseCaseMdxImage } from '@/components/use-cases/use-case-mdx-image';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
-import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { resolveAuthor } from '@/lib/blog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
@@ -305,9 +304,6 @@ export default async function UseCasePage(props: PageProps) {
           </div>
         </section>
       )}
-
-      <UseCasesCta />
-      <div className="h-16 sm:h-24" />
     </main>
   );
 }
