@@ -23,7 +23,7 @@ const RIVAL_ICONS = { Claude, OpenAI } as const;
  *  the headline states what Kortix is, the sub defines it, and this backs it. */
 function RivalProof() {
   return (
-    <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+    <div className="kx-hero-text text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
       <span>{heroEyebrow.lead}</span>
       {heroEyebrow.rivals.map((r, i) => {
         const Glyph = RIVAL_ICONS[r.icon] as ((p: { className?: string }) => ReactNode) | undefined;
@@ -69,24 +69,29 @@ const Hero = () => {
       className="relative flex min-h-svh flex-col justify-center overflow-hidden pt-32 pb-12 sm:pt-36 sm:pb-16 lg:pt-32 lg:pb-14"
     >
       <div
-        className="inset-0 z-0 hidden mask-t-from-70% lg:absolute"
+        className="kx-hero-veil inset-0 z-0 hidden mask-t-from-70% lg:absolute"
         aria-hidden
         data-a11y-decorative
       >
         <WallpaperBackground wallpaperId="brandmark" />
       </div>
 
-      {/* kx-stagger fades each direct child up in turn (0/40/80/120ms):
-          headline → sub + CTAs → product frame → trust line. The delays and the
-          reduced-motion fallback both live in globals.css, so nothing here may
-          set an inline animation-delay — an inline style would outrank the
-          stylesheet and survive prefers-reduced-motion. */}
-      <div className="kx-stagger relative z-20">
+      {/* Six bands enter in reading order — proof → headline → sub → actions →
+          product → trust — each with its own delay and its own distance. The
+          whole fold settles by ~1.1s: the frame starts last but runs longest,
+          so it lands with the trust line rather than after it.
+
+          Delays are Tailwind arbitrary properties, not inline styles. Both the
+          keyframes and the reduced-motion fallback live in globals.css, and an
+          inline `animation-delay` would outrank the stylesheet and keep the
+          staged reveal alive after prefers-reduced-motion removed the travel.
+          Setting only `--kx-enter` leaves the stylesheet free to zero it. */}
+      <div className="relative z-20">
         {/* The headline opens the page — nothing above it. At lg it steps up to
             6xl so it carries the fold the way the navbar carries the chrome. */}
         <div className="mx-auto w-full max-w-7xl px-6">
           <RivalProof />
-          <h1 className="text-foreground max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
+          <h1 className="kx-hero-text text-foreground max-w-4xl text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl lg:text-6xl">
             {hero.title}
           </h1>
         </div>
@@ -95,7 +100,7 @@ const Hero = () => {
         <div className="mx-auto mt-6 w-full max-w-7xl px-6">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
             <div className="max-w-xl">
-              <p className="text-muted-foreground text-base leading-relaxed text-pretty sm:text-lg">
+              <p className="kx-hero-text text-muted-foreground text-base leading-relaxed text-pretty [--kx-enter:150ms] sm:text-lg">
                 {hero.sub}
               </p>
             </div>
@@ -110,7 +115,7 @@ const Hero = () => {
                 every mobile platform asks for; h-12 is 44.2px. The override is
                 local because sm and up keeps the 36.8px the rest of the site is
                 drawn to. */}
-            <div className="flex w-full shrink-0 flex-wrap gap-3 sm:w-auto">
+            <div className="kx-hero-text flex w-full shrink-0 flex-wrap gap-3 [--kx-enter:210ms] sm:w-auto">
               <Button
                 size="lg"
                 onClick={handleLaunch}
@@ -132,12 +137,12 @@ const Hero = () => {
 
         <div
           id="demo"
-          className="relative z-10 mx-auto mt-10 max-w-7xl scroll-mt-24 px-6 sm:mt-12 lg:mt-8"
+          className="kx-hero-frame relative z-10 mx-auto mt-10 max-w-7xl scroll-mt-24 px-6 [--kx-enter:290ms] sm:mt-12 lg:mt-8"
         >
           <HeroSurfaces />
         </div>
 
-        <p className="text-muted-foreground/60 mx-auto mt-6 max-w-7xl px-6 text-center font-mono text-[11px] tracking-wide">
+        <p className="kx-hero-text text-muted-foreground/60 mx-auto mt-6 max-w-7xl px-6 text-center font-mono text-[11px] tracking-wide [--kx-enter:420ms]">
           {hero.trust}
         </p>
       </div>

@@ -979,6 +979,94 @@
   }
 }
 
+/* Hero enter — the landing fold, and nothing else.
+
+   `.kx-stagger` above is route-level motion: one curve, one duration, delays
+   keyed off DOM order. A hero band cannot use it. The eyebrow, the headline,
+   the sub, the button pair, a full-bleed product frame and the trust line are
+   six very different sizes, and on a fixed 300ms/40ms grid the small things
+   read as hurried while the big one reads as snatched. Duration has to scale
+   with the distance an element travels, so each band opts in by hand and
+   declares its own delay.
+
+   That delay arrives as a class (`[--kx-enter:150ms]`), never as an inline
+   `style`. Not a preference: an inline declaration outranks a stylesheet one,
+   so an inline `animation-delay` would survive the `prefers-reduced-motion`
+   block below — the movement would stop and the staged reveal would carry on
+   without it. Setting only the custom property leaves `animation-delay: 0ms`
+   free to win.
+
+   Blur is on text and on text only. 6px is what separates a considered fade
+   from a generic one — the words resolve rather than appear — but it is a
+   per-pixel filter, and running it across a ~1100px product frame costs real
+   frames on the exact paint where the page is already busiest hydrating. */
+@keyframes kx-hero-text {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* The frame travels 24px rather than 14 and settles from 0.99 rather than out
+   of blur. It is the only element on the fold big enough for scale to register
+   as approach instead of as a wobble, and the floor stays high on purpose:
+   anything under ~0.95 on a screenshot stops reading as motion and starts
+   reading as a zoom effect. */
+@keyframes kx-hero-frame {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.kx-hero-text,
+.kx-hero-frame,
+.kx-hero-veil {
+  animation-delay: var(--kx-enter, 0ms);
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.kx-hero-text {
+  animation-name: kx-hero-text;
+  animation-duration: 620ms;
+}
+
+.kx-hero-frame {
+  animation-name: kx-hero-frame;
+  animation-duration: 820ms;
+}
+
+/* The wallpaper is ambient, so it gets no movement and the longest ramp on the
+   page. It should read as having been there all along, not as arriving. */
+.kx-hero-veil {
+  animation-name: kx-fade;
+  animation-duration: 1100ms;
+  animation-timing-function: linear;
+}
+
+/* Reduced motion removes the movement, not the animation. The fade stays,
+   because it is what tells a reader the fold finished loading; the travel, the
+   scale and the staged delays go. */
+@media (prefers-reduced-motion: reduce) {
+  .kx-hero-text,
+  .kx-hero-frame {
+    animation-name: kx-fade;
+    animation-duration: 260ms;
+    animation-delay: 0ms;
+  }
+}
+
 /* Catalogue card reveal — the cards a "View all" uncovers in a category grid.
 
    Deliberately NOT `.kx-fade-up`. That is page-enter motion for a handful of
