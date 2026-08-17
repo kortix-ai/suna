@@ -21,7 +21,6 @@ import {
 import {
   dismissOnboarding,
   openSettingsPanel,
-  openSettingsTab,
   selectAccountForUi,
 } from "../helpers/ui";
 
@@ -142,22 +141,43 @@ async function createProjectForAccessTest(
 }
 
 /**
- * Opens one tab of the settings panel from the project page.
- *
- * `tab` is a rail label from
- * `apps/web/src/features/workspace/settings/rail.ts`; the pane's own heading
- * is that same label (`SettingsTabHeader` reads it off the rail entry), so
- * the heading assertion below is what proves the pane — not just the rail
- * row — actually rendered.
+ * Repositories graduated out of the Settings overlay's rail into the
+ * Customize bar's Settings tab (`/projects/[id]/config`), merged into the
+ * General section as a "Git repo" subsection (`git-view.tsx`,
+ * `SettingsSubsectionHeader title="Git repo"` — an `h3`, one level under the
+ * page's own `h1`). Navigate straight there; the returned locator scopes
+ * subsequent queries to the page, which is fine since there is exactly one
+ * repo link on it.
  */
-async function openSettingsSection(page: Page, projectId: string, tab: string) {
-  await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
+async function openRepositoriesSection(page: Page, projectId: string) {
+  await page.goto(`/projects/${projectId}/config`, {
+    waitUntil: "domcontentloaded",
+  });
   await dismissOnboarding(page);
-  const panel = await openSettingsTab(page, tab);
   await expect(
-    panel.getByRole("heading", { name: tab, exact: true }),
+    page.getByRole("heading", { name: "Git repo", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
-  return panel;
+  return page;
+}
+
+/**
+ * Members graduated a second time, off the Settings overlay entirely and
+ * onto its own top-level Customize tab (`/projects/[id]/members`,
+ * `settings-tabs.ts` GRADUATED map). `CapabilityPageShell` renders the page
+ * title "Members" as an `h1`; the pane defaults to its "People" section
+ * (`members-tab.tsx`'s `useState<MembersSection>('people')`), the one with
+ * the member table and Invite button this test needs — no `?section=`
+ * required.
+ */
+async function openMembersSection(page: Page, projectId: string) {
+  await page.goto(`/projects/${projectId}/members`, {
+    waitUntil: "domcontentloaded",
+  });
+  await dismissOnboarding(page);
+  await expect(
+    page.getByRole("heading", { name: "Members", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  return page;
 }
 
 function byEmail(members: ProjectAccessMember[], email: string) {
@@ -566,10 +586,9 @@ test.describe("08 — Accounts, invites, and project access", () => {
     // `seedDatabaseProject` never writes a connection row. Either the app has
     // to fall back to `project.repo_url` or the fixture has to seed a
     // connection; do not delete this assertion to go green.
-    const repositoriesPanel = await openSettingsSection(
+    const repositoriesPanel = await openRepositoriesSection(
       page,
       project.project_id,
-      "Repositories",
     );
     const githubLink = repositoriesPanel.getByRole("link", {
       name: projectRepoWebUrl.replace("https://github.com/", ""),
@@ -581,11 +600,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
     ).toBeVisible();
     await expect(githubLink).toHaveAttribute("href", projectRepoWebUrl);
 
-    const membersPanel = await openSettingsSection(
-      page,
-      project.project_id,
-      "Members",
-    );
+    const membersPanel = await openMembersSection(page, project.project_id);
     // Wait for the initial access inventory before submitting a mutation.
     // Otherwise a slow pre-mutation response can overwrite the invalidated query.
     // The member list is a `Table` now (`members-tab.tsx:926-1080`), so a
