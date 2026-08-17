@@ -38,7 +38,7 @@ export function UseCasesCta() {
                     <HiArrowRight className="size-4" />
                   </Link>
                 </Button>
-                <Button asChild size="lg" variant="accent" className="w-full">
+                <Button asChild size="lg" variant="secondary" className="w-full">
                   <Link href="/enterprise">Talk to sales</Link>
                 </Button>
               </div>

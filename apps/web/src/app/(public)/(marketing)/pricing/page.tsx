@@ -193,7 +193,7 @@ export default function PricingPage() {
                     <ArrowRight className="size-3.5" />
                   </Link>
                 </Button>
-                <Button asChild size="lg" className="w-full" variant="accent">
+                <Button asChild size="lg" className="w-full" variant="secondary">
                   <Link href={START_URL}>
                     {tI18nHardcoded.raw(
                       'autoAppPublicMarketingPricingPageJsxTextGetStarted9675943d',

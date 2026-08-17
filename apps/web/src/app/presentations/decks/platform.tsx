@@ -188,13 +188,13 @@ export function useSlides(): SlideDef[] {
               </Lead>
               <InstallChip />
               <div className="flex flex-wrap gap-3 pt-1">
-                <Button size="xl">
+                <Button size="lg">
                   {tI18nHardcoded.raw(
                     'autoAppPresentationSlidesPlatformJsxTextStartBuildinge2f47368',
                   )}
                   <ArrowRight className="size-4" />
                 </Button>
-                <Button size="xl" variant="secondary">
+                <Button size="lg" variant="secondary">
                   {tI18nHardcoded.raw(
                     'autoAppPresentationSlidesPlatformJsxTextTalkToSales159e3ec0',
                   )}
@@ -1552,13 +1552,13 @@ export function useSlides(): SlideDef[] {
               </Dim>
             </h2>
             <div className="flex flex-wrap items-center gap-3">
-              <Button size="xl">
+              <Button size="lg">
                 {tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxTextStartBuildinge2f47368',
                 )}
                 <ArrowRight className="size-4" />
               </Button>
-              <Button size="xl" variant="secondary" asChild>
+              <Button size="lg" variant="secondary" asChild>
                 <Link href="/enterprise">
                   {tI18nHardcoded.raw(
                     'autoAppPresentationSlidesPlatformJsxTextTalkToSales159e3ec0',

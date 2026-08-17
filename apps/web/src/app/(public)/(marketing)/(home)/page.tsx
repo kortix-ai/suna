@@ -56,7 +56,7 @@ export default function Home() {
       <FaqSection />
 
       {/* Close, standing on its own */}
-      <CtaSection />
+      {/* <CtaSection /> */}
 
       <ScrollCtaPill />
     </div>

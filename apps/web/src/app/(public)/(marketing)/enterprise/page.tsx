@@ -156,10 +156,10 @@ const EnterprisePage = () => {
                 {t('heroDescription')}
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="xl" onClick={() => setCalOpen(true)}>
+                <Button size="lg" onClick={() => setCalOpen(true)}>
                   {t('talkToSalesCta')}
                 </Button>
-                <Button size="xl" variant="secondary" asChild>
+                <Button size="lg" variant="secondary" asChild>
                   <Link href="/pricing">{t('comparePlansCta')}</Link>
                 </Button>
               </div>
@@ -378,7 +378,7 @@ const EnterprisePage = () => {
                     <Button size="lg" className="w-full" onClick={() => setCalOpen(true)}>
                       {t('talkToSalesCta')}
                     </Button>
-                    <Button asChild size="lg" className="w-full" variant="accent">
+                    <Button asChild size="lg" className="w-full" variant="secondary">
                       <Link href="/pricing">{t('comparePlansCta')}</Link>
                     </Button>
                   </div>

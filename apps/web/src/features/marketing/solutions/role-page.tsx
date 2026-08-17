@@ -54,10 +54,10 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
             {role.hero.sub}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="xl" asChild>
+            <Button size="lg" asChild>
               <Link href="/auth">Get started</Link>
             </Button>
-            <Button size="xl" variant="secondary" asChild>
+            <Button size="lg" variant="secondary" asChild>
               <Link href="/contact">Talk to us</Link>
             </Button>
           </div>
@@ -267,10 +267,10 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
               {role.closing.sub}
             </p>
             <div className="flex flex-wrap gap-3">
-              <Button size="xl" asChild>
+              <Button size="lg" asChild>
                 <Link href="/auth">Get started</Link>
               </Button>
-              <Button size="xl" variant="secondary" asChild>
+              <Button size="lg" variant="secondary" asChild>
                 <Link href="/contact">Talk to us</Link>
               </Button>
             </div>

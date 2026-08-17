@@ -61,10 +61,10 @@ export function ConnectorsHero() {
           </h1>
           <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">{hero.sub}</p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="xl" asChild>
+            <Button size="lg" asChild>
               <Link href="/auth">{hero.ctaPrimary}</Link>
             </Button>
-            <Button size="xl" variant="secondary" asChild>
+            <Button size="lg" variant="secondary" asChild>
               <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
             </Button>
           </div>

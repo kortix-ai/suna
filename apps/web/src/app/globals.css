@@ -296,6 +296,8 @@
   --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
   --text-sm--line-height: calc(1.25 / 0.875);
+  --text-md: 0.9rem;
+  --text-md--line-height: calc(1.375 / 0.9375);
   --text-base: 1rem;
   --text-base--line-height: calc(1.5 / 1);
   --text-lg: 1.125rem;
@@ -707,7 +709,7 @@
 }
 
 .dark {
-  --background: oklch(0.17 0 0); /* canvas #090909 */
+  --background: oklch(15% 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */

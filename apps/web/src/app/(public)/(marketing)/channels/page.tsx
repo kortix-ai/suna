@@ -69,10 +69,10 @@ export default function ChannelsPage(): ReactNode {
               {hero.sub}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="xl" asChild>
+              <Button size="lg" asChild>
                 <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
               </Button>
-              <Button size="xl" variant="secondary" asChild>
+              <Button size="lg" variant="secondary" asChild>
                 <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
               </Button>
             </div>
@@ -355,10 +355,10 @@ export default function ChannelsPage(): ReactNode {
               {closing.sub}
             </p>
             <div className="flex flex-wrap gap-3">
-              <Button size="xl" asChild>
+              <Button size="lg" asChild>
                 <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
               </Button>
-              <Button size="xl" variant="secondary" asChild>
+              <Button size="lg" variant="secondary" asChild>
                 <Link href={closing.ctaSecondaryHref}>{closing.ctaSecondary}</Link>
               </Button>
             </div>

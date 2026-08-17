@@ -592,7 +592,7 @@ export default function DevelopersPage() {
                 </Button>
               </div>
               <Button
-                size="xl"
+                size="lg"
                 variant="secondary"
                 className="ring-ring/15 p-3 px-5 ring-2"
                 asChild
@@ -1192,7 +1192,7 @@ export default function DevelopersPage() {
                       <HiArrowRight className="size-4" />
                     </Link>
                   </Button>
-                  <Button asChild size="lg" className="w-full" variant="accent">
+                  <Button asChild size="lg" className="w-full" variant="secondary">
                     <Link href={GITHUB_URL}>
                       {tI18nHardcoded.raw(
                         'autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178',

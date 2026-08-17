@@ -5,62 +5,27 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const marketingButtonVariants = cva(
-  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-
+  "group/button inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[calc(var(--radius)-3px)] font-medium whitespace-nowrap transition-transform focus-visible:ring-1 focus-visible:outline-none active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none text-center [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 [&_svg]:drop-shadow-sm dark:shadow-md shadow-black/15",
   {
     variants: {
       variant: {
-        default: 'bg-foreground text-background hover:bg-foreground/90',
-        brand:
-          'bg-kortix-blue/90 dark:bg-kortix-blue/60 text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/85 dark:hover:bg-kortix-blue/50 transition-colors duration-200 ease-in',
-        blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
-        'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
-        'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
-        danger: 'bg-destructive text-background hover:bg-destructive/90',
-        destructive: 'bg-destructive/80 text-background hover:bg-destructive/85',
-        outline:
-          'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
-        'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
+        default:
+          'border-[0.5px] border-background/10 bg-foreground text-background  hover:bg-foreground/90 focus-visible:ring-foreground dark:border-transparent ',
         secondary:
-          'bg-secondary text-primary hover:bg-secondary  border border-border  text-foreground ',
-        'outline-secondary': 'bg-secondary text-primary hover:bg-secondary ',
-        input: 'bg-input text-primary hover:bg-input',
-        accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/10',
-        ghost: 'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',
-        muted: 'bg-muted text-foreground hover:bg-muted/90',
-        link: 'text-foreground underline-offset-4 hover:underline bg-transparent',
-        foreground: 'bg-foreground text-foreground-foreground hover:bg-foreground/90',
-        'outline-foreground':
-          'border border-foreground/10 bg-foreground/80 hover:bg-foreground/90 text-foreground/80 hover:text-foreground',
-        success: 'bg-emerald-500/60 text-foreground hover:bg-emerald-500/65',
-        info: 'border border-blue-800 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
-        inverse:
-          'w-fit dark:bg-[#0a0a0a] dark:hover:bg-[#0a0a0a]/95 dark:text-[#fafafa] bg-[#fafafa] hover:bg-[#fafafa]/95 text-[#0a0a0a]',
-        'invert-outline-foreground':
-          'border border-background/10 bg-foreground/90 hover:bg-foreground text-background hover:text-background',
-        transparent: 'bg-transparent hover:bg-transparent text-foreground',
-        text: 'text-muted-foreground hover:text-primary',
-
-        'ghost-sidebar': 'bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
-        'outline-sidebar':
-          'border border-border bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
+          'border-[0.5px] border-foreground/10 bg-secondary text-secondary-foreground  hover:bg-secondary/80',
+        outline:
+          'border-[0.5px] border-foreground/10 bg-transparent text-foreground  hover:bg-secondary',
+        destructive:
+          'border-[0.5px] border-white/10 bg-destructive text-destructive-foreground  hover:bg-destructive/90 dark:border-transparent',
+        ghost: 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground',
+        transparent: 'bg-transparent text-foreground hover:bg-transparent',
       },
       size: {
-        default: 'h-9 px-4 py-2.5 has-[>svg]:px-3.5',
-        xs: 'h-7  gap-1.5 px-2.5 has-[>svg]:px-2',
-        base: "h-7 gap-1 px-2.5   in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        sm: 'h-9 rounded-md px-4 has-[>svg]:px-3',
-        lg: 'h-10  px-6 has-[>svg]:px-4',
-        xl: 'h-12 text-base px-8 has-[>svg]:px-6',
-        icon: 'size-10 ',
-        'icon-xs': 'size-6 rounded-sm',
-        'icon-sm': 'size-7 ',
-        'icon-lg': 'size-10 ',
-        'magic-sm':
-          'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 rounded-md sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
-        toolbar: "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
-
-        fit: 'h-auto w-auto items-start justify-start px-3 py-1.5',
+        default: 'h-9 px-3.5 text-md rounded-[calc(var(--radius)-3px)]',
+        sm: 'h-8 px-3 text-sm rounded-[calc(var(--radius)-3px)]',
+        lg: 'h-10 px-4 text-md rounded-[calc(var(--radius-md)-0.4px)]',
+        icon: 'size-9',
+        'icon-sm': 'size-7.5',
       },
     },
     defaultVariants: {
