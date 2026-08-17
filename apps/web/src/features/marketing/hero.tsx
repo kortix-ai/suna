@@ -10,7 +10,6 @@ import { hero, heroEyebrow } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
-import { ArrowRightIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback } from 'react';
 
 /** `heroEyebrow.rivals[].icon` selects a logo by name at runtime, so it can't be
@@ -19,8 +18,10 @@ import { type ReactNode, useCallback } from 'react';
 const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
- *  their marks, so "AI Management System" lands without a paragraph first. */
-function RivalEyebrow() {
+ *  their marks. It used to sit ABOVE the H1, which made a competitor comparison
+ *  the first thing on the page; it now renders as a proof line under the sub —
+ *  the headline states what Kortix is, the sub defines it, and this backs it. */
+function RivalProof() {
   return (
     <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
       <span>{heroEyebrow.lead}</span>
@@ -33,7 +34,7 @@ function RivalEyebrow() {
             <span className="text-foreground font-medium">{r.label}</span>
           </span>
         );
-      })}{' '}
+      })}
     </div>
   );
 }
@@ -58,10 +59,10 @@ const Hero = () => {
   return (
     /* The hero owns a full viewport and centres inside it. Before this it was
        simply padded from the top, so on a tall display the block finished with
-       ~300px of dead space under it while the eyebrow still sat ~30px below the
+       ~300px of dead space under it while the headline still sat ~30px below the
        navbar — top-heavy and cramped at the same time. `min-h-svh` plus
        `justify-center` splits the slack above and below instead, and the top
-       padding is the floor that keeps the eyebrow clear of the fixed navbar
+       padding is the floor that keeps the headline clear of the fixed navbar
        (67px) at every height. */
     <section
       id="hero"
@@ -75,24 +76,34 @@ const Hero = () => {
         <WallpaperBackground wallpaperId="brandmark" />
       </div>
 
-      <div className="relative z-20">
+      {/* kx-stagger fades each direct child up in turn (0/40/80/120ms):
+          headline → sub + CTAs → product frame → trust line. The delays and the
+          reduced-motion fallback both live in globals.css, so nothing here may
+          set an inline animation-delay — an inline style would outrank the
+          stylesheet and survive prefers-reduced-motion. */}
+      <div className="kx-stagger relative z-20">
+        {/* The headline opens the page — nothing above it. At lg it steps up to
+            6xl so it carries the fold the way the navbar carries the chrome. */}
         <div className="mx-auto w-full max-w-7xl px-6">
-          <RivalEyebrow />
-
-          <h1 className="text-foreground mt-5 max-w-3xl text-4xl font-medium tracking-tight text-balance sm:text-5xl">
+          <RivalProof />
+          <h1 className="text-foreground max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
             {hero.title}
           </h1>
+        </div>
 
-          {/* sub on the left, actions on the right — keeps the fold short */}
-          <div className="mt-6 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed sm:text-lg">
-              {hero.sub}
-            </p>
+        {/* sub + proof on the left, actions on the right — keeps the fold short */}
+        <div className="mx-auto mt-6 w-full max-w-7xl px-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
+            <div className="max-w-xl">
+              <p className="text-muted-foreground text-base leading-relaxed text-pretty sm:text-lg">
+                {hero.sub}
+              </p>
+            </div>
 
-            {/* The two CTAs split the full width on a phone and shrink to their
-                labels from sm up. Left at their intrinsic width they came to 139
-                and 123 of the 346 available, which is both a small target and an
-                odd ragged pair under a full-bleed headline.
+            {/* Primary leads. The two CTAs split the full width on a phone and
+                shrink to their labels from sm up. Left at their intrinsic width
+                they came to 139 and 123 of the 346 available, which is both a
+                small target and an odd ragged pair under a full-bleed headline.
 
                 h-12 on phones only. This theme sets --spacing to 0.23rem, so the
                 shared size="lg" resolves to 36.8px, under the 44px touch target
@@ -102,15 +113,18 @@ const Hero = () => {
             <div className="flex w-full shrink-0 flex-wrap gap-3 sm:w-auto">
               <Button
                 size="lg"
+                onClick={handleLaunch}
+                className="flex-1 active:scale-[0.97] sm:flex-none"
+              >
+                {hero.ctaPrimary}
+              </Button>
+              <Button
+                size="lg"
                 variant="secondary"
                 onClick={() => openDemo()}
-                className="h-12 flex-1 sm:h-10 sm:flex-none"
+                className="flex-1 active:scale-[0.97] sm:flex-none"
               >
                 {hero.ctaSecondary}
-              </Button>
-              <Button size="lg" onClick={handleLaunch} className="h-12 flex-1 sm:h-10 sm:flex-none">
-                {hero.ctaPrimary}
-                <ArrowRightIcon className="size-4" />
               </Button>
             </div>
           </div>

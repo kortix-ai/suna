@@ -617,7 +617,11 @@ export function HeroSurfaces() {
           product legible while leaving the fold visibly un-crowded. The
           subtrahend is everything above and below it — nav, eyebrow, H1, sub,
           CTAs, the tab row and the trust line. */}
-      <div className="border-border bg-card h-[340px] overflow-hidden rounded-xl border sm:h-[360px] lg:h-[clamp(340px,calc(100svh-448px),520px)]">
+      {/* shadow-2xl: the frame is the product shot the whole fold exists for,
+          and flat-on-the-page it read as one more bordered panel. Same step the
+          use-case wheel gives its active card, so the page's two hero-scale
+          surfaces sit at one elevation. */}
+      <div className="border-border bg-card h-[340px] overflow-hidden rounded-xl border shadow-2xl sm:h-[360px] lg:h-[clamp(340px,calc(100svh-448px),520px)]">
         <SurfacePanel surface={active} />
       </div>
 
