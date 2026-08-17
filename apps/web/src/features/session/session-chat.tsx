@@ -24,6 +24,7 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hasOpenAssistantTurn } from './assistant-turn-open';
+import { hasRunningToolCall } from './running-tool';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
@@ -2277,6 +2278,12 @@ export function SessionChat({
   // gate permanently. See `assistant-turn-open.ts`.
   const hasIncompleteAssistant = useMemo(() => hasOpenAssistantTurn(messages), [messages]);
 
+  // A tool call is executing right now. This is the queue interrupt's ONE
+  // message-derived input: a message queued mid-run stops the turn at the next
+  // tool boundary, and this is the boundary — the drain's end-of-turn machine
+  // still never reads messages. See `running-tool.ts`.
+  const hasRunningTool = useMemo(() => hasRunningToolCall(messages), [messages]);
+
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
     let lastUserIdx = -1;
@@ -2415,7 +2422,8 @@ export function SessionChat({
   // Client-side message queue — mirrors Claude Code / Codex: a message typed
   // while the agent is mid-turn is held instead of being sent straight through
   // (the OpenCode server would accept it immediately, but interleaving it into
-  // a live turn is exactly the reported bug).
+  // a live turn is exactly the reported bug), then delivered by interrupting
+  // the run at the next tool boundary — see `use-message-queue-drain.ts`.
   //
   // The state lives in `useMessageQueueStore` — per session and persisted —
   // not here. As component state it died silently on every session-tab switch,
@@ -3457,15 +3465,19 @@ export function SessionChat({
     unregisterSender,
   ]);
 
-  // Release the whole queue on one prompt, only when the turn actually ended.
+  // Release the whole queue on one prompt — by interrupting the run at the
+  // next tool boundary when something new was typed mid-run (the Claude Code
+  // behavior; see `use-message-queue-drain.ts`), or at the real end of turn
+  // when the interrupt is held.
   //
   // What used to be here drained the WHOLE queue whenever any tool part flipped
   // to 'completed' or 'error', or whenever the debounced `isBusy` fell. Both
   // fire mid-turn: a tool finishing means the agent is still working, and
   // `isBusy` is a 300ms fade timer for the busy indicator. It also watched
   // `messages`, so scrolling up to load older history counted as boundaries
-  // too. The drain now reads the server's own session status plus the gates
-  // that mean a human is being waited on, and nothing else.
+  // too. The end-of-turn drain now reads the server's own session status plus
+  // the gates that mean a human is being waited on; the interrupt path
+  // additionally reads exactly one message-derived signal, `hasRunningTool`.
   const queueGates = useMemo<QueueDrainGates>(
     () => ({
       isServerBusy,
@@ -3560,10 +3572,37 @@ export function SessionChat({
     [handleSend, commands],
   );
 
+  /**
+   * The abort the queue's interrupt path issues when a message is typed
+   * mid-run. Same machinery as the stop button — the optimistic "Interrupted"
+   * label, the tracked `AbortSettlement` — with two deliberate differences:
+   * it never pauses the queue (the interrupt exists to deliver it), and it
+   * reuses a stop already in flight rather than issuing a second abort.
+   * Resolves only once the abort has settled; `awaitAbortSettlement`-produced
+   * settlements never reject, and a failed/timed-out settlement still means
+   * any local in-flight delivery was cancelled first (see `stopThenSendNow`'s
+   * doc), so dispatching after it cannot race the old turn.
+   */
+  const interruptForQueue = useCallback(async (): Promise<void> => {
+    const pending = pendingAbortSettlementRef.current.get(sessionId);
+    if (pending) {
+      await pending;
+      return;
+    }
+    const status = useSessionStateStore.getState().sessionStatus[sessionId];
+    if (status?.type !== 'busy' && status?.type !== 'retry') return;
+    applyOptimisticAbort(sessionId);
+    clearTimeout(busyTimerRef.current);
+    setIsBusy(false);
+    await issueSessionCancel();
+  }, [sessionId, issueSessionCancel]);
+
   const queueDrain = useMessageQueueDrain({
     sessionId,
     gates: queueGates,
+    hasRunningTool,
     send: sendQueuedBatch,
+    interrupt: interruptForQueue,
   });
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
@@ -3599,8 +3638,9 @@ export function SessionChat({
 
   /**
    * The per-row action: end the current turn if one is running, then send that
-   * message. The only path that interrupts a running turn — automatic draining
-   * never does — which is why it is a deliberate click and says what it does.
+   * message. Unlike the automatic interrupt (`interruptForQueue`), this jumps
+   * the queue order, sends the row ALONE, and does not wait for a tool
+   * boundary — it is a deliberate click and says what it does.
    *
    * T10: waits for the real `AbortSettlement` the stop it just issued
    * produces (via `stopThenSendNow`), not a guess and not the optimistic

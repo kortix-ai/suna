@@ -6,7 +6,9 @@ import {
   canDrainQueue,
   createDrainMachine,
   planDrainTick,
+  runQueueInterrupt,
   shouldClearPause,
+  shouldInterruptForQueue,
   shouldQueueInsteadOfSend,
   stepDrainMachine,
   type QueueDrainGates,
@@ -476,5 +478,152 @@ describe('dead-turn husk override', () => {
     if (action.kind === 'wait') {
       expect(action.ms).toBe(OPEN_TURN_HUSK_MS - 1_000);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interrupt-at-boundary: a queued message stops the run at the next tool
+// boundary instead of waiting for the whole turn.
+// ---------------------------------------------------------------------------
+
+/** The state in which the interrupt must fire. Tests flip one input at a time. */
+const INTERRUPTIBLE = {
+  gates: { ...CLEAR, isServerBusy: true, hasIncompleteAssistant: true },
+  hasRunningTool: false,
+  hasNewPending: true,
+  sending: false,
+  interrupting: false,
+};
+
+describe('shouldInterruptForQueue', () => {
+  test('fires while the server is busy, nothing else holds, and no tool is running', () => {
+    expect(shouldInterruptForQueue(INTERRUPTIBLE)).toBe(true);
+  });
+
+  test('an open assistant message alone does not block — busy IS the interrupt target', () => {
+    // `hasIncompleteAssistant` is a drain gate ("wait for the turn to end").
+    // The interrupt exists precisely because the turn has not ended.
+    expect(
+      shouldInterruptForQueue({
+        ...INTERRUPTIBLE,
+        gates: { ...INTERRUPTIBLE.gates, hasIncompleteAssistant: true },
+      }),
+    ).toBe(true);
+  });
+
+  test('waits while a tool call is executing — never kill a running tool', () => {
+    expect(shouldInterruptForQueue({ ...INTERRUPTIBLE, hasRunningTool: true })).toBe(false);
+  });
+
+  test('fires the moment the running tool finishes', () => {
+    const during = { ...INTERRUPTIBLE, hasRunningTool: true };
+    expect(shouldInterruptForQueue(during)).toBe(false);
+    expect(shouldInterruptForQueue({ ...during, hasRunningTool: false })).toBe(true);
+  });
+
+  test('does nothing while the server is idle — the ordinary drain owns that path', () => {
+    expect(
+      shouldInterruptForQueue({
+        ...INTERRUPTIBLE,
+        gates: { ...INTERRUPTIBLE.gates, isServerBusy: false },
+      }),
+    ).toBe(false);
+  });
+
+  test('nothing new pending → no interrupt', () => {
+    // Leftovers from a split batch queued BEFORE this turn started must wait
+    // for it, not kill it. Only a message typed during the run interrupts.
+    expect(shouldInterruptForQueue({ ...INTERRUPTIBLE, hasNewPending: false })).toBe(false);
+  });
+
+  test('never doubles up while a send or an earlier interrupt is in flight', () => {
+    expect(shouldInterruptForQueue({ ...INTERRUPTIBLE, sending: true })).toBe(false);
+    expect(shouldInterruptForQueue({ ...INTERRUPTIBLE, interrupting: true })).toBe(false);
+  });
+
+  const HOLDS: [string, Partial<QueueDrainGates>][] = [
+    ['a structured question is on screen', { hasActiveQuestion: true }],
+    ['an approval is pending', { hasPendingApproval: true }],
+    ['permissions are pending', { pendingPermissionCount: 1 }],
+    ['the user pressed stop', { isPaused: true }],
+    ['the view is read-only', { readOnly: true }],
+    ['the runtime is not ready', { runtimeReady: false }],
+    ['a rewind is staged', { revertStaged: true }],
+    ['our own send is unacknowledged', { pendingSendInFlight: true }],
+    ['a compaction is running', { isOptimisticCompacting: true }],
+  ];
+  for (const [name, override] of HOLDS) {
+    test(`held while ${name}`, () => {
+      expect(
+        shouldInterruptForQueue({
+          ...INTERRUPTIBLE,
+          gates: { ...INTERRUPTIBLE.gates, ...override },
+        }),
+      ).toBe(false);
+    });
+  }
+});
+
+describe('runQueueInterrupt', () => {
+  test('aborts first, then claims and dispatches the batch', async () => {
+    const order: string[] = [];
+    await runQueueInterrupt({
+      interrupt: async () => {
+        order.push('interrupt');
+      },
+      isHeld: () => false,
+      claimBatch: () => {
+        order.push('claim');
+        return ['a', 'b'];
+      },
+      dispatch: async (claimed) => {
+        order.push(`dispatch:${claimed.join(',')}`);
+      },
+    });
+    expect(order).toEqual(['interrupt', 'claim', 'dispatch:a,b']);
+  });
+
+  test('a failed abort dispatches nothing — never fire into a still-running turn', async () => {
+    let dispatched = false;
+    await runQueueInterrupt({
+      interrupt: async () => {
+        throw new Error('abort failed');
+      },
+      isHeld: () => false,
+      claimBatch: () => ['a'],
+      dispatch: async () => {
+        dispatched = true;
+      },
+    });
+    expect(dispatched).toBe(false);
+  });
+
+  test('a stop pressed while the abort settled holds the dispatch', async () => {
+    // The user hit stop during our interrupt. Stop wins: "stop doing things"
+    // includes the queue, and the pause must not be followed a beat later by
+    // exactly the message it was holding back.
+    let dispatched = false;
+    await runQueueInterrupt({
+      interrupt: async () => {},
+      isHeld: () => true,
+      claimBatch: () => ['a'],
+      dispatch: async () => {
+        dispatched = true;
+      },
+    });
+    expect(dispatched).toBe(false);
+  });
+
+  test('an empty claim dispatches nothing — another drain already took the batch', async () => {
+    let dispatched = false;
+    await runQueueInterrupt({
+      interrupt: async () => {},
+      isHeld: () => false,
+      claimBatch: () => [],
+      dispatch: async () => {
+        dispatched = true;
+      },
+    });
+    expect(dispatched).toBe(false);
   });
 });

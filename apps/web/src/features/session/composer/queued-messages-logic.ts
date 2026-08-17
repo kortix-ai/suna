@@ -11,15 +11,17 @@
  * The screen-reader announcement for the queue.
  *
  * "All send" is load-bearing, not filler: the queue drains as one batch, and a
- * label that reads like a schedule ("sends when this turn ends", one row at a
- * time) describes the behaviour this surface used to have. Sighted users get
- * the same fact from the numbered rows all being live at once, which is why
- * there is no visible header saying it.
+ * label that reads like a schedule (one row at a time) describes the behaviour
+ * this surface used to have. "Next stopping point", not "when this turn ends":
+ * a queued message interrupts the run once the currently executing tool call
+ * finishes (see `use-message-queue-drain.ts`) — promising the end of the turn
+ * would overstate the wait. Sighted users get the batch fact from the rows all
+ * being live at once, which is why there is no visible header saying it.
  */
 export function queueSummaryLabel(count: number): string {
   return count === 1
-    ? '1 queued · sends when this turn ends'
-    : `${count} queued · all send when this turn ends`;
+    ? '1 queued · sends at the next stopping point'
+    : `${count} queued · all send at the next stopping point`;
 }
 
 /**

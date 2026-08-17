@@ -4,10 +4,11 @@
  * The queue, shown as a flat list of what goes next — one borderless row per
  * message, drag handle on the left, actions on the right.
  *
- * All of it sends when this turn ends, as one message, top to bottom. That is
- * why there is no number column: the order is the list. It is also why the
- * order gets a control — the batch is composed in list order, so moving a row
- * edits what the sent message says.
+ * All of it sends at the next stopping point — the run is interrupted once the
+ * currently executing tool call finishes (see `use-message-queue-drain.ts`) —
+ * as one message, top to bottom. That is why there is no number column: the
+ * order is the list. It is also why the order gets a control — the batch is
+ * composed in list order, so moving a row edits what the sent message says.
  *
  * ## The row anatomy
  *

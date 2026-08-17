@@ -30,6 +30,28 @@
  * something: the server's own session status, plus the gates that mean the run
  * is paused waiting for a human. It is pure and clock-injected, so every rule
  * below is asserted in a unit test rather than observed by hand.
+ *
+ * ## Two release paths, matching Claude Code
+ *
+ * A queued message is an instruction the agent should react to NOW, not after
+ * it finishes everything it had planned. So there are two ways out of the
+ * queue:
+ *
+ *   1. **The interrupt** (`shouldInterruptForQueue` + `runQueueInterrupt`):
+ *      while the server is busy and a NEW message is waiting, the run is
+ *      stopped at the next tool boundary — the currently executing tool call
+ *      is allowed to finish (never killed halfway; see `running-tool.ts`), the
+ *      remainder of the turn is aborted, and the whole queue goes out
+ *      immediately. The interrupt IS the boundary, so no settle window
+ *      applies.
+ *   2. **The ordinary drain** (`stepDrainMachine`): when the interrupt is held
+ *      — a question on screen, an approval pending, the user pressed stop, a
+ *      batch leftover with nothing newly typed — the queue waits for the real
+ *      end of turn exactly as before.
+ *
+ * Rule 1 is why a finished tool call is still not a *drain* boundary: the
+ * drain waits for the whole turn. The interrupt is the only path that acts at
+ * a tool boundary, and it acts by ending the turn first.
  */
 
 /**
@@ -170,6 +192,93 @@ export function shouldQueueInsteadOfSend(input: {
 }): boolean {
   if (input.runtimeReady === false) return true;
   return input.isBusy || input.pendingCount > 0 || input.hasInFlight;
+}
+
+/**
+ * Whether a queued message should interrupt the running turn right now.
+ *
+ * This is the Claude Code behavior: a message typed while the agent works is
+ * not a note for later — it is the user steering. The agent finishes the tool
+ * call it is executing (never killed halfway), the rest of the turn is
+ * aborted, and the queue goes out immediately with the completed tool's result
+ * already in the transcript.
+ *
+ * What must hold before firing:
+ *
+ *   - **Something NEW is pending.** `hasNewPending` is "a message enqueued
+ *     since the last claim". A leftover from a split batch (the user changed
+ *     model mid-queue, so `claimBatch` stopped early) was queued BEFORE the
+ *     turn it did not join — it waits for that turn like any queued message,
+ *     rather than killing the run its own batch-mates just started.
+ *   - **The server says busy.** An idle session has nothing to interrupt; the
+ *     ordinary drain owns that path and already dispatches there.
+ *   - **No tool is executing.** The boundary. `hasRunningTool` comes from
+ *     `running-tool.ts`; a `pending` tool does not block, because it has not
+ *     started.
+ *   - **No human is being waited on.** A question, approval, or permission
+ *     prompt means the run is paused FOR the user — aborting it would answer
+ *     on their behalf. The queue holds, exactly as the drain does.
+ *   - **Nothing else holds the queue.** Stop's pause, read-only views, staged
+ *     rewinds, a sleeping runtime, our own unacknowledged send, a compaction:
+ *     all the reasons the drain would not release also mean do not interrupt.
+ *   - **Not already busy doing this.** One send or one interrupt at a time.
+ */
+export function shouldInterruptForQueue(input: {
+  gates: QueueDrainGates;
+  hasRunningTool: boolean;
+  /** A message was enqueued since the last claim — see above. */
+  hasNewPending: boolean;
+  /** A dispatch from an earlier tick is still awaiting its send. */
+  sending: boolean;
+  /** An earlier interrupt is still settling. */
+  interrupting: boolean;
+}): boolean {
+  const { gates } = input;
+  if (!input.hasNewPending || input.sending || input.interrupting) return false;
+  if (!gates.isServerBusy) return false;
+  if (input.hasRunningTool) return false;
+  if (gates.hasActiveQuestion || gates.hasPendingApproval || gates.pendingPermissionCount > 0) {
+    return false;
+  }
+  if (gates.isPaused || gates.readOnly || gates.revertStaged) return false;
+  if (!gates.runtimeReady) return false;
+  if (gates.pendingSendInFlight || gates.isOptimisticCompacting) return false;
+  return true;
+}
+
+/**
+ * Carry out one interrupt: abort the run, wait for that to settle, then claim
+ * and dispatch the queue as one prompt.
+ *
+ * Injected like `stopThenSendNow` (session-chat.tsx), so the ordering is
+ * asserted in tests rather than observed by hand. The rules:
+ *
+ *   - `interrupt()` resolves only once the abort has settled (server-confirmed
+ *     or bounded-timeout — see `AbortSettlement`). If it REJECTS, nothing is
+ *     dispatched: a prompt must never be fired into a turn that might still be
+ *     running. The ordinary drain picks the queue up at the real end of turn.
+ *   - `isHeld()` is re-checked after the abort settles. A stop pressed while
+ *     the interrupt was in flight wins — "stop doing things" includes the
+ *     queue, even a queue that was mid-interrupt.
+ *   - An empty claim means another path (the ordinary drain, another view of
+ *     this session) took the batch first; the store's claim is the lock, so
+ *     this dispatches nothing rather than doubling up.
+ */
+export async function runQueueInterrupt<T>(deps: {
+  interrupt: () => Promise<void>;
+  isHeld: () => boolean;
+  claimBatch: () => T[];
+  dispatch: (claimed: T[]) => Promise<void>;
+}): Promise<void> {
+  try {
+    await deps.interrupt();
+  } catch {
+    return;
+  }
+  if (deps.isHeld()) return;
+  const claimed = deps.claimBatch();
+  if (claimed.length === 0) return;
+  await deps.dispatch(claimed);
 }
 
 /**
