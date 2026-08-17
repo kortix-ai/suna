@@ -595,8 +595,6 @@ function SubSessionTreeNode({
 // subscriptions and metric computations cost nothing during streaming.
 // ============================================================================
 
-const RAW_PAGE_SIZE = 30;
-
 function SessionContextModalBody({
   messages,
   session,
@@ -605,7 +603,6 @@ function SessionContextModalBody({
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
   const pricingLookup = useModelPricingLookup(providers);
-  const [rawVisibleCount, setRawVisibleCount] = useState(RAW_PAGE_SIZE);
   const [rawOpen, setRawOpen] = useState(false);
   // Sticky: once true, the row list stays mounted so reopening is instant.
   const [rawMounted, setRawMounted] = useState(false);
@@ -620,14 +617,6 @@ function SessionContextModalBody({
   // Keystrokes stay urgent; filtering the full message list runs deferred.
   const deferredRawQuery = useDeferredValue(rawQuery);
   const [rawRole, setRawRole] = useState<'all' | 'user' | 'assistant'>('all');
-  const handleRawQueryChange = useCallback((value: string) => {
-    setRawQuery(value);
-    setRawVisibleCount(RAW_PAGE_SIZE);
-  }, []);
-  const handleRawRoleChange = useCallback((value: string) => {
-    setRawRole(value as 'all' | 'user' | 'assistant');
-    setRawVisibleCount(RAW_PAGE_SIZE);
-  }, []);
 
   const metrics = useMemo(
     () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
@@ -699,8 +688,6 @@ function SessionContextModalBody({
     }
     return list;
   }, [messages, rawRole, deferredRawQuery]);
-  const visibleRawMessages = filteredRawMessages.slice(0, rawVisibleCount);
-  const remainingRawMessages = filteredRawMessages.length - visibleRawMessages.length;
 
   const usageFraction = ctx?.limit ? Math.min(1, ctx.total / ctx.limit) : null;
 
@@ -930,12 +917,16 @@ function SessionContextModalBody({
                     <InputGroupSearchInput
                       placeholder={t.raw('rawSearchPlaceholder')}
                       value={rawQuery}
-                      onChange={(e) => handleRawQueryChange(e.target.value)}
+                      onChange={(e) => setRawQuery(e.target.value)}
                       variant="popover"
                     />
-                    <InputGroupSearchClear onClick={() => handleRawQueryChange('')} />
+                    <InputGroupSearchClear onClick={() => setRawQuery('')} />
                   </InputGroupSearch>
-                  <Tabs value={rawRole} onValueChange={handleRawRoleChange} className="w-fit">
+                  <Tabs
+                    value={rawRole}
+                    onValueChange={(value) => setRawRole(value as typeof rawRole)}
+                    className="w-fit"
+                  >
                     <TabsListCompact type="default">
                       <TabsTriggerCompact value="all">{t.raw('rawFilterAll')}</TabsTriggerCompact>
                       <TabsTriggerCompact value="user">{t.raw('rawFilterUser')}</TabsTriggerCompact>
@@ -950,8 +941,13 @@ function SessionContextModalBody({
                     {t.raw('rawNoMatches')}
                   </p>
                 ) : (
+                  // Every matching message, not a first page behind a "Show
+                  // more" click — each closed row is `content-visibility:auto`
+                  // (see RawMessage below), so the browser skips layout/paint
+                  // for whatever is off-screen and rendering the full list up
+                  // front costs nothing more than rendering 30 of it did.
                   <Accordion type="multiple" className="px-2 py-2">
-                    {visibleRawMessages.map((msg) => (
+                    {filteredRawMessages.map((msg) => (
                       <RawMessage
                         key={msg.info.id}
                         message={msg.info}
@@ -960,21 +956,6 @@ function SessionContextModalBody({
                       />
                     ))}
                   </Accordion>
-                )}
-                {remainingRawMessages > 0 && (
-                  <div className="px-4 pb-3">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => setRawVisibleCount((count) => count + RAW_PAGE_SIZE)}
-                    >
-                      {t.raw('showMore')}
-                      <span className="text-muted-foreground tabular-nums">
-                        ({remainingRawMessages})
-                      </span>
-                    </Button>
-                  </div>
                 )}
               </>
             ) : null}

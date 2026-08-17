@@ -87,7 +87,7 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
   expect(view).toContain('<iframe');
-  expect(view).toContain('className="max-w-5xl"');
+  expect(view).toContain('className="max-w-5xl px-4"');
 });
 
 test('the Apps row matches the row contract of the group it sits in', () => {

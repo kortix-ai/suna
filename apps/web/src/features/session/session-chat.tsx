@@ -25,6 +25,11 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom';
 import { hasOpenAssistantTurn } from './assistant-turn-open';
 import {
+  COMPOSER_EDITOR_SELECTOR,
+  SUGGESTION_MENU_SELECTOR,
+  shouldCountEscape,
+} from './esc-to-stop';
+import {
   SystemNotificationCard,
   parseSystemNotifications,
   stripSystemPtyText,
@@ -3660,26 +3665,51 @@ export function SessionChat({
     // modal), which must not issue stop commands.
     if (!isActiveSessionTab || readOnly) return;
 
+    // Sampled in the CAPTURE phase — before ProseMirror/@tiptap/suggestion
+    // run — because an Escape that dismisses the `@`/`/` menu unmounts its
+    // listbox synchronously inside the editor's own keydown handling; by
+    // bubble time the menu this press was meant for is already gone. See
+    // `EscapePress` in esc-to-stop.ts.
+    let suggestionMenuWasOpen = false;
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      suggestionMenuWasOpen = document.querySelector(SUGGESTION_MENU_SELECTOR) !== null;
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isBusy) return;
 
-      // ESC was already consumed by something else — e.g. the composer's own
-      // slash/mention popover (which calls preventDefault) or another focused
-      // control that handled it — so it must never advance the stop counter.
-      if (e.defaultPrevented) return;
-
       // ESC-to-stop is a page-wide shortcut: it must fire whether or not the
       // composer is focused, because users watch the agent run with focus
-      // elsewhere (chat body, a tool view, or nothing at all). The only presses
-      // we ignore are those meant for an open overlay the user is interacting
-      // with — when focus sits inside a dialog/menu/popover/select, that ESC is
-      // for dismissing it, not for stopping. (A hovered tooltip never takes
-      // focus, so the stop button's own tooltip can't suppress the shortcut.)
+      // elsewhere (chat body, a tool view, or nothing at all) AND with focus
+      // in the chat input itself. The presses that must not advance the
+      // counter: one meant for an open overlay the user is interacting with
+      // (focus in a dialog/menu/popover/select — that ESC dismisses it; a
+      // hovered tooltip never takes focus, so the stop button's own tooltip
+      // can't suppress the shortcut), and one another control already
+      // consumed. `defaultPrevented` decides "consumed" EXCEPT for presses
+      // inside the composer editor: ProseMirror's backdrop key mapping
+      // preventDefaults EVERY Escape in the contenteditable, so there the
+      // real consumed-signal is the `@`/`/` menu having been open at capture
+      // time. shouldCountEscape (esc-to-stop.ts) owns the decision.
       const active = document.activeElement;
-      const focusInOverlay = active?.closest(
-        '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
-      );
-      if (focusInOverlay) return;
+      const focusInOverlay =
+        active?.closest(
+          '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
+        ) != null;
+      const fromComposerEditor =
+        e.target instanceof Element && e.target.closest(COMPOSER_EDITOR_SELECTOR) !== null;
+      if (
+        !shouldCountEscape({
+          fromComposerEditor,
+          defaultPrevented: e.defaultPrevented,
+          suggestionMenuWasOpen,
+          focusInOverlay,
+          isComposing: e.isComposing,
+        })
+      ) {
+        return;
+      }
 
       e.preventDefault();
 
@@ -3714,8 +3744,12 @@ export function SessionChat({
       }
     };
 
+    window.addEventListener('keydown', onKeyDownCapture, true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [isActiveSessionTab, readOnly, isBusy, handleStop, clearEscHint, escCount]);
 
   // Reset when session goes idle

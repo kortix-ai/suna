@@ -109,7 +109,13 @@ export function GatewayOverview({
 
   const requests = overview?.requests ?? 0;
   const errors = overview?.errors ?? 0;
+  // Total spend regardless of who collected it. `kortix_cost` is what came out
+  // of the Kortix wallet; `provider_cost` is what went straight to your own
+  // provider on your own key. A BYOK project spends entirely on the second,
+  // which is why this headline used to read $0.0000 forever.
   const cost = overview?.total_cost ?? 0;
+  const kortixCost = overview?.kortix_cost ?? 0;
+  const providerCost = overview?.provider_cost ?? 0;
   const inTokens = overview?.input_tokens ?? 0;
   const outTokens = overview?.output_tokens ?? 0;
 
@@ -138,7 +144,7 @@ export function GatewayOverview({
           <StatCard
             label="Total spend"
             value={fmtUsd(cost)}
-            sub={`over ${days} days`}
+            sub={<SpendSplit kortixCost={kortixCost} providerCost={providerCost} days={days} />}
             icon={DollarSign}
             accent="var(--kortix-blue)"
             spark={sparkSeries}
@@ -312,3 +318,48 @@ export function GatewayOverview({
     </div>
   );
 }
+
+/**
+ * Who actually collected the money behind the Total spend headline.
+ *
+ * Two payees, never more: the Kortix wallet (managed inference, or the
+ * platform fee on a BYOK route) and your own provider account (BYOK, billed
+ * to your own key). A payee that collected nothing is left out rather than
+ * printed as a `$0.0000` — on the two common deployments (all-managed and
+ * all-BYOK) exactly one side is real, and naming it is more useful than a
+ * two-term sum with a zero in it.
+ */
+function SpendSplit({
+  kortixCost,
+  providerCost,
+  days,
+}: {
+  kortixCost: number;
+  providerCost: number;
+  days: number;
+}) {
+  if (kortixCost > 0 && providerCost > 0) {
+    return (
+      <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <Payee color="var(--kortix-blue)" label="Kortix" amount={kortixCost} />
+        <span className="text-muted-foreground/40">·</span>
+        <Payee color="var(--muted-foreground)" label="providers" amount={providerCost} />
+      </span>
+    );
+  }
+  if (providerCost > 0) return <>billed to your own provider keys</>;
+  if (kortixCost > 0) return <>billed as Kortix credits</>;
+  return <>over {days} days</>;
+}
+
+function Payee({ color, label, amount }: { color: string; label: string; amount: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums">
+      <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      {fmtUsd(amount)} {label}
+    </span>
+  );
+}
+// `Panel` is not redefined here — it moved to `./_shared` (imported above)
+// so `gateway-logs.tsx` could use the identical component instead of its own
+// copy. Re-declaring it locally would shadow the import.

@@ -136,7 +136,10 @@ const LogRow = forwardRef<
       <StatusBadge ok={row.ok} status={row.status} />
       <span className="flex items-center gap-1">
         <span className="text-foreground w-16 text-right text-xs tabular-nums">
-          ${row.final_cost.toFixed(4)}
+          {/* What the request cost YOU — the full caller-facing total, not
+              just the Kortix-billed slice (`kortix_cost`, 0 on a plain BYOK
+              call with no platform fee). */}
+          ${row.total_cost.toFixed(4)}
         </span>
         <ChevronRight
           className={cn(
@@ -156,6 +159,27 @@ function StatTile({ label, value }: { label: string; value: ReactNode }) {
       <div className="text-foreground mt-0.5 text-sm font-medium tabular-nums">{value}</div>
     </div>
   );
+}
+
+/**
+ * Who charged for this request, in the caller's own terms.
+ *
+ * `credits` = Kortix-managed inference on Kortix's credentials, paid from the
+ * wallet. `platform-fee` = your own provider key, plus the Kortix platform
+ * fee. `none` = your own provider key with no Kortix charge at all (self-host
+ * and free tier), or a flat-rate subscription route such as ChatGPT Codex.
+ */
+function billedByLabel(billingMode: string | null, provider: string): string {
+  switch (billingMode) {
+    case 'credits':
+      return 'Kortix credits';
+    case 'platform-fee':
+      return `your ${provider} key + Kortix fee`;
+    case 'none':
+      return `your ${provider} key`;
+    default:
+      return provider;
+  }
 }
 
 function DetailField({ label, value }: { label: string; value: ReactNode }) {
@@ -323,14 +347,27 @@ function GatewayLogDetail({
             <StatusBadge ok={data.ok} status={data.status} />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {/* Money tiles show only what the CALLER paid. On a Kortix-managed
+              (`credits`) request the upstream price is Kortix's wholesale cost,
+              not the caller's — the API never sends it, so there is no
+              "provider cost" tile to render for one. A BYOK request that also
+              carries a Kortix platform fee is the only case with two payees,
+              and only that case gets the fourth tile. */}
+          <div
+            className={cn(
+              'grid grid-cols-2 gap-2',
+              data.kortix_cost > 0 && data.provider_cost > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3',
+            )}
+          >
             <StatTile label="Latency" value={`${data.latency_ms}ms`} />
             <StatTile
               label="Tokens"
               value={(data.input_tokens + data.output_tokens).toLocaleString()}
             />
-            <StatTile label="Provider cost" value={`$${data.upstream_cost.toFixed(4)}`} />
-            <StatTile label="Billed" value={`$${data.final_cost.toFixed(4)}`} />
+            <StatTile label="Cost" value={`$${data.total_cost.toFixed(4)}`} />
+            {data.kortix_cost > 0 && data.provider_cost > 0 && (
+              <StatTile label="Kortix fee" value={`$${data.kortix_cost.toFixed(4)}`} />
+            )}
           </div>
 
           <div className="bg-popover rounded-md border px-4 py-1">
@@ -357,7 +394,10 @@ function GatewayLogDetail({
               />
             )}
             <DetailField label="Streaming" value={data.streaming ? 'yes' : 'no'} />
-            {data.billing_mode && <DetailField label="Billing mode" value={data.billing_mode} />}
+            {/* Was "Billing mode: none", which reads as "this call was free"
+                and is the reason a $0.00 next to a real provider charge looked
+                like a bug rather than a BYOK route. Name the payee instead. */}
+            <DetailField label="Billed by" value={billedByLabel(data.billing_mode, data.provider)} />
             {data.attempts > 1 && <DetailField label="Attempts" value={data.attempts} />}
             {/* Fetched by the route since day one and never rendered — it is the
                 only place the fallback chain that actually ran is visible. */}

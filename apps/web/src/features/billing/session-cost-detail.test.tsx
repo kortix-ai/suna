@@ -18,6 +18,8 @@ const detail = {
   updated_at: '2026-07-01T11:00:00.000Z',
   last_activity_at: '2026-07-01T11:00:00.000Z',
   llm_cost: 1.25,
+  llm_kortix_cost: 0,
+  llm_provider_cost: 1.25,
   compute_cost: 0.5,
   total_cost: 1.75,
   request_count: 2,

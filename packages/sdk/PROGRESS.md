@@ -970,6 +970,74 @@ SDK packed-install smoke: passed
 
 ---
 
+### 2026-08-17 — session `gateway-spend` — spend types carry the Kortix / provider split
+
+**Done.** Every LLM spend rollup in the platform summed `final_cost` alone, which
+answers "what did Kortix bill you" — 0 for every BYOK request, because a BYOK
+route resolves to `billingMode: 'none'` with `markup: 0`. A self-hosted gateway
+therefore reported `$0.0000` beside 927M real tokens. The API now reports total
+spend (`final_cost + upstream_cost`, the upstream side excluded on Kortix-managed
+rows where it is Kortix's own COGS), so the SDK's cost types gained the matching
+split fields.
+
+Additive only — no exported name, signature, or existing field was renamed or
+removed:
+
+- `GatewayLogRow`: `+kortix_cost`, `+provider_cost`, `+total_cost`.
+  `upstream_cost` and `final_cost` stay, now `@deprecated` aliases of
+  `provider_cost` / `kortix_cost`. `upstream_cost`'s VALUE changes on
+  `billing_mode: 'credits'` rows only: the API now sends 0 instead of Kortix's
+  wholesale price, which was publishing the Kortix margin on every managed
+  request. No consumer can legitimately want that number.
+- `GatewayOverview`, `GatewaySeriesPoint`, `GatewayModelStat`: `+kortix_cost`,
+  `+provider_cost`. Their existing `total_cost` / `cost` fields now carry the
+  corrected total instead of the Kortix-billed slice.
+- `CostSummaryTotals`, `ProjectCostRow`, `SessionCostSummary`:
+  `+llm_kortix_cost`, `+llm_provider_cost`. `llm_cost` now carries the total.
+
+RED first. These are type-level assertions, so RED shows up under `tsc`, not
+`bun test`:
+
+```
+$ bun tsc --noEmit
+src/core/rest/projects-client/gateway.test.ts(61,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(62,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(63,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(64,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(71,9): error TS2322: Type 'true' is not assignable to type 'false'.
+error: "tsc" exited with code 2
+```
+
+GREEN — all three gates:
+
+```
+$ pnpm run typecheck
+> tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+(clean, no output)
+
+$ pnpm test
+ 1943 pass
+ 2 skip
+ 0 fail
+ 7377 expect() calls
+Ran 1945 tests across 145 files. [22.47s]
+
+$ pnpm run smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed
+```
+
+Public-surface snapshots unchanged — this adds interface FIELDS, not exports.
+The `version` field was not touched.
+
+**Shippable to production: YES.** Verified against a live local API on real
+data (a project with 95 BYOK + 63 managed requests): `/gateway/overview`
+returns `total_cost 6.9148 = kortix_cost 2.1144 + provider_cost 4.8005`, where
+it previously returned `2.1144`. A `credits` log row now returns
+`provider_cost: 0` and no longer ships its `0.2174` wholesale cost.
+
+---
+
 ### 2026-08-13 — session `warm-index` — warm-session decline must not toast
 
 **Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
@@ -10213,3 +10281,150 @@ bb7b36a41d), SDK-side residuals:
 - RED-proven: session-title-sync gate (1 failing test before the gate),
   stash TTL (import failure then behavioral), both suites green after
   (6 pass / 21 pass).
+
+### 2026-08-17 — bounded prompt-observation + un-parked status poll (branch `stuck-busy-latch`)
+
+Fixes the "session stuck working forever" class (turn finished but the UI shows
+"Gathering thoughts…"/"Sharing the result…"/stop-button until a hard refresh;
+queue drain gate held closed by the phantom busy).
+
+**Changed** — `core/session-sync/session-sync-controller.ts`, TDD (4 RED tests
+first):
+
+1. `PROMPT_OBSERVATION_STALL_MS = 10_000` (new export): the REST-prompt busy
+   override now expires unless renewed by proof the turn is alive
+   (`noteActivity` on any SSE frame for the session, `observePromptStatus`
+   busy/retry, `observePromptActivity`). Before, `awaiting-work` ignored idle
+   *forever* — a prompt the runtime accepted but never turned into a turn, or a
+   lost `session.idle` frame, pinned the UI busy until reload. Expiry only
+   stops the override; a genuinely-busy runtime still reports busy.
+2. `checkLiveness` no longer awaits the transcript tail unboundedly. A parked
+   sandbox-proxy read (wedged opencode: never answers, never errors) used to
+   block `reconcileStatus` on EVERY subsequent poll — `reconcile('poll')`
+   returns the same in-flight `tailRequest`, so one parked read disabled status
+   reconciliation permanently. That is the "only a hard refresh fixes it"
+   signature. The tail race is bounded at `livenessIntervalMs`; the status poll
+   always runs.
+
+**Evidence** — `pnpm --filter @kortix/sdk test`: 1944 pass, 0 fail, 145 files
+(baseline this session on clean main: 1940 pass / 1942). `typecheck` clean.
+`smoke:install`: `✔ install smoke test passed`. Ground truth from a live
+worktree-stack probe (project af8b0482, session 289bdc5b, Platinum): mid-turn
+stop → resume left `/session/status` = `busy` and blocking
+`POST /session/:id/message` 504s after the ALB budget — the runtime can claim
+busy for a dead turn, so the client MUST reconcile on a bounded clock.
+
+Additive only: one new exported const, no renames, no snapshot removals.
+
+### 2026-08-17 (same session, follow-up) — live SSE evidence vetoes health-probe failures
+
+Third defect in the same stuck-session cluster, seen live on Essentia: during a
+heavy turn (PDF/asset generation) the `/kortix/health` probe times out, two
+consecutive misses flip the connection store to `unreachable`, which tears down
+the SSE stream (`use-opencode-events` gates on `status === 'connected'`) and
+routes every send to the wake queue ("Waking this session up…") — against a
+runtime that is provably up, mid-turn, and serving the Files panel.
+
+**Changed** — `browser/stores/sandbox-connection-store.ts` gains
+`lastRuntimeEvidenceAt` + `noteRuntimeEvidence()` (called on every delivered SSE
+frame, 1s write granularity); `react/use-runtime-reconnect.ts` gains
+`RUNTIME_EVIDENCE_FRESH_MS = 15_000` + pure `shouldIgnoreProbeFailure()`, and
+the probe failure path discards a failure while evidence is fresh. If the
+stream really is dead, evidence goes stale in 15s and failures count again.
+
+**Evidence** — TDD RED first (4 new tests; suite failed on missing export).
+`pnpm --filter @kortix/sdk test`: 1950 pass, 0 fail, 145 files. `typecheck`
+clean. `smoke:install` passed. Surface snapshots re-recorded — additive only
+(`RUNTIME_EVIDENCE_FRESH_MS`, `shouldIgnoreProbeFailure`,
+`noteRuntimeEvidence`).
+
+### 2026-08-17 (same session, follow-up 3) — adversarial audit fixes
+
+An 82-agent adversarial workflow attacked the day's five fixes: 22 raw claims,
+10 survived 3-lens verification with executed-test proofs. All confirmed
+defects fixed:
+
+1. **Blind stall expiry (critical class).** The 10s override expiry could
+   unmask a LIVE turn (no SSE frame for 10s + a stale idle in the store) and —
+   by flipping isBusy false — stop the liveness polling that was its own
+   justification (`checkLiveness`'s guard makes the first poll land at 2×
+   interval, never within the stall window). Expiry is now authoritative:
+   `resolvePromptStall` polls `/session/status` first; busy keeps the override
+   and re-arms; idle settles through the settlement window; unreachable
+   releases. 3 new controller tests.
+2. **Husk dispatch into a live turn.** `stepDrainMachine`/`planDrainTick` now
+   flag a husk-released dispatch (`viaHusk`), and the drain hook confirms
+   idleness via new `loadSessionRuntimeStatus` (SDK react export; registry +
+   3 tests) before sending — a busy answer heals the store instead.
+3. **`gates.runtimeReady` missing from the drain effect deps** — a message
+   queued against a sleeping sandbox never sent on wake. Added.
+4. **Retry was a silent no-op** — the wake selector summed pending+failed,
+   invariant under retry. Split into two lane selectors; pause-lift now keys
+   on pending-lane growth (enqueue AND retry lift it).
+5. **Failed-lane preservation reverted** (`git revert b66158a311`): proven
+   double-preservation (the composer already restores text+files on a failed
+   await), an unimplemented dedupe promise, and no agent/model capture. The
+   composer restore is the single mechanism; the refresh-mid-flight hole is a
+   documented residual.
+
+**Evidence** — `pnpm --filter @kortix/sdk test`: 2115 pass, 0 fail, 148 files.
+`typecheck` clean. `smoke:install` passed. apps/web `tsc` clean apart from the
+known `test.each` baseline; eslint clean on changed files. Snapshots additive
+only (`loadSessionRuntimeStatus`).
+
+### 2026-08-17 (same session, follow-up 4) — confirmation-fleet fixes
+
+A 4-agent confirmation fleet re-attacked the audit fixes; 2 of 4 dimensions
+survived with executed proofs. All fixed:
+
+1. **Detached client method (latent on main, root cause).** Both
+   `loadSessionRuntimeStatus` and the registry controller's `loadStatus`
+   detached `client.session.status` before calling it; the real SDK method
+   dereferences `this.client`, so every status reconciliation against a real
+   client threw TypeError silently — only plain-object fakes passed. Bound
+   calls now; class-based regression test added.
+2. **Stall resolve epoched + deadlined + retried.** `resolvePromptStall` now
+   captures `promptObservationEpoch` (bumped on begin/clear) and discards
+   late answers from prior observations; the status read is deadlined at
+   `livenessIntervalMs`; a failed/timed-out read retries next window up to
+   `PROMPT_STALL_MAX_ATTEMPTS = 3` (transient 502 never unmasks a live turn;
+   a dead runtime still releases in ~30s). 3 new controller tests.
+3. **Husk-confirm window.** The confirmation round-trip is capped at
+   `HUSK_CONFIRM_TIMEOUT_MS = 5s` (never strands the queue), and after the
+   await the dispatch rechecks every gate except the husk itself via new pure
+   `shouldAbortHuskDispatch` (Stop pressed / revert staged / server busy
+   during the round-trip now abort). 5 new boundary tests.
+
+Confirmation fleet also proved: drain-wake originals CLOSED (real-React
+harness, pre-fix counterfactuals), revert of b66158a311 residue-free.
+
+**Evidence** — SDK: 2119 pass, 0 fail, 148 files; typecheck clean;
+smoke:install passed. Web: boundary tests 54 pass / 0 fail; tsc clean apart
+from the known baseline; eslint clean.
+
+### 2026-08-17 (same session, follow-up 5) — round-2 confirmation fixes
+
+The r2 confirmation fleet verified all prior fixes closed, and found 2 new
+holes + 2 hygiene issues. All fixed, TDD RED first (3 new tests):
+
+1. **Intra-observation staleness.** A stall status read issued while the
+   runtime was honestly idle could be OVERTAKEN by the turn starting mid-
+   flight; the late idle answer then released the override and wrote stale
+   idle into the store — a stuck-IDLE latch over a live turn. `resolvePromptStall`
+   now stamps `promptRunningGeneration` + `lastActivityAt` at issue time and
+   discards overtaken answers entirely (fresh evidence has already re-armed
+   the deadline). Also: an idle answer whose re-entrant setStatus wrapper
+   moved the phase to 'settling' now lets settlement own the release instead
+   of clearing instantly (the 500ms window was being skipped).
+2. **Husk confirm escapes the component lifetime.** The detached confirmation
+   IIFE could approve a dispatch AFTER unmount, with frozen refs that by
+   construction approve, through a runtime pointer re-aimed at ANOTHER
+   session's sandbox. `aliveRef` liveness guard checked before the claim.
+3. **`loadSessionRuntimeStatus` laundered failures into idle.** The generated
+   client RESOLVES with `{error}` on HTTP failure; mapping that to idle
+   starved every thrown-error retry budget. Now throws on `error`/missing data.
+4. **destroy() leak**: the stall deadline timer is tracked and cancelled.
+
+**Evidence** — SDK: 2122 pass, 0 fail, 148 files; typecheck clean;
+smoke:install passed. Web tsc clean apart from the known baseline; eslint
+clean on the drain hook.

@@ -59,7 +59,10 @@ import {
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
 import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
-import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
+import {
+  useCatalog,
+  usePipedreamStatus,
+} from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
@@ -173,6 +176,16 @@ function ChannelsFallback() {
  * view of the same list — it is the other direction of the same job (who can
  * reach the agent, rather than what the agent can reach). Last is where a
  * reader stops expecting the strip to keep filtering one thing.
+ *
+ * Discovery and All are dropped entirely on a deployment with no catalogue —
+ * see `catalogueAvailable`. They are two views of ONE catalogue, and without
+ * `connectors_api_discover` that catalogue is Pipedream's, which answers `501`
+ * on every request unless three env vars are set. They are removed rather
+ * than disabled: a disabled tab still asserts that the feature exists and is
+ * merely out of reach for now, which is not what "this deployment does not
+ * have Pipedream" means. Connected and Channels stay either way — every
+ * deployment has its own connectors and its own inbound channels, catalogue
+ * or not.
  */
 const SCOPES: readonly ConnectorScope[] = ['discover', 'all', 'connected', 'channels'];
 
@@ -353,6 +366,22 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
+  // Whether this deployment has a catalogue to browse at all.
+  //
+  // `useCatalog` falls back to Easy Connect (Pipedream) whenever
+  // `connectors_api_discover` is off, which is the default — so with the flag
+  // off and Pipedream unconfigured, Discovery and All have no backend and every
+  // request they make answers `501`. The probe is read HERE rather than off
+  // `catalog`, because it decides `enabled` for the very hook that would
+  // otherwise report it.
+  //
+  // Only a confirmed `absent` closes the tabs. While the probe is in flight the
+  // page renders exactly as it always has: the overwhelming majority of
+  // deployments do have Pipedream, and removing two tabs for a beat on every
+  // load to spare a minority one is the wrong trade.
+  const pipedreamStatus = usePipedreamStatus(!discoverEnabled);
+  const catalogueAvailable = discoverEnabled || pipedreamStatus !== 'absent';
+
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
     [projectId],
@@ -411,7 +440,18 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // connector than reading the ones already there, and the ones already there
   // are one click away. It also made the landing tab depend on a query, so the
   // page could settle onto a different tab than it first rendered.
-  const scope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';
+  //
+  // Unless the requested scope needs a catalogue that is not there: `?scope=`
+  // outlives the answer it was read under, and `?c=` returns the user to this
+  // page after an OAuth round trip with the same param still in the URL.
+  // Reading it blindly would strand them on a tab the strip no longer renders.
+  // Connected and Channels never need the catalogue, so they are honored
+  // either way.
+  const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';
+  const scope: ConnectorScope =
+    catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'
+      ? requestedScope
+      : 'connected';
   const catalogActive = scope === 'discover' || scope === 'all';
   // Channels replaces the connector list rather than narrowing it, so the
   // controls that only make sense over that list come off with it: the search
@@ -420,6 +460,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // it — so it needs neither, and leaving them on screen would offer to search
   // a list that is not there.
   const channelsActive = scope === 'channels';
+
+  // The scopes the strip actually offers. Filters out Discovery/All when
+  // there is no catalogue to browse — see `catalogueAvailable` above and this
+  // component's header comment. Connected and Channels are never filtered:
+  // every deployment has its own connectors and its own inbound channels.
+  const visibleScopes = catalogueAvailable
+    ? SCOPES
+    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');
 
   // The category the catalogue should FILTER by, server-side. `null` while
   // browsing everything and while a search runs — the search is server-side
@@ -557,56 +605,66 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         ) : undefined
       }
       filters={
-        <>
-          {/* Rendered immediately, not behind `settled`. The strip used to
-              wait for both queries because the landing tab was derived from
-              one of them and Connected carried a count off the other; neither
-              is true now, so waiting only meant an empty 28px slot on every
-              load followed by the tabs popping in. Four static labels over a
-              scope read out of the URL have nothing to wait for. */}
-          <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
-            <TabsList>
-              {SCOPES.map((value) => (
-                <TabsTrigger key={value} value={value}>
-                  {SCOPE_LABEL[value]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          {/* Global rules — connector approval policy, so it belongs on this
-              page and not on the shared capability bar, which also rides over
-              Agents, Skills and Triggers.
+        // A strip of one tab is not a choice, so it collapses to no strip at
+        // all when only one scope is reachable — `CapabilityPageShell` drops
+        // the whole row when this is `undefined`, which is why it must not be
+        // a bare fragment. With Channels in the mix a catalogue-less
+        // deployment still has two real destinations (Connected, Channels),
+        // so the strip survives losing Discovery and All; it only disappears
+        // entirely for the narrower case of neither existing.
+        visibleScopes.length > 1 ? (
+          <>
+            {/* Rendered immediately, not behind `settled`. The strip used to
+                wait for both queries because the landing tab was derived from
+                one of them and Connected carried a count off the other; neither
+                is true now, so waiting only meant an empty 28px slot on every
+                load followed by the tabs popping in. Static labels over a
+                scope read out of the URL have nothing to wait for. */}
+            <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
+              <TabsList>
+                {visibleScopes.map((value) => (
+                  <TabsTrigger key={value} value={value}>
+                    {SCOPE_LABEL[value]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            {/* Global rules — connector approval policy, so it belongs on this
+                page and not on the shared capability bar, which also rides over
+                Agents, Skills and Triggers.
 
-              Text, not a chip. This row already carries the tab strip's
-              filled control; a second bordered pill opposite it would read as
-              a second selector rather than a way out to a settings surface.
-              `variant="text"` is the codebase's muted-text affordance
-              (`text-muted-foreground` → `text-primary` on hover); `px-0` drops
-              the pill padding so the label sits flush with the container's
-              right edge, mirroring the tab strip flush left. It keeps the
-              full `h-8` of `size="sm"` as its hit area.
+                Text, not a chip. This row already carries the tab strip's
+                filled control; a second bordered pill opposite it would read as
+                a second selector rather than a way out to a settings surface.
+                `variant="text"` is the codebase's muted-text affordance
+                (`text-muted-foreground` → `text-primary` on hover); `px-0` drops
+                the pill padding so the label sits flush with the container's
+                right edge, mirroring the tab strip flush left. It keeps the
+                full `h-8` of `size="sm"` as its hit area.
 
-              `ml-auto` rather than leaning on the shell's `justify-between`:
-              when the row wraps on a narrow viewport this lands alone on the
-              second line, and `justify-between` would drop it to the LEFT
-              there. `ml-auto` holds it right in both layouts.
+                `ml-auto` rather than leaning on the shell's `justify-between`:
+                when the row wraps on a narrow viewport this lands alone on the
+                second line, and `justify-between` would drop it to the LEFT
+                there. `ml-auto` holds it right in both layouts.
 
-              Not gated on `canWrite` — anyone who can open the page can read
-              the project's approval policy. */}
-          <Button
-            type="button"
-            variant="text"
-            size="sm"
-            onClick={() => setRulesOpen(true)}
-            className="ml-auto px-0 transition-colors"
-          >
-            Global rules
-          </Button>
-          {/* The category filter is NOT here. It is a rail of chips rendered by
-              `ConnectorBrowse` directly above the grid it filters — this row is
-              too narrow for it, and the rail has to sit next to its content for
-              the lit chip to read as "this is why you are seeing these". */}
-        </>
+                Not gated on `canWrite` — anyone who can open the page can read
+                the project's approval policy. */}
+            <Button
+              type="button"
+              variant="text"
+              size="sm"
+              onClick={() => setRulesOpen(true)}
+              className="ml-auto px-0 transition-colors"
+            >
+              Global rules
+            </Button>
+            {/* The category filter is NOT here. It is a rail of chips rendered
+                by `ConnectorBrowse` directly above the grid it filters — this
+                row is too narrow for it, and the rail has to sit next to its
+                content for the lit chip to read as "this is why you are seeing
+                these". */}
+          </>
+        ) : undefined
       }
     >
       {channelsActive ? (
@@ -643,10 +701,15 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 size="sm"
                 title="No connectors yet"
                 description="Connect an outside tool and your agents can use it in a session."
+                // The CTA goes with the tab it opens. With no catalogue on this
+                // deployment it would be a button to a tab that is not there;
+                // `+` is the remaining way in, and it is already in the header.
                 action={
-                  <Button size="sm" variant="secondary" onClick={() => setScope('discover')}>
-                    Browse the catalogue
-                  </Button>
+                  catalogueAvailable ? (
+                    <Button size="sm" variant="secondary" onClick={() => setScope('discover')}>
+                      Browse the catalogue
+                    </Button>
+                  ) : undefined
                 }
               />
             )

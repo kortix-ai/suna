@@ -3,6 +3,7 @@ import type { Message } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
 import {
+  loadSessionRuntimeStatus,
   ACTIVE_SESSION_PREFETCH_SOURCE,
   beginSessionPromptObservation,
   clearActiveSessionPrefetches,
@@ -210,5 +211,69 @@ describe('REST prompt observation events', () => {
     expect(() =>
       noteSessionSyncEvent({ type: 'sync' } as unknown as { type?: string; properties: unknown }),
     ).not.toThrow();
+  });
+});
+
+describe('loadSessionRuntimeStatus', () => {
+  test('returns the authoritative runtime status for one session', async () => {
+    const client = {
+      session: {
+        messages: async () => ({ data: [] }),
+        status: async () => ({ data: { 'ses-1': { type: 'busy' } } }),
+      },
+    } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toEqual({ type: 'busy' });
+  });
+
+  test('a session absent from the snapshot is authoritatively idle', async () => {
+    const client = {
+      session: {
+        messages: async () => ({ data: [] }),
+        status: async () => ({ data: {} }),
+      },
+    } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toEqual({ type: 'idle' });
+  });
+
+  test('a runtime without a status endpoint returns null (caller decides)', async () => {
+    const client = { session: { messages: async () => ({ data: [] }) } } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toBeNull();
+  });
+});
+
+describe('loadSessionRuntimeStatus binds the client method', () => {
+  test('a client whose status() reads `this` (like the real SDK) works', async () => {
+    // The real @opencode-ai/sdk SessionClient.status() dereferences
+    // `this.client`. Detaching the method (`const f = s.status; await f()`)
+    // makes `this` undefined and throws before any request goes out — which
+    // silently disabled every status reconciliation against a real client
+    // while all the plain-object test fakes kept passing.
+    class RealisticSession {
+      private answer = { data: { 'ses-1': { type: 'busy' } } };
+      async messages() {
+        return { data: [] };
+      }
+      async status() {
+        // Throws exactly like the SDK if called detached.
+        return (this as RealisticSession).answer;
+      }
+    }
+    const client = { session: new RealisticSession() } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toEqual({ type: 'busy' });
+  });
+});
+
+describe('loadSessionRuntimeStatus refuses to launder failures into idle', () => {
+  test('an SDK-style resolved error response throws instead of reporting idle', async () => {
+    // The generated client RESOLVES with { error } on HTTP failure. Mapping
+    // that to "idle" told every caller a failing runtime was authoritatively
+    // done — which defeats retry budgets built on thrown errors.
+    const client = {
+      session: {
+        messages: async () => ({ data: [] }),
+        status: async () => ({ error: { message: 'ECONNREFUSED' } }),
+      },
+    } as never;
+    await expect(loadSessionRuntimeStatus('ses-1', client)).rejects.toThrow();
   });
 });

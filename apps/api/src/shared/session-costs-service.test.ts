@@ -452,13 +452,13 @@ describe('listSessionCosts service', () => {
     const baseQuery = requireBaseSessionQuery();
     const identifiers = unqualifiedSelectIdentifiers(baseQuery);
 
-    // A real floor, not a non-zero one. The select carries exactly 12 unqualified
-    // fields — 9 from the LLM aggregate, 3 from the compute aggregate — so a
-    // `> 0` check would still pass if 11 of them silently stopped rendering and
+    // A real floor, not a non-zero one. The select carries exactly 14 unqualified
+    // fields — 11 from the LLM aggregate, 3 from the compute aggregate — so a
+    // `> 0` check would still pass if 13 of them silently stopped rendering and
     // the checks below would then be guarding almost nothing.
     //
     // If you added a subquery field selected outward and landed here: bump this to
-    // 13, then re-read the assertions below and confirm your new alias is neither
+    // 15, then re-read the assertions below and confirm your new alias is neither
     // exposed by another FROM item nor missing from the exposure map. Adding a field
     // is exactly when a new collision appears, which is why this routes you here.
     //
@@ -467,7 +467,7 @@ describe('listSessionCosts service', () => {
     // unqualifiedSelectIdentifiers, so it moves neither this count nor the checks
     // below. That is safe only while such an alias is unique. Two colliding dotted
     // aliases are 42702 and this test will not see them.
-    expect(identifiers).toHaveLength(12);
+    expect(identifiers).toHaveLength(14);
 
     const exposures = outerFromExposureCounts(baseQuery);
 

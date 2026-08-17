@@ -12,7 +12,10 @@ import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
-import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
+import {
+  noteRuntimeEvidence,
+  useSandboxConnectionStore,
+} from '../../browser/stores/sandbox-connection-store';
 import { useServerStore } from '../../browser/stores/server-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
@@ -255,6 +258,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     const handle = openEventStream({
       client,
       onEvent: (event) => {
+        // Every delivered frame is live proof the runtime is reachable — it
+        // vetoes concurrent health-probe failures (a loaded box can miss the
+        // probe deadline mid-turn). See shouldIgnoreProbeFailure.
+        noteRuntimeEvidence();
         noteSessionSyncEvent(event);
         handleEvent(event);
       },

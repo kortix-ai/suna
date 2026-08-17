@@ -177,7 +177,11 @@ test('forwardKortixRequest owns wrapper authentication, body buffering, and resp
   expect(forwardedRequest!.headers.get('authorization')).toBe('Bearer kortix-operator-token');
   expect(forwardedRequest!.headers.get('cookie')).toBeNull();
   expect(forwardedRequest!.headers.get('accept-encoding')).toBe('identity');
-  expect(forwardedRequest!.headers.get('content-length')).toBe('17');
+  // Deliberately NOT set: undici derives it from the body, and pinning it made
+  // every bodied request a wrapper forwards throw `invalid content-length
+  // header`, which the helper swallowed into a bare 502. The body still arrives
+  // intact, which is the property that actually matters.
+  expect(forwardedRequest!.headers.get('content-length')).toBeNull();
   expect(await forwardedRequest!.text()).toBe('{"hello":"world"}');
 
   expect(response.status).toBe(202);

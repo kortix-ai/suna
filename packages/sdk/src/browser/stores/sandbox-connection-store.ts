@@ -37,6 +37,14 @@ interface SandboxConnectionStore {
 	recoveryPhase: SandboxRecoveryPhase;
 	restartRequestedAt: number | null;
 	manualRetryNonce: number;
+	/**
+	 * When the last live SSE event from the active runtime arrived. Proof of
+	 * reachability that outranks a failed health probe: an event that just came
+	 * over the wire cannot be stale, while a probe on a loaded box can time out
+	 * even though the runtime is mid-turn and serving traffic. See
+	 * `shouldIgnoreProbeFailure` in `react/use-runtime-reconnect`.
+	 */
+	lastRuntimeEvidenceAt: number | null;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -119,6 +127,7 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	recoveryPhase: "idle",
 	restartRequestedAt: null,
 	manualRetryNonce: 0,
+	lastRuntimeEvidenceAt: null,
 }));
 
 export function requestRuntimeReconnect() {
@@ -238,6 +247,7 @@ export function resetForServerSwitch() {
 			recoveryPhase: "idle",
 			restartRequestedAt: null,
 			manualRetryNonce: 0,
+			lastRuntimeEvidenceAt: null,
 		});
 		saveWasConnected(true);
 		return;
@@ -260,6 +270,7 @@ export function resetForServerSwitch() {
 			recoveryPhase: "idle",
 			restartRequestedAt: null,
 			manualRetryNonce: 0,
+			lastRuntimeEvidenceAt: null,
 		});
 		saveWasConnected(true);
 		return;
@@ -279,8 +290,20 @@ export function resetForServerSwitch() {
 		recoveryPhase: "idle",
 		restartRequestedAt: null,
 		manualRetryNonce: 0,
+		lastRuntimeEvidenceAt: null,
 	});
 	saveWasConnected(false);
+}
+
+/**
+ * Record that a live SSE event from the active runtime just arrived. Cheap and
+ * called per event, so it only writes when the timestamp actually moves the
+ * freshness window (>= 1s granularity keeps store notifications rare).
+ */
+export function noteRuntimeEvidence(at: number = Date.now()) {
+	const previous = useSandboxConnectionStore.getState().lastRuntimeEvidenceAt;
+	if (previous !== null && at - previous < 1_000) return;
+	useSandboxConnectionStore.setState({ lastRuntimeEvidenceAt: at });
 }
 
 export function markRecoveryRequested(phase: Exclude<SandboxRecoveryPhase, 'idle'>) {

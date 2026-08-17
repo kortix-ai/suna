@@ -1,6 +1,11 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import type { GatewayLogRow } from './gateway';
+import type {
+  GatewayLogRow,
+  GatewayModelStat,
+  GatewayOverview,
+  GatewaySeriesPoint,
+} from './gateway';
 import {
   createGatewayKey,
   deleteGatewayBudget,
@@ -43,6 +48,28 @@ type GatewayLogCarriesCacheWrites = GatewayLogRow extends { cache_write_tokens: 
 test('GatewayLogRow carries cache-write tokens from the API contract', () => {
   const contractIncludesCacheWrites: GatewayLogCarriesCacheWrites = true;
   expect(contractIncludesCacheWrites).toBe(true);
+});
+
+// `final_cost` alone is what KORTIX billed, which is 0 on every BYOK request.
+// Each gateway shape has to carry the split so a caller can render what the
+// caller actually spent instead of a permanent $0.00.
+type CarriesSpendSplit<T> = T extends { kortix_cost: number; provider_cost: number }
+  ? true
+  : false;
+
+test('every gateway money shape carries the Kortix / provider spend split', () => {
+  const logRow: CarriesSpendSplit<GatewayLogRow> = true;
+  const overview: CarriesSpendSplit<GatewayOverview> = true;
+  const seriesPoint: CarriesSpendSplit<GatewaySeriesPoint> = true;
+  const modelStat: CarriesSpendSplit<GatewayModelStat> = true;
+  expect([logRow, overview, seriesPoint, modelStat]).toEqual([true, true, true, true]);
+});
+
+type GatewayLogCarriesTotal = GatewayLogRow extends { total_cost: number } ? true : false;
+
+test('a gateway log row reports the total the request cost the caller', () => {
+  const carriesTotal: GatewayLogCarriesTotal = true;
+  expect(carriesTotal).toBe(true);
 });
 
 test('listGatewayLogs builds the query string from limit/offset/ok', async () => {

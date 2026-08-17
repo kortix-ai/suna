@@ -100,10 +100,12 @@ function createController(sessionId: string, key: string): SessionSyncController
     sessionId,
     loadPage: (request) => readSessionMessagePage(resolveClient(key), sessionId, request),
     loadStatus: async () => {
-      const loadStatus = resolveClient(key).session.status;
-      if (!loadStatus) return { type: 'idle' } as SessionStatus;
-      const result = await loadStatus();
-      return result.data?.[sessionId] ?? ({ type: 'idle' } as SessionStatus);
+      // Bound call — see loadSessionRuntimeStatus. The previous detached call
+      // (`const f = client.session.status; await f()`) threw a TypeError on
+      // the real SDK client, so the controller's status reconciliation had
+      // never actually worked outside plain-object test fakes.
+      const status = await loadSessionRuntimeStatus(sessionId, resolveClient(key));
+      return status ?? ({ type: 'idle' } as SessionStatus);
     },
     hydrate: (messages) => {
       useSyncStore.getState().hydrate(sessionId, messages);
@@ -244,6 +246,35 @@ export function beginSessionPromptObservation(sessionId: string, runtimeScope?: 
 
 export function endSessionPromptObservation(sessionId: string, runtimeScope?: string): void {
   findExistingSessionEntry(sessionId, runtimeScope)?.controller.endPromptObservation();
+}
+
+/**
+ * One authoritative read of a session's runtime status. `null` when the
+ * runtime exposes no status endpoint — the caller decides what silence means.
+ * A session absent from the snapshot is authoritatively idle: the runtime
+ * enumerates every session it is working on.
+ */
+export async function loadSessionRuntimeStatus(
+  sessionId: string,
+  client: SessionMessageClient = getClient(),
+): Promise<SessionStatus | null> {
+  // Invoke BOUND — `client.session.status()` — never detached into a local.
+  // The real SDK's SessionClient.status() dereferences `this.client`, so a
+  // detached call throws a TypeError before any request goes out. That exact
+  // detachment silently disabled status reconciliation against real clients
+  // while every plain-object test fake kept passing.
+  if (!client.session.status) return null;
+  const result = (await client.session.status()) as {
+    data?: Record<string, SessionStatus>;
+    error?: unknown;
+  };
+  // The generated client RESOLVES with { error } on HTTP failure. Mapping
+  // that to "idle" told callers a failing runtime was authoritatively done —
+  // and starved every retry budget built on thrown errors. Fail loudly.
+  if (result.error !== undefined || result.data === undefined) {
+    throw new Error(`session status read failed: ${JSON.stringify(result.error ?? 'no data')}`);
+  }
+  return result.data[sessionId] ?? ({ type: 'idle' } as SessionStatus);
 }
 
 export function loadSessionTranscriptMessages(

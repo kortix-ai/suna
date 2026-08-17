@@ -10,6 +10,7 @@ import {
 } from '../browser/session-sync/session-cache-ownership';
 import {
   getSessionSyncController,
+  loadSessionRuntimeStatus,
   loadSessionTranscriptMessages,
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
@@ -25,7 +26,7 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
-export { loadSessionTranscriptMessages };
+export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
 type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
   patch?: string;

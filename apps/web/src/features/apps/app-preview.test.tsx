@@ -8,6 +8,9 @@ import {
   AppPreview,
   AppPreviewOverlay,
   PREVIEW_SPINNER_DELAY_MS,
+  PREVIEW_VIEWPORT_HEIGHT,
+  PREVIEW_VIEWPORT_WIDTH,
+  previewScale,
   scheduleSlowPreview,
 } from './apps-view';
 
@@ -151,5 +154,75 @@ describe('scheduleSlowPreview', () => {
   test('the threshold is short enough to stay under a perceived stall', () => {
     expect(PREVIEW_SPINNER_DELAY_MS).toBeGreaterThanOrEqual(200);
     expect(PREVIEW_SPINNER_DELAY_MS).toBeLessThanOrEqual(400);
+  });
+});
+
+/**
+ * The second defect: a card thumbnail showed the App's MOBILE layout.
+ *
+ * A tile is ~300-450px wide, and an iframe that wide is a 300-450px viewport,
+ * so every App answered the card with its hamburger-and-one-column view — the
+ * one layout nobody deploys an App for. The card now renders the App at a
+ * desktop viewport and scales the result down, so the tile shows the layout
+ * opening the App would show.
+ */
+describe('previewScale', () => {
+  test('shrinks a desktop viewport into the tile it has to fit', () => {
+    expect(previewScale(640, 1280)).toBe(0.5);
+    expect(previewScale(320, 1280)).toBe(0.25);
+  });
+
+  test('defaults to the desktop viewport the card renders at', () => {
+    expect(previewScale(PREVIEW_VIEWPORT_WIDTH)).toBe(1);
+  });
+
+  test('refuses a width nothing can be concluded from', () => {
+    // A detached node, a display:none ancestor, and a server render all measure
+    // 0. Scaling by 0 — or by NaN — is how a thumbnail silently disappears.
+    for (const width of [0, -10, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(previewScale(width)).toBeNull();
+    }
+    expect(previewScale(640, 0)).toBeNull();
+  });
+
+  test('the viewport is 16:9, matching the tile, so nothing is cropped', () => {
+    expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(16 / 9, 5);
+  });
+
+  test('the viewport is a desktop width — a phone width would defeat the point', () => {
+    expect(PREVIEW_VIEWPORT_WIDTH).toBeGreaterThanOrEqual(1024);
+  });
+});
+
+describe('AppPreview — the card renders a desktop viewport', () => {
+  test('the card frame is sized to the desktop viewport, not to the tile', () => {
+    const html = renderToStaticMarkup(
+      <AppPreview app={APP} url={URL} accessError={false} interactive={false} />,
+    );
+
+    expect(html).toContain(`width:${PREVIEW_VIEWPORT_WIDTH}px`);
+    expect(html).toContain(`height:${PREVIEW_VIEWPORT_HEIGHT}px`);
+    expect(html).toContain('origin-top-left');
+  });
+
+  test('it stays hidden until measured, rather than flashing an unscaled corner', () => {
+    // `renderToStaticMarkup` skips effects, which is exactly the pre-measure
+    // state: no layout has happened, so there is no honest scale to apply yet.
+    const html = renderToStaticMarkup(
+      <AppPreview app={APP} url={URL} accessError={false} interactive={false} />,
+    );
+
+    expect(html).toContain('visibility:hidden');
+    expect(html).not.toContain('transform:scale');
+  });
+
+  test('the modal frame is untouched — it fills the dialog at its real size', () => {
+    const html = renderToStaticMarkup(
+      <AppPreview app={APP} url={URL} accessError={false} interactive />,
+    );
+
+    expect(html).not.toContain(`width:${PREVIEW_VIEWPORT_WIDTH}px`);
+    expect(html).not.toContain('visibility:hidden');
+    expect(html).toContain('size-full');
   });
 });
