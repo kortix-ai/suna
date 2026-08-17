@@ -95,16 +95,22 @@ describe('GetMemTool joins the shared BasicTool shell', () => {
     expect(html).toContain('src/login.tsx');
   });
 
-  test('panel surface: standard sticky header, LTM content preserved', () => {
+  // Task 16 REWRITE: the panel surface is a closed-by-default disclosure row,
+  // not a sticky page header over an open body. The content assertions stay —
+  // they are the point of this test — so the row is opened with `defaultOpen`,
+  // which is exactly what the panel passes when a detail holds one call.
+  test('panel surface: disclosure row, LTM content preserved once opened', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
-          <GetMemTool part={makePart({ id: 9 }, LTM_OUTPUT)} />
+          <GetMemTool part={makePart({ id: 9 }, LTM_OUTPUT)} defaultOpen />
         </ToolSurfaceContext.Provider>,
       ),
     );
 
-    expect(html).toContain('sticky');
+    expect(html).not.toContain('sticky');
+    expect(html).toContain('bg-popover border-border overflow-hidden rounded-md border');
+    expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('text-sm font-medium');
     expect(html).toContain('Recalled');
 

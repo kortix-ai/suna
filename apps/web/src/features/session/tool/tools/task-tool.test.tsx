@@ -179,10 +179,12 @@ describe('TaskTool — the row expands in place', () => {
     expect(markup).toContain('>Agent · explorer</span>');
     expect(markup).toContain('title="Find the bug">Find the bug</span>');
     // A settled call counts its steps; the badge is inline-suppressed by the
-    // shell, so the panel surface is where it is visible — and there the title
-    // is an `h3`, not the inline row's span.
+    // shell, so the panel surface is where it is visible. Task 16 REWRITE: the
+    // panel title is the disclosure row's own `span`, not the old page
+    // header's `h3` — the panel stopped being a page for one call.
     const panelMarkup = render(taskPart({}), { panel: true });
-    expect(panelMarkup).toContain('>Agent · explorer</h3>');
+    expect(panelMarkup).toContain('>Agent · explorer</span>');
+    expect(panelMarkup).not.toContain('<h3');
     expect(panelMarkup).toContain('>2 steps</span>');
   });
 
@@ -249,14 +251,24 @@ describe('TaskTool — the row expands in place', () => {
     expect(render(taskPart({}), { activatable: true, locked: true })).toContain('aria-expanded');
   });
 
-  test('the panel surface renders the same activity and action, expanded', () => {
-    // `PanelTool` has no disclosure: it renders the body outright. The activity
-    // list and the action must both survive that surface.
+  test('the panel surface is a disclosure row too — closed, then the same activity and action', () => {
+    // Task 16 REWRITE: the panel branch used to render the body outright, so
+    // this test only had to check the body survived the surface. Now the panel
+    // is a row that obeys `defaultOpen` like the inline one, so BOTH states are
+    // pinned: closed hides the sub-agent's steps, open shows exactly what the
+    // old always-expanded panel showed.
     childMessages = CHILD_MESSAGES;
-    const markup = render(taskPart({}), { panel: true });
-    expect(markup).toContain('Searched');
-    expect(markup).toContain('pattern=TODO');
-    expect(markup).toContain('Open full view');
+
+    const closed = render(taskPart({}), { panel: true });
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).not.toContain('pattern=TODO');
+    expect(closed).not.toContain('Open full view');
+
+    const open = render(taskPart({}), { panel: true, open: true });
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain('Searched');
+    expect(open).toContain('pattern=TODO');
+    expect(open).toContain('Open full view');
   });
 });
 

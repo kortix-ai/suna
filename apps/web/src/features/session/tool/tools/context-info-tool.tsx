@@ -9,7 +9,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
-export function ContextInfoTool({ part }: ToolProps) {
+export function ContextInfoTool({ part, defaultOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   const output = partOutput(part);
@@ -28,6 +28,7 @@ export function ContextInfoTool({ part }: ToolProps) {
           </span>
         </div>
       }
+      defaultOpen={defaultOpen}
     >
       <ToolOutputFallback output={output} toolName="context_info" />
     </BasicTool>

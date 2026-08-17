@@ -805,8 +805,19 @@ export function ToolParts({
             This step hit a problem — the details below show what happened.
           </div>
         )}
+        {/* One rendered call → open it; several → every row starts closed and
+            the detail reads as a list of what happened, which is the only way
+            a three-call step is skimmable at all. Counted on `visible`, not
+            `parts`: `collapseSnapshots` can fold three `todo_write` calls into
+            the single row that is actually drawn, and that lone row is a
+            single-part detail by every measure the reader has. */}
         {visible.map((part) => (
-          <ToolPartRenderer key={part.callID} part={part} sessionId={sessionId} defaultOpen />
+          <ToolPartRenderer
+            key={part.callID}
+            part={part}
+            sessionId={sessionId}
+            defaultOpen={visible.length === 1}
+          />
         ))}
       </div>
     </ToolSurfaceContext.Provider>

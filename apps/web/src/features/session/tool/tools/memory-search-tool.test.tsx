@@ -85,7 +85,30 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
     expect(html).toContain('1 result');
   });
 
-  test('panel surface: standard sticky header, title reflects search kind', () => {
+  // Task 16 REWRITE: the panel surface is a closed-by-default disclosure row,
+  // not a sticky page header over an open body. The title assertion is the
+  // point of this test and stays on the row; the result body needs the row
+  // opened, which is what a single-call detail passes.
+  test('panel surface: disclosure row, title reflects search kind', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolSurfaceContext.Provider value="panel">
+          <MemorySearchTool
+            part={makePart({ query: 'competitor pricing notes' }, SEARCH_OUTPUT)}
+            defaultOpen
+          />
+        </ToolSurfaceContext.Provider>,
+      ),
+    );
+
+    expect(html).not.toContain('sticky');
+    expect(html).toContain('bg-popover border-border overflow-hidden rounded-md border');
+    expect(html).toContain('text-sm font-medium');
+    expect(html).toContain('LTM Search');
+    expect(html).toContain('User previously flagged that Acme undercuts');
+  });
+
+  test('panel surface: closed by default, the results stay behind the row', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
@@ -96,9 +119,8 @@ describe('MemorySearchTool joins the shared BasicTool shell', () => {
       ),
     );
 
-    expect(html).toContain('sticky');
-    expect(html).toContain('text-sm font-medium');
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('LTM Search');
-    expect(html).toContain('User previously flagged that Acme undercuts');
+    expect(html).not.toContain('User previously flagged that Acme undercuts');
   });
 });

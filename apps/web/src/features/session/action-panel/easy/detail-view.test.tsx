@@ -336,6 +336,46 @@ describe('ToolParts summary line (W3, opt-in)', () => {
   });
 });
 
+/**
+ * Task 16 (W11/D13, controller ruling R12). The panel surface is a disclosure
+ * row now, so `defaultOpen` finally means something here: it is the difference
+ * between a detail that opens as a readable list and one that dumps every
+ * payload on screen at once.
+ *
+ * Asserted on the `ToolPartRenderer` elements rather than on rendered markup
+ * because that IS the wiring — `ToolParts` is exercised as a plain function
+ * here (see `toolPartsChildren`), and fully rendering the renderer would need
+ * a query/intl provider tree this file has no other reason to stand up. The
+ * `aria-expanded="false"`/`"true"` those props produce is pinned directly on
+ * the row, in `tool/shared/infrastructure.test.tsx`.
+ */
+describe('ToolParts defaultOpen wiring (Task 16, W11/D13)', () => {
+  const openFlags = (parts: ToolPart[]) =>
+    toolPartsChildren({ parts, sessionId: 's1' })
+      .filter((c) => c.type === ToolPartRenderer)
+      .map((c) => (c.props as { defaultOpen?: boolean }).defaultOpen);
+
+  test('a single call opens — there is nothing to choose between', () => {
+    expect(openFlags([part('bash')])).toEqual([true]);
+  });
+
+  test('several calls all start closed — the detail is a list first', () => {
+    expect(openFlags([part('bash'), part('web_search'), part('edit')])).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  test('counted on the rows actually drawn, not the parts handed in', () => {
+    // `collapseSnapshots` folds three `todo_write` calls into the one row that
+    // is really rendered, and a lone row is a single-call detail by every
+    // measure the reader has.
+    const snapshots = [part('todo_write'), part('todo_write'), part('todo_write')];
+    expect(openFlags(snapshots)).toEqual([true]);
+  });
+});
+
 describe('ToolParts wrapper — un-cap keeps height only (Task 17, W11/D14)', () => {
   test('max-h-none stays; overflow-visible is gone so ToolCodeCard keeps its x-axis scrollbar', () => {
     const provider = ToolParts({ parts: [part('bash')], sessionId: 's1' }) as ReactElement<{

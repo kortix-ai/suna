@@ -29,7 +29,7 @@ import { useContext, useMemo, useState } from 'react';
 
 import { cleanWorkerOutput } from '@/features/session/tool/shared/agent-helpers';
 
-export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
+export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
   const status = partStatus(part);
@@ -88,6 +88,7 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
         badge={
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }
+        defaultOpen={defaultOpen}
         forceOpen={forceOpen}
       >
         {/* The verification condition and whatever the worker returned are one

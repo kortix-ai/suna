@@ -7,7 +7,7 @@ import { createContext } from 'react';
  *
  * Lives in its own module rather than in `infrastructure.tsx` to keep the
  * import graph acyclic. The shared cards need to know the surface (an inline
- * row indents to its label column; the panel supplies its own padding), and
+ * row indents to its label column; a panel row supplies its own padding), and
  * `infrastructure.tsx` in turn renders those cards — so if the context stayed
  * there, card → infrastructure → card would be a cycle. It survives today only
  * because every use sits inside a component body and therefore runs after all

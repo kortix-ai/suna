@@ -13,7 +13,7 @@ import { useMemo } from 'react';
 
 const TRIGGER = { title: 'Session Stats', subtitle: '', args: [] as string[] };
 
-export function SessionStatsTool({ part }: ToolProps) {
+export function SessionStatsTool({ part, defaultOpen }: ToolProps) {
   const output = partOutput(part);
 
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
@@ -21,7 +21,11 @@ export function SessionStatsTool({ part }: ToolProps) {
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
-    <BasicTool icon={<Layers className="size-3.5 shrink-0" />} trigger={TRIGGER}>
+    <BasicTool
+      icon={<Layers className="size-3.5 shrink-0" />}
+      trigger={TRIGGER}
+      defaultOpen={defaultOpen}
+    >
       {outputIsError ? (
         <ToolOutputFallback output={output} toolName="session_stats" />
       ) : output ? (

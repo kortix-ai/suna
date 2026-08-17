@@ -95,6 +95,11 @@ export const AdvancedPanel = memo(function AdvancedPanel({
       >
         {current && (
           <ToolSurfaceContext.Provider value="panel">
+            {/* `defaultOpen` is what keeps this view expanded now that the panel
+                surface is a disclosure row (it used to be inert here, because
+                the panel branch rendered its body unconditionally). This view
+                shows exactly one call at a time and the navigator below is how
+                you reach the others, so its row is always the open one. */}
             <ToolPartRenderer part={current} sessionId={sessionId} defaultOpen />
           </ToolSurfaceContext.Provider>
         )}

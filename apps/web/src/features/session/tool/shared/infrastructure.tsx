@@ -29,6 +29,7 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
   ArrowSquareOutIcon,
+  CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
@@ -983,107 +984,177 @@ function ToolHeaderRow({
   );
 }
 
-// Title + subtitle/args for the large side-panel header layout.
-function PanelTriggerTitle({
+/**
+ * Title + subtitle + args on ONE line, for the panel's disclosure row.
+ *
+ * The panel used to stack these — an `h3` with a second mono line under it —
+ * which is a page header, and a page header only works when there is one call
+ * on the page. A detail routinely holds several, so the unit here is a row: one
+ * line, closed, that says which call this is and nothing more. Everything the
+ * old header showed still shows, it just reads left-to-right instead of
+ * top-to-bottom.
+ */
+function PanelRowTitle({
   trigger,
   running,
-  badge,
   onSubtitleClick,
 }: {
   trigger: TriggerTitle;
   running: boolean;
-  badge?: React.ReactNode;
   onSubtitleClick?: () => void;
 }) {
   const args = trigger.args ?? [];
-  const hasMeta = Boolean(trigger.subtitle || args.length > 0);
 
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 flex-1">
-        {running ? (
-          <TextShimmer className="text-sm font-medium">{trigger.title || 'Working'}</TextShimmer>
-        ) : (
-          <h3 className="text-foreground truncate text-sm font-medium">{trigger.title}</h3>
-        )}
-        {hasMeta && (
-          <div className="text-muted-foreground mt-0.5 flex min-w-0 items-baseline gap-1.5 font-mono text-xs">
-            {trigger.subtitle && (
-              <span
-                className={cn(
-                  'truncate',
-                  onSubtitleClick &&
-                    'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
-                )}
-                title={trigger.subtitle}
-                onClick={onSubtitleClick}
-              >
-                {trigger.subtitle}
-              </span>
-            )}
-            {args.length > 0 && (
-              <>
-                {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
-                <span
-                  className="text-muted-foreground/60 min-w-0 truncate"
-                  title={args.join(' · ')}
-                >
-                  {args.join(' · ')}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      {badge && (
-        <span className="text-muted-foreground/60 shrink-0 pt-0.5 font-mono text-xs whitespace-nowrap tabular-nums">
-          {badge}
+    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+      {running ? (
+        <TextShimmer className="min-w-0 truncate text-sm font-medium">
+          {trigger.title || 'Working'}
+        </TextShimmer>
+      ) : (
+        <span className="text-foreground min-w-0 truncate text-sm font-medium">
+          {trigger.title}
+        </span>
+      )}
+      {trigger.subtitle && (
+        <span
+          className={cn(
+            'text-muted-foreground min-w-0 truncate font-mono text-xs',
+            onSubtitleClick &&
+              'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
+          )}
+          title={trigger.subtitle}
+          // `stopPropagation` is load-bearing now and was not before: the
+          // subtitle sits INSIDE the disclosure trigger, so without it every
+          // "open this file" click would also toggle the row it lives on.
+          onClick={
+            onSubtitleClick
+              ? (e) => {
+                  e.stopPropagation();
+                  onSubtitleClick();
+                }
+              : undefined
+          }
+        >
+          {trigger.subtitle}
+        </span>
+      )}
+      {args.length > 0 && (
+        <span
+          className="text-muted-foreground/60 min-w-0 truncate font-mono text-xs"
+          title={args.join(' · ')}
+        >
+          {args.join(' · ')}
         </span>
       )}
     </div>
   );
 }
 
-// Side-panel surface: large sticky header on top, padded body below.
-function PanelTool({
+/**
+ * Side-panel surface: one closed-by-default disclosure row per tool call.
+ *
+ * The panel is not a page for a single call. A Progress step or a Context group
+ * hands the detail N calls at once, and the old layout answered that with N
+ * sticky `px-4 pt-4 pb-3` headers and N padded bodies stacked down the pane —
+ * the same title treatment repeated, every payload open, nothing skimmable.
+ * A row inverts it: the detail opens as a list of one-line summaries, and the
+ * reader expands the one they came for.
+ *
+ * The row is the same `bg-popover rounded-md border` surface the design system
+ * uses for every panel row, and it borrows `PanelCard`'s chevron idiom (a
+ * `CaretRightIcon` rotating 90° when open) so expanding a tool call and
+ * expanding a panel card are visibly the same gesture. No rail, no connector,
+ * no per-row header: the gap between rows is the whole rhythm.
+ *
+ * Interaction is gated on having a body — a childless call has nothing to
+ * disclose, so it gets no chevron, no `role="button"`, and no cursor change
+ * rather than a control that does nothing. `locked` keeps the trigger (a locked
+ * row must still be openable) and only drops the pointer affordance; refusing
+ * the close is {@link BasicTool}'s `handleOpenChange`, shared with inline.
+ */
+function PanelToolRow({
+  icon,
   trigger,
   children,
   running,
   badge,
+  outcome,
   onSubtitleClick,
+  locked,
+  open,
+  onOpenChange,
   className,
 }: {
+  icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   children?: React.ReactNode;
   running: boolean;
   badge?: React.ReactNode;
+  outcome: ToolOutcome;
   onSubtitleClick?: () => void;
+  locked?: boolean;
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
   className?: string;
 }) {
-  return (
-    <div className="bg-background flex flex-col">
-      {trigger && (
-        <div className="bg-background sticky top-0 z-10 px-4 pt-4 pb-3">
-          {isTriggerTitle(trigger) ? (
-            <PanelTriggerTitle
-              trigger={trigger}
-              running={running}
-              badge={badge}
-              onSubtitleClick={onSubtitleClick}
-            />
-          ) : (
-            <div className="flex items-start justify-between gap-3">
-              <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 text-sm font-medium [&>span:first-child>svg]:size-4">
-                {trigger}
-              </div>
-            </div>
-          )}
+  const hasBody = Boolean(children);
+  // Same substitution the inline header makes, from the same context — a failed
+  // call leads with the verdict on both surfaces or the two disagree about what
+  // happened. See {@link ToolOutcomeIcon}.
+  const leading = outcome === 'ok' ? icon : <ToolOutcomeIcon outcome={outcome} />;
+
+  const row = (
+    <div
+      className={cn(
+        'flex min-h-11 w-full items-center gap-2.5 px-3 py-2.5 text-left',
+        hasBody && 'transition-colors',
+        hasBody && !locked && 'hover:bg-muted-foreground/[0.04] cursor-pointer',
+      )}
+    >
+      {leading && (
+        <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center [&>svg]:size-4">
+          {leading}
+        </span>
+      )}
+      {isTriggerTitle(trigger) ? (
+        <PanelRowTitle trigger={trigger} running={running} onSubtitleClick={onSubtitleClick} />
+      ) : (
+        <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 truncate text-sm font-medium [&>span:first-child>svg]:size-4">
+          {trigger}
         </div>
       )}
-      {children && (
-        <div className={cn('h-full min-h-0 flex-1 p-4 pt-0 text-sm', className)}>{children}</div>
+      {badge && (
+        <span className="text-muted-foreground/60 shrink-0 font-mono text-xs whitespace-nowrap tabular-nums">
+          {badge}
+        </span>
+      )}
+      {hasBody && (
+        <CaretRightIcon
+          aria-hidden
+          // CSS, not `motion` — the rotation is a 150ms state change on one
+          // property, and every row on the pane would otherwise carry a
+          // motion component. `motion-reduce` snaps it instead.
+          className={cn(
+            'text-muted-foreground size-4 shrink-0 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
+        />
       )}
     </div>
+  );
+
+  return (
+    <Disclosure
+      open={open}
+      onOpenChange={onOpenChange}
+      className="bg-popover border-border overflow-hidden rounded-md border"
+    >
+      {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
+      {hasBody && open && (
+        <div className={cn('border-border border-t px-3 py-3 text-sm', className)}>{children}</div>
+      )}
+    </Disclosure>
   );
 }
 
@@ -1199,7 +1270,13 @@ export function BasicTool({
   const outcome = useContext(ToolOutcomeContext);
   const surface = useContext(ToolSurfaceContext);
   const activate = useContext(BoundActivateContext);
-  const [open, setOpen] = useState(defaultOpen);
+  // `forceOpen` seeds the state as well as latching it. The effect below alone
+  // could only open the row on the frame AFTER mount, so a call that arrives
+  // already waiting on a permission or a question rendered closed once and then
+  // snapped open — a flash of the wrong answer on the exact row whose prompt is
+  // the point. The effect stays for the case it is actually for: `forceOpen`
+  // flipping true on an already-mounted row.
+  const [open, setOpen] = useState(defaultOpen || !!forceOpen);
 
   useEffect(() => {
     if (forceOpen) setOpen(true);
@@ -1213,18 +1290,32 @@ export function BasicTool({
     [locked],
   );
 
-  // Side-panel surface has its own header/body layout and ignores the inline modes.
+  // Side-panel surface: a disclosure row, closed unless the caller seeded it
+  // open. It runs on the SAME state the inline branch does — `defaultOpen`
+  // seeds it, `forceOpen` latches it, `locked` refuses the close — because the
+  // panel is a second presentation of one behavior, not a second behavior. The
+  // branch used to ignore all three (plus `icon` and `outcome`) and render an
+  // always-expanded page header instead.
+  //
+  // `onClick` stays inline-only: a panel row's click is its disclosure, and the
+  // two tools that pass one (project-create / project-select) have no body, so
+  // they render as the plain, non-interactive rows they already were here.
   if (surface === 'panel') {
     return (
-      <PanelTool
+      <PanelToolRow
+        icon={icon}
         trigger={trigger}
         running={running}
         badge={badge}
+        outcome={outcome}
         onSubtitleClick={onSubtitleClick}
+        locked={locked}
+        open={open}
+        onOpenChange={handleOpenChange}
         className={className}
       >
         {children}
-      </PanelTool>
+      </PanelToolRow>
     );
   }
 
@@ -1285,10 +1376,11 @@ export const TOOL_INDENT = 'ml-[var(--tool-indent,1.375rem)]';
  * The indent, or nothing, depending on which surface the tool is drawn on.
  *
  * An inline row leads with a `size-4` icon and a `gap-1.5`, so its text column
- * starts 22px in and a card below it has to match. The panel has no icon
- * gutter and supplies its own `p-4`, so the same indent only pushes the card
- * 22px off the header it sits under. {@link ToolOutputCard} already guarded its
- * indent this way; every other site hardcoded `TOOL_INDENT` and drifted.
+ * starts 22px in and a card below it has to match. A panel row's body has no
+ * icon gutter and supplies its own `px-3 py-3`, so the same indent only pushes
+ * the card 22px off the trigger it sits under. {@link ToolOutputCard} already
+ * guarded its indent this way; every other site hardcoded `TOOL_INDENT` and
+ * drifted.
  */
 export function useToolIndent(): string {
   return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';

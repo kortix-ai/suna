@@ -5,7 +5,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { CheckIcon as Check } from '@phosphor-icons/react';
 
-export function TaskDoneTool({ part, forceOpen }: ToolProps) {
+export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const result = (input.result as string) || '';
   return (
@@ -16,6 +16,7 @@ export function TaskDoneTool({ part, forceOpen }: ToolProps) {
         </span>
       }
       trigger={{ title: 'Task done' }}
+      defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >
       {result && (
