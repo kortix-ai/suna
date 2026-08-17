@@ -28,7 +28,7 @@ const catalog = readFileSync(join(import.meta.dir, 'catalog', 'use-catalog.ts'),
  *
  *   1. the Easy Connect queries wait on the probe,
  *   2. the tab strip disappears only when the probe has CONFIRMED `absent`,
- *   3. `scope` is forced past whatever `scopeChoice` still holds.
+ *   3. `scope` is forced past whatever the `?scope=` URL param still asks for.
  *
  * Drop any one and the 501 card comes back — silently, and only on the
  * deployments that cannot report it.
@@ -94,34 +94,47 @@ describe('connectors page without Pipedream', () => {
   test('the strip is removed, not disabled, and leaves no empty row behind', () => {
     // `CapabilityPageShell` drops the whole filter row when `filters` is
     // undefined and keeps it for anything truthy — so a fragment here would
-    // leave a 28px gap where the tabs used to be. A single remaining tab is
-    // not a choice either; the page keeps its title and its `+` button.
+    // leave a 28px gap where the tabs used to be. `visibleScopes` is what
+    // decides this now, not `catalogueAvailable` directly: Channels means a
+    // catalogue-less deployment still has two real destinations (Connected,
+    // Channels), so the strip only fully disappears when fewer than two
+    // scopes remain — a single remaining tab is not a choice either.
     expect(page).toContain('filters={');
-    expect(page).toContain('catalogueAvailable ? (');
+    expect(page).toContain('visibleScopes.length > 1 ? (');
     expect(page).toContain(') : undefined');
+    expect(page).toContain(
+      "const visibleScopes = catalogueAvailable\n    ? SCOPES\n    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');",
+    );
     expect(page).not.toContain('disabled={!catalogueAvailable}');
   });
 
   test('scope is forced to Connected, not defaulted to it', () => {
-    // `scopeChoice` outlives the answer it was made under: the user can click
-    // Discovery in the beat before the probe lands, and an OAuth return brings
-    // them back to this page with that state intact. `scopeChoice ?? 'discover'`
-    // alone would strand them on a tab the strip no longer renders — the
+    // The `?scope=` param outlives the answer it was read under: the user can
+    // click Discovery in the beat before the probe lands, and an OAuth return
+    // brings them back to this page with that param still in the URL. Reading
+    // it blindly would strand them on a tab the strip no longer renders — the
     // catalogue would mount, fire, and 501 with nothing to switch away to.
+    // Connected and Channels never need the catalogue, so they are exempt
+    // from the force.
     expect(page).toContain(
-      "const scope: ConnectorScope = catalogueAvailable ? (scopeChoice ?? 'discover') : 'connected';",
+      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
+    );
+    expect(page).toContain(
+      "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
     );
     expect(page).not.toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
     // `catalogActive` is what mounts `ConnectorBrowse`, and it is derived from
     // the forced `scope` — so the forcing above is also what keeps the
-    // catalogue unmounted.
-    expect(page).toContain("const catalogActive = scope !== 'connected';");
+    // catalogue unmounted. It names the two catalogue scopes explicitly now
+    // rather than `!== 'connected'`, since Channels is also not-connected but
+    // must not mount the catalogue either.
+    expect(page).toContain("const catalogActive = scope === 'discover' || scope === 'all';");
   });
 
   test('the Connected empty state offers no tab that is not there', () => {
-    // "Browse the catalogue" sets `scopeChoice` to `discover`. With no
-    // catalogue that is a button to a hidden tab, and the forced `scope` would
-    // swallow the click — a control that visibly does nothing.
+    // "Browse the catalogue" sets `scope` to `discover`. With no catalogue
+    // that is a button to a hidden tab, and the forced `scope` would swallow
+    // the click — a control that visibly does nothing.
     const start = page.indexOf('title="No connectors yet"');
     const end = page.indexOf('</CatalogGrid>');
     expect(start).toBeGreaterThan(-1);
