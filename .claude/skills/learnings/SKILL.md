@@ -21,6 +21,24 @@ linked, not inlined.
 
 ## Register
 
+### Presigned uploads must suppress runtime-inferred content types (2026-08-17)
+
+**When:** sending a body to a provider-generated signed upload URL. Send the exact signed headers. Set an explicit empty `Content-Type` when the signature omits it. Do not let Bun infer a MIME type from `Bun.file()`.
+*Incident:* E2B template uploads returned GCS `403 SignatureDoesNotMatch` because Bun added `application/gzip` to a URL signed with an empty content type. Template creation succeeded, but every new immutable image remained unbuildable.
+*Enforcer:* `unit-e2b-bun-upload-patch.test.ts` requires the E2B dependency patch to use `Bun.file()` and an explicit empty `Content-Type` in both bundles. A real E2B template build verifies the signed upload.
+
+### Provider lifecycle renewal must use the provider activity primitive (2026-08-17)
+
+**When:** implementing provider-neutral lifecycle renewal. Use the provider's native activity or deadline API. Do not assume a guest command updates the provider lifecycle clock. Reject renewal unless the provider reports the sandbox as running.
+*Incident:* Daytona accepted repeated `true` guest commands while its one-minute native autostop clock continued unchanged. The sandbox stopped 21 seconds before Kortix `deadline_at` during deterministic lifecycle testing.
+*Enforcer:* `daytona.test.ts` requires `refreshActivity()`, rejects stopped sandboxes, propagates failures, and bounds a hung refresh. The live provider harness forces a one-minute native timer.
+
+### A persisted user message is not proof that its OpenCode turn is active (2026-08-17)
+
+**When:** changing exact-turn lifecycle probes. Treat a user-only or incomplete assistant message as active only when `/session/status` reports that exact session as `busy` or `retry`. Treat an idle session as terminal. Treat an unreadable or unknown status as unknown and non-renewing.
+*Incident:* a native OpenCode prompt persisted its user message but created no assistant message; the exact-message probe returned active for 198 seconds and would have renewed an idle Platinum sandbox indefinitely.
+*Enforcer:* `orphaned-turn-finalize.test.ts` covers busy, retry, idle, and unreadable session status.
+
 ### A sandbox lifecycle grant requires exact active-turn evidence (2026-08-17)
 
 **When:** changing session prompt delivery, sandbox reaping, or any sandbox provider lifecycle adapter. Persist token-bound `delivering` authority before upstream delivery. Promote only after OpenCode exposes the exact user `messageID`. Renew both `deadline_at` and the provider-native timer only from a fresh exact-turn probe. Treat unknown evidence as non-renewing. Linearize idle stop against prompt delivery with one database claim, and never let renewal wake a stopped sandbox.

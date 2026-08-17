@@ -28,7 +28,15 @@ const SESSION = 'ses_abc';
 const ORIGINAL_FETCH = globalThis.fetch;
 let calls: string[] = [];
 
-function stubFetch(messages: unknown, opts: { messagesOk?: boolean; abortThrows?: boolean } = {}) {
+function stubFetch(
+  messages: unknown,
+  opts: {
+    messagesOk?: boolean;
+    abortThrows?: boolean;
+    sessionStatus?: unknown;
+    sessionStatusOk?: boolean;
+  } = {},
+) {
   calls = []
   ;(globalThis as { fetch: unknown }).fetch = async (input: unknown, init?: { method?: string }) => {
     const url = String(input);
@@ -36,6 +44,10 @@ function stubFetch(messages: unknown, opts: { messagesOk?: boolean; abortThrows?
     if (url.includes('/abort')) {
       if (opts.abortThrows) throw new Error('connection refused');
       return new Response('{}', { status: 200 });
+    }
+    if (url.includes('/session/status')) {
+      if (opts.sessionStatusOk === false) return new Response('nope', { status: 503 });
+      return new Response(JSON.stringify(opts.sessionStatus ?? {}), { status: 200 });
     }
     if (opts.messagesOk === false) return new Response('nope', { status: 503 });
     return new Response(JSON.stringify(messages), { status: 200 });
@@ -159,16 +171,61 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
 });
 
 describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
-  test('a delivered user message without an assistant is active, not terminal', async () => {
-    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }]);
+  test('a delivered user message without an assistant is active only while OpenCode reports busy', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'busy' } },
+    });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
+  });
+
+  test('a user-only message in an idle OpenCode session is terminal', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'idle' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('an absent OpenCode session status is terminal', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], { sessionStatus: {} });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('a retrying OpenCode session keeps a user-only message active', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'retry' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
+  });
+
+  test('an unreadable OpenCode session status makes user-only evidence unknown', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], { sessionStatusOk: false });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
+  });
+
+  test('an unrecognized OpenCode session status makes user-only evidence unknown', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'paused' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
+  });
+
+  test('a later user message makes the exact older turn terminal even while the session is busy', async () => {
+    stubFetch(
+      [
+        { info: { id: 'msg_turn_1', role: 'user' } },
+        { info: { id: 'msg_turn_2', role: 'user' } },
+      ],
+      { sessionStatus: { [SESSION]: { type: 'busy' } } },
+    );
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+    expect(calls.some((url) => url.includes('/session/status'))).toBe(false);
   });
 
   test('an incomplete assistant for the exact user message remains active', async () => {
     stubFetch([
       { info: { id: 'msg_turn_1', role: 'user' } },
       { info: { role: 'assistant', parentID: 'msg_turn_1', time: {} } },
-    ]);
+    ], { sessionStatus: { [SESSION]: { type: 'busy' } } });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
   });
 
@@ -199,7 +256,7 @@ describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
           error: { name: 'APIError', data: { isRetryable: true } },
         },
       },
-    ]);
+    ], { sessionStatus: { [SESSION]: { type: 'retry' } } });
     expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
     expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
   });

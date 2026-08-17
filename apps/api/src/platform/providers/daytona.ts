@@ -341,16 +341,14 @@ export class DaytonaProvider implements SandboxProvider {
     if (classifyDaytonaState(sandbox.state) !== 'running') {
       throw new Error(`Daytona lifecycle renewal refused for non-running sandbox ${externalId}`);
     }
-    const result = await withTimeout(
-      sandbox.process.executeCommand('true', undefined, undefined, 10),
+    // Guest commands do not reset Daytona's lifecycle clock. Use the provider's
+    // dedicated activity endpoint. The state gate above prevents this call from
+    // granting activity to a stopped sandbox.
+    await withTimeout(
+      sandbox.refreshActivity(),
       PROVIDER_CALL_TIMEOUT_MS,
       `Daytona lifecycle renewal(${externalId})`,
     );
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `Daytona lifecycle renewal failed for ${externalId}: exit ${result.exitCode}: ${result.result.slice(0, 500)}`,
-      );
-    }
   }
 
   async stop(externalId: string): Promise<void> {

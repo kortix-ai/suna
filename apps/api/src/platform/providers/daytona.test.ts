@@ -23,7 +23,7 @@ mock.module('../../config', () => ({
 mock.module('../../shared/db', () => ({ db: {} }));
 
 let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
-let lifecycleCommands: Array<{ command: string; timeout: number | undefined }>;
+let activityRefreshes: string[];
 
 mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
@@ -54,45 +54,31 @@ beforeEach(() => {
   // Below the code's own 1000ms floor (Math.max(1000, …)) would just get
   // clamped up — use a value comfortably above it.
   process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS = '1200';
-  lifecycleCommands = [];
+  activityRefreshes = [];
   getDaytonaSandbox = () => new Promise<never>(() => {});
 });
 
-test('renewLifecycle performs one bounded no-op inside the running sandbox', async () => {
+test('renewLifecycle refreshes provider activity for a running sandbox', async () => {
   getDaytonaSandbox = async () => ({
+    id: 'sbx_active',
     state: 'started',
-    process: {
-      executeCommand: async (
-        command: string,
-        _cwd?: string,
-        _env?: Record<string, string>,
-        timeout?: number,
-      ) => {
-        lifecycleCommands.push({ command, timeout });
-        return { exitCode: 0, result: '' };
-      },
+    refreshActivity: async () => {
+      activityRefreshes.push('sbx_active');
     },
   });
   const { DaytonaProvider } = await import('./daytona');
 
   await new DaytonaProvider().renewLifecycle('sbx_active');
 
-  expect(lifecycleCommands).toEqual([{ command: 'true', timeout: 10 }]);
+  expect(activityRefreshes).toEqual(['sbx_active']);
 });
 
-test('renewLifecycle never executes inside a stopped sandbox', async () => {
+test('renewLifecycle never refreshes a stopped sandbox', async () => {
   getDaytonaSandbox = async () => ({
+    id: 'sbx_stopped',
     state: 'stopped',
-    process: {
-      executeCommand: async (
-        command: string,
-        _cwd?: string,
-        _env?: Record<string, string>,
-        timeout?: number,
-      ) => {
-        lifecycleCommands.push({ command, timeout });
-        return { exitCode: 0, result: '' };
-      },
+    refreshActivity: async () => {
+      activityRefreshes.push('sbx_stopped');
     },
   });
   const { DaytonaProvider } = await import('./daytona');
@@ -100,21 +86,37 @@ test('renewLifecycle never executes inside a stopped sandbox', async () => {
   await expect(new DaytonaProvider().renewLifecycle('sbx_stopped')).rejects.toThrow(
     'non-running sandbox',
   );
-  expect(lifecycleCommands).toEqual([]);
+  expect(activityRefreshes).toEqual([]);
 });
 
-test('renewLifecycle rejects a failed no-op instead of reporting renewal', async () => {
+test('renewLifecycle rejects a failed activity refresh instead of reporting renewal', async () => {
   getDaytonaSandbox = async () => ({
+    id: 'sbx_failed',
     state: 'started',
-    process: {
-      executeCommand: async () => ({ exitCode: 17, result: 'guest unavailable' }),
+    refreshActivity: async () => {
+      throw new Error('activity refresh unavailable');
     },
   });
   const { DaytonaProvider } = await import('./daytona');
 
   await expect(new DaytonaProvider().renewLifecycle('sbx_failed')).rejects.toThrow(
-    'exit 17: guest unavailable',
+    'activity refresh unavailable',
   );
+});
+
+test('renewLifecycle bounds a hung activity refresh', async () => {
+  getDaytonaSandbox = async () => ({
+    id: 'sbx_hung',
+    state: 'started',
+    refreshActivity: () => new Promise<never>(() => {}),
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  const startedAt = Date.now();
+  await expect(new DaytonaProvider().renewLifecycle('sbx_hung')).rejects.toThrow(
+    'Daytona lifecycle renewal(sbx_hung) timed out after 1200ms',
+  );
+  expect(Date.now() - startedAt).toBeLessThan(5_000);
 });
 
 test('getStatus() gives up on a hung Daytona call instead of hanging forever', async () => {
