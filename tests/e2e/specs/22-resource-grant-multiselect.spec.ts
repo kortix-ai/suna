@@ -144,7 +144,8 @@ test.describe('22 — Resource-grant multi-select', () => {
       await expect
         .poll(() => grantPostStatuses.length, { timeout: 10_000 })
         .toBe(2);
-      expect(grantPostStatuses).toEqual([200, 200]);
+      // POST /resource-grants returns 201 (created), not 200.
+      expect(grantPostStatuses).toEqual([201, 201]);
 
       // The list re-renders with both grants, each labeled by the member it
       // went to — not just a count, the actual two people.
