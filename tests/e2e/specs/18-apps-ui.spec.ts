@@ -195,9 +195,11 @@ test.describe('18 — Kortix Apps UI', () => {
         expect(createdUrl.hostname).toMatch(/\.apps\.localhost$/);
       } else {
         const environmentPrefix = appsEnvironment || (env.target === 'prod' ? 'prod' : env.target);
-        expect(createdUrl.hostname).toMatch(
-          new RegExp(`^${environmentPrefix}-.+\\.${appsBaseDomain.replaceAll('.', '\\.')}$`),
-        );
+        const hostnameSuffix = `.${appsBaseDomain}`;
+        expect(createdUrl.hostname.endsWith(hostnameSuffix)).toBe(true);
+        const deploymentHostname = createdUrl.hostname.slice(0, -hostnameSuffix.length);
+        expect(deploymentHostname.startsWith(`${environmentPrefix}-`)).toBe(true);
+        expect(deploymentHostname.length).toBeGreaterThan(environmentPrefix.length + 1);
       }
       await expect(createDialog).toBeHidden();
       await expect(page.getByText('UI App', { exact: true })).toBeVisible();
