@@ -14,6 +14,8 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
   pendingSessionPromptForRecovery,
@@ -838,14 +840,20 @@ function ActiveSessionChat({
   const selectedSession = selectedOpenCodeSessionId
     ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
-  // Pin the first resolved root id so the chat keeps its identity if the live
-  // value blips back to null mid-session. State, not a ref written during
-  // render: this component is already keyed per session by the route, so there
-  // is no cross-session reset to hand-roll, and a discarded render can no longer
+  // Pin the resolved root id so the chat keeps its identity if the live
+  // value blips back to null mid-session — but FOLLOW a non-null change: the
+  // SDK's pin precedence only climbs, so a different resolved id is a
+  // higher-authority correction (e.g. a stale persisted mirror displaced by
+  // the real /start pin) and holding the old latch would keep painting — and
+  // delivering into — the conversation the stale pin named. See
+  // resolvePinnedRootSessionId. State, not a ref written during render: this
+  // component is already keyed per session by the route, so there is no
+  // cross-session reset to hand-roll, and a discarded render can no longer
   // leave a pin behind that the state it belongs to never saw.
   const [pinnedRootSessionId, setPinnedRootSessionId] = useState<string | null>(null);
   useEffect(() => {
-    if (!pinnedRootSessionId && rootSessionId) setPinnedRootSessionId(rootSessionId);
+    const next = resolvePinnedRootSessionId(pinnedRootSessionId, rootSessionId);
+    if (next !== pinnedRootSessionId) setPinnedRootSessionId(next);
   }, [pinnedRootSessionId, rootSessionId]);
   const chatSessionId = selectedSession?.id ?? pinnedRootSessionId ?? rootSessionId ?? null;
 
@@ -867,6 +875,9 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
+    // Same hand-off for the message queue: the instant shell enqueues under
+    // the ROUTE id, SessionChat drains under the pin — see adoptSessionQueue.
+    useMessageQueueStore.getState().adoptSessionQueue(sessionId, chatSessionId);
   }, [sessionId, chatSessionId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

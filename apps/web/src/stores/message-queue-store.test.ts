@@ -500,3 +500,60 @@ describe('queued slash commands', () => {
     expect(revived.command).toBeUndefined();
   });
 });
+
+describe('adoptSessionQueue', () => {
+  // #6110's orphan: the instant shell enqueues under the ROUTE session id,
+  // but SessionChat drains `queues[chatSessionId]` — the OpenCode `ses_*`
+  // pin. Without a hand-off, messages typed during boot never render in the
+  // real chat and never send. The session page calls this beside
+  // `migrateStash` the moment the pin resolves.
+  test('moves a queue from the route id to the resolved pin', () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(A, { text: 'typed during boot' } as never);
+
+    useMessageQueueStore.getState().adoptSessionQueue(A, B);
+
+    const state = useMessageQueueStore.getState();
+    expect(state.getSessionQueue(A).pending).toHaveLength(0);
+    expect(state.getSessionQueue(B).pending.map((m) => m.text)).toEqual(['typed during boot']);
+  });
+
+  test('prepends the boot-time messages before anything already queued at the pin', () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(A, { text: 'first, typed on the shell' } as never);
+    store.enqueue(B, { text: 'second, typed in the chat' } as never);
+
+    useMessageQueueStore.getState().adoptSessionQueue(A, B);
+
+    expect(
+      useMessageQueueStore
+        .getState()
+        .getSessionQueue(B)
+        .pending.map((m) => m.text),
+    ).toEqual(['first, typed on the shell', 'second, typed in the chat']);
+  });
+
+  test("keeps the pin queue's in-flight claim", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(B, { text: 'sending' } as never);
+    const claimed = useMessageQueueStore.getState().claimNext(B);
+    expect(claimed).toBeDefined();
+    store.enqueue(A, { text: 'boot message' } as never);
+
+    useMessageQueueStore.getState().adoptSessionQueue(A, B);
+
+    expect(useMessageQueueStore.getState().getSessionQueue(B).inFlightId).toBe(
+      claimed?.id ?? null,
+    );
+  });
+
+  test('same id or empty source: no-op', () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(B, { text: 'stays' } as never);
+
+    useMessageQueueStore.getState().adoptSessionQueue(B, B);
+    useMessageQueueStore.getState().adoptSessionQueue('ses_empty', B);
+
+    expect(useMessageQueueStore.getState().getSessionQueue(B).pending).toHaveLength(1);
+  });
+});

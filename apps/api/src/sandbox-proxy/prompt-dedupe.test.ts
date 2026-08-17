@@ -19,7 +19,7 @@ describe('promptDeliveryKey', () => {
       sessionId: 'se',
       body: undefined,
     });
-    expect(key).toBe('idem:abc-123');
+    expect(key).toBe('idem:sb\0se\0abc-123');
   });
 
   test('falls back to a stable content hash when no key is supplied', () => {
@@ -131,7 +131,7 @@ describe('promptDeliveryKey', () => {
         sessionId: 'se',
         body: bodyWithId('msg_0123456789ab00000000000000'),
       });
-      expect(key).toBe('idem:cli-key-1');
+      expect(key).toBe('idem:sb\0se\0cli-key-1');
     });
 
     test('a command body (no messageID field) still falls back to the content hash', () => {
@@ -365,5 +365,47 @@ describe('shouldClaimPromptDelivery', () => {
 
   test('a lookalike path is treated as a prompt, not a command', () => {
     expect(shouldClaimPromptDelivery('/session/abc/commands', false)).toBe(true);
+  });
+});
+
+describe('Idempotency-Key scoping', () => {
+  // A failed create can requeue and re-provision onto a DIFFERENT
+  // session/sandbox while carrying the SAME command-scoped Idempotency-Key
+  // (session-lifecycle/engine.ts reuses the create command's id for the
+  // post-create prompt). An unscoped `idem:` key let the first attempt's
+  // claim swallow the retry's delivery to the NEW sandbox as a "duplicate" —
+  // that sandbox genuinely never saw the prompt. Scope by sandbox+session,
+  // exactly like the msgid and hash precedences: a repeat to the SAME box
+  // still dedupes; a different box is a different delivery.
+  test('the same Idempotency-Key on a different sandbox/session is a different delivery', () => {
+    const a = promptDeliveryKey({
+      idempotencyKey: 'cmd-1',
+      sandboxId: 'sb-old',
+      sessionId: 'se-old',
+      body: undefined,
+    });
+    const b = promptDeliveryKey({
+      idempotencyKey: 'cmd-1',
+      sandboxId: 'sb-new',
+      sessionId: 'se-new',
+      body: undefined,
+    });
+    expect(a).not.toBe(b);
+  });
+
+  test('the same Idempotency-Key on the same sandbox/session still collides', () => {
+    const a = promptDeliveryKey({
+      idempotencyKey: 'cmd-1',
+      sandboxId: 'sb',
+      sessionId: 'se',
+      body: undefined,
+    });
+    const b = promptDeliveryKey({
+      idempotencyKey: 'cmd-1',
+      sandboxId: 'sb',
+      sessionId: 'se',
+      body: new TextEncoder().encode('{"different":"body"}').buffer,
+    });
+    expect(a).toBe(b);
   });
 });
