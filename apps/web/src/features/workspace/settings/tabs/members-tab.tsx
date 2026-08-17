@@ -1106,7 +1106,18 @@ export function MembersTabView({
                             ) : canManageMembers && isInheritedFromGroupOnly(member) ? (
                               <Hint
                                 side="top"
-                                label={`Inherited from the ${member.group_sources?.[0]?.group_name ?? 'group'} group. Change the group's project access to update this.`}
+                                label={(() => {
+                                  const groupName = member.group_sources?.[0]?.group_name ?? 'group';
+                                  const extra = (member.group_sources?.length ?? 0) - 1;
+                                  // Only naming the winning group used to make
+                                  // "change the group's project access" a lie
+                                  // when a second group also granted access —
+                                  // editing just Engineering wouldn't actually
+                                  // unlock the row if Viewers still applied.
+                                  return extra > 0
+                                    ? `Inherited from the ${groupName} group and ${extra} other group${extra === 1 ? '' : 's'}. Change all of their project access to update this.`
+                                    : `Inherited from the ${groupName} group. Change the group's project access to update this.`;
+                                })()}
                               >
                                 <Lock className="text-muted-foreground size-3.5 shrink-0" />
                               </Hint>

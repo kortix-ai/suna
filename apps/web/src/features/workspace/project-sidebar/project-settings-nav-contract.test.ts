@@ -105,17 +105,22 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(SOURCE).toContain('p.allowed || p.isLoading');
   });
 
-  test('is gated on project.customize.write, on top of the per-tab read leaves', () => {
-    // A plain Member has every per-tab READ leaf (they're in
-    // PROJECT_MEMBER_BASELINE) but not PROJECT_CUSTOMIZE_WRITE (EDITOR_EXTRAS
-    // only) — so without this second gate a Member would see the row even
-    // though every tab behind it is read-only for them. Optimistic like every
-    // other probe here: hide only on an explicit `false`, never while loading.
+  test('is gated on project.customize.read, on top of the per-tab read leaves', () => {
+    // Was project.customize.write — an audited live bug, not a design call
+    // that held up. PROJECT_CUSTOMIZE_READ sits in PROJECT_MEMBER_BASELINE,
+    // so every project role (plain Member included) can reach this row. A
+    // Member is not "look but never touch" behind it: the Member baseline
+    // already includes browsing Connectors, seeing the Agent roster, and
+    // firing Triggers on demand (PROJECT_MEMBER_EXTRAS) — real capabilities
+    // Member gets today, and a .write-gated row hid discovery of a surface
+    // they could already use once they got there (direct URL navigation to
+    // /projects/<id>/customize always worked; the sidebar row was the only
+    // thing that didn't). .write still gates every individual mutation on
+    // every page beneath this row. Optimistic like every other probe here:
+    // hide only on an explicit `false`, never while loading.
     const navItem = fnSource('ProjectCustomizeNavItem');
 
-    expect(navItem).toContain(
-      'useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE)',
-    );
+    expect(navItem).toContain('useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ)');
     expect(navItem).toContain('if (canCustomize.allowed === false) return null;');
   });
 
