@@ -1081,7 +1081,7 @@ function PanelTool({
         </div>
       )}
       {children && (
-        <div className={cn('h-full min-h-0 flex-1 p-4 pt-0 text-sm', className)}>{children}</div>
+        <div className={cn('h-full min-h-0 flex-1 p-3 pt-0 text-sm', className)}>{children}</div>
       )}
     </div>
   );
