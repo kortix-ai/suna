@@ -27,6 +27,53 @@ linked, not inlined.
 *Incident:* the one-minute Dev Platinum proof stopped after `deadline_at`, but the provider webhook committed `status='stopped'` with a synthetic unknown `activeTurns` token still present.
 *Enforcer:* `sandbox-state-sync.test.ts` requires `applyStoppedState()` to remove every turn-authority key atomically for all stop paths. The live provider harness verifies the stopped row has zero active turns.
 
+### An updater flag change is live only after updater recreation (2026-08-17)
+
+**When:** changing self-host `.env` values consumed by the updater container.
+Stop or recreate the updater before relying on the new value. Recreating only
+the API, frontend, and gateway leaves the updater's old environment active.
+*Near-miss:* Essentia's `.env` said `KORTIX_AUTO_UPDATE=false`, but its live
+updater still had `true` and replaced PR #6478 images with `dev-latest`.
+*Enforcer:* deployment runbook preflight; no automated gate exists yet.
+
+### A self-host image must carry the exact source commit before rollout (2026-08-17)
+
+**When:** building a local or branch-only self-host image. Pass the frozen SHA as
+`KORTIX_COMMIT` to every API and gateway Docker build. A tag names operator
+intent. Only the baked commit lets `/v1/health` prove source provenance. Reject
+an image that reports `unknown` before any migration or service swap.
+*Near-miss:* the PR #6478 Essentia build initially omitted both build arguments.
+The command was cancelled before deployment. *Enforcer:* deployment runbook
+preflight; no automated local-image gate exists yet.
+
+### Provider deletion must retry throttling through absence proof (2026-08-17)
+
+**When:** deleting a paid provider resource from a user-facing delete route.
+Retry the delete call and the following absence poll when the provider returns
+its typed throttling error. A best-effort catch may close local billing while
+the external resource continues billing. *Near-miss:* Lightsail throttled three
+App delete calls after PR #6478 E2E returned `200`; the service remained
+`RUNNING`. *Enforcer:* `lightsail.test.ts` pins throttling retries in both phases.
+
+### Access logs must delete secret-bearing request headers (2026-08-17)
+
+**When:** configuring access logs for a proxy that authenticates its origin by
+request header. Caddy's JSON access log records request headers by default.
+Delete the origin header in the log encoder before sending logs to users or a
+provider. Stripping the header only before proxying does not redact the access
+record. *Near-miss:* Lightsail App logs exposed the direct-origin token during
+PR #6478 self-host E2E. *Enforcer:* `main_test.go` pins the Caddy filter.
+
+### Tagged provider creates and immutable build retries need explicit contracts (2026-08-17)
+
+**When:** adding a tagged provider resource or retrying a build with a fixed tag.
+Grant the provider's tagging action with its create action. Lightsail
+`CreateContainerService(tags=...)` requires `lightsail:TagResource`. Query the
+registry before retrying an immutable deployment tag, and reuse a completed
+image. Otherwise one missing IAM action becomes two duplicate-build failures.
+*Near-miss:* Apps Lightsail self-host E2E, PR #6478. *Enforcer:*
+`lightsail.test.ts` pins image reuse and the Terraform tagging grant.
+
 ### Presigned uploads must suppress runtime-inferred content types (2026-08-17)
 
 **When:** sending a body to a provider-generated signed upload URL. Send the exact signed headers. Set an explicit empty `Content-Type` when the signature omits it. Do not let Bun infer a MIME type from `Bun.file()`.
@@ -461,3 +508,28 @@ the resolver returns one constant, so no size can reproduce 90,000 again.
 metric that counted it. `kortix.probe_timeout` was left pinned to false on
 every span — a dashboard built on it looks healthy by construction.
 *Incident:* PR #6473, merged `7e8a56badaef80374a189e0e427a08eb06b44697`.
+
+### Provider contracts need literal schema and price boundary tests (2026-08-17)
+
+**When:** adding a provider discriminator, machine catalogue, or fixed monthly
+provider price.
+
+Do not size a database field from the current shortest enum value. The Apps
+hosting migration used `varchar(16)`, but `managed_container` has 17 characters.
+The first real HTTP request failed with PostgreSQL `22001`. Do not derive a
+fixed provider price from CPU, memory, or another resource rate. Lightsail sells
+named powers at exact monthly prices. A linear resource formula overcharged
+`nano`, `micro`, and `small`.
+
+**Rules:** (1) test every discriminator's literal length against the database
+column; (2) test every provider catalogue row, not only the default machine;
+(3) keep fixed provider prices as an explicit table; (4) run one real route
+through migration, persistence, read-back, and cleanup.
+
+**Enforcement:** the Apps database schema test covers `managed_container`; the
+hosting backend test covers all six Lightsail powers and monthly floors; flow
+`APP-5` covers default sandbox, explicit Lightsail, budget rejection, persisted
+read-back, App deletion, and fixture cleanup.
+
+*Near-miss:* Apps managed-container hosting local E2E, branch
+`apps-hosting-backends`.

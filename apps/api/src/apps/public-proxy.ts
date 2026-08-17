@@ -8,9 +8,16 @@ import {
 } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
+import { listResolvedProjectSecrets } from '../projects/secrets';
 import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
-import { AppHostingProvider } from './hosting';
+import { resolveAppRuntimeEnvironment } from './environment';
+import {
+  AppHostingService,
+  appRuntimeTarget,
+  hostingSelectionForTarget,
+  type AppRuntimeCreateInput,
+} from './hosting-service';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { resolveAppHost, type ResolvedAppHost } from './hostnames';
@@ -596,7 +603,7 @@ export function appRuntimeNeedsWake(
 
 export async function ensureAppRuntimeRunning(
   loaded: NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>,
-  hosting: AppHostingProvider,
+  hosting: AppHostingService,
   options: { forceProviderStart?: boolean } = {},
 ) {
   let app = loaded.app;
@@ -637,10 +644,11 @@ export async function ensureAppRuntimeRunning(
   if (!leased) return waitForWake(loaded.runtime.runtimeId, Date.now() + WAKE_LEASE_MS);
 
   try {
-    const provider = leased.provider as SandboxProviderName;
-    if (options.forceProviderStart) await hosting.start(provider, leased.externalId);
-    else await hosting.ensureRunning(provider, leased.externalId);
-    await hosting.waitUntilReady(provider, leased.externalId, leased.runtimeId, 120_000);
+    const target = appRuntimeTarget(leased);
+    const recreate = await appRuntimeRecreateInput(loaded, leased);
+    if (options.forceProviderStart) await hosting.start(target, recreate);
+    else await hosting.ensureRunning(target, recreate);
+    await hosting.waitUntilReady(target, 120_000);
 
     // A manual stop can win while the provider is starting. The desired state
     // is authoritative. Do not publish a running row after the user stopped it.
@@ -650,7 +658,7 @@ export async function ensureAppRuntimeRunning(
       .where(eq(apps.appId, app.appId))
       .limit(1);
     if (!currentApp || currentApp.deletedAt || currentApp.desiredState !== 'running') {
-      await hosting.stop(provider, leased.externalId);
+      await hosting.stop(target);
       const stoppedAt = new Date();
       await db
         .update(appRuntimes)
@@ -692,10 +700,10 @@ export async function ensureAppRuntimeRunning(
     await startComputeSession({
       sandboxId: running.runtimeId,
       accountId: running.accountId,
-      provider,
+      provider: target.provider,
       // The machine the provider really allocates — see hosting.effectiveMachine.
       spec: {
-        ...hosting.effectiveMachine(provider, {
+        ...hosting.effectiveMachine(hostingSelectionForTarget(target), {
           cpuCores: app.cpuCores,
           memoryGb: app.memoryGb,
           diskGb: app.diskGb,
@@ -729,12 +737,53 @@ export async function ensureAppRuntimeRunning(
   }
 }
 
+async function appRuntimeRecreateInput(
+  loaded: NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>,
+  runtime: typeof appRuntimes.$inferSelect,
+): Promise<AppRuntimeCreateInput> {
+  const snapshotName = loaded.deployment.providerBuildId
+    || `kortix-app-${loaded.deployment.deploymentId.replaceAll('-', '')}`;
+  let envVars: Record<string, string> | undefined;
+  if (runtime.hostingType === 'managed_container') {
+    const buildSpec = loaded.deployment.buildSpec as Record<string, unknown>;
+    const availableSecrets = await listResolvedProjectSecrets(
+      loaded.app.projectId,
+      loaded.deployment.createdBy,
+    );
+    envVars = resolveAppRuntimeEnvironment({
+      environment: (buildSpec.environment ?? {}) as Record<string, string>,
+      secrets: (buildSpec.secrets ?? {}) as Record<string, string>,
+      availableSecrets,
+    }).env;
+  }
+  const metadata = runtime.metadata as Record<string, unknown>;
+  const imageReference = typeof metadata.imageReference === 'string'
+    ? metadata.imageReference
+    : snapshotName;
+  return {
+    runtimeId: runtime.runtimeId,
+    deploymentId: loaded.deployment.deploymentId,
+    accountId: loaded.app.accountId,
+    userId: loaded.deployment.createdBy,
+    name: `app-${loaded.app.routeKey}-v${loaded.deployment.version}`,
+    snapshotName,
+    imageReference,
+    machine: {
+      cpuCores: loaded.app.cpuCores,
+      memoryGb: loaded.app.memoryGb,
+      diskGb: loaded.app.diskGb,
+    },
+    envVars,
+  };
+}
+
 export function appUpstreamHeaders(request: Request, providerHeaders: Record<string, string>, publicHost: string): Headers {
   const headers = new Headers(request.headers);
   for (const name of [
     'host', 'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
     'te', 'trailer', 'transfer-encoding', 'upgrade',
     EDGE_HOST_HEADER, EDGE_TIMESTAMP_HEADER, EDGE_SIGNATURE_HEADER,
+    'x-kortix-origin-token',
   ]) headers.delete(name);
   headers.set('x-kortix-app-host', publicHost);
   headers.set('x-forwarded-host', publicHost);
@@ -792,7 +841,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     return appPublicStatusResponse(request, state.app, publicDeploymentStatus(state.deployment));
   }
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
-  const hosting = new AppHostingProvider();
+  const hosting = new AppHostingService();
   const coldStart = appRuntimeNeedsWake(state.runtime);
   if (coldStart) {
     await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
@@ -829,7 +878,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
 
   const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
   const fetchUpstream = async () => {
-    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId);
+    const ingress = await hosting.ingress(appRuntimeTarget(runtime));
     const upstreamUrl = `${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`;
     return fetch(upstreamUrl, {
       method: request.method,
@@ -872,7 +921,10 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
 
   if (upstream.status === 400) {
     const body = await upstream.clone().text().catch(() => '');
-    if (appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, body)) {
+    if (
+      runtime.hostingType === 'sandbox'
+      && appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, body)
+    ) {
       await upstream.body?.cancel().catch(() => {});
       if (coldStart) return startingResponse();
       try {
@@ -885,7 +937,10 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
       }
       if (upstream.status === 400) {
         const retryBody = await upstream.clone().text().catch(() => '');
-        if (appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, retryBody)) {
+        if (
+          runtime.hostingType === 'sandbox'
+          && appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, retryBody)
+        ) {
           await upstream.body?.cancel().catch(() => {});
           return startingResponse();
         }

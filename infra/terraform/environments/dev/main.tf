@@ -95,6 +95,13 @@ data "aws_secretsmanager_secret" "env" {
   name = "kortix-dev-env"
 }
 
+module "apps_lightsail_hosting" {
+  source      = "../../modules/apps-lightsail-hosting"
+  name        = local.name
+  environment = "dev"
+  tags        = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -109,14 +116,21 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image                   = var.api_image
-  container_port          = var.container_port
-  certificate_arn         = one(module.acm[*].certificate_arn)
-  environment             = var.api_environment
-  secrets                 = var.api_secrets
-  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
-  ses_send_region         = "us-east-2"
-  ses_send_identity_names = ["kortix.com", "kortix.ai"]
+  image           = var.api_image
+  container_port  = var.container_port
+  certificate_arn = one(module.acm[*].certificate_arn)
+  environment = merge(var.api_environment, {
+    KORTIX_APPS_LIGHTSAIL_ENABLED  = "true"
+    KORTIX_APPS_AWS_REGION         = var.aws_region
+    KORTIX_APPS_BUILD_BUCKET       = module.apps_lightsail_hosting.build_bucket
+    KORTIX_APPS_ECR_REPOSITORY_URI = module.apps_lightsail_hosting.ecr_repository_uri
+    KORTIX_APPS_CODEBUILD_PROJECT  = module.apps_lightsail_hosting.codebuild_project
+  })
+  secrets                          = var.api_secrets
+  secrets_blob_arn                 = data.aws_secretsmanager_secret.env.arn
+  additional_task_role_policy_json = module.apps_lightsail_hosting.api_task_role_policy_json
+  ses_send_region                  = "us-east-2"
+  ses_send_identity_names          = ["kortix.com", "kortix.ai"]
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges

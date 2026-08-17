@@ -327,18 +327,28 @@ describe('Kortix Apps schema', () => {
 
   test('stores immutable artifacts and deployment versions', () => {
     expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
-    expect(getTableConfig(appDeployments).name).toBe('app_deployments');
+    const deploymentConfig = getTableConfig(appDeployments);
+    expect(deploymentConfig.name).toBe('app_deployments');
     expect(columnNames(appDeployments)).toEqual(expect.arrayContaining([
       'created_by',
       'source_session_id',
       'actor_type',
     ]));
     expect(indexNames(appDeployments)).toContain('app_deployments_app_version_unique');
+    expect((appDeployments.hostingType as unknown as { config: { length: number } }).config.length)
+      .toBeGreaterThanOrEqual('managed_container'.length);
+    expect(deploymentConfig.foreignKeys.find(
+      (foreignKey) => foreignKey.getName() === 'app_deployments_artifact_id_app_artifacts_artifact_id_fk',
+    )?.onDelete).toBe('cascade');
   });
 
   test('stores provider runtimes and append-only deployment events', () => {
     expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
     expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
+    expect(columnNames(appRuntimes)).toEqual(expect.arrayContaining([
+      'hosting_type',
+      'origin_token_hash',
+    ]));
     expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
   });
 

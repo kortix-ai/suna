@@ -4,6 +4,10 @@ import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
 export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b';
+export type AppManagedContainerProvider = 'aws_lightsail';
+export type AppHostingBackend =
+  | { type: 'sandbox'; provider?: AppHostingProvider }
+  | { type: 'managed_container'; provider: AppManagedContainerProvider };
 export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';
@@ -153,8 +157,10 @@ export type AppSource =
 export interface CreateAppDeploymentInput {
   artifact_id: string;
   source: AppSource;
-  /** Optional infrastructure preference. Omit it to use the server policy. */
+  /** @deprecated Sandbox shorthand. Use `hosting` for new callers. */
   provider?: AppHostingProvider;
+  /** Optional hosting backend. Omit it to preserve the current sandbox default. */
+  hosting?: AppHostingBackend;
   /** Non-secret runtime environment values. */
   environment?: Record<string, string>;
   /** Runtime environment key -> project secret identifier. */
@@ -168,8 +174,8 @@ export interface AppDeployment {
   version: number;
   status: AppDeploymentStatus;
   source_kind: AppSourceKind;
-  hosting_type: 'sandbox';
-  hosting_provider: AppHostingProvider | null;
+  hosting_type: AppHostingBackend['type'];
+  hosting_provider: AppHostingProvider | AppManagedContainerProvider | null;
   runtime_spec: Record<string, unknown>;
   build_spec: Record<string, unknown>;
   error_code: string | null;

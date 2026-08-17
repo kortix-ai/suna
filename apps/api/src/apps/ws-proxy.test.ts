@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AppHostingProvider } from './hosting';
+import type { AppHostingService } from './hosting-service';
 import { prepareAppWsUpgrade, type AppWsUpgradeDependencies } from './ws-proxy';
 
 process.env.INTERNAL_KORTIX_ENV = 'dev';
@@ -24,6 +24,7 @@ function loadedApp(runtimeStatus: 'running' | 'stopped' = 'stopped') {
     deployment: { deploymentId: '55555555-5555-4555-8555-555555555555' },
     runtime: {
       runtimeId: '66666666-6666-4666-8666-666666666666',
+      hostingType: 'sandbox',
       provider: 'platinum',
       externalId: 'socket-app-runtime',
       status: runtimeStatus,
@@ -44,7 +45,7 @@ function dependencies(
         url: 'https://runtime.example.test',
         headers: { authorization: 'Bearer runtime' },
       }),
-    }) as unknown as AppHostingProvider,
+    }) as unknown as AppHostingService,
     ensureAppRuntimeRunning: async () => loaded.runtime,
     enqueueCurrentAppRuntime: async () => true,
     stampActivity: async () => {},
@@ -105,7 +106,7 @@ describe('Apps WebSocket edge contract', () => {
               headers: { authorization: 'Bearer runtime' },
             };
           },
-        }) as unknown as AppHostingProvider,
+        }) as unknown as AppHostingService,
         ensureAppRuntimeRunning: async () => {
           events.push('wake');
           return { ...loaded.runtime, status: 'running' };

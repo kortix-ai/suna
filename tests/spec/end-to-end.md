@@ -820,6 +820,19 @@ policy to `project` puts the App in that teammate's list and makes it readable;
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
 A `NONMEMBER` remains 403 on the whole surface.
 
+`APP-5` Hosting backend selection — deployment creation accepts one additive
+`hosting` object. Omitting it preserves `hosting_type: sandbox` and the current
+server-selected provider. An explicit sandbox selection persists its provider.
+An explicit `{type:'managed_container', provider:'aws_lightsail'}` selection
+persists both values without adding Lightsail to the sandbox-provider enum.
+The deprecated top-level `provider` shorthand cannot appear with `hosting` and
+returns **400** when both are present. Lightsail accepts only an exact container
+power shape. A generic 1 CPU / 3 GB App returns **400**. A 1 CPU / 2 GB App with
+less than the `$40` monthly Lightsail floor returns **402** with
+`code: app_hosting_budget_too_low`, `required_monthly_usd: 40`, and the rejected
+`budget_usd`. The flow verifies the omitted default, explicit sandbox, explicit
+Lightsail, conflict, machine, budget, and cleanup contracts through real HTTP.
+
 ---
 
 ## 29. Additional executable product contracts

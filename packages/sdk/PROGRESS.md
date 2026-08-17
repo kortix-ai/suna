@@ -12,6 +12,95 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-16 — session `apps-hosting-backends` claim
+
+No **Now** task claimed. This is the user-directed provider-agnostic Apps Hosting
+refactor and AWS Lightsail implementation.
+
+Claimed SDK scope:
+
+- Add an additive `hosting` request contract that separates the hosting backend
+  from sandbox provider selection.
+- Keep the existing `provider` field as a deprecated sandbox shorthand.
+- Preserve every existing Apps export name and the release-managed package
+  version.
+- Add failing contract tests before implementation.
+- Update both public-surface snapshots only for intentional additive names.
+- Run SDK typecheck, the complete SDK suite, and packed-install smoke.
+
+Required platform proof includes the real API, CLI, browser, AWS Lightsail
+Container Services, direct-origin denial, cleanup, merge, Deploy Dev, deployed
+SHA, and Dev behavior.
+
+**Standalone status:** COMPLETE. Local, AWS Lightsail, and `kortix-self-host`
+verification are complete.
+
+**Verified locally on 2026-08-17:**
+
+- `pnpm test` — `374/374` REST and CLI flows, SDK, flow-runner, route
+  coverage, and `99/99` worktree tests passed.
+- `pnpm test -- --browser-only` — `13` passed, `7` documented
+  provider-dependent skips, `0` failed. The Apps journey verified real create,
+  read, update, and confirmed-delete requests and visible state.
+- `pnpm test -- --full` — all `7` lanes passed in `255.6s`; browser passed in
+  `67.2s` and package-quality passed in `118.7s`.
+- Post-AWS-fix `pnpm test -- --full` — all `7` lanes passed in `249.9s`;
+  API/CLI passed in `20.5s`, SDK in `24.8s`, browser in `67.6s`, and package
+  quality in `110.3s`.
+- `pnpm --filter @kortix/sdk typecheck` — passed.
+- `pnpm --filter @kortix/sdk test` — `2,094` passed, `0` failed, `7,629`
+  expectations across `147` files.
+- `pnpm --filter @kortix/sdk run smoke:install` — packed install and Node ESM
+  import passed.
+- All five changed Terraform roots passed `terraform validate`.
+- The `essentia` AWS smoke built image
+  `deployment-c0f5ba71969a42de9e6772440a757d4e` through CodeBuild run
+  `essentia-selfhost-apps-hosting:b24677cc-464e-4ddf-ab83-90f31c1e480e`.
+  The real Lightsail service returned `403` at the direct origin, `200` through
+  the authenticated runtime path, and passed POST, cookie, SSE, WebSocket, and
+  log-read checks.
+- AWS cleanup left zero `kortix-selfhost-app-*` services. ECR returned
+  `RepositoryPolicyNotFoundException`, which proves the temporary Lightsail
+  pull-principal policy was removed.
+- API typecheck passed. Focused Lightsail and price tests passed `43/43` with
+  `88` expectations. Terraform format, all three environment validations, and
+  module `tflint` passed.
+- Essentia `kortix-self-host` runs SHA
+  `36826c1e039fee95cf5c7a1e8d6c4cd1c54dba4a` on two healthy API, two healthy
+  frontend, and two healthy gateway replicas. API health reports version
+  `apps-hosting-36826c1e03` and the full SHA.
+- Persistence audit command `15f53f15-5ca5-4c1e-9f8f-d48b668bc204`
+  found the live updater still had `KORTIX_AUTO_UPDATE=true` after `.env` was
+  changed to `false`. The updater was recreated with `false`. Post-fix command
+  `74ba8e6e-18a7-40cf-91fe-6940d4d5da3a` verified the pinned `.env`, the updater
+  environment, all six healthy feature replicas, and public health SHA.
+- The maintained Apps UI Playwright journey passed `1/1` in `40.4s` against
+  `essentia.kortix.cloud`. It verified the feature gate, create, read, update,
+  exact request payloads, confirmed delete, and visible desktop/mobile states.
+- Final Lightsail lifecycle command
+  `3c3b8833-4aaa-4f16-9ca1-abefbb927d0d` passed two complete deployments. Both
+  direct origins returned `403`. Both authenticated App requests returned
+  `200`. Provider runtime logs returned `76` and `83` entries and contained
+  neither the real origin token nor its header name. Deployment two replaced
+  deployment one, and the public App delete returned `200` after teardown.
+- Final AWS cleanup reports zero `kortix-dev-app-*` services, zero deployment
+  images in `essentia-selfhost-apps-hosting`, and
+  `RepositoryPolicyNotFoundException` for that repository.
+- The final completion audit corrected the SDK README's stale fractional-power
+  list. The database and API accept whole CPU values, so the documented
+  Lightsail powers now match the implemented `medium`, `large`, and `xlarge`
+  contract. The audit also removed stale `experimental` and `404` copy: Apps is
+  a stable flag, and disabled Apps routes return `403 feature_disabled`.
+
+The user requires this branch and PR to remain standalone. Merge and Deploy
+Dev are intentionally deferred until explicit approval.
+
+**SDK package shippable to production: YES.**
+
+**Complete Apps platform shippable to production: YES.** The implementation and
+standalone self-host deployment are verified. Merge and Deploy Dev remain
+intentionally deferred by the user's isolation requirement.
+
 ### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
 
 **Files:** `packages/sdk/src/core/session/rewind.ts` (+`.test.ts`),

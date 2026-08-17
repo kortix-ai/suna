@@ -49,6 +49,7 @@ interface FakeComputeRow {
   sandboxId: string;
   sessionId: string | null;
   provider: string;
+  computeProvider?: string | null;
   cpuCores: number;
   memoryGb: number;
   diskGb: number;
@@ -147,6 +148,7 @@ interface FakeAppRuntimeRow {
   runtimeId: string;
   accountId: string;
   provider: string;
+  hostingType: string;
   externalId: string;
   status: string;
   desiredState: string;
@@ -206,6 +208,7 @@ const selectMissingApps = async (limit: number) =>
       sandboxId: r.runtimeId,
       accountId: r.accountId,
       provider: r.provider,
+      hostingType: r.hostingType,
       externalId: r.externalId,
       cpuCores: r.cpuCores,
       memoryGb: r.memoryGb,
@@ -265,6 +268,7 @@ function appRuntime(overrides: Partial<FakeAppRuntimeRow> = {}): FakeAppRuntimeR
     runtimeId: 'app-runtime-1',
     accountId: 'acct-1',
     provider: 'daytona',
+    hostingType: 'sandbox',
     externalId: 'app-external-1',
     status: 'running',
     desiredState: 'running',
@@ -412,6 +416,34 @@ describe('tickRunningComputeCharges', () => {
 });
 
 describe('reconcileMissingAppComputeSessions', () => {
+  test('uses the Apps hosting dispatcher and records the Lightsail pricing provider', async () => {
+    accountsById['acct-app'] = { billingModel: 'per_seat' };
+    appRuntimeRows = [appRuntime({
+      runtimeId: 'app-runtime-lightsail',
+      accountId: 'acct-app',
+      hostingType: 'managed_container',
+      provider: 'aws_lightsail',
+      externalId: 'kortix-test-app-runtime',
+      cpuCores: 1,
+      memoryGb: 2,
+      diskGb: 10,
+    })];
+    const observed: string[] = [];
+
+    const result = await reconcileMissingAppComputeSessions(100, {
+      status: async (target: { hostingType: string; provider: string; externalId: string }) => {
+        observed.push(`${target.hostingType}:${target.provider}:${target.externalId}`);
+        return 'running';
+      },
+    } as never);
+
+    expect(result).toEqual({ checked: 1, reconciled: 1, errors: 0 });
+    expect(observed).toEqual([
+      'managed_container:aws_lightsail:kortix-test-app-runtime',
+    ]);
+    expect(openRowFor('app-runtime-lightsail')?.computeProvider).toBe('aws_lightsail');
+  });
+
   test('opens an App compute window with the exact App machine and attribution', async () => {
     accountsById['acct-app'] = { billingModel: 'per_seat' };
     appRuntimeRows = [appRuntime({

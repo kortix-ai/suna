@@ -2,7 +2,7 @@
 
 Date: 2026-08-07
 
-Last verified: 2026-08-08
+Last verified: 2026-08-17
 
 Status: canonical implementation contract and deferred architecture record
 
@@ -17,51 +17,58 @@ sandboxes. It does not expose a durable application deployment product.
 Users need one command and one SDK surface that deploys a static directory,
 Docker build context, or OCI image to a stable Kortix URL.
 
-The deployment product must keep provider details out of user configuration.
+The deployment product must keep provider details optional in user configuration.
 It must scale a runtime to zero, wake it on a public request, preserve a stable
 URL across deployments, and retain enough state to explain every build and
 runtime transition.
 
 ## Current decision
 
-The first-release sandbox system remains the only implemented hosting backend.
-Kortix deploys every source kind into a Daytona, Platinum, or E2B sandbox. Local
-Docker is not a supported Apps provider. Provider selection remains a server
-policy unless an operator supplies an explicit preference.
+Kortix Apps has a provider-neutral hosting contract. Sandbox hosting remains the
+default. It deploys every source kind into Daytona, Platinum, or E2B. The first
+managed-container backend is AWS Lightsail Container Services. Local Docker is
+not a supported Apps provider.
 
-This uniform backend is an accepted first-release tradeoff. It provides one
-runtime contract for static files, framework bundles, Dockerfiles, and OCI
-images. Static Apps pay the cost of building and waking a sandbox, but the
-product does not add a separate edge-static path yet.
+The public selection is a discriminated union:
+
+```ts
+type AppHostingBackend =
+  | { type: 'sandbox'; provider?: 'daytona' | 'platinum' | 'e2b' }
+  | { type: 'managed_container'; provider: 'aws_lightsail' };
+```
+
+Omitting `hosting` selects sandbox policy. The deprecated top-level `provider`
+field remains a sandbox-only compatibility shorthand. A request cannot combine
+`hosting` and `provider`. `aws_lightsail` never enters the sandbox provider enum.
 
 The following decisions are binding until this document changes:
 
-1. Keep the current sandbox implementation and improve its reliability.
+1. Keep sandbox hosting as the default.
 2. Keep `kortix apps deploy` blocking by default until the deployment is ready.
 3. Keep `--no-wait` as the explicit asynchronous mode.
 4. Keep Kortix as the control plane for identity, URLs, access, deployments,
    rollback, provenance, budgets, billing, and lifecycle state.
-5. Keep the Apps UI as an inventory and management surface. It does not create
-   an empty App identity.
-6. Treat Cloudflare, Deno Deploy, Vercel, Cloud Run, and other hosting backends
-   as deferred architecture only. No current CLI, SDK, API, or UI contract
-   promises these backends.
+5. Keep the Apps UI as a complete App identity CRUD and management surface.
+6. Support AWS Lightsail only as the first managed-container backend.
+7. Treat Cloudflare, Deno Deploy, Vercel, Cloud Run, and other backends as
+   deferred architecture. No current contract promises them.
 
 ## Terms
 
 - **App**: mutable product record with a stable hostname and active deployment.
 - **Artifact**: immutable uploaded build context or immutable OCI source.
 - **Deployment**: immutable app version built from one artifact and one spec.
-- **Runtime**: one provider sandbox executing one deployment.
+- **Runtime**: one provider resource executing one deployment.
 - **Sandbox provider**: Daytona, Platinum, or E2B adapter that builds and runs a
   sandbox deployment.
-- **Hosting backend**: a future execution class such as sandbox, edge static,
-  managed function, or managed container. The only current value is sandbox.
+- **Hosting backend**: an execution class. Current values are `sandbox` and
+  `managed_container`.
+- **Managed-container provider**: AWS Lightsail Container Services.
 - **Transport**: HTTP, SSE, or WebSocket traffic. Do not use this term for a
   hosting backend.
 
-The product name is **Kortix Apps**. Provider names never appear in a normal App
-specification.
+The product name is **Kortix Apps**. Provider selection is optional. Normal
+deployments omit it and use sandbox policy.
 
 ## Supported first-release workloads
 
@@ -131,16 +138,16 @@ Kortix routing header before the request reaches the user process.
 - Default readiness path: `/`
 - Readiness timeout during deploy: `120 seconds`
 - Maximum restarts per boot: `3`
-- Monthly per-App compute safety limit: `$5`
+- Monthly per-App compute safety limit: `$5` for sandbox hosting. Lightsail
+  requires a limit at or above the selected fixed-price power.
 
 Every value is server-configurable. Account policy can impose lower or higher
 limits.
 
 ## Resource controls
 
-An App runtime is a sandbox on the same providers, drawing on the same wallet
-as a session, so it answers to the same controls. `apps/limits.ts` is the single
-place that decides whether an App may consume compute.
+An App runtime draws on the same wallet as a session. It answers to the same
+controls. `apps/limits.ts` decides whether an App may consume compute.
 
 - **Machine** — an App machine may not exceed `SANDBOX_SPEC_LIMITS` (32 CPU,
   128 GB memory, 500 GB disk), the ceiling a session snapshot already answers
@@ -170,6 +177,30 @@ E2B's `Template.build` accepts `cpuCount` and `memoryMB` and has no disk
 parameter, so an App's disk on E2B is provider-managed and is not billed. A gap
 between the requested and effective machine is recorded as a deployment event
 rather than silently accepted.
+
+AWS Lightsail requires an exact CPU and memory power. The App budget must cover
+the complete monthly power price before deployment or wake. Lightsail storage
+is included in that price. Kortix does not add the shared disk meter.
+
+The current App resource contract stores whole CPU and memory values. It can
+select the following Lightsail powers. Nano, micro, and small require a future
+decimal-resource migration and are rejected by the API today.
+
+| Power | vCPU | Memory | Minimum monthly App budget |
+| --- | ---: | ---: | ---: |
+| `medium` | 1 | 2 GB | $40 |
+| `large` | 2 | 4 GB | $80 |
+| `xlarge` | 4 | 8 GB | $160 |
+
+Lightsail stop deletes the Container Service. The next authorized request
+recreates it from the immutable deployment image. App deletion also deletes the
+Container Service. The managed-resource reaper removes unprotected Lightsail
+services, S3 build contexts, and ECR deployment images after its grace period.
+
+Lightsail exposes a public provider origin. The App runtime requires
+`X-Kortix-Origin-Token` on every route except `/__kortix/health`. The Kortix
+proxy injects this token and removes it before the user process receives the
+request. A direct provider-origin request without the token returns `403`.
 
 ## Hostnames
 
@@ -286,7 +317,7 @@ Unique index: `(app_id, principal_type, principal_id)`.
 - `version int not null`
 - `status queued|validating|building|provisioning|checking|ready|failed|cancelled not null`
 - `source_kind static|bundle|dockerfile|oci_image not null`
-- `hosting_type sandbox not null`
+- `hosting_type sandbox|managed_container not null`
 - `hosting_provider text null`
 - `provider_build_id text null`
 - `runtime_spec jsonb not null`
@@ -310,7 +341,8 @@ Unique index: `(app_id, version)`.
 - `runtime_id uuid primary key`
 - `deployment_id uuid not null`
 - `account_id uuid not null`
-- `provider text not null`
+- `hosting_type sandbox|managed_container not null`
+- `provider daytona|platinum|e2b|aws_lightsail not null`
 - `external_id text not null`
 - `status provisioning|starting|running|stopping|stopped|error|deleted not null`
 - `control_port int not null default 7331`
@@ -504,21 +536,28 @@ Commands:
 ```text
 kortix apps deploy [path] --slug <slug>
 kortix apps deploy --image <image> --slug <slug> --port <port> --command <command>
+kortix apps deploy [path] --slug <slug> --hosting aws-lightsail --budget 40
+kortix apps create <slug>
 kortix apps ls
-kortix apps inspect <slug-or-id>
-kortix apps deployments <slug-or-id>
+kortix apps show <slug-or-id>
 kortix apps logs <slug-or-id> [--follow] [--build]
 kortix apps rollback <slug-or-id> <version>
 kortix apps start <slug-or-id>
 kortix apps stop <slug-or-id>
 kortix apps access <slug-or-id> [--mode <mode>] [--password <value>] [--members <ids>] [--groups <ids>]
-kortix apps open <slug-or-id>
-kortix apps rm <slug-or-id>
+kortix apps access-link <slug-or-id>
+kortix apps delete <slug-or-id> --yes
 ```
 
 Deploy waits by default. `--no-wait` returns after queueing. Deploy accepts
 `--access`, `--password`, `--members`, and `--groups`. Passwords are CLI input
 only. They never belong in `kortix.yaml`.
+
+Deploy accepts `--cpu`, `--memory`, `--disk`, `--idle-timeout`, and `--budget`.
+It applies supplied values to a new or selected App before deployment.
+`--hosting sandbox` selects sandbox policy. `--hosting aws-lightsail` selects
+Lightsail. `--provider daytona|platinum|e2b` is the deprecated sandbox-only
+shorthand and cannot be combined with `--hosting`.
 
 The packer applies `.gitignore`, `.dockerignore`, and `.kortixignore`. It always
 excludes `.git`, `.env*`, `node_modules`, and existing archive output.
@@ -560,9 +599,11 @@ The project sidebar lists Apps under Services. The page shows hostname, active
 version, deployment state, runtime state, resource size, last request, and
 monthly compute.
 
-The UI is an inventory for CLI- and SDK-created Apps. It has no Create App
-control. Each card shows a protected live preview, lifecycle state, access mode,
-deployment history, rollback, start, stop, access settings, and deletion.
+The UI creates, lists, reads, updates, and deletes App identities. Creation and
+editing cover the name, slug, machine, idle timeout, and monthly budget. Delete
+requires explicit confirmation. Each card also shows a protected live preview,
+lifecycle state, access mode, deployment history, rollback, start, stop, and
+access settings.
 
 The internal Browser opens `*.apps.kortix.com` and `*.apps.localhost` directly.
 It does not send these URLs through the generic sandbox proxy because the App
@@ -599,6 +640,12 @@ The release is incomplete until these black-box cases pass:
 22. A policy revision revokes an old cookie without breaking asset requests.
 23. The internal Browser preserves direct App-host navigation and cookies.
 24. A cold start queues at most one current-daemon replacement.
+25. Omitted hosting defaults to sandbox and explicit sandbox provider selection works.
+26. Lightsail rejects unsupported powers and budgets below the exact monthly floor.
+27. A direct Lightsail provider-origin request without its origin token returns `403`.
+28. HTTP bodies, JSON, cookies, SSE, and WebSockets pass through Lightsail.
+29. Lightsail stop deletes the service and the next authorized request recreates it.
+30. App CRUD, including confirmed delete, works through the real browser UI.
 
 ## Verified Dev acceptance: 2026-08-08
 
@@ -692,15 +739,15 @@ The CLI and SDK continue to expose Kortix Apps.
 
 ### Separate build and hosting
 
-A future refactor must separate two contracts:
+The implementation separates two contracts:
 
 1. A build backend accepts source and produces an immutable, content-addressed
    artifact with logs and provenance.
 2. A hosting backend deploys a compatible artifact and returns a protected
    origin plus provider release metadata.
 
-The existing `AppHostingProvider` becomes the sandbox backend. Its `appd`,
-control ports, explicit wake, and runtime leases remain sandbox-specific.
+The existing `AppHostingProvider` is the sandbox backend. Its control port,
+explicit provider stop, and sandbox lifecycle remain sandbox-specific.
 Universal deployment records must not require an `appd` token or sandbox
 ports.
 
@@ -722,11 +769,11 @@ non-public App.
 
 | Workload                                        | Candidate future backend                                              | Current backend |
 | ----------------------------------------------- | --------------------------------------------------------------------- | --------------- |
-| Static files and prebuilt SPAs                  | Shared Cloudflare router plus immutable object storage                | Sandbox         |
-| Compatible JavaScript and TypeScript            | Deno Deploy or Cloudflare Workers                                     | Sandbox         |
-| Next.js and supported web frameworks            | Vercel or compatible managed runtime                                  | Sandbox         |
-| Stateless OCI HTTP services                     | Cloud Run, Vercel Containers, or proven Cloudflare Containers tenancy | Sandbox         |
-| Unrestricted Docker and custom runtime behavior | Daytona or Platinum sandbox                                           | Sandbox         |
+| Static files and prebuilt SPAs                  | Shared Cloudflare router plus immutable object storage                | Sandbox or Lightsail |
+| Compatible JavaScript and TypeScript            | Deno Deploy or Cloudflare Workers                                     | Sandbox or Lightsail |
+| Next.js and supported web frameworks            | Vercel or compatible managed runtime                                  | Sandbox or Lightsail |
+| Stateless OCI HTTP services                     | Cloud Run, Vercel Containers, or proven Cloudflare Containers tenancy | Sandbox or Lightsail |
+| Unrestricted Docker and custom runtime behavior | Daytona or Platinum sandbox                                           | Sandbox or Lightsail |
 
 Do not create one Cloudflare Worker per App without proving account and
 multi-tenant limits. A shared Kortix Apps Router serving content-addressed
@@ -738,17 +785,15 @@ payload, timeout, logs, deletion, and cost acceptance suite before selection.
 
 ### Deferred delivery order
 
-1. Refactor the existing implementation into a sandbox backend without changing
-   behavior.
-2. Keep durable deployment rows and leases, but run claims in a dedicated
+1. Keep durable deployment rows and leases, but run claims in a dedicated
    worker instead of relying on API-process timers.
-3. Add a shared edge-static proof with private access enforced before object
+2. Add a shared edge-static proof with private access enforced before object
    retrieval.
-4. Run one OCI acceptance suite against candidate managed-container backends.
-5. Select a default using measured deployment latency, cold latency, origin
+3. Run the same acceptance suite against each new managed backend.
+4. Select any new default using measured deployment latency, cold latency, origin
    security, logs, WebSockets, deletion, rollback, and cost.
-6. Add framework-specific backends only after the general backend contract is
+5. Add framework-specific backends only after the general backend contract is
    stable.
 
-Start this work only when sandbox cost or latency becomes a measured product
-constraint. Until then, improve and operate the current sandbox path.
+Start this work only when sandbox and Lightsail cost or latency data identifies
+a measured product constraint. Until then, improve both current hosting paths.

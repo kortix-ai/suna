@@ -3,6 +3,12 @@
 The **same modules as dev** (`../dev`), with prod-grade numbers. Bringing prod
 up is the same workflow as dev — only the variables differ.
 
+This root also creates the shared Apps Lightsail build resources: one private
+S3 bucket, immutable ECR repository, CodeBuild project, log group, and API task
+policy. Sandbox hosting remains the default. The API creates and deletes
+per-App Lightsail Container Services only for explicit `aws_lightsail`
+deployments.
+
 | Setting | dev | prod |
 |---|---|---|
 | Task size | 512 / 1024 | 1024 / 2048 |

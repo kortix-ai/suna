@@ -5,9 +5,17 @@ description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable
 
 Kortix Apps are provider-neutral serverless deployments. An App owns one stable URL. Each deployment is immutable. Failed deployments do not replace active traffic.
 
-Apps is an experimental feature flag and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. Until a project manager enables **Apps** under Customize → Feature flags, every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`, and `kortix apps <subcommand>` prints that message and exits `1`.
+Apps is a stable project feature flag and off by default. The Apps navigation remains visible for a selected project and opens an enablement screen. Until a project manager enables **Apps** under Customize → Feature flags, every Apps route answers `403` with `{ error, code: "feature_disabled", feature: "apps" }`, and `kortix apps <subcommand>` prints that message and exits `1`.
 
-All current source kinds run through the same Kortix sandbox hosting backend. Kortix selects Daytona, Platinum, or E2B. Static Apps, bundles, Dockerfiles, and OCI images therefore share one deployment and cold-wake contract. Cloudflare, Deno Deploy, Vercel, and other managed hosting backends are not part of the current API or SDK contract.
+Sandbox hosting remains the default. Kortix selects Daytona, Platinum, or E2B when `hosting` is omitted. AWS Lightsail Container Services is the optional managed-container backend. Static Apps, bundles, Dockerfiles, and OCI images share one deployment contract across both hosting types. Cloudflare, Deno Deploy, Vercel, and other managed backends remain future designs.
+
+```ts
+type AppHostingBackend =
+  | { type: 'sandbox'; provider?: 'daytona' | 'platinum' | 'e2b' }
+  | { type: 'managed_container'; provider: 'aws_lightsail' };
+```
+
+The deprecated deployment `provider` field remains a sandbox-only shorthand. Do not combine it with `hosting`.
 
 ## Choose the fastest source path
 
@@ -39,6 +47,7 @@ const artifact = await apps.artifacts.uploadArchive(tarGzBytes);
 const deployment = await apps.deployments.create(app.app_id, {
   artifact_id: artifact.artifact_id,
   source: { kind: 'static', spa: true },
+  // Omit hosting for the default sandbox backend.
 });
 console.log(app.url, deployment.status);
 
@@ -67,10 +76,29 @@ await apps.deployments.create(app.app_id, {
     port: 3000,
     readiness_path: '/health',
   },
+  hosting: { type: 'managed_container', provider: 'aws_lightsail' },
 });
 ```
 
-Use `apps.access.get`, `apps.access.update`, `apps.access.session`, `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`, `apps.start`, `apps.stop`, and `apps.remove` for the full lifecycle. `apps.stop` suspends compute immediately. The next request resumes the App. `apps.start` warms it before traffic arrives.
+Lightsail supports exact powers. The App budget must meet the selected monthly floor.
+
+| Power | vCPU | Memory | Minimum budget |
+| --- | ---: | ---: | ---: |
+| medium | 1 | 2 GB | $40/month |
+| large | 2 | 4 GB | $80/month |
+| xlarge | 4 | 8 GB | $160/month |
+
+The CLI selects Lightsail with `--hosting aws-lightsail`. Supply `--cpu`, `--memory`, `--disk`, `--idle-timeout`, and `--budget` when creating or changing the App. For example:
+
+```bash
+kortix apps deploy . --slug api --type dockerfile \
+  --command '["node","server.js"]' --port 3000 \
+  --hosting aws-lightsail --cpu 1 --memory 2 --disk 10 --budget 40
+```
+
+Use `apps.create`, `apps.list`, `apps.get`, `apps.update`, and `apps.remove` for App identity CRUD. Use `apps.access.get`, `apps.access.update`, `apps.access.session`, `apps.deployments.get`, `apps.deployments.logs`, `apps.rollback`, `apps.start`, and `apps.stop` for the runtime lifecycle. The Apps page exposes the same identity CRUD, including confirmed deletion.
+
+`apps.stop` suspends compute immediately. Sandbox hosting stops the sandbox. Lightsail hosting deletes the Container Service because Lightsail has no zero-scale stop state. The next authorized request recreates the service from the immutable image. `apps.start` warms it before traffic arrives.
 
 `kortix apps access <app>` reads a policy. Add `--mode`, `--password`, `--members`, or `--groups` to update it. `kortix apps access-link <app> --json` creates a five-minute authenticated browser URL without changing the policy. Treat that URL as a secret. `kortix apps deploy` accepts the equivalent `--access`, `--password`, `--members`, and `--groups` flags.
 
@@ -78,4 +106,6 @@ Each cold start compares the active deployment's `runtime_version` with the curr
 
 The Kortix Browser opens `*.apps.kortix.com` and `*.apps.localhost` directly. Direct navigation preserves the host-only access cookie and avoids the generic sandbox proxy.
 
-Hosting provider selection remains a server policy unless an operator supplies the optional deployment preference. Managed acceptance covers Platinum and Daytona. E2B implements the same provider contract.
+The Lightsail provider origin requires `X-Kortix-Origin-Token`. Kortix injects the token at the proxy and strips it before the user process. Direct provider-origin requests without the token return `403`. HTTP bodies, JSON, cookies, SSE, and WebSockets use the same protected proxy path.
+
+Terraform provisions the private S3 build-context bucket, immutable ECR repository, CodeBuild project, least-privilege ECS task policy, and environment configuration. The managed-resource reaper deletes unprotected Lightsail services, expired build contexts, and ECR images. It keeps nonterminal deployments and the ten newest ready rollback images per live App.

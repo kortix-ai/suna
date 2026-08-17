@@ -181,7 +181,7 @@ func (s appSpec) restartLimit() int {
 	return s.RestartLimit
 }
 
-func renderCaddyfile(spec appSpec) (string, error) {
+func renderCaddyfile(spec appSpec, originToken string) (string, error) {
 	if err := spec.validate(); err != nil {
 		return "", err
 	}
@@ -194,12 +194,27 @@ func renderCaddyfile(spec appSpec) (string, error) {
 		}
 		body = fmt.Sprintf("\troot * %s\n%s\tfile_server\n", root, spa)
 	} else {
+		stripOriginToken := ""
+		if originToken != "" {
+			stripOriginToken = "\n\t\theader_up -X-Kortix-Origin-Token"
+		}
 		body = fmt.Sprintf(`	reverse_proxy 127.0.0.1:%d {
 		header_up Host {http.request.header.X-Kortix-App-Host}
 		header_up X-Forwarded-Host {http.request.header.X-Kortix-App-Host}
-		header_up -X-Kortix-App-Host
+		header_up -X-Kortix-App-Host%s
 	}
-`, spec.TargetPort)
+`, spec.TargetPort, stripOriginToken)
+	}
+	auth := ""
+	if originToken != "" {
+		auth = fmt.Sprintf(`	@kortix_health path /__kortix/health
+	respond @kortix_health 200
+	@origin_denied {
+		not path /__kortix/health
+		not header X-Kortix-Origin-Token %s
+	}
+	respond @origin_denied 403
+`, originToken)
 	}
 	return fmt.Sprintf(`{
 	admin off
@@ -210,10 +225,15 @@ func renderCaddyfile(spec appSpec) (string, error) {
 	encode zstd gzip
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>headers>X-Kortix-Origin-Token delete
+			}
+		}
 	}
-%s}
-`, ingressPort, body), nil
+%s%s}
+`, ingressPort, auth, body), nil
 }
 
 type logEntry struct {
@@ -451,13 +471,16 @@ func serveControl(ctx context.Context, token string, state *runtimeState) *http.
 	return server
 }
 
-func waitReady(ctx context.Context, spec appSpec, state *runtimeState) {
+func waitReady(ctx context.Context, spec appSpec, state *runtimeState, originToken string) {
 	url := spec.readinessURL()
 	client := &http.Client{Timeout: 2 * time.Second}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if originToken != "" {
+			req.Header.Set("X-Kortix-Origin-Token", originToken)
+		}
 		response, err := client.Do(req)
 		if err == nil {
 			_ = response.Body.Close()
@@ -495,9 +518,9 @@ func startApp(spec appSpec, state *runtimeState) (*childProcess, error) {
 	return child, nil
 }
 
-func startReadinessWatch(ctx context.Context, spec appSpec, state *runtimeState) context.CancelFunc {
+func startReadinessWatch(ctx context.Context, spec appSpec, state *runtimeState, originToken string) context.CancelFunc {
 	readyCtx, cancel := context.WithCancel(ctx)
-	go waitReady(readyCtx, spec, state)
+	go waitReady(readyCtx, spec, state, originToken)
 	return cancel
 }
 
@@ -508,7 +531,8 @@ func run(ctx context.Context, spec appSpec, token string) error {
 	state := &runtimeState{startedAt: time.Now().UTC(), status: "starting", logs: newLogRing(defaultLogCapacity)}
 	serveControl(ctx, token, state)
 
-	caddyfile, err := renderCaddyfile(spec)
+	originToken := os.Getenv("KORTIX_APP_ORIGIN_TOKEN")
+	caddyfile, err := renderCaddyfile(spec, originToken)
 	if err != nil {
 		return err
 	}
@@ -535,7 +559,7 @@ func run(ctx context.Context, spec appSpec, token string) error {
 	}
 	defer os.Remove(caddyPath)
 
-	cancelReady := startReadinessWatch(ctx, spec, state)
+	cancelReady := startReadinessWatch(ctx, spec, state, originToken)
 	defer func() { cancelReady() }()
 
 	for {
@@ -591,7 +615,7 @@ func run(ctx context.Context, spec appSpec, token string) error {
 				state.setStatus("failed")
 				return err
 			}
-			cancelReady = startReadinessWatch(ctx, spec, state)
+			cancelReady = startReadinessWatch(ctx, spec, state, originToken)
 		}
 	}
 }

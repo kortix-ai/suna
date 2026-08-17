@@ -3110,6 +3110,10 @@ export const sandboxComputeSessions = kortixSchema.table(
     sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
     provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    // Provider used for pricing. NULL preserves legacy rows whose sandbox
+    // provider is already stored in `provider`.
+    computeProvider: varchar('compute_provider', { length: 32 })
+      .$type<'daytona' | 'platinum' | 'e2b' | 'aws_lightsail'>(),
     cpuCores: integer('cpu_cores').notNull(),
     memoryGb: integer('memory_gb').notNull(),
     diskGb: integer('disk_gb').notNull(),
@@ -3140,6 +3144,10 @@ export const sandboxComputeSessions = kortixSchema.table(
       // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
       // `project_monitor_boxes.box_id`; it needs no dedicated join column.
       sql`${table.workloadType} IN ('session', 'app', 'monitor')`,
+    ),
+    check(
+      'sandbox_compute_sessions_compute_provider_check',
+      sql`${table.computeProvider} IS NULL OR ${table.computeProvider} IN ('daytona', 'platinum', 'e2b', 'aws_lightsail')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
@@ -3275,11 +3283,11 @@ export const appDeployments = kortixSchema.table(
       .references(() => apps.appId, { onDelete: 'cascade' }),
     artifactId: uuid('artifact_id')
       .notNull()
-      .references(() => appArtifacts.artifactId, { onDelete: 'restrict' }),
+      .references(() => appArtifacts.artifactId, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     status: varchar('status', { length: 20 }).default('queued').notNull(),
     sourceKind: varchar('source_kind', { length: 16 }).notNull(),
-    hostingType: varchar('hosting_type', { length: 16 }).default('sandbox').notNull(),
+    hostingType: varchar('hosting_type', { length: 24 }).default('sandbox').notNull(),
     hostingProvider: varchar('hosting_provider', { length: 32 }),
     providerBuildId: text('provider_build_id'),
     runtimeSpec: jsonb('runtime_spec').default({}).notNull(),
@@ -3314,7 +3322,10 @@ export const appDeployments = kortixSchema.table(
       'app_deployments_source_kind_check',
       sql`${table.sourceKind} IN ('static', 'bundle', 'dockerfile', 'oci_image')`,
     ),
-    check('app_deployments_hosting_type_check', sql`${table.hostingType} = 'sandbox'`),
+    check(
+      'app_deployments_hosting_type_check',
+      sql`${table.hostingType} IN ('sandbox', 'managed_container')`,
+    ),
     check(
       'app_deployments_actor_type_check',
       sql`${table.actorType} IN ('human', 'agent', 'service_account', 'system')`,
@@ -3335,12 +3346,14 @@ export const appRuntimes = kortixSchema.table(
       .notNull()
       .references(() => appDeployments.deploymentId, { onDelete: 'cascade' }),
     accountId: uuid('account_id').notNull(),
+    hostingType: varchar('hosting_type', { length: 24 }).default('sandbox').notNull(),
     provider: varchar('provider', { length: 32 }).notNull(),
     externalId: text('external_id').notNull(),
     status: varchar('status', { length: 20 }).default('provisioning').notNull(),
-    controlPort: integer('control_port').default(7331).notNull(),
+    controlPort: integer('control_port').default(7331),
     ingressPort: integer('ingress_port').default(8080).notNull(),
-    controlTokenHash: text('control_token_hash').notNull(),
+    controlTokenHash: text('control_token_hash'),
+    originTokenHash: text('origin_token_hash'),
     idleDeadlineAt: timestamp('idle_deadline_at', { withTimezone: true }),
     activityLeaseUntil: timestamp('activity_lease_until', { withTimezone: true }),
     wakeLeaseOwner: text('wake_lease_owner'),
@@ -3356,6 +3369,14 @@ export const appRuntimes = kortixSchema.table(
     check(
       'app_runtimes_status_check',
       sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping', 'stopped', 'error', 'deleted')`,
+    ),
+    check(
+      'app_runtimes_hosting_type_check',
+      sql`${table.hostingType} IN ('sandbox', 'managed_container')`,
+    ),
+    check(
+      'app_runtimes_auth_material_check',
+      sql`(${table.hostingType} = 'sandbox' AND ${table.controlPort} IS NOT NULL AND ${table.controlTokenHash} IS NOT NULL) OR (${table.hostingType} = 'managed_container' AND ${table.originTokenHash} IS NOT NULL)`,
     ),
     index('app_runtimes_deployment_idx').on(table.deploymentId, table.createdAt),
     index('app_runtimes_external_idx').on(table.provider, table.externalId),

@@ -34,6 +34,7 @@ import {
   parseTimestamp,
 } from './compute-liveness';
 import { pauseComputeSession } from './compute-metering';
+import { AppHostingService, appRuntimeTarget } from '../../apps/hosting-service';
 
 export interface OrphanComputeResult {
   checked: number;
@@ -92,6 +93,7 @@ export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
       appUpdatedAt: appRuntimes.updatedAt,
       appMetadata: appRuntimes.metadata,
       appProvider: appRuntimes.provider,
+      appHostingType: appRuntimes.hostingType,
       appExternalId: appRuntimes.externalId,
       monitorStatus: projectMonitorBoxes.status,
       monitorUpdatedAt: projectMonitorBoxes.updatedAt,
@@ -109,6 +111,29 @@ export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
     .where(eq(sandboxComputeSessions.state, 'active'))
     .orderBy(sql`${sandboxComputeSessions.startedAt} asc`)
     .limit(limit);
+}
+
+export async function resolveInvariantProviderStatus(
+  input: {
+    isApp: boolean;
+    sandboxId: string;
+    hostingType: string | null;
+    provider: string;
+    externalId: string;
+  },
+  appHosting = new AppHostingService(),
+  sandboxStatus: (provider: ProviderName, externalId: string) => Promise<SandboxStatus> =
+    (provider, externalId) => getProvider(provider).getStatus(externalId),
+): Promise<SandboxStatus> {
+  if (!input.isApp) {
+    return sandboxStatus(input.provider as ProviderName, input.externalId);
+  }
+  return appHosting.status(appRuntimeTarget({
+    hostingType: input.hostingType ?? 'sandbox',
+    provider: input.provider,
+    runtimeId: input.sandboxId,
+    externalId: input.externalId,
+  }));
 }
 
 /**
@@ -130,6 +155,7 @@ export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
  */
 export async function reconcileOrphanComputeSessions(
   now = new Date(),
+  appHosting = new AppHostingService(),
 ): Promise<OrphanComputeResult> {
   const unresolvedCeilingMs = computeUnresolvedCeilingMs();
   const maxWindowMs = computeMaxWindowMs();
@@ -208,9 +234,13 @@ export async function reconcileOrphanComputeSessions(
 
         let providerStatus: SandboxStatus | null = null;
         if (!decision.reason && decision.needsProviderStatus) {
-          providerStatus = await getProvider(provider as ProviderName)
-            .getStatus(externalId as string)
-            .catch(() => null);
+          providerStatus = await resolveInvariantProviderStatus({
+            isApp,
+            sandboxId: row.sandboxId,
+            hostingType: row.appHostingType,
+            provider: provider as string,
+            externalId: externalId as string,
+          }, appHosting).catch(() => null);
           // 'unknown' is the STEADY state for a box deleted out from under us
           // (44 of 66 open prod rows answered unknown), so track how long it has
           // been continuously unresolvable rather than treating it as transient.

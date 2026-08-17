@@ -152,7 +152,7 @@ await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 
 ### Apps
 
-`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is a stable project feature that is off by default, so API operations return `403 feature_disabled` until a project manager enables it.
 
 ```ts
 const apps = kortix.project(projectId).apps;
@@ -215,6 +215,31 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
+
+### Apps hosting
+
+`kortix.project(projectId).apps` owns App identity CRUD, access, artifacts,
+immutable deployments, logs, rollback, start, and stop. Omit `hosting` to use the
+default sandbox backend. Sandbox policy selects Daytona, Platinum, or E2B.
+
+```ts
+await apps.deployments.create(appId, {
+  artifact_id: artifactId,
+  source,
+  hosting: { type: 'managed_container', provider: 'aws_lightsail' },
+});
+```
+
+`AppHostingBackend` keeps sandbox providers separate from managed-container
+providers. The deprecated top-level `provider` input remains a sandbox-only
+shorthand. Do not combine `provider` and `hosting`.
+
+AWS Lightsail requires an exact power and a matching App monthly budget. The
+supported CPU/memory/budget floors are `1/2/$40`, `2/4/$80`, and `4/8/$160`.
+Lightsail's nano, micro, and small powers require a future decimal-resource
+migration and are rejected by the current whole-CPU App contract. Lightsail
+stop deletes the Container Service. The next authorized request recreates it
+from the immutable deployment image.
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the

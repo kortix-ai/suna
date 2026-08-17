@@ -156,6 +156,24 @@ describe('Compute cost calculation', () => {
     expect(calculateComputeCost(spec, 3600, 'e2b')).toBeCloseTo(daytona, 8);
   });
 
+  test.each([
+    [0.25, 0.5, 7],
+    [0.25, 1, 10],
+    [0.5, 1, 15],
+    [1, 2, 40],
+    [2, 4, 80],
+    [4, 8, 160],
+  ] as const)(
+    'an AWS Lightsail %p vCPU / %p GB App costs %p USD per 30-day month',
+    (cpuCores, memoryGb, monthlyUsd) => {
+      expect(calculateComputeCost(
+        { cpuCores, memoryGb, diskGb: 0, gpuCount: 0 },
+        30 * 24 * 60 * 60,
+        'aws_lightsail',
+      )).toBeCloseTo(monthlyUsd, 10);
+    },
+  );
+
   test('cost scales linearly with both spec and time', () => {
     const baseline = calculateComputeCost(spec, 60);
     const doubleTime = calculateComputeCost(spec, 120);

@@ -1,5 +1,7 @@
 import type { ProviderName } from './index';
 
+export type ComputeProviderName = ProviderName | 'aws_lightsail';
+
 export interface ProviderComputeRateCard {
   cpuPerCoreSecond: number;
   memoryPerGbSecond: number;

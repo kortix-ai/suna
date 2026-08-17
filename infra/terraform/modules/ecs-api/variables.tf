@@ -190,6 +190,12 @@ variable "secrets_blob_arn" {
   default     = ""
 }
 
+variable "additional_task_role_policy_json" {
+  description = "Optional least-privilege policy JSON attached to the ECS application task role."
+  type        = string
+  default     = ""
+}
+
 variable "ses_send_identity_names" {
   description = "Verified SES identity names from which this ECS task may send email. Empty disables SES task-role access."
   type        = list(string)

@@ -106,6 +106,7 @@ import {
 } from './projects/suna-migration/suna-migration-worker';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
+import { startAppHostingReaper, stopAppHostingReaper } from './apps/hosting-reaper';
 import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
@@ -1374,6 +1375,7 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
+  startAppHostingReaper();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
@@ -1391,6 +1393,7 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
+  stopAppHostingReaper();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');

@@ -228,6 +228,15 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
       if (url.pathname === '/v1/projects/proj_e2e/apps/app_1' && req.method === 'GET') {
         return Response.json({ ...app, access_mode: appAccessMode, access_revision: appAccessRevision });
       }
+      if (url.pathname === '/v1/projects/proj_e2e/apps/app_1' && req.method === 'PATCH') {
+        const update = body as Record<string, number | string>;
+        if (update.cpu !== undefined) app.machine.cpu = Number(update.cpu);
+        if (update.memory_gb !== undefined) app.machine.memory_gb = Number(update.memory_gb);
+        if (update.disk_gb !== undefined) app.machine.disk_gb = Number(update.disk_gb);
+        if (update.idle_timeout_seconds !== undefined) app.idle_timeout_seconds = Number(update.idle_timeout_seconds);
+        if (update.monthly_budget_usd !== undefined) app.monthly_budget_usd = Number(update.monthly_budget_usd);
+        return Response.json(app);
+      }
       if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/access' && req.method === 'GET') {
         return Response.json({
           mode: 'private',
@@ -272,6 +281,8 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
         }, { status: 201 });
       }
       if (url.pathname === '/v1/projects/proj_e2e/apps/app_1/deployments' && req.method === 'POST') {
+        const deploymentInput = body as Record<string, any>;
+        const hosting = deploymentInput?.hosting as Record<string, string> | undefined;
         return Response.json({
           deployment_id: 'deployment_1',
           app_id: 'app_1',
@@ -279,8 +290,8 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
           version: 1,
           status: 'queued',
           source_kind: 'oci_image',
-          hosting_type: 'sandbox',
-          hosting_provider: 'daytona',
+          hosting_type: hosting?.type ?? 'sandbox',
+          hosting_provider: hosting?.provider ?? deploymentInput?.provider ?? 'daytona',
           runtime_spec: {},
           build_spec: {},
           error_code: null,
@@ -539,6 +550,125 @@ describe('kortix CLI black-box behavior', () => {
     expect(requests.map((r) => r.path)).toEqual(['/v1/skills', '/v1/skills/kortix-system']);
     expect(requests.every((r) => r.authorization === 'Bearer tok_blackbox')).toBe(true);
   }, 20_000);
+
+  test('Apps deploy selects Lightsail with --hosting and rejects conflicting provider flags', async () => {
+    const apiBase = startAppsServer();
+    const configFile = writeConfig(apiBase, true);
+    const baseArgs = [
+      'apps',
+      'deploy',
+      '--app',
+      'demo',
+      '--image',
+      'ghcr.io/kortix/demo:1',
+      '--command',
+      '["node","server.js"]',
+      '--port',
+      '3000',
+      '--budget',
+      '40',
+      '--no-wait',
+      '--project',
+      'proj_e2e',
+      '--json',
+    ];
+
+    const deployed = await runCli(
+      [...baseArgs, '--hosting', 'aws-lightsail'],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
+
+    expect(deployed.code).toBe(0);
+    expect(JSON.parse(deployed.stdout).deployment).toMatchObject({
+      hosting_type: 'managed_container',
+      hosting_provider: 'aws_lightsail',
+    });
+    expect(requests.at(-1)?.body).toMatchObject({
+      hosting: { type: 'managed_container', provider: 'aws_lightsail' },
+    });
+
+    const conflicting = await runCli(
+      [...baseArgs, '--hosting', 'aws-lightsail', '--provider', 'daytona'],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
+    expect(conflicting.code).toBe(1);
+    expect(conflicting.stderr).toContain('Use --hosting or --provider, not both');
+  }, 20_000);
+
+  test('Apps deploy applies machine and budget flags to new and existing Lightsail Apps', async () => {
+    const apiBase = startAppsServer();
+    const configFile = writeConfig(apiBase, true);
+    const deploymentArgs = [
+      '--image',
+      'ghcr.io/kortix/demo:1',
+      '--command',
+      '["node","server.js"]',
+      '--port',
+      '3000',
+      '--hosting',
+      'aws-lightsail',
+      '--cpu',
+      '1',
+      '--memory',
+      '2',
+      '--disk',
+      '10',
+      '--idle-timeout',
+      '600',
+      '--budget',
+      '40',
+      '--no-wait',
+      '--project',
+      'proj_e2e',
+      '--json',
+    ];
+
+    const created = await runCli(
+      ['apps', 'deploy', '--slug', 'fresh-lightsail', ...deploymentArgs],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
+    expect(created.code).toBe(0);
+    expect(requests.find((request) => request.method === 'POST' && request.path === '/v1/projects/proj_e2e/apps')?.body).toMatchObject({
+      slug: 'fresh-lightsail',
+      cpu: 1,
+      memory_gb: 2,
+      disk_gb: 10,
+      idle_timeout_seconds: 600,
+      monthly_budget_usd: 40,
+    });
+
+    requests.length = 0;
+    const updated = await runCli(
+      ['apps', 'deploy', '--app', 'demo', ...deploymentArgs],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
+    expect(updated.code).toBe(0);
+    expect(requests.find((request) => request.method === 'PATCH' && request.path === '/v1/projects/proj_e2e/apps/app_1')?.body).toEqual({
+      cpu: 1,
+      memory_gb: 2,
+      disk_gb: 10,
+      idle_timeout_seconds: 600,
+      monthly_budget_usd: 40,
+    });
+
+    const belowFloor = await runCli(
+      [
+        'apps',
+        'deploy',
+        '--slug',
+        'underfunded-lightsail',
+        ...deploymentArgs.map((argument) => argument === '40' ? '39' : argument),
+      ],
+      tmp,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
+    expect(belowFloor.code).toBe(1);
+    expect(belowFloor.stderr).toContain('requires at least $40.00 per month');
+  }, 30_000);
 
   test('the `skills` alias still resolves for sandboxes baked against the old name', async () => {
     const apiBase = startSystemSkillsServer();

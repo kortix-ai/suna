@@ -3,22 +3,49 @@ import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
 let sandboxRows: Array<{ sandboxId: string; provider: string; externalId: string | null }> = [];
+let appRuntimeRows: Array<{
+  runtimeId: string;
+  hostingType: string;
+  provider: string;
+  externalId: string;
+}> = [];
 let sandboxQueryError: Error | null = null;
 let stops: string[] = [];
+let appRemovals: string[] = [];
+let appComputePauses: string[] = [];
 let stopErrorByExternal: Record<string, Error> = {};
 let reconciled: string[] = [];
 let creditAccount: Record<string, unknown> | null = null;
 
 mock.module('../../shared/db', () => ({
   db: {
-    select: () => ({
+    select: (fields: Record<string, unknown>) => ({
       from: () => ({
         where: async () => {
+          if ('runtimeId' in fields) {
+            return appRuntimeRows;
+          }
           if (sandboxQueryError) throw sandboxQueryError;
           return sandboxRows;
         },
       }),
     }),
+    update: () => ({ set: () => ({ where: async () => undefined }) }),
+  },
+}));
+
+mock.module('../../apps/hosting-service', () => ({
+  AppHostingService: class {
+    async remove(target: { externalId: string }) {
+      appRemovals.push(target.externalId);
+    }
+  },
+  appRuntimeTarget: (runtime: unknown) => runtime,
+}));
+
+mock.module('./compute-metering', () => ({
+  pauseComputeSession: async (runtimeId: string) => {
+    appComputePauses.push(runtimeId);
   },
 }));
 
@@ -76,8 +103,11 @@ const { deleteAccountImmediately } = await import('./account-deletion');
 
 beforeEach(() => {
   sandboxRows = [];
+  appRuntimeRows = [];
   sandboxQueryError = null;
   stops = [];
+  appRemovals = [];
+  appComputePauses = [];
   stopErrorByExternal = {};
   reconciled = [];
   creditAccount = null;
@@ -144,5 +174,27 @@ describe('deleteAccountImmediately — sandbox teardown', () => {
 
     expect(result.success).toBe(true);
     expect(stops).toEqual([]);
+  });
+
+  test('removes sandbox and Lightsail App runtimes before account deletion completes', async () => {
+    appRuntimeRows = [
+      {
+        runtimeId: 'runtime-sandbox',
+        hostingType: 'sandbox',
+        provider: 'daytona',
+        externalId: 'sandbox-app-1',
+      },
+      {
+        runtimeId: 'runtime-lightsail',
+        hostingType: 'managed_container',
+        provider: 'aws_lightsail',
+        externalId: 'kortix-test-app-1',
+      },
+    ];
+
+    await deleteAccountImmediately('acct-1');
+
+    expect(appRemovals.sort()).toEqual(['kortix-test-app-1', 'sandbox-app-1']);
+    expect(appComputePauses.sort()).toEqual(['runtime-lightsail', 'runtime-sandbox']);
   });
 });
