@@ -1,10 +1,14 @@
 'use client';
 
+import { CopyOverlay } from '@/components/markdown/code';
+import { MarkdownFrontmatterCard, parseFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import {
   BasicTool,
   InlineDiffView,
   isErrorOutput,
+  MD_FLUSH_CLASSES,
   partInput,
   partOutput,
   partStatus,
@@ -14,6 +18,7 @@ import {
   ToolEmptyState,
   ToolOutputFallback,
   ToolRunningContext,
+  useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
@@ -88,6 +93,59 @@ export function memoryRowTarget(
   const openPath = command === 'rename' ? newPath || path : path;
   const relative = memoryRelPath(openPath);
   return { openPath, subtitle: relative && relative !== 'memory' ? relative : undefined };
+}
+
+/**
+ * Whether a memory file's extension reads as a document rather than source.
+ *
+ * `view` and `create` used to run every extension through `ToolCodeCard` —
+ * highlighted, monospaced source. That is right for `.json` and friends, but a
+ * `.md` memory note came out as its own markup: `**bold**`, `# heading`, list
+ * dashes, all shown literally instead of rendered. `.mdx` gets the same
+ * treatment; nothing else does.
+ */
+export function isMemoryMarkdown(ext: string): boolean {
+  return ext === 'md' || ext === 'mdx';
+}
+
+/**
+ * The markdown counterpart to `ToolCodeCard`: identical chrome — the
+ * trigger-aligned indent, the `border`/`bg-popover` card, a copy affordance
+ * over the raw text — with prose in place of a highlighted-source pane.
+ *
+ * A memory file can open with its own YAML frontmatter block, same as any
+ * other markdown file (agent/skill definitions, notes with metadata headers).
+ * `parseFrontmatter` passes content with none straight through unchanged, so
+ * the common case — a plain note — pays nothing for the check; content that
+ * does carry one gets the same small metadata card `file-viewer.tsx` renders
+ * for it, instead of the parser reading the `---` fences as a stray rule and a
+ * giant bold heading.
+ *
+ * `allowHtml={false}`: this reads as a stored FILE, not chat prose — embedded
+ * markup shows as escaped text rather than becoming live DOM, matching the
+ * file viewer's own markdown pane.
+ */
+function MemoryMarkdownCard({ code }: { code: string }) {
+  const indent = useToolIndent();
+  if (!code) return null;
+  const { frontmatter, body } = parseFrontmatter(code);
+  return (
+    <div className={cn('mt-1.5', indent)}>
+      <div className="border-border bg-popover relative rounded-md border">
+        <CopyOverlay code={code}>
+          {/* `MD_FLUSH_CLASSES` strips the nested code-block chrome (border,
+              background, padding) a fenced code block would otherwise draw
+              inside this already-bordered card; the fence's own `pre` keeps
+              its `overflow-auto`, so a long line inside it scrolls instead of
+              clipping or blowing out the panel's width. */}
+          <div data-scrollable className={cn('max-h-96 overflow-auto p-3', MD_FLUSH_CLASSES)}>
+            {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
+            <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
+  );
 }
 
 export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -187,7 +245,11 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
           </ToolResultCard>
         );
     } else if (view?.type === 'file' && view.content) {
-      body = <ToolCodeCard code={view.content} language={ext} />;
+      body = isMemoryMarkdown(ext) ? (
+        <MemoryMarkdownCard code={view.content} />
+      ) : (
+        <ToolCodeCard code={view.content} language={ext} />
+      );
     } else if (output) {
       body = <ToolOutputFallback output={output} toolName="memory" />;
     } else {
@@ -199,7 +261,11 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     }
   } else if (command === 'create') {
     body = fileText ? (
-      <ToolCodeCard code={fileText} language={ext} />
+      isMemoryMarkdown(ext) ? (
+        <MemoryMarkdownCard code={fileText} />
+      ) : (
+        <ToolCodeCard code={fileText} language={ext} />
+      )
     ) : (
       <ToolResultCard>
         <ToolEmptyState message={isStreaming ? 'Writing memory…' : 'No content.'} />

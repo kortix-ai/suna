@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryTool, memoryRowTarget, memoryToolTitle } from './memory-tool';
+import { isMemoryMarkdown, MemoryTool, memoryRowTarget, memoryToolTitle } from './memory-tool';
 
 /**
  * The contract this file pins (spec W8).
@@ -52,7 +52,17 @@ function memoryPart(input: Record<string, unknown>, output = ''): ToolPart {
   } as unknown as ToolPart;
 }
 
-const render = (part: ToolPart) => renderToStaticMarkup(withProviders(<MemoryTool part={part} />));
+const render = (part: ToolPart, open = false) =>
+  renderToStaticMarkup(withProviders(<MemoryTool part={part} defaultOpen={open} />));
+
+/** A `view`'s raw output, in the runtime's own "content of X with line
+ *  numbers" shape — `parseMemoryView` strips the `N\t` prefix off each line. */
+function viewOutput(path: string, lines: string[]): string {
+  return [
+    `Content of ${path} with line numbers:`,
+    ...lines.map((line, i) => `${i + 1}\t${line}`),
+  ].join('\n');
+}
 
 describe('memoryToolTitle', () => {
   test('every command that CHANGES memory reads as an update', () => {
@@ -199,5 +209,118 @@ describe('MemoryTool — the trigger says what happened, and to what', () => {
 
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain('remember me');
+  });
+});
+
+/**
+ * The contract this block pins (Task 18, spec W11/D15).
+ *
+ * A `.md`/`.mdx` memory file used to run through `ToolCodeCard` like every
+ * other extension — highlighted, monospaced SOURCE. A note written as
+ * `# Deploy notes` came out reading exactly that, `#` and all, instead of a
+ * heading. `.json` and everything else is source and stays source.
+ *
+ * `isMemoryMarkdown` is the one decision this split hangs on, so it is pinned
+ * directly (below) AND through both bodies that consult it (`view`'s file
+ * branch, `create`) — a mutation that flips either arm of that `if` fails one
+ * of the two body tests in each pair: force it always `true` and the `.json`
+ * case starts rendering `<h1>`-free source through a document pane (asserted
+ * absent below); force it always `false` and the `.md` case stops producing a
+ * heading element and starts leaking the literal `#`.
+ *
+ * Assertions are element-anchored, not bare substrings: a rendered `<h1>`'s
+ * captured text, never a `toContain` on the phrase alone — a heading and its
+ * un-parsed source can both contain the same words.
+ */
+describe('isMemoryMarkdown — the render branch, pinned directly', () => {
+  test('md and mdx read as documents', () => {
+    expect(isMemoryMarkdown('md')).toBe(true);
+    expect(isMemoryMarkdown('mdx')).toBe(true);
+  });
+
+  test('every other extension keeps the code card', () => {
+    for (const ext of ['json', 'txt', 'yaml', 'yml', 'ts', '']) {
+      expect(isMemoryMarkdown(ext)).toBe(false);
+    }
+  });
+});
+
+describe('MemoryTool view — a markdown file renders as a document', () => {
+  test('a heading element appears, not the literal `#`', () => {
+    const output = viewOutput('.kortix/memory/notes.md', [
+      '# Deploy notes',
+      '',
+      '- run the migration',
+    ]);
+    const markup = render(memoryPart({ command: 'view', path: '.kortix/memory/notes.md' }, output), true);
+
+    const heading = /<h1[^>]*>([^<]*)<\/h1>/.exec(markup);
+    expect(heading?.[1]).toBe('Deploy notes');
+    // The un-parsed source never reaches the page.
+    expect(markup).not.toContain('# Deploy notes');
+    expect(markup).toContain('run the migration');
+  });
+
+  test('a leading frontmatter block renders as the metadata card, not a stray rule', () => {
+    // Same split `file-viewer.tsx` uses: read raw, a leading `---\n…\n---`
+    // parses as a thematic break followed by a setext heading, not metadata.
+    const output = viewOutput('.kortix/memory/agent.md', [
+      '---',
+      'name: scout',
+      '---',
+      '# Scout',
+      'Finds things.',
+    ]);
+    const markup = render(memoryPart({ command: 'view', path: '.kortix/memory/agent.md' }, output), true);
+
+    expect(markup).toContain('scout');
+    const heading = /<h1[^>]*>([^<]*)<\/h1>/.exec(markup);
+    expect(heading?.[1]).toBe('Scout');
+    // The frontmatter fences never surface as their own paragraph/rule text.
+    expect(markup).not.toContain('name: scout');
+  });
+
+  test('a .json view keeps the highlighted code card — no markdown parsing', () => {
+    const output = viewOutput('.kortix/memory/config.json', ['# not a heading', 'value: 1']);
+    const markup = render(
+      memoryPart({ command: 'view', path: '.kortix/memory/config.json' }, output),
+      true,
+    );
+
+    expect(markup).not.toContain('<h1');
+    expect(markup).toContain('# not a heading');
+  });
+});
+
+describe('MemoryTool create — the same markdown/code split', () => {
+  test('a markdown create body renders as a document', () => {
+    const markup = render(
+      memoryPart({
+        command: 'create',
+        path: '.kortix/memory/plan.md',
+        file_text: '## Plan\n\nDo the thing.',
+      }),
+      true,
+    );
+
+    const heading = /<h2[^>]*>([^<]*)<\/h2>/.exec(markup);
+    expect(heading?.[1]).toBe('Plan');
+    expect(markup).not.toContain('## Plan');
+    expect(markup).toContain('Do the thing.');
+  });
+
+  test('a .json create body keeps the code card — no markdown parsing', () => {
+    const markup = render(
+      memoryPart({
+        command: 'create',
+        path: '.kortix/memory/config.json',
+        file_text: '# not a heading\nvalue: 1',
+      }),
+      true,
+    );
+
+    expect(markup).not.toContain('<h1');
+    expect(markup).not.toContain('<h2');
+    expect(markup).toContain('# not a heading');
   });
 });
