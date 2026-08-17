@@ -92,7 +92,6 @@ module "apps_lightsail_hosting" {
   source      = "../../modules/apps-lightsail-hosting"
   name        = local.name
   environment = "prod"
-  aws_region  = var.aws_region
   tags        = local.tags
 }
 

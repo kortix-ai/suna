@@ -235,10 +235,13 @@ data "aws_iam_policy_document" "api_task" {
     resources = ["${aws_s3_bucket.build_contexts.arn}/apps/${var.environment}/*"]
   }
   statement {
-    sid = "ReconcileDeploymentImages"
+    sid = "ManageDeploymentImagesAndPullPolicies"
     actions = [
       "ecr:BatchDeleteImage",
+      "ecr:DeleteRepositoryPolicy",
       "ecr:DescribeImages",
+      "ecr:GetRepositoryPolicy",
+      "ecr:SetRepositoryPolicy",
     ]
     resources = [aws_ecr_repository.apps.arn]
   }

@@ -1,5 +1,4 @@
-import { createReadStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,8 +8,11 @@ import {
 } from '@aws-sdk/client-codebuild';
 import {
   BatchDeleteImageCommand,
+  DeleteRepositoryPolicyCommand,
   DescribeImagesCommand,
   ECRClient,
+  GetRepositoryPolicyCommand,
+  SetRepositoryPolicyCommand,
 } from '@aws-sdk/client-ecr';
 import {
   CreateContainerServiceCommand,
@@ -58,6 +60,7 @@ export interface LightsailDependencies {
   environment: string;
   controlSecret: string;
   sleep: (milliseconds: number) => Promise<void>;
+  fetch?: typeof globalThis.fetch;
 }
 
 export interface LightsailBuildInput {
@@ -98,6 +101,14 @@ function imageTag(deploymentId: string): string {
   return `deployment-${deploymentId.replaceAll('-', '')}`;
 }
 
+function repositoryName(repositoryUri: string): string {
+  return repositoryUri.replace(/^[^/]+\//, '');
+}
+
+function pullPolicySid(externalId: string): string {
+  return `AllowLightsailPull-${externalId}`;
+}
+
 function codeBuildSpec(): string {
   return [
     'version: 0.2',
@@ -129,6 +140,7 @@ export class LightsailAppHostingBackend {
       ecr: new ECRClient({ region: input.region }),
       s3: new S3Client({ region: input.region }),
       sleep: (milliseconds) => Bun.sleep(milliseconds),
+      fetch: globalThis.fetch,
     });
   }
 
@@ -143,10 +155,15 @@ export class LightsailAppHostingBackend {
     const reference = `${this.dependencies.ecrRepositoryUri}:${imageTag(input.deploymentId)}`;
     try {
       await tar.c({ cwd: staged.contextDir, file: archivePath, gzip: true }, ['.']);
+      // App artifacts are capped at 50 MiB. Buffering makes the S3 request
+      // replayable and avoids Bun/Node stream sockets becoming non-retryable
+      // when S3 closes an idle chunked upload.
+      const archive = await readFile(archivePath);
       await this.dependencies.s3.send(new PutObjectCommand({
         Bucket: this.dependencies.buildBucket,
         Key: objectKey,
-        Body: createReadStream(archivePath),
+        Body: archive,
+        ContentLength: archive.byteLength,
         ContentType: 'application/gzip',
         Metadata: { deployment_id: input.deploymentId },
       }));
@@ -219,6 +236,76 @@ export class LightsailAppHostingBackend {
     throw new Error(`Lightsail service ${externalId} did not finish ${description} within 15 minutes`);
   }
 
+  private async repositoryPolicy(): Promise<{ Version: string; Statement: any[] }> {
+    try {
+      const response = await this.dependencies.ecr.send(new GetRepositoryPolicyCommand({
+        repositoryName: repositoryName(this.dependencies.ecrRepositoryUri),
+      }));
+      const parsed = JSON.parse(response.policyText || '{}') as {
+        Version?: string;
+        Statement?: unknown | unknown[];
+      };
+      const statements = parsed.Statement === undefined
+        ? []
+        : Array.isArray(parsed.Statement) ? parsed.Statement : [parsed.Statement];
+      return { Version: parsed.Version || '2012-10-17', Statement: statements };
+    } catch (error) {
+      if ((error as { name?: string }).name === 'RepositoryPolicyNotFoundException') {
+        return { Version: '2012-10-17', Statement: [] };
+      }
+      throw error;
+    }
+  }
+
+  private async grantRepositoryAccess(externalId: string, principalArn: string): Promise<void> {
+    const policy = await this.repositoryPolicy();
+    const sid = pullPolicySid(externalId);
+    policy.Statement = policy.Statement.filter((statement) => statement?.Sid !== sid);
+    policy.Statement.push({
+      Sid: sid,
+      Effect: 'Allow',
+      Principal: { AWS: principalArn },
+      Action: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+    });
+    await this.dependencies.ecr.send(new SetRepositoryPolicyCommand({
+      repositoryName: repositoryName(this.dependencies.ecrRepositoryUri),
+      policyText: JSON.stringify(policy),
+    }));
+  }
+
+  private async removeRepositoryAccess(externalId: string): Promise<void> {
+    const policy = await this.repositoryPolicy();
+    const statements = policy.Statement.filter(
+      (statement) => statement?.Sid !== pullPolicySid(externalId),
+    );
+    if (statements.length === policy.Statement.length) return;
+    if (statements.length === 0) {
+      await this.dependencies.ecr.send(new DeleteRepositoryPolicyCommand({
+        repositoryName: repositoryName(this.dependencies.ecrRepositoryUri),
+      }));
+      return;
+    }
+    await this.dependencies.ecr.send(new SetRepositoryPolicyCommand({
+      repositoryName: repositoryName(this.dependencies.ecrRepositoryUri),
+      policyText: JSON.stringify({ ...policy, Statement: statements }),
+    }));
+  }
+
+  private async waitForEndpoint(serviceUrl: string): Promise<void> {
+    const url = `${serviceUrl.replace(/\/$/, '')}/__kortix/health`;
+    const fetcher = this.dependencies.fetch ?? globalThis.fetch;
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      try {
+        const response = await fetcher(url, { signal: AbortSignal.timeout(5_000) });
+        if (response.status >= 200 && response.status < 400) return;
+      } catch {
+        // Lightsail publishes the URL before its edge listener accepts traffic.
+      }
+      await this.dependencies.sleep(2_000);
+    }
+    throw new Error(`Lightsail endpoint ${url} did not become ready within 6 minutes`);
+  }
+
   async createRuntime(input: LightsailRuntimeInput): Promise<LightsailRuntimeHandle> {
     const externalId = serviceName(this.dependencies.environment, input.runtimeId);
     const originToken = appOriginToken(input.runtimeId, this.dependencies.controlSecret);
@@ -248,6 +335,19 @@ export class LightsailAppHostingBackend {
       serviceName: externalId,
       privateRegistryAccess: { ecrImagePullerRole: { isActive: true } },
     }));
+    const registryService = await this.waitFor(
+      externalId,
+      (candidate) => (
+        candidate.state === 'READY' || candidate.state === 'RUNNING'
+      ) && Boolean(candidate.privateRegistryAccess?.ecrImagePullerRole?.principalArn),
+      'enabling private registry access',
+    );
+    const pullerArn = registryService.privateRegistryAccess.ecrImagePullerRole.principalArn;
+    // AWS documents a 30-second IAM propagation window after the Lightsail
+    // puller principal appears. The repository policy must include that exact
+    // principal before Lightsail can start the private ECR image.
+    await this.dependencies.sleep(30_000);
+    await this.grantRepositoryAccess(externalId, pullerArn);
     await this.dependencies.lightsail.send(new CreateContainerServiceDeploymentCommand({
       serviceName: externalId,
       containers: {
@@ -279,6 +379,7 @@ export class LightsailAppHostingBackend {
       (candidate) => candidate.state === 'RUNNING' && candidate.currentDeployment?.state === 'ACTIVE',
       'deploying',
     );
+    await this.waitForEndpoint(service.url);
     return {
       externalId,
       originTokenHash: appOriginTokenHash(originToken),
@@ -292,15 +393,32 @@ export class LightsailAppHostingBackend {
   }
 
   async stop(externalId: string): Promise<void> {
-    try {
-      await this.dependencies.lightsail.send(
-        new DeleteContainerServiceCommand({ serviceName: externalId }),
-      );
-    } catch (error) {
-      if ((error as { name?: string }).name !== 'NotFoundException') throw error;
+    let deletionStarted = false;
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      try {
+        await this.dependencies.lightsail.send(
+          new DeleteContainerServiceCommand({ serviceName: externalId }),
+        );
+        deletionStarted = true;
+        break;
+      } catch (error) {
+        if ((error as { name?: string }).name === 'NotFoundException') {
+          await this.removeRepositoryAccess(externalId);
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes('transition state')) throw error;
+        await this.dependencies.sleep(2_000);
+      }
+    }
+    if (!deletionStarted) {
+      throw new Error(`Lightsail service ${externalId} stayed transitional for 6 minutes`);
     }
     for (let attempt = 0; attempt < 180; attempt += 1) {
-      if (!(await this.service(externalId))) return;
+      if (!(await this.service(externalId))) {
+        await this.removeRepositoryAccess(externalId);
+        return;
+      }
       await this.dependencies.sleep(2_000);
     }
     throw new Error(`Lightsail service ${externalId} was not deleted within 6 minutes`);
@@ -336,11 +454,12 @@ export class LightsailAppHostingBackend {
   }
 
   async waitUntilReady(externalId: string): Promise<void> {
-    await this.waitFor(
+    const service = await this.waitFor(
       externalId,
       (service) => service.state === 'RUNNING' && service.currentDeployment?.state === 'ACTIVE',
       'becoming ready',
     );
+    await this.waitForEndpoint(service.url);
   }
 
   async status(externalId: string): Promise<SandboxStatus> {
@@ -408,7 +527,7 @@ export class LightsailAppHostingBackend {
     const protectedImageTags = new Set(
       [...input.protectedDeploymentIds].map((deploymentId) => imageTag(deploymentId)),
     );
-    const repositoryName = this.dependencies.ecrRepositoryUri.replace(/^[^/]+\//, '');
+    const ecrRepositoryName = repositoryName(this.dependencies.ecrRepositoryUri);
     const result = {
       contextsListed: 0,
       imagesListed: 0,
@@ -465,7 +584,7 @@ export class LightsailAppHostingBackend {
       let nextToken: string | undefined;
       for (let page = 0; page < MAX_RECONCILIATION_PAGES && remaining > 0; page += 1) {
         const described = await this.dependencies.ecr.send(new DescribeImagesCommand({
-          repositoryName,
+          repositoryName: ecrRepositoryName,
           maxResults: 100,
           nextToken,
         }));
@@ -480,7 +599,10 @@ export class LightsailAppHostingBackend {
           imageIds.push({ imageTag: tag });
         }
         if (imageIds.length > 0) {
-          await this.dependencies.ecr.send(new BatchDeleteImageCommand({ repositoryName, imageIds }));
+          await this.dependencies.ecr.send(new BatchDeleteImageCommand({
+            repositoryName: ecrRepositoryName,
+            imageIds,
+          }));
           result.imagesDeleted += imageIds.length;
           remaining -= imageIds.length;
         }
@@ -508,6 +630,7 @@ export class LightsailAppHostingBackend {
           await this.dependencies.lightsail.send(
             new DeleteContainerServiceCommand({ serviceName: externalId }),
           );
+          await this.removeRepositoryAccess(externalId);
           result.servicesDeleted += 1;
           remaining -= 1;
         } catch {

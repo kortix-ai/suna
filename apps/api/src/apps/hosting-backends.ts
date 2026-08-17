@@ -16,9 +16,9 @@ export interface AppHostingSelectionInput {
 }
 
 const LIGHTSAIL_POWERS = [
-  // The App resource contract persists integer CPU and memory values. Keep
-  // the backend table inside that public contract until a decimal-resource
-  // migration makes the smaller Lightsail powers representable end to end.
+  { name: 'nano', cpuCores: 0.25, memoryGb: 0.5, monthlyUsd: 7 },
+  { name: 'micro', cpuCores: 0.25, memoryGb: 1, monthlyUsd: 10 },
+  { name: 'small', cpuCores: 0.5, memoryGb: 1, monthlyUsd: 15 },
   { name: 'medium', cpuCores: 1, memoryGb: 2, monthlyUsd: 40 },
   { name: 'large', cpuCores: 2, memoryGb: 4, monthlyUsd: 80 },
   { name: 'xlarge', cpuCores: 4, memoryGb: 8, monthlyUsd: 160 },
@@ -39,7 +39,11 @@ export function resolveAppHostingSelection(input: AppHostingSelectionInput): App
 
 export function lightsailPowerForMachine(machine: AppMachineSpec): LightsailPowerName {
   const power = LIGHTSAIL_POWERS.find(
-    (candidate) => candidate.cpuCores === machine.cpuCores && candidate.memoryGb === machine.memoryGb,
+    (candidate) => (
+      candidate.cpuCores >= 1
+      && candidate.cpuCores === machine.cpuCores
+      && candidate.memoryGb === machine.memoryGb
+    ),
   );
   if (!power) {
     throw new Error(
@@ -58,8 +62,15 @@ export function minimumMonthlyHostingCost(
 }
 
 export function lightsailMonthlyCostForMachine(machine: AppMachineSpec): number {
-  const power = lightsailPowerForMachine(machine);
-  return LIGHTSAIL_POWERS.find((candidate) => candidate.name === power)!.monthlyUsd;
+  const power = LIGHTSAIL_POWERS.find(
+    (candidate) => candidate.cpuCores === machine.cpuCores && candidate.memoryGb === machine.memoryGb,
+  );
+  if (!power) {
+    throw new Error(
+      `AWS Lightsail does not support ${machine.cpuCores} vCPU and ${machine.memoryGb} GB memory`,
+    );
+  }
+  return power.monthlyUsd;
 }
 
 export type AppHostingConfigurationValidation =

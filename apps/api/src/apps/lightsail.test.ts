@@ -22,6 +22,7 @@ function commandClient(responses: Record<string, unknown | unknown[]>) {
 
 describe('AWS Lightsail Apps hosting backend', () => {
   test('creates one tagged service and an ECR-backed authenticated deployment', async () => {
+    const pullerArn = 'arn:aws:iam::701935371203:role/amazon/lightsail/us-west-2/containers/kortix-test-app-111111111111/private-repo-access/role';
     const lightsail = commandClient({
       CreateContainerServiceCommand: {
         containerService: { state: 'READY', url: 'https://service.cs.amazonlightsail.com/' },
@@ -33,6 +34,14 @@ describe('AWS Lightsail Apps hosting backend', () => {
         { containerServices: [{ state: 'READY' }] },
         {
           containerServices: [{
+            state: 'READY',
+            privateRegistryAccess: {
+              ecrImagePullerRole: { isActive: true, principalArn: pullerArn },
+            },
+          }],
+        },
+        {
+          containerServices: [{
             state: 'RUNNING',
             url: 'https://service.cs.amazonlightsail.com/',
             currentDeployment: { state: 'ACTIVE' },
@@ -40,10 +49,21 @@ describe('AWS Lightsail Apps hosting backend', () => {
         },
       ],
     });
+    const ecr = commandClient({
+      GetRepositoryPolicyCommand: {
+        policyText: JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [{ Sid: 'ExistingPolicy', Effect: 'Allow', Principal: '*', Action: 'ecr:GetDownloadUrlForLayer' }],
+        }),
+      },
+      SetRepositoryPolicyCommand: {},
+    });
+    const sleeps: number[] = [];
+    const endpointRequests: string[] = [];
     const backend = new LightsailAppHostingBackend({
       lightsail: lightsail.client as never,
       codebuild: commandClient({}).client as never,
-      ecr: commandClient({}).client as never,
+      ecr: ecr.client as never,
       s3: commandClient({}).client as never,
       region: 'us-west-2',
       buildBucket: 'builds',
@@ -51,7 +71,13 @@ describe('AWS Lightsail Apps hosting backend', () => {
       codebuildProject: 'apps-build',
       environment: 'test',
       controlSecret: 'control-secret-for-tests',
-      sleep: async () => {},
+      sleep: async (milliseconds) => { sleeps.push(milliseconds); },
+      fetch: (async (url) => {
+        endpointRequests.push(String(url));
+        return new Response(endpointRequests.length === 1 ? 'warming' : '', {
+          status: endpointRequests.length === 1 ? 503 : 200,
+        });
+      }) as typeof fetch,
     });
 
     const result = await backend.createRuntime({
@@ -80,6 +106,29 @@ describe('AWS Lightsail Apps hosting backend', () => {
     });
     expect(JSON.stringify(deploy?.input)).toContain('KORTIX_APP_ORIGIN_TOKEN');
     expect(result.originTokenHash).toHaveLength(64);
+    const commandNames = lightsail.commands.map((command) => command.name);
+    const updateIndex = commandNames.indexOf('UpdateContainerServiceCommand');
+    const deployIndex = commandNames.indexOf('CreateContainerServiceDeploymentCommand');
+    expect(commandNames.slice(updateIndex + 1, deployIndex)).toContain('GetContainerServicesCommand');
+    expect(sleeps).toContain(30_000);
+    expect(ecr.commands.map((command) => command.name)).toEqual([
+      'GetRepositoryPolicyCommand',
+      'SetRepositoryPolicyCommand',
+    ]);
+    const policy = JSON.parse(String(
+      ecr.commands.find((command) => command.name === 'SetRepositoryPolicyCommand')?.input.policyText,
+    ));
+    expect(policy.Statement).toContainEqual(expect.objectContaining({ Sid: 'ExistingPolicy' }));
+    expect(policy.Statement).toContainEqual({
+      Sid: 'AllowLightsailPull-kortix-test-app-111111111111',
+      Effect: 'Allow',
+      Principal: { AWS: pullerArn },
+      Action: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+    });
+    expect(endpointRequests).toEqual([
+      'https://service.cs.amazonlightsail.com/__kortix/health',
+      'https://service.cs.amazonlightsail.com/__kortix/health',
+    ]);
   });
 
   test('deletes the service on stop so disabled capacity cannot continue billing', async () => {
@@ -87,10 +136,27 @@ describe('AWS Lightsail Apps hosting backend', () => {
       DeleteContainerServiceCommand: {},
       GetContainerServicesCommand: { containerServices: [] },
     });
+    const ecr = commandClient({
+      GetRepositoryPolicyCommand: {
+        policyText: JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Sid: 'AllowLightsailPull-kortix-test-app-111111111111',
+              Effect: 'Allow',
+              Principal: { AWS: 'arn:aws:iam::701935371203:role/puller' },
+              Action: ['ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer'],
+            },
+            { Sid: 'ExistingPolicy', Effect: 'Allow', Principal: '*', Action: 'ecr:GetDownloadUrlForLayer' },
+          ],
+        }),
+      },
+      SetRepositoryPolicyCommand: {},
+    });
     const backend = new LightsailAppHostingBackend({
       lightsail: lightsail.client as never,
       codebuild: commandClient({}).client as never,
-      ecr: commandClient({}).client as never,
+      ecr: ecr.client as never,
       s3: commandClient({}).client as never,
       region: 'us-west-2',
       buildBucket: 'builds',
@@ -102,6 +168,52 @@ describe('AWS Lightsail Apps hosting backend', () => {
     });
     await backend.stop('kortix-test-app-111111111111');
     expect(lightsail.commands.map((command) => command.name)).toEqual([
+      'DeleteContainerServiceCommand',
+      'GetContainerServicesCommand',
+    ]);
+    const updatedPolicy = JSON.parse(String(
+      ecr.commands.find((command) => command.name === 'SetRepositoryPolicyCommand')?.input.policyText,
+    ));
+    expect(updatedPolicy.Statement).toEqual([
+      { Sid: 'ExistingPolicy', Effect: 'Allow', Principal: '*', Action: 'ecr:GetDownloadUrlForLayer' },
+    ]);
+  });
+
+  test('waits and retries deletion while Lightsail is updating the service', async () => {
+    const transition = Object.assign(
+      new Error('The specified service is in a transition state ("UPDATING") and cannot be deleted.'),
+      { name: 'InvalidInputException' },
+    );
+    const commands: string[] = [];
+    let deleteAttempts = 0;
+    const backend = new LightsailAppHostingBackend({
+      lightsail: {
+        send: async (command: { constructor: { name: string } }) => {
+          commands.push(command.constructor.name);
+          if (command.constructor.name === 'DeleteContainerServiceCommand') {
+            deleteAttempts += 1;
+            if (deleteAttempts === 1) throw transition;
+          }
+          return { containerServices: [] };
+        },
+      },
+      codebuild: commandClient({}).client as never,
+      ecr: commandClient({}).client as never,
+      s3: commandClient({}).client as never,
+      region: 'us-west-2',
+      buildBucket: 'builds',
+      ecrRepositoryUri: 'repo',
+      codebuildProject: 'build',
+      environment: 'test',
+      controlSecret: 'control-secret-for-tests',
+      sleep: async () => {},
+    });
+
+    await backend.stop('kortix-test-app-updating');
+
+    expect(deleteAttempts).toBe(2);
+    expect(commands).toEqual([
+      'DeleteContainerServiceCommand',
       'DeleteContainerServiceCommand',
       'GetContainerServicesCommand',
     ]);

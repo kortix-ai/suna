@@ -32,7 +32,8 @@ Required platform proof includes the real API, CLI, browser, AWS Lightsail
 Container Services, direct-origin denial, cleanup, merge, Deploy Dev, deployed
 SHA, and Dev behavior.
 
-**Local status:** COMPLETE. AWS Lightsail and self-host verification remain.
+**Local status:** COMPLETE. AWS Lightsail proof is complete. Self-host
+verification remains.
 
 **Verified locally on 2026-08-17:**
 
@@ -43,20 +44,36 @@ SHA, and Dev behavior.
   read, update, and confirmed-delete requests and visible state.
 - `pnpm test -- --full` — all `7` lanes passed in `255.6s`; browser passed in
   `67.2s` and package-quality passed in `118.7s`.
+- Post-AWS-fix `pnpm test -- --full` — all `7` lanes passed in `249.9s`;
+  API/CLI passed in `20.5s`, SDK in `24.8s`, browser in `67.6s`, and package
+  quality in `110.3s`.
 - `pnpm --filter @kortix/sdk typecheck` — passed.
 - `pnpm --filter @kortix/sdk test` — `2,094` passed, `0` failed, `7,629`
   expectations across `147` files.
 - `pnpm --filter @kortix/sdk run smoke:install` — packed install and Node ESM
   import passed.
 - All five changed Terraform roots passed `terraform validate`.
+- The `essentia` AWS smoke built image
+  `deployment-c0f5ba71969a42de9e6772440a757d4e` through CodeBuild run
+  `essentia-selfhost-apps-hosting:b24677cc-464e-4ddf-ab83-90f31c1e480e`.
+  The real Lightsail service returned `403` at the direct origin, `200` through
+  the authenticated runtime path, and passed POST, cookie, SSE, WebSocket, and
+  log-read checks.
+- AWS cleanup left zero `kortix-selfhost-app-*` services. ECR returned
+  `RepositoryPolicyNotFoundException`, which proves the temporary Lightsail
+  pull-principal policy was removed.
+- API typecheck passed. Focused Lightsail and price tests passed `43/43` with
+  `88` expectations. Terraform format, all three environment validations, and
+  module `tflint` passed.
 
 The user requires this branch and PR to remain standalone. Merge and Deploy
 Dev are intentionally deferred until explicit approval.
 
 **SDK package shippable to production: YES.**
 
-**Complete Apps platform shippable to production: NOT YET.** Real AWS
-Lightsail and `kortix-self-host` proof remain.
+**Complete Apps platform shippable to production: NOT YET.** The
+`kortix-self-host` API and UI proof remains. Merge and Deploy Dev remain
+intentionally deferred.
 
 ### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
 
