@@ -1,3 +1,4 @@
+import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
@@ -177,6 +178,31 @@ describe('SkillTool', () => {
     // not. The name is enough: skills install at `.kortix/opencode/skills/<name>/`.
     const markup = render(part({ name: 'webapp' }, OUTPUT_NO_DIR), true);
     expect(markup).toContain('title=".kortix/opencode/skills/webapp/SKILL.md"');
+  });
+
+  // Task 20: the file list's heading used to be `text-sm ... uppercase`, one
+  // notch off the trigger's own weight, directly under a row that already
+  // names the skill and badges the file count. It is the sanctioned 10px
+  // section label now — the grouping survives, the second title does not.
+  test('the file list is labelled at section weight, not at heading weight', () => {
+    // On the panel, where the row carries the badge that counts the files.
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <ToolSurfaceContext.Provider value="panel">
+            <SkillTool part={part({ name: 'webapp', dir: DIR }, OUTPUT)} defaultOpen />
+          </ToolSurfaceContext.Provider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+    // The row's own badge still counts them.
+    expect(markup).toContain('2 files');
+    // The body still groups them under a label…
+    expect(markup).toContain('Files');
+    expect(markup).toContain('text-[10px] font-medium tracking-wider uppercase');
+    // …and no longer shouts it at `text-sm`.
+    expect(markup).not.toContain('text-sm font-medium tracking-wide uppercase');
   });
 
   test('a skill with no usable name expands in place and offers no doc action', () => {

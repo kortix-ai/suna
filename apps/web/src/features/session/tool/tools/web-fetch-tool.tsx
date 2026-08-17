@@ -147,6 +147,14 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               </button>
             </DisclosureTrigger>
             <DisclosureContent>
+              {/* No `data-scrollable` here, deliberately. That attribute is
+                  the panel's opt-in to un-cap a height (`detail-view.tsx`),
+                  and this is 8000 characters of raw markup behind an explicit
+                  "View raw HTML" fold — the one thing on this card that should
+                  stay boxed on every surface. Un-capping it would flood the
+                  pane with the source of a page whose readable text is already
+                  rendered above. It is the exception the un-cap is for:
+                  everything the reader came for uncaps; the dump does not. */}
               <pre className="text-muted-foreground/70 max-h-96 overflow-auto px-3 pb-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap">
                 {rawHtmlPreview}
               </pre>

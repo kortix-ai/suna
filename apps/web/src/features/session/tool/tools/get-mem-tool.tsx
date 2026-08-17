@@ -10,7 +10,12 @@ import {
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock, ToolField, ToolSection } from '@/features/session/tool/shared/output-block';
+import {
+  FoldedSection,
+  OutputBlock,
+  ToolField,
+  ToolSection,
+} from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -48,14 +53,21 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     >
       {report ? (
         // Shared result card, not a bespoke muted div — holds composed fields.
+        //
+        // What a reader opened a recalled memory for is the memory: an
+        // observation's title and narrative, an entry's caption and content.
+        // Everything else here — which call asked for it, which facts and
+        // concepts were extracted, which files it touched, its tags — is
+        // provenance, and it used to stack open underneath the answer as six
+        // more labelled sections. Those fold; the answer does not.
         <ToolResultCard bodyClassName="space-y-2.5 p-2">
           {(source || memoryId) && (
-            <ToolSection label="Request">
+            <FoldedSection label="Request">
               <div className="flex flex-wrap items-center gap-1.5">
                 {source && <ToolField label="Source" value={source} />}
                 {memoryId && <ToolField label="ID" value={`#${memoryId}`} mono />}
               </div>
-            </ToolSection>
+            </FoldedSection>
           )}
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -88,7 +100,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                 </ToolSection>
               )}
               {report.facts.length > 0 && (
-                <ToolSection label={`Facts (${report.facts.length})`}>
+                <FoldedSection label={`Facts (${report.facts.length})`}>
                   <ul className="space-y-1">
                     {report.facts.map((fact, index) => (
                       <li
@@ -100,10 +112,10 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                       </li>
                     ))}
                   </ul>
-                </ToolSection>
+                </FoldedSection>
               )}
               {report.concepts.length > 0 && (
-                <ToolSection label="Concepts">
+                <FoldedSection label="Concepts">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {report.concepts.map((concept) => (
                       <span
@@ -114,7 +126,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                       </span>
                     ))}
                   </div>
-                </ToolSection>
+                </FoldedSection>
               )}
               {(report.tool || report.prompt || report.session || report.filesRead.length > 0) && (
                 <div className="space-y-1.5">
@@ -131,10 +143,10 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                     {report.session && <ToolField label="Session" value={report.session} mono />}
                   </div>
                   {report.filesRead.length > 0 && (
-                    <ToolSection
-                      label={tHardcodedUi.raw(
+                    <FoldedSection
+                      label={`${tHardcodedUi.raw(
                         'componentsSessionToolRenderers.line1823JsxTextFilesRead',
-                      )}
+                      )} (${report.filesRead.length})`}
                     >
                       <div className="flex flex-wrap gap-1.5">
                         {report.filesRead.map((file) => (
@@ -146,7 +158,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                           </span>
                         ))}
                       </div>
-                    </ToolSection>
+                    </FoldedSection>
                   )}
                 </div>
               )}
@@ -164,7 +176,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                 </ToolSection>
               )}
               {report.tags.length > 0 && (
-                <ToolSection label="Tags">
+                <FoldedSection label={`Tags (${report.tags.length})`}>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {report.tags.map((tag) => (
                       <span key={tag} className={cn('text-xs font-medium', STATUS_TEXT.success)}>
@@ -172,7 +184,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                       </span>
                     ))}
                   </div>
-                </ToolSection>
+                </FoldedSection>
               )}
               {(report.session || report.updated) && (
                 <div className="flex flex-wrap items-center gap-1.5">

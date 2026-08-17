@@ -8,7 +8,7 @@ import {
   partOutput,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-block';
+import { FoldedSection, OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
@@ -211,13 +211,17 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
           </div>
         )}
 
+        {/* The answer to "create a trigger" is the trigger — its name, its
+            schedule, its status, all above. The prompt the trigger will run
+            with is the instruction that produced it, and it is a paragraph,
+            so it folds. */}
         {action === 'create' && typeof input.prompt === 'string' && (
           <div className="border-border/30 mt-2 border-t pt-2">
-            <ToolSection label="Prompt">
+            <FoldedSection label="Prompt">
               <OutputBlock
                 text={input.prompt.slice(0, 400) + (input.prompt.length > 400 ? '...' : '')}
               />
-            </ToolSection>
+            </FoldedSection>
           </div>
         )}
       </div>

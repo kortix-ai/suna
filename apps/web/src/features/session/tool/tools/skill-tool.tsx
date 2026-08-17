@@ -12,6 +12,7 @@ import {
   partStatus,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolSection } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
   extractSkillContent,
@@ -165,10 +166,11 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             {skillFiles.length > 0 && (
               <>
                 {markdownContent && <Separator className="my-4" />}
-                <div className="flex flex-col space-y-2">
-                  <div className="text-muted-foreground text-sm font-medium tracking-wide uppercase">
-                    Files
-                  </div>
+                {/* The sanctioned section label, not a `text-sm` uppercase
+                    heading. The row above this body already names the skill
+                    and badges "N files", so a heading at nearly the trigger's
+                    own weight said the same thing twice, louder. */}
+                <ToolSection label="Files">
                   <ul className="space-y-0.5">
                     {skillFiles.map((f, i) => (
                       <li
@@ -180,7 +182,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                       </li>
                     ))}
                   </ul>
-                </div>
+                </ToolSection>
               </>
             )}
           </div>
