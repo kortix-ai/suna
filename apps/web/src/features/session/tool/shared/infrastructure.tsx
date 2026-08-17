@@ -1061,11 +1061,14 @@ function PanelRowTitle({
  * A row inverts it: the detail opens as a list of one-line summaries, and the
  * reader expands the one they came for.
  *
- * The row is the same `bg-popover rounded-md border` surface the design system
- * uses for every panel row, and it borrows `PanelCard`'s chevron idiom (a
- * `CaretRightIcon` rotating 90° when open) so expanding a tool call and
- * expanding a panel card are visibly the same gesture. No rail, no connector,
- * no per-row header: the gap between rows is the whole rhythm.
+ * The row is the `bg-popover rounded-md border` surface the design system uses
+ * for every panel row, and its disclosure affordance is the same MARK the Easy
+ * cards use — a `CaretRightIcon` that points down once the thing is open. Only
+ * the mark is shared: `PanelCard` sits on `bg-pane` at a tighter radius and
+ * animates its chevron through `motion` with a press scale, while this row is a
+ * denser, plainer thing that rotates its chevron in CSS. Same vocabulary, not
+ * the same component. No rail, no connector, no per-row header: the gap between
+ * rows is the whole rhythm.
  *
  * Interaction is gated on having a body — a childless call has nothing to
  * disclose, so it gets no chevron, no `role="button"`, and no cursor change
@@ -1120,6 +1123,11 @@ function PanelToolRow({
       {isTriggerTitle(trigger) ? (
         <PanelRowTitle trigger={trigger} running={running} onSubtitleClick={onSubtitleClick} />
       ) : (
+        // `truncate` here CLIPS rather than ellipsises — a node trigger's
+        // content is flex children (the DCP tools' label + chip rows), and
+        // `text-overflow` only applies to inline text. Clipping is the intent:
+        // the row is one line, and an over-long node has to stop at the badge
+        // rather than push the chevron off the card.
         <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 truncate text-sm font-medium [&>span:first-child>svg]:size-4">
           {trigger}
         </div>
