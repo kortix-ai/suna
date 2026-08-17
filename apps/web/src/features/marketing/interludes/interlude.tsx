@@ -42,7 +42,7 @@ export function Interlude({
   flip?: boolean;
 }): ReactNode {
   return (
-    <section id={id} className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+    <section id={id} className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <div className="grid items-center gap-x-16 gap-y-10 lg:grid-cols-12">
         {/* prose */}
         <div

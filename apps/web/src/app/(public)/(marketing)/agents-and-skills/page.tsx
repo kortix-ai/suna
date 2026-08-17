@@ -99,7 +99,7 @@ export default function AgentsAndSkillsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 1 · an agent is two files ───────────────────────────────────── */}
-      <section id="agent" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="agent" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={agent.eyebrow} title={agent.title} sub={agent.sub} />
 
         <Reveal delay={0.06}>
@@ -130,7 +130,7 @@ export default function AgentsAndSkillsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · the permission tree and the ceiling above it ─────────────── */}
-      <section id="reach" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="reach" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={reach.eyebrow} title={reach.title} sub={reach.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -186,7 +186,7 @@ export default function AgentsAndSkillsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · a skill is a directory ──────────────────────────────────── */}
-      <section id="skill" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="skill" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={skill.eyebrow} title={skill.title} sub={skill.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -236,7 +236,7 @@ export default function AgentsAndSkillsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · it is all text in the repo ──────────────────────────────── */}
-      <section id="repo" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="repo" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={repo.eyebrow} title={repo.title} sub={repo.sub} />
 
         <Reveal delay={0.06}>
@@ -270,7 +270,7 @@ export default function AgentsAndSkillsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · starting from someone else's work ───────────────────────── */}
-      <section id="marketplace" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="marketplace" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading
           eyebrow={marketplace.eyebrow}
           title={marketplace.title}
@@ -310,7 +310,7 @@ export default function AgentsAndSkillsPage(): ReactNode {
       </section>
 
       {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <Reveal>
           <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
             <Badge variant="kortix" className="rounded">

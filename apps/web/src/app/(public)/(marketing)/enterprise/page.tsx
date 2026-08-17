@@ -170,7 +170,7 @@ const EnterprisePage = () => {
           </div>
         </section>
 
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -229,7 +229,7 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -260,7 +260,7 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
@@ -324,7 +324,7 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">

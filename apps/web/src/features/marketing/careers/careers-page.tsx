@@ -97,7 +97,7 @@ function Board({ onApply }: { onApply: () => void }): ReactNode {
 /** The bar. The one prose block on the page that earns its space. */
 function Bar(): ReactNode {
   return (
-    <section id="what-we-look-for" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+    <section id="what-we-look-for" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <SectionHeader eyebrow={bar.eyebrow} title={bar.title} />
       <Reveal>
         <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>

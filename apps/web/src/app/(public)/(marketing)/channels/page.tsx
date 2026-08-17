@@ -102,7 +102,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 1 · the four platforms, and the truth about each ────────────── */}
-      <section id="surfaces" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="surfaces" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={surfaces.eyebrow} title={surfaces.title} sub={surfaces.sub} />
 
         <Reveal delay={0.06}>
@@ -130,7 +130,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · a thread is a session ───────────────────────────────────── */}
-      <section id="thread" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="thread" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={thread.eyebrow} title={thread.title} sub={thread.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -170,7 +170,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · connecting it, honestly ─────────────────────────────────── */}
-      <section id="connect" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="connect" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={connect.eyebrow} title={connect.title} sub={connect.sub} />
 
         <Reveal delay={0.06}>
@@ -196,7 +196,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · what comes back into the thread ─────────────────────────── */}
-      <section id="round-trip" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="round-trip" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={back.eyebrow} title={back.title} sub={back.sub} />
 
         <Reveal delay={0.06}>
@@ -223,7 +223,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · driving the project from the thread ─────────────────────── */}
-      <section id="commands" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="commands" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={commands.eyebrow} title={commands.title} sub={commands.sub} />
 
         <Reveal delay={0.06}>
@@ -281,7 +281,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 6 · the walls do not move because it is chat ────────────────── */}
-      <section id="rules" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="rules" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={rules.eyebrow} title={rules.title} sub={rules.sub} />
 
         <Reveal delay={0.06}>
@@ -309,7 +309,7 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 7 · the gap, named out loud ─────────────────────────────────── */}
-      <section id="custom" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="custom" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={custom.eyebrow} title={custom.title} sub={custom.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -342,7 +342,7 @@ export default function ChannelsPage(): ReactNode {
       </section>
 
       {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <Reveal>
           <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
             <Badge variant="kortix" className="rounded">

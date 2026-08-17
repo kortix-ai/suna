@@ -12,7 +12,7 @@ import KortixGrid from '@/components/ui/marketing/gridder';
  */
 export function UseCasesCta() {
   return (
-    <section className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
+    <section className="relative mx-auto max-w-6xl px-6 py-24 md:py-30 lg:px-0">
       <Reveal>
         <div className="border-border bg-card relative overflow-hidden rounded-sm border">
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">

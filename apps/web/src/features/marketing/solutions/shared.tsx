@@ -25,7 +25,7 @@ export function Section({
   className?: string;
 }): ReactNode {
   return (
-    <section id={id} className={cn(SOLUTIONS_MEASURE, 'py-16 sm:py-24', className)}>
+    <section id={id} className={cn(SOLUTIONS_MEASURE, 'py-24 sm:py-30', className)}>
       {children}
     </section>
   );

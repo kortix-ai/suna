@@ -102,7 +102,7 @@ export default function AgentComputerPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 1 · what happens when a session starts ──────────────────────── */}
-      <section id="boot" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="boot" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={boot.eyebrow} title={boot.title} sub={boot.sub} />
 
         <Reveal delay={0.06}>
@@ -131,7 +131,7 @@ export default function AgentComputerPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · the agent owns the whole machine ────────────────────────── */}
-      <section id="control" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="control" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={control.eyebrow} title={control.title} sub={control.sub} />
 
         <Reveal delay={0.06}>
@@ -152,7 +152,7 @@ export default function AgentComputerPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · the diagram: main → session branches → change request ───── */}
-      <section id="parallel" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="parallel" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={parallel.eyebrow} title={parallel.title} sub={parallel.sub} />
 
         <Reveal delay={0.06}>
@@ -171,7 +171,7 @@ export default function AgentComputerPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · the machine is declared in the repo ─────────────────────── */}
-      <section id="declared" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="declared" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={declared.eyebrow} title={declared.title} sub={declared.sub} />
 
         <Reveal delay={0.06}>
@@ -211,7 +211,7 @@ export default function AgentComputerPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · everything the machine runs on is a file ────────────────── */}
-      <section id="files" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="files" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={files.eyebrow} title={files.title} sub={files.sub} />
 
         {/* `min-w-0` on both columns — see the note on the `declared` grid. */}
@@ -241,7 +241,7 @@ export default function AgentComputerPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 6 · the walls around a machine that can do anything ─────────── */}
-      <section id="isolation" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="isolation" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={isolation.eyebrow} title={isolation.title} sub={isolation.sub} />
 
         <Reveal delay={0.06}>
@@ -267,7 +267,7 @@ export default function AgentComputerPage(): ReactNode {
       </section>
 
       {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <Reveal>
           <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
             <Badge variant="kortix" className="rounded">

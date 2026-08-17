@@ -126,7 +126,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 1 · isolation ───────────────────────────────────────────────── */}
-      <section id="isolation" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="isolation" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={isolation.eyebrow} title={isolation.title} sub={isolation.sub} />
 
         <Reveal delay={0.06}>
@@ -145,7 +145,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · credentials ─────────────────────────────────────────────── */}
-      <section id="credentials" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="credentials" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading
           eyebrow={credentials.eyebrow}
           title={credentials.title}
@@ -168,7 +168,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · identity & permissions ──────────────────────────────────── */}
-      <section id="identity" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="identity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={identity.eyebrow} title={identity.title} sub={identity.sub} />
 
         <Reveal delay={0.06}>
@@ -244,7 +244,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · control ─────────────────────────────────────────────────── */}
-      <section id="control" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="control" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={control.eyebrow} title={control.title} sub={control.sub} />
 
         <Reveal delay={0.06}>
@@ -272,7 +272,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · how work lands ──────────────────────────────────────────── */}
-      <section id="change-requests" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="change-requests" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={landing.eyebrow} title={landing.title} sub={landing.sub} />
 
         <Reveal delay={0.06}>
@@ -298,7 +298,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 6 · audit ───────────────────────────────────────────────────── */}
-      <section id="audit" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="audit" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={audit.eyebrow} title={audit.title} sub={audit.sub} />
 
         <Reveal delay={0.06}>
@@ -311,7 +311,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 7 · deployment & posture ────────────────────────────────────── */}
-      <section id="posture" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="posture" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={posture.eyebrow} title={posture.title} sub={posture.sub} />
 
         <Reveal delay={0.06}>
@@ -357,7 +357,7 @@ export default function SecurityPage(): ReactNode {
       <SectionDivider />
 
       {/* ── disclosure ──────────────────────────────────────────────────── */}
-      <section id="disclosure" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="disclosure" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading
           eyebrow={disclosure.eyebrow}
           title={disclosure.title}
@@ -401,7 +401,7 @@ export default function SecurityPage(): ReactNode {
       </section>
 
       {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <Reveal>
           <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
             <Badge variant="kortix" className="rounded">

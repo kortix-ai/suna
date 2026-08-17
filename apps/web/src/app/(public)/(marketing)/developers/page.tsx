@@ -619,7 +619,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <Eyebrow>
@@ -654,7 +654,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="flex flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="flex flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="mx-auto w-full max-w-7xl">
           <Reveal>
             <div className="mb-8 max-w-2xl">
@@ -895,7 +895,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
             <Eyebrow>
@@ -957,7 +957,7 @@ export default function DevelopersPage() {
       </section>
 
       {/* Scalability */}
-      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal>
             <Eyebrow>Scale</Eyebrow>
@@ -1047,7 +1047,7 @@ export default function DevelopersPage() {
       </section>
 
       {/* Connectors */}
-      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal className="lg:order-2">
             <Eyebrow>Connectors</Eyebrow>
@@ -1084,7 +1084,7 @@ export default function DevelopersPage() {
         </div>
       </section>
 
-      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <Reveal>
           <div className="mb-2 max-w-2xl">
             <Eyebrow>

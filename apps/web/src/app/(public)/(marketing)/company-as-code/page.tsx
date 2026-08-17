@@ -103,7 +103,7 @@ export default function CompanyAsCodePage(): ReactNode {
       <SectionDivider />
 
       {/* ── 1 · the two files that define the company ───────────────────── */}
-      <section id="definition" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="definition" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading
           eyebrow={definition.eyebrow}
           title={definition.title}
@@ -157,7 +157,7 @@ export default function CompanyAsCodePage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · what is in the repo, and what deliberately is not ───────── */}
-      <section id="repo" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="repo" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={repo.eyebrow} title={repo.title} sub={repo.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -190,7 +190,7 @@ export default function CompanyAsCodePage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · grep your whole company ─────────────────────────────────── */}
-      <section id="grep" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="grep" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={grep.eyebrow} title={grep.title} sub={grep.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -221,7 +221,7 @@ export default function CompanyAsCodePage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · a skill change lands as a reviewed commit ───────────────── */}
-      <section id="change" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="change" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={change.eyebrow} title={change.title} sub={change.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -250,7 +250,7 @@ export default function CompanyAsCodePage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · the company patches itself, on a schedule ───────────────── */}
-      <section id="self-improve" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="self-improve" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading
           eyebrow={selfImprove.eyebrow}
           title={selfImprove.title}
@@ -296,7 +296,7 @@ export default function CompanyAsCodePage(): ReactNode {
       <SectionDivider />
 
       {/* ── 6 · it is a git repo, so it walks out the door with you ─────── */}
-      <section id="portable" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="portable" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={portable.eyebrow} title={portable.title} sub={portable.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -328,7 +328,7 @@ export default function CompanyAsCodePage(): ReactNode {
       </section>
 
       {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <Reveal>
           <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
             <Badge variant="kortix" className="rounded">

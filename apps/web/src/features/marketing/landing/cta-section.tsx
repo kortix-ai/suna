@@ -24,7 +24,7 @@ export function CtaSection() {
   }, [user]);
 
   return (
-    <section id="cta" className="py-16 sm:py-24">
+    <section id="cta" className="py-24 sm:py-30">
       <div
         className="pointer-events-none absolute inset-0 -top-4 [mask-image:linear-gradient(to_bottom,#000_0%,#000_30%,transparent_90%)] md:scale-110"
         aria-hidden

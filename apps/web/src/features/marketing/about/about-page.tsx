@@ -130,7 +130,7 @@ function Statements(): ReactNode {
  */
 function PlatformSection(): ReactNode {
   return (
-    <section id="platform" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+    <section id="platform" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <SectionHeader eyebrow={platform.eyebrow} title={platform.title} />
       <Reveal>
         <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>

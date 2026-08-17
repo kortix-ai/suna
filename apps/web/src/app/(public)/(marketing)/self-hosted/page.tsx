@@ -138,7 +138,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 1 · what you keep ───────────────────────────────────────────── */}
-      <section id="what-you-keep" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="what-you-keep" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={yours.eyebrow} title={yours.title} sub={yours.sub} />
 
         <Reveal delay={0.06}>
@@ -151,7 +151,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · the commands ────────────────────────────────────────────── */}
-      <section id="commands" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="commands" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={commands.eyebrow} title={commands.title} sub={commands.sub} />
 
         <Reveal delay={0.06}>
@@ -178,7 +178,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · the first run ───────────────────────────────────────────── */}
-      <section id="first-run" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="first-run" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={firstRun.eyebrow} title={firstRun.title} sub={firstRun.sub} />
 
         <Reveal delay={0.06}>
@@ -232,7 +232,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · the stack ───────────────────────────────────────────────── */}
-      <section id="stack" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="stack" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={stack.eyebrow} title={stack.title} sub={stack.sub} />
 
         <Reveal delay={0.06}>
@@ -259,7 +259,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · parity ──────────────────────────────────────────────────── */}
-      <section id="parity" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="parity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={parity.eyebrow} title={parity.title} sub={parity.sub} />
 
         <Reveal delay={0.06}>
@@ -272,7 +272,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 6 · models ──────────────────────────────────────────────────── */}
-      <section id="models" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="models" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={models.eyebrow} title={models.title} sub={models.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -301,7 +301,7 @@ export default function SelfHostedPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 7 · where it runs ───────────────────────────────────────────── */}
-      <section id="targets" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="targets" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <SectionHeading eyebrow={targets.eyebrow} title={targets.title} sub={targets.sub} />
 
         <Reveal delay={0.06}>
@@ -325,7 +325,7 @@ export default function SelfHostedPage(): ReactNode {
       </section>
 
       {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
         <Reveal>
           <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
             <Badge variant="kortix" className="rounded">
