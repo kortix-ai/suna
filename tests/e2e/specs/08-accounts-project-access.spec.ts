@@ -470,10 +470,19 @@ test.describe("08 — Accounts, invites, and project access", () => {
         'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
       ),
     ).toHaveCount(0);
-    await expect(page.getByText("Terminal", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("Secrets", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("Triggers", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("Tunnel", { exact: true })).toHaveCount(0);
+    // Scoped to the sidebar, not the whole page: the project-home empty
+    // state now renders its own "set up your project" quick tiles
+    // (`ProjectHomeSections`), one of which is literally labeled "Triggers"
+    // — a legitimate destination button, not the old dashboard sidebar row
+    // this assertion originally checked for. The old sidebar rows
+    // (Terminal / Secrets / Triggers / Tunnel) are still gone; scope the
+    // locator to `[data-slot="sidebar"]` so the new page-body tile doesn't
+    // collide with that check.
+    const sidebar = page.locator('[data-slot="sidebar"]');
+    await expect(sidebar.getByText("Terminal", { exact: true })).toHaveCount(0);
+    await expect(sidebar.getByText("Secrets", { exact: true })).toHaveCount(0);
+    await expect(sidebar.getByText("Triggers", { exact: true })).toHaveCount(0);
+    await expect(sidebar.getByText("Tunnel", { exact: true })).toHaveCount(0);
     // The sidebar's own Settings row is gone (Jay, 2026-08-17) — the panel
     // now opens only via Mod+, or the workspace switcher's "User Settings"
     // row. `openSettingsPanel` presses the shortcut and asserts the panel.
