@@ -26,7 +26,7 @@ import { useMemo, useState } from 'react';
 import { cleanWorkerOutput, parseTaskRows } from '@/features/session/tool/shared/agent-helpers';
 import { OutputBlock } from '@/features/session/tool/shared/output-block';
 
-export function AgentStatusTool({ part, forceOpen }: ToolProps) {
+export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const status = partStatus(part);
   const output = partOutput(part);
   const isRunning = status === 'running' || status === 'pending';
@@ -51,6 +51,7 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
             </Badge>
           ) : undefined
         }
+        defaultOpen={defaultOpen}
         forceOpen={forceOpen}
       >
         {!isRunning && taskRows.length > 0 && (

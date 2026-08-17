@@ -16,7 +16,7 @@ import {
   partOutput,
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
-import { ToolSection } from '@/features/session/tool/shared/output-block';
+import { FoldedSection, ToolSection } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -203,11 +203,14 @@ export function ConnectorDescribeTool({ part, defaultOpen, forceOpen, locked }: 
               {String(parsed.description)}
             </p>
           ) : null}
-          <ToolSection
+          {/* The tool's name and what it does answer "what is this app
+              action". The JSON schema of its arguments is for the model, and
+              it is the longest thing on the card. */}
+          <FoldedSection
             label={tI18nHardcoded.raw('autoFeaturesSessionToolRenderersJsxTextInputSchema878a1df6')}
           >
             <ConnectorJson value={parsed.inputSchema ?? EMPTY_INPUT_SCHEMA} />
-          </ToolSection>
+          </FoldedSection>
         </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
@@ -286,10 +289,13 @@ export function ConnectorCallTool({ part, defaultOpen, forceOpen, locked }: Tool
             )}
           </div>
 
+          {/* The arguments the app was called WITH fold; what it answered
+              does not. A call's result is the only thing on this card the
+              reader opened it for, including the failure reason. */}
           {Object.keys(args).length > 0 && (
-            <ToolSection label="Request">
+            <FoldedSection label="Request">
               <ConnectorJson value={args} />
-            </ToolSection>
+            </FoldedSection>
           )}
 
           {!outputIsError && parsed ? (

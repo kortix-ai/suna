@@ -20,6 +20,7 @@ import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/runtime-files';
 import { getFileIcon } from '@/features/project-files';
 import { track } from '@/lib/track';
+import { cn } from '@/lib/utils';
 import {
   AppWindowIcon as AppWindow,
   CaretDownIcon as ChevronDown,
@@ -32,7 +33,7 @@ import {
 import { useEffect, useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { deliverableKindLabel, isScaffoldingOutput } from '../shared/output-priority';
-import { outputKey } from './easy-panel-logic';
+import { groupOutputsByKind, outputKey } from './easy-panel-logic';
 import { PanelCard } from './panel-card';
 
 const KIND_ICON = {
@@ -80,8 +81,10 @@ function ImageThumb({ path, callID, name }: { path: string; callID: string; name
   }, [path, cacheKey, src, failed]);
 
   if (!src || failed) {
+    // `size-4`, like every other leading glyph in this list — the fallback
+    // stands where the thumbnail will, so it must not be a smaller mark.
     const Ico = KIND_ICON.image;
-    return <Ico className="text-muted-foreground size-3.5" />;
+    return <Ico className="text-muted-foreground size-4" />;
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -101,11 +104,17 @@ function ImageThumb({ path, callID, name }: { path: string; callID: string; name
  * thumbnail (W13): the icon says "picture," the thumb shows which one.
  */
 function OutputIcon({ output }: { output: OutputItem }) {
-  const tile = ' flex size-7 shrink-0 items-center justify-center rounded-sm';
+  const tile = 'flex size-7 shrink-0 items-center justify-center rounded-sm';
+  /** A quiet ground under the glyph, the same treatment the Context card's
+   *  `FileList` tiles carry. Without it the leading mark floats and the list
+   *  loses the left edge the eye reads down. A real thumbnail is its own
+   *  anchor and fills the whole tile, so it stays bare — a ground under a
+   *  transparent PNG would read as a backing colour the image doesn't have. */
+  const groundedTile = `${tile} bg-muted/70`;
 
   if (output.kind === 'file') {
     return (
-      <span className={tile}>
+      <span className={groundedTile}>
         {getFileIcon(output.name, { className: 'size-4', variant: 'monochrome' })}
       </span>
     );
@@ -121,7 +130,7 @@ function OutputIcon({ output }: { output: OutputItem }) {
 
   const Ico = KIND_ICON[output.kind];
   return (
-    <span className={tile}>
+    <span className={groundedTile}>
       <Ico className="text-muted-foreground size-4" />
     </span>
   );
@@ -148,21 +157,74 @@ function isOpenable(output: OutputItem): boolean {
  */
 const VISIBLE_LIMIT = 8;
 
+/** One tappable row — split out of `OutputRows` so the grouped and flat
+ *  branches render the identical row markup instead of two copies drifting
+ *  apart. */
+function OutputRow({
+  output,
+  onOpenOutput,
+}: {
+  output: OutputItem;
+  onOpenOutput: (output: OutputItem) => void;
+}) {
+  return (
+    <li className="flex items-center">
+      <button
+        type="button"
+        disabled={!isOpenable(output)}
+        onClick={() => isOpenable(output) && onOpenOutput(output)}
+        // `py-2` puts the row at ~44px — a real touch target — and the
+        // transition/press pair is the one the Context card's rows use,
+        // so the two cards sharing this panel move identically.
+        className="hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-2 text-left transition-[background-color,transform] active:scale-[0.98] disabled:cursor-default"
+      >
+        <OutputIcon output={output} />
+        <span className="text-foreground min-w-0 flex-1 truncate text-sm">
+          {output.title ?? output.name}
+        </span>
+        {output.fresh && (
+          <span className="text-kortix-green shrink-0 text-xs font-medium">
+            {output.fresh === 'new' ? 'New' : 'Updated'}
+          </span>
+        )}
+        <span className="text-muted-foreground shrink-0 text-xs">
+          {deliverableKindLabel(output)}
+        </span>
+      </button>
+    </li>
+  );
+}
+
 export function OutputRows({
   outputs,
   onOpenOutput,
+  initialShowAll,
 }: {
   outputs: OutputItem[];
   /** Only called for outputs that are actually openable — see `isOpenable`. */
   onOpenOutput: (output: OutputItem) => void;
+  /**
+   * Seeds the fold's open/closed state — the same "start already resolved"
+   * trick `PanelCard`'s `defaultExpanded` uses, here so the grouped expanded
+   * view is reachable from a static render. Real callers never pass this:
+   * `apps/web`'s `bun test` runs with no jsdom/`@testing-library/react`
+   * harness (see `general-tab.rename.test.tsx`), so there is no click to
+   * simulate on the "N more files" row — a test that wants the expanded,
+   * grouped list has to seed it instead.
+   */
+  initialShowAll?: boolean;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(initialShowAll ?? false);
   // Scaffolding (data/config/source) never occupies a visible row while a
   // real deliverable exists — it lives behind the fold with the overflow.
   const deliverables = outputs.filter((o) => !isScaffoldingOutput(o));
   const base = deliverables.length > 0 ? deliverables : outputs;
   const visible = showAll ? outputs : base.slice(0, VISIBLE_LIMIT);
   const hidden = Math.max(0, outputs.length - visible.length);
+  // Grouping only ever organizes the expanded long list (see
+  // `groupOutputsByKind`'s own doc comment) — the collapsed, pre-fold slice
+  // stays a flat list, so this is `null` whenever `showAll` is false.
+  const groups = showAll ? groupOutputsByKind(visible) : null;
 
   return (
     <FadedScrollArea
@@ -170,44 +232,53 @@ export function OutputRows({
       rootClassName="h-auto min-h-0 flex-1"
       className="overscroll-contain"
     >
-      <ul className="flex flex-col gap-0">
-        {visible.map((o) => (
-          <li key={outputKey(o)} className="flex items-center">
-            <button
-              type="button"
-              disabled={!isOpenable(o)}
-              onClick={() => isOpenable(o) && onOpenOutput(o)}
-              className="hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 text-left disabled:cursor-default"
-            >
-              <OutputIcon output={o} />
-              <span className="text-foreground min-w-0 flex-1 truncate text-sm">
-                {o.title ?? o.name}
-              </span>
-              {o.fresh && (
-                <span className="text-kortix-green shrink-0 text-xs font-medium">
-                  {o.fresh === 'new' ? 'New' : 'Updated'}
-                </span>
-              )}
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {deliverableKindLabel(o)}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      {groups ? (
+        <div className="flex flex-col gap-0">
+          {groups.map((group, i) => (
+            <div key={group.kind}>
+              <p
+                className={cn(
+                  'text-muted-foreground px-1 pb-1 text-xs font-medium',
+                  i > 0 && 'pt-2',
+                )}
+              >
+                {group.label}
+              </p>
+              <ul className="flex flex-col gap-0">
+                {group.items.map((o) => (
+                  <OutputRow key={outputKey(o)} output={o} onOpenOutput={onOpenOutput} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-0">
+          {visible.map((o) => (
+            <OutputRow key={outputKey(o)} output={o} onOpenOutput={onOpenOutput} />
+          ))}
+        </ul>
+      )}
 
       {hidden > 0 && !showAll && (
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="text-muted-foreground hover:text-foreground hover:bg-accent -mx-0.5 mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-1 py-1.5 text-left text-sm transition-colors"
+          // Same rhythm and press feedback as the rows above it. `color` rides
+          // along in the transition list because this row also lightens its
+          // label on hover — `transition-colors` would have swept in
+          // border-color and fill with it.
+          className="text-muted-foreground hover:text-foreground hover:bg-accent -mx-0.5 mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-1 py-2 text-left text-sm transition-[background-color,color,transform] active:scale-[0.98]"
         >
           <span className="flex size-7 shrink-0 items-center justify-center">
             <ChevronDown className="size-3.5" />
           </span>
           {/* Say what they are, not just how many — "8 more" is a mystery box;
               "8 more files" is a decision the user can make without clicking. */}
-          <span className="truncate">
+          {/* `tabular-nums`: the count climbs while a run streams outputs in,
+              and proportional digits shift the whole label sideways each time
+              it crosses a width boundary (9 → 10 → 100). */}
+          <span className="truncate tabular-nums">
             {hidden} more {hidden === 1 ? 'file' : 'files'}
           </span>
         </button>
@@ -295,12 +366,19 @@ export function OutputsCard({
   );
 }
 
-/** Soft placeholder art — a stacked-document glyph, matching the reference. */
+/**
+ * Soft placeholder art — a stacked-document glyph, matching the reference.
+ *
+ * Full-alpha `border-border` and `bg-muted/50` for the same reason
+ * `ContextArt` (context-card.tsx) carries them: on dark, `--border` at 60%
+ * and `--muted` at 30% both resolve to within ~0.03 L of `--card`, which left
+ * the frame invisible in exactly the state whose whole job is to be seen.
+ */
 function OutputsArt() {
   return (
     <div
       aria-hidden
-      className="border-border/60 bg-muted/30 flex h-16 w-20 items-end justify-center gap-1 rounded-md border p-3"
+      className="border-border bg-muted/50 flex h-16 w-20 items-end justify-center gap-1 rounded-md border p-3"
     >
       <span className="bg-muted-foreground/30 h-4 w-1.5 rounded-sm" />
       <span className="bg-muted-foreground/30 h-7 w-1.5 rounded-sm" />

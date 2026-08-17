@@ -1,5 +1,6 @@
 'use client';
 
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
 import {
   BasicTool,
@@ -88,6 +89,11 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     return args;
   }, [parsed]);
 
+  // Local state driving a CONTROLLED `Disclosure` — the same shape web-fetch's
+  // "View raw HTML" fold uses. Both of these were hand-rolled `<button>` +
+  // `{show && …}` pairs: no `aria-expanded`, no height animation, and two
+  // near-identical copies of the chevron ternary. The standard primitive owns
+  // the role, the keyboard handling and the reveal; the row keeps its chrome.
   const [showConv, setShowConv] = React.useState(false);
   const [showTodos, setShowTodos] = React.useState(true);
 
@@ -135,23 +141,25 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
           </div>
 
           {parsed.todos.length > 0 && (
-            <div>
-              <button
-                onClick={() => setShowTodos(!showTodos)}
-                className="hover:bg-muted/20 flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors"
-              >
-                {showTodos ? (
-                  <ChevronDown className="text-muted-foreground/40 size-2.5" />
-                ) : (
-                  <ChevronRight className="text-muted-foreground/40 size-2.5" />
-                )}
-                <ListTodo className="text-muted-foreground/60 size-3" />
-                <span className="text-xs font-medium">Todos</span>
-                <span className="text-muted-foreground/50 ml-auto text-xs">
-                  {parsed.todos.length}
-                </span>
-              </button>
-              {showTodos && (
+            <Disclosure open={showTodos} onOpenChange={setShowTodos}>
+              <DisclosureTrigger>
+                <button
+                  type="button"
+                  className="hover:bg-muted/20 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors"
+                >
+                  {showTodos ? (
+                    <ChevronDown className="text-muted-foreground/40 size-2.5" />
+                  ) : (
+                    <ChevronRight className="text-muted-foreground/40 size-2.5" />
+                  )}
+                  <ListTodo className="text-muted-foreground/60 size-3" />
+                  <span className="text-xs font-medium">Todos</span>
+                  <span className="text-muted-foreground/50 ml-auto text-xs">
+                    {parsed.todos.length}
+                  </span>
+                </button>
+              </DisclosureTrigger>
+              <DisclosureContent>
                 <div className="space-y-1 px-3 pb-2">
                   {parsed.todos.map((todo) => {
                     const isComplete = todo.status === 'completed';
@@ -182,35 +190,41 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     );
                   })}
                 </div>
-              )}
-            </div>
+              </DisclosureContent>
+            </Disclosure>
           )}
 
+          {/* Closed. A session's whole transcript is the heaviest thing this
+              view can render, and it is not what the reader came for — the
+              header line already says how many messages and tool calls there
+              were. */}
           {parsed.hasConversation && parsed.conversation && (
-            <div>
-              <button
-                onClick={() => setShowConv(!showConv)}
-                className="hover:bg-muted/20 flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors"
-              >
-                {showConv ? (
-                  <ChevronDown className="text-muted-foreground/40 size-2.5" />
-                ) : (
-                  <ChevronRight className="text-muted-foreground/40 size-2.5" />
-                )}
-                <MessageCircle className="text-muted-foreground/60 size-3" />
-                <span className="text-xs font-medium">Conversation</span>
-                <span className="text-muted-foreground/50 ml-auto text-xs">
-                  {parsed.msgCount}{' '}
-                  {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}
-                  {parsed.toolCount} tools
-                </span>
-              </button>
-              {showConv && (
+            <Disclosure open={showConv} onOpenChange={setShowConv}>
+              <DisclosureTrigger>
+                <button
+                  type="button"
+                  className="hover:bg-muted/20 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors"
+                >
+                  {showConv ? (
+                    <ChevronDown className="text-muted-foreground/40 size-2.5" />
+                  ) : (
+                    <ChevronRight className="text-muted-foreground/40 size-2.5" />
+                  )}
+                  <MessageCircle className="text-muted-foreground/60 size-3" />
+                  <span className="text-xs font-medium">Conversation</span>
+                  <span className="text-muted-foreground/50 ml-auto text-xs">
+                    {parsed.msgCount}{' '}
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}
+                    {parsed.toolCount} tools
+                  </span>
+                </button>
+              </DisclosureTrigger>
+              <DisclosureContent>
                 <div className="px-3 py-2">
                   <OutputBlock text={parsed.conversation} markdown />
                 </div>
-              )}
-            </div>
+              </DisclosureContent>
+            </Disclosure>
           )}
 
           {parsed.compression && (

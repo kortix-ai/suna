@@ -10,6 +10,8 @@ const baseRange = { preset: '30d' as const, from: 'F', to: 'T' };
 const summaryWithChartableSeries = {
   totals: {
     llm_cost: 12.4,
+    llm_kortix_cost: 0,
+    llm_provider_cost: 12.4,
     compute_cost: 34.02,
     total_cost: 46.42,
     request_count: 100,

@@ -970,6 +970,74 @@ SDK packed-install smoke: passed
 
 ---
 
+### 2026-08-17 — session `gateway-spend` — spend types carry the Kortix / provider split
+
+**Done.** Every LLM spend rollup in the platform summed `final_cost` alone, which
+answers "what did Kortix bill you" — 0 for every BYOK request, because a BYOK
+route resolves to `billingMode: 'none'` with `markup: 0`. A self-hosted gateway
+therefore reported `$0.0000` beside 927M real tokens. The API now reports total
+spend (`final_cost + upstream_cost`, the upstream side excluded on Kortix-managed
+rows where it is Kortix's own COGS), so the SDK's cost types gained the matching
+split fields.
+
+Additive only — no exported name, signature, or existing field was renamed or
+removed:
+
+- `GatewayLogRow`: `+kortix_cost`, `+provider_cost`, `+total_cost`.
+  `upstream_cost` and `final_cost` stay, now `@deprecated` aliases of
+  `provider_cost` / `kortix_cost`. `upstream_cost`'s VALUE changes on
+  `billing_mode: 'credits'` rows only: the API now sends 0 instead of Kortix's
+  wholesale price, which was publishing the Kortix margin on every managed
+  request. No consumer can legitimately want that number.
+- `GatewayOverview`, `GatewaySeriesPoint`, `GatewayModelStat`: `+kortix_cost`,
+  `+provider_cost`. Their existing `total_cost` / `cost` fields now carry the
+  corrected total instead of the Kortix-billed slice.
+- `CostSummaryTotals`, `ProjectCostRow`, `SessionCostSummary`:
+  `+llm_kortix_cost`, `+llm_provider_cost`. `llm_cost` now carries the total.
+
+RED first. These are type-level assertions, so RED shows up under `tsc`, not
+`bun test`:
+
+```
+$ bun tsc --noEmit
+src/core/rest/projects-client/gateway.test.ts(61,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(62,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(63,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(64,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(71,9): error TS2322: Type 'true' is not assignable to type 'false'.
+error: "tsc" exited with code 2
+```
+
+GREEN — all three gates:
+
+```
+$ pnpm run typecheck
+> tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+(clean, no output)
+
+$ pnpm test
+ 1943 pass
+ 2 skip
+ 0 fail
+ 7377 expect() calls
+Ran 1945 tests across 145 files. [22.47s]
+
+$ pnpm run smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed
+```
+
+Public-surface snapshots unchanged — this adds interface FIELDS, not exports.
+The `version` field was not touched.
+
+**Shippable to production: YES.** Verified against a live local API on real
+data (a project with 95 BYOK + 63 managed requests): `/gateway/overview`
+returns `total_cost 6.9148 = kortix_cost 2.1144 + provider_cost 4.8005`, where
+it previously returned `2.1144`. A `credits` log row now returns
+`provider_cost: 0` and no longer ships its `0.2174` wholesale cost.
+
+---
+
 ### 2026-08-13 — session `warm-index` — warm-session decline must not toast
 
 **Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its
@@ -10213,3 +10281,59 @@ bb7b36a41d), SDK-side residuals:
 - RED-proven: session-title-sync gate (1 failing test before the gate),
   stash TTL (import failure then behavioral), both suites green after
   (6 pass / 21 pass).
+
+### 2026-08-17 — bounded prompt-observation + un-parked status poll (branch `stuck-busy-latch`)
+
+Fixes the "session stuck working forever" class (turn finished but the UI shows
+"Gathering thoughts…"/"Sharing the result…"/stop-button until a hard refresh;
+queue drain gate held closed by the phantom busy).
+
+**Changed** — `core/session-sync/session-sync-controller.ts`, TDD (4 RED tests
+first):
+
+1. `PROMPT_OBSERVATION_STALL_MS = 10_000` (new export): the REST-prompt busy
+   override now expires unless renewed by proof the turn is alive
+   (`noteActivity` on any SSE frame for the session, `observePromptStatus`
+   busy/retry, `observePromptActivity`). Before, `awaiting-work` ignored idle
+   *forever* — a prompt the runtime accepted but never turned into a turn, or a
+   lost `session.idle` frame, pinned the UI busy until reload. Expiry only
+   stops the override; a genuinely-busy runtime still reports busy.
+2. `checkLiveness` no longer awaits the transcript tail unboundedly. A parked
+   sandbox-proxy read (wedged opencode: never answers, never errors) used to
+   block `reconcileStatus` on EVERY subsequent poll — `reconcile('poll')`
+   returns the same in-flight `tailRequest`, so one parked read disabled status
+   reconciliation permanently. That is the "only a hard refresh fixes it"
+   signature. The tail race is bounded at `livenessIntervalMs`; the status poll
+   always runs.
+
+**Evidence** — `pnpm --filter @kortix/sdk test`: 1944 pass, 0 fail, 145 files
+(baseline this session on clean main: 1940 pass / 1942). `typecheck` clean.
+`smoke:install`: `✔ install smoke test passed`. Ground truth from a live
+worktree-stack probe (project af8b0482, session 289bdc5b, Platinum): mid-turn
+stop → resume left `/session/status` = `busy` and blocking
+`POST /session/:id/message` 504s after the ALB budget — the runtime can claim
+busy for a dead turn, so the client MUST reconcile on a bounded clock.
+
+Additive only: one new exported const, no renames, no snapshot removals.
+
+### 2026-08-17 (same session, follow-up) — live SSE evidence vetoes health-probe failures
+
+Third defect in the same stuck-session cluster, seen live on Essentia: during a
+heavy turn (PDF/asset generation) the `/kortix/health` probe times out, two
+consecutive misses flip the connection store to `unreachable`, which tears down
+the SSE stream (`use-opencode-events` gates on `status === 'connected'`) and
+routes every send to the wake queue ("Waking this session up…") — against a
+runtime that is provably up, mid-turn, and serving the Files panel.
+
+**Changed** — `browser/stores/sandbox-connection-store.ts` gains
+`lastRuntimeEvidenceAt` + `noteRuntimeEvidence()` (called on every delivered SSE
+frame, 1s write granularity); `react/use-runtime-reconnect.ts` gains
+`RUNTIME_EVIDENCE_FRESH_MS = 15_000` + pure `shouldIgnoreProbeFailure()`, and
+the probe failure path discards a failure while evidence is fresh. If the
+stream really is dead, evidence goes stale in 15s and failures count again.
+
+**Evidence** — TDD RED first (4 new tests; suite failed on missing export).
+`pnpm --filter @kortix/sdk test`: 1950 pass, 0 fail, 145 files. `typecheck`
+clean. `smoke:install` passed. Surface snapshots re-recorded — additive only
+(`RUNTIME_EVIDENCE_FRESH_MS`, `shouldIgnoreProbeFailure`,
+`noteRuntimeEvidence`).

@@ -12,7 +12,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
-export function DCPPruneTool({ part }: ToolProps) {
+export function DCPPruneTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const isRunning = useContext(ToolRunningContext);
@@ -35,6 +35,8 @@ export function DCPPruneTool({ part }: ToolProps) {
           {isRunning && <Loading className="text-muted-foreground ml-auto size-3" />}
         </div>
       }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
     >
       {output ? <ToolOutputFallback output={output} toolName="prune" /> : null}
     </BasicTool>

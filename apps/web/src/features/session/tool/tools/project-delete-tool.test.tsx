@@ -56,7 +56,12 @@ describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
     expect(html).not.toContain('text-muted-foreground/40 flex items-center gap-2 px-2.5 py-1 text-xs');
   });
 
-  test('panel surface: standard sticky header, message preserved', () => {
+  // Task 16 REWRITE: the panel surface is a disclosure row, not a sticky page
+  // header. This tool renders a BODYLESS `BasicTool` — everything it has to say
+  // is the trigger — so its row is deliberately NOT a control: no chevron, no
+  // `role="button"`, nothing to open. That is the contract for every childless
+  // call on the panel.
+  test('panel surface: a bodyless call is a plain row, message preserved', () => {
     const html = renderToStaticMarkup(
       withProviders(
         <ToolSurfaceContext.Provider value="panel">
@@ -65,9 +70,15 @@ describe('ProjectDeleteTool joins the shared BasicTool shell', () => {
       ),
     );
 
-    expect(html).toContain('sticky');
+    expect(html).not.toContain('sticky');
+    expect(html).toContain('bg-popover border-border overflow-hidden rounded-md border');
     expect(html).toContain('text-sm font-medium');
     expect(html).toContain('Workspace');
     expect(html).toContain('Workspace delete disabled');
+
+    // Nothing to disclose → not a control.
+    expect(html).not.toContain('aria-expanded');
+    expect(html).not.toContain('role="button"');
+    expect(html).not.toContain('cursor-pointer');
   });
 });

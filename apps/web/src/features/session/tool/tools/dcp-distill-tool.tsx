@@ -12,7 +12,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
-export function DCPDistillTool({ part }: ToolProps) {
+export function DCPDistillTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const isRunning = useContext(ToolRunningContext);
@@ -33,6 +33,8 @@ export function DCPDistillTool({ part }: ToolProps) {
           {isRunning && <Loading className="text-muted-foreground ml-auto size-3" />}
         </div>
       }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
     >
       {output ? <ToolOutputFallback output={output} toolName="distill" /> : null}
     </BasicTool>

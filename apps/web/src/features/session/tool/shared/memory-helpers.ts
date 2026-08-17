@@ -29,9 +29,16 @@ export function parseMemoryView(
   const body = nl === -1 ? '' : output.slice(nl + 1);
 
   if (/content of .* with line numbers/i.test(header)) {
+    // `(\t|$)`, not `\t`. A file that ends with a newline — nearly every one —
+    // makes `memory view` emit a final entry with an EMPTY body: `28\t`. The
+    // output then passes through `partOutput`, which trims it, and the trim
+    // takes that trailing tab with it. The line reaching here is the bare
+    // `28`, which a tab-anchored strip cannot match, so the file's last line
+    // number survived into the markdown and rendered as prose at the bottom of
+    // every memory document.
     const content = body
       .split('\n')
-      .map((line) => line.replace(/^\s*\d+\t/, ''))
+      .map((line) => line.replace(/^\s*\d+(\t|$)/, ''))
       .join('\n');
     return { type: 'file', content };
   }

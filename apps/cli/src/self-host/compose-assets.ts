@@ -447,7 +447,12 @@ interface MemSpec {
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
   'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-640m}', reservation: '256m' },
-  'llm-gateway': { limit: '512m', reservation: '128m' },
+  // Headroom for large multimodal requests: the gateway buffers the raw request
+  // body (image-heavy agent turns run tens of MiB — see DEFAULT_MAX_REQUEST_BYTES),
+  // so 512m was far too tight once the body ceiling was raised. Give it a generous
+  // 2 GiB default so a big image-heavy turn never OOM-kills the gateway; small
+  // boxes can dial it back via KORTIX_GATEWAY_MEMORY_LIMIT.
+  'llm-gateway': { limit: '${KORTIX_GATEWAY_MEMORY_LIMIT:-2048m}', reservation: '256m' },
   frontend: { limit: '512m', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },

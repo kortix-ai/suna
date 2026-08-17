@@ -17,6 +17,66 @@ export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
+/**
+ * Env-var names the runtime owns, which a manifest may therefore not set.
+ *
+ * WHY THIS LIVES IN THE MANIFEST SCHEMA
+ *
+ * The API refuses these when it builds a deployment's environment
+ * (`resolveAppRuntimeEnvironment` → `assertDestination`). For a long time the
+ * manifest validator did not, so `kortix validate` passed on a manifest that
+ * could never deploy, and the author found out from a failed deploy instead of
+ * from the tool whose entire job is to tell them first.
+ *
+ * That is not a hypothetical: a `kortix.yaml` setting `KORTIX_API_KEY`
+ * validated clean and failed at deploy, and the App that eventually shipped
+ * without those variables did not error at all — the feature depending on them
+ * simply rendered nothing.
+ *
+ * So the rule lives here, in the contract package both sides already depend
+ * on, and `apps/api` imports it rather than restating it.
+ */
+export const RESERVED_ENV_NAME_PREFIXES = ['KORTIX_', 'OPENCODE_'] as const;
+
+/** Process-level names the sandbox sets itself; overriding them breaks boot. */
+export const RESERVED_ENV_NAMES: ReadonlySet<string> = new Set([
+  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
+  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+]);
+
+/**
+ * Secrets the platform holds but must never hand to a runtime, because an
+ * agent reachable by prompt injection would then be holding them too.
+ */
+export const NEVER_DELIVERED_ENV_NAMES: ReadonlySet<string> = new Set([
+  'SLACK_SIGNING_SECRET',
+  'SLACK_BOT_TOKEN',
+]);
+
+/** Is this name one the runtime owns? Used by both `validate` and deploy. */
+export function isReservedEnvName(name: string): boolean {
+  return (
+    RESERVED_ENV_NAMES.has(name) ||
+    NEVER_DELIVERED_ENV_NAMES.has(name) ||
+    RESERVED_ENV_NAME_PREFIXES.some((prefix) => name.startsWith(prefix))
+  );
+}
+
+/** Why a name is refused, phrased for the person who wrote the manifest. */
+export function reservedEnvNameReason(name: string): string | null {
+  const prefix = RESERVED_ENV_NAME_PREFIXES.find((candidate) => name.startsWith(candidate));
+  if (prefix) {
+    return `is reserved: the \`${prefix}\` prefix belongs to the platform. Rename it (for example \`MYAPP_${name.slice(prefix.length)}\`) and read it under the new name.`;
+  }
+  if (NEVER_DELIVERED_ENV_NAMES.has(name)) {
+    return 'is reserved: the platform never delivers this secret to a runtime.';
+  }
+  if (RESERVED_ENV_NAMES.has(name)) {
+    return 'is reserved: the runtime sets this itself, and overriding it breaks the sandbox.';
+  }
+  return null;
+}
+
 export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
 
 /**

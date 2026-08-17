@@ -28,6 +28,8 @@ describe('formatPeriodDelta', () => {
 const baseSummary = {
   totals: {
     llm_cost: 12.4,
+    llm_kortix_cost: 0,
+    llm_provider_cost: 12.4,
     compute_cost: 34.02,
     total_cost: 46.42,
     request_count: 100,

@@ -12,14 +12,14 @@ import { AgentSpawnTool } from '@/features/session/tool/tools/agent-spawn-tool';
 import { AgentStopTool } from '@/features/session/tool/tools/agent-stop-tool';
 import { TaskDoneTool } from '@/features/session/tool/tools/task-done-tool';
 
-export function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
+export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const action = (input.action as string) || '';
   switch (action) {
     case 'start':
-      return <AgentSpawnTool part={part} forceOpen={forceOpen} />;
+      return <AgentSpawnTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
     case 'message':
-      return <AgentMessageTool part={part} forceOpen={forceOpen} />;
+      return <AgentMessageTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
     case 'cancel':
       return <AgentStopTool part={part} forceOpen={forceOpen} />;
     case 'approve': {
@@ -37,7 +37,7 @@ export function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
       );
     }
     default:
-      return <AgentMessageTool part={part} forceOpen={forceOpen} />;
+      return <AgentMessageTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
   }
 }
 ToolRegistry.register('agent_task_update', AgentTaskUpdateTool);

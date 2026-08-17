@@ -30,9 +30,17 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useRuntimePendingStore } from '@kortix/sdk/react';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
-import { ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
+import {
+  CaretDownIcon,
+  ShieldCheckIcon as ShieldCheck,
+  ShieldWarningIcon as ShieldAlert,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+/** Full-text review is only worth an extra click for a detail that won't fit
+ * on one line — short commands stay flat, no chevron. */
+const EXPANDABLE_DETAIL_LENGTH = 64;
 
 interface SessionPermissionPromptProps {
   /** The OPENCODE session id (what `PermissionRequest.sessionID` carries). */
@@ -74,6 +82,16 @@ export function SessionPermissionPrompt({
   // Which button is loading: `${requestId}:once|always|reject`, 'session-all',
   // or `config:${type}` / 'config:*'.
   const [busy, setBusy] = useState<string | null>(null);
+  // Request ids currently showing their full (untruncated) detail text.
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback((requestId: string) => {
+    setExpandedRows((current) => {
+      const next = new Set(current);
+      if (next.has(requestId)) next.delete(requestId);
+      else next.add(requestId);
+      return next;
+    });
+  }, []);
 
   const reply = useCallback(
     async (requestId: string, kind: 'once' | 'always' | 'reject') => {
@@ -181,9 +199,9 @@ export function SessionPermissionPrompt({
 
   if (autoApprove) {
     return (
-      <div className="border-border/60 bg-muted/40 mb-2 flex items-center gap-2 rounded-xl border px-3 py-1.5">
-        <ShieldCheck className="text-muted-foreground size-3.5" />
-        <span className="text-muted-foreground flex-1 text-[11px]">
+      <div className="border-border bg-popover mb-2 flex items-center gap-2 rounded-md border px-3 py-2">
+        <ShieldCheck className="text-kortix-green size-4" />
+        <span className="text-muted-foreground flex-1 text-xs">
           Auto-allowing all permission requests for this session
         </span>
         <Button size="xs" variant="ghost" onClick={() => void turnOffAutoApprove()}>
@@ -196,39 +214,60 @@ export function SessionPermissionPrompt({
   if (permissions.length === 0) return null;
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-b border-amber-500/20 px-3 py-1.5">
-        <ShieldCheck className="size-3.5 text-amber-600 dark:text-amber-400" />
-        <span className="text-foreground text-xs font-semibold tracking-tight">
+    <div className="bg-popover border-kortix-orange/25 mb-2 overflow-hidden rounded-md border">
+      <div className="border-kortix-orange/20 flex items-center gap-2 border-b px-3 py-2">
+        <ShieldAlert className="text-kortix-orange size-4" />
+        <span className="text-foreground text-xs font-medium">
           {permissions.length === 1
             ? 'The agent needs your permission'
             : `${permissions.length} actions need your permission`}
         </span>
-        <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
+        <span className="text-muted-foreground text-xs">— it's paused until you decide</span>
       </div>
-      <ul className="divide-y divide-amber-500/15">
+      <ul className="divide-border divide-y">
         {permissions.map((p) => {
           const detail = permissionDetail(p);
+          const expandable = !!detail && detail.length > EXPANDABLE_DETAIL_LENGTH;
+          const expanded = expandedRows.has(p.id);
           return (
-            <li key={p.id} className="flex items-center gap-2 px-3 py-2">
+            <li key={p.id} className="flex items-start gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-foreground text-xs font-medium">{permissionLabel(p)}</span>
                 </div>
                 {detail ? (
-                  <code
-                    title={detail}
-                    className="text-muted-foreground mt-0.5 block truncate font-mono text-[11px]"
+                  <button
+                    type="button"
+                    onClick={expandable ? () => toggleExpanded(p.id) : undefined}
+                    className={cn(
+                      'mt-0.5 flex w-full items-start gap-1 text-left',
+                      expandable ? 'cursor-pointer' : 'cursor-default',
+                    )}
                   >
-                    {detail}
-                  </code>
+                    <code
+                      title={expandable ? undefined : detail}
+                      className={cn(
+                        'text-muted-foreground font-mono text-xs',
+                        expanded ? 'wrap-break-word whitespace-pre-wrap' : 'truncate',
+                      )}
+                    >
+                      {detail}
+                    </code>
+                    {expandable ? (
+                      <CaretDownIcon
+                        className={cn(
+                          'text-muted-foreground mt-0.5 size-3 shrink-0 transition-transform duration-150',
+                          expanded && 'rotate-180',
+                        )}
+                      />
+                    ) : null}
+                  </button>
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Button
                   size="xs"
-                  variant="muted"
-                  className={cn('hover:bg-destructive/10 hover:text-destructive')}
+                  variant="outline"
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'reject')}
                 >
@@ -237,7 +276,7 @@ export function SessionPermissionPrompt({
                 </Button>
                 <Button
                   size="xs"
-                  variant="outline"
+                  variant="muted"
                   title="Allow this action for the rest of this session — the agent won't ask again for it"
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
@@ -259,11 +298,12 @@ export function SessionPermissionPrompt({
           );
         })}
       </ul>
-      <div className="flex items-center gap-2 border-t border-amber-500/15 px-3 py-1.5">
-        <span className="text-muted-foreground text-[11px]">This session:</span>
+      <div className="border-border flex items-center gap-2 border-t px-3 py-2">
+        <span className="text-muted-foreground text-xs">This session:</span>
         <Button
           size="xs"
           variant="ghost"
+          className="text-muted-foreground hover:text-foreground"
           title="Allow every permission request for the rest of this session"
           disabled={!!busy}
           onClick={() => void allowAllForSession()}
@@ -275,8 +315,8 @@ export function SessionPermissionPrompt({
       {canWriteConfig.allowed ? (
         // Deliberately set apart from the one-off buttons above: these WRITE the
         // project's permission config — every future session stops asking.
-        <div className="bg-muted/40 border-border/40 flex flex-wrap items-center gap-2 border-t px-3 py-1.5">
-          <span className="text-muted-foreground text-[11px]">
+        <div className="bg-muted/40 border-border flex flex-wrap items-center gap-2 border-t px-3 py-2">
+          <span className="text-muted-foreground text-xs">
             Project config <span className="opacity-70">(applies to future sessions)</span>:
           </span>
           {uniqueTypes.map((type) => (

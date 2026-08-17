@@ -94,7 +94,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       locked={locked}
     >
       {mode === 'tools' && toolEntries.length > 0 ? (
-        <div data-scrollable className="max-h-72 overflow-auto">
+        <div data-scrollable className="max-h-96 overflow-auto">
           {toolEntries.map((entry) => (
             <div
               key={entry.at}

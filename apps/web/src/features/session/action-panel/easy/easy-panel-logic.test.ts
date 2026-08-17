@@ -9,6 +9,7 @@ import {
   aspectChangedWidth,
   deriveIsRunning,
   fitSplitPercent,
+  groupOutputsByKind,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
@@ -746,5 +747,114 @@ describe('focusIndexForCall (which command inside a group to open)', () => {
     expect(focusIndexForCall(parts, null)).toBe(-1);
     expect(focusIndexForCall(parts, undefined)).toBe(-1);
     expect(focusIndexForCall([], 'c1')).toBe(-1);
+  });
+});
+
+describe('groupOutputsByKind (Task 9 — kind grouping for large mixed runs)', () => {
+  /** A minimal, valid `OutputItem` of the given kind — `app` needs a `url`,
+   *  everything else is fine with just a name. */
+  function item(kind: OutputItem['kind'], name: string, callID = name): OutputItem {
+    if (kind === 'app') return { callID, name, kind, url: 'http://localhost:3000' };
+    return { callID, name, kind } as OutputItem;
+  }
+
+  function files(n: number, prefix = 'f'): OutputItem[] {
+    return Array.from({ length: n }, (_, i) => item('file', `${prefix}${i}.md`, `${prefix}${i}`));
+  }
+
+  // ─── the threshold — exactly 10 stays flat, 11 does not. ──
+
+  it('does not group at exactly the threshold (10 mixed outputs)', () => {
+    const outputs = [...files(5), ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`))];
+    expect(outputs).toHaveLength(10);
+    expect(groupOutputsByKind(outputs)).toBeNull();
+  });
+
+  it('groups the moment the list crosses the threshold (11 mixed outputs)', () => {
+    const outputs = [...files(6), ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`))];
+    expect(outputs).toHaveLength(11);
+    const groups = groupOutputsByKind(outputs);
+    expect(groups?.map((g) => g.kind)).toEqual(['file', 'image']);
+  });
+
+  it('does not group a short list, however mixed', () => {
+    const outputs = [item('file', 'a.md'), item('image', 'b.png'), item('video', 'c.mp4')];
+    expect(groupOutputsByKind(outputs)).toBeNull();
+  });
+
+  // ─── single-kind runs never group, no matter how long. ──
+
+  it('never groups a single-kind run past the threshold', () => {
+    expect(groupOutputsByKind(files(20))).toBeNull();
+  });
+
+  // ─── label mapping — every kind gets its plain-language header. ──
+
+  it('maps every kind to its plain-language label', () => {
+    const outputs = [
+      item('app', 'App'),
+      item('presentation', 'Deck'),
+      item('image', 'Pic'),
+      item('video', 'Clip'),
+      ...files(7),
+    ];
+    const groups = groupOutputsByKind(outputs);
+    expect(groups?.find((g) => g.kind === 'app')?.label).toBe('Apps');
+    expect(groups?.find((g) => g.kind === 'presentation')?.label).toBe('Presentations');
+    expect(groups?.find((g) => g.kind === 'image')?.label).toBe('Images');
+    expect(groups?.find((g) => g.kind === 'video')?.label).toBe('Videos');
+    expect(groups?.find((g) => g.kind === 'file')?.label).toBe('Documents');
+  });
+
+  // ─── group order follows first appearance in the input, not a fixed table. ──
+
+  it('orders groups by first appearance in the input, not a fixed priority table', () => {
+    const outputs = [
+      item('video', 'v1'),
+      item('file', 'f1'),
+      item('file', 'f2'),
+      item('image', 'i1'),
+      item('file', 'f3'),
+      item('image', 'i2'),
+      item('video', 'v2'),
+      item('file', 'f4'),
+      item('file', 'f5'),
+      item('file', 'f6'),
+      item('file', 'f7'),
+    ];
+    const groups = groupOutputsByKind(outputs);
+    // video appears first (index 0), then file (index 1), then image (index 3)
+    // — the reverse of `outputRank`'s file-before-media priority, proving this
+    // reads appearance order and does not re-derive `sortOutputs`'s ranking.
+    expect(groups?.map((g) => g.kind)).toEqual(['video', 'file', 'image']);
+  });
+
+  // ─── item order within a group is untouched input order. ──
+
+  it('preserves input order within each group', () => {
+    const outputs = [
+      item('file', 'f1'),
+      item('image', 'i1'),
+      item('file', 'f2'),
+      item('file', 'f3'),
+      item('image', 'i2'),
+      ...files(6, 'g'),
+    ];
+    const groups = groupOutputsByKind(outputs);
+    expect(groups?.find((g) => g.kind === 'file')?.items.map((o) => o.name)).toEqual([
+      'f1',
+      'f2',
+      'f3',
+      'g0.md',
+      'g1.md',
+      'g2.md',
+      'g3.md',
+      'g4.md',
+      'g5.md',
+    ]);
+    expect(groups?.find((g) => g.kind === 'image')?.items.map((o) => o.name)).toEqual([
+      'i1',
+      'i2',
+    ]);
   });
 });

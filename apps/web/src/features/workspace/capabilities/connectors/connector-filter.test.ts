@@ -53,9 +53,19 @@ describe('the landing tab is Discovery, unconditionally', () => {
   // connector, and the ones they have are one click away. It also made the
   // landing tab depend on a query, so the page could settle onto a different
   // tab than it first rendered.
+  //
+  // `catalogueAvailable` is not a return of that: it is not derived from the
+  // project's connectors but from the DEPLOYMENT, and it does not pick between
+  // tabs — it decides whether Discovery and All exist at all. On a self-host
+  // with no Pipedream credentials the catalogue they show answers `501`, so
+  // both are removed and Connected is the only tab left to land on. See
+  // `connectors-page.pipedream-unconfigured.test.ts`.
   test('the default scope is a constant, not derived from the project', () => {
-    expect(page).toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
+    expect(page).toContain(
+      "const scope: ConnectorScope = catalogueAvailable ? (scopeChoice ?? 'discover') : 'connected';",
+    );
     expect(page).not.toContain('defaultConnectorScope');
+    expect(page).not.toContain('connectors.length ?');
   });
 
   test('the helper is gone rather than left unused', () => {

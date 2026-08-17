@@ -169,6 +169,13 @@ export interface SessionChatInputProps {
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
   } | null;
+  /**
+   * A fresh (never-before-seen) value asks the composer to open its attach
+   * (file-picker) flow — the empty Context card's "Add context" button.
+   * Id-keyed exactly like `prefill.id`: a repeat request bumps to a new id
+   * so the effect below fires again even if the composer never unmounted.
+   */
+  attachRequestId?: number | null;
 
   providers?: ProviderListResponse;
   threadContext?: {
@@ -356,6 +363,7 @@ function ComposerImpl({
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
+  attachRequestId = null,
   providers,
   threadContext,
   onContextClick,
@@ -435,6 +443,15 @@ function ComposerImpl({
   const handleAttachClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  // "Add context" (Task 5): a fresh `attachRequestId` opens the same file
+  // picker `handleAttachClick` opens for a manual click or the `/attach-file`
+  // command — see `session-composer-prefill-store.ts` for the held/id-keyed
+  // handoff this consumes.
+  useEffect(() => {
+    if (attachRequestId == null) return;
+    handleAttachClick();
+  }, [attachRequestId, handleAttachClick]);
 
   const dragHasFiles = useCallback((e: React.DragEvent<HTMLElement>) => {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files');

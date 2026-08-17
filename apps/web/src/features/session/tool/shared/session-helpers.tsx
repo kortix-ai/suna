@@ -227,7 +227,11 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
         <div
           key={msg.index}
           className={cn(
-            'overflow-hidden rounded-2xl border',
+            // `rounded-md`, not `rounded-2xl`: this card nests inside the bash
+            // tool's own `rounded-md` command card, and a 16px radius inside an
+            // 8px one reads as a pill dropped into a panel. The conformance
+            // sweep only scans `tool/tools/`, so this file never caught it.
+            'overflow-hidden rounded-md border',
             msg.role === 'user' ? 'border-border/60' : 'border-border/40',
           )}
         >

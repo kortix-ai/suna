@@ -141,16 +141,22 @@ test.describe('21 — Trigger-created session access UI', () => {
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
-      const ownSidebarRow = page.locator(`a[href$="/sessions/${ownSessionId}"]`);
-      const sharedSidebarRow = page.locator(`a[href$="/sessions/${sharedTriggerSessionId}"]`);
-      await expect(ownSidebarRow).toBeVisible();
+      const ownSidebarLink = page.locator(`a[href$="/sessions/${ownSessionId}"]`);
+      const sharedSidebarLink = page.locator(`a[href$="/sessions/${sharedTriggerSessionId}"]`);
+      const ownSidebarRow = ownSidebarLink.locator('..');
+      const sharedSidebarRow = sharedSidebarLink.locator('..');
+      await expect(ownSidebarLink).toBeVisible();
       await expect(ownSidebarRow.locator('[data-session-shared="true"]')).toHaveCount(0);
-      await expect(sharedSidebarRow).toBeVisible();
-      await expect(sharedSidebarRow.getByText('Shared', { exact: true })).toBeVisible();
+      await expect(sharedSidebarLink).toBeVisible();
       await expect(sharedSidebarRow.locator('[data-session-shared="true"]')).toHaveAttribute(
         'aria-label',
         /^Shared by /,
       );
+      await expect(sharedSidebarRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      await expect(sharedSidebarRow.getByText('Shared', { exact: true })).toHaveCount(0);
+      const sidebarIndicators = sharedSidebarRow.locator('[data-session-indicators="true"]');
+      await expect(sidebarIndicators.locator('[data-session-shared="true"]')).toHaveCount(1);
+      await expect(sidebarIndicators.locator('[data-session-source="true"]')).toHaveCount(1);
 
       await page.goto(`/projects/${projectId}/sessions`, {
         waitUntil: 'domcontentloaded',
@@ -160,7 +166,8 @@ test.describe('21 — Trigger-created session access UI', () => {
       await expect(ownInventoryRow).toBeVisible();
       await expect(ownInventoryRow.locator('[data-session-shared="true"]')).toHaveCount(0);
       await expect(sharedInventoryRow).toBeVisible();
-      await expect(sharedInventoryRow.getByText('Shared', { exact: true })).toBeVisible();
+      await expect(sharedInventoryRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      await expect(sharedInventoryRow.getByText('Shared', { exact: true })).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Search', exact: true }).click();
       const palette = page.getByRole('dialog');
@@ -168,7 +175,8 @@ test.describe('21 — Trigger-created session access UI', () => {
       const sharedPaletteRow = palette.locator('[cmdk-item]', {
         hasText: 'Shared scheduled session',
       });
-      await expect(sharedPaletteRow.getByText('Shared', { exact: true })).toBeVisible();
+      await expect(sharedPaletteRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      await expect(sharedPaletteRow.getByText('Shared', { exact: true })).toHaveCount(0);
       await page.keyboard.press('Escape');
 
       const { section } = await openTriggerAccess(page, projectId);

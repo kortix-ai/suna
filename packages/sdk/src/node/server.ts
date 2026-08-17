@@ -58,7 +58,20 @@ export async function forwardKortixRequest(options: {
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
   const body = hasBody ? await request.arrayBuffer() : undefined;
-  if (body) headers.set('content-length', String(body.byteLength));
+  /*
+   * `content-length` is NOT set back on.
+   *
+   * undici derives it from the body, and setting it explicitly made every
+   * bodied request through a wrapper proxy fail with
+   * `InvalidArgumentError: invalid content-length header` (UND_ERR_INVALID_ARG)
+   * — the throw is swallowed below and returned as a bare
+   * `502 Upstream request failed`, with the real cause nowhere in the response.
+   *
+   * That is not a corner: it is every POST, PUT and PATCH a wrapper forwards.
+   * A chat panel could list sessions and read config over GET and then failed
+   * the moment it tried to CREATE a session, which reads as "the agent is
+   * broken" rather than "the proxy cannot send a body".
+   */
 
   let upstreamResponse: Response;
   try {
