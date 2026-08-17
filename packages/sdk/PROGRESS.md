@@ -10428,3 +10428,13 @@ holes + 2 hygiene issues. All fixed, TDD RED first (3 new tests):
 **Evidence** — SDK: 2122 pass, 0 fail, 148 files; typecheck clean;
 smoke:install passed. Web tsc clean apart from the known baseline; eslint
 clean on the drain hook.
+
+### 2026-08-18 — session `fix-mcp-catalog-auth` claim
+
+Claimed the additive `token_params` field on `OAuth2ClientCredentials`. This
+field lets connector authors send provider-required client-credentials form
+parameters such as Sage Intacct `username`. Existing OAuth2 fields and static
+credentials remain compatible.
+
+**Status:** IN PROGRESS. RED test, implementation, full SDK gates, repository
+delivery, Essentia deploy proof, and live Intacct verification remain required.
