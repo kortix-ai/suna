@@ -27,6 +27,18 @@ let pausedComputeWindows: Array<{
 let orderByExpressions: string[] = [];
 let statusCalls: string[] = [];
 let livenessStamps: Array<{ sandboxId: string; at: Date }> = [];
+let timeoutRenewals: Array<{ provider: string; externalId: string }> = [];
+let lifecycleRenewErrorByExternal: Record<string, Error> = {};
+let activeTurnRenewalBySandbox: Record<string, 'renewed' | 'inactive'> = {};
+let activeTurnRenewalCalls: Array<{ sandboxId: string; token: string }> = [];
+let deliveringTurnObservationBySandbox: Record<string, 'active' | 'terminal' | 'unknown'> = {};
+let turnObservationByToken: Record<string, 'active' | 'terminal' | 'unknown'> = {};
+let deliveringTurnRecoveryCalls: Array<{
+  sandboxId: string;
+  token: string;
+  observation: 'active' | 'terminal' | 'unknown';
+}> = [];
+let clearedTurnCalls: Array<{ sandboxId: string; token: string }> = [];
 
 /**
  * What the DB returns for the LAST-MOMENT deadline re-read, when it differs from
@@ -36,6 +48,7 @@ let livenessStamps: Array<{ sandboxId: string; at: Date }> = [];
  * `null` models the row being unreadable/gone.
  */
 let freshDeadlineBySandbox: Record<string, Date | null> = {};
+let stopClaimDeniedBySandbox: Record<string, boolean> = {};
 
 /** Mirrors the ORDER BY the reaper asks Postgres for, so a pass over more rows
  *  than the batch actually rotates instead of re-selecting the same head:
@@ -50,24 +63,33 @@ function applyOrder(rows: any[], now: Date = NOW): any[] {
   return [...rows].sort((a, b) => expired(a) - expired(b) || visited(a).localeCompare(visited(b)));
 }
 
+function hasTurnAuthority(row: any): boolean {
+  const states = [row.metadata?.activeTurn?.state];
+  const activeTurns = row.metadata?.activeTurns;
+  if (activeTurns && typeof activeTurns === 'object' && !Array.isArray(activeTurns)) {
+    states.push(...Object.values(activeTurns).map((turn: any) => turn?.state));
+  }
+  return states.some((state) => state === 'delivering' || state === 'active');
+}
+
 /** Flatten a drizzle SQL expression to its literal text so a test can assert
  *  what the sweep actually asks Postgres to order by. */
 function describeSql(expression: any): string {
-  const chunks: unknown[] = expression?.queryChunks ?? [];
-  return chunks
-    .map((chunk: any) => {
-      if (typeof chunk === 'string') return chunk;
-      if (Array.isArray(chunk?.value)) return chunk.value.join('');
-      return chunk?.name ?? '';
-    })
-    .join(' ');
+  if (expression === null || expression === undefined) return '';
+  if (typeof expression !== 'object') return String(expression);
+  if (Array.isArray(expression)) return expression.map(describeSql).join(' ');
+  if (Array.isArray(expression.queryChunks)) {
+    return expression.queryChunks.map(describeSql).join(' ');
+  }
+  if (Array.isArray(expression.value)) return expression.value.join('');
+  if (expression.value !== undefined) return String(expression.value);
+  return expression.name ?? '';
 }
 
 /** Pull the BOUND VALUES out of a drizzle predicate, so the mock can answer a
  *  single-row lookup with the row that was actually asked for instead of
- *  whichever row happens to be first. Without this the reaper's last-moment
- *  deadline re-read (reloadDeadlineAt) is answered from `candidates[0]` and a
- *  multi-row pass silently tests nothing. */
+ *  whichever row happens to be first. Without this the reaper's atomic stop
+ *  claim is answered from `candidates[0]` and a multi-row pass tests nothing. */
 function sqlValues(expression: unknown): string[] {
   const out: string[] = [];
   const walk = (node: any) => {
@@ -114,7 +136,10 @@ function isVisitStamp(call: { updates: Record<string, unknown> }): boolean {
   const keys = Object.keys(call.updates);
   return keys.length === 1 && keys[0] === 'metadata';
 }
-const rowUpdates = () => updateCalls.filter((c) => !isVisitStamp(c));
+function isStopClaimBookkeeping(call: { updates: Record<string, unknown> }): boolean {
+  return describeSql(call.updates.metadata).includes('lifecycleStopClaim');
+}
+const rowUpdates = () => updateCalls.filter((c) => !isVisitStamp(c) && !isStopClaimBookkeeping(c));
 const visitStamps = () => updateCalls.filter(isVisitStamp);
 
 // Mock config so the test doesn't import the real config, which calls
@@ -159,9 +184,26 @@ mock.module('../shared/db', () => ({
               const row = candidates.find((c) => asked.has(c.sandboxId));
               return hybrid(row ? [{ deadlineAt: row.deadlineAt }] : []);
             }
+            const predicateText = describeSql(predicate);
+            const boundValues = new Set(sqlValues(predicate));
+            const selectsWithoutTurnAuthority =
+              predicateText.includes('activeTurn') && /\band\s+not\s*\(/i.test(predicateText);
+            const selectedSandboxRows = candidates
+              .filter((row) =>
+                !predicateText.includes('activeTurn')
+                  ? true
+                  : selectsWithoutTurnAuthority
+                    ? !hasTurnAuthority(row)
+                    : hasTurnAuthority(row),
+              )
+              .filter(
+                (row) =>
+                  !predicateText.toLowerCase().includes('not in') ||
+                  !boundValues.has(row.sandboxId),
+              );
             return hybrid(
               table === sessionSandboxes
-                ? candidates
+                ? selectedSandboxRows
                 : table === appRuntimes
                   ? appRuntimeKeepRows
                   : table === sandboxComputeSessions
@@ -180,7 +222,7 @@ mock.module('../shared/db', () => ({
         // Awaitable (reconcileRowToStopped), chainable to `.returning()`
         // (reconcileStuckActiveSessions), and `.catch()`-able (the batched
         // visit stamp). Records exactly one update call whichever is used.
-        where: () => {
+        where: (predicate?: unknown) => {
           let recorded = false;
           const record = () => {
             if (recorded) return;
@@ -189,7 +231,27 @@ mock.module('../shared/db', () => ({
           };
           record();
           const p: any = Promise.resolve(undefined);
-          p.returning = async () => [{ sessionId: 'updated' }];
+          p.returning = async () => {
+            if (
+              describeSql(updates.metadata).includes('jsonb_set') &&
+              isStopClaimBookkeeping({ updates })
+            ) {
+              const asked = new Set(sqlValues(predicate));
+              const id = [...asked].find(
+                (value) =>
+                  value in freshDeadlineBySandbox ||
+                  candidates.some((row) => row.sandboxId === value),
+              );
+              if (!id || stopClaimDeniedBySandbox[id]) return [];
+              const fresh =
+                id in freshDeadlineBySandbox
+                  ? freshDeadlineBySandbox[id]
+                  : (candidates.find((row) => row.sandboxId === id)?.deadlineAt ?? null);
+              if (!fresh || fresh.getTime() > Date.now()) return [];
+              return [{ sandboxId: id }];
+            }
+            return [{ sessionId: 'updated' }];
+          };
           return p;
         },
       }),
@@ -214,6 +276,11 @@ mock.module('../platform/providers', () => ({
       stops.push(externalId);
       stopsByProvider.push({ provider: name, externalId });
       const err = stopErrorByExternal[externalId];
+      if (err) throw err;
+    },
+    renewLifecycle: async (externalId: string) => {
+      timeoutRenewals.push({ provider: name, externalId });
+      const err = lifecycleRenewErrorByExternal[externalId];
       if (err) throw err;
     },
     listManagedRunningSandboxes: async () => (name === 'e2b' ? e2bManagedBoxes : managedBoxes),
@@ -244,17 +311,54 @@ mock.module('../billing/services/compute-metering', () => ({
   },
 }));
 
+const sandboxReaper = await import('./sandbox-reaper');
 const {
   decideReconcile,
   decideComputeClose,
   computeCloseWindowEnd,
   hasFailedRuntimeStart,
-  reapAndReconcileSandboxes,
   reconcileOrphanComputeSessions,
   reapOrphanProviderBoxes,
   reconcileStuckActiveSessions,
   REAP_BATCH_SIZE,
-} = await import('./sandbox-reaper');
+  observeSandboxTurn,
+} = sandboxReaper;
+
+const reapAndReconcileSandboxes = (now?: Date) =>
+  sandboxReaper.reapAndReconcileSandboxes(now, {
+    renewActiveSandboxTurn: async (sandboxId: string, token: string) => {
+      activeTurnRenewalCalls.push({ sandboxId, token });
+      return activeTurnRenewalBySandbox[sandboxId] ?? 'inactive';
+    },
+    observeSandboxTurn: async (
+      _provider: unknown,
+      _externalId: string,
+      sandboxId?: string,
+      turn?: { token?: string },
+    ) =>
+      (turn?.token ? turnObservationByToken[turn.token] : undefined) ??
+      deliveringTurnObservationBySandbox[sandboxId ?? ''] ??
+      'unknown',
+    reconcileSandboxTurnDelivery: async (
+      sandboxId: string,
+      token: string,
+      observation: 'active' | 'terminal' | 'unknown',
+    ) => {
+      deliveringTurnRecoveryCalls.push({ sandboxId, token, observation });
+      return observation === 'active'
+        ? 'active'
+        : observation === 'terminal'
+          ? 'inactive'
+          : 'deferred';
+    },
+    clearSandboxTurn: async (sandboxId: string, token: string) => {
+      clearedTurnCalls.push({
+        sandboxId,
+        token,
+      });
+      return true;
+    },
+  });
 
 const HOUR = 3_600_000;
 
@@ -277,7 +381,16 @@ beforeEach(() => {
   orderByExpressions = [];
   statusCalls = [];
   livenessStamps = [];
+  timeoutRenewals = [];
+  lifecycleRenewErrorByExternal = {};
+  activeTurnRenewalBySandbox = {};
+  activeTurnRenewalCalls = [];
+  deliveringTurnObservationBySandbox = {};
+  turnObservationByToken = {};
+  deliveringTurnRecoveryCalls = [];
+  clearedTurnCalls = [];
   freshDeadlineBySandbox = {};
+  stopClaimDeniedBySandbox = {};
 });
 
 // ── pure decision functions (the money + UX correctness lives here) ──────────
@@ -285,12 +398,15 @@ describe('decideReconcile', () => {
   test('never acts on unknown provider state', () => {
     expect(decideReconcile('unknown')).toBe('none');
   });
+
   test('removed → reconcile-removed', () => {
     expect(decideReconcile('removed')).toBe('reconcile-removed');
   });
+
   test('provider already stopped → reconcile-stopped', () => {
     expect(decideReconcile('stopped')).toBe('reconcile-stopped');
   });
+
   test('running is not a reconcile concern', () => {
     expect(decideReconcile('running')).toBe('none');
   });
@@ -300,6 +416,56 @@ describe('decideReconcile', () => {
   // longest-billed open prod rows were ALL in Daytona state `error`).
   test('REGRESSION: a terminal (dead) box reconciles and closes billing', () => {
     expect(decideReconcile('terminal')).toBe('reconcile-stopped');
+  });
+});
+
+describe('provider-neutral turn observation', () => {
+  test('passes the exact OpenCode identity through the provider endpoint', async () => {
+    let requested: URL | null = null;
+    const authorization = { value: null as string | null };
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requested = new URL(request.url);
+        authorization.value = request.headers.get('authorization');
+        return Response.json({ turn_in_flight: true });
+      },
+    });
+    try {
+      const observation = await observeSandboxTurn(
+        {
+          resolveEndpoint: async () => ({
+            url: `http://127.0.0.1:${server.port}`,
+            headers: { Authorization: 'Bearer service-key' },
+          }),
+        },
+        'ext-1',
+        'sb-1',
+        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      );
+
+      expect(observation).toBe('active');
+      expect((requested as URL | null)?.pathname).toBe('/kortix/health');
+      expect((requested as URL | null)?.searchParams.get('turn')).toBe('1');
+      expect((requested as URL | null)?.searchParams.get('turn_session_id')).toBe('ses_root');
+      expect((requested as URL | null)?.searchParams.get('turn_message_id')).toBe('msg_turn_1');
+      expect(authorization.value).toBe('Bearer service-key');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('an unreachable provider endpoint is unknown, never terminal', async () => {
+    expect(
+      await observeSandboxTurn(
+        {
+          resolveEndpoint: async () => {
+            throw new Error('provider unavailable');
+          },
+        },
+        'ext-1',
+      ),
+    ).toBe('unknown');
   });
 });
 
@@ -344,6 +510,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     const r = await reapAndReconcileSandboxes(NOW);
 
+    expect(activeTurnRenewalCalls).toEqual([]);
     expect(r.stopped).toBe(1);
     expect(r.billingClosed).toBe(1);
     expect(stops).toEqual(['ext-1']);
@@ -370,6 +537,329 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(pausedCompute).toEqual([]);
     // The liveness stamp the merged billing clamp depends on is still written.
     expect(livenessStamps).toEqual([{ sandboxId: 'sb-1', at: NOW }]);
+  });
+
+  test('REGRESSION: an active tool-only turn renews past the one-minute deadline', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurn: {
+            token: 'turn-token',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['turn-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
+    expect(r.stopped).toBe(0);
+    expect(r.lifecycleRenewed).toBe(1);
+    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+  });
+
+  test('recovers an accepted prompt whose post-delivery database promotion failed', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurn: {
+            token: 'delivery-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(deliveringTurnRecoveryCalls).toEqual([
+      { sandboxId: 'sb-1', token: 'delivery-token', observation: 'active' },
+    ]);
+    expect(r.stopped).toBe(0);
+    expect(r.lifecycleRenewed).toBe(1);
+    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+  });
+
+  test('does not probe a delivery before its grace deadline', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 1),
+        metadata: {
+          activeTurn: {
+            token: 'delivery-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(deliveringTurnRecoveryCalls).toEqual([]);
+    expect(r.stopped).toBe(0);
+    expect(r.lifecycleRenewed).toBe(1);
+  });
+
+  test('repairs a lost terminal relay before the prior active grant expires', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + HOUR),
+        metadata: {
+          activeTurn: {
+            token: 'active-token',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+    const result = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
+    expect(result.stopped).toBe(0);
+    expect(result.lifecycleRenewed).toBe(1);
+  });
+
+  test('removes a delivering record when OpenCode is terminal and allows expiry', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurn: {
+            token: 'delivery-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(deliveringTurnRecoveryCalls).toEqual([
+      { sandboxId: 'sb-1', token: 'delivery-token', observation: 'terminal' },
+    ]);
+    expect(r.stopped).toBe(1);
+    expect(timeoutRenewals).toEqual([]);
+  });
+
+  test('an indeterminate delivery stops after its persisted delivery grace expires', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurn: {
+            token: 'delivery-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'unknown';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(deliveringTurnRecoveryCalls).toEqual([
+      { sandboxId: 'sb-1', token: 'delivery-token', observation: 'unknown' },
+    ]);
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'delivery-token' }]);
+    expect(r.stopped).toBe(1);
+    expect(r.lifecycleRenewed).toBe(0);
+    expect(timeoutRenewals).toEqual([]);
+  });
+
+  test('fresh OpenCode evidence renews an active turn without a wall-clock cap', async () => {
+    candidates = [
+      candidate({
+        createdAt: new Date(NOW.getTime() - 25 * HOUR),
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurns: {
+            'long-turn': {
+              token: 'long-turn',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_long',
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['long-turn'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'long-turn' }]);
+    expect(r.stopped).toBe(0);
+    expect(r.lifecycleRenewed).toBe(1);
+    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+  });
+
+  test('an expired active record clears only after exact terminal evidence', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurn: {
+            token: 'active-token',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
+    expect(r.stopped).toBe(1);
+  });
+
+  test('a terminal turn cannot stop a concurrent active turn', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurns: {
+            'first-token': {
+              token: 'first-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_first',
+              startedAtMs: NOW.getTime() - 2_000,
+            },
+            'second-token': {
+              token: 'second-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_second',
+              startedAtMs: NOW.getTime() - 1_000,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['first-token'] = 'terminal';
+    turnObservationByToken['second-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const result = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'first-token' }]);
+    expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'second-token' }]);
+    expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+    expect(stops).toEqual([]);
+    expect(result.stopped).toBe(0);
+    expect(result.lifecycleRenewed).toBe(1);
+  });
+
+  test('a stale legacy terminal contraction cannot stop a newer active turn', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurn: {
+            token: 'newer-token',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_newer',
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([]);
+    expect(r.stopped).toBe(0);
+    expect(r.lifecycleRenewed).toBe(1);
+  });
+
+  test('every provider renews its native lifecycle while the Kortix deadline is live', async () => {
+    candidates = (['daytona', 'platinum', 'e2b'] as const).map((provider, index) =>
+      candidate({
+        sandboxId: `sb-${provider}`,
+        sessionId: `sess-${provider}`,
+        externalId: `ext-${provider}`,
+        provider,
+        deadlineAt: new Date(NOW.getTime() + HOUR + index),
+      }),
+    );
+    for (const provider of ['daytona', 'platinum', 'e2b']) {
+      statusByExternal[`ext-${provider}`] = 'running';
+    }
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.skipped).toBe(3);
+    expect(r.lifecycleRenewed).toBe(3);
+    expect(timeoutRenewals).toEqual([
+      { provider: 'daytona', externalId: 'ext-daytona' },
+      { provider: 'platinum', externalId: 'ext-platinum' },
+      { provider: 'e2b', externalId: 'ext-e2b' },
+    ]);
+    expect(stops).toEqual([]);
+  });
+
+  test('an expired box is stopped without renewing its provider lifecycle', async () => {
+    candidates = [candidate({ provider: 'e2b', deadlineAt: new Date(NOW.getTime() - 1) })];
+    statusByExternal['ext-1'] = 'running';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.stopped).toBe(1);
+    expect(r.lifecycleRenewed).toBe(0);
+    expect(timeoutRenewals).toEqual([]);
+    expect(stops).toEqual(['ext-1']);
+  });
+
+  test('a renewal failure never turns a live Kortix deadline into a stop decision', async () => {
+    candidates = [candidate({ provider: 'e2b', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new Error('provider renewal unavailable');
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.errors).toBe(1);
+    expect(r.stopped).toBe(0);
+    expect(stops).toEqual([]);
+    expect(pausedCompute).toEqual([]);
   });
 
   test('the deadline is the WHOLE decision — the box is never consulted', async () => {
@@ -443,6 +933,21 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // Nothing was written: no billing close, no status flip.
     expect(pausedCompute).toEqual([]);
     expect(rowUpdates()).toEqual([]);
+  });
+
+  test('REGRESSION: a prompt that wins the final stop claim cannot be stopped', async () => {
+    candidates = [candidate({ deadlineAt: new Date(NOW.getTime() - HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    freshDeadlineBySandbox['sb-1'] = new Date(Date.now() - 60_000);
+    // The prompt commits its activeTurns entry between the reaper decision and
+    // the stop claim. The claim's conditional UPDATE returns no row.
+    stopClaimDeniedBySandbox['sb-1'] = true;
+
+    const result = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual([]);
+    expect(result.skipped).toBe(1);
+    expect(pausedCompute).toEqual([]);
   });
 
   test('a deadline still expired at the last moment is stopped as before', async () => {
@@ -702,6 +1207,57 @@ describe('reconcileStuckActiveSessions', () => {
 });
 
 describe('the batch cap rotates and cannot starve a row', () => {
+  test('active renewal and expired-stop backlogs receive independent capacity', async () => {
+    const prev = process.env.KORTIX_REAP_BATCH_SIZE;
+    process.env.KORTIX_REAP_BATCH_SIZE = '2';
+    try {
+      const active = ['a', 'b', 'c'].map((id) =>
+        candidate({
+          sandboxId: `sb-active-${id}`,
+          sessionId: `sess-active-${id}`,
+          externalId: `ext-active-${id}`,
+          metadata: {
+            activeTurns: {
+              [`turn-${id}`]: {
+                token: `turn-${id}`,
+                state: 'active',
+                opencodeSessionId: `ses-${id}`,
+                messageId: `msg-${id}`,
+              },
+            },
+          },
+        }),
+      );
+      const expired = ['a', 'b', 'c'].map((id) =>
+        candidate({
+          sandboxId: `sb-expired-${id}`,
+          sessionId: `sess-expired-${id}`,
+          externalId: `ext-expired-${id}`,
+          deadlineAt: new Date(NOW.getTime() - 1),
+        }),
+      );
+      candidates = [...active, ...expired];
+      for (const row of candidates) statusByExternal[row.externalId] = 'running';
+      for (const row of active) {
+        activeTurnRenewalBySandbox[row.sandboxId] = 'renewed';
+        turnObservationByToken[`turn-${row.sandboxId.replace('sb-active-', '')}`] = 'active';
+      }
+
+      const result = await reapAndReconcileSandboxes(NOW);
+
+      expect(result.candidates).toBe(4);
+      expect(
+        activeTurnRenewalCalls.filter(({ sandboxId }) => sandboxId.startsWith('sb-active-')),
+      ).toHaveLength(2);
+      expect(stops.filter((id) => id.startsWith('ext-expired-'))).toHaveLength(2);
+      expect(result.matching).toBe(6);
+      expect(result.deferred).toBe(2);
+    } finally {
+      if (prev === undefined) delete process.env.KORTIX_REAP_BATCH_SIZE;
+      else process.env.KORTIX_REAP_BATCH_SIZE = prev;
+    }
+  });
+
   test('the candidate query orders by the visit stamp, oldest first', async () => {
     candidates = [candidate()];
     statusByExternal['ext-1'] = 'running';

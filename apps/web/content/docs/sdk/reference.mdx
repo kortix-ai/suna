@@ -107,9 +107,10 @@ A repeat that arrives while the first call is still provisioning gets `409` with
 `code: 'provision_in_flight'` rather than a `project_id` that call may still roll
 back. Retry with the same key.
 
-`project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
-private, unavailable, and soft-deleted sessions, with ownership and
-runtime-state metadata.
+`project(id).sessions.list({ scope: 'project' })` is a manager-only lifecycle
+inventory. It adds accessible unavailable, warm, and soft-deleted sessions with
+ownership and runtime-state metadata. Both list scopes omit every session the
+caller cannot open.
 
 ### GitHub — `kortix.github`
 
@@ -312,7 +313,8 @@ webhook HMAC secret) applies to `type: 'webhook'`.
 string[] }` and defaults to `private`. This policy is account-local runtime
 state. It does not enter the portable `kortix.yaml` manifest. Updating only
 `session_access` creates no Git commit. A pinned session keeps its own sharing
-settings.
+settings. Project managers can always open trigger-created sessions, including
+sessions that use `private` or selected-member access.
 
 #### `p.marketplace` / `p.registry` — installed items
 

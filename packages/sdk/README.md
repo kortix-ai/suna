@@ -127,7 +127,7 @@ await kortix.project(pid).secrets.upsert({
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
-  .sessions.list({ scope: "project" }); // manager only
+  .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)

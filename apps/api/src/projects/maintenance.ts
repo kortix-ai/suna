@@ -459,6 +459,7 @@ export async function runProjectMaintenance(): Promise<void> {
       `idle_deferred=${idle.deferred}`,
       `idle_stopped=${idle.stopped}`,
       `idle_skipped=${idle.skipped}`,
+      `lifecycle_renewed=${idle.lifecycleRenewed}`,
       `compute_rows_closed=${orphanCompute.closed}`,
       `late_wakes_stopped=${runtimeWakes.stopped}`,
       `parked_runtimes_preserved=${runtimeWakes.removed}`,

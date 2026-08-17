@@ -14,6 +14,7 @@ import {
   type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
+import { SessionSharedBadge } from '@/components/projects/session-shared-badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -726,6 +727,8 @@ function ProjectSessionRow({
           )}
 
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
+
+          <SessionSharedBadge session={session} />
 
           {childCount > 0 && (
             <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">

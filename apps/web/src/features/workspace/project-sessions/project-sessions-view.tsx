@@ -72,7 +72,7 @@ import { SessionsSelectionBar } from './sessions-selection-bar';
 import { SessionsToolbar } from './sessions-toolbar';
 
 /**
- * This page's view state is its OWN — narrowing the full inventory here must not
+ * This page's view state is its OWN — narrowing the manager inventory here must not
  * narrow the sidebar you navigate with. It still OPENS matching the sidebar:
  * a surface with no stored choice inherits the sidebar's, and only diverges once
  * you change something here.
@@ -235,10 +235,11 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
-    // 'project' scope: the manager-only, unfiltered full inventory — a
+    // 'project' scope: the manager-only lifecycle inventory — a
     // DIFFERENT server request than the default 'visible' scope every other
-    // reader uses, so it MUST carry its own scope segment in the key (see
-    // qk.project.sessions' doc comment). Sharing the default-scope key here
+    // reader uses. It includes accessible warm and soft-deleted rows, but never
+    // sessions the manager cannot open. It MUST carry its own scope segment in
+    // the key (see qk.project.sessions' doc comment). Sharing the default-scope key here
     // is the exact bug this file existed to fix.
     queryKey: qk.project.sessions(projectId, 'project'),
     queryFn: () => listProjectSessions(projectId, { scope: 'project' }),

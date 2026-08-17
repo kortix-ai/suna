@@ -442,12 +442,12 @@ export function ScheduleCreateModal({
                         copy={{
                           heading: 'Who can access sessions created by this trigger',
                           private: {
-                            label: 'Only the trigger agent',
-                            desc: 'No teammates can open these sessions unless you add them.',
+                            label: 'Trigger agent and project managers',
+                            desc: 'Project managers can always open trigger-created sessions.',
                           },
                           members: {
                             label: 'Selected teammates',
-                            desc: 'Choose members and groups that can open these sessions.',
+                            desc: 'Choose additional members and groups. Project managers always have access.',
                           },
                           project: {
                             label: 'Whole project',

@@ -34,7 +34,10 @@ export type ProjectMonitorMode = 'poll' | 'stream';
  */
 export type ProjectTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
 
-/** Who may open sessions created by this trigger. The trigger agent remains the owner. */
+/**
+ * Who may open sessions created by this trigger. The trigger agent remains the
+ * owner. Project managers always retain access, including in `private` mode.
+ */
 export interface TriggerSessionAccess {
   mode: 'private' | 'project' | 'members';
   memberIds: string[];

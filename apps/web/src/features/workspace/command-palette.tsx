@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionSharedBadge } from '@/components/projects/session-shared-badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1750,6 +1751,7 @@ export function CommandPalette() {
                           >
                             <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
+                            <SessionSharedBadge session={session} />
                             <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
@@ -1912,6 +1914,7 @@ export function CommandPalette() {
                           >
                             <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
+                            <SessionSharedBadge session={session} />
                             {session.session_id === params?.sessionId && (
                               <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                             )}
@@ -2294,6 +2297,7 @@ export function CommandPalette() {
                     >
                       <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>
+                      <SessionSharedBadge session={session} />
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {formatRelativeTime(new Date(sessionLastActivityAt(session)).getTime())}
                       </span>

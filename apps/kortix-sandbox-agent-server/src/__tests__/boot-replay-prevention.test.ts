@@ -224,11 +224,11 @@ describe('the boot path is wired to the defer outcome, not just resolveExistingR
     expect(priorMarkerReadAt).toBeLessThan(markerWriteAt)
   })
 
-  test('F1: the delivery marker is written only AFTER deliverInitialOpenCodePrompt, never before', () => {
+  test('F1: the delivery marker is written only after accepted prompt publication', () => {
     const start = SRC.indexOf('async function maybeCreateInitialOpencodeSession(')
     const end = SRC.indexOf('\nasync function resolveExistingRoot', start)
     const body = SRC.slice(start, end)
-    const deliverCallAt = body.indexOf('await deliverInitialOpenCodePrompt(')
+    const deliverCallAt = body.indexOf('await publishInitialOpenCodeSessionAfterPrompt(')
     const markerWriteAt = body.indexOf('markInitialPromptDelivered()')
     expect(deliverCallAt).toBeGreaterThan(-1)
     expect(markerWriteAt).toBeGreaterThan(deliverCallAt)

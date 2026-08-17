@@ -88,7 +88,8 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
           - 'runtimeWakeLeaseExpiresAt'
           - 'runtimeWakeProviderStatus'
           - 'runtimeWakeCleanupId'
-          - 'runtimeWakeCleanupLeaseExpiresAt') || ${JSON.stringify(patch)}::jsonb`,
+          - 'runtimeWakeCleanupLeaseExpiresAt'
+          - 'lifecycleStopClaim') || ${JSON.stringify(patch)}::jsonb`,
       })
       .where(eq(sessionSandboxes.sandboxId, write.sandboxId));
     await tx

@@ -945,6 +945,10 @@ export const SessionCreateAcceptedSchema = z.object({
 });
 export type SessionCreateAccepted = z.infer<typeof SessionCreateAcceptedSchema>;
 
+/**
+ * Account-local access policy for sessions created by a trigger. Project
+ * managers always retain access; `private` excludes ordinary project members.
+ */
 export const TriggerSessionAccessSchema = z
   .object({
     mode: z.enum(['private', 'project', 'members']),

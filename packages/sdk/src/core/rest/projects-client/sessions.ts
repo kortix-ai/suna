@@ -113,6 +113,10 @@ export interface CreateProjectSessionInput {
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
   branch_already_created?: boolean;
+  /**
+   * Client metadata. Server-owned lifecycle and trigger-attribution keys are
+   * rejected, including `source`, `trigger_kind`, and `trigger_slug`.
+   */
   metadata?: Record<string, unknown>;
   /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
   runtime_context?: SessionRuntimeContext;
@@ -168,7 +172,10 @@ export interface ProjectOpenCodeSession {
   archived_at: number | null;
 }
 
-/** @param options.scope - `project` asks for the manager-only full inventory. */
+/**
+ * @param options.scope - `project` asks for the manager-only lifecycle
+ * inventory. Both scopes omit sessions the caller cannot open.
+ */
 export async function listProjectSessions(
   projectId: string,
   options?: { scope?: 'visible' | 'project' },

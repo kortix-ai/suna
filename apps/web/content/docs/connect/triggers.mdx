@@ -253,14 +253,16 @@ A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `
 
 ## Session access
 
-Sessions a trigger creates are private by default. The trigger agent's service
-account owns them. The person who configured or manually fired the trigger does
-not gain access through that action.
+Sessions a trigger creates use the private policy by default. The trigger
+agent's service account owns them. Project managers can always open them.
+Account owners and account admins receive the effective project-manager role.
+The person who configured or manually fired the trigger does not gain access
+through that action unless they have one of those roles.
 
 Trigger settings offer three policies:
 
-- **Only the trigger agent** — no teammate can open a trigger-created session.
-- **Selected teammates** — the trigger agent plus selected project members and account groups.
+- **Trigger agent and project managers** — no ordinary project member can open the session.
+- **Selected teammates** — the trigger agent, project managers, and selected project members or account groups.
 - **Whole project** — every project member.
 
 The access policy is account-local runtime state. It does not enter the

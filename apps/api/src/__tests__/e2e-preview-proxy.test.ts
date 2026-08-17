@@ -192,6 +192,14 @@ mock.module('../shared/db', () => {
   };
 });
 
+const realTurnLifecycle = await import('../projects/sandbox-turn-lifecycle');
+mock.module('../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  beginSandboxTurn: async () => 'granted',
+  acceptSandboxTurn: async () => true,
+  abandonSandboxTurn: async () => true,
+}));
+
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
 // `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so

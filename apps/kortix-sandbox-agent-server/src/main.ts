@@ -61,6 +61,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
+import { opencodeDeliveryInFlight } from './opencode-turn-state'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -467,6 +468,35 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  let initialTurnAcceptanceSettled = false
+  let initialTurnAcceptanceInFlight = false
+  const reconcileInitialTurnAcceptance = async () => {
+    if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
+    const opencodeSessionId = bootState.initialOpenCodeSessionId
+    const turnToken = process.env.KORTIX_INITIAL_TURN_TOKEN?.trim()
+    const messageId = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID?.trim()
+    if (!opencodeSessionId || !turnToken || !messageId) return
+    initialTurnAcceptanceInFlight = true
+    try {
+      const result = await reconcileInitialTurnAcceptanceToApi(
+        opencode.getInternalUrl(),
+        cfg.workspace,
+        opencodeSessionId,
+        messageId,
+        turnToken,
+      )
+      // `unknown` grants no authority. Retry it on the next 30-second
+      // reconciliation tick. `inactive` means the exact message is absent or
+      // terminal, so an older prompt on a reused root cannot promote this token.
+      initialTurnAcceptanceSettled = result !== 'unknown'
+    } catch (err) {
+      logger.warn('[opencode-events] initial turn acceptance relay failed', {
+        err: (err as Error).message,
+      })
+    } finally {
+      initialTurnAcceptanceInFlight = false
+    }
+  }
   // On (re)subscribe, reconcile the pinned root's last turn: if it already
   // COMPLETED (idle) before this subscription was live — the fast-boot race,
   // where a trivial first turn finishes inside the prompt→subscribe gap — relay
@@ -475,11 +505,19 @@ async function startSessionRuntime(
   // and this reconcile collapse to a single finalize; a reconnect after the turn
   // relayed is a no-op.
   const onConnected = () => {
+    void reconcileInitialTurnAcceptance()
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onEvent, onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = {
+    onEvent,
+    onQuestionAsked,
+    onSessionIdle,
+    onSessionError,
+    onConnected,
+    onReconcile: onConnected,
+  }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -490,14 +528,20 @@ async function startSessionRuntime(
     // backstop for any residual gap.
     const loop = startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    await maybeCreateInitialOpencodeSession(opencode, bootState, bootMark, loop.connected).catch((err) => {
-      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
-      logger.warn('[boot] initial opencode session setup failed', err)
-    })
+    await maybeCreateInitialOpencodeSession(opencode, bootState, bootMark, loop.connected).catch(
+      (err) => {
+        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        logger.warn('[boot] initial opencode session setup failed', err)
+      },
+    )
     if (bootState.initialOpenCodeSessionId) {
+      await reconcileInitialTurnAcceptance()
       opencode.markReady()
       bootMark('opencode-ready')
-      logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
+      logger.info('[boot] opencode ready via initial session', {
+        opencodePid: opencode.getPid(),
+        timeline: bootState.timeline,
+      })
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
@@ -1094,7 +1138,6 @@ async function maybeCreateInitialOpencodeSession(
       void deleteOpencodeSession(baseUrl, workspace, seedBakedId)
     }
   }
-  bootState.initialOpenCodeSessionId = sessionId
   bootMark('opencode-root-ready')
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
@@ -1111,16 +1154,15 @@ async function maybeCreateInitialOpencodeSession(
       let timer: ReturnType<typeof setTimeout> | undefined
       await Promise.race([
         eventLoopConnected,
-        new Promise<void>((r) => { timer = setTimeout(r, 10_000) }),
+        new Promise<void>((r) => {
+          timer = setTimeout(r, 10_000)
+        }),
       ])
       if (timer) clearTimeout(timer)
       bootMark('event-loop-connected')
     }
-    await deliverInitialOpenCodePrompt(
-      opencode,
-      sessionId,
-      workspace,
-      buildInitialPromptBody(prompt),
+    await publishInitialOpenCodeSessionAfterPrompt(bootState, sessionId, () =>
+      deliverInitialOpenCodePrompt(opencode, sessionId, workspace, buildInitialPromptBody(prompt)),
     )
     // F1: written ONLY after delivery actually succeeded (an exception above
     // skips this line) — the durable receipt `reusedRootAlreadyDelivered`
@@ -1128,11 +1170,32 @@ async function maybeCreateInitialOpencodeSession(
     markInitialPromptDelivered()
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
-    logger.info('[boot] initial prompt already delivered to reused root; not re-running', { sessionId })
+    bootState.initialOpenCodeSessionId = sessionId
+    logger.info('[boot] initial prompt already delivered to reused root; not re-running', {
+      sessionId,
+    })
   } else {
+    bootState.initialOpenCodeSessionId = sessionId
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
+}
+
+/**
+ * Publish the boot root only after OpenCode accepts the initial prompt.
+ *
+ * The event-loop reconciliation timer reads `initialOpenCodeSessionId` as its
+ * acceptance gate. Publishing the id before `prompt_async` returns lets that
+ * timer promote a `delivering` database record while the request is still in
+ * flight, including before OpenCode has received one byte.
+ */
+export async function publishInitialOpenCodeSessionAfterPrompt(
+  bootState: SandboxBootState,
+  sessionId: string,
+  deliver: () => Promise<void>,
+): Promise<void> {
+  await deliver()
+  bootState.initialOpenCodeSessionId = sessionId
 }
 
 /**
@@ -1715,6 +1778,110 @@ export async function deliverInitialOpenCodePrompt(
 }
 
 /**
+ * Promote only the initial-turn authority that apps/api created before the
+ * sandbox existed. The daemon cannot mint a token, create a lifecycle record,
+ * or revive a record removed by terminal evidence.
+ */
+export async function relayInitialTurnAcceptedToApi(
+  opencodeSessionId: string,
+  messageId: string,
+  turnToken: string,
+): Promise<boolean> {
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const sandboxToken = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
+    throw new Error('initial turn acceptance relay context is unavailable')
+  }
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sandboxToken}`,
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      kind: 'turn_accepted',
+      opencode_session_id: opencodeSessionId,
+      turn_message_id: messageId,
+      turn_token: turnToken,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(`initial turn acceptance rejected: ${response.status} ${body.slice(0, 200)}`)
+  }
+  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
+  return body.ok === true
+}
+
+/** Remove only a pre-created initial-turn record that OpenCode never accepted. */
+export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const sandboxToken = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
+    throw new Error('initial turn abandonment relay context is unavailable')
+  }
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sandboxToken}`,
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      kind: 'turn_abandoned',
+      turn_token: turnToken,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(`initial turn abandonment rejected: ${response.status} ${body.slice(0, 200)}`)
+  }
+  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
+  return body.ok === true
+}
+
+export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
+
+/**
+ * Promote daemon-delivered authority only after OpenCode exposes the exact
+ * client-minted user message as queued or running.
+ *
+ * A restart can reuse a root that already contains an older prompt. Root-level
+ * `hasMessages` evidence is therefore insufficient: it would promote a new
+ * token for work that the daemon deliberately did not rerun.
+ */
+export async function reconcileInitialTurnAcceptanceToApi(
+  opencodeBaseUrl: string,
+  workspace: string,
+  opencodeSessionId: string,
+  messageId: string,
+  turnToken: string,
+): Promise<InitialTurnAcceptanceReconciliation> {
+  const inFlight = await opencodeDeliveryInFlight(
+    opencodeBaseUrl,
+    workspace,
+    opencodeSessionId,
+    messageId,
+  )
+  if (inFlight === null) return 'unknown'
+  if (!inFlight) {
+    await relayInitialTurnAbandonedToApi(turnToken)
+    return 'inactive'
+  }
+  await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+  return 'accepted'
+}
+
+/**
  * Create the session's root opencode conversation, retrying while opencode is
  * still coming up.
  *
@@ -1996,6 +2163,7 @@ export async function relayTurnEndToApi(
     kind: 'end',
     status: effectiveStatus,
     opencode_session_id: opencodeSessionId,
+    turn_message_id: turn.parentMessageId ?? undefined,
     ...(error
       ? {
           error_name: error.name,
@@ -2044,6 +2212,9 @@ interface RootTurnState {
    *  identity, used as the exactly-once dedup key. null while the turn is still
    *  running (assistant message present but not completed) or before any reply. */
   completedAt: number | null
+  /** The user message this assistant turn answers. This is the stable identity
+   *  minted by the client and recorded by apps/api before prompt delivery. */
+  parentMessageId: string | null
 }
 
 // Read the ROOT turn's outcome from its last assistant message — the same
@@ -2063,18 +2234,24 @@ async function readRootTurnState(
   try {
     const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-    if (!res.ok) return { completedAt: null }
+    if (!res.ok) return { completedAt: null, parentMessageId: null }
     const rows = (await res.json()) as Array<{
       info?: {
         role?: string
+        parentID?: string
         time?: { completed?: number }
         error?: {
           name?: string
-          data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+          data?: {
+            message?: string
+            statusCode?: number
+            isRetryable?: boolean
+            providerID?: string
+          }
         }
       }
     }>
-    if (!Array.isArray(rows)) return { completedAt: null }
+    if (!Array.isArray(rows)) return { completedAt: null, parentMessageId: null }
     // The most recent assistant message decides the turn's outcome. Crucially,
     // stop at the turn boundary: if a USER message is the newest row (a pending or
     // follow-up turn that hasn't produced an assistant reply yet), treat the run
@@ -2082,16 +2259,17 @@ async function readRootTurnState(
     // error and relay it as this turn's failure.
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
-      if (info?.role === 'user') return { completedAt: null }
+      if (info?.role === 'user') return { completedAt: null, parentMessageId: null }
       if (info?.role !== 'assistant') continue
       return {
         error: info.error ? flattenOpencodeError(info.error) : undefined,
         completedAt: info.time?.completed ?? null,
+        parentMessageId: info.parentID ?? null,
       }
     }
-    return { completedAt: null }
+    return { completedAt: null, parentMessageId: null }
   } catch {
-    return { completedAt: null }
+    return { completedAt: null, parentMessageId: null }
   }
 }
 
@@ -2169,6 +2347,7 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
 
 /** Build the first-turn request from the session-bound runtime environment. */
 export function buildInitialPromptBody(prompt: string): {
+  messageID?: string
   parts: Array<{ type: 'text'; text: string }>
   model?: { providerID: string; modelID: string }
   agent?: string
@@ -2176,7 +2355,9 @@ export function buildInitialPromptBody(prompt: string): {
   const model = resolveOpencodeModel()
   const agentName = (process.env.KORTIX_AGENT_NAME ?? '').trim()
   const agent = agentName && agentName !== 'default' ? agentName : undefined
+  const messageID = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID?.trim() || undefined
   return {
+    ...(messageID ? { messageID } : {}),
     parts: [{ type: 'text', text: prompt }],
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),

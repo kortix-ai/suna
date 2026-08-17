@@ -4,11 +4,9 @@ import { serializeSession } from './serializers';
 /**
  * A row a caller cannot ACCESS must not carry that session's content.
  *
- * `GET /sessions?scope=project` deliberately lists rows the caller cannot open
- * (so a manager sees the whole project), marking each `can_access: false`. The
- * serializer redacted nothing, so those rows still carried `metadata` — which
- * holds `initial_prompt`, the literal text a user typed — plus the session's
- * secret allowlist.
+ * Session inventory removes rows the caller cannot open. This serializer stays
+ * fail-closed because another caller can still pass `canAccess:false`. Such a
+ * row must not carry metadata, prompts, titles, or secret allowlists.
  */
 const row = (over: Record<string, unknown> = {}) =>
   ({
@@ -76,9 +74,7 @@ describe('serializeSession redaction', () => {
     expect(out.opencode_sessions).toEqual([{ id: 'oc1' }]);
   });
 
-  test('an inaccessible row still carries what a listing legitimately needs', () => {
-    // The point of scope=project is that a manager can SEE the session exists,
-    // its status, and when it ran — redaction must not break that.
+  test('defensive redaction preserves only non-content identity fields', () => {
     const out = serializeSession(row(), { canAccess: false }) as Record<string, unknown>;
     expect(out.session_id).toBe('11111111-1111-4111-8111-111111111111');
     expect(out.status).toBe('running');

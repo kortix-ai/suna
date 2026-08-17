@@ -3,6 +3,7 @@
  * Trigger create commits the project manifest (a real git commit).
  */
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 flow(
@@ -688,12 +689,17 @@ flow(
       'PATCH /v1/projects/:projectId/triggers/:slug',
       'GET /v1/projects/:projectId/triggers',
       'GET /v1/projects/:projectId/files/history',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
       'POST /v1/accounts/:accountId/iam/groups',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
     const project = await team.project({ managedGit: true });
+    const manager = await team.addMember('member');
+    if (!manager.userId) throw new Error('trigger access manager fixture has no user id');
+    await team.grantProjectRole(project.id, manager.userId, 'manager');
     const teammate = await team.addMember('member');
     const teammateUserId = teammate.userId;
     if (!teammateUserId) throw new Error('trigger access teammate fixture has no user id');
@@ -707,6 +713,24 @@ flow(
     groupResponse.status(201);
     const groupId = groupResponse.json<{ group_id: string }>().group_id;
     let manifestCommitHashes: string[] = [];
+    const triggerPrivateSessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: {
+        source: 'trigger:scheduler',
+        trigger_kind: 'git',
+        trigger_slug: 'access-policy-target',
+      },
+    });
+    const humanPrivateSessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: {},
+    });
 
     await ctx.step('omitted session_access defaults to private', async () => {
       const r = await owner.post(
@@ -739,6 +763,58 @@ flow(
       manifestCommitHashes = history
         .json<{ commits: Array<{ hash: string }> }>()
         .commits.map((commit) => commit.hash);
+    });
+
+    await ctx.step(
+      'project manager opens a private trigger session but not a private human session',
+      async () => {
+        const triggerSession = await ctx.client.as(manager).get(
+          '/v1/projects/:projectId/sessions/:sessionId',
+          { params: { projectId: project.id, sessionId: triggerPrivateSessionId } },
+        );
+        triggerSession.status(200).body().has('$.session_id', triggerPrivateSessionId);
+
+        const humanSession = await ctx.client.as(manager).get(
+          '/v1/projects/:projectId/sessions/:sessionId',
+          { params: { projectId: project.id, sessionId: humanPrivateSessionId } },
+        );
+        humanSession.status(404);
+      },
+    );
+
+    await ctx.step('ordinary project member cannot open a private trigger session', async () => {
+      const r = await ctx.client.as(teammate).get(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { params: { projectId: project.id, sessionId: triggerPrivateSessionId } },
+      );
+      r.status(404);
+    });
+
+    await ctx.step('ordinary project member cannot discover a private trigger session', async () => {
+      const r = await ctx.client.as(teammate).get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+      });
+      r.status(200);
+      const sessions = r.json<Array<{ session_id: string }>>();
+      if (sessions.some((session) => session.session_id === triggerPrivateSessionId)) {
+        throw new Error('ordinary member discovered a private trigger session');
+      }
+    });
+
+    await ctx.step('manager inventory includes the trigger session and hides inaccessible sessions', async () => {
+      const r = await ctx.client.as(manager).get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        query: { scope: 'project' },
+      });
+      r.status(200);
+      const sessions = r.json<Array<{ session_id: string; can_access: boolean }>>();
+      const byId = new Map(sessions.map((session) => [session.session_id, session.can_access]));
+      if (byId.get(triggerPrivateSessionId) !== true) {
+        throw new Error('manager inventory did not grant trigger-session content access');
+      }
+      if (byId.has(humanPrivateSessionId)) {
+        throw new Error('manager inventory exposed an inaccessible private session');
+      }
     });
 
     await ctx.step(
