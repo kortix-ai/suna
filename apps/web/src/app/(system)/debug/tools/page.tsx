@@ -1464,6 +1464,43 @@ const PANEL_MCP_PARTS = [
   ),
 ];
 
+/**
+ * `show` is the one tool that FILLS the panel instead of hanging a card under a
+ * row: `tool-part-renderer.tsx`'s `fillsPanel` special-cases it because the
+ * preview IS the payload, and `show-tool.tsx` returns its body with no shell.
+ *
+ * A content-only part (`type` + `content`, no `path` and no `url`) is the whole
+ * fixture: `sandboxPath` stays null, so every `useFileContent`/`useBinaryBlob`
+ * in `show-content-renderer.tsx` is inert and nothing here needs a sandbox.
+ * The carousel and website-preview branches are deliberately NOT fixtured —
+ * those do need a live payload and a proxied URL.
+ *
+ * What this block shows is the SHELL-LESS grammar: no disclosure row, no
+ * chevron, no payload card — the document is the detail. Every other fixture
+ * beside it draws a row you have to open first, which is the contrast.
+ *
+ * What it does NOT show is fill-to-pane-height. `fillsPanel`'s `h-full`
+ * resolves against `ToolParts`' auto-height flex column, so it only bites when
+ * a definite-height ancestor exists — the real panel's `CARD_FRAME`
+ * (`absolute inset-y-3 … overflow-hidden`, `detail-view.tsx`). Forcing a height
+ * here would clip the document at the fold, which is NOT what the panel does:
+ * there the outer `min-h-0 flex-1 overflow-auto` container scrolls instead.
+ */
+const PANEL_SHOW_PARTS = [
+  part(
+    'show',
+    done(
+      {
+        type: 'markdown',
+        title: 'Launch plan',
+        content:
+          '# Launch plan\n\n## This week\n\n- Ship the new pricing page\n- Wire up the checkout flow\n- QA on mobile + desktop\n\n## Next week\n\n1. Announcement post\n2. Email the waitlist\n3. Monitor conversion\n\n> The actions panel should stretch this content to the full height of the panel, with its own internal scroll.\n\n```ts\nexport const ready = true;\n```\n',
+      },
+      '',
+    ),
+  ),
+];
+
 /** One detail as the panel draws it — the pane's width and the detail card's
  *  own frame and padding, from `detail-view.tsx`'s `CARD_FRAME`. */
 function PanelDetailFixture({
@@ -1643,6 +1680,11 @@ export default function DebugToolsPage() {
             label="unregistered tool — MCP fallback"
             fixture="panel-mcp"
             parts={PANEL_MCP_PARTS}
+          />
+          <PanelDetailFixture
+            label="show (markdown) — fills the detail, no row"
+            fixture="panel-show"
+            parts={PANEL_SHOW_PARTS}
           />
         </div>
       </div>

@@ -1,11 +1,11 @@
+import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
+import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
+import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
-import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
-import type { ToolPart } from '@/ui';
 
 import { BashTool, bashRowTitle } from './bash-tool';
 
@@ -248,7 +248,9 @@ describe('BashTool reports whether the command actually worked', () => {
 
   test('the exact code appears once, in the expanded card', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('bun test', 'FAIL\n<exit_code>2</exit_code>')} defaultOpen />),
+      withProviders(
+        <BashTool part={makePart('bun test', 'FAIL\n<exit_code>2</exit_code>')} defaultOpen />,
+      ),
     );
 
     expect(html).toContain('Exit code 2');
@@ -256,7 +258,9 @@ describe('BashTool reports whether the command actually worked', () => {
 
   test('a successful command carries no exit-code line', () => {
     const html = renderToStaticMarkup(
-      withProviders(<BashTool part={makePart('ls', 'a.txt\n<exit_code>0</exit_code>')} defaultOpen />),
+      withProviders(
+        <BashTool part={makePart('ls', 'a.txt\n<exit_code>0</exit_code>')} defaultOpen />,
+      ),
     );
 
     expect(html).not.toContain('Exit code');
@@ -493,6 +497,110 @@ describe('BashTool card, for the cases with nothing to show', () => {
     );
 
     expect(html.match(/absolute top-2 right-2/g)?.length).toBe(2);
+  });
+});
+
+// The panel de-nest, for the FOURTH card.
+//
+// `shared/infrastructure.test.tsx` pins the other three — `ToolOutputCard`,
+// `ToolCodeCard`, `ToolResultCard` — against the same gate finding: on the
+// panel the row card is already the frame and the disclosure body is already
+// the inset, so a payload that draws its own is a second edge and a second
+// gutter around one thing. Bash's command card is a fourth card with a
+// hand-rolled frame, so it was invisible to that sweep and unpinned until now.
+//
+// It de-nests on a SHARPER rule than the other three, which is the reason it
+// needs its own pin. They drop the whole inset. This one cannot: the hairline
+// between the command pane and the output pane is internal to this card, and
+// text pressed against that line from both sides is worse than the redundant
+// frame ever was. So `paneInset` keeps the VERTICAL half (`py-2` where inline
+// has `p-3`) and lets the row body's `px-3` be the horizontal gutter. Assert
+// both halves — the frame going away AND the inset shrinking rather than
+// vanishing — because either one alone is a different, wrong card.
+//
+// Element-anchored, like the geometry suite above: read the open tag of the
+// element in question rather than substring-matching the whole document, so a
+// class landing on some unrelated node cannot satisfy the assertion.
+describe('BashTool command card de-nests on the panel (gate finding 5, fourth card)', () => {
+  const part = makePart('echo hi', 'hi');
+
+  function render(surface: 'inline' | 'panel') {
+    const tool = <BashTool part={part} defaultOpen />;
+    return renderToStaticMarkup(
+      withProviders(
+        surface === 'panel' ? (
+          <ToolSurfaceContext.Provider value="panel">{tool}</ToolSurfaceContext.Provider>
+        ) : (
+          tool
+        ),
+      ),
+    );
+  }
+
+  /** The open tag of the element at `at`, found by walking back to its `<`. */
+  function openTagAt(html: string, at: number) {
+    return html.slice(html.lastIndexOf('<', at), html.indexOf('>', at) + 1);
+  }
+
+  /** The card's own wrapper — the `relative` div that holds the command pane. */
+  const cardTag = (html: string) =>
+    openTagAt(html, html.lastIndexOf('<div class="relative', html.indexOf('max-h-64')));
+
+  /** The `<pre>` the highlighted command is drawn in. */
+  const commandPaneTag = (html: string) => openTagAt(html, html.indexOf('<pre'));
+
+  /** The div holding the raw output text, inside the output pane's scroller. */
+  const outputPaneTag = (html: string) =>
+    openTagAt(html, html.lastIndexOf('<div', html.indexOf('>hi<')));
+
+  test('inline: the card draws its own frame and both panes take the full 12px inset', () => {
+    const html = render('inline');
+
+    expect(cardTag(html)).toContain('border-border bg-popover rounded-md border');
+    expect(commandPaneTag(html)).toContain('p-3 pr-11');
+    expect(outputPaneTag(html)).toContain('p-3 pr-11');
+  });
+
+  test('panel: the frame is gone — the row card already drew it', () => {
+    const html = render('panel');
+    const card = cardTag(html);
+
+    expect(card).not.toContain('bg-popover');
+    expect(card).not.toContain('rounded-md');
+    expect(card).not.toContain('border');
+    // The card element itself survives; only its chrome went.
+    expect(card).toContain('relative');
+  });
+
+  test('panel: the inset shrinks to the vertical half, not to nothing', () => {
+    const html = render('panel');
+
+    // `py-2`, not `p-3` — the row body's `px-3` is the horizontal gutter now,
+    // but the command/output hairline still needs air above and below it.
+    for (const tag of [commandPaneTag(html), outputPaneTag(html)]) {
+      expect(tag).toContain('py-2 pr-11');
+      expect(tag).not.toContain('p-3');
+    }
+  });
+
+  test('panel: the empty state keeps the same vertical inset as a pane of output', () => {
+    // Otherwise a command that printed nothing sits at a different height from
+    // one that printed a line, and the card twitches between the two.
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolSurfaceContext.Provider value="panel">
+          <BashTool part={makePart('mkdir -p build', '')} defaultOpen />
+        </ToolSurfaceContext.Provider>,
+      ),
+    );
+
+    expect(openTagAt(html, html.indexOf('>No output<'))).toContain('py-2 text-xs leading-relaxed');
+  });
+
+  test('panel: the hairline BETWEEN the two panes stays — it is not the frame', () => {
+    // The de-nest drops edges the row card can redraw. This one separates the
+    // command from what it printed, which nothing outside the card can say.
+    expect(render('panel')).toContain('border-border/60 border-t');
   });
 });
 

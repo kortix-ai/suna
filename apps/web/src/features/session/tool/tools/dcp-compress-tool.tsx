@@ -12,7 +12,7 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
-export function DCPCompressTool({ part, defaultOpen }: ToolProps) {
+export function DCPCompressTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const isRunning = useContext(ToolRunningContext);
@@ -34,6 +34,7 @@ export function DCPCompressTool({ part, defaultOpen }: ToolProps) {
         </div>
       }
       defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
     >
       {output ? <ToolOutputFallback output={output} toolName="compress" /> : null}
     </BasicTool>

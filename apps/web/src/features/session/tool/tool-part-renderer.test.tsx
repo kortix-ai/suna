@@ -118,11 +118,24 @@ describe('ToolPartRenderer forwards the open props to every branch', () => {
  * renderer without a render test per tool.
  *
  * The rule is narrow on purpose: a `<BasicTool>` WITH children must mention
- * `defaultOpen` among its props. A self-closing one has nothing to open and is
- * exempt (`agent-stop`, `project-delete`). What the value is — the prop, a
- * literal, an `||` of both — is the renderer's business.
+ * BOTH `defaultOpen` and `forceOpen` among its props. A self-closing one has
+ * nothing to open and is exempt (`agent-stop`, `project-delete`). What the
+ * value is — the prop, a literal, an `||` of both — is the renderer's business.
+ *
+ * `forceOpen` is swept for the same reason and a sharper one. `defaultOpen`
+ * only seeds the row, so dropping it costs a click. `forceOpen` LATCHES it
+ * open (`BasicTool` seeds `useState(defaultOpen || !!forceOpen)` and re-opens
+ * on every change), which is how a tool that needs an answer — a permission
+ * prompt, an ask — puts its own question on screen. Drop it and the prompt is
+ * behind a shut row the reader has no reason to click, so the run just stalls.
+ * Nine body-bearing renderers were dropping it when this half of the rule went
+ * in: `context-info`, `dcp-compress`, `dcp-distill`, `dcp-prune`,
+ * `project-create`, `project-select`, `session-message`, `session-stats`,
+ * `task-list`. Two of those (`session-message`, `task-list`) hardcode
+ * `defaultOpen={false}` — which is exactly the shape where the latch is the
+ * only way the row ever opens by itself.
  */
-describe('every BasicTool with a body accepts defaultOpen', () => {
+describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => {
   const toolDir = join(__dirname, 'tools');
   const sources: [string, string][] = [
     ...readdirSync(toolDir)
@@ -167,12 +180,20 @@ describe('every BasicTool with a body accepts defaultOpen', () => {
     expect(bodied.length).toBeLessThan(total);
   });
 
-  test('no body-bearing call site drops it', () => {
-    const gaps = sources.flatMap(([name, src]) =>
+  /** Every body-bearing `<BasicTool>` whose props omit `prop`, as `file:line`. */
+  function gapsFor(prop: string): string[] {
+    return sources.flatMap(([name, src]) =>
       openTags(src)
-        .filter((t) => !t.selfClosing && !t.props.includes('defaultOpen'))
+        .filter((t) => !t.selfClosing && !t.props.includes(prop))
         .map((t) => `${name}:${t.line}`),
     );
-    expect(gaps).toEqual([]);
+  }
+
+  test('no body-bearing call site drops defaultOpen', () => {
+    expect(gapsFor('defaultOpen')).toEqual([]);
+  });
+
+  test('no body-bearing call site drops forceOpen', () => {
+    expect(gapsFor('forceOpen')).toEqual([]);
   });
 });

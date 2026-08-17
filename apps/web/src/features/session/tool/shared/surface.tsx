@@ -58,11 +58,15 @@ export function useToolIndent(): string {
   return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';
 }
 
-/** The hairline card every payload draws around itself on the INLINE surface. */
-export const TOOL_CARD_FRAME = 'border-border bg-popover rounded-md border';
+/** The hairline card every payload draws around itself on the INLINE surface.
+ *  Module-private: {@link useToolCardFrame} is the only sanctioned reader, so a
+ *  card cannot take the frame without also taking the surface gate. */
+const TOOL_CARD_FRAME = 'border-border bg-popover rounded-md border';
 
-/** The inset a payload card puts between its frame and its content. */
-export const TOOL_CARD_PAD = 'p-3';
+/** The inset a payload card puts between its frame and its content.
+ *  Module-private for the same reason as {@link TOOL_CARD_FRAME} — read it
+ *  through {@link useToolCardPad}. */
+const TOOL_CARD_PAD = 'p-3';
 
 /**
  * The frame a payload card draws — or nothing, on the panel, where the row

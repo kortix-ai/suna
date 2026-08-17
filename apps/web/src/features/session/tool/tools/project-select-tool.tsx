@@ -14,7 +14,7 @@ import { useCallback, useMemo } from 'react';
 
 import { parseProjectSelectOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectSelectTool({ part, defaultOpen }: ToolProps) {
+export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
@@ -40,6 +40,7 @@ export function ProjectSelectTool({ part, defaultOpen }: ToolProps) {
         icon={<Folder />}
         trigger={{ title: 'Workspace', subtitle: name || 'failed' }}
         defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
       >
         <ToolOutputFallback output={output} toolName="project_select" />
       </BasicTool>

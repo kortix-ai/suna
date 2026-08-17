@@ -12,6 +12,25 @@ import { cn } from '@/lib/utils';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
+/**
+ * This is deliberately NOT a card, which is why it keeps its own `bg-muted/20
+ * rounded-sm px-3 py-2` while every card normalized onto the surface gates.
+ *
+ * `ToolOutputCard`, `ToolResultCard`, `ToolCodeCard` and bash's command card
+ * are all TOP-LEVEL: each is the one object a tool row hangs under itself, so
+ * each draws the hairline frame, owns a horizontal scroll axis, and de-nests on
+ * the panel because the row card is already that frame. This block is none of
+ * those. It is a nested passage of wrapped text — mono or markdown, `whitespace-
+ * pre-wrap wrap-break-word`, so it has no x-scroll to reconcile — and it has no
+ * frame to drop, because `bg-muted/20 rounded-sm` is a shade change, not an
+ * edge. It marks "this stretch is the tool's raw words" the way a blockquote
+ * marks quoted text, and it does that whether it sits inside a card, inside a
+ * `ToolSection`/`FoldedSection`, or straight in a row body. Handing it to
+ * `useToolCardFrame`/`useToolCardPad` would delete the only cue separating it
+ * from the prose around it and buy back nothing, since it has no second frame
+ * and no second inset to collapse. So the gates stop at the cards, and the
+ * literals here stay.
+ */
 export function OutputBlock({
   text,
   markdown = false,

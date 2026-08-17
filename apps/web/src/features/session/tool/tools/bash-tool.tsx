@@ -86,17 +86,18 @@ export function bashRowTitle(description: unknown, failed: boolean): string {
  * it is.
  *
  * One frame, one type rhythm: `border bg-popover rounded-md` around content
- * panes that share a 12px inset and one `leading-relaxed` line height — inline.
- * On the panel the frame and the horizontal inset both belong to the row card
- * this hangs inside (`useToolCardFrame`), so only the vertical air around the
- * command/output hairline survives. That
-
+ * panes that share a 12px inset and one `leading-relaxed` line height. That
  * pairing — `[&_code]:text-xs [&_code]:leading-relaxed` over a 12px pane — is
  * the same override `iam/audit-tab.tsx` uses to pull `HighlightedCode` down to
  * a small pane: the component hardcodes `text-sm leading-[1.65]` on its own
  * `<code>`, and a `[&_code]:` variant is one specificity step above it. The
  * size half was already here; without the leading half the highlighted command
  * kept a line height 0.3px off the output it sits above.
+ *
+ * That frame is the INLINE surface's. On the panel the frame and the
+ * horizontal inset both belong to the row card this hangs inside
+ * (`useToolCardFrame`), so only the vertical air around the command/output
+ * hairline survives.
  *
  * The empty state takes that leading too, so a command that printed nothing
  * stands exactly where one line of output would instead of collapsing 3.5px

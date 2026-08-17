@@ -52,16 +52,14 @@ export function ToolResultCard({
     <div
       className={cn(
         // `p-1` is the ONE inset that stays on the frame rather than moving to
-        // the body, and it is kept deliberately: the body is a scroll
-        // container, so padding put there scrolls away with the content and a
-        // scrolled row would sit flush against the border. 4px on the frame is
-        // a gutter that cannot scroll — it keeps the scrollbar off the border
-        // and keeps a clipped row visibly clipped. The rows' own inset
-        // (`px-2 py-1.5`) is the callers' `bodyClassName`, inside the scroller
-        // where it belongs.
-        // `p-1` survives the de-nest: it is the scrollbar gutter, not a second
-        // inset — 4px inside the row body's 12px, which is where the rows'
-        // own `bodyClassName` inset already sits.
+        // the body, and it survives the panel de-nest for that reason: the body
+        // is a scroll container, so padding put there scrolls away with the
+        // content and a scrolled row would sit flush against the border. 4px on
+        // the frame is a scrollbar gutter that cannot scroll — it keeps the
+        // scrollbar off the border and keeps a clipped row visibly clipped, and
+        // on the panel it nests 4px inside the row body's 12px rather than
+        // adding a second inset. The rows' own inset (`px-2 py-1.5`) is the
+        // callers' `bodyClassName`, inside the scroller where it belongs.
         'p-1',
         framed && ['rounded-md border', TONE_CLASS[tone]],
         // The same `mt-1.5` seam + shared indent every other card under a tool

@@ -7,9 +7,27 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { hitPreview, MemorySearchTool } from './memory-search-tool';
 
-// Task 5: memory-search rebuilt on the grammar (BasicTool + ToolSection +
-// flat bg-muted/20 rounded-sm rows). Content-preservation check — every hit
-// field (source/type, id, confidence, content, files) still renders.
+// memory-search on the shared grammar: `BasicTool` shell, no bespoke chrome,
+// and each hit FOLDED behind its own identity line rather than laid out flat.
+//
+// This file used to check the opposite — that every hit field rendered at once
+// on a row of flat `bg-muted/20 rounded-sm` chrome. The fold replaced that, so
+// the assertions inverted with it: the identity line (source/type, id,
+// confidence, `hitPreview`'s first 80 chars) is what must be ON screen, and the
+// body it hides — the tail of the content, the files, `OutputBlock`'s own
+// `bg-muted/20` — is what must NOT be. A search answers with a list; five hits
+// are five rows, not five documents.
+//
+// Note on the harness ceiling: these are all INVERSE assertions, and that is
+// the most this file can prove. The positive open-state case — open a hit,
+// see the full content and `docs/pricing.md` — is structurally unobtainable
+// here. `renderToStaticMarkup` produces a string, not a document: there is no
+// DOM to click and no effects run, so a `FoldedSection` can never be opened
+// after its initial render — and the hit rows pass no `defaultOpen`, with no
+// prop on `MemorySearchTool` to reach in and set one, so they cannot be asked
+// to start open either. Both routes to an open hit are closed. So
+// "the body is absent when closed" is the ceiling, and opening a hit is left
+// to the Playwright journey and the acceptance shots.
 
 // MemorySearchTool calls `useTranslations('hardcodedUi')` unconditionally
 // (for its "% conf" suffix) — see show-tool.test.tsx for the same

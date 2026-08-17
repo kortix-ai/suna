@@ -821,8 +821,6 @@ export const StalePendingContext = createContext(false);
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
 export {
-  TOOL_CARD_FRAME,
-  TOOL_CARD_PAD,
   TOOL_INDENT,
   ToolSurfaceContext,
   useToolCardFrame,
@@ -1011,16 +1009,6 @@ function ToolHeaderRow({
 }
 
 /**
- * Title + subtitle + args on ONE line, for the panel's disclosure row.
- *
- * The panel used to stack these — an `h3` with a second mono line under it —
- * which is a page header, and a page header only works when there is one call
- * on the page. A detail routinely holds several, so the unit here is a row: one
- * line, closed, that says which call this is and nothing more. Everything the
- * old header showed still shows, it just reads left-to-right instead of
- * top-to-bottom.
- */
-/**
  * The row title's shrink priority: it yields LAST, and only to a cap.
  *
  * Title and subtitle are flex siblings, and both used to be plain `min-w-0
@@ -1038,6 +1026,16 @@ function ToolHeaderRow({
  */
 const PANEL_TITLE_CLASS = 'min-w-0 max-w-[60%] shrink-0 truncate';
 
+/**
+ * Title + subtitle + args on ONE line, for the panel's disclosure row.
+ *
+ * The panel used to stack these — an `h3` with a second mono line under it —
+ * which is a page header, and a page header only works when there is one call
+ * on the page. A detail routinely holds several, so the unit here is a row: one
+ * line, closed, that says which call this is and nothing more. Everything the
+ * old header showed still shows, it just reads left-to-right instead of
+ * top-to-bottom.
+ */
 function PanelRowTitle({
   trigger,
   running,

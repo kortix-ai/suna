@@ -145,7 +145,14 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
         ) : null}
 
         {surface === 'panel' && childToolParts.length > 0 && (
-          <div className="border-border/30 border-t p-3">
+          // Full-bleed seam, not a nested box. The panel row body already
+          // supplies the 12px gutter this sits in, so a `p-3` here inset the
+          // activity list a second time (24px of gutter around a 420px pane)
+          // and pulled the hairline in from both edges — a second frame drawn
+          // inside the row card's. `-mx-3` cancels the body's horizontal inset
+          // so the `border-t` spans the card edge to edge, `px-3` puts the
+          // content back where it was, and only the top inset survives.
+          <div className="border-border/30 -mx-3 border-t px-3 pt-3">
             <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
           </div>
         )}
