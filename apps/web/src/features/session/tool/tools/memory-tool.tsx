@@ -1,7 +1,10 @@
 'use client';
 
 import { CopyOverlay } from '@/components/markdown/code';
-import { MarkdownFrontmatterCard, parseFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import {
@@ -18,6 +21,8 @@ import {
   ToolEmptyState,
   ToolOutputFallback,
   ToolRunningContext,
+  useToolCardFrame,
+  useToolCardPad,
   useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -127,12 +132,16 @@ export function isMemoryMarkdown(ext: string): boolean {
  */
 function MemoryMarkdownCard({ code }: { code: string }) {
   const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
   if (!code) return null;
   const { frontmatter, body } = parseFrontmatter(code);
   return (
     // Seam and indent gated together, exactly as `ToolCodeCard` gates them.
     <div className={cn(indent && 'mt-1.5', indent)}>
-      <div className="border-border bg-popover relative rounded-md border">
+      {/* Frame and pad gated the same way, and for the same reason: on the
+          panel the row card is the frame and its body is the inset. */}
+      <div className={cn('relative', frame)}>
         <CopyOverlay code={code}>
           {/* `MD_FLUSH_CLASSES` strips the nested code-block chrome (border,
               background, padding) a fenced code block would otherwise draw
@@ -141,7 +150,10 @@ function MemoryMarkdownCard({ code }: { code: string }) {
               clipping or blowing out the panel's width. */}
           {/* `pr-11` mirrors `ToolCodeCard`: the same `CopyOverlay` button is
               pinned at `top-3 right-3`, and prose is what runs under it. */}
-          <div data-scrollable className={cn('max-h-96 overflow-auto p-3 pr-11', MD_FLUSH_CLASSES)}>
+          <div
+            data-scrollable
+            className={cn('max-h-96 overflow-auto', pad, 'pr-11', MD_FLUSH_CLASSES)}
+          >
             {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
             <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
           </div>

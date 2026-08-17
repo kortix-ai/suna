@@ -121,7 +121,9 @@ describe('BasicTool panel surface — the disclosure row', () => {
   });
 
   test('a childless call is a plain row, not a control that does nothing', () => {
-    const html = renderPanel(<BasicTool trigger={{ title: 'Workspace', subtitle: 'kortix-web' }} />);
+    const html = renderPanel(
+      <BasicTool trigger={{ title: 'Workspace', subtitle: 'kortix-web' }} />,
+    );
 
     expect(html).toContain('Workspace');
     expect(html).not.toContain('role="button"');
@@ -172,6 +174,88 @@ describe('BasicTool panel surface — the disclosure row', () => {
     // Still a row, not the old sticky header.
     expect(html).not.toContain('sticky');
     expect(html).not.toContain('items-start justify-between gap-3');
+  });
+});
+
+// ─── Phase 6 gate, finding 1 (BLOCKER) — the title is not the part that loses ─
+//
+// Title and subtitle are flex siblings. Both used to be plain `min-w-0
+// truncate`, which gives flexbox no shrink priority at all: it takes the
+// overflow out of both IN PROPORTION TO THEIR CONTENT, so the longer one wins.
+// A 420px panel row therefore rendered the `testing` skill as `t…` next to 28
+// characters of its own description, and `mcp__linear__create_issue` as `C..`.
+// The name is the only thing a CLOSED row exists to say.
+//
+// Anchored to the emitted span, not to `toContain` on the whole document: a
+// bare class-name search passes on any element in the tree, including the
+// subtitle's.
+function spanAround(html: string, text: string): string {
+  const close = html.indexOf(`>${text}</span>`);
+  if (close < 0) return '';
+  return html.slice(html.lastIndexOf('<span', close), close + 1);
+}
+
+describe('the panel row title has shrink priority (gate finding 1)', () => {
+  const LONG_SUBTITLE =
+    'Use for every Kortix test task, behavior change, bug fix, refactor, or API route change';
+
+  test('a SHORT title beside a long subtitle keeps its own width', () => {
+    const html = renderPanel(
+      <BasicTool trigger={{ title: 'testing', subtitle: LONG_SUBTITLE }}>
+        <div>body</div>
+      </BasicTool>,
+    );
+
+    const title = spanAround(html, 'testing');
+    expect(title).not.toBe('');
+    // `shrink-0` is the fix: the title is no longer in the proportional
+    // shrink pool the subtitle dominates.
+    expect(title).toContain('shrink-0');
+    // …and `max-w-[60%]` is the other half — see below.
+    expect(title).toContain('max-w-[60%]');
+    // It still ellipsises rather than clipping mid-word.
+    expect(title).toContain('truncate');
+  });
+
+  test('the subtitle is the one that yields — it keeps shrinking, the title does not', () => {
+    const html = renderPanel(
+      <BasicTool trigger={{ title: 'testing', subtitle: LONG_SUBTITLE }}>
+        <div>body</div>
+      </BasicTool>,
+    );
+
+    const subtitle = spanAround(html, LONG_SUBTITLE);
+    expect(subtitle).not.toBe('');
+    expect(subtitle).toContain('min-w-0');
+    expect(subtitle).toContain('truncate');
+    // The one class that would make the subtitle rigid and re-open the bug
+    // from the other side.
+    expect(subtitle).not.toContain('shrink-0');
+  });
+
+  test('a genuinely long title is capped, not rigid — it cannot push the subtitle off', () => {
+    // `shrink-0` ALONE would be the same failure mirrored: a sentence-length
+    // title would take the whole row and leave the subtitle nothing. The cap
+    // is what stops it, so it is asserted as its own case.
+    const html = renderPanel(
+      <BasicTool
+        trigger={{
+          title: 'Run the whole session test suite against the deployed staging API',
+          subtitle: 'apps/web',
+        }}
+      >
+        <div>body</div>
+      </BasicTool>,
+    );
+
+    const title = spanAround(
+      html,
+      'Run the whole session test suite against the deployed staging API',
+    );
+    expect(title).toContain('max-w-[60%]');
+    expect(title).toContain('truncate');
+    // The subtitle is still in the markup — the row did not lose it.
+    expect(html).toContain('>apps/web</span>');
   });
 });
 
@@ -250,6 +334,70 @@ describe('the bordered tool cards share one rhythm', () => {
     expect(html).not.toContain('--tool-indent');
     expect(html).not.toContain('ml-7');
     expect(html).not.toContain('mt-1.5');
+  });
+});
+
+// ─── Phase 6 gate, finding 5 — one payload, one frame ───────────────────────
+//
+// An opened panel row drew THREE frames around one payload: the row card's
+// `bg-popover rounded-md border`, the disclosure body's `border-t px-3 py-3`,
+// and then the payload card's own `bg-popover rounded-md border` with its own
+// `p-3` inside that. Three edges and 24px of gutter on a 420px pane to say one
+// thing.
+//
+// The de-nest: on the panel the payload card drops BOTH its frame and its own
+// inset, because the row card is already the frame and the body is already the
+// inset. Inline it keeps both — there it hangs under a trigger row on the page
+// background with nothing else to bound it, which is why the frame exists at
+// all. Both halves are asserted, on both surfaces, because dropping only one
+// of them leaves the payload either edgeless-but-double-inset or framed-but-
+// flush.
+describe('a payload card de-nests on the panel and is unchanged inline (gate finding 5)', () => {
+  const cards = (
+    <>
+      <RawOutputBlock output="plain log line" />
+      <ToolCodeCard code="const a = 1;" language="ts" />
+      <ToolResultCard>
+        <div>a row</div>
+      </ToolResultCard>
+    </>
+  );
+
+  test('panel: no second frame and no second inset', () => {
+    const html = renderPanel(cards);
+
+    // The row card's own frame is not in this fragment — `BasicTool` is not
+    // rendered here — so ANY `bg-popover … border` is a payload drawing a
+    // frame the row already drew.
+    expect(html).not.toContain('bg-popover');
+    expect(html).not.toContain('rounded-md border');
+    // The card's own 12px gutter is gone; the body's `px-3 py-3` is the inset.
+    expect(html).not.toContain('overflow-auto p-3');
+    // The copy-button reserve survives the merge — it is not padding, it is
+    // room for a control that really is there.
+    expect(html).toContain('pr-11');
+  });
+
+  test('inline: frame and inset both intact — the de-nest is panel-only', () => {
+    const html = renderToStaticMarkup(cards);
+
+    expect(html).toContain('border-border bg-popover rounded-md border');
+    expect(html).toContain('max-h-96 overflow-auto p-3 pr-11');
+    expect(html).toContain(INDENT);
+    expect(html).toContain('mt-1.5');
+  });
+
+  test('a FAILURE keeps its edge on the panel — a tint is not a frame', () => {
+    // The neutral frame is redundant on the panel; the destructive one is the
+    // signal itself, and the row card has no way to carry it.
+    const html = renderPanel(
+      <ToolResultCard tone="destructive">
+        <div>it broke</div>
+      </ToolResultCard>,
+    );
+
+    expect(html).toContain('border-destructive/40 bg-destructive/10');
+    expect(html).toContain('rounded-md border');
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useToolIndent } from '@/features/session/tool/shared/surface';
+import { useToolCardFrame, useToolIndent } from '@/features/session/tool/shared/surface';
 import { cn } from '@/lib/utils';
 
 /**
@@ -41,6 +41,12 @@ export function ToolResultCard({
   tone?: keyof typeof TONE_CLASS;
 }) {
   const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  // A tint is not a frame. On the panel the row card already draws the neutral
+  // edge, so this card drops its own (see `useToolCardFrame`) — but a failure's
+  // `border-destructive/40 bg-destructive/10` is the signal itself, and the row
+  // card has no way to carry it. Destructive keeps its edge on both surfaces.
+  const framed = tone === 'destructive' || frame !== '';
 
   return (
     <div
@@ -53,8 +59,11 @@ export function ToolResultCard({
         // and keeps a clipped row visibly clipped. The rows' own inset
         // (`px-2 py-1.5`) is the callers' `bodyClassName`, inside the scroller
         // where it belongs.
-        'rounded-md border p-1',
-        TONE_CLASS[tone],
+        // `p-1` survives the de-nest: it is the scrollbar gutter, not a second
+        // inset — 4px inside the row body's 12px, which is where the rows'
+        // own `bodyClassName` inset already sits.
+        'p-1',
+        framed && ['rounded-md border', TONE_CLASS[tone]],
         // The same `mt-1.5` seam + shared indent every other card under a tool
         // row uses (`ToolCodeCard`, `ToolOutputCard`, `bash`'s command card),
         // and gated the same way. The indent was `ml-7` — 28px, derived from a

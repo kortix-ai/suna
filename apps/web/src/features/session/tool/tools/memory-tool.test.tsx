@@ -1,10 +1,10 @@
-import { memoryRelPath } from '@/features/session/tool/shared/memory-helpers';
+import { memoryRelPath, parseMemoryView } from '@/features/session/tool/shared/memory-helpers';
 import type { ToolPart } from '@/ui';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { isMemoryMarkdown, MemoryTool, memoryRowTarget, memoryToolTitle } from './memory-tool';
+import { isMemoryMarkdown, memoryRowTarget, MemoryTool, memoryToolTitle } from './memory-tool';
 
 /**
  * The contract this file pins (spec W8).
@@ -252,7 +252,10 @@ describe('MemoryTool view — a markdown file renders as a document', () => {
       '',
       '- run the migration',
     ]);
-    const markup = render(memoryPart({ command: 'view', path: '.kortix/memory/notes.md' }, output), true);
+    const markup = render(
+      memoryPart({ command: 'view', path: '.kortix/memory/notes.md' }, output),
+      true,
+    );
 
     const heading = /<h1[^>]*>([^<]*)<\/h1>/.exec(markup);
     expect(heading?.[1]).toBe('Deploy notes');
@@ -271,7 +274,10 @@ describe('MemoryTool view — a markdown file renders as a document', () => {
       '# Scout',
       'Finds things.',
     ]);
-    const markup = render(memoryPart({ command: 'view', path: '.kortix/memory/agent.md' }, output), true);
+    const markup = render(
+      memoryPart({ command: 'view', path: '.kortix/memory/agent.md' }, output),
+      true,
+    );
 
     expect(markup).toContain('scout');
     const heading = /<h1[^>]*>([^<]*)<\/h1>/.exec(markup);
@@ -322,5 +328,67 @@ describe('MemoryTool create — the same markdown/code split', () => {
     expect(markup).not.toContain('<h1');
     expect(markup).not.toContain('<h2');
     expect(markup).toContain('# not a heading');
+  });
+});
+
+// ─── Phase 6 gate, finding 2 (HIGH) — the last line NUMBER leaked as prose ───
+//
+// `memory view` emits `Content of X with line numbers:` then one `N\t<line>`
+// per line. A file that ends with a newline — nearly every file — produces a
+// final entry whose body is EMPTY: `4\t`. That output then passes through
+// `partOutput`, which `.trim()`s it, and the trim takes the trailing tab with
+// it. The line reaching `parseMemoryView` is the bare `4`, which the old
+// tab-anchored `^\s*\d+\t` could not match, so the number survived into the
+// markdown and rendered at the end of the document as if the author had typed
+// it. Confirmed in the gate's DOM as `<li>…the tooltip?\n28</li>`.
+//
+// This is the runtime's real output, trimmed exactly as the component trims
+// it — not a shape invented for the test.
+function viewOutputEndingInNewline(path: string, lines: string[]): string {
+  const numbered = [...lines, ''].map((line, i) => `${i + 1}\t${line}`);
+  return [`Content of ${path} with line numbers:`, ...numbered].join('\n');
+}
+
+describe('parseMemoryView — a file that ends with a newline (gate finding 2)', () => {
+  test('the trailing bare line number is stripped, not kept as content', () => {
+    const raw = viewOutputEndingInNewline('.kortix/memory/notes.md', [
+      '# Deploy notes',
+      '',
+      '- run the migration',
+    ]);
+    // `partOutput`'s trim is the step that removes the final tab and creates
+    // the bug, so the input here is trimmed the same way the component's is.
+    const view = parseMemoryView(raw.trim(), '.kortix/memory/notes.md');
+
+    expect(view?.type).toBe('file');
+    const content = view?.type === 'file' ? view.content : '';
+    expect(content).toBe('# Deploy notes\n\n- run the migration\n');
+    expect(content.trimEnd().endsWith('- run the migration')).toBe(true);
+  });
+
+  test('a numbered line whose content IS a number is still content', () => {
+    // The strip is anchored to the number PLUS its separator, so a file line
+    // reading `4` (kept by its own `\t`) is not mistaken for a line number.
+    const raw = ['Content of .kortix/memory/n.md with line numbers:', '1\t4', '2\tfour'].join('\n');
+    const view = parseMemoryView(raw, '.kortix/memory/n.md');
+
+    expect(view?.type === 'file' ? view.content : '').toBe('4\nfour');
+  });
+
+  test('end to end: the rendered document does not end in a stray number', () => {
+    const raw = viewOutputEndingInNewline('.kortix/memory/notes.md', [
+      '# Deploy notes',
+      '',
+      '- run the migration',
+    ]);
+    const markup = render(
+      memoryPart({ command: 'view', path: '.kortix/memory/notes.md' }, raw),
+      true,
+    );
+
+    // Anchored to the element the number leaked INTO. A `not.toContain('4')`
+    // would pass on markup that never rendered the list at all.
+    const item = /<li[^>]*>([\s\S]*?)<\/li>/.exec(markup);
+    expect(item?.[1]).toBe('run the migration');
   });
 });

@@ -12,7 +12,12 @@ import { openSessionQuickView } from '@/features/session/open-session-quick-view
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
-import { ToolSurfaceContext, useToolIndent } from '@/features/session/tool/shared/surface';
+import {
+  ToolSurfaceContext,
+  useToolCardFrame,
+  useToolCardPad,
+  useToolIndent,
+} from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -710,11 +715,17 @@ export function ToolOutputFallback({
  */
 function ToolOutputCard({ copyText, children }: { copyText?: string; children: React.ReactNode }) {
   const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
 
   return (
     <div
       className={cn(
-        'border-border bg-popover relative rounded-md border',
+        'relative',
+        // Frame and inset are the panel's business too: on the panel the row
+        // card is already the frame, so drawing a second one around the body
+        // is the triple-nesting the gate filed. See `useToolCardFrame`.
+        frame,
         // The seam and the indent are ONE inline-surface concern, so they are
         // gated together. Inline, the card hangs under a trigger row and needs
         // both: 6px of air and the row's 22px text column (this card used to
@@ -738,7 +749,7 @@ function ToolOutputCard({ copyText, children }: { copyText?: string; children: R
           className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
         />
       )}
-      <div data-scrollable className="max-h-96 overflow-auto p-3 pr-11">
+      <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
         {children}
       </div>
     </div>
@@ -810,8 +821,12 @@ export const StalePendingContext = createContext(false);
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
 export {
+  TOOL_CARD_FRAME,
+  TOOL_CARD_PAD,
   TOOL_INDENT,
   ToolSurfaceContext,
+  useToolCardFrame,
+  useToolCardPad,
   useToolIndent,
   type ToolSurface,
 } from '@/features/session/tool/shared/surface';
@@ -1005,6 +1020,24 @@ function ToolHeaderRow({
  * old header showed still shows, it just reads left-to-right instead of
  * top-to-bottom.
  */
+/**
+ * The row title's shrink priority: it yields LAST, and only to a cap.
+ *
+ * Title and subtitle are flex siblings, and both used to be plain `min-w-0
+ * truncate` — no shrink priority at all, so flexbox took the overflow out of
+ * both in proportion to their content. A long subtitle therefore ate the
+ * title: the `testing` skill's row rendered as `t…` beside 28 characters of
+ * description, and `mcp__linear__create_issue` rendered as `C..`. The name is
+ * the one thing a closed row exists to say, so it cannot be the part that
+ * loses.
+ *
+ * `shrink-0` alone would let a sentence-length title push the subtitle off the
+ * card entirely, which is the same failure mirrored. The `max-w-[60%]` cap is
+ * the second half: a short title always renders whole, a long one truncates at
+ * 60% of the trigger and leaves the rest to the subtitle.
+ */
+const PANEL_TITLE_CLASS = 'min-w-0 max-w-[60%] shrink-0 truncate';
+
 function PanelRowTitle({
   trigger,
   running,
@@ -1019,11 +1052,11 @@ function PanelRowTitle({
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
       {running ? (
-        <TextShimmer className="min-w-0 truncate text-sm font-medium">
+        <TextShimmer className={cn(PANEL_TITLE_CLASS, 'text-sm font-medium')}>
           {trigger.title || 'Working'}
         </TextShimmer>
       ) : (
-        <span className="text-foreground min-w-0 truncate text-sm font-medium">
+        <span className={cn('text-foreground text-sm font-medium', PANEL_TITLE_CLASS)}>
           {trigger.title}
         </span>
       )}
@@ -1393,14 +1426,19 @@ export function ToolCodeCard({
   className?: string;
 }) {
   const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
   if (!code) return null;
   return (
     <div className={cn(indent && 'mt-1.5', indent, className)}>
-      <div className="border-border bg-popover relative rounded-md border">
+      {/* Frame and pad are gated on the surface for the same reason the indent
+          is: on the panel the row card is the frame and its body is the inset.
+          See `useToolCardFrame`. */}
+      <div className={cn('relative', frame)}>
         {/* The scroller sits INSIDE the overlay so the copy button stays pinned
             to the card while long content scrolls under it. */}
         <CopyOverlay code={code}>
-          <div data-scrollable className="max-h-96 overflow-auto p-3 pr-11">
+          <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
             <HighlightedCode code={code} language={language} />
           </div>
         </CopyOverlay>

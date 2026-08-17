@@ -40,13 +40,27 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   const report = useMemo(() => parseMemoryEntryOutput(output), [output]);
   const isStreaming = (status === 'pending' && running) || status === 'running';
 
+  // What the row says when it is SHUT.
+  //
+  // It used to say `Recalled · #482`, and a group of them said `Recalled ·
+  // #482` / `Recalled · #1180` — two rows that name neither the memory nor
+  // anything a reader could act on. The payload already carries the words: an
+  // observation has a `title`, an LTM entry a `caption`. Those go in the
+  // subtitle; the id, which identifies the record but not the memory, moves to
+  // the badge at the row's right edge. Until the output parses (streaming, or
+  // an unrecognized shape) the id is all there is, so it stays the subtitle
+  // rather than leaving the row with nothing.
+  const recalled = report ? (report.kind === 'observation' ? report.title : report.caption) : '';
+  const idLabel = memoryId ? `#${memoryId}` : undefined;
+
   return (
     <BasicTool
       icon={<Brain className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Recalled',
-        subtitle: memoryId ? `#${memoryId}` : undefined,
+        subtitle: recalled || idLabel,
       }}
+      badge={recalled ? idLabel : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -70,21 +84,31 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
             </FoldedSection>
           )}
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-muted-foreground text-xs">
-              <Fingerprint className="size-3" />
-              {report.kind === 'observation'
-                ? tHardcodedUi.raw('componentsSessionToolRenderers.line1730JsxTextObservation')
-                : tHardcodedUi.raw('componentsSessionToolRenderers.line1847JsxTextLTM')}
-              {report.id}
+          {/* One meta line, one baseline. Each span is `inline-flex
+              items-center`: without it the icon claimed its own line box, so
+              the fingerprint sat ABOVE `Observation #482` and the uppercase
+              type label beside it rode visibly higher than the id it
+              qualifies. The created date lost its `ml-auto` for the same
+              reason it needed fixing — in a `flex-wrap` row `ml-auto` pushes a
+              wrapped item to the far right and leaves the gap it came from
+              dead. It reads as the third fact on the line instead. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+              <Fingerprint className="size-3 shrink-0" />
+              <span>
+                {report.kind === 'observation'
+                  ? tHardcodedUi.raw('componentsSessionToolRenderers.line1730JsxTextObservation')
+                  : tHardcodedUi.raw('componentsSessionToolRenderers.line1847JsxTextLTM')}
+                {report.id}
+              </span>
             </span>
-            <span className="text-muted-foreground text-xs tracking-wide uppercase">
+            <span className="text-muted-foreground inline-flex items-center text-xs tracking-wide uppercase">
               {report.type}
             </span>
             {report.created && (
-              <span className="text-muted-foreground ml-auto text-xs">
-                <CalendarClock className="size-3" />
-                {report.created}
+              <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                <CalendarClock className="size-3 shrink-0" />
+                <span>{report.created}</span>
               </span>
             )}
           </div>
@@ -132,13 +156,18 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
                 <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {report.tool && <ToolField label="Tool" value={report.tool} />}
+                    {/* NOT a `ToolField`. The token is "Prompt #" / "Prompt
+                        n°" — a word plus the marker for the number that
+                        follows it — and `ToolField` puts a `gap-2` between its
+                        label and its value, which rendered `Prompt # 14`. The
+                        marker belongs to the number, so the two are set
+                        adjacent, exactly as the `Observation #482` line above
+                        sets them, and the token stays whole for every locale. */}
                     {report.prompt && (
-                      <ToolField
-                        label={tHardcodedUi.raw(
-                          'componentsSessionToolRenderers.line1811JsxTextPrompt',
-                        )}
-                        value={report.prompt}
-                      />
+                      <span className="text-muted-foreground/60 inline-flex items-baseline text-xs">
+                        {tHardcodedUi.raw('componentsSessionToolRenderers.line1811JsxTextPrompt')}
+                        <span className="text-foreground/80">{report.prompt}</span>
+                      </span>
                     )}
                     {report.session && <ToolField label="Session" value={report.session} mono />}
                   </div>

@@ -148,3 +148,90 @@ describe('GetMemTool joins the shared BasicTool shell', () => {
     expect(html).not.toContain('bg-gradient');
   });
 });
+
+// ─── Phase 6 gate, finding 4 (MEDIUM) — a shut row must say WHAT was recalled ─
+//
+// A group of these rows read `Recalled · #482` and `Recalled · #1180`: two
+// identical titles and two opaque ids. The payload already carries the words —
+// an observation has a `Title:`, an LTM entry a `Caption:` — so the subtitle
+// carries those and the record id moves to the badge at the row's right edge.
+describe('the closed get_mem row names the memory (gate finding 4)', () => {
+  const closedTrigger = (part: ToolPart) =>
+    renderToStaticMarkup(
+      withProviders(
+        <ToolSurfaceContext.Provider value="panel">
+          <GetMemTool part={part} />
+        </ToolSurfaceContext.Provider>,
+      ),
+    );
+
+  test("an observation's title is the subtitle, its id is the badge", () => {
+    const html = closedTrigger(makePart({ id: 42 }, OBSERVATION_OUTPUT));
+
+    // Closed: everything asserted below is trigger content, not body content.
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('Simplified the login flow');
+
+    // The subtitle span carries the memory's own words…
+    expect(html).toContain('title="Refactored auth flow"');
+    // …and the id rides the badge, which is the row's `shrink-0` trailing slot.
+    expect(html).toContain('text-muted-foreground/60 shrink-0 font-mono text-xs');
+    expect(html).toContain('>#42</span>');
+  });
+
+  test('an LTM entry falls back to its caption', () => {
+    const html = closedTrigger(makePart({ id: 9 }, LTM_OUTPUT));
+
+    expect(html).toContain('title="User prefers dark mode"');
+    expect(html).toContain('>#9</span>');
+  });
+
+  test('with nothing parsed, the id is still the subtitle — never an empty row', () => {
+    // Streaming, or an output shape this parser does not recognize. The id is
+    // all there is, so it stays where the reader can see it.
+    const html = closedTrigger(makePart({ id: 77 }, 'still thinking…'));
+
+    expect(html).toContain('title="#77"');
+    expect(html).toContain('Recalled');
+  });
+});
+
+// ─── Phase 6 gate, finding 3 (HIGH) — the meta line is ONE line ──────────────
+//
+// The `<span>` holding the fingerprint icon plus `Observation #482` had no
+// `inline-flex items-center`, so the icon claimed its own line box: it sat
+// ABOVE the text, and the uppercase type label beside it rode on a different
+// baseline. The created date's `ml-auto` then pushed it to the far right of a
+// `flex-wrap` row, wrapping it onto a second line with a wide dead gap under
+// the id. And `Prompt #` reached `ToolField`, whose `gap-2` rendered the
+// number as `Prompt # 14`.
+describe('the get_mem meta line (gate finding 3)', () => {
+  const opened = renderToStaticMarkup(
+    withProviders(<GetMemTool part={makePart({ id: 42 }, OBSERVATION_OUTPUT)} defaultOpen />),
+  );
+
+  test('the id span lays its icon out inline, so text and icon share a baseline', () => {
+    const idx = opened.indexOf('Observation #');
+    expect(idx).toBeGreaterThan(-1);
+    const openTag = opened.slice(
+      opened.lastIndexOf('<span', opened.lastIndexOf('<span', idx) - 1),
+      idx,
+    );
+    expect(openTag).toContain('inline-flex items-center');
+  });
+
+  test('the created date is in flow, not flung right by ml-auto', () => {
+    expect(opened).toContain('2026-07-01');
+    // `ml-auto` in a `flex-wrap` row is what put the date on its own line with
+    // a dead gap beside the id it belongs to.
+    expect(opened).not.toContain('ml-auto');
+  });
+
+  test('the prompt number is not separated from its own # by a field gap', () => {
+    // `Prompt #` + `ToolField`'s `gap-2` + `7` rendered as `Prompt # 7`. The
+    // marker belongs to the number, so they are set adjacent — and the token
+    // stays whole, which is what keeps `Prompt n°` / `Prompt nº` correct.
+    expect(opened).toContain('Prompt #<span class="text-foreground/80">7</span>');
+    expect(opened).not.toContain('shrink-0">Prompt #</span>');
+  });
+});

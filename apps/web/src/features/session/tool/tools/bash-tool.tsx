@@ -11,6 +11,8 @@ import {
   partStreamingInput,
   StructuredOutput,
   ToolRunningContext,
+  useToolCardFrame,
+  useToolCardPad,
   useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -84,7 +86,11 @@ export function bashRowTitle(description: unknown, failed: boolean): string {
  * it is.
  *
  * One frame, one type rhythm: `border bg-popover rounded-md` around content
- * panes that share a 12px inset and one `leading-relaxed` line height. That
+ * panes that share a 12px inset and one `leading-relaxed` line height — inline.
+ * On the panel the frame and the horizontal inset both belong to the row card
+ * this hangs inside (`useToolCardFrame`), so only the vertical air around the
+ * command/output hairline survives. That
+
  * pairing — `[&_code]:text-xs [&_code]:leading-relaxed` over a 12px pane — is
  * the same override `iam/audit-tab.tsx` uses to pull `HighlightedCode` down to
  * a small pane: the component hardcodes `text-sm leading-[1.65]` on its own
@@ -114,12 +120,29 @@ function CommandBlock({
 }) {
   const hasOutput = Boolean(richOutput || output);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
+  // On the panel the row card is the frame and the disclosure body is the
+  // inset, so this card draws neither — the gate counted FOUR seams around one
+  // bash payload. The command/output hairline below is not one of them: it
+  // separates two different things and stays on both surfaces.
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+  // The one part of the card's inset the panel still needs. Horizontally the
+  // row body's `px-3` is the gutter, but the hairline BETWEEN the command and
+  // its output is internal to this card, and text pressed against it on both
+  // sides is worse than the extra frame ever was.
+  const paneInset = pad || 'py-2';
 
   return (
-    <div className="border-border bg-popover relative rounded-md border">
+    <div className={cn('relative', frame)}>
       <div data-scrollable className="max-h-64 overflow-auto">
         <div className="relative">
-          <pre className="text-foreground/90 p-3 pr-11 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
+          <pre
+            className={cn(
+              'text-foreground/90 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
+              paneInset,
+              'pr-11',
+            )}
+          >
             <HighlightedCode code={command} language="bash">
               {command}
             </HighlightedCode>
@@ -137,7 +160,13 @@ function CommandBlock({
           ) : output ? (
             <div className="relative">
               <div data-scrollable className="max-h-80 overflow-auto">
-                <div className="text-muted-foreground p-3 pr-11 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
+                <div
+                  className={cn(
+                    'text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
+                    paneInset,
+                    'pr-11',
+                  )}
+                >
                   {output}
                 </div>
               </div>
@@ -149,13 +178,23 @@ function CommandBlock({
               </div>
             </div>
           ) : (
-            <p className="text-muted-foreground/50 p-3 text-xs leading-relaxed">No output</p>
+            <p className={cn('text-muted-foreground/50', paneInset, 'text-xs leading-relaxed')}>
+              No output
+            </p>
           )}
         </div>
       )}
 
       {failed && (
-        <div className="border-border/60 text-muted-foreground/70 border-t px-3 py-2 font-mono text-xs tabular-nums">
+        <div
+          className={cn(
+            'border-border/60 text-muted-foreground/70 border-t py-2 font-mono text-xs tabular-nums',
+            // Metadata about the card, not a third pane: it keeps the shorter
+            // 8px vertical inset, and only the horizontal one is the surface's
+            // to supply.
+            pad && 'px-3',
+          )}
+        >
           Exit code {exitCode}
         </div>
       )}

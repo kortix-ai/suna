@@ -57,3 +57,45 @@ export const TOOL_INDENT = 'ml-[var(--tool-indent,1.375rem)]';
 export function useToolIndent(): string {
   return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';
 }
+
+/** The hairline card every payload draws around itself on the INLINE surface. */
+export const TOOL_CARD_FRAME = 'border-border bg-popover rounded-md border';
+
+/** The inset a payload card puts between its frame and its content. */
+export const TOOL_CARD_PAD = 'p-3';
+
+/**
+ * The frame a payload card draws — or nothing, on the panel, where the row
+ * card IS the frame.
+ *
+ * An opened panel row used to draw three frames around one payload: the row
+ * card's `bg-popover rounded-md border`, the disclosure body's `border-t px-3
+ * py-3`, and then the payload's own `bg-popover rounded-md border`. Three
+ * edges and two insets to say one thing. Inline the payload needs its own
+ * frame — it hangs under a trigger row on the page background with nothing
+ * else to bound it — but on the panel it is the only thing inside a card that
+ * already bounds it, so the frame is redundant and the second inset is the
+ * "inset twice for no added meaning" the gate filed.
+ *
+ * A tint is NOT a frame: {@link ToolResultCard} keeps its destructive border
+ * and wash on both surfaces, because that edge carries the failure and the row
+ * card cannot.
+ */
+export function useToolCardFrame(): string {
+  return useContext(ToolSurfaceContext) === 'inline' ? TOOL_CARD_FRAME : '';
+}
+
+/**
+ * The card's own content inset — or nothing, on the panel.
+ *
+ * The other half of {@link useToolCardFrame}: dropping the frame alone would
+ * leave the payload inset twice (the body's `px-3 py-3` plus the card's own
+ * `p-3`, 24px of gutter around a 420px pane). The row body's inset is the one
+ * that survives, so the panel reads as one frame with one 12px gutter.
+ *
+ * Callers keep their `pr-11` copy-button reserve AFTER this class so the
+ * right-hand reserve survives the merge on both surfaces.
+ */
+export function useToolCardPad(): string {
+  return useContext(ToolSurfaceContext) === 'inline' ? TOOL_CARD_PAD : '';
+}
