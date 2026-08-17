@@ -2624,6 +2624,18 @@ function ProjectGroupGrantsCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to detach group'),
   });
 
+  // Progressive disclosure: this card is a role-assignment shortcut for a
+  // GROUP (the same operation the People tab does per-member — see
+  // attachMutation's `role: ProjectRole` above), not a resource concern. For
+  // the overwhelming majority of accounts that have never created a group,
+  // it is a permanently-empty "go create one elsewhere" teaching card that
+  // only adds noise to a page about THIS project's access. Hide it entirely
+  // once loaded with nothing to show; a project with an existing grant (even
+  // an orphaned one, pointing at a since-deleted group) keeps the card, since
+  // that grant still needs to be manageable/removable.
+  const groupsLoaded = !grantsQuery.isLoading && !groupsQuery.isLoading;
+  if (groupsLoaded && groups.length === 0 && grants.length === 0) return null;
+
   return (
     <>
       <section className="space-y-3">
@@ -3625,6 +3637,15 @@ function ProjectRoleAssignmentsCard({
 
   const canSubmit =
     !!subjectType && subjectIds.length > 0 && !!roleId && !createMutation.isPending;
+
+  // Progressive disclosure — see ProjectGroupGrantsCard's identical comment.
+  // Custom roles are defined on the account Roles page; an account that has
+  // never made one gets a permanently-empty "go create one elsewhere" card
+  // here. Hide it once loaded with nothing to show; keep it if there is an
+  // existing project-scoped binding to manage/remove, even one whose role
+  // was since deleted.
+  const rolesLoaded = !policiesQuery.isLoading && !rolesQuery.isLoading;
+  if (rolesLoaded && customRoles.length === 0 && policies.length === 0) return null;
 
   return (
     <>
