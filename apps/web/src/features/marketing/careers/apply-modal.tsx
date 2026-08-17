@@ -5,6 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/marketing/select';
+import {
   Modal,
   ModalBody,
   ModalContent,
@@ -13,13 +20,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast } from '@/components/ui/toast';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
@@ -159,10 +159,7 @@ export function ApplyModal({
                   {applyForm.areaLabel} <span className="text-destructive">*</span>
                 </Label>
                 <Select value={area ?? undefined} onValueChange={setArea}>
-                  <SelectTrigger
-                    id="apply-area"
-                    className="border-border bg-input text-foreground w-full"
-                  >
+                  <SelectTrigger id="apply-area">
                     <SelectValue placeholder={applyForm.areaPlaceholder} />
                   </SelectTrigger>
                   <SelectContent>

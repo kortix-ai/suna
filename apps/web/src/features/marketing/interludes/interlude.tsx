@@ -1,6 +1,7 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
@@ -44,29 +45,26 @@ export function Interlude({
     <section id={id} className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
       <div className="grid items-center gap-x-16 gap-y-10 lg:grid-cols-12">
         {/* prose */}
-        <Reveal
+        <div
           className={cn(
             'min-w-0 lg:col-span-5',
             flip ? 'lg:order-2' : 'lg:order-1',
           )}
         >
-          <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-            {eyebrow}
-          </p>
-          <h2 className="text-foreground mt-5 text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-            {title}
-          </h2>
-          <div className="mt-5 space-y-4">
-            {paragraphs.map((paragraph) => (
-              <p
-                key={paragraph.slice(0, 32)}
-                className="text-muted-foreground text-base leading-[1.7] text-pretty"
-              >
-                {paragraph}
-              </p>
-            ))}
-          </div>
-        </Reveal>
+          <SectionHeader eyebrow={eyebrow} title={title} />
+          <Reveal>
+            <div className="mt-5 space-y-4">
+              {paragraphs.map((paragraph) => (
+                <p
+                  key={paragraph.slice(0, 32)}
+                  className="text-muted-foreground text-base leading-[1.7] text-pretty"
+                >
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+          </Reveal>
+        </div>
 
         {/* graphic */}
         <Reveal

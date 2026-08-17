@@ -7,6 +7,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import SectionHeader from '@/features/marketing/component/section-header';
 import type { ReactNode } from 'react';
 import { faq } from './content';
 
@@ -60,42 +61,23 @@ import { faq } from './content';
  */
 export function FaqSection(): ReactNode {
   return (
-    <section id="faq" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-      <Reveal>
-        <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-          {faq.eyebrow}
-        </p>
-        <h2 className="text-foreground mt-5 max-w-2xl text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-          {faq.title}
-        </h2>
-      </Reveal>
+    <section id="faq" className="mx-auto flex max-w-7xl flex-col px-6 py-16 sm:py-24 lg:flex-row">
+      <SectionHeader eyebrow={faq.eyebrow} title={faq.title} />
 
-      <Reveal delay={0.06}>
+      <Reveal delay={0.06} className="w-full">
         <Accordion
           type="single"
           collapsible
-          className="border-border bg-card mt-10 overflow-hidden rounded-sm border"
+          className="mt-10 flex w-full flex-col gap-1 border-0 lg:mt-0"
         >
-          {faq.items.map((item, i) => (
+          {faq.items.map((item) => (
             <AccordionItem
               key={item.id}
               value={item.id}
               id={item.id}
-              className={i > 0 ? 'border-border border-t' : ''}
+              className="hover:bg-card data-[state=open]:bg-card rounded-lg border-0 transition-colors"
             >
-              {/* HIT AREA. `py-5` puts the row at 59px measured (1440 and 390
-                  alike), clear of the 44px tap-target floor a previous audit
-                  found several controls on this site below. The trigger is
-                  `flex-1`, so the target is the whole 1234px row rather than the
-                  words in it.
-
-                  `hover:no-underline` because the caret is already the
-                  affordance and an underline on top of it reads as a link. The
-                  row tint is the hover cue instead, and it spans the full width
-                  so the target is legible before the pointer reaches the text.
-                  `rounded-sm` so the focus ring matches the slab it sits in
-                  rather than the primitive's default `rounded-2xl`. */}
-              <AccordionTrigger className="hover:bg-primary/[0.04] rounded-sm px-5 py-5 text-left hover:no-underline sm:px-8">
+              <AccordionTrigger className="rounded-lg px-5 py-5 text-left hover:no-underline sm:px-8">
                 <span className="text-foreground min-w-0 text-base leading-snug font-medium tracking-tight text-balance">
                   {item.question}
                 </span>

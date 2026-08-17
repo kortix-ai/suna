@@ -3,6 +3,7 @@
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { Github } from '@/features/icon/icons/github';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -130,13 +131,8 @@ function Statements(): ReactNode {
 function PlatformSection(): ReactNode {
   return (
     <section id="platform" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <SectionHeader eyebrow={platform.eyebrow} title={platform.title} />
       <Reveal>
-        <Eyebrow>{platform.eyebrow}</Eyebrow>
-
-        <h2 className="text-foreground mt-6 max-w-3xl text-2xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-          {platform.title}
-        </h2>
-
         <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>
           {platform.sub}
         </p>

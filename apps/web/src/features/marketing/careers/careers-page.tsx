@@ -8,6 +8,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
@@ -97,13 +98,8 @@ function Board({ onApply }: { onApply: () => void }): ReactNode {
 function Bar(): ReactNode {
   return (
     <section id="what-we-look-for" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+      <SectionHeader eyebrow={bar.eyebrow} title={bar.title} />
       <Reveal>
-        <Eyebrow>{bar.eyebrow}</Eyebrow>
-
-        <h2 className="text-foreground mt-6 max-w-3xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-          {bar.title}
-        </h2>
-
         <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>
           {bar.lead}
         </p>
@@ -131,14 +127,9 @@ function Bar(): ReactNode {
 function Apply({ onApply }: { onApply: () => void }): ReactNode {
   return (
     <section id="apply" className="mx-auto max-w-7xl px-6 pb-16 sm:pb-24">
-      <Reveal>
-        <div className="border-border border-t pt-12 sm:pt-16">
-          <Eyebrow>{apply.eyebrow}</Eyebrow>
-
-          <h2 className="text-foreground mt-6 max-w-3xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-            {apply.title}
-          </h2>
-
+      <div className="border-border border-t pt-12 sm:pt-16">
+        <SectionHeader eyebrow={apply.eyebrow} title={apply.title} />
+        <Reveal>
           <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>
             {apply.body}
           </p>
@@ -163,8 +154,8 @@ function Apply({ onApply }: { onApply: () => void }): ReactNode {
               </li>
             ))}
           </ul>
-        </div>
-      </Reveal>
+        </Reveal>
+      </div>
     </section>
   );
 }
