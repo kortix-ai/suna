@@ -1,14 +1,34 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useReducedMotion } from 'motion/react';
+import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useCases, type ArtifactTone, type UseCase, type UseCaseArtifact } from './content';
 
 const CARDS = useCases.cards;
 const COUNT = CARDS.length;
+
+/**
+ * Position ticks. Same falloff as the session chat minimap: the active tick is
+ * the longest, neighbours decay geometrically, so the row itself is the
+ * position indicator — not a binary on/off.
+ */
+const TICK_THICKNESS = 2.9;
+const TICK_HEIGHT_MAX = 16;
+const TICK_HEIGHT_MIN = 6;
+const TICK_HEIGHT_FALLOFF = 0.45;
+
+function tickHeight(distance: number): number {
+  if (distance <= 0) return TICK_HEIGHT_MAX;
+  const span = TICK_HEIGHT_MAX - TICK_HEIGHT_MIN;
+  return Math.round(TICK_HEIGHT_MIN + span * TICK_HEIGHT_FALLOFF ** distance);
+}
+
+function tickOpacity(distance: number): number {
+  if (distance <= 0) return 1;
+  return Math.max(0.2, 0.45 * 0.72 ** (distance - 1));
+}
 
 /**
  * Arc geometry.
@@ -251,7 +271,10 @@ function Checks({ artifact }: { artifact: Extract<UseCaseArtifact, { kind: 'chec
           key={item.label}
           className="border-border/40 flex items-center gap-2 border-b px-2.5 py-[7px] last:border-b-0 sm:px-3"
         >
-          <span aria-hidden className={cn('size-[6px] shrink-0 rounded-full', TONE_DOT[item.tone])} />
+          <span
+            aria-hidden
+            className={cn('size-[6px] shrink-0 rounded-full', TONE_DOT[item.tone])}
+          />
           <span className="text-foreground/80 min-w-0 flex-1 truncate text-[11px]">
             {item.label}
           </span>
@@ -339,10 +362,13 @@ function UseCaseCard({ card, index, active }: { card: UseCase; index: number; ac
   return (
     <>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-foreground/80 font-mono text-[10px] tracking-widest uppercase">
+        <span
+          className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
+          data-text="true"
+        >
           {card.tag}
         </span>
-        <span className="text-muted-foreground/40 font-mono text-[10px] tabular-nums">
+        <span className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase tabular-nums select-none">
           {String(index + 1).padStart(2, '0')}
         </span>
       </div>
@@ -365,20 +391,22 @@ function UseCaseCard({ card, index, active }: { card: UseCase; index: number; ac
 const CARD_SHELL =
   'border-border bg-card flex flex-col rounded-xl border p-4 sm:p-5 transition-shadow duration-300';
 
-const EDGE_MASK =
-  'linear-gradient(to right, transparent 0%, #000 7%, #000 93%, transparent 100%)';
+const EDGE_MASK = 'linear-gradient(to right, transparent 0%, #000 7%, #000 93%, transparent 100%)';
 
 /** Header, shared by the wheel and the reduced-motion grid. */
 function SectionHeader({ counter }: { counter?: ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-7xl px-6">
-      <Badge variant="kortix" className="rounded">
+    <div className="mx-auto w-full max-w-7xl gap-4 px-6">
+      <span
+        className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
+        data-text="true"
+      >
         {useCases.eyebrow}
-      </Badge>
-      <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      </span>
+      <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <h2
-          id="use-case-wheel-title"
-          className="text-foreground max-w-3xl text-3xl font-medium tracking-tight text-balance sm:text-4xl"
+          data-heading="true"
+          className="text-foreground max-w-2xl font-sans text-2xl font-medium text-balance sm:text-3xl"
         >
           {useCases.title}
         </h2>
@@ -394,11 +422,7 @@ function SectionHeader({ counter }: { counter?: ReactNode }) {
 /** `prefers-reduced-motion` fallback: the same seven cards, no transforms. */
 function UseCaseGrid() {
   return (
-    <section
-      id="use-cases"
-      aria-labelledby="use-case-wheel-title"
-      className="py-16 sm:py-24"
-    >
+    <section id="use-cases" aria-labelledby="use-case-wheel-title" className="py-24 sm:py-30">
       <SectionHeader />
       <div className="mx-auto mt-12 grid w-full max-w-7xl grid-cols-1 gap-4 px-6 sm:grid-cols-2 lg:grid-cols-3">
         {CARDS.map((card, index) => (
@@ -508,21 +532,29 @@ export function UseCaseWheel(): ReactNode {
         <div className="sticky top-0 flex h-screen flex-col overflow-hidden pt-20">
           <SectionHeader
             counter={
-              <div className="flex shrink-0 items-center gap-3">
-                <div aria-hidden className="flex items-end gap-[3px]">
-                  {CARDS.map((card, index) => (
+              <div aria-hidden className="flex shrink-0 items-end gap-[3px]">
+                {CARDS.map((card, index) => {
+                  const distance = Math.abs(index - activeIndex);
+                  const focused = distance === 0;
+                  const scale = tickHeight(distance) / TICK_HEIGHT_MAX;
+                  return (
                     <span
                       key={card.id}
+                      style={{
+                        width: TICK_THICKNESS,
+                        height: TICK_HEIGHT_MAX,
+                        opacity: tickOpacity(distance),
+                        transform: `scaleY(${scale})`,
+                      }}
                       className={cn(
-                        'w-[3px] rounded-full transition-all duration-300',
-                        index === activeIndex ? 'bg-foreground h-4' : 'bg-foreground/20 h-2',
+                        'origin-bottom rounded-full',
+                        'transition-[transform,opacity,background-color] duration-200 ease-out',
+                        'motion-reduce:transition-[opacity,background-color]',
+                        focused ? 'bg-foreground' : 'bg-muted-foreground',
                       )}
                     />
-                  ))}
-                </div>
-                <span className="text-muted-foreground/60 font-mono text-[11px] tabular-nums">
-                  {String(activeIndex + 1).padStart(2, '0')} / {String(COUNT).padStart(2, '0')}
-                </span>
+                  );
+                })}
               </div>
             }
           />
@@ -549,9 +581,9 @@ export function UseCaseWheel(): ReactNode {
                 data-active={index === activeIndex ? 'true' : 'false'}
                 className={cn(
                   CARD_SHELL,
-                  'relative',
+                  'relative scale-104',
                   'absolute top-1/2 left-1/2 h-[368px] w-[292px] will-change-transform sm:h-[404px] sm:w-[468px]',
-                  'shadow-none data-[active=true]:shadow-2xl data-[active=true]:border-foreground/20',
+                  'data-[active=true]:border-foreground/20 shadow-none data-[active=true]:shadow-2xl',
                 )}
                 style={{ transform: 'translate(-50%, -50%)' }}
               >
