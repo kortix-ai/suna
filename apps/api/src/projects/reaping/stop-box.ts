@@ -10,11 +10,16 @@
  * and this module only carries it out.
  */
 
+import { randomUUID } from 'node:crypto';
 import { getProvider } from '../../platform/providers';
 import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import type { StopReason } from '../stop-reason';
-import { type ReapCandidate, reloadDeadlineAt } from './box-queries';
+import {
+  type ReapCandidate,
+  claimExpiredSandboxStop,
+  releaseSandboxStopClaim,
+} from './box-queries';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from './policy';
 import { applyStoppedState } from './sandbox-state-sync';
 
@@ -51,8 +56,8 @@ const ABORT_TIMEOUT_MS = 4_000;
  * `sandbox-proxy/backend.ts`'s `buildSandboxUpstreamHeaders` compose — not a
  * new client.
  *
- * `userId` is omitted for system-triggered stops (the reaper: deadline
- * expiry, the 24h run cap). The daemon's `/kortix/abort` only verifies the
+ * `userId` is omitted for system-triggered stops (the idle reaper). The
+ * daemon's `/kortix/abort` only verifies the
  * HMAC signature, not who it names, so a synthetic system identity signed
  * with the sandbox's own service key clears its auth gate exactly like a real
  * user's would. `buildSandboxUpstreamHeaders` / `resolvePreviewUserContext`
@@ -105,8 +110,7 @@ export async function abortLiveTurnBeforeStop(input: {
   }
 }
 
-/** The only fields a stop needs. Narrower than ReapCandidate so a request-path
- *  caller (the run-cap park below) can hand over the row it already has. */
+/** The only fields an idle stop needs. */
 export type StoppableBox = Pick<
   ReapCandidate,
   'sandboxId' | 'sessionId' | 'externalId' | 'provider'
@@ -117,21 +121,23 @@ export type StoppableBox = Pick<
  * `'deadline_expired'`, which meant a new caller silently inherited that
  * reason without ever having to think about it — exactly backwards for a
  * field the classification query groups on. Every caller now names its own
- * reason explicitly; see box-reaper.ts and parkBoxAtRunCap below.
+ * reason explicitly; see box-reaper.ts.
  */
 export async function stopExpiredBox(
   row: StoppableBox,
   now: Date,
   stopReason: StopReason,
 ): Promise<StopBoxOutcome> {
-  // LAST-MOMENT RE-CHECK. `row.deadlineAt` came from the batch snapshot, taken
+  // ATOMIC LAST-MOMENT CLAIM. `row.deadlineAt` came from the batch snapshot, taken
   // BEFORE this row's multi-second `getStatus` round-trip. A prompt (or a human
   // clicking the preview, or a gateway LLM call) that landed inside that window
   // has already extended the box, and stopping it here would kill live work the
-  // control plane had just agreed to keep. Compare against a FRESH clock too —
-  // the pass's `now` is as stale as its snapshot.
-  const deadlineAt = await reloadDeadlineAt(row.sandboxId);
-  if (!deadlineAt || deadlineAt.getTime() > Date.now()) return 'skipped';
+  // control plane had just agreed to keep. The claim rechecks the current
+  // deadline and all turn records in one UPDATE. It also blocks a later prompt
+  // before that request can send any byte to the provider.
+  const claimToken = randomUUID();
+  const claimed = await claimExpiredSandboxStop(row.sandboxId, claimToken, new Date());
+  if (!claimed) return 'skipped';
 
   // Close the turn before the box loses power. Every row reaching this line
   // came from `reapCandidatePredicate` (status = 'active'), so the box can
@@ -141,8 +147,12 @@ export async function stopExpiredBox(
   try {
     await getProvider(row.provider).stop(row.externalId);
   } catch (err) {
-    if (isLifecycleTransitionInProgress(err)) return 'skipped';
+    if (isLifecycleTransitionInProgress(err)) {
+      await releaseSandboxStopClaim(row.sandboxId, claimToken);
+      return 'skipped';
+    }
     if (!isAlreadyNotRunning(err)) {
+      await releaseSandboxStopClaim(row.sandboxId, claimToken);
       console.error(
         `[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
       );
@@ -158,31 +168,4 @@ export async function stopExpiredBox(
     now,
   });
   return 'stopped';
-}
-
-/**
- * Park a box that has burned its ENTIRE 24-hour stretch, from the request path
- * that just refused its prompt.
- *
- * Without this the refusal is only correct, not useful: the box sits at the cap
- * with an expired deadline until the next maintenance pass (5 minutes), and every
- * retry in between is refused for the same reason. Parking it here means the very
- * next prompt finds a stopped row, auto-resumes it, and the DB trigger anchors a
- * fresh stretch — which is the recovery the cap was always documented to have.
- *
- * Best-effort by construction: if it fails, the reaper does exactly this within
- * one pass. `stopExpiredBox` re-reads the deadline first, so this cannot park a
- * box whose grant a concurrent turn has meanwhile revived.
- */
-export async function parkBoxAtRunCap(row: StoppableBox): Promise<void> {
-  const outcome = await stopExpiredBox(row, new Date(), 'run_cap').catch((err) => {
-    console.warn(
-      `[deadline] run-cap park failed for sandbox ${row.sandboxId}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return 'errors' as StopBoxOutcome;
-  });
-  if (outcome === 'stopped') {
-    console.log(`[deadline] parked sandbox ${row.sandboxId} at its 24h run cap`);
-  }
 }

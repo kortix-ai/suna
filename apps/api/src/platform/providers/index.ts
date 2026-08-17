@@ -1,8 +1,8 @@
 import { config } from '../../config';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 import { DaytonaProvider } from './daytona';
 import { E2BProvider } from './e2b';
 import { PlatinumProvider } from './platinum';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /**
  * Sandbox provider lineup. Extensible registry — adding a new runtime is
@@ -254,8 +254,23 @@ export interface SandboxProvider {
    * so the caller can fall back to a name-boot; a transient 5xx throws a normal
    * (retryable) error and MUST NOT be turned into a name fallback.
    */
-  createFromExternalId?(externalTemplateId: string, opts: CreateSandboxOpts): Promise<ProvisionResult>;
+  createFromExternalId?(
+    externalTemplateId: string,
+    opts: CreateSandboxOpts,
+  ): Promise<ProvisionResult>;
   start(externalId: string): Promise<void>;
+  /**
+   * Renew the provider-native lifecycle deadline for a sandbox that Kortix has
+   * already confirmed is running and whose `session_sandboxes.deadline_at` is
+   * still live.
+   *
+   * This operation is mandatory for every provider. It must be idempotent,
+   * bounded, and must not wake a stopped sandbox. The provider implementation
+   * owns its native mechanism: absolute timeout renewal, idle-timer activity,
+   * or an equivalent control-plane operation. Only the Kortix reaper calls it;
+   * an in-sandbox process cannot renew its own lifecycle.
+   */
+  renewLifecycle(externalId: string): Promise<void>;
   stop(externalId: string): Promise<void>;
   remove(externalId: string): Promise<void>;
   getStatus(externalId: string): Promise<SandboxStatus>;
@@ -276,7 +291,10 @@ export interface SandboxProvider {
    * silently broke every other provider's runtime connection (502/503). Keeping
    * it on the interface makes that regression a compile error.
    */
-  resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress>;
+  resolveIngress(
+    externalId: string,
+    request: SandboxIngressRequest,
+  ): Promise<ResolvedSandboxIngress>;
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
   /** Apply the exact server-owned network credentials for one sandbox. */
@@ -311,7 +329,8 @@ export interface SandboxProvider {
  *
  * This is a BACKSTOP, not the primary stop mechanism. `deadline_at`
  * (projects/sandbox-deadline.ts) is primary: the reaper stops any active box
- * past its deadline, extended only by control-plane-observed turn starts. The
+ * past its deadline, extended only by control-plane observations and the
+ * durable active-turn record created by an accepted prompt. The
  * provider's native timer only sees INBOUND traffic — blind to local tool runs,
  * and no longer reset by an in-box keep-alive now that the execution lease is
  * deleted — so at the reaper's TTL it WOULD kill working boxes (the 2026-06-24
@@ -323,10 +342,10 @@ export interface SandboxProvider {
  * days of prod: the p99 turn is ~78 min and the MAX is ~8.4h, and the p99.9 gap
  * between consecutive usage_events is already ~1h (long local tool runs emit
  * none at all). 12h is ~1.4x the worst turn ever observed and ~12x that p99.9
- * gap, so it cannot plausibly pre-empt a working box; it is 3x the 4h turn grant
- * and below ABSOLUTE_RUN_CAP_MS (24h), so while the API is alive the
- * activity-aware deadline always fires first, and when the API is dead an orphan
- * bleeds at most 12 box-hours instead of the 264h measured on 2026-07-29.
+ * gap, so it cannot plausibly pre-empt a working box. The reaper resets this
+ * provider timer while exact active-turn evidence remains live. When the API is
+ * dead, an orphan bleeds at most 12 box-hours instead of the 264h measured on
+ * 2026-07-29.
  *
  * FLOOR 60. Never below the value this function returned before the split, so a
  * mis-set env var cannot resurrect the mid-work-kill class. Callers needing a

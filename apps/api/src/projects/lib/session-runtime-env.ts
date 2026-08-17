@@ -1,5 +1,5 @@
-import { agentConfigEtag } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
+import { agentConfigEtag } from './compile-agent-config';
 import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
 
 export interface SessionRuntimeEnvInput {
@@ -12,6 +12,7 @@ export interface SessionRuntimeEnvInput {
   /** Frontend base URL (no /v1) the sandbox surfaces as user-facing links. */
   frontendUrl?: string;
   initialPrompt?: string | null;
+  initialTurn?: { token: string; messageId: string } | null;
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   workspaceMode?: WorkspaceModeV2 | null;
@@ -48,6 +49,12 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // The API adopts/persists that root; it must not create a competing one.
     KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    ...(input.initialPrompt && input.initialTurn
+      ? {
+          KORTIX_INITIAL_TURN_TOKEN: input.initialTurn.token,
+          KORTIX_INITIAL_TURN_MESSAGE_ID: input.initialTurn.messageId,
+        }
+      : {}),
     ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (connector MCP / gateway provider / Slack overlays still apply on

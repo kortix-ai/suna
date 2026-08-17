@@ -10,8 +10,9 @@ import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 // call ORDER (abort strictly before provider.stop) and that a failed/timed-out/
 // unreachable abort never blocks the stop it precedes.
 
-let deadlineAtOverride: Date | null = null;
-let reloadDeadlineCalls: string[] = [];
+let stopClaimGranted = true;
+let stopClaimCalls: Array<{ sandboxId: string; token: string }> = [];
+let stopClaimReleaseCalls: Array<{ sandboxId: string; token: string }> = [];
 let providerStopCalls: string[] = [];
 let providerStopError: Error | null = null;
 let applyStoppedCalls: Array<Record<string, unknown>> = [];
@@ -24,9 +25,12 @@ let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Resp
 const originalFetch = globalThis.fetch;
 
 mock.module('./box-queries', () => ({
-  reloadDeadlineAt: async (sandboxId: string) => {
-    reloadDeadlineCalls.push(sandboxId);
-    return deadlineAtOverride;
+  claimExpiredSandboxStop: async (sandboxId: string, token: string) => {
+    stopClaimCalls.push({ sandboxId, token });
+    return stopClaimGranted;
+  },
+  releaseSandboxStopClaim: async (sandboxId: string, token: string) => {
+    stopClaimReleaseCalls.push({ sandboxId, token });
   },
 }));
 
@@ -74,11 +78,9 @@ const row = {
 const NOW = new Date('2026-08-15T00:05:00.000Z');
 
 beforeEach(() => {
-  // Expired by default — the shape most calls into stopExpiredBox arrive in.
-  // Compared against the REAL clock (Date.now()), not the `now` fixture: the
-  // implementation's skip gate reads live time, only the write uses `now`.
-  deadlineAtOverride = new Date(Date.now() - 60_000);
-  reloadDeadlineCalls = [];
+  stopClaimGranted = true;
+  stopClaimCalls = [];
+  stopClaimReleaseCalls = [];
   providerStopCalls = [];
   providerStopError = null;
   applyStoppedCalls = [];
@@ -101,7 +103,7 @@ afterAll(() => {
 
 describe('stopExpiredBox — pre-stop abort', () => {
   test('a deadline that is no longer expired skips reaping and never attempts the abort', async () => {
-    deadlineAtOverride = new Date(Date.now() + 60_000);
+    stopClaimGranted = false;
 
     const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
@@ -114,7 +116,9 @@ describe('stopExpiredBox — pre-stop abort', () => {
     const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
     expect(outcome).toBe('stopped');
-    expect(reloadDeadlineCalls).toEqual(['sb-1']);
+    expect(stopClaimCalls).toEqual([
+      { sandboxId: 'sb-1', token: expect.any(String) },
+    ]);
     expect(abortFetchCalls).toHaveLength(1);
     expect(abortFetchCalls[0]?.url).toBe('https://daemon.example.test/kortix/abort');
     expect(abortFetchCalls[0]?.init.method).toBe('POST');
@@ -129,7 +133,7 @@ describe('stopExpiredBox — pre-stop abort', () => {
       throw new DOMException('The operation timed out.', 'TimeoutError');
     };
 
-    const outcome = await stopExpiredBox(row, NOW, 'run_cap');
+    const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
     expect(outcome).toBe('stopped');
     expect(abortFetchCalls).toHaveLength(1);
@@ -169,5 +173,8 @@ describe('stopExpiredBox — pre-stop abort', () => {
 
     expect(abortFetchCalls).toHaveLength(1);
     expect(applyStoppedCalls).toEqual([]);
+    expect(stopClaimReleaseCalls).toEqual([
+      { sandboxId: 'sb-1', token: stopClaimCalls[0]?.token },
+    ]);
   });
 });

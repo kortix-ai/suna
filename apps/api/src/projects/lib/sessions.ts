@@ -84,6 +84,10 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
+import {
+  type PreparedInitialSandboxTurn,
+  prepareInitialSandboxTurn,
+} from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
@@ -276,6 +280,7 @@ export async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
   /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
@@ -508,6 +513,7 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
+      initialTurn: input.initialTurn,
       // Concrete session model after explicit → agent → project → account →
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
@@ -1211,6 +1217,7 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
   const pendingPrompt =
     body.pending_prompt &&
     typeof body.pending_prompt === 'object' &&
@@ -1403,29 +1410,30 @@ export async function createProjectSession(input: {
       ]);
       const envPromise = baseShaPromise
         .then((baseSha) =>
-        buildSessionSandboxEnvVars({
-          accountId,
-          projectId,
-          sessionId,
-          userId,
-          repoUrl: project.repoUrl,
-          baseRef,
-          agentName,
-          initialPrompt,
-          opencodeModel,
-          llmGatewayEnabled,
-          platformMetaAgent,
-          freshSession: true,
-          baseSha,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath,
-          workspaceMode,
-        }),
+          buildSessionSandboxEnvVars({
+            accountId,
+            projectId,
+            sessionId,
+            userId,
+            repoUrl: project.repoUrl,
+            baseRef,
+            agentName,
+            initialPrompt,
+            initialTurn,
+            opencodeModel,
+            llmGatewayEnabled,
+            platformMetaAgent,
+            freshSession: true,
+            baseSha,
+            defaultBranch: project.defaultBranch,
+            manifestPath: project.manifestPath,
+            workspaceMode,
+          }),
         )
         .then((envVars) => {
-        tl.mark('env-vars');
-        return envVars;
-      });
+          tl.mark('env-vars');
+          return envVars;
+        });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
         await db
@@ -1483,6 +1491,7 @@ export async function createProjectSession(input: {
         agentName,
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        initialTurn,
         extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {

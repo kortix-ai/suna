@@ -7,13 +7,14 @@
  * SQL in sandbox-deadline.ts; the reaper that judges the row is the real
  * `reapAndReconcileSandboxes`; and the stop that closes it out is the real
  * `applyStoppedState`, which settles the compute meter against the still-active
- * row before flipping either status. Only `provider.stop()` is stubbed, because
- * the one thing this suite cannot own is somebody else's hypervisor.
+ * row before flipping either status. Only the provider lifecycle calls are
+ * stubbed, because this suite cannot own somebody else's hypervisor.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 
 const stops: string[] = [];
+const renewals: string[] = [];
 // Spread the real module: only `getProvider` is stubbed, so every other export
 // (error classes the transitive importers need) stays exactly as shipped.
 const realProviders = await import('../platform/providers');
@@ -21,6 +22,9 @@ mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     getStatus: async () => 'running',
+    renewLifecycle: async (externalId: string) => {
+      renewals.push(externalId);
+    },
     stop: async (externalId: string) => {
       stops.push(externalId);
     },
@@ -147,6 +151,7 @@ describe('a sandbox lifetime, start to death', () => {
     await reapAndReconcileSandboxes(new Date());
 
     expect(stops).toEqual([]);
+    expect(renewals).toContain(EXTERNAL_ID);
     expect((await statusOf()).sandbox).toBe('active');
   });
 

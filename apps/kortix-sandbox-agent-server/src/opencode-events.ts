@@ -52,6 +52,14 @@ type OpencodeEventHandlers = {
   // subscribe-before-prompt ordering — makes finalize independent of subscription
   // timing.
   onConnected?: () => void
+  // Periodic terminal reconciliation. This closes the case where the SSE
+  // connection stays open but one session.idle frame is lost, or the first API
+  // relay exhausts its retries. It may only report terminal evidence.
+  onReconcile?: () => void
+}
+
+export interface OpencodeEventLoopOptions {
+  reconcileIntervalMs?: number
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -61,6 +69,7 @@ export function startOpencodeEventLoop(
   opencode: Opencode,
   cfg: Config,
   handlers: OpencodeEventHandlers,
+  options: OpencodeEventLoopOptions = {},
 ): { stop(): void; connected: Promise<void> } {
   let stopping = false
   let abortController: AbortController | null = null
@@ -75,6 +84,7 @@ export function startOpencodeEventLoop(
   // from "an established subscription dropped" (real fault, back off). See the
   // retry loop below.
   let everConnected = false
+  let reconcileTimer: ReturnType<typeof setInterval> | null = null
 
   async function connectOnce(): Promise<void> {
     const url = `${opencode.getInternalUrl()}/event?directory=${encodeURIComponent(cfg.workspace)}`
@@ -93,6 +103,12 @@ export function startOpencodeEventLoop(
     // on every (re)connect; the handler is idempotent (per-turn dedup), so a
     // reconnect after the turn already relayed is a no-op.
     handlers.onConnected?.()
+    if (!reconcileTimer && handlers.onReconcile) {
+      reconcileTimer = setInterval(
+        () => handlers.onReconcile?.(),
+        options.reconcileIntervalMs ?? 30_000,
+      )
+    }
 
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -127,8 +143,7 @@ export function startOpencodeEventLoop(
       }
     }
   }
-
-  ;(async () => {
+  (async () => {
     // Two DIFFERENT retry regimes, because the pre-connect and post-connect
     // failures mean opposite things.
     //
@@ -175,6 +190,7 @@ export function startOpencodeEventLoop(
   return {
     stop() {
       stopping = true
+      if (reconcileTimer) clearInterval(reconcileTimer)
       abortController?.abort()
     },
     connected,
@@ -200,7 +216,10 @@ export function flattenOpencodeError(e: {
 
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
-export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
+export function dispatch(
+  event: { type?: string; properties?: unknown },
+  handlers: OpencodeEventHandlers,
+): void {
   handlers.onEvent?.(event)
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
     const req = event.properties as QuestionRequest
@@ -220,7 +239,12 @@ export function dispatch(event: { type?: string; properties?: unknown }, handler
           sessionID?: string
           error?: {
             name?: string
-            data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+            data?: {
+              message?: string
+              statusCode?: number
+              isRetryable?: boolean
+              providerID?: string
+            }
           }
         }
       | undefined

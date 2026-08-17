@@ -14,17 +14,25 @@ type FakeSandbox = ReturnType<typeof fakeSandbox>;
 let createdTemplate: string | undefined;
 let createdOpts: Record<string, unknown> | undefined;
 let connected: Array<{ sandboxId: string; opts: Record<string, unknown> }> = [];
+let timeoutRenewals: Array<{
+  sandboxId: string;
+  timeoutMs: number;
+  opts: Record<string, unknown>;
+}> = [];
 let staticPauses: Array<{ sandboxId: string; opts: Record<string, unknown> }> = [];
 let killed: string[] = [];
 let infoState: 'running' | 'paused' | 'missing' = 'running';
 let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
 let listOpts: Record<string, unknown> | undefined;
-let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) => fakeSandbox(sandboxId);
+let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) =>
+  fakeSandbox(sandboxId);
 let createFactory: () => FakeSandbox = () => fakeSandbox('sb-created');
 let killFactory: (sandboxId: string) => boolean | Promise<boolean> = (sandboxId) => {
   killed.push(sandboxId);
   return true;
 };
+let timeoutRenewalFactory: () => void | Promise<void> = () => {};
+let staticPauseFactory: () => boolean | Promise<boolean> = () => true;
 
 class FakeSandboxNotFoundError extends Error {}
 
@@ -86,9 +94,14 @@ class FakeSandboxApi {
     return connectFactory(sandboxId);
   }
 
+  static async setTimeout(sandboxId: string, timeoutMs: number, opts: Record<string, unknown>) {
+    timeoutRenewals.push({ sandboxId, timeoutMs, opts });
+    await timeoutRenewalFactory();
+  }
+
   static async pause(sandboxId: string, opts: Record<string, unknown>) {
     staticPauses.push({ sandboxId, opts });
-    return true;
+    return staticPauseFactory();
   }
 
   static async kill(sandboxId: string) {
@@ -132,6 +145,7 @@ beforeEach(() => {
   createdTemplate = undefined;
   createdOpts = undefined;
   connected = [];
+  timeoutRenewals = [];
   staticPauses = [];
   killed = [];
   infoState = 'running';
@@ -143,6 +157,8 @@ beforeEach(() => {
     killed.push(sandboxId);
     return true;
   };
+  timeoutRenewalFactory = () => {};
+  staticPauseFactory = () => true;
 });
 
 describe('E2B provider admission and registry', () => {
@@ -158,6 +174,54 @@ describe('E2B provider admission and registry', () => {
 });
 
 describe('E2B provider lifecycle', () => {
+  test('renews the provider deadline without reconnecting or waking the sandbox', async () => {
+    const provider = new E2BProvider();
+
+    await provider.renewLifecycle('sb-active-turn');
+
+    expect(timeoutRenewals).toEqual([
+      {
+        sandboxId: 'sb-active-turn',
+        timeoutMs: 3_600_000,
+        opts: expect.objectContaining({
+          apiKey: 'e2b_test_key',
+          domain: 'e2b.dev',
+          requestTimeoutMs: 20_000,
+        }),
+      },
+    ]);
+    expect(connected).toEqual([]);
+  });
+
+  test('bounds a hung provider deadline renewal', async () => {
+    timeoutRenewalFactory = () => new Promise<void>(() => {});
+    const provider = new E2BProvider(25_000, 10);
+
+    await expect(provider.renewLifecycle('sb-hung-renewal')).rejects.toThrow(
+      'E2B lifecycle renewal(sb-hung-renewal) timed out after 10ms',
+    );
+    expect(connected).toEqual([]);
+  });
+
+  test('propagates a stopped-sandbox renewal refusal without waking it', async () => {
+    timeoutRenewalFactory = async () => {
+      throw new Error('sandbox is paused');
+    };
+    const provider = new E2BProvider();
+
+    await expect(provider.renewLifecycle('sb-stopped')).rejects.toThrow('sandbox is paused');
+    expect(connected).toEqual([]);
+  });
+
+  test('bounds a hung static pause used by the idle reaper', async () => {
+    staticPauseFactory = () => new Promise<boolean>(() => {});
+    const provider = new E2BProvider(25_000, 25_000, 10);
+
+    await expect(provider.stop('sb-hung-stop')).rejects.toThrow(
+      'E2B stop(sb-hung-stop) timed out after 10ms',
+    );
+  });
+
   test('create is private, filesystem-persistent, explicit-resume-only, and launches Kortix', async () => {
     const sandbox = fakeSandbox('sb-secure', 'traffic-secret');
     createFactory = () => sandbox;
@@ -200,7 +264,9 @@ describe('E2B provider lifecycle', () => {
     expect(sandbox.runs).toHaveLength(3);
     expect(sandbox.runs[0].command).toBe('chmod 600 /etc/kortix/runtime-env.json');
     expect(sandbox.runs[1]).toMatchObject({
-      command: expect.stringContaining('flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint'),
+      command: expect.stringContaining(
+        'flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint',
+      ),
       opts: {
         background: true,
         timeoutMs: 0,
@@ -218,13 +284,15 @@ describe('E2B provider lifecycle', () => {
     createFactory = () => fakeSandbox('sb-tokenless', '');
     const provider = new E2BProvider();
 
-    await expect(provider.create({
-      accountId: 'acc-1',
-      userId: 'usr-1',
-      name: 'session-1',
-      snapshot: 'tpl',
-      envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token' },
-    })).rejects.toThrow('private traffic access token');
+    await expect(
+      provider.create({
+        accountId: 'acc-1',
+        userId: 'usr-1',
+        name: 'session-1',
+        snapshot: 'tpl',
+        envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token' },
+      }),
+    ).rejects.toThrow('private traffic access token');
 
     expect(killed).toEqual(['sb-tokenless']);
   });
@@ -265,10 +333,13 @@ describe('E2B provider lifecycle', () => {
 
   test('App cold resume relaunches appd and skips the session entrypoint', async () => {
     const resumed = fakeSandbox('app-resume');
-    resumed.persistedFiles.set('/etc/kortix/runtime-env.json', JSON.stringify({
-      KORTIX_WORKLOAD_TYPE: 'app',
-      KORTIX_APPD_TOKEN: 'persisted-appd-token',
-    }));
+    resumed.persistedFiles.set(
+      '/etc/kortix/runtime-env.json',
+      JSON.stringify({
+        KORTIX_WORKLOAD_TYPE: 'app',
+        KORTIX_APPD_TOKEN: 'persisted-appd-token',
+      }),
+    );
     connectFactory = () => resumed;
 
     await new E2BProvider().start('app-resume');
@@ -288,10 +359,13 @@ describe('E2B provider lifecycle', () => {
     // `sleep infinity`, so nothing restarted appd — and this is exactly the
     // call AppHostingProvider.waitUntilReady makes to recover a stalled App.
     const sandbox = fakeSandbox('app-recover');
-    sandbox.persistedFiles.set('/etc/kortix/runtime-env.json', JSON.stringify({
-      KORTIX_WORKLOAD_TYPE: 'app',
-      KORTIX_APPD_TOKEN: 'persisted-appd-token',
-    }));
+    sandbox.persistedFiles.set(
+      '/etc/kortix/runtime-env.json',
+      JSON.stringify({
+        KORTIX_WORKLOAD_TYPE: 'app',
+        KORTIX_APPD_TOKEN: 'persisted-appd-token',
+      }),
+    );
     connectFactory = () => sandbox;
 
     await new E2BProvider().ensureAppRuntimeStarted('app-recover');
@@ -320,14 +394,16 @@ describe('E2B provider lifecycle', () => {
   });
 
   test('rejects an App workload without KORTIX_APPD_TOKEN', async () => {
-    await expect(new E2BProvider().create({
-      accountId: 'acc-1',
-      userId: 'usr-1',
-      name: 'app-1',
-      snapshot: 'app-template-1',
-      workloadType: 'app',
-      envVars: { KORTIX_SANDBOX_TOKEN: 'session-token-is-not-valid-for-apps' },
-    })).rejects.toThrow(/KORTIX_APPD_TOKEN/);
+    await expect(
+      new E2BProvider().create({
+        accountId: 'acc-1',
+        userId: 'usr-1',
+        name: 'app-1',
+        snapshot: 'app-template-1',
+        workloadType: 'app',
+        envVars: { KORTIX_SANDBOX_TOKEN: 'session-token-is-not-valid-for-apps' },
+      }),
+    ).rejects.toThrow(/KORTIX_APPD_TOKEN/);
   });
 
   test('stop drops RAM but preserves disk, and start explicitly reconnects the same identity', async () => {
@@ -335,7 +411,10 @@ describe('E2B provider lifecycle', () => {
     createFactory = () => sandbox;
     const provider = new E2BProvider();
     await provider.create({
-      accountId: 'acc-1', userId: 'usr-1', name: 'session-1', snapshot: 'tpl',
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'tpl',
       envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token' },
     });
 
@@ -359,7 +438,9 @@ describe('E2B provider lifecycle', () => {
     expect(connected.map((call) => call.sandboxId)).toEqual(['sb-cold-resume']);
     expect(resumed.runs).toEqual([
       expect.objectContaining({
-        command: expect.stringContaining('flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint'),
+        command: expect.stringContaining(
+          'flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint',
+        ),
         opts: expect.objectContaining({
           background: true,
           timeoutMs: 0,
@@ -375,7 +456,9 @@ describe('E2B provider lifecycle', () => {
   test('overlapping cold-resume calls share one provider start operation', async () => {
     const resumed = fakeSandbox('sb-concurrent-resume');
     let releaseConnect!: () => void;
-    const connectGate = new Promise<void>((resolve) => { releaseConnect = resolve; });
+    const connectGate = new Promise<void>((resolve) => {
+      releaseConnect = resolve;
+    });
     connectFactory = async () => {
       await connectGate;
       return resumed;
@@ -389,14 +472,20 @@ describe('E2B provider lifecycle', () => {
     expect(connected.map((call) => call.sandboxId)).toEqual(['sb-concurrent-resume']);
     releaseConnect();
     await Promise.all([first, second]);
-    expect(resumed.runs.filter((run) => run.command.includes('/usr/local/bin/kortix-entrypoint'))).toHaveLength(1);
+    expect(
+      resumed.runs.filter((run) => run.command.includes('/usr/local/bin/kortix-entrypoint')),
+    ).toHaveLength(1);
   });
 
   test.each([
     ['missing', undefined, 'missing file'],
     ['malformed', '{not-json', 'JSON'],
     ['non-string', JSON.stringify({ KORTIX_SANDBOX_TOKEN: 42 }), 'non-string'],
-    ['tokenless', JSON.stringify({ KORTIX_API_URL: 'https://api.example.com/v1' }), 'no KORTIX_SANDBOX_TOKEN'],
+    [
+      'tokenless',
+      JSON.stringify({ KORTIX_API_URL: 'https://api.example.com/v1' }),
+      'no KORTIX_SANDBOX_TOKEN',
+    ],
   ] as const)(
     'cold resume fails closed for a %s persisted runtime environment',
     async (_case, persisted, expectedMessage) => {
@@ -424,7 +513,10 @@ describe('E2B provider lifecycle', () => {
     connectFactory = (sandboxId) => fakeSandbox(sandboxId, 'traffic-private');
     const provider = new E2BProvider();
 
-    const ingress = await provider.resolveIngress('sb-ingress', { port: 3000, transport: 'websocket' });
+    const ingress = await provider.resolveIngress('sb-ingress', {
+      port: 3000,
+      transport: 'websocket',
+    });
 
     expect(connected.map((call) => call.sandboxId)).toEqual(['sb-ingress']);
     expect(ingress).toEqual({

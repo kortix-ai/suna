@@ -7,8 +7,7 @@ import { mockConfigModule } from './reaping/test-support/mock-config';
 // LEAST and never GREATEST, and neither may assign active_since.
 let executed: string[] = [];
 /** What the mocked driver returns from `db.execute`. `undefined` reproduces a
- *  driver whose shape this module does not recognise; the writer must then fail
- *  OPEN rather than refuse a user's prompt. */
+ *  driver response returned by `db.execute`. */
 let executeResult: unknown;
 let executeThrows: Error | null = null;
 
@@ -43,13 +42,12 @@ mock.module('../shared/db', () => ({
 }));
 
 const {
-  ABSOLUTE_RUN_CAP_MS,
+  NON_TURN_DEADLINE_CAP_MS,
   extendSandboxDeadline,
   grantWarmPoolLifetime,
   idleGraceMs,
   isSandboxAuthored,
   isTurnStartRequest,
-  observeTurnStart,
   shortenSandboxDeadline,
   shortenSandboxDeadlineOnTurnEnd,
   turnGrantMs,
@@ -72,8 +70,8 @@ describe('the constants', () => {
     expect(idleGraceMs()).toBe(15 * 60_000);
   });
 
-  test('the absolute cap mirrors the DB CHECK at 24h', () => {
-    expect(ABSOLUTE_RUN_CAP_MS).toBe(24 * 3_600_000);
+  test('non-turn observations are capped at 24h', () => {
+    expect(NON_TURN_DEADLINE_CAP_MS).toBe(24 * 3_600_000);
   });
 
   test('the grant is tunable, so it can be tightened without a code change', () => {
@@ -81,11 +79,9 @@ describe('the constants', () => {
     expect(turnGrantMs()).toBe(60 * 60_000);
   });
 
-  // The documented kill switch: a grant longer than the cap makes every extend
-  // clamp at active_since + 24h, neutralising the feature with no rollback.
-  test('KILL SWITCH: an absurd grant still cannot exceed the cap', () => {
+  test('an absurd non-turn grant still clamps to the cap', () => {
     process.env.KORTIX_SANDBOX_TURN_GRANT_MINUTES = '100000';
-    expect(turnGrantMs()).toBeGreaterThan(ABSOLUTE_RUN_CAP_MS);
+    expect(turnGrantMs()).toBeGreaterThan(NON_TURN_DEADLINE_CAP_MS);
   });
 });
 
@@ -97,7 +93,7 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
     expect(sql).toContain('LEAST'); // the cap
     expect(sql).toContain('GREATEST'); // monotonic: a concurrent extend can't be lost
     expect(sql).toContain('active_since +');
-    expect(sql).toContain('86400'); // ABSOLUTE_RUN_CAP_MS in seconds
+    expect(sql).toContain('86400'); // NON_TURN_DEADLINE_CAP_MS in seconds
     expect(sql).toContain('14400'); // the 4h grant in seconds
   });
 
@@ -130,73 +126,6 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
     expect(executed[0]).toContain('sandbox_id');
     expect(executed[1]).toContain('session_id');
     expect(executed[2]).toContain('external_id');
-  });
-});
-
-// ═══ THE DEFECT THIS CLOSES ═══
-// The extend clamps at `active_since + 24h`. Once a box has burned its whole
-// stretch that value is in the PAST, so a fire-and-forget extend on the prompt
-// path ACCEPTED the user's message and let the reaper stop the box seconds
-// later — mid-work, message swallowed. Accepting work you are about to kill is
-// worse than refusing it, so the prompt paths ask, and refuse at the cap.
-describe('observeTurnStart — refuse at the cap instead of accepting then killing', () => {
-  test('a box with life left is GRANTED the turn', async () => {
-    executeResult = [{ live: true }];
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('granted');
-  });
-
-  test('REGRESSION: a box at its 24h cap is refused, not accepted-then-killed', async () => {
-    // The UPDATE ran and clamped to active_since + 24h, which is already past.
-    executeResult = [{ live: false }];
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('at_cap');
-  });
-
-  test('no matching live row is distinguishable from a cap hit', async () => {
-    executeResult = [];
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('no_box');
-  });
-
-  test('it issues exactly the same monotone, capped statement as an extend', async () => {
-    executeResult = [{ live: true }];
-    await observeTurnStart({ sessionId: 'sess-1' });
-    const observed = executed[0];
-
-    executed = [];
-    await extendSandboxDeadline({ sessionId: 'sess-1' });
-
-    expect(observed).toBe(executed[0]);
-  });
-
-  test('it reports liveness from the DB clock, never from the API pod clock', async () => {
-    executeResult = [{ live: true }];
-    await observeTurnStart({ sessionId: 'sess-1' });
-
-    expect(executed[0]).toContain('RETURNING');
-    expect(executed[0]).toContain('deadline_at > now()');
-  });
-
-  test('reads the node-postgres { rows } shape as well as the postgres-js array', async () => {
-    executeResult = { rows: [{ live: false }] };
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('at_cap');
-  });
-
-  // Refusing a user's prompt because a driver returned an unfamiliar shape, or
-  // because the DB blipped, is far worse than granting one turn too many — the
-  // CHECK is still the real bound either way.
-  test('FAILS OPEN on an unrecognised driver shape', async () => {
-    executeResult = undefined;
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('granted');
-  });
-
-  test('FAILS OPEN when the write itself throws', async () => {
-    executeThrows = new Error('db down');
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('granted');
   });
 });
 

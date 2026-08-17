@@ -23,6 +23,7 @@ mock.module('../../config', () => ({
 mock.module('../../shared/db', () => ({ db: {} }));
 
 let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
+let lifecycleCommands: Array<{ command: string; timeout: number | undefined }>;
 
 mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
@@ -53,7 +54,67 @@ beforeEach(() => {
   // Below the code's own 1000ms floor (Math.max(1000, …)) would just get
   // clamped up — use a value comfortably above it.
   process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS = '1200';
+  lifecycleCommands = [];
   getDaytonaSandbox = () => new Promise<never>(() => {});
+});
+
+test('renewLifecycle performs one bounded no-op inside the running sandbox', async () => {
+  getDaytonaSandbox = async () => ({
+    state: 'started',
+    process: {
+      executeCommand: async (
+        command: string,
+        _cwd?: string,
+        _env?: Record<string, string>,
+        timeout?: number,
+      ) => {
+        lifecycleCommands.push({ command, timeout });
+        return { exitCode: 0, result: '' };
+      },
+    },
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  await new DaytonaProvider().renewLifecycle('sbx_active');
+
+  expect(lifecycleCommands).toEqual([{ command: 'true', timeout: 10 }]);
+});
+
+test('renewLifecycle never executes inside a stopped sandbox', async () => {
+  getDaytonaSandbox = async () => ({
+    state: 'stopped',
+    process: {
+      executeCommand: async (
+        command: string,
+        _cwd?: string,
+        _env?: Record<string, string>,
+        timeout?: number,
+      ) => {
+        lifecycleCommands.push({ command, timeout });
+        return { exitCode: 0, result: '' };
+      },
+    },
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  await expect(new DaytonaProvider().renewLifecycle('sbx_stopped')).rejects.toThrow(
+    'non-running sandbox',
+  );
+  expect(lifecycleCommands).toEqual([]);
+});
+
+test('renewLifecycle rejects a failed no-op instead of reporting renewal', async () => {
+  getDaytonaSandbox = async () => ({
+    state: 'started',
+    process: {
+      executeCommand: async () => ({ exitCode: 17, result: 'guest unavailable' }),
+    },
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  await expect(new DaytonaProvider().renewLifecycle('sbx_failed')).rejects.toThrow(
+    'exit 17: guest unavailable',
+  );
 });
 
 test('getStatus() gives up on a hung Daytona call instead of hanging forever', async () => {
