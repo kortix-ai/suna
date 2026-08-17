@@ -14,7 +14,7 @@ import {
   type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
-import { SessionSharedBadge } from '@/components/projects/session-shared-badge';
+import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -733,8 +733,6 @@ function ProjectSessionRow({
 
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
-          <SessionSharedBadge session={session} />
-
           {childCount > 0 && (
             <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
               {childCount}
@@ -742,7 +740,7 @@ function ProjectSessionRow({
           )}
         </Link>
 
-        <div className="flex shrink-0 items-center gap-0">
+        <div className="flex shrink-0 items-center gap-0" data-session-indicators="true">
           {spawnedBy && !nested && (
             <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
               <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
@@ -751,7 +749,10 @@ function ProjectSessionRow({
             </Hint>
           )}
           {SourceIcon && (
-            <span className="flex size-4 shrink-0 items-center justify-center">
+            <span
+              className="flex size-4 shrink-0 items-center justify-center"
+              data-session-source="true"
+            >
               <Hint
                 side="top"
                 label={
@@ -764,6 +765,7 @@ function ProjectSessionRow({
               </Hint>
             </span>
           )}
+          <SessionSharedIcon session={session} />
 
           <div className="relative w-10 min-w-10 shrink-0">
             {activity && (

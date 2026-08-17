@@ -1,7 +1,7 @@
 'use client';
 
 import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
-import { SessionSharedBadge } from '@/components/projects/session-shared-badge';
+import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -184,7 +184,7 @@ function SessionRowImpl({
             <span className="text-muted-foreground"> · {source.triggerSlug}</span>
           ) : null}
         </span>
-        <SessionSharedBadge session={session} />
+        <SessionSharedIcon session={session} />
       </span>
     </>
   );
