@@ -60,6 +60,8 @@ describe('assembleSessionCostSummary', () => {
       llm: {
         sessionId: 'session-zero',
         llmCost: '1.1250000000',
+        llmKortixCost: '0.1250000000',
+        llmProviderCost: '1.0000000000',
         requestCount: '3',
         errorCount: '1',
         inputTokens: '120',
@@ -81,6 +83,11 @@ describe('assembleSessionCostSummary', () => {
       owner_type: 'service_account',
       owner_name: 'automation-agent',
       llm_cost: 1.125,
+      // The split behind llm_cost: what Kortix billed vs what went straight to
+      // your own provider. Summing final_cost alone reported the provider side
+      // as $0.00 — see shared/llm-spend.ts.
+      llm_kortix_cost: 0.125,
+      llm_provider_cost: 1,
       compute_cost: 0.375,
       total_cost: 1.5,
       request_count: 3,

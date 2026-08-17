@@ -152,8 +152,13 @@ interface SessionBaseRow {
 interface LlmAggregateRow {
   sessionId?: string | null;
   llmCost: NumericValue;
-  llmKortixCost?: NumericValue;
-  llmProviderCost?: NumericValue;
+  // REQUIRED, not optional. `listSessionCosts` hand-builds this literal from a
+  // subquery whose projected columns are enumerated one by one — an optional
+  // field there compiles fine with the projection missing and silently reports
+  // $0.00 for the split, which is the exact class of bug this module exists to
+  // fix. Required makes the compiler catch a forgotten projection.
+  llmKortixCost: NumericValue;
+  llmProviderCost: NumericValue;
   requestCount: NumericValue;
   errorCount: NumericValue;
   inputTokens: NumericValue;
@@ -384,6 +389,8 @@ function llmAggregateSubquery(accountId: string, window: CostWindow) {
     .select({
       sessionId: gatewayRequestLogs.sessionId,
       llmCost: llmAggregateFields.llmCost.as('llm_cost'),
+      llmKortixCost: llmAggregateFields.llmKortixCost.as('llm_kortix_cost'),
+      llmProviderCost: llmAggregateFields.llmProviderCost.as('llm_provider_cost'),
       requestCount: llmAggregateFields.requestCount.as('request_count'),
       errorCount: llmAggregateFields.errorCount.as('error_count'),
       inputTokens: llmAggregateFields.inputTokens.as('input_tokens'),
@@ -638,6 +645,8 @@ export async function listSessionCosts(input: {
         createdAt: projectSessions.createdAt,
         updatedAt: projectSessions.updatedAt,
         llmCost: llm.llmCost,
+        llmKortixCost: llm.llmKortixCost,
+        llmProviderCost: llm.llmProviderCost,
         requestCount: llm.requestCount,
         errorCount: llm.errorCount,
         inputTokens: llm.inputTokens,
@@ -681,6 +690,8 @@ export async function listSessionCosts(input: {
       owner: row.ownerId ? ownerById.get(row.ownerId) : undefined,
       llm: {
         llmCost: row.llmCost,
+        llmKortixCost: row.llmKortixCost,
+        llmProviderCost: row.llmProviderCost,
         requestCount: row.requestCount,
         errorCount: row.errorCount,
         inputTokens: row.inputTokens,
