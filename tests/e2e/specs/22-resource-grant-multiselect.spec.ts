@@ -39,14 +39,18 @@ interface ResourceGrantsResponse {
 }
 
 /**
- * Regression coverage for the "Assign an agent" dialog's multi-select
- * (members-tab.tsx's ResourceAccessCard): reported live as "right away you
- * can only ever edit one user at a time. you should be able to multi-select
- * users in groups which get access to the agent." The picker was replaced
- * with SubjectPicker (a toggle-button allow-list, `aria-pressed` on each
- * row, see sharing-picker.tsx), and submitting fires one
- * createProjectResourceGrant per selected principal via Promise.allSettled —
- * this spec proves both selections actually land as two grants, not one.
+ * Regression coverage for the "Assign an agent" dialog's multi-select on
+ * BOTH steps (members-tab.tsx's ResourceAccessCard): reported live as
+ * "right away you can only ever edit one user at a time. you should be able
+ * to multi-select users in groups which get access to the agent" — and,
+ * once that landed, "sure the agent selection is also a multi-step of
+ * course like granting access." Step 1 (agent) and step 2 (member/group)
+ * are each independent Checkbox lists / SubjectPicker now; submitting fires
+ * one createProjectResourceGrant per (agent, principal) pair via
+ * Promise.allSettled. This spec picks one agent and two members — the
+ * simplest case that still proves the pair-fan-out (2 grants, not 1) — a
+ * fuller multi-agent case is the natural follow-up if that dimension ever
+ * regresses independently.
  *
  * `createLocalGitRepository` seeds `kortix.yaml` with `agents:\n  kortix: {}`
  * (local-git.ts), so every project made through it already has a real
@@ -118,10 +122,10 @@ test.describe('22 — Resource-grant multi-select', () => {
       const dialog = page.getByRole('dialog', { name: 'Assign an agent', exact: true });
       await expect(dialog).toBeVisible();
 
-      await dialog.getByRole('combobox').click();
-      await page.getByRole('option', { name: 'kortix', exact: true }).click();
-
-      // Multi-select: both members, one dialog, one submit.
+      // Multi-select on both sides: one agent, two members, one dialog, one
+      // submit. Both steps are Checkbox lists now (members-tab.tsx), not
+      // single-select dropdowns.
+      await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
       await dialog.getByRole('button', { name: memberAEmail }).click();
       await dialog.getByRole('button', { name: memberBEmail }).click();
 
@@ -134,7 +138,8 @@ test.describe('22 — Resource-grant multi-select', () => {
           grantPostStatuses.push(r.status());
         }
       });
-      await dialog.getByRole('button', { name: 'Grant access to 2', exact: true }).click();
+      // 1 agent x 2 members = 2 total grants.
+      await dialog.getByRole('button', { name: 'Grant access (2)', exact: true }).click();
       await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       await expect
         .poll(() => grantPostStatuses.length, { timeout: 10_000 })

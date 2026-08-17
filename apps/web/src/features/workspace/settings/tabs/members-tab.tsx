@@ -3006,12 +3006,12 @@ function ResourceAccessCard({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pickerType] = useState<ResourceGrantType>('agent'); // agent-only grant flow
-  const [pickerResourceId, setPickerResourceId] = useState<string>(''); // the agent
-  // Multi-select: grant the same agent to several members and/or groups in
-  // one action, instead of one grant per dialog open. Fires one
-  // createProjectResourceGrant call per selected principal — the API is one
-  // row per (resource, principal), there is no batch endpoint — but the
-  // person only ever picks a set and hits one button.
+  // Multi-select on BOTH sides: grant several agents to several members/groups
+  // in one action. Fires one createProjectResourceGrant call per (agent,
+  // principal) pair — the API is one row per resource×principal, there is no
+  // batch endpoint — but the person only ever picks two sets and hits one
+  // button, instead of re-opening the dialog per agent per person.
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
@@ -3022,6 +3022,8 @@ function ResourceAccessCard({
       next.delete(id);
       return next;
     });
+  const toggleAgent = (id: string) =>
+    setSelectedAgentIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   // The grant flow is AGENT-ONLY: the pyramid routes ALL resources — secrets,
   // connectors, AND skills — to people through the AGENTS they're assigned to,
@@ -3030,16 +3032,23 @@ function ResourceAccessCard({
   // grants still render in the list below so they can be revoked.)
   const activeItems = resources.agents;
 
-  // Blast-radius preview: when an AGENT is picked, what the assignee inherits
-  // (the agent's declared secrets + connectors). Null for skills/secrets or until
-  // an agent is chosen. Reads the `declares` the resource-grants API attaches.
+  // Blast-radius preview: the UNION of every selected agent's declared
+  // secrets/connectors — what the assignees inherit across all of them, not
+  // just the first pick. 'all' on any one agent makes the union 'all' for
+  // that dimension (it can't be narrowed by adding more agents).
   const selectedAgentDeclares = useMemo(() => {
-    if (pickerType !== 'agent' || !pickerResourceId) return null;
-    return resources.agents.find((a) => a.id === pickerResourceId)?.declares ?? null;
-  }, [pickerType, pickerResourceId, resources.agents]);
+    if (pickerType !== 'agent' || selectedAgentIds.length === 0) return null;
+    const picked = resources.agents.filter((a) => selectedAgentIds.includes(a.id));
+    if (picked.length === 0) return null;
+    const union = (key: 'secrets' | 'connectors'): string[] | 'all' => {
+      if (picked.some((a) => a.declares?.[key] === 'all')) return 'all';
+      return [...new Set(picked.flatMap((a) => (a.declares?.[key] as string[] | undefined) ?? []))];
+    };
+    return { secrets: union('secrets'), connectors: union('connectors') };
+  }, [pickerType, selectedAgentIds, resources.agents]);
 
   function resetGrantForm() {
-    setPickerResourceId('');
+    setSelectedAgentIds([]);
     setSelectedMemberIds([]);
     setSelectedGroupIds([]);
   }
@@ -3055,6 +3064,9 @@ function ResourceAccessCard({
   }
 
   const selectedPrincipalCount = selectedMemberIds.length + selectedGroupIds.length;
+  // Total grants this submit will create: every selected agent crossed with
+  // every selected principal, not just one dimension.
+  const selectedGrantCount = selectedAgentIds.length * selectedPrincipalCount;
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -3062,18 +3074,21 @@ function ResourceAccessCard({
         ...selectedMemberIds.map((principalId) => ({ principalType: 'member' as const, principalId })),
         ...selectedGroupIds.map((principalId) => ({ principalType: 'group' as const, principalId })),
       ];
+      const pairs = selectedAgentIds.flatMap((resourceId) =>
+        principals.map((p) => ({ resourceId, ...p })),
+      );
       const results = await Promise.allSettled(
-        principals.map((p) =>
+        pairs.map((pair) =>
           createProjectResourceGrant(projectId, {
             resourceType: pickerType as ResourceGrantType,
-            resourceId: pickerResourceId,
-            principalType: p.principalType,
-            principalId: p.principalId,
+            resourceId: pair.resourceId,
+            principalType: pair.principalType,
+            principalId: pair.principalId,
           }),
         ),
       );
       const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-      return { total: principals.length, failed };
+      return { total: pairs.length, failed };
     },
     onSuccess: ({ total, failed }) => {
       const ok = total - failed.length;
@@ -3139,7 +3154,10 @@ function ResourceAccessCard({
   );
 
   const canSubmit =
-    !!pickerType && !!pickerResourceId && selectedPrincipalCount > 0 && !createMutation.isPending;
+    !!pickerType &&
+    selectedAgentIds.length > 0 &&
+    selectedPrincipalCount > 0 &&
+    !createMutation.isPending;
 
   return (
     <>
@@ -3280,23 +3298,26 @@ function ResourceAccessCard({
           >
             <ModalBody className="space-y-4">
               <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs font-medium">1. Agent</span>
-                <Select
-                  value={pickerResourceId}
-                  onValueChange={setPickerResourceId}
-                  disabled={createMutation.isPending}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select an agent" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeItems.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <span className="text-muted-foreground text-xs font-medium">
+                  1. Agent
+                  {selectedAgentIds.length > 0 ? (
+                    <span className="ml-1 tabular-nums">({selectedAgentIds.length})</span>
+                  ) : null}
+                </span>
+                {/* Multi-select: grant several agents to the same set of
+                    people in one submit, instead of re-opening this dialog
+                    per agent. */}
+                <div className="border-border max-h-40 overflow-y-auto rounded-md border p-1">
+                  {activeItems.map((r) => (
+                    <Checkbox
+                      key={r.id}
+                      label={r.name}
+                      checked={selectedAgentIds.includes(r.id)}
+                      onCheckedChange={() => toggleAgent(r.id)}
+                      disabled={createMutation.isPending}
+                    />
+                  ))}
+                </div>
               </div>
 
               {selectedAgentDeclares && <BlastRadiusPreview declares={selectedAgentDeclares} />}
@@ -3335,9 +3356,7 @@ function ResourceAccessCard({
               </Button>
               <Button type="submit" size="sm" disabled={!canSubmit}>
                 {createMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                {selectedPrincipalCount > 1
-                  ? `Grant access to ${selectedPrincipalCount}`
-                  : 'Grant access'}
+                {selectedGrantCount > 1 ? `Grant access (${selectedGrantCount})` : 'Grant access'}
               </Button>
             </ModalFooter>
           </form>
