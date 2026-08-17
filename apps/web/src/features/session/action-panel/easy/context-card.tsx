@@ -17,36 +17,17 @@
  * a bare line of text.
  *
  * **Empty-state actions (Task 5).** An empty card used to be a dead promise —
- * a sentence with nothing to act on. Two quiet actions sit under it now:
- * "Add context" hands the user straight to the composer's attach flow
- * (`onAddContext`, a plain callback — see `easy-panel.tsx` for what it's
- * wired to), and "Connect apps" reveals `ConnectAppsStrip` (Task 6) in place.
- * The open/closed state for the strip is NOT local `useState` here — it's
- * hoisted to `EasyPanel` (`connectAppsOpen` / `onToggleConnectApps`) so this
- * component stays hook-free, which is what lets `context-card.test.tsx` keep
- * calling it as a plain function instead of mounting it for real.
+ * a sentence with nothing to act on. "Add context" hands the user straight
+ * to the composer's attach flow (`onAddContext`, a plain callback — see
+ * `easy-panel.tsx` for what it's wired to).
  *
- * **Non-empty footer row (Task 7).** Once the card has real rows, the
- * empty-state buttons are gone (`PanelCard`'s `isEmpty` ternary renders
- * `emptyActions` XOR `children` — never both), so a quiet "Connect apps" row
- * sits after the group list instead — the same `ConnectAppsStrip` reveal,
- * the same `connectAppsOpen` / `onToggleConnectApps` state, just a second
- * toggle for it. Styled after the "N more files" fold row in
- * `outputs-card.tsx` (muted label, glyph in a `size-7` box, `hover:` lightens
- * to `text-foreground`) rather than the empty state's outlined `Button` —
- * this row is a footnote, not an invitation.
- *
- * Both toggles point `aria-controls` at the SAME strip container id
- * (`connectAppsStripId` below) — only one of the two branches this id lives
- * in is ever mounted at once (the `isEmpty` ternary again), so the id stays
- * unique in the DOM despite two possible toggles for it.
- *
- * **Neither toggle renders without a `projectId`.** `ConnectAppsStrip` needs
- * one to declare a connector against and returns `null` without it, so a
- * toggle rendered anyway is a control that reveals nothing: `aria-expanded`
- * flips, an empty container mounts, and the user is told something opened
- * that did not. There is no project-less version of connecting an app, so the
- * affordance is absent rather than inert.
+ * **Connect apps removed.** This card used to also carry a "Connect apps"
+ * affordance — an empty-state button, a non-empty footer row, both revealing
+ * `ConnectAppsStrip` in place, gated on a `projectId` prop. Product decision:
+ * gone. Removed with it: `ConnectAppsStrip`/`connect-apps-strip.tsx`, the
+ * `connectAppsOpen`/`onToggleConnectApps` state that used to be hoisted to
+ * `EasyPanel`, and the `projectId` prop this card no longer needs. This was
+ * the whole surface — nothing else in the panel referenced it.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -58,13 +39,11 @@ import {
   CaretRightIcon as ChevronRight,
   FileTextIcon as FileText,
   GlobeIcon as Globe,
-  PlugsConnectedIcon as PlugsConnected,
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import type { ContextItem } from '../shared/derive-panels';
 import type { StepFamily } from '../shared/narration';
 import { familyForTool, narrateFailedStep, narrateStep } from '../shared/narration';
-import { ConnectAppsStrip } from './connect-apps-strip';
 import type { Detail } from './detail-view';
 import { ToolParts } from './detail-view';
 import { PanelCard } from './panel-card';
@@ -88,9 +67,6 @@ export function ContextCard({
   onOpenDetail,
   onOpenFile,
   onAddContext,
-  projectId,
-  connectAppsOpen,
-  onToggleConnectApps,
 }: {
   files: ContextItem[];
   web: ContextItem[];
@@ -106,22 +82,7 @@ export function ContextCard({
    *  `onOpenFile` — this card grows no store dependency of its own; see
    *  `easy-panel.tsx` for what it's wired to. */
   onAddContext: () => void;
-  /** For `ConnectAppsStrip`, when a "Connect apps" toggle has it open — the
-   *  strip needs a project to declare a connector against. Undefined also
-   *  removes both toggles; see this file's header comment. */
-  projectId: string | undefined;
-  /** Whether `ConnectAppsStrip` is open under the empty-state buttons. Owned
-   *  by `EasyPanel`, not local state — see this file's header comment. */
-  connectAppsOpen: boolean;
-  onToggleConnectApps: () => void;
 }) {
-  // Shared by both toggles — see this file's header comment on why one id is
-  // safe despite two possible triggers for it.
-  const connectAppsStripId = `context-card-connect-apps-${sessionId}`;
-  // No project, no connector to declare — so no toggle either, in EITHER
-  // branch. See this file's header comment.
-  const canConnectApps = Boolean(projectId);
-
   const groups: ContextGroup[] = [];
 
   if (web.length) {
@@ -184,33 +145,10 @@ export function ContextCard({
       emptyArt={<ContextArt />}
       emptyText="Track tools and referenced files used in this task."
       emptyActions={
-        <div className="flex w-full flex-col items-stretch gap-3">
-          <div className="flex items-center justify-center gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddContext}>
-              <Plus className="size-3.5" />
-              Add context
-            </Button>
-            {canConnectApps && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={onToggleConnectApps}
-                aria-expanded={connectAppsOpen}
-                aria-controls={connectAppsStripId}
-              >
-                <PlugsConnected className="size-3.5" />
-                Connect apps
-              </Button>
-            )}
-          </div>
-          <ConnectAppsReveal
-            id={connectAppsStripId}
-            open={connectAppsOpen}
-            projectId={projectId}
-            className="text-left"
-          />
-        </div>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddContext}>
+          <Plus className="size-3.5" />
+          Add context
+        </Button>
       }
       // The same dense gutter Outputs uses. Rows carry their own inset, so the
       // body only has to keep them off the card's edge — a full `p-4` frame
@@ -240,63 +178,7 @@ export function ContextCard({
           </li>
         ))}
       </ul>
-      {/* Non-empty footer row (Task 7) — see this file's header comment. Only
-          reachable here, inside `children`, which `PanelCard` renders
-          exclusively in the non-empty branch of its `isEmpty` ternary. */}
-      {canConnectApps && (
-        <>
-          <button
-            type="button"
-            onClick={onToggleConnectApps}
-            aria-expanded={connectAppsOpen}
-            aria-controls={connectAppsStripId}
-            // `color` rides the transition list because the label lightens on
-            // hover, and the press scale is the one every row in both cards
-            // uses — the same treatment the Outputs fold row carries, so a
-            // footnote row moves identically wherever it appears.
-            className="text-muted-foreground hover:text-foreground hover:bg-accent -mx-0.5 mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-1 py-1.5 text-left text-sm transition-[background-color,color,transform] active:scale-[0.98]"
-          >
-            <span className="flex size-7 shrink-0 items-center justify-center">
-              <PlugsConnected className="size-3.5" />
-            </span>
-            <span className="truncate">Connect apps</span>
-          </button>
-          <ConnectAppsReveal
-            id={connectAppsStripId}
-            open={connectAppsOpen}
-            projectId={projectId}
-            className="mt-1"
-          />
-        </>
-      )}
     </PanelCard>
-  );
-}
-
-/**
- * The strip's container, in the one shape both toggles reveal it in.
- *
- * Two branches render it — under the empty-state buttons and under the footer
- * row — and they differ only in the wrapper's spacing class. Written twice,
- * the `id` (which `aria-controls` points at from both toggles) and the
- * open-gate were two copies to keep in step; here they are one.
- */
-function ConnectAppsReveal({
-  id,
-  open,
-  projectId,
-  className,
-}: {
-  id: string;
-  open: boolean;
-  projectId: string | undefined;
-  className: string;
-}) {
-  if (!open) return null;
-  return (
-    <div id={id} className={className}>
-      <ConnectAppsStrip projectId={projectId} />
-    </div>
   );
 }
 

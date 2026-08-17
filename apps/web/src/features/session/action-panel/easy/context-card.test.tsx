@@ -64,9 +64,6 @@ function cardBody(
   items: { files: ContextItem[]; web: ContextItem[]; tools: ContextItem[] } = { files, web, tools },
   emptyStateProps: {
     onAddContext?: () => void;
-    projectId?: string;
-    connectAppsOpen?: boolean;
-    onToggleConnectApps?: () => void;
   } = {},
 ): ReactNode {
   const card = ContextCard({
@@ -75,28 +72,22 @@ function cardBody(
     onOpenDetail,
     onOpenFile,
     onAddContext: emptyStateProps.onAddContext ?? (() => {}),
-    projectId: emptyStateProps.projectId,
-    connectAppsOpen: emptyStateProps.connectAppsOpen ?? false,
-    onToggleConnectApps: emptyStateProps.onToggleConnectApps ?? (() => {}),
   });
   return (card as ReactElement<{ children?: ReactNode }>).props.children;
 }
 
 /**
  * The `emptyActions` prop `ContextCard` hands `PanelCard` — the "Add
- * context" / "Connect apps" block (Task 5). `PanelCard` only renders this
- * inside its own collapsed-by-default `DisclosureContent` (see `cardBody`'s
- * comment for why a whole-card render shows none of it), so — same move as
- * `cardBody` reaching for `children` — this reaches for the prop directly
- * instead of mounting anything.
+ * context" button (Task 5). `PanelCard` only renders this inside its own
+ * collapsed-by-default `DisclosureContent` (see `cardBody`'s comment for why
+ * a whole-card render shows none of it), so — same move as `cardBody`
+ * reaching for `children` — this reaches for the prop directly instead of
+ * mounting anything.
  */
 function emptyActionsOf(
   items: { files: ContextItem[]; web: ContextItem[]; tools: ContextItem[] },
   emptyStateProps: {
     onAddContext?: () => void;
-    projectId?: string;
-    connectAppsOpen?: boolean;
-    onToggleConnectApps?: () => void;
   } = {},
 ): ReactNode {
   const card = ContextCard({
@@ -105,9 +96,6 @@ function emptyActionsOf(
     onOpenDetail: () => {},
     onOpenFile: () => {},
     onAddContext: emptyStateProps.onAddContext ?? (() => {}),
-    projectId: emptyStateProps.projectId,
-    connectAppsOpen: emptyStateProps.connectAppsOpen ?? false,
-    onToggleConnectApps: emptyStateProps.onToggleConnectApps ?? (() => {}),
   }) as ReactElement<PanelCardProps>;
   return card.props.emptyActions;
 }
@@ -130,9 +118,6 @@ function renderExpanded(
   items: { files: ContextItem[]; web: ContextItem[]; tools: ContextItem[] },
   emptyStateProps: {
     onAddContext?: () => void;
-    projectId?: string;
-    connectAppsOpen?: boolean;
-    onToggleConnectApps?: () => void;
   } = {},
 ): string {
   const card = ContextCard({
@@ -141,9 +126,6 @@ function renderExpanded(
     onOpenDetail: () => {},
     onOpenFile: () => {},
     onAddContext: emptyStateProps.onAddContext ?? (() => {}),
-    projectId: emptyStateProps.projectId,
-    connectAppsOpen: emptyStateProps.connectAppsOpen ?? false,
-    onToggleConnectApps: emptyStateProps.onToggleConnectApps ?? (() => {}),
   }) as ReactElement<PanelCardProps>;
   return renderToStaticMarkup(<PanelCard {...card.props} defaultExpanded />);
 }
@@ -151,25 +133,6 @@ function renderExpanded(
 /** The opening tag of every `<button>` in the rendered body, in document order. */
 function buttonTags(html: string): string[] {
   return [...html.matchAll(/<button[^>]*>/g)].map((m) => m[0]);
-}
-
-/**
- * `buttonTags`, minus the Task 7 "Connect apps" footer toggle.
- *
- * The footer row is the only group-list `<button>` carrying `aria-controls`
- * — every group row opens the detail layer and has no such attribute — so
- * that's the marker used to separate "one button per group" assertions from
- * the footer, which exists once regardless of how many groups there are.
- */
-function groupRowTags(html: string): string[] {
-  return buttonTags(html).filter((tag) => !tag.includes('aria-controls'));
-}
-
-/** How many times `needle` occurs in `haystack` — used to prove text renders
- *  exactly once rather than merely "at least once" (catches an accidental
- *  double-render the empty state and the footer would otherwise both pass). */
-function countOccurrences(haystack: string, needle: string): number {
-  return haystack.split(needle).length - 1;
 }
 
 /**
@@ -208,23 +171,15 @@ function buttonsIn(node: ReactNode, found: ReactElement[] = []): ReactElement[] 
   return found;
 }
 
-/** `buttonsIn`, minus the Task 7 footer toggle — see `groupRowTags` for why
- *  `aria-controls` is what separates it from a group row's own button. */
-function groupRowsIn(node: ReactNode): ReactElement[] {
-  return buttonsIn(node).filter(
-    (el) => !('aria-controls' in (el.props as Record<string, unknown>)),
-  );
-}
-
 /**
  * Every unrendered element of a given `type` (e.g. the `Button` component
  * itself) in a React tree, in document order.
  *
- * "Add context" / "Connect apps" (Task 5) are `<Button>` components, not raw
- * `<button>` elements — `buttonsIn`'s `element.type === 'button'` check can
- * never match a component reference, only the host-element string. Matching
- * on the imported `Button` reference directly reaches the exact element the
- * card constructed — same idea as `buttonsIn`, generalized past host tags.
+ * "Add context" (Task 5) is a `<Button>` component, not a raw `<button>`
+ * element — `buttonsIn`'s `element.type === 'button'` check can never match a
+ * component reference, only the host-element string. Matching on the
+ * imported `Button` reference directly reaches the exact element the card
+ * constructed — same idea as `buttonsIn`, generalized past host tags.
  */
 function elementsOfType<P>(
   node: ReactNode,
@@ -245,9 +200,7 @@ function elementsOfType<P>(
 describe('ContextCard groups are rows, not pills (W1)', () => {
   test('every group control is a full-width row button, never a pill', () => {
     const html = renderToStaticMarkup(<>{cardBody()}</>);
-    // `groupRowTags` excludes the Task 7 "Connect apps" footer toggle, which
-    // also renders here (the card is non-empty) but isn't a group row.
-    const tags = groupRowTags(html);
+    const tags = buttonTags(html);
     expect(tags).toHaveLength(3); // one per group
     for (const tag of tags) {
       expect(tag).toContain('w-full');
@@ -280,8 +233,7 @@ describe('ContextCard groups are rows, not pills (W1)', () => {
 
   test('a row opens that group in the detail layer', () => {
     const opened: Detail[] = [];
-    // `groupRowsIn` excludes the Task 7 footer toggle — see its comment.
-    const rows = groupRowsIn(cardBody((detail) => opened.push(detail)));
+    const rows = buttonsIn(cardBody((detail) => opened.push(detail)));
     expect(rows).toHaveLength(3);
 
     for (const row of rows) {
@@ -309,9 +261,7 @@ describe('"Files read" rows open the file viewer (Task 3)', () => {
     const opened: Detail[] = [];
     const onOpenFile = (path: string, allPaths: string[]) => calls.push({ path, allPaths });
 
-    // `groupRowsIn` excludes the Task 7 footer toggle, which also renders
-    // here (the card is non-empty) but isn't a group row.
-    const rows = groupRowsIn(
+    const rows = buttonsIn(
       cardBody(
         (detail) => opened.push(detail),
         onOpenFile,
@@ -355,221 +305,38 @@ describe('"Files read" rows open the file viewer (Task 3)', () => {
   });
 });
 
-describe('Empty-state actions: Add context / Connect apps (Task 5)', () => {
+describe('Empty-state actions: Add context (Task 5)', () => {
   const empty = { files: [], web: [], tools: [] };
 
-  // Every case below passes `projectId` because "Connect apps" now renders
-  // only with one — see the "no projectId" describe block for that gate.
-  test('"Add context" renders only in the empty state — the non-empty card shows neither empty-state button', () => {
-    const emptyHtml = renderExpanded(empty, { projectId: 'p1' });
+  test('"Add context" renders only in the empty state — the non-empty card shows no empty-state button', () => {
+    const emptyHtml = renderExpanded(empty);
     expect(emptyHtml).toContain('Add context');
-    expect(emptyHtml).toContain('Connect apps');
 
-    // Task 7 gives the non-empty card its OWN "Connect apps" footer row, so
-    // that text alone no longer proves the empty-state button is gone — see
-    // the "Non-empty footer row" describe block below for the directional
-    // pin between the empty-state button and the footer row.
-    const fullHtml = renderExpanded({ files, web, tools }, { projectId: 'p1' });
+    const fullHtml = renderExpanded({ files, web, tools });
     expect(fullHtml).not.toContain('Add context');
   });
 
   test('"Add context" calls onAddContext and nothing else', () => {
     let addContextCalls = 0;
-    let toggleCalls = 0;
     const buttons = elementsOfType<{ onClick?: () => void }>(
-      emptyActionsOf(empty, {
-        projectId: 'p1',
-        onAddContext: () => addContextCalls++,
-        onToggleConnectApps: () => toggleCalls++,
-      }),
+      emptyActionsOf(empty, { onAddContext: () => addContextCalls++ }),
       Button,
     );
-    expect(buttons).toHaveLength(2); // Add context, Connect apps
+    expect(buttons).toHaveLength(1); // Add context only
 
     (buttons[0].props as { onClick?: () => void }).onClick?.();
 
     expect(addContextCalls).toBe(1);
-    expect(toggleCalls).toBe(0);
   });
 
-  test('"Connect apps" calls onToggleConnectApps and nothing else', () => {
-    let addContextCalls = 0;
-    let toggleCalls = 0;
-    const buttons = elementsOfType<{ onClick?: () => void }>(
-      emptyActionsOf(empty, {
-        projectId: 'p1',
-        onAddContext: () => addContextCalls++,
-        onToggleConnectApps: () => toggleCalls++,
-      }),
-      Button,
-    );
-
-    (buttons[1].props as { onClick?: () => void }).onClick?.();
-
-    expect(toggleCalls).toBe(1);
-    expect(addContextCalls).toBe(0);
-  });
-
-  test('connectAppsOpen reveals ConnectAppsStrip under the buttons; closed hides it', () => {
-    const closedHtml = renderToStaticMarkup(
-      <>{emptyActionsOf(empty, { connectAppsOpen: false, projectId: 'p1' })}</>,
-    );
-    // 'Gmail' is a `ConnectAppsStrip` row label (`DEFAULT_CONNECTORS`) — absent
-    // whenever the strip itself is absent.
-    expect(closedHtml).not.toContain('Gmail');
-
-    const openHtml = renderToStaticMarkup(
-      <>{emptyActionsOf(empty, { connectAppsOpen: true, projectId: 'p1' })}</>,
-    );
-    expect(openHtml).toContain('Gmail');
-  });
-
-  test('connectAppsOpen without a projectId renders no strip — ConnectAppsStrip needs one to declare a connector against', () => {
-    const html = renderToStaticMarkup(
-      <>{emptyActionsOf(empty, { connectAppsOpen: true, projectId: undefined })}</>,
-    );
-    expect(html).not.toContain('Gmail');
-  });
-});
-
-describe('Non-empty footer row: + Connect apps (Task 7)', () => {
-  const nonEmpty = { files, web, tools };
-  const empty = { files: [], web: [], tools: [] };
-
-  test('the footer row renders only when non-empty; the empty-state actions never render when non-empty (both directions pinned)', () => {
-    // `projectId` is required for either "Connect apps" affordance to render
-    // at all now — see the "no projectId" describe block below.
-    const emptyHtml = renderExpanded(empty, { projectId: 'p1' });
-    const fullHtml = renderExpanded(nonEmpty, { projectId: 'p1' });
-
-    // `-mx-0.5 mt-0.5` sits only on the footer row's className — the
-    // empty-state "Connect apps" button is a shadcn `outline`-variant
-    // `Button`, whose classes never include it — so it's a clean marker for
-    // "the footer row is on the page" independent of the shared label text.
-    expect(emptyHtml).not.toContain('-mx-0.5 mt-0.5');
-    expect(fullHtml).toContain('-mx-0.5 mt-0.5');
-
-    // "Connect apps" renders exactly once per state — the empty-state button
-    // in emptyHtml, the footer row in fullHtml — never both at once. A
-    // regression that rendered the empty-state actions ALONGSIDE the footer
-    // (or vice versa) would push either count to 2.
-    expect(countOccurrences(emptyHtml, 'Connect apps')).toBe(1);
-    expect(countOccurrences(fullHtml, 'Connect apps')).toBe(1);
-
-    // The empty state's "Add context" button never renders once the card has
-    // rows — the footer row has no equivalent of its own.
-    expect(emptyHtml).toContain('Add context');
-    expect(fullHtml).not.toContain('Add context');
-  });
-
-  test('the footer toggle reveals the SAME ConnectAppsStrip the empty-state toggle opens — no second state', () => {
-    const closedHtml = renderExpanded(nonEmpty, { connectAppsOpen: false, projectId: 'p1' });
-    // 'Gmail' is a `ConnectAppsStrip` row label (`DEFAULT_CONNECTORS`) —
-    // absent whenever the strip itself is absent.
-    expect(closedHtml).not.toContain('Gmail');
-
-    const openHtml = renderExpanded(nonEmpty, { connectAppsOpen: true, projectId: 'p1' });
-    expect(openHtml).toContain('Gmail');
-  });
-
-  test('the footer row calls onToggleConnectApps and nothing else', () => {
-    let toggleCalls = 0;
-    let openDetailCalls = 0;
-    // All buttons in document order: 3 group rows, then the footer toggle —
-    // `buttonsIn` (unfiltered) is what proves the footer sits AFTER the
-    // group list, not `groupRowsIn`, which would exclude it entirely.
-    const rows = buttonsIn(
-      cardBody(
-        () => openDetailCalls++,
-        undefined,
-        nonEmpty,
-        { projectId: 'p1', onToggleConnectApps: () => toggleCalls++ },
-      ),
-    );
-    expect(rows).toHaveLength(4); // 3 group rows + the footer toggle
-    const footer = rows[3];
-
-    (footer.props as { onClick?: () => void }).onClick?.();
-
-    expect(toggleCalls).toBe(1);
-    expect(openDetailCalls).toBe(0);
-  });
-
-  test('both toggles share one aria-controls target — the strip container id (Minor carried from Task 5 review)', () => {
-    const stripId = 'context-card-connect-apps-s1'; // sessionId is 's1' in cardBody/renderExpanded
-    const fullOpenHtml = renderExpanded(nonEmpty, { connectAppsOpen: true, projectId: 'p1' });
-    expect(fullOpenHtml).toContain(`aria-controls="${stripId}"`);
-    expect(fullOpenHtml).toContain(`id="${stripId}"`);
-
-    const emptyOpenHtml = renderExpanded(empty, { connectAppsOpen: true, projectId: 'p1' });
-    expect(emptyOpenHtml).toContain(`aria-controls="${stripId}"`);
-    expect(emptyOpenHtml).toContain(`id="${stripId}"`);
-
-    // Mutation check: a wrong id (stale/typo'd) would never appear in either
-    // render — proving this assertion isn't vacuously true for any string.
-    expect(fullOpenHtml).not.toContain('aria-controls="context-card-connect-apps-WRONG"');
-  });
-});
-
-/**
- * `ConnectAppsStrip` returns null without a `projectId` (it has no project to
- * declare a connector against), so a toggle rendered anyway is a dead control:
- * pressing it flips `aria-expanded` over an empty container. Both affordances
- * — the empty state's button and the non-empty footer row — are gated on the
- * project, in both directions.
- */
-describe('Connect apps needs a project — no projectId, no toggle', () => {
-  const nonEmpty = { files, web, tools };
-  const empty = { files: [], web: [], tools: [] };
-
-  test('without a projectId neither affordance renders', () => {
+  // Mutation-checked: temporarily restoring the removed "Connect apps" button
+  // (empty state) or footer row (non-empty state) makes this fail — proving
+  // it isn't vacuously true for a card that never had the text to begin with.
+  test('"Connect apps" was removed by product decision — its text renders in neither state', () => {
     const emptyHtml = renderExpanded(empty);
-    const fullHtml = renderExpanded(nonEmpty);
+    const fullHtml = renderExpanded({ files, web, tools });
 
     expect(emptyHtml).not.toContain('Connect apps');
     expect(fullHtml).not.toContain('Connect apps');
-    // Nothing claims to control the strip either — no `aria-expanded` over an
-    // element that was never mounted.
-    expect(emptyHtml).not.toContain('aria-controls="context-card-connect-apps-s1"');
-    expect(fullHtml).not.toContain('aria-controls="context-card-connect-apps-s1"');
-    // `-mx-0.5 mt-0.5` is the footer row's own marker (see the Task 7 block).
-    expect(fullHtml).not.toContain('-mx-0.5 mt-0.5');
-
-    // The rest of the card is untouched: only the connect affordance is gone.
-    expect(emptyHtml).toContain('Add context');
-    expect(fullHtml).toContain('Web sources');
-  });
-
-  test('with a projectId both affordances render', () => {
-    const emptyHtml = renderExpanded(empty, { projectId: 'p1' });
-    const fullHtml = renderExpanded(nonEmpty, { projectId: 'p1' });
-
-    expect(emptyHtml).toContain('Connect apps');
-    expect(fullHtml).toContain('Connect apps');
-    expect(fullHtml).toContain('-mx-0.5 mt-0.5');
-  });
-
-  test('the empty-state toggle itself is absent, not merely inert, without a project', () => {
-    // Reaches the constructed `Button` elements directly — a toggle that
-    // rendered but did nothing would still show up here as a second button.
-    const withProject = elementsOfType<{ onClick?: () => void }>(
-      emptyActionsOf(empty, { projectId: 'p1' }),
-      Button,
-    );
-    expect(withProject).toHaveLength(2); // Add context, Connect apps
-
-    const withoutProject = elementsOfType<{ onClick?: () => void }>(
-      emptyActionsOf(empty, { projectId: undefined }),
-      Button,
-    );
-    expect(withoutProject).toHaveLength(1); // Add context only
-  });
-
-  test('the footer toggle itself is absent, not merely inert, without a project', () => {
-    const withProject = buttonsIn(cardBody(undefined, undefined, nonEmpty, { projectId: 'p1' }));
-    expect(withProject).toHaveLength(4); // 3 group rows + the footer toggle
-
-    const withoutProject = buttonsIn(cardBody(undefined, undefined, nonEmpty, {}));
-    expect(withoutProject).toHaveLength(3); // the 3 group rows, nothing else
   });
 });

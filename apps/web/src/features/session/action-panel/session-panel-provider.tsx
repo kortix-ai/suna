@@ -82,10 +82,6 @@ export type OpenSource = 'row' | 'auto' | 'chip' | 'nav' | 'quick';
 export interface SessionPanelValue {
   sessionId: string;
   projectSessionId?: string;
-  /** The project this session belongs to — absent while booting/transient,
-   *  same as `projectSessionId`. Exposed for surfaces (`ConnectAppsStrip`)
-   *  that need it but don't otherwise touch `openAudit`/`openFiles`. */
-  projectId?: string;
 
   /** Card data — everything the floating overlay renders. */
   files: OutputItem[];
@@ -794,7 +790,6 @@ export function SessionPanelProvider({
     () => ({
       sessionId,
       projectSessionId,
-      projectId,
       files,
       context,
       apps,
@@ -814,7 +809,6 @@ export function SessionPanelProvider({
     [
       sessionId,
       projectSessionId,
-      projectId,
       files,
       context,
       apps,
