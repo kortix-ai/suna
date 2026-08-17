@@ -172,8 +172,13 @@ export function promptDeliveryKey(opts: {
   sessionId: string;
   body: ArrayBuffer | undefined;
 }): string {
+  // Scoped by sandbox + session like the two precedences below. A create
+  // retry re-provisions onto a DIFFERENT session/sandbox while reusing the
+  // same command-scoped Idempotency-Key (session-lifecycle/engine.ts); an
+  // unscoped key let the first attempt's claim swallow the retry's delivery
+  // to the new box — which genuinely never saw the prompt — as a "duplicate".
   const provided = opts.idempotencyKey?.trim();
-  if (provided) return `idem:${provided}`;
+  if (provided) return `idem:${opts.sandboxId}\0${opts.sessionId}\0${provided}`;
   const messageId = extractWireMessageId(opts.body);
   if (messageId) return `msgid:${opts.sandboxId}\0${opts.sessionId}\0${messageId}`;
   const hash = createHash('sha256')
