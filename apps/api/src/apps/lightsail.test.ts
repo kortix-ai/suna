@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { LightsailAppHostingBackend } from './lightsail';
 
 function commandClient(responses: Record<string, unknown | unknown[]>) {
@@ -21,6 +23,66 @@ function commandClient(responses: Record<string, unknown | unknown[]>) {
 }
 
 describe('AWS Lightsail Apps hosting backend', () => {
+  test('Terraform grants the tagging action used by tagged service creation', () => {
+    const terraform = readFileSync(resolve(
+      import.meta.dir,
+      '../../../../infra/terraform/modules/apps-lightsail-hosting/main.tf',
+    ), 'utf8');
+    expect(terraform).toContain('"lightsail:CreateContainerService"');
+    expect(terraform).toContain('"lightsail:TagResource"');
+  });
+
+  test('reuses an existing immutable deployment image instead of rebuilding the same tag', async () => {
+    const ecr = commandClient({
+      DescribeImagesCommand: {
+        imageDetails: [{ imageDigest: 'sha256:already-built' }],
+      },
+    });
+    const codebuild = commandClient({});
+    const s3 = commandClient({});
+    const logLines: string[] = [];
+    const backend = new LightsailAppHostingBackend({
+      lightsail: commandClient({}).client as never,
+      codebuild: codebuild.client as never,
+      ecr: ecr.client as never,
+      s3: s3.client as never,
+      region: 'us-west-2',
+      buildBucket: 'builds',
+      ecrRepositoryUri: '123.dkr.ecr.us-west-2.amazonaws.com/apps',
+      codebuildProject: 'apps-build',
+      environment: 'test',
+      controlSecret: 'control-secret-for-tests',
+      sleep: async () => {},
+    });
+
+    const result = await backend.buildImage({
+      deploymentId: '22222222-2222-4222-8222-222222222222',
+      snapshotName: 'kortix-app-22222222222242228222222222222222',
+      dockerfile: 'FROM scratch',
+      runtimeSpec: {},
+      logTap: { onLine: (line) => logLines.push(line) },
+    });
+
+    expect(result).toEqual({
+      buildId: 'ecr:sha256:already-built',
+      imageReference: '123.dkr.ecr.us-west-2.amazonaws.com/apps:deployment-22222222222242228222222222222222',
+    });
+    expect(ecr.commands).toEqual([
+      {
+        name: 'DescribeImagesCommand',
+        input: {
+          repositoryName: 'apps',
+          imageIds: [{ imageTag: 'deployment-22222222222242228222222222222222' }],
+        },
+      },
+    ]);
+    expect(codebuild.commands).toEqual([]);
+    expect(s3.commands).toEqual([]);
+    expect(logLines).toEqual([
+      'Reusing existing ECR image 123.dkr.ecr.us-west-2.amazonaws.com/apps:deployment-22222222222242228222222222222222',
+    ]);
+  });
+
   test('creates one tagged service and an ECR-backed authenticated deployment', async () => {
     const pullerArn = 'arn:aws:iam::701935371203:role/amazon/lightsail/us-west-2/containers/kortix-test-app-111111111111/private-repo-access/role';
     const lightsail = commandClient({

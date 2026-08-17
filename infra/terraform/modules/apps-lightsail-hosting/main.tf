@@ -253,6 +253,7 @@ data "aws_iam_policy_document" "api_task" {
       "lightsail:DeleteContainerService",
       "lightsail:GetContainerLog",
       "lightsail:GetContainerServices",
+      "lightsail:TagResource",
       "lightsail:UpdateContainerService",
     ]
     resources = ["*"]

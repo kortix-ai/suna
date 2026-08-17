@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### Tagged provider creates and immutable build retries need explicit contracts (2026-08-17)
+
+**When:** adding a tagged provider resource or retrying a build with a fixed tag.
+Grant the provider's tagging action with its create action. Lightsail
+`CreateContainerService(tags=...)` requires `lightsail:TagResource`. Query the
+registry before retrying an immutable deployment tag, and reuse a completed
+image. Otherwise one missing IAM action becomes two duplicate-build failures.
+*Near-miss:* Apps Lightsail self-host E2E, PR #6478. *Enforcer:*
+`lightsail.test.ts` pins image reuse and the Terraform tagging grant.
+
 ### A platform-injected principal must never have its authority re-derived from user config (2026-08-13)
 
 **When:** touching code that RE-resolves an already-minted credential —

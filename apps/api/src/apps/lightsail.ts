@@ -13,6 +13,7 @@ import {
   ECRClient,
   GetRepositoryPolicyCommand,
   SetRepositoryPolicyCommand,
+  type ImageDetail,
 } from '@aws-sdk/client-ecr';
 import {
   CreateContainerServiceCommand,
@@ -144,7 +145,30 @@ export class LightsailAppHostingBackend {
     });
   }
 
+  private async existingDeploymentImage(tag: string): Promise<ImageDetail | null> {
+    try {
+      const response = await this.dependencies.ecr.send(new DescribeImagesCommand({
+        repositoryName: repositoryName(this.dependencies.ecrRepositoryUri),
+        imageIds: [{ imageTag: tag }],
+      }));
+      return response.imageDetails?.[0] ?? null;
+    } catch (error) {
+      if ((error as { name?: string }).name === 'ImageNotFoundException') return null;
+      throw error;
+    }
+  }
+
   async buildImage(input: LightsailBuildInput): Promise<{ buildId: string; imageReference: string }> {
+    const tag = imageTag(input.deploymentId);
+    const reference = `${this.dependencies.ecrRepositoryUri}:${tag}`;
+    const existing = await this.existingDeploymentImage(tag);
+    if (existing) {
+      input.logTap?.onLine?.(`Reusing existing ECR image ${reference}`);
+      return {
+        buildId: `ecr:${existing.imageDigest ?? tag}`,
+        imageReference: reference,
+      };
+    }
     const staged = await stageAppBuildContext(input.snapshotName, input.dockerfile, {
       sourceDir: input.sourceDir,
       runtimeSpec: input.runtimeSpec,
@@ -152,7 +176,6 @@ export class LightsailAppHostingBackend {
     const temporaryRoot = await mkdtemp(join(tmpdir(), 'kortix-app-lightsail-build-'));
     const archivePath = join(temporaryRoot, 'context.tar.gz');
     const objectKey = `apps/${environmentNamespace(this.dependencies.environment)}/build-contexts/${input.deploymentId}.tar.gz`;
-    const reference = `${this.dependencies.ecrRepositoryUri}:${imageTag(input.deploymentId)}`;
     try {
       await tar.c({ cwd: staged.contextDir, file: archivePath, gzip: true }, ['.']);
       // App artifacts are capped at 50 MiB. Buffering makes the S3 request
