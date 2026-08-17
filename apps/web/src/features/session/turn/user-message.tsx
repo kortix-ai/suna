@@ -412,7 +412,7 @@ const BUBBLE_TEXT = cn(
 );
 
 const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-4.5 py-3.5 select-none rounded-xl',
 );
 
 export interface NormalizedAttachment {

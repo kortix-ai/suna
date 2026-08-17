@@ -64,7 +64,7 @@ export function EasyPanel() {
     // Preview keep `shrink-0` and stay on screen at their full height, always.
     // `min-h-0` is what lets this shrink at all — a flex container defaults to
     // its content's minimum height and would otherwise refuse.
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <OutputsCard
         outputs={files}
         defaultExpanded={outputsDefaultOpen}

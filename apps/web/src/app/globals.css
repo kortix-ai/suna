@@ -318,9 +318,9 @@
   --text-8xl--line-height: 1;
   /* Standard border radius values */
   --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 3px);
   /* Standard radius for all main form elements and UI components */
   --radius-2xl: 1rem;
   --border-width: 1.5px;
