@@ -677,6 +677,82 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
   });
 });
 
+describe('trailing assistant prefill is stripped across the board (one normalization fixes both errors)', () => {
+  // Reproduces two real production errors, both from a trailing assistant message
+  // (a replayed partial from a cancelled turn):
+  //   • Bedrock `global.anthropic.claude-sonnet-5` → HTTP 400 "This model does not
+  //     support assistant message prefill. The conversation must end with a user
+  //     message."
+  //   • ChatGPT-Codex `gpt-5.6-sol` → empty 200 stream → empty_completion.
+  // A conversation must end on a user/tool turn, so toModelMessages drops the
+  // trailing assistant UNCONDITIONALLY (like repairToolPairing) — every family.
+  const withTrailingAssistant = {
+    messages: [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'partial reply the client replayed' },
+    ],
+  };
+
+  for (const family of ['bedrock', 'anthropic', 'openai', 'openai-compatible'] as const) {
+    it(`${family}: strips the trailing assistant so the request ends on a user message`, () => {
+      const args = buildAiSdkArgs({ ...withTrailingAssistant }, family);
+      expect(args.messages).toHaveLength(1);
+      expect(args.messages[args.messages.length - 1].role).toBe('user');
+    });
+  }
+
+  it('codex (openai + reasoning effort): strips the trailing assistant that makes the Responses backend return empty', () => {
+    const args = buildAiSdkArgs({ ...withTrailingAssistant, reasoning_effort: 'low' }, 'openai', {
+      providerName: 'openai-codex',
+    });
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0].role).toBe('user');
+  });
+
+  it('strips multiple consecutive trailing assistant turns, keeps the last user/tool turn', () => {
+    const args = buildAiSdkArgs(
+      {
+        messages: [
+          { role: 'user', content: 'q' },
+          { role: 'assistant', content: 'a1' },
+          { role: 'assistant', content: 'a2' },
+        ],
+      },
+      'bedrock',
+    );
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0].role).toBe('user');
+  });
+
+  it('a conversation already ending on a user turn is untouched', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'assistant', content: 'hi' }, { role: 'user', content: 'go' }] },
+      'openai',
+    );
+    expect(args.messages).toHaveLength(2);
+    expect(args.messages[args.messages.length - 1].role).toBe('user');
+  });
+
+  it('bedrock: the prompt-cache breakpoint lands on the surviving user turn, not a removed assistant', () => {
+    const args = buildAiSdkArgs({ ...withTrailingAssistant }, 'bedrock');
+    const last = args.messages[args.messages.length - 1] as {
+      role: string;
+      providerOptions?: { bedrock?: { cachePoint?: unknown } };
+    };
+    expect(last.role).toBe('user');
+    expect(last.providerOptions?.bedrock?.cachePoint).toEqual({ type: 'default' });
+  });
+
+  it('never strips down to an empty conversation (all-assistant history is left for the upstream)', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'assistant', content: 'only' }] },
+      'bedrock',
+    );
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0].role).toBe('assistant');
+  });
+});
+
 describe('ai-sdk anthropic/bedrock prompt caching (ported from native)', () => {
   it('anthropic: attaches cacheControl to the system prompt, the last tool, and the last message', () => {
     const args = buildAiSdkArgs(
