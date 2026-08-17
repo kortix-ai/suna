@@ -20,9 +20,9 @@ import {
 } from "../helpers/session-auth";
 import {
   dismissOnboarding,
+  openSettingsPanel,
   openSettingsTab,
   selectAccountForUi,
-  settingsPanel,
 } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
@@ -466,9 +466,6 @@ test.describe("08 — Accounts, invites, and project access", () => {
       page.getByText("Sessions", { exact: true }).first(),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Settings" }).first(),
-    ).toBeVisible();
-    await expect(
       page.locator(
         'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
       ),
@@ -477,8 +474,10 @@ test.describe("08 — Accounts, invites, and project access", () => {
     await expect(page.getByText("Secrets", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Triggers", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Tunnel", { exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Settings" }).first().click();
-    await expect(settingsPanel(page)).toBeVisible();
+    // The sidebar's own Settings row is gone (Jay, 2026-08-17) — the panel
+    // now opens only via Mod+, or the workspace switcher's "User Settings"
+    // row. `openSettingsPanel` presses the shortcut and asserts the panel.
+    await openSettingsPanel(page);
     await expect(
       page.locator(
         'a[href*="/instances"], a[href*="/dashboard"], a[href^="/sessions/"]',
