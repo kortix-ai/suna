@@ -49,7 +49,10 @@ import {
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
 import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
-import { useCatalog } from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
+import {
+  useCatalog,
+  usePipedreamStatus,
+} from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
@@ -120,6 +123,16 @@ function ModalFormFallback() {
  * on the other two tabs. Removing a card the user can already see is connected
  * is not a filter worth a tab; it just made "where did Slack go?" a question
  * the page could provoke.
+ *
+ * Two of the three are dropped entirely on a deployment with no catalogue —
+ * see `catalogueAvailable`. Discovery and All are two views of ONE catalogue,
+ * and without `connectors_api_discover` that catalogue is Pipedream's, which
+ * answers `501` on every request unless three env vars are set. They are
+ * removed rather than disabled: a disabled tab still asserts that the feature
+ * exists and is merely out of reach for now, which is not what "this
+ * deployment does not have Pipedream" means. What is left is the project's own
+ * connectors, which every deployment has, and `+`, which never needed a
+ * catalogue.
  */
 const SCOPES: readonly ConnectorScope[] = ['discover', 'all', 'connected'];
 
@@ -226,6 +239,22 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
+  // Whether this deployment has a catalogue to browse at all.
+  //
+  // `useCatalog` falls back to Easy Connect (Pipedream) whenever
+  // `connectors_api_discover` is off, which is the default — so with the flag
+  // off and Pipedream unconfigured, Discovery and All have no backend and every
+  // request they make answers `501`. The probe is read HERE rather than off
+  // `catalog`, because it decides `enabled` for the very hook that would
+  // otherwise report it.
+  //
+  // Only a confirmed `absent` closes the tabs. While the probe is in flight the
+  // page renders exactly as it always has: the overwhelming majority of
+  // deployments do have Pipedream, and removing two tabs for a beat on every
+  // load to spare a minority one is the wrong trade.
+  const pipedreamStatus = usePipedreamStatus(!discoverEnabled);
+  const catalogueAvailable = discoverEnabled || pipedreamStatus !== 'absent';
+
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
     [projectId],
@@ -284,7 +313,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // connector than reading the ones already there, and the ones already there
   // are one click away. It also made the landing tab depend on a query, so the
   // page could settle onto a different tab than it first rendered.
-  const scope: ConnectorScope = scopeChoice ?? 'discover';
+  //
+  // Unless there is no catalogue at all, in which case the choice is forced
+  // rather than defaulted: `scopeChoice` outlives the answer it was made
+  // under — the user can click Discovery in the beat before the probe lands,
+  // and `?c=` returns them to this page after an OAuth round trip with that
+  // choice still in state. Reading it here would strand them on a tab the
+  // strip no longer renders.
+  const scope: ConnectorScope = catalogueAvailable ? (scopeChoice ?? 'discover') : 'connected';
   const catalogActive = scope !== 'connected';
 
   // The category the catalogue should FILTER by, server-side. `null` while
@@ -417,27 +453,33 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         ) : undefined
       }
       filters={
-        <>
-          {/* Rendered immediately, not behind `settled`. The strip used to
-              wait for both queries because the landing tab was derived from
-              one of them and Connected carried a count off the other; neither
-              is true now, so waiting only meant an empty 28px slot on every
-              load followed by the tabs popping in. Three static labels over a
-              constant `scope` have nothing to wait for. */}
-          <Tabs value={scope} onValueChange={(value) => setScopeChoice(value as ConnectorScope)}>
-            <TabsList>
-              {SCOPES.map((value) => (
-                <TabsTrigger key={value} value={value}>
-                  {SCOPE_LABEL[value]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          {/* The category filter is NOT here. It is a rail of chips rendered by
-              `ConnectorBrowse` directly above the grid it filters — this row is
-              too narrow for it, and the rail has to sit next to its content for
-              the lit chip to read as "this is why you are seeing these". */}
-        </>
+        // A strip of one tab is not a choice, so a deployment with no catalogue
+        // gets no strip — `CapabilityPageShell` drops the whole row when this
+        // is `undefined`, which is why it must not be a fragment.
+        catalogueAvailable ? (
+          <>
+            {/* Rendered immediately, not behind `settled`. The strip used to
+                wait for both queries because the landing tab was derived from
+                one of them and Connected carried a count off the other; neither
+                is true now, so waiting only meant an empty 28px slot on every
+                load followed by the tabs popping in. Three static labels over a
+                constant `scope` have nothing to wait for. */}
+            <Tabs value={scope} onValueChange={(value) => setScopeChoice(value as ConnectorScope)}>
+              <TabsList>
+                {SCOPES.map((value) => (
+                  <TabsTrigger key={value} value={value}>
+                    {SCOPE_LABEL[value]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            {/* The category filter is NOT here. It is a rail of chips rendered
+                by `ConnectorBrowse` directly above the grid it filters — this
+                row is too narrow for it, and the rail has to sit next to its
+                content for the lit chip to read as "this is why you are seeing
+                these". */}
+          </>
+        ) : undefined
       }
     >
       {catalogActive ? (
@@ -469,10 +511,19 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 size="sm"
                 title="No connectors yet"
                 description="Connect an outside tool and your agents can use it in a session."
+                // The CTA goes with the tab it opens. With no catalogue on this
+                // deployment it would be a button to a tab that is not there;
+                // `+` is the remaining way in, and it is already in the header.
                 action={
-                  <Button size="sm" variant="secondary" onClick={() => setScopeChoice('discover')}>
-                    Browse the catalogue
-                  </Button>
+                  catalogueAvailable ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setScopeChoice('discover')}
+                    >
+                      Browse the catalogue
+                    </Button>
+                  ) : undefined
                 }
               />
             )
