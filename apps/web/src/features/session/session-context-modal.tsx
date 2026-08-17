@@ -32,6 +32,7 @@ import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@/ui/types';
+import { PROVIDER_LABELS } from '@kortix/llm-catalog';
 import type { AssistantMessage, Message, Part, Session } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import { useSessionStateStore } from '@kortix/sdk/react';
@@ -113,11 +114,21 @@ function getSessionContextMetrics(
   const limit = model?.limit?.context as number | undefined;
   const total = tokenTotal(last);
 
+  // The gateway registers every model under the single synthetic `kortix`
+  // opencode provider, so `provider.name` is always "Kortix" — even for a
+  // BYOK Anthropic/Bedrock/OpenAI model. The gateway separately serves the
+  // REAL upstream provider on the model itself (`model.provider`, e.g.
+  // "anthropic"); prefer that for display, same fallback order as
+  // `pickerGroupId`/`pickerGroupLabel` in ./model-grouping.ts.
+  const upstreamProviderId =
+    last.providerID === 'kortix' && model?.provider ? model.provider : last.providerID;
+
   return {
     totalCost,
     context: {
       message: last,
-      providerLabel: (provider as any)?.name ?? last.providerID,
+      providerLabel:
+        PROVIDER_LABELS[upstreamProviderId] ?? (provider as any)?.name ?? last.providerID,
       modelLabel: model?.name ?? last.modelID,
       limit,
       input: last.tokens?.input ?? 0,
