@@ -669,7 +669,7 @@ function CardMedia({ logo, logoAlt, icon: Icon, size = 22, className }: CardMedi
         className={cn('inline-flex shrink-0 items-center gap-1.5', wrap)}
       >
         {logos.map((src, i) => (
-          <span key={i} className="inline-flex items-center gap-1.5">
+          <span key={src} className="inline-flex items-center gap-1.5">
             {i > 0 && <span aria-hidden className="bg-border h-px w-2" />}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

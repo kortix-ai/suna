@@ -323,10 +323,11 @@ export function sectionTitle(key: string): string {
  * grid under two identical React keys.
  */
 export function sectionKeysForEntry(categories: readonly string[]): Set<string> {
-  const named = categories
-    .map((category) => category.trim())
-    .filter((category) => category.length > 0)
-    .map(sectionKeyForCategory);
+  const named: string[] = [];
+  for (const category of categories) {
+    const trimmed = category.trim();
+    if (trimmed.length > 0) named.push(sectionKeyForCategory(trimmed));
+  }
   return named.length > 0 ? new Set(named) : new Set([OTHER]);
 }
 

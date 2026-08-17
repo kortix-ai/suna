@@ -176,6 +176,11 @@ import {
 import { CardSection } from './card-section';
 import { IconsSection } from './icons-section';
 
+// Filtered once at module load — the catalog is a static constant, so the
+// per-render filter().map() chain in the JSX collapses to a single map.
+const MARK_WALLPAPERS = WALLPAPER_DOWNLOADS.filter((w) => w.group === 'mark');
+const PRODUCT_WALLPAPERS = WALLPAPER_DOWNLOADS.filter((w) => w.group === 'product');
+
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },
   {
@@ -1448,7 +1453,7 @@ export default function BrandPage() {
                   a retina display.
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                  {WALLPAPER_DOWNLOADS.filter((w) => w.group === 'mark').map((w) => (
+                  {MARK_WALLPAPERS.map((w) => (
                     <WallpaperCard key={`${w.id}-${w.theme}`} wallpaper={w} />
                   ))}
                 </div>
@@ -1465,7 +1470,7 @@ export default function BrandPage() {
                   phone file is its own portrait render, not a crop.
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                  {WALLPAPER_DOWNLOADS.filter((w) => w.group === 'product').map((w) => (
+                  {PRODUCT_WALLPAPERS.map((w) => (
                     <WallpaperCard key={`${w.id}-${w.theme}`} wallpaper={w} />
                   ))}
                 </div>
@@ -3375,10 +3380,13 @@ export default function BrandPage() {
                           sub: 'every day at 03:00',
                         },
                         { icon: Plug, label: 'GitHub', sub: 'Connected' },
-                      ].map((item, i) => {
+                      ].map((item) => {
                         const I = item.icon;
                         return (
-                          <SpotlightCard key={i} className="bg-card border-border/50 border">
+                          <SpotlightCard
+                            key={item.label}
+                            className="bg-card border-border/50 border"
+                          >
                             <div className="flex cursor-pointer items-center gap-3 p-4">
                               <div className="bg-muted border-border/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border">
                                 <I className="text-foreground h-4 w-4" />

@@ -360,12 +360,14 @@ export function SqliteRenderer({
         if (tableInfos.length > 0) {
           setSelectedTable(tableInfos[0].name);
         }
-        setIsLoading(false);
       } catch (e: unknown) {
         if (abortController.signal.aborted) return;
         console.error('[SqliteRenderer] Error:', e);
         if (!cancelled) {
           setError((e as Error)?.message || 'Failed to load database');
+        }
+      } finally {
+        if (!cancelled && !abortController.signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -426,9 +428,10 @@ export function SqliteRenderer({
   const isEditable = !readOnly && selectedTableInfo?.type === 'table';
   const columnDefs = useMemo((): ColDef[] => {
     if (!tableData.columns.length) return [];
-    const pkColumns = new Set(
-      selectedTableInfo?.columns.filter((c) => c.pk).map((c) => c.name) ?? [],
-    );
+    const pkColumns = new Set<string>();
+    for (const c of selectedTableInfo?.columns ?? []) {
+      if (c.pk) pkColumns.add(c.name);
+    }
 
     return tableData.columns.map((col) => ({
       field: col,
@@ -1483,6 +1486,7 @@ export function SqliteRenderer({
                     'placeholder:text-muted-foreground/20',
                   )}
                   placeholder="NULL"
+                  aria-label={`${expandedCell.column} value`}
                   spellCheck={false}
                   autoFocus
                 />

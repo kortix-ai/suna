@@ -8,7 +8,7 @@ import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 
 const ICON_BUTTON =
-  'shrink-0 rounded-full p-0 hit-area-1 active:scale-[0.96] active:duration-150 duration-300 ease-out ';
+  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-150 duration-300 ease-out ';
 
 export interface SendStopControlProps {
   isSending: boolean;
@@ -91,7 +91,7 @@ export function SendStopControl({
             size="sm"
             disabled={!questionCanAct || disabled}
             onClick={onSubmit}
-            className="hit-area-1 shrink-0 rounded-lg duration-300 ease-out active:scale-[0.96] active:duration-150"
+            className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-300 ease-out active:scale-[0.96] active:duration-150"
           >
             {questionButtonLabel}
           </Button>

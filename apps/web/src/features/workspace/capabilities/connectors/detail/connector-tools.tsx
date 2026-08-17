@@ -257,10 +257,13 @@ export function ConnectorTools({
   // exact count. Project-locked paths are excluded: writing a connector rule
   // under a project rule changes nothing.
   const [bulk, setBulk] = useState<{ group: ToolGroup; choice: PolicyChoice } | null>(null);
-  const bulkPathsFor = (group: ToolGroup) =>
-    group.actions
-      .map((action) => action.path)
-      .filter((path) => !isLockedByProject(path, effective));
+  const bulkPathsFor = (group: ToolGroup) => {
+    const paths: string[] = [];
+    for (const action of group.actions) {
+      if (!isLockedByProject(action.path, effective)) paths.push(action.path);
+    }
+    return paths;
+  };
   const bulkPaths = bulk ? bulkPathsFor(bulk.group) : [];
 
   // ── Advanced: pattern rules ─────────────────────────────────────────────

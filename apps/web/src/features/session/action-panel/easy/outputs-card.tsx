@@ -58,7 +58,7 @@ const thumbCache = new Map<string, string>();
  */
 function ImageThumb({ path, callID, name }: { path: string; callID: string; name: string }) {
   const cacheKey = `${callID}:${path}`;
-  const [src, setSrc] = useState<string | null>(thumbCache.get(cacheKey) ?? null);
+  const [src, setSrc] = useState<string | null>(() => thumbCache.get(cacheKey) ?? null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {

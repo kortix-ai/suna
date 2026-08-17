@@ -100,11 +100,13 @@ export function useDemoConversation(opts: { onEnterChat: () => void }): DemoConv
 
   const finalize = useCallback((sc: DemoScenario) => {
     setStartedSteps(sc.steps.length);
-    setDoneToolIds(new Set(sc.steps.filter((s) => s.kind === 'tool').map((s) => s.id)));
+    const toolIds = new Set<string>();
     const full: Record<string, string> = {};
-    sc.steps.forEach((s) => {
-      if (s.kind === 'text') full[s.id] = s.markdown;
-    });
+    for (const s of sc.steps) {
+      if (s.kind === 'tool') toolIds.add(s.id);
+      else if (s.kind === 'text') full[s.id] = s.markdown;
+    }
+    setDoneToolIds(toolIds);
     setStreamed(full);
     setPhase('done');
   }, []);

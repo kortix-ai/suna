@@ -64,8 +64,11 @@ export function ConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     >
       {connectors.length > 0 ? (
         <ToolResultCard bodyClassName="space-y-0.5">
-          {connectors.map((c, i) => (
-            <div key={String(c.slug ?? i)} className="flex items-center gap-2 px-2 py-1 text-xs">
+          {connectors.map((c) => (
+            <div
+              key={String(c.slug ?? '') || `${String(c.name ?? '')}:${String(c.provider ?? '')}`}
+              className="flex items-center gap-2 px-2 py-1 text-xs"
+            >
               <Plug className="text-muted-foreground/50 size-3 shrink-0" />
               <span className="text-foreground truncate font-medium">
                 {String(c.name || c.slug || '')}
@@ -129,8 +132,11 @@ export function ConnectorDiscoverTool({ part, defaultOpen, forceOpen, locked }: 
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
       ) : matches.length > 0 ? (
         <ToolResultCard bodyClassName="space-y-1.5">
-          {matches.map((m, i) => (
-            <div key={String(m.tool ?? i)} className="px-2 py-1 text-xs">
+          {matches.map((m) => (
+            <div
+              key={String(m.tool ?? '') || String(m.description ?? '').slice(0, 60)}
+              className="px-2 py-1 text-xs"
+            >
               <div className="flex items-center gap-2">
                 <span className="text-foreground truncate font-mono">{String(m.tool ?? '')}</span>
                 <ConnectorRiskBadge risk={m.risk} />

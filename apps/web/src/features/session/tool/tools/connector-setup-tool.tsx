@@ -26,6 +26,17 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
   // the body.
   const isError = useMemo(() => isErrorOutput(output), [output]);
 
+  // Connector names are the row identity — disambiguate a repeated name with
+  // an occurrence counter instead of the iteration index.
+  const keyedConnectors = useMemo(() => {
+    const seen = new Map<string, number>();
+    return (data?.connectors ?? []).map((conn) => {
+      const n = seen.get(conn) ?? 0;
+      seen.set(conn, n + 1);
+      return { conn, key: n === 0 ? conn : `${conn}#${n}` };
+    });
+  }, [data]);
+
   return (
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
@@ -45,8 +56,8 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
         <ToolOutputFallback output={output} toolName="connector_setup" />
       ) : data && data.connectors.length > 0 ? (
         <ToolResultCard bodyClassName="space-y-0.5">
-          {data.connectors.map((conn, i) => (
-            <div key={i} className="flex items-center gap-2 px-2 py-1 text-xs">
+          {keyedConnectors.map(({ conn, key }) => (
+            <div key={key} className="flex items-center gap-2 px-2 py-1 text-xs">
               <Plug className="text-muted-foreground size-3.5 shrink-0" />
               <span className="font-medium">{conn}</span>
             </div>

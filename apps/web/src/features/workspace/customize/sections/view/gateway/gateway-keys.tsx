@@ -44,13 +44,17 @@ import {
 } from '@/hooks/projects/use-project-gateway';
 import type { CreatedGatewayKey } from '@/lib/projects-gateway-client';
 
+// Hoisted so render does not rebuild the formatter per call — same default
+// locale and options as the previous inline `toLocaleDateString` call.
+const KEY_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function fmtDate(s: string | null): string {
   if (!s) return 'never';
-  return new Date(s).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return KEY_DATE_FORMAT.format(new Date(s));
 }
 
 export function GatewayKeys({

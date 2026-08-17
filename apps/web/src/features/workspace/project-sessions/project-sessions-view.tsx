@@ -290,6 +290,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId, SURFACE));
+  const collapsedSectionSet = useMemo(() => new Set(collapsedSections), [collapsedSections]);
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
   const resetFilters = useSessionFilterStore((s) => s.resetFilters);
 
@@ -592,7 +593,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                         key={section.id}
                         section={section}
                         showHeader={grouped.showHeaders}
-                        open={!collapsedSections.includes(section.id)}
+                        open={!collapsedSectionSet.has(section.id)}
                         onOpenChange={() => toggleSectionCollapsed(projectId, section.id, SURFACE)}
                       >
                         {section.sessions.map((session) => {

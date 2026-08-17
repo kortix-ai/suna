@@ -179,15 +179,15 @@ export function useCatalog(
     const nativeEntries = includeComputers ? [native] : [];
     if (source === 'discover') {
       return nativeEntries.concat(
-        (discoverQuery.data?.pages ?? [])
-          .flatMap((page) => page.items)
-          .map(catalogEntryFromDiscover),
+        (discoverQuery.data?.pages ?? []).flatMap((page) =>
+          page.items.map(catalogEntryFromDiscover),
+        ),
       );
     }
     return nativeEntries.concat(
-      (easyConnectQuery.data?.pages ?? [])
-        .flatMap((page) => page.apps)
-        .map(catalogEntryFromEasyConnect),
+      (easyConnectQuery.data?.pages ?? []).flatMap((page) =>
+        page.apps.map(catalogEntryFromEasyConnect),
+      ),
     );
   }, [activeQuery, category, source, discoverQuery.data, easyConnectQuery.data]);
 

@@ -128,7 +128,7 @@ export function TypingAnimation({
           case 'typing':
             if (currentCharIndex < graphemes.length) {
               setDisplayedText(graphemes.slice(0, currentCharIndex + 1).join(''));
-              setCurrentCharIndex(currentCharIndex + 1);
+              setCurrentCharIndex((prev) => prev + 1);
             } else {
               if (hasMultipleWords || loop) {
                 const isLastWord = currentWordIndex === wordsToAnimate.length - 1;
@@ -146,7 +146,7 @@ export function TypingAnimation({
           case 'deleting':
             if (currentCharIndex > 0) {
               setDisplayedText(graphemes.slice(0, currentCharIndex - 1).join(''));
-              setCurrentCharIndex(currentCharIndex - 1);
+              setCurrentCharIndex((prev) => prev - 1);
             } else {
               const nextIndex = (currentWordIndex + 1) % wordsToAnimate.length;
               setCurrentWordIndex(nextIndex);

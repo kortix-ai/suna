@@ -211,11 +211,11 @@ export function sessionSecretsSummary(draft: SessionScopeDraft): string {
 export function sessionConnectorsSummary(draft: SessionScopeDraft): string {
   if (draft.connector_bindings === undefined) return 'Unchanged';
   if (draft.connector_bindings_inherited === true) return SESSION_SCOPE_CONNECTORS_INHERITED_LABEL;
-  const bound = Object.keys(draft.connector_bindings);
+  const bound = new Set(Object.keys(draft.connector_bindings));
   // A required-but-unconnected alias is selected too — it has no connection to
   // bind, which is precisely why it is recorded separately.
-  const required = (draft.require_connectors ?? []).filter((alias) => !bound.includes(alias));
-  const count = bound.length + required.length;
+  const required = (draft.require_connectors ?? []).filter((alias) => !bound.has(alias));
+  const count = bound.size + required.length;
   return count === 0 ? 'None allowed' : `${count} selected`;
 }
 

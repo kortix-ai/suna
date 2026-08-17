@@ -60,6 +60,9 @@ import {
   revokeScimToken,
 } from '@/lib/iam-client';
 import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
+
+// Static registry — filter once at module load instead of on every render.
+const START_SYNC_GUIDES = SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint);
 import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {
@@ -161,6 +164,8 @@ function ProvisioningHealthPanel({
   );
 }
 
+const fallbackDateFormat = new Intl.DateTimeFormat();
+
 function formatRelative(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -173,7 +178,7 @@ function formatRelative(iso: string | null): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString();
+  return fallbackDateFormat.format(d);
 }
 
 async function copyValue(value: string, successMsg = 'Copied to clipboard') {
@@ -399,7 +404,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                   <p className="text-foreground text-xs font-medium">
                     Start automatic sync in your IdP
                   </p>
-                  {SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint).map((g) => (
+                  {START_SYNC_GUIDES.map((g) => (
                     <div key={g.id} className="flex gap-2">
                       <span className="w-24 shrink-0">{g.name.split(' (')[0]}</span>
                       <span className="text-foreground min-w-0 flex-1">

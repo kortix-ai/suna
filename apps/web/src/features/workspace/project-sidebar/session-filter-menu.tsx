@@ -138,12 +138,15 @@ function buildFacetOptions<V extends string>(
   matchesOne: (session: ProjectSession, value: V) => boolean,
   active: readonly V[],
 ): SessionFilterFacetOption<V>[] {
-  return declared
-    .map((option) => ({
-      ...option,
-      count: facetedSessions.filter((session) => matchesOne(session, option.value)).length,
-    }))
-    .filter((option) => option.count > 0 || active.includes(option.value));
+  const activeSet = new Set(active);
+  const options: SessionFilterFacetOption<V>[] = [];
+  for (const option of declared) {
+    const count = facetedSessions.filter((session) => matchesOne(session, option.value)).length;
+    if (count > 0 || activeSet.has(option.value)) {
+      options.push({ ...option, count });
+    }
+  }
+  return options;
 }
 
 export function resolveStatusFacetOptions(
@@ -240,6 +243,9 @@ export function SessionFilterMenu({
   const sourceOptions = resolveSourceFacetOptions(sessions, statusFilters, sourceFilters);
   const showFiltersSection = statusOptions.length > 0 || sourceOptions.length > 0;
   const hasActiveFacets = statusFilters.length > 0 || sourceFilters.length > 0;
+  const hiddenSectionSet = new Set(hiddenSections);
+  const statusFilterSet = new Set(statusFilters);
+  const sourceFilterSet = new Set(sourceFilters);
 
   return (
     <DropdownMenuContent align={align} side={side} className="w-56 p-1">
@@ -298,7 +304,7 @@ export function SessionFilterMenu({
             {showOptions.map((option) => (
               <DropdownMenuCheckboxItem
                 key={option.id}
-                checked={!hiddenSections.includes(option.id)}
+                checked={!hiddenSectionSet.has(option.id)}
                 onCheckedChange={() => toggleSectionHidden(projectId, option.id, surface)}
                 onSelect={(event) => event.preventDefault()}
               >
@@ -339,7 +345,7 @@ export function SessionFilterMenu({
                 {statusOptions.map((option) => (
                   <DropdownMenuCheckboxItem
                     key={option.value}
-                    checked={statusFilters.includes(option.value)}
+                    checked={statusFilterSet.has(option.value)}
                     onCheckedChange={() => toggleStatusFilter(projectId, option.value, surface)}
                     onSelect={(event) => event.preventDefault()}
                   >
@@ -365,7 +371,7 @@ export function SessionFilterMenu({
                   return (
                     <DropdownMenuCheckboxItem
                       key={option.value}
-                      checked={sourceFilters.includes(option.value)}
+                      checked={sourceFilterSet.has(option.value)}
                       onCheckedChange={() => toggleSourceFilter(projectId, option.value, surface)}
                       onSelect={(event) => event.preventDefault()}
                     >

@@ -89,9 +89,9 @@ export function WorkspaceMenuSection() {
   // `groupWorkspacesByAccount` drops any account with zero workspaces, and
   // `undefined` data folds to `[]` on error, so without this the account would
   // vanish indistinguishably from "genuinely has no workspaces".
-  const failedAccounts = accounts
-    .map((account, i) => ({ account, result: workspaceQueries[i] }))
-    .filter(({ result }) => result.isError);
+  const failedAccounts = accounts.flatMap((account, i) =>
+    workspaceQueries[i].isError ? [{ account, result: workspaceQueries[i] }] : [],
+  );
 
   const groups = useMemo(
     () =>

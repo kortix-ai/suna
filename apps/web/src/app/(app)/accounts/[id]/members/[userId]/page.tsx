@@ -62,11 +62,17 @@ const ROLE_LABEL: Record<string, string> = {
 
 const PANEL = 'bg-popover rounded-md border';
 
+const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return DATE_FORMATTER.format(d);
 }
 
 export default function MemberDetailPage() {

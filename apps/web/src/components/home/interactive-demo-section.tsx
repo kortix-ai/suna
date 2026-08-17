@@ -93,7 +93,9 @@ function Panel({
         <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">
             {title}
-            {count && <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>}
+            {count ? (
+              <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>
+            ) : null}
           </span>
           {action}
         </div>
@@ -179,6 +181,8 @@ function StatusDot({ on, label }: { on: boolean; label?: [string, string] }) {
   );
 }
 
+const knob = <span className="size-4 rounded-full bg-white shadow" />;
+
 function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const className = cn(
@@ -186,7 +190,6 @@ function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
     on ? 'bg-kortix-green justify-end' : 'bg-muted-foreground/20 justify-start',
     onClick && 'cursor-pointer',
   );
-  const knob = <span className="size-4 rounded-full bg-white shadow" />;
   if (!onClick) return <span className={className}>{knob}</span>;
   return (
     <button
@@ -261,11 +264,11 @@ function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
                   <span className="min-w-0 flex-1">
                     <span className="text-foreground flex items-center gap-1.5 text-xs font-medium sm:text-sm">
                       {title}
-                      {count && (
+                      {count ? (
                         <Badge size="sm" variant="muted">
                           {count}
                         </Badge>
-                      )}
+                      ) : null}
                     </span>
                     <span className="text-muted-foreground mt-0.5 block truncate text-[11px] sm:text-xs">
                       {sub}
@@ -521,6 +524,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
     ([domain, name]) =>
       !query || name.toLowerCase().includes(query) || domain.toLowerCase().includes(query),
   );
+  const connectedExtraSet = new Set(connectedExtra);
   return (
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -595,7 +599,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
       {list.length > 0 ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {list.map(([domain, name, connected]) => {
-            const justConnected = !connected && connectedExtra.includes(name);
+            const justConnected = !connected && connectedExtraSet.has(name);
             return (
               <div
                 key={name}
@@ -606,7 +610,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
               >
                 <BrandLogo domain={domain} alt={name} />
                 <span className="text-foreground truncate text-sm font-medium">{name}</span>
-                <ConnectBadge connected={connected || connectedExtra.includes(name)} />
+                <ConnectBadge connected={connected || connectedExtraSet.has(name)} />
               </div>
             );
           })}

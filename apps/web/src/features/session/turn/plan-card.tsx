@@ -183,8 +183,8 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
               connecting separator drew a second, weaker reading of the same
               sequence the list already implies. */}
           <ul className="mt-3 flex w-full flex-col gap-2">
-            {todos.map((todo, index) => (
-              <li key={index} className={cn(RAIL_ROW, 'items-start')}>
+            {todos.map((todo) => (
+              <li key={todo.content} className={cn(RAIL_ROW, 'items-start')}>
                 <span className={cn('flex', RAIL_SLOT, GLYPH_ON_FIRST_LINE)}>
                   <TodoStatusIcon status={todo.status} />
                 </span>

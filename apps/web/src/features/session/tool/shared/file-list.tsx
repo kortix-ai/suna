@@ -160,11 +160,11 @@ export function InlineFileList({
 }) {
   return (
     <div>
-      {paths.map((fp, i) => {
+      {paths.map((fp) => {
         const dp = toDisplayPath(fp);
         return (
           <ToolListRow
-            key={i}
+            key={fp}
             icon={<FileText />}
             name={getFilename(dp) ?? dp}
             dir={getDirectory(dp)}
@@ -198,7 +198,7 @@ export function InlineGrepResults({
         const isExpanded = expandedIndex === i;
 
         return (
-          <div key={i}>
+          <div key={group.filePath}>
             <ToolListRow
               icon={<FileText />}
               name={getFilename(dp) ?? dp}

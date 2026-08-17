@@ -102,6 +102,17 @@ import {
 
 const PLACEHOLDERS = ['{{ message.text }}', '{{ message.source }}', '{{ fired_at }}'];
 
+/** Shared formatter, hoisted so render does not rebuild the Intl machinery per
+ *  call. Options mirror `toLocaleString()`'s defaults — identical output. */
+const lastRunFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
 /** A copy-pasteable request for whoever is wiring the other end up. */
 function buildSampleRequest(url: string): string {
   return [
@@ -1021,7 +1032,7 @@ function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
                 value: (
                   <span className="tabular-nums">
                     {trigger.last_fired_at
-                      ? new Date(trigger.last_fired_at).toLocaleString()
+                      ? lastRunFormatter.format(new Date(trigger.last_fired_at))
                       : describeLastRun(null)}
                   </span>
                 ),

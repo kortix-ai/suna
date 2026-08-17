@@ -86,7 +86,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -200,6 +200,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
+  const collapsedSectionIds = useMemo(() => new Set(collapsedSections), [collapsedSections]);
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
 
   const restartMutation = useMutation({
@@ -391,7 +392,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             sessions={sessions}
             reviewCountBySession={reviewSummary.needsYouBySession}
             showHeader={grouped.showHeaders}
-            open={!collapsedSections.includes(section.id)}
+            open={!collapsedSectionIds.has(section.id)}
             onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
           >
             {/* Two independent groupings compose here: `groupSessions` splits the

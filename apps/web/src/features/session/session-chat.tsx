@@ -397,7 +397,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
             const answer = answers[i] || [];
             const answerText = answer.join(', ') || 'No answer';
             return (
-              <div key={i} className="space-y-0.5">
+              <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
                   <UnifiedMarkdown content={q.question} />
                 </div>
@@ -564,10 +564,13 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
  *  inline with the conversation flow, styled like tool-call cards. */
 function NotificationTurn({ turn }: { turn: Turn }) {
   const rawText = useMemo(() => {
-    return turn.userMessage.parts
-      .filter((p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored)
-      .map((p) => (p as TextPart).text || '')
-      .join('\n');
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
+        texts.push((p as TextPart).text || '');
+      }
+    }
+    return texts.join('\n');
   }, [turn.userMessage.parts]);
 
   const { notifications } = useMemo(
@@ -579,8 +582,8 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 
   return (
     <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n, i) => (
-        <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+      {notifications.map((n) => (
+        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
       ))}
     </div>
   );
@@ -788,10 +791,11 @@ function SessionTurnImpl({
   }, [turn.assistantMessages]);
   const streamingResponseRaw = useMemo(() => {
     if (!activeAssistantMessage) return '';
-    return activeAssistantMessage.parts
-      .filter(isTextPart)
-      .map((p) => p.text ?? '')
-      .join('');
+    let text = '';
+    for (const p of activeAssistantMessage.parts) {
+      if (isTextPart(p)) text += p.text ?? '';
+    }
+    return text;
   }, [activeAssistantMessage]);
   const lastTextPart = useMemo(() => findLastTextPart(allParts), [allParts]);
   const responseRaw = lastTextPart?.text ?? '';
@@ -1132,14 +1136,13 @@ function SessionTurnImpl({
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {
-    const textParts = turn.userMessage.parts.filter(
-      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-    return textParts
-      .map((p) => stripSystemPtyText(p.text))
-      .filter((t) => t.trim())
-      .join('\n')
-      .trim();
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
+      const text = stripSystemPtyText((p as TextPart).text);
+      if (text.trim()) texts.push(text);
+    }
+    return texts.join('\n').trim();
   }, [turn.userMessage.parts]);
 
   const commandForTurn = useMemo(() => {
@@ -1216,8 +1219,8 @@ function SessionTurnImpl({
     // When inline content is active, copy all text parts (not just the last one)
     const textToCopy = inlineContentParts
       ? inlineContentParts
-          .filter((item) => item.type === 'text')
           .flatMap((item) => {
+            if (item.type !== 'text') return [];
             const text = (item.part as TextPart).text?.trim();
             return text ? [text] : [];
           })
@@ -1269,33 +1272,25 @@ function SessionTurnImpl({
    * Memoised, the arrays keep their identity until the parts actually change,
    * which is what makes the memo boundaries downstream able to bite.
    */
-  const segments = useMemo(
-    () =>
-      segmentTurn(
-        allParts
-          .map(({ part }) => part)
-          .filter((part) => {
-            if (isToolPart(part) && part.tool === 'todowrite') return false;
-            if (isToolPart(part) && part.tool === 'question') {
-              // Keep only answered questions, and only if not rendering inline
-              return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
-            }
-            return true;
-          })
-          // A kept question rides into its burst as the ANSWERED part — the
-          // one from answeredQuestionParts, possibly synthetic with
-          // optimistically-cached or output-parsed answers the raw store part
-          // does not carry yet. Without this substitution the burst row would
-          // show "0 answered" until the server confirms.
-          .map((part) =>
-            isToolPart(part) && part.tool === 'question'
-              ? (answeredQuestionPartsById.get(part.id) ?? part)
-              : part,
-          ),
-        { standaloneCallIds },
-      ),
-    [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds],
-  );
+  const segments = useMemo(() => {
+    const parts: (typeof allParts)[number]['part'][] = [];
+    for (const { part } of allParts) {
+      if (isToolPart(part) && part.tool === 'todowrite') continue;
+      if (isToolPart(part) && part.tool === 'question') {
+        // Keep only answered questions, and only if not rendering inline.
+        if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
+        // A kept question rides into its burst as the ANSWERED part — the
+        // one from answeredQuestionParts, possibly synthetic with
+        // optimistically-cached or output-parsed answers the raw store part
+        // does not carry yet. Without this substitution the burst row would
+        // show "0 answered" until the server confirms.
+        parts.push(answeredQuestionPartsById.get(part.id) ?? part);
+        continue;
+      }
+      parts.push(part);
+    }
+    return segmentTurn(parts, { standaloneCallIds });
+  }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
   // Shell mode — short-circuit rendering
@@ -1434,7 +1429,7 @@ function SessionTurnImpl({
             if (segment.kind === 'burst') {
               return (
                 <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? index}`}
+                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
                   parts={segment.parts}
                   sessionId={sessionId}
                   working={working}
@@ -3118,12 +3113,13 @@ export function SessionChat({
       // File and agent refs from tracked @ mentions. File uploads still use
       // the separate <file path="..." mime="..." ...>…</file> block below —
       // these are only for plain @ references to existing files/agents.
-      const fileMentionRefs: FileRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'file' && m.label)
-        .map((m) => ({ path: m.label, name: m.label }));
-      const agentMentionRefs: AgentRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'agent' && m.label)
-        .map((m) => ({ name: m.label }));
+      const fileMentionRefs: FileRefLike[] = [];
+      const agentMentionRefs: AgentRefLike[] = [];
+      for (const m of mentions ?? []) {
+        if (!m.label) continue;
+        if (m.kind === 'file') fileMentionRefs.push({ path: m.label, name: m.label });
+        else if (m.kind === 'agent') agentMentionRefs.push({ name: m.label });
+      }
 
       // Play send sound
       playSound('send');

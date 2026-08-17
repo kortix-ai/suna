@@ -118,7 +118,9 @@ export function DotmHex9({
   const om = clamp01(opacityMid);
   const op = clamp01(opacityPeak);
   const phase = reducedMotion || matrixPhase === "idle" ? 0.1 : cyclePhase;
-  const activePatternIndexes = getPatternIndexes(pattern);
+  // Set, not array: membership is checked once per dot on every animation
+  // frame, so linear `.includes` scans multiply per render.
+  const activePatternIndexes = new Set(getPatternIndexes(pattern));
   const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset);
   const matrixStyle = {
     width: stylePx(matrixWidth),
@@ -149,7 +151,7 @@ export function DotmHex9({
         {ROW_COUNTS.map((count, row) => (
           <div key={row} style={{ display: "flex", justifyContent: "center", gap: stylePx(gap) }}>
             {Array.from({ length: count }).map((_, col) => {
-              const isActive = activePatternIndexes.includes(hexPatternIndex(row, count, col));
+              const isActive = activePatternIndexes.has(hexPatternIndex(row, count, col));
               const opacity = isActive ? opacityForCell(row, col, phase) : 0;
               const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);
               return <span key={`${row},${col}`} aria-hidden="true" className={cx("dmx-dot", !isActive && "dmx-inactive", dmxBloom.bloomDot && "dmx-bloom-dot", dotClassName)} style={{ width: stylePx(dotSize), height: stylePx(dotSize), opacity: styleOpacity(remapOpacityToTriplet(opacity, ob, om, op)),

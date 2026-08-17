@@ -72,15 +72,18 @@ function Stepper({
 
   const currentStep = value ?? activeStep;
 
+  const contextValue = React.useMemo(
+    () => ({
+      activeStep: currentStep,
+      setActiveStep,
+      orientation,
+      count,
+    }),
+    [currentStep, setActiveStep, orientation, count],
+  );
+
   return (
-    <StepperContext.Provider
-      value={{
-        activeStep: currentStep,
-        setActiveStep,
-        orientation,
-        count,
-      }}
-    >
+    <StepperContext.Provider value={contextValue}>
       <div
         data-slot="stepper"
         className={cn(
@@ -113,8 +116,13 @@ function StepperItem({
   const state: StepState =
     completed || step < activeStep ? 'completed' : activeStep === step ? 'active' : 'inactive';
 
+  const itemContextValue = React.useMemo(
+    () => ({ step, state, isDisabled: disabled }),
+    [step, state, disabled],
+  );
+
   return (
-    <StepItemContext.Provider value={{ step, state, isDisabled: disabled }}>
+    <StepItemContext.Provider value={itemContextValue}>
       <div
         data-slot="stepper-item"
         className={cn(

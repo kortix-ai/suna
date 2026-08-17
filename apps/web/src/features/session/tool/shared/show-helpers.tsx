@@ -165,10 +165,14 @@ export function ShowHeaderAvatars({ items }: { items: ShowCarouselItem[] }) {
   const overflow = items.length - visible.length;
   return (
     <AvatarGroup className="shrink-0 -space-x-1.5 *:data-[slot=avatar]:ring-secondary">
-      {visible.map((item, index) => {
+      {visible.map((item) => {
         const src = showItemImageSrc(item);
         return (
-          <Avatar key={index} size="sm" className=''>
+          <Avatar
+            key={`${item.type}:${item.path ?? item.url ?? item.title ?? ''}`}
+            size="sm"
+            className=""
+          >
             {src ? <AvatarImage src={src} alt={item.title || ''} /> : null}
             <AvatarFallback className='bg-background'>{showFileTypeIcon(item.type, item.path, 'size-3.5')}</AvatarFallback>
           </Avatar>

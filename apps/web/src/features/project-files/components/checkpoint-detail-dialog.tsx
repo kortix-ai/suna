@@ -37,6 +37,16 @@ import { DiffRenderer } from './diff-renderer';
 // helpers
 // ---------------------------------------------------------------------------
 
+const relativeDateFormatter = new Intl.DateTimeFormat();
+
+const fullDateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatRelative(timestamp: number): string {
   const diff = Date.now() - timestamp;
   const seconds = Math.floor(diff / 1000);
@@ -47,17 +57,11 @@ function formatRelative(timestamp: number): string {
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
+  return relativeDateFormatter.format(timestamp);
 }
 
 function formatFull(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fullDateFormatter.format(timestamp);
 }
 
 function statusIconFor(status: ProjectCommitFile['status'], className = 'size-3.5') {

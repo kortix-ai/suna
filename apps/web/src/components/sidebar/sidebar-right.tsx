@@ -150,8 +150,14 @@ export function SidebarRight() {
     [featureFlags],
   );
   const filterClusters = useCallback(
-    (clusters: MenuItemDef[][]) =>
-      clusters.map((cluster) => cluster.filter(flagAllows)).filter((cluster) => cluster.length > 0),
+    (clusters: MenuItemDef[][]) => {
+      const allowed: MenuItemDef[][] = [];
+      for (const cluster of clusters) {
+        const items = cluster.filter(flagAllows);
+        if (items.length > 0) allowed.push(items);
+      }
+      return allowed;
+    },
     [flagAllows],
   );
   const quickActionClusters = filterClusters(

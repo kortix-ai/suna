@@ -221,62 +221,71 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
             const memberCount = g.member_count ?? 0;
             const projectCount = g.project_count ?? 0;
             return (
-              <li
-                key={g.group_id}
-                onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-                className="bg-popover hover:bg-popover-foreground/5 flex cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
-              >
-                <EntityAvatar icon={Users} size="md" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground truncate text-sm font-medium">{g.name}</span>
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      className={g.source === 'scim' ? undefined : 'capitalize'}
-                      title={
-                        g.source === 'scim'
-                          ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
-                          : undefined
-                      }
-                    >
-                      {g.source === 'scim' ? 'Synced from IdP' : g.source}
-                    </Badge>
+              <li key={g.group_id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(`/accounts/${accountId}/groups/${g.group_id}`);
+                    }
+                  }}
+                  className="bg-popover hover:bg-popover-foreground/5 flex cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+                >
+                  <EntityAvatar icon={Users} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground truncate text-sm font-medium">{g.name}</span>
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        className={g.source === 'scim' ? undefined : 'capitalize'}
+                        title={
+                          g.source === 'scim'
+                            ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
+                            : undefined
+                        }
+                      >
+                        {g.source === 'scim' ? 'Synced from IdP' : g.source}
+                      </Badge>
+                    </div>
+                    <span className="text-muted-foreground text-xs">
+                      <InlineMeta>
+                        {g.description || null}
+                        <span>
+                          {memberCount} member{memberCount === 1 ? '' : 's'}
+                        </span>
+                        <span>
+                          {projectCount} project{projectCount === 1 ? '' : 's'}
+                        </span>
+                      </InlineMeta>
+                    </span>
                   </div>
-                  <span className="text-muted-foreground text-xs">
-                    <InlineMeta>
-                      {g.description || null}
-                      <span>
-                        {memberCount} member{memberCount === 1 ? '' : 's'}
-                      </span>
-                      <span>
-                        {projectCount} project{projectCount === 1 ? '' : 's'}
-                      </span>
-                    </InlineMeta>
-                  </span>
+                  {canCreate ? (
+                    <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-muted-foreground hover:text-foreground size-7"
+                            aria-label={`Actions for ${g.name}`}
+                          >
+                            <MoreHorizontal className="size-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onSelect={() => setDeleteTarget(g)} className="gap-2">
+                            <Trash2 className="size-3.5" />
+                            Delete group
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ) : null}
                 </div>
-                {canCreate ? (
-                  <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-foreground size-7"
-                          aria-label={`Actions for ${g.name}`}
-                        >
-                          <MoreHorizontal className="size-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onSelect={() => setDeleteTarget(g)} className="gap-2">
-                          <Trash2 className="size-3.5" />
-                          Delete group
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ) : null}
               </li>
             );
           })}

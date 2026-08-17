@@ -114,9 +114,11 @@ export function takenIdsAddedByStorageEvent(event: {
 }): string[] {
   if (event.key !== WARM_TAKEN_STORAGE_KEY) return [];
   const before = new Set(parseEntries(event.oldValue).map(([id]) => id));
-  return parseEntries(event.newValue)
-    .map(([id]) => id)
-    .filter((id) => !before.has(id));
+  const added: string[] = [];
+  for (const [id] of parseEntries(event.newValue)) {
+    if (!before.has(id)) added.push(id);
+  }
+  return added;
 }
 
 function safeLocalStorage(): WarmTakenStorage | null {

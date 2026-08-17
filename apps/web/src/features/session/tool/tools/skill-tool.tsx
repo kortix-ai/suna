@@ -107,9 +107,9 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   Files
                 </div>
                 <ul className="space-y-0.5">
-                  {skillFiles.map((f, i) => (
+                  {skillFiles.map((f) => (
                     <li
-                      key={i}
+                      key={f}
                       className="text-muted-foreground flex items-center gap-1.5 font-mono text-xs"
                     >
                       <FileText className="text-muted-foreground size-3 shrink-0" />

@@ -96,7 +96,11 @@ export function SubscriptionStoreSync({ children }: { children: React.ReactNode 
 
 // Backward compatibility hooks - map to new unified structure
 export function useSubscriptionContext() {
-  const store = useSubscriptionStore();
+  const accountState = useSubscriptionStore((s) => s.accountState);
+  const isLoading = useSubscriptionStore((s) => s.isLoading);
+  const error = useSubscriptionStore((s) => s.error);
+  const refetch = useSubscriptionStore((s) => s.refetch);
+  const store = { accountState, isLoading, error, refetch };
 
   return {
     subscriptionData: store.accountState?.subscription
@@ -149,7 +153,10 @@ export function useSubscriptionContext() {
 }
 
 export function useSharedSubscription() {
-  const store = useSubscriptionStore();
+  const isLoading = useSubscriptionStore((s) => s.isLoading);
+  const error = useSubscriptionStore((s) => s.error);
+  const refetch = useSubscriptionStore((s) => s.refetch);
+  const store = { isLoading, error, refetch };
   const ctx = useSubscriptionContext();
 
   return {
@@ -161,7 +168,16 @@ export function useSharedSubscription() {
 }
 
 export function useSubscriptionData() {
-  const store = useSubscriptionStore();
+  const storeAccountState = useSubscriptionStore((s) => s.accountState);
+  const storeIsLoading = useSubscriptionStore((s) => s.isLoading);
+  const storeError = useSubscriptionStore((s) => s.error);
+  const storeRefetch = useSubscriptionStore((s) => s.refetch);
+  const store = {
+    accountState: storeAccountState,
+    isLoading: storeIsLoading,
+    error: storeError,
+    refetch: storeRefetch,
+  };
   const { user } = useAuth();
 
   const { data: accountState, isLoading, error, refetch } = useAccountState({ enabled: !!user });

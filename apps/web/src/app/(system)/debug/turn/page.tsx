@@ -1,7 +1,7 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { ActivityBurst } from '@/features/session/turn/activity-burst';
@@ -617,6 +617,9 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 export default function DebugTurnPage() {
   const [dark, setDark] = useState(true);
   const [activateCount, setActivateCount] = useState(0);
+  // Stable identity: an inline arrow in `value` would re-render every
+  // context consumer on each render of this page.
+  const onToolActivate = useCallback(() => setActivateCount((n) => n + 1), []);
 
   // Mark the uploading fixture as an in-flight send so the tiles render their
   // spinner. Mirrors what `beginOptimisticSend` does on a real send.
@@ -683,7 +686,7 @@ export default function DebugTurnPage() {
             work, every click on a tool row would increment this counter
             instead of expanding the row inline.
           */}
-          <ToolActivateContext.Provider value={() => setActivateCount((n) => n + 1)}>
+          <ToolActivateContext.Provider value={onToolActivate}>
             {BURSTS.map((b) => (
               <Section key={b.label} label={b.label}>
                 <ActivityBurst

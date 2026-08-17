@@ -55,11 +55,13 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
 
   const toolEntries = useMemo(() => {
     if (mode !== 'tools' || !output) return [];
-    const entries: Array<{ status: string; tool: string; summary: string }> = [];
+    // `at` is the match's character offset in `output` — a stable per-entry
+    // identity for React keys (two entries can share tool + summary text).
+    const entries: Array<{ at: number; status: string; tool: string; summary: string }> = [];
     const re = /^\[(\w+)\]\s+\*\*(\w+)\*\*:\s*(.+)/gm;
     let m;
     while ((m = re.exec(output)) !== null) {
-      entries.push({ status: m[1], tool: m[2], summary: m[3].slice(0, 120) });
+      entries.push({ at: m.index, status: m[1], tool: m[2], summary: m[3].slice(0, 120) });
     }
     return entries;
   }, [mode, output]);
@@ -93,9 +95,9 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
     >
       {mode === 'tools' && toolEntries.length > 0 ? (
         <div data-scrollable className="max-h-72 overflow-auto">
-          {toolEntries.map((entry, i) => (
+          {toolEntries.map((entry) => (
             <div
-              key={i}
+              key={entry.at}
               className="border-border/10 flex items-start gap-0 border-b last:border-b-0"
             >
               <span className="w-6 shrink-0 py-1 text-center font-mono text-xs select-none">

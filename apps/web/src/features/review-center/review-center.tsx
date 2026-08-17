@@ -457,7 +457,10 @@ export function ReviewCenter({
       return;
     }
     const known = knownIdsRef.current;
-    const arrived = items.filter((i) => !known.has(i.id)).map((i) => i.id);
+    const arrived: string[] = [];
+    for (const item of items) {
+      if (!known.has(item.id)) arrived.push(item.id);
+    }
     if (arrived.length > 0) {
       setFreshIds((prev) => {
         const n = new Set(prev);

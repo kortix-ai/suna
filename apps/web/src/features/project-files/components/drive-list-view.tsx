@@ -291,7 +291,10 @@ function ListRow({
                   value={renameName}
                   onChange={(e) => setRenameName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') confirmRename();
+                    if (e.key === 'Enter') {
+                      if (e.nativeEvent.isComposing) return;
+                      confirmRename();
+                    }
                     if (e.key === 'Escape') setIsRenaming(false);
                   }}
                   onBlur={confirmRename}

@@ -292,6 +292,7 @@ function QueuedRow({
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
             if (event.key === 'Enter') {
               event.preventDefault();
               commit();
@@ -386,7 +387,8 @@ export function QueuedMessages({
    * rows defeats the `:empty` check the composer's strip relies on to
    * disappear: the shell itself was the "phantom sliver above the composer".
    */
-  const visibleMessages = messages.filter((m) => !inFlightIds.includes(m.id));
+  const inFlightIdSet = new Set(inFlightIds);
+  const visibleMessages = messages.filter((m) => !inFlightIdSet.has(m.id));
 
   /**
    * What actually renders: the drag's local order while one is live, the
@@ -395,12 +397,15 @@ export function QueuedMessages({
    * end rather than not rendering at all.
    */
   const byId = new Map(visibleMessages.map((m) => [m.id, m]));
-  const orderedMessages = dragOrder
-    ? [
-        ...dragOrder.filter((id) => byId.has(id)),
-        ...visibleMessages.filter((m) => !dragOrder.includes(m.id)).map((m) => m.id),
-      ].map((id) => byId.get(id)!)
-    : visibleMessages;
+  let orderedMessages = visibleMessages;
+  if (dragOrder) {
+    const dragOrderSet = new Set(dragOrder);
+    const orderedIds = dragOrder.filter((id) => byId.has(id));
+    for (const m of visibleMessages) {
+      if (!dragOrderSet.has(m.id)) orderedIds.push(m.id);
+    }
+    orderedMessages = orderedIds.map((id) => byId.get(id)!);
+  }
 
   /** Keep the keyboard in the list when a row is removed from under it. */
   const focusAfterRemove = useCallback(

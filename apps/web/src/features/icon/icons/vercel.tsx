@@ -11,6 +11,6 @@ export const Vercel = ({ className }: { className?: string }) => (
     xmlns="http://www.w3.org/2000/svg"
     className={cn('size-4', className)}
   >
-    <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="currentColor" />
+    <path d="M37.53 0L75.05 65H0L37.53 0Z" fill="currentColor" />
   </svg>
 );

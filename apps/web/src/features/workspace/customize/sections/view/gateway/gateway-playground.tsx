@@ -64,9 +64,10 @@ function PlaygroundModelSelector({
   disabled?: boolean;
   onChange: (value: string | null) => void;
 }) {
+  const excluded = new Set(exclude);
   const options = models.filter((model) => {
     const wire = modelKeyToWire(model);
-    return !exclude.includes(wire) || wire === value;
+    return !excluded.has(wire) || wire === value;
   });
   return (
     <ModelSelector
@@ -158,9 +159,10 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
     [catalogModels],
   );
 
+  const selectedSet = new Set(selected);
   const canAddMore =
     selected.length < MAX_MODELS &&
-    models.some((model) => !selected.includes(modelKeyToWire(model)));
+    models.some((model) => !selectedSet.has(modelKeyToWire(model)));
   const canRun = prompt.trim().length > 0 && selected.length > 0 && !playground.isPending;
   const results = playground.data?.results ?? null;
 
@@ -245,10 +247,7 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
                 const tunedCount = tuned ? Object.keys(tuned).length : 0;
                 const open = tunedModel === wire;
                 return (
-                  <li
-                    key={`${wire}-${index}`}
-                    className="bg-popover overflow-hidden rounded-md border"
-                  >
+                  <li key={wire} className="bg-popover overflow-hidden rounded-md border">
                     <div className="flex items-center gap-2 px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <PlaygroundModelSelector
@@ -364,8 +363,8 @@ export function GatewayPlayground({ projectId }: { projectId: string }) {
           </div>
         ) : results && results.length > 0 ? (
           <div className={cn('grid gap-4', results.length > 1 && 'lg:grid-cols-2')}>
-            {results.map((result, index) => (
-              <PlaygroundResultCard key={`${result.model}-${index}`} result={result} />
+            {results.map((result) => (
+              <PlaygroundResultCard key={result.model} result={result} />
             ))}
           </div>
         ) : null}

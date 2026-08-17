@@ -57,9 +57,12 @@ export function mergeQueuedBatch(batch: WebQueuedMessage[]): MergedQueuedBatch |
   // A `lost` attachment is what a file becomes after a reload: a marker with
   // no data. Send the text rather than a broken attachment — the composer
   // already shows the user that the file was dropped.
-  const files = batch
-    .flatMap((message) => message.files ?? [])
-    .filter((file): file is AttachedFile => file.kind !== 'lost');
+  const files: AttachedFile[] = [];
+  for (const message of batch) {
+    for (const file of message.files ?? []) {
+      if (file.kind !== 'lost') files.push(file);
+    }
+  }
 
   // One `<file_ref />` / `<agent_ref />` block goes out per prompt, so the
   // same file mentioned in two queued messages must not be listed twice.

@@ -109,11 +109,17 @@ import { useSettingsAccountId } from '../use-settings-account-id';
 /** Byte-identical to the local `formatDate` several other tabs keep — a
  *  different fallback string and a different locale argument from
  *  `lib/utils/date.ts`'s, so not the same function. */
+const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return DATE_FORMATTER.format(d);
 }
 
 export interface OrganizationTabViewProps {

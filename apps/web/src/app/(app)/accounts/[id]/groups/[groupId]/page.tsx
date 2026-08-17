@@ -78,6 +78,24 @@ import { contract, qk } from '@kortix/sdk/react';
 // Entity row dialect shared with the customize section views.
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
 
+/* Module-scope formatters: `Intl.DateTimeFormat` construction is the expensive
+   half of formatting, and these (locale, options) pairs are static. Each one
+   reproduces the exact `toLocale*` default expansion it replaced. */
+const addedDateFormat = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+const attachedDateFormat = new Intl.DateTimeFormat();
+const expiresAtFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
 export default function GroupDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string; groupId: string }>();
@@ -389,12 +407,7 @@ function GroupMembersCard({
                   <span className="text-muted-foreground text-xs">
                     <InlineMeta>
                       <span>
-                        Added{' '}
-                        {new Date(m.added_at).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
+                        Added {addedDateFormat.format(new Date(m.added_at))}
                       </span>
                     </InlineMeta>
                   </span>
@@ -846,7 +859,7 @@ function GroupProjectGrantsCard({
                   </div>
                   <span className="text-muted-foreground text-xs">
                     <InlineMeta>
-                      <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
+                      <span>Attached {attachedDateFormat.format(new Date(g.created_at))}</span>
                       {g.expires_at ? (
                         <span
                           className={
@@ -854,7 +867,7 @@ function GroupProjectGrantsCard({
                               ? 'text-kortix-red'
                               : 'text-kortix-yellow'
                           }
-                          title={new Date(g.expires_at).toLocaleString()}
+                          title={expiresAtFormat.format(new Date(g.expires_at))}
                         >
                           {formatExpiry(g.expires_at)}
                         </span>

@@ -32,32 +32,31 @@ type RuntimeProvidersSnapshot =
 export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmProviderEntry {
   const connectedIds = new Set(ocProviders?.connected ?? []);
   const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
-  const models: LlmProviderModel[] =
-    kortix && connectedIds.has('kortix')
-      ? Object.entries(kortix.models ?? {})
-          .filter(([id]) => id.startsWith('codex/'))
-          .map(([id, m]) => {
-            const raw = m as {
-              name?: string;
-              release_date?: string;
-              released?: string;
-              reasoning?: boolean;
-              tool_call?: boolean;
-              limit?: { context?: number; output?: number };
-            };
-            return {
-              id: id.slice('codex/'.length),
-              name: (raw.name || id)
-                .replace('(latest)', '')
-                .trim()
-                .replace(/\s*\(ChatGPT\)$/, ''),
-              released: raw.release_date ?? raw.released ?? null,
-              reasoning: raw.reasoning,
-              tool_call: raw.tool_call,
-              limit: raw.limit,
-            };
-          })
-      : [];
+  const models: LlmProviderModel[] = [];
+  if (kortix && connectedIds.has('kortix')) {
+    for (const [id, m] of Object.entries(kortix.models ?? {})) {
+      if (!id.startsWith('codex/')) continue;
+      const raw = m as {
+        name?: string;
+        release_date?: string;
+        released?: string;
+        reasoning?: boolean;
+        tool_call?: boolean;
+        limit?: { context?: number; output?: number };
+      };
+      models.push({
+        id: id.slice('codex/'.length),
+        name: (raw.name || id)
+          .replace('(latest)', '')
+          .trim()
+          .replace(/\s*\(ChatGPT\)$/, ''),
+        released: raw.release_date ?? raw.released ?? null,
+        reasoning: raw.reasoning,
+        tool_call: raw.tool_call,
+        limit: raw.limit,
+      });
+    }
+  }
 
   return {
     id: 'codex',

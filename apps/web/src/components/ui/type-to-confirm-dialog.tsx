@@ -168,9 +168,18 @@ function TypeToConfirmBody({
             <div className="bg-popover space-y-2 rounded-md border px-4 py-3">
               <p className="text-sm font-medium">{consequencesTitle}</p>
               <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm text-pretty">
-                {consequences.map((item, i) => (
-                  <li key={i}>{item}</li>
-                ))}
+                {(() => {
+                  // Callers pass static string lists — key by content, with an
+                  // occurrence counter for repeats and non-text nodes.
+                  const seen = new Map<string, number>();
+                  return consequences.map((item) => {
+                    const base =
+                      typeof item === 'string' || typeof item === 'number' ? String(item) : 'node';
+                    const n = seen.get(base) ?? 0;
+                    seen.set(base, n + 1);
+                    return <li key={n === 0 ? base : `${base}#${n}`}>{item}</li>;
+                  });
+                })()}
               </ul>
             </div>
           ) : null}

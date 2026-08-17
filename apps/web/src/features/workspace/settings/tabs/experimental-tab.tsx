@@ -251,6 +251,7 @@ export function ExperimentalTabView({
   // Shown once there is something to search, or while a query is active so the
   // field does not vanish under the cursor the moment it matches nothing.
   const showSearch = features.length > 0 || searching;
+  const pendingKeySet = new Set(pendingKeys);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -314,7 +315,7 @@ export function ExperimentalTabView({
                 <ExperimentalFeatureRow
                   key={feature.key}
                   feature={feature}
-                  pending={pendingKeys.includes(feature.key)}
+                  pending={pendingKeySet.has(feature.key)}
                   canManage={canManage}
                   onToggle={onToggle}
                 />

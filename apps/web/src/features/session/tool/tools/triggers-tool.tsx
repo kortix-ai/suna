@@ -164,7 +164,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
             {triggerLines.map((t, i) =>
               'name' in t ? (
                 <div
-                  key={i}
+                  key={`${t.name}|${t.sourceType}:${t.sourceDetail}`}
                   className="hover:bg-muted/30 flex items-center gap-2 rounded px-1 py-1 text-xs"
                 >
                   {t.sourceType === 'webhook' ? (

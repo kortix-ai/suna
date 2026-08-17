@@ -330,12 +330,13 @@ export function InstantSessionShell({
  * the side panel opens. Falls back to inline on mobile (no layer). Must render
  * as a descendant of SessionLayout to read the layer from context.
  */
+const shellWallpaperEl = (
+  <div className="pointer-events-none absolute inset-0 z-0">
+    <SessionWelcome />
+  </div>
+);
+
 function ShellWallpaper() {
   const layer = useSessionWallpaperLayer();
-  const wallpaper = (
-    <div className="pointer-events-none absolute inset-0 z-0">
-      <SessionWelcome />
-    </div>
-  );
-  return layer ? createPortal(wallpaper, layer) : wallpaper;
+  return layer ? createPortal(shellWallpaperEl, layer) : shellWallpaperEl;
 }

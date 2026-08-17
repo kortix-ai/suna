@@ -104,6 +104,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const isMulti = currentQuestion?.multiple ?? false;
     const options = currentQuestion?.options ?? [];
     const currentAnswers = answers[tab] ?? [];
+    const currentAnswerSet = new Set(currentAnswers);
     const showCustom = currentQuestion?.custom !== false;
 
     // -----------------------------------------------------------------------
@@ -313,7 +314,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                 const isAnswered = (answers[i]?.length ?? 0) > 0;
                 return (
                   <button
-                    key={i}
+                    key={q.question}
                     onClick={() => {
                       setTab(i);
                     }}
@@ -337,7 +338,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                       {isAnswered && (
                         <svg viewBox="0 0 12 12" fill="none" width="7" height="7">
                           <path
-                            d="M3 7.17905L5.02703 8.85135L9 3.5"
+                            d="M3 7.18L5.03 8.85L9 3.5"
                             stroke="currentColor"
                             strokeWidth="1.5"
                             strokeLinecap="square"
@@ -390,7 +391,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                         {done && (
                           <svg viewBox="0 0 12 12" fill="none" width="7" height="7">
                             <path
-                              d="M3 7.17905L5.02703 8.85135L9 3.5"
+                              d="M3 7.18L5.03 8.85L9 3.5"
                               stroke="currentColor"
                               strokeWidth="1.5"
                               strokeLinecap="square"
@@ -426,10 +427,10 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                 {/* Options — compact rows */}
                 <div className="space-y-px">
                   {options.map((opt, i) => {
-                    const isPicked = currentAnswers.includes(opt.label);
+                    const isPicked = currentAnswerSet.has(opt.label);
                     return (
                       <button
-                        key={i}
+                        key={opt.label}
                         onClick={() => selectOption(i)}
                         className={cn(
                           'group flex w-full cursor-pointer items-center gap-2 rounded-2xl border px-2 py-1.5 text-left transition-colors duration-150 ease-out active:scale-[0.998]',
@@ -449,7 +450,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                           {isPicked && (
                             <svg viewBox="0 0 12 12" fill="none" width="8" height="8">
                               <path
-                                d="M3 7.17905L5.02703 8.85135L9 3.5"
+                                d="M3 7.18L5.03 8.85L9 3.5"
                                 stroke="currentColor"
                                 strokeWidth="1.5"
                                 strokeLinecap="square"

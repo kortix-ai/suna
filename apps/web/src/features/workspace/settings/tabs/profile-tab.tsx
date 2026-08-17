@@ -97,6 +97,12 @@ import { SettingsTabHeader } from '../settings-tab-header';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
 
+const deletionDateFormat = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+
 /** Supabase hands the TOTP QR back as an SVG data URL (or raw SVG in older
  *  versions) — normalize both into something an <img> can render. Moved
  *  here from `security-tab.tsx` (Task 10); this is its only consumer. */
@@ -854,11 +860,7 @@ export function ProfileTab() {
 
   const formatDate = (dateString: string | null | undefined): string | null => {
     if (!dateString) return null;
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    return deletionDateFormat.format(new Date(dateString));
   };
 
   return (

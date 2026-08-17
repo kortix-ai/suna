@@ -355,13 +355,14 @@ export function filterRailGroups(
 ): readonly RailGroup[] {
   const q = query.trim().toLowerCase();
   if (!q) return groups;
-  return groups
-    .map((group) =>
-      group.label.toLowerCase().includes(q)
-        ? group
-        : { ...group, items: group.items.filter((item) => railItemMatches(item, q)) },
-    )
-    .filter((group) => group.items.length > 0);
+  const filtered: RailGroup[] = [];
+  for (const group of groups) {
+    const next = group.label.toLowerCase().includes(q)
+      ? group
+      : { ...group, items: group.items.filter((item) => railItemMatches(item, q)) };
+    if (next.items.length > 0) filtered.push(next);
+  }
+  return filtered;
 }
 
 /**

@@ -154,9 +154,19 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
         // together with nothing marking where one page ends. Same hairline
         // `bash-tool` puts between a command and its output.
         <ToolResultCard className="[&>*>*+*]:border-border/60 [&>*>*+*]:border-t">
-          {results.map((result, idx) => (
-            <ScrapeResultItem key={`${result.url}-${idx}`} result={result} />
-          ))}
+          {(() => {
+            const seen = new Map<string, number>();
+            return results.map((result) => {
+              const n = seen.get(result.url) ?? 0;
+              seen.set(result.url, n + 1);
+              return (
+                <ScrapeResultItem
+                  key={n ? `${result.url}#${n}` : result.url}
+                  result={result}
+                />
+              );
+            });
+          })()}
         </ToolResultCard>
       ) : null}
     </BasicTool>

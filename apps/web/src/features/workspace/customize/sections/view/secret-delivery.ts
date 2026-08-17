@@ -53,11 +53,10 @@ export function connectorBindingChanges(
   selectedSlugs: readonly string[],
 ): { bind: string[]; unbind: string[] } {
   const selected = new Set(selectedSlugs);
-  const currentlyBound = new Set(
-    connectors
-      .filter((connector) => connector.secretIdentifier === secretIdentifier)
-      .map((connector) => connector.slug),
-  );
+  const currentlyBound = new Set<string>();
+  for (const connector of connectors) {
+    if (connector.secretIdentifier === secretIdentifier) currentlyBound.add(connector.slug);
+  }
   return {
     bind: [...selected].filter((slug) => !currentlyBound.has(slug)),
     unbind: [...currentlyBound].filter((slug) => !selected.has(slug)),

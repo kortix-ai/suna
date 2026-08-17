@@ -151,6 +151,7 @@ export function FileBreadcrumbs() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.nativeEvent.isComposing) return;
       if (e.key === 'Enter' && isEditing) {
         navigateToPath(editValue.trim() || '/');
         setIsEditing(false);
@@ -195,6 +196,7 @@ export function FileBreadcrumbs() {
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === 'Enter') {
               navigateToPath(editValue.trim() || '/');
               setIsEditing(false);
@@ -207,6 +209,7 @@ export function FileBreadcrumbs() {
           }}
           className="bg-card focus:ring-primary/50 h-7 min-w-0 flex-1 rounded-2xl border px-2 font-mono text-sm outline-none focus:ring-2"
           placeholder="/path/to/folder"
+          aria-label="Path to folder"
         />
       </div>
     );
