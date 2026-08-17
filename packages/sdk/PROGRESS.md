@@ -89,7 +89,8 @@ verification are complete.
 - The final completion audit corrected the SDK README's stale fractional-power
   list. The database and API accept whole CPU values, so the documented
   Lightsail powers now match the implemented `medium`, `large`, and `xlarge`
-  contract.
+  contract. The audit also removed stale `experimental` and `404` copy: Apps is
+  a stable flag, and disabled Apps routes return `403 feature_disabled`.
 
 The user requires this branch and PR to remain standalone. Merge and Deploy
 Dev are intentionally deferred until explicit approval.

@@ -152,7 +152,7 @@ await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 
 ### Apps
 
-`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is an experimental project feature, so API operations return `404` until a project manager enables it.
+`kortix.project(projectId).apps` deploys immutable App versions behind one stable URL. New Apps use `private` access. Apps is a stable project feature that is off by default, so API operations return `403 feature_disabled` until a project manager enables it.
 
 ```ts
 const apps = kortix.project(projectId).apps;
