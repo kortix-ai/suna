@@ -147,7 +147,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               </button>
             </DisclosureTrigger>
             <DisclosureContent>
-              <pre className="text-muted-foreground/70 max-h-72 overflow-auto px-3 pb-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap">
+              <pre className="text-muted-foreground/70 max-h-96 overflow-auto px-3 pb-2 font-mono text-[11px] leading-relaxed wrap-break-word whitespace-pre-wrap">
                 {rawHtmlPreview}
               </pre>
             </DisclosureContent>

@@ -138,7 +138,9 @@ function MemoryMarkdownCard({ code }: { code: string }) {
               inside this already-bordered card; the fence's own `pre` keeps
               its `overflow-auto`, so a long line inside it scrolls instead of
               clipping or blowing out the panel's width. */}
-          <div data-scrollable className={cn('max-h-96 overflow-auto p-3', MD_FLUSH_CLASSES)}>
+          {/* `pr-11` mirrors `ToolCodeCard`: the same `CopyOverlay` button is
+              pinned at `top-3 right-3`, and prose is what runs under it. */}
+          <div data-scrollable className={cn('max-h-96 overflow-auto p-3 pr-11', MD_FLUSH_CLASSES)}>
             {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
             <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
           </div>
@@ -275,7 +277,9 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     body = failed ? (
       <ToolError error={output} toolName="memory" />
     ) : oldStr || newStr ? (
-      <ToolResultCard bodyClassName="max-h-96">
+      // `bodyClassName="max-h-96"` used to raise this diff above the card's old
+      // `max-h-[19rem]`; that IS the card's cap now, so the override is gone.
+      <ToolResultCard>
         <InlineDiffView oldValue={oldStr} newValue={newStr} filename={relPath} />
       </ToolResultCard>
     ) : (

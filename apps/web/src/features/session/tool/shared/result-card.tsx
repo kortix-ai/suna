@@ -1,8 +1,6 @@
 'use client';
 
-import { useContext } from 'react';
-
-import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
+import { useToolIndent } from '@/features/session/tool/shared/surface';
 import { cn } from '@/lib/utils';
 
 /**
@@ -42,25 +40,33 @@ export function ToolResultCard({
    *  grep hits and patched files, none of which are errors. */
   tone?: keyof typeof TONE_CLASS;
 }) {
-  const surface = useContext(ToolSurfaceContext);
+  const indent = useToolIndent();
 
   return (
     <div
       className={cn(
+        // `p-1` is the ONE inset that stays on the frame rather than moving to
+        // the body, and it is kept deliberately: the body is a scroll
+        // container, so padding put there scrolls away with the content and a
+        // scrolled row would sit flush against the border. 4px on the frame is
+        // a gutter that cannot scroll — it keeps the scrollbar off the border
+        // and keeps a clipped row visibly clipped. The rows' own inset
+        // (`px-2 py-1.5`) is the callers' `bodyClassName`, inside the scroller
+        // where it belongs.
         'rounded-md border p-1',
         TONE_CLASS[tone],
-        // 28px = an inline row's icon column (`size-4`) plus its `gap-3`, so
-        // the card starts on the label's column. The panel surface has no such
-        // gutter and supplies its own padding, where the indent would only
-        // push content off-centre.
-        surface === 'inline' && 'mt-1.5 ml-7',
+        // The same `mt-1.5` + shared indent every other card under a tool row
+        // uses (`ToolCodeCard`, `ToolOutputCard`, `bash`'s command card). The
+        // indent was `ml-7` — 28px, derived from a `gap-3` this row class does
+        // not have — so this card and `ToolCodeCard` disagreed by 6px on the
+        // very same expanded row. `mt-1.5` is unconditional like theirs; the
+        // seam is the card's, not the surface's.
+        'mt-1.5',
+        indent,
         className,
       )}
     >
-      {/* Scrolling lives inside the padding so the scrollbar never rides the
-			    card's border, and a clipped row stays visibly clipped — the cue that
-			    there is more below. */}
-      <div data-scrollable className={cn('max-h-[19rem] overflow-auto', bodyClassName)}>
+      <div data-scrollable className={cn('max-h-96 overflow-auto', bodyClassName)}>
         {children}
       </div>
     </div>

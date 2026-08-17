@@ -12,7 +12,7 @@ import { openSessionQuickView } from '@/features/session/open-session-quick-view
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
-import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
+import { ToolSurfaceContext, useToolIndent } from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -709,30 +709,33 @@ export function ToolOutputFallback({
  * looking at, and the other paths quietly keep rendering naked text.
  */
 function ToolOutputCard({ copyText, children }: { copyText?: string; children: React.ReactNode }) {
-  const surface = useContext(ToolSurfaceContext);
+  const indent = useToolIndent();
 
   return (
     <div
       className={cn(
-        'border-border bg-popover relative rounded-md border',
-        // An inline row leads with a 16px icon and a gap-3, so `ml-7` puts the
-        // card on the label's column. The panel surface has no such gutter and
-        // supplies its own padding, so the same indent would only push the
-        // content off-centre.
-        surface === 'inline' && 'ml-7',
+        // `mt-1.5` + the shared indent is the seam every bordered card under a
+        // tool row sits on — `ToolCodeCard`, `ToolResultCard` and edit's
+        // instructions line all use the same pair, and this card used to be the
+        // one that hugged its trigger and started 6px further right (a
+        // hardcoded `ml-7` against the row's real 22px text column).
+        'border-border bg-popover relative mt-1.5 rounded-md border',
+        indent,
       )}
     >
       {/* Floated rather than in a header bar: a bar would cost a row of height
 		      on every output block, and the button reads clearly against the
-		      surface on its own. `pr-9` on the body keeps the first line from
-		      running under it. */}
+		      surface on its own. `pr-11` on the body keeps the first line from
+		      running under it — one reserve value for every floating copy in the
+		      tool views (`bash`'s command/output panes and `ToolCodeCard` use the
+		      same one). */}
       {copyText && (
         <CopyButton
           code={copyText}
           className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
         />
       )}
-      <div data-scrollable className="max-h-72 overflow-auto p-3 pr-9">
+      <div data-scrollable className="max-h-96 overflow-auto p-3 pr-11">
         {children}
       </div>
     </div>
@@ -803,7 +806,12 @@ export const StalePendingContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
-export { ToolSurfaceContext, type ToolSurface } from '@/features/session/tool/shared/surface';
+export {
+  TOOL_INDENT,
+  ToolSurfaceContext,
+  useToolIndent,
+  type ToolSurface,
+} from '@/features/session/tool/shared/surface';
 
 // Background memory plumbing (searches/gets and raw .kortix/memory reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
@@ -1363,37 +1371,11 @@ export function BasicTool({
  * A file's contents inside an expanded tool row, in the same card `bash` draws
  * around a command — so read / write / edit / bash all present code the one way.
  *
- * `TOOL_INDENT` lines the card up with the trigger's text, not its icon:
- * {@link ToolHeaderRow} renders a `size-4` icon and {@link TOOL_ROW_CLASS} sets
- * `gap-1.5`, so the text column starts 22px in. (`bash` used to hardcode `ml-7`
- * against a `gap-3` that this row class does not have, which put its block 6px
- * past the text above it.)
- *
- * 22px is the DEFAULT, not the law, because the gap it derives from can be
- * overridden by the surface. A tool row inside a chain of thought is forced to
- * `gap-3` so its label lines up with the thought and file rows above it
- * (`turn/activity-step.tsx`), which moves the text column to 28px and left the
- * card 6px short — the same 6px error the note above records, mirrored. A
- * hardcoded value cannot follow a gap it cannot see, so the surface sets
- * `--tool-indent` alongside the gap it overrides and the two can no longer
- * drift apart. Every other surface leaves the variable unset and gets 22px.
+ * The indent comes from {@link useToolIndent}; `pr-11` is the shared reserve
+ * every floating copy button gets (see {@link ToolOutputCard}) — `CopyOverlay`
+ * pins its button at `top-3 right-3`, and without the reserve the first line of
+ * a wrapped file ran underneath it.
  */
-export const TOOL_INDENT = 'ml-[var(--tool-indent,1.375rem)]';
-
-/**
- * The indent, or nothing, depending on which surface the tool is drawn on.
- *
- * An inline row leads with a `size-4` icon and a `gap-1.5`, so its text column
- * starts 22px in and a card below it has to match. A panel row's body has no
- * icon gutter and supplies its own `px-3 py-3`, so the same indent only pushes
- * the card 22px off the trigger it sits under. {@link ToolOutputCard} already
- * guarded its indent this way; every other site hardcoded `TOOL_INDENT` and
- * drifted.
- */
-export function useToolIndent(): string {
-  return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';
-}
-
 export function ToolCodeCard({
   code,
   language,
@@ -1411,7 +1393,7 @@ export function ToolCodeCard({
         {/* The scroller sits INSIDE the overlay so the copy button stays pinned
             to the card while long content scrolls under it. */}
         <CopyOverlay code={code}>
-          <div data-scrollable className="max-h-96 overflow-auto p-3">
+          <div data-scrollable className="max-h-96 overflow-auto p-3 pr-11">
             <HighlightedCode code={code} language={language} />
           </div>
         </CopyOverlay>
@@ -1440,10 +1422,17 @@ export function InlineDiffView({
   );
 }
 
+/**
+ * A frameless code pane, for code that is already inside someone else's card.
+ *
+ * `p-3` is the same inset every other mono body in the tool views carries
+ * ({@link ToolCodeCard}, `bash`'s command and output panes); it used to be the
+ * only one at `px-3 py-2`, which is the row/list inset, not the code one.
+ */
 export function ToolCode({ code, language }: { code: string; language: string }) {
   return (
     <div data-scrollable className="max-h-96 overflow-auto">
-      <pre className="text-foreground/90 overflow-x-auto px-3 py-2 font-mono text-xs leading-[1.65] [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_span]:border-none [&_span]:outline-none">
+      <pre className="text-foreground/90 overflow-x-auto p-3 font-mono text-xs leading-[1.65] [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_span]:border-none [&_span]:outline-none">
         <HighlightedCode code={code} language={language}>
           {code}
         </HighlightedCode>

@@ -5,10 +5,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   BasicTool,
   BoundActivateContext,
+  RawOutputBlock,
   shouldShowToolPartInActionsPanel,
+  ToolCodeCard,
   ToolOutcomeContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 
 // ─── Task 16 (Phase 6, spec W11/D13) — the panel surface is disclosure rows ──
 //
@@ -169,6 +172,75 @@ describe('BasicTool panel surface — the disclosure row', () => {
     // Still a row, not the old sticky header.
     expect(html).not.toContain('sticky');
     expect(html).not.toContain('items-start justify-between gap-3');
+  });
+});
+
+// ─── Task 19 (Phase 6, spec W11/D16) — ONE block rhythm ─────────────────────
+//
+// Three bordered cards can sit under the SAME expanded row, and each one used
+// to answer the geometry questions differently: `ToolOutputCard` indented 28px
+// and capped at 288px, `ToolResultCard` indented 28px and capped at 304px,
+// `ToolCodeCard` indented 22px and capped at 384px — so a `read` and a `memory`
+// row in one turn drew their cards on two different left edges. The law now:
+//
+//   • frame  — `bg-popover border-border rounded-md border`, `mt-1.5` seam;
+//   • indent — the shared `--tool-indent` variable (22px), inline only;
+//   • cap    — `max-h-96`, one value (bash's 64/80 panes are the stated
+//              exception and are pinned in `bash-tool.test.tsx`);
+//   • reserve — `pr-11` wherever a copy button floats over the body.
+//
+// Class strings are the contract because geometry is all there is to assert.
+const INDENT = 'ml-[var(--tool-indent,1.375rem)]';
+
+describe('the bordered tool cards share one rhythm', () => {
+  const inline = (node: ReactNode) => renderToStaticMarkup(node);
+
+  test('ToolOutputCard: 22px indent, max-h-96, pr-11 reserve', () => {
+    const html = inline(<RawOutputBlock output={'plain log line\n'.repeat(4)} />);
+
+    expect(html).toContain('max-h-96 overflow-auto p-3 pr-11');
+    expect(html).toContain(INDENT);
+    expect(html).toContain('mt-1.5');
+    // The three values it used to carry alone.
+    expect(html).not.toContain('ml-7');
+    expect(html).not.toContain('max-h-72');
+    expect(html).not.toContain('pr-9');
+  });
+
+  test('ToolCodeCard: the same reserve — CopyOverlay pins its button at right-3', () => {
+    const html = inline(<ToolCodeCard code="const a = 1;" language="ts" />);
+
+    expect(html).toContain('max-h-96 overflow-auto p-3 pr-11');
+    expect(html).toContain(INDENT);
+  });
+
+  test('ToolResultCard: the same indent and cap as the other two', () => {
+    const html = inline(
+      <ToolResultCard>
+        <div>a row</div>
+      </ToolResultCard>,
+    );
+
+    expect(html).toContain('max-h-96 overflow-auto');
+    expect(html).toContain(INDENT);
+    expect(html).toContain('mt-1.5');
+    expect(html).not.toContain('ml-7');
+    expect(html).not.toContain('max-h-[19rem]');
+  });
+
+  test('the panel drops the indent on all three — it has no icon gutter', () => {
+    const html = renderPanel(
+      <>
+        <RawOutputBlock output="plain log line" />
+        <ToolCodeCard code="const a = 1;" language="ts" />
+        <ToolResultCard>
+          <div>a row</div>
+        </ToolResultCard>
+      </>,
+    );
+
+    expect(html).not.toContain('--tool-indent');
+    expect(html).not.toContain('ml-7');
   });
 });
 
