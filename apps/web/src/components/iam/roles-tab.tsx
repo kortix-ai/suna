@@ -12,6 +12,7 @@
 
 import {
   CopyIcon as Copy,
+  EyeIcon as Eye,
   LockIcon as Lock,
   PencilSimpleIcon,
   PlusIcon as Plus,
@@ -134,6 +135,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createPrefill, setCreatePrefill] = useState<RolePrefill | null>(null);
   const [editTarget, setEditTarget] = useState<IamRole | null>(null);
+  const [viewTarget, setViewTarget] = useState<IamRole | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IamRole | null>(null);
 
   const rolesQuery = useQuery({
@@ -216,6 +218,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Origin</TableHead>
+              <TableHead>Capabilities</TableHead>
               <TableHead>Used by</TableHead>
               <TableHead className="w-28">
                 <span className="sr-only">Actions</span>
@@ -231,6 +234,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
                 canManage={canManage}
                 rbacEnabled={rbacEnabled}
                 onEdit={() => setEditTarget(role)}
+                onView={() => setViewTarget(role)}
                 onDelete={() => setDeleteTarget(role)}
                 onDuplicate={(prefill) => openCreate(prefill)}
               />
@@ -264,6 +268,18 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
         />
       )}
 
+      {viewTarget && (
+        <RoleDialog
+          accountId={accountId}
+          mode="view"
+          role={viewTarget}
+          open={!!viewTarget}
+          onOpenChange={(o) => {
+            if (!o) setViewTarget(null);
+          }}
+        />
+      )}
+
       {deleteTarget && (
         <DeleteRoleConfirm
           accountId={accountId}
@@ -281,6 +297,7 @@ function RoleRow({
   canManage,
   rbacEnabled,
   onEdit,
+  onView,
   onDelete,
   onDuplicate,
 }: {
@@ -289,6 +306,7 @@ function RoleRow({
   canManage: boolean;
   rbacEnabled: boolean;
   onEdit: () => void;
+  onView: () => void;
   onDelete: () => void;
   onDuplicate: (prefill: RolePrefill) => void;
 }) {
@@ -301,6 +319,17 @@ function RoleRow({
     queryFn: () => getRoleUsage(accountId, role.role_id),
     staleTime: 30_000,
     enabled: isCustom,
+  });
+
+  // "You will see what they can do and what they can't" — at a glance, not
+  // just after opening Edit. Fetched for every role, built-in included (the
+  // same call `handleDuplicate` below already proves works for both); shares
+  // its cache key with the edit/view dialog's own `permsQuery`, so opening
+  // either after this resolves is instant, not a second round-trip.
+  const permsQuery = useQuery({
+    queryKey: ['iam-role-permissions', accountId, role.role_id],
+    queryFn: () => getRolePermissions(accountId, role.role_id),
+    staleTime: 30_000,
   });
 
   async function handleDuplicate() {
@@ -354,6 +383,28 @@ function RoleRow({
           <Badge variant="outline" size="sm" className="font-normal">
             Custom
           </Badge>
+        )}
+      </TableCell>
+      <TableCell>
+        {/* The count itself is the affordance — clickable for everyone, not
+            just managers. "What can this role do?" should never require
+            permission to change it; a raw number with no way to see WHICH
+            capabilities it covers is not actually an answer. */}
+        {permsQuery.isError ? (
+          <span className="text-muted-foreground text-xs">—</span>
+        ) : permsQuery.isLoading ? (
+          <Skeleton className="h-4 w-20" />
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground -mx-2 h-auto gap-1 px-2 py-1 text-xs font-normal"
+            onClick={onView}
+          >
+            <Eye className="size-3.5 shrink-0" />
+            {permsQuery.data?.actions.length ?? 0} capabilities
+          </Button>
         )}
       </TableCell>
       <TableCell className="text-muted-foreground text-xs">
@@ -459,14 +510,21 @@ function RoleDialog({
   onOpenChange,
 }: {
   accountId: string;
-  mode: 'create' | 'edit';
+  /** 'view' is read-only — everyone gets it (including non-managers and on
+   *  built-in roles), not just people who can edit. "What can this role
+   *  actually do?" should never require permission to change it. */
+  mode: 'create' | 'edit' | 'view';
   role?: IamRole;
   prefill?: RolePrefill | null;
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const isView = mode === 'view';
   const isEdit = mode === 'edit' && !!role;
+  // Both edit and view load the role's existing grant set into the matrix —
+  // view just never lets it change.
+  const hasExistingRole = (mode === 'edit' || mode === 'view') && !!role;
 
   const [name, setName] = useState(role?.name ?? prefill?.name ?? '');
   const [keyValue, setKeyValue] = useState(role?.key ?? (prefill ? slugifyKey(prefill.name) : ''));
@@ -484,21 +542,22 @@ function RoleDialog({
     staleTime: 30_000,
   });
 
-  // Pre-fill the matrix selection for an edit.
+  // Pre-fill the matrix selection for an edit OR a view — both read the
+  // role's existing grant set, view just never writes it back.
   const permsQuery = useQuery({
     queryKey: ['iam-role-permissions', accountId, role?.role_id],
     queryFn: () => getRolePermissions(accountId, role!.role_id),
     staleTime: 30_000,
-    enabled: isEdit,
+    enabled: hasExistingRole,
   });
 
-  // Seed selected from loaded permissions (edit mode) once the query resolves.
-  // Keyed on the resolved data so we never toggle against a not-yet-seeded set.
+  // Seed selected from loaded permissions once the query resolves. Keyed on
+  // the resolved data so we never toggle against a not-yet-seeded set.
   useEffect(() => {
-    if (isEdit && permsQuery.data) {
+    if (hasExistingRole && permsQuery.data) {
       setSelected(new Set(permsQuery.data.actions));
     }
-  }, [isEdit, permsQuery.data]);
+  }, [hasExistingRole, permsQuery.data]);
 
   const matrixActions = useMemo(
     () => (actionsQuery.data ?? []).filter((a) => a.resource_type === resourceType),
@@ -592,11 +651,12 @@ function RoleDialog({
 
   const mutation = isEdit ? updateMutation : createMutation;
   const isPending = mutation.isPending;
-  const matrixLoading = actionsQuery.isLoading || (isEdit && permsQuery.isLoading);
-  const matrixError = actionsQuery.isError || (isEdit && permsQuery.isError);
+  const matrixLoading = actionsQuery.isLoading || (hasExistingRole && permsQuery.isLoading);
+  const matrixError = actionsQuery.isError || (hasExistingRole && permsQuery.isError);
   // Guard the matrix until the edit-mode permissions seed has resolved, so an
-  // admin never toggles against an empty (not-yet-seeded) set.
-  const matrixDisabled = isPending || matrixLoading || matrixError;
+  // admin never toggles against an empty (not-yet-seeded) set. View mode is
+  // always disabled — there is nothing to guard against, it just never opens.
+  const matrixDisabled = isView || isPending || matrixLoading || matrixError;
 
   const submitDisabled =
     isPending || !nameValid || (!isEdit && !keyValid) || matrixLoading || matrixError;
@@ -605,10 +665,11 @@ function RoleDialog({
     <Modal open={open} onOpenChange={(o) => !isPending && onOpenChange(o)}>
       <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-2xl">
         <ModalHeader>
-          <ModalTitle>{isEdit ? 'Edit role' : 'New role'}</ModalTitle>
+          <ModalTitle>{isView ? 'View role' : isEdit ? 'Edit role' : 'New role'}</ModalTitle>
           <ModalDescription>
-            Pick the capabilities this role grants. Anything left unchecked is deactivated for
-            principals assigned this role.
+            {isView
+              ? `What ${role?.name ?? 'this role'} can do — checked capabilities are granted, everything else is deactivated for anyone assigned it.`
+              : 'Pick the capabilities this role grants. Anything left unchecked is deactivated for principals assigned this role.'}
           </ModalDescription>
         </ModalHeader>
 
@@ -621,8 +682,8 @@ function RoleDialog({
                 value={name}
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="Deploy operator"
-                disabled={isPending}
-                autoFocus
+                disabled={isPending || isView}
+                autoFocus={!isView}
               />
             </div>
             <div className="space-y-1.5">
@@ -635,7 +696,7 @@ function RoleDialog({
                   setKeyValue(e.target.value);
                 }}
                 placeholder="deploy_operator"
-                disabled={isPending || isEdit}
+                disabled={isPending || isEdit || isView}
                 className="font-mono"
               />
               {!isEdit && keyValue.length > 0 && !keyValid && (
@@ -653,7 +714,7 @@ function RoleDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this role is for"
-              disabled={isPending}
+              disabled={isPending || isView}
             />
           </div>
 
@@ -665,7 +726,7 @@ function RoleDialog({
                 setResourceType(v as ResourceType);
                 if (!isEdit) setSelected(new Set());
               }}
-              disabled={isPending || isEdit}
+              disabled={isPending || isEdit || isView}
             >
               <SelectTrigger id="role-resource-type" className="w-48">
                 <SelectValue />
@@ -766,19 +827,25 @@ function RoleDialog({
           </div>
         </ModalBody>
 
-        <ModalFooter className="sm:justify-between">
+        <ModalFooter className={isView ? undefined : 'sm:justify-between'}>
           <Button
             type="button"
             variant="outline-ghost"
             onClick={() => onOpenChange(false)}
             disabled={isPending}
           >
-            Cancel
+            {isView ? 'Close' : 'Cancel'}
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={submitDisabled} className="gap-1.5">
-            {isPending && <Loading className="size-4 shrink-0" />}
-            {isEdit ? 'Save changes' : 'Create role'}
-          </Button>
+          {!isView && (
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={submitDisabled}
+              className="gap-1.5"
+            >
+              {isPending && <Loading className="size-4 shrink-0" />}
+              {isEdit ? 'Save changes' : 'Create role'}
+            </Button>
+          )}
         </ModalFooter>
       </ModalContent>
     </Modal>

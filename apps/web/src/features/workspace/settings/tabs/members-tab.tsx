@@ -2008,7 +2008,7 @@ function MembersTabInner({
       }}
       isRemovePending={removeMutation.isPending}
       onOpenInvite={() => setInviteOpen(true)}
-      permissionsHelpSlot={<PermissionsHelpPopover align="end" />}
+      permissionsHelpSlot={<PermissionsHelpPopover align="end" accountId={accountId} />}
       pendingInvites={pendingInvitesQuery.data?.pending ?? []}
       isPendingInvitesLoading={canManageMembers && pendingInvitesQuery.isLoading}
       pendingInviteBusyIds={pendingInviteBusyIds}
