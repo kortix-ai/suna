@@ -34,7 +34,11 @@ import {
 import { db } from '../shared/db';
 import { upsertCredential, upsertOAuth2Credential } from './credentials';
 import { areValidConditions, isValidMatcher } from './policy';
-import { type SyncResult, syncProjectConnectors } from './sync';
+import {
+  rematerializeCatalogAfterCredentialUpdate,
+  type SyncResult,
+  syncProjectConnectors,
+} from './sync';
 import {
   type ManifestMutationResult,
   mutateManifestWithRetry,
@@ -318,6 +322,8 @@ export async function setConnectorCredentialShared(
   const [connector] = await db
     .select({
       connectorId: connectors.connectorId,
+      accountId: connectors.accountId,
+      providerType: connectors.providerType,
       authorizationStrategy: connectors.authorizationStrategy,
       authSecret: connectors.authSecret,
     })
@@ -355,7 +361,12 @@ export async function setConnectorCredentialShared(
       kind: input.kind,
     });
   }
-  return { ok: true };
+  const sync = await rematerializeCatalogAfterCredentialUpdate({
+    projectId,
+    accountId: connector.accountId,
+    provider: connector.providerType,
+  });
+  return { ok: true, ...(sync ? { sync } : {}) };
 }
 
 /**

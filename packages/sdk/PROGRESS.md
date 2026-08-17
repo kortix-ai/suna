@@ -10431,10 +10431,25 @@ clean on the drain hook.
 
 ### 2026-08-18 — session `fix-mcp-catalog-auth` claim
 
-Claimed the additive `token_params` field on `OAuth2ClientCredentials`. This
-field lets connector authors send provider-required client-credentials form
-parameters such as Sage Intacct `username`. Existing OAuth2 fields and static
-credentials remain compatible.
+Completed the additive, provider-neutral `token_params` field on
+`OAuth2ClientCredentials` and fixed authenticated MCP catalog discovery.
+Connector authors can supply bounded provider-required token form parameters;
+OAuth-owned fields cannot be overridden. The API now uses `oauth4webapi` for
+all five supported endpoint authentication methods (`none`,
+`client_secret_post`, `client_secret_basic`, `client_secret_jwt`, and
+`private_key_jwt`). MCP `tools/list` uses the same credential/static-header
+path as execution, rejects HTTP and JSON-RPC failures, redacts raw and encoded
+credential representations, retries broken zero-action catalogs, and refreshes
+after both shared and connection-specific credential updates.
 
-**Status:** IN PROGRESS. RED test, implementation, full SDK gates, repository
-delivery, Essentia deploy proof, and live Intacct verification remain required.
+**Evidence:** focused OAuth/MCP/contract/SDK matrix **166 pass / 0 fail**;
+API unit suite **7051 pass / 74 skip / 0 fail** across 630 files; SDK suite
+**2125 pass / 0 fail** across 148 files; API-contract suite **73 pass / 0
+fail**; API, SDK, and API-contract typechecks clean; SDK packed-install smoke
+passed; `git diff --check` clean. The OAuth tests make real token requests for
+all five methods and verify PS256 assertions both with and without an optional
+certificate thumbprint.
+
+**Status:** COMPLETE. **Shippable to production: YES** for the implementation.
+Repository merge, Deploy Dev, and live Intacct verification are release proof,
+tracked separately from the SDK/API code verdict.
