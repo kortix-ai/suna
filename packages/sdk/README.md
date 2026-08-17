@@ -214,6 +214,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
+| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
 ### Apps hosting
 
@@ -234,11 +235,11 @@ providers. The deprecated top-level `provider` input remains a sandbox-only
 shorthand. Do not combine `provider` and `hosting`.
 
 AWS Lightsail requires an exact power and a matching App monthly budget. The
-supported CPU/memory/budget floors are `0.25/0.5/$7`, `0.25/1/$10`,
-`0.5/1/$15`, `1/2/$40`, `2/4/$80`, and `4/8/$160`. Lightsail stop deletes the
-Container Service. The next authorized request recreates it from the immutable
-deployment image.
-| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
+supported CPU/memory/budget floors are `1/2/$40`, `2/4/$80`, and `4/8/$160`.
+Lightsail's nano, micro, and small powers require a future decimal-resource
+migration and are rejected by the current whole-CPU App contract. Lightsail
+stop deletes the Container Service. The next authorized request recreates it
+from the immutable deployment image.
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the

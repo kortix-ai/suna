@@ -86,6 +86,10 @@ verification are complete.
 - Final AWS cleanup reports zero `kortix-dev-app-*` services, zero deployment
   images in `essentia-selfhost-apps-hosting`, and
   `RepositoryPolicyNotFoundException` for that repository.
+- The final completion audit corrected the SDK README's stale fractional-power
+  list. The database and API accept whole CPU values, so the documented
+  Lightsail powers now match the implemented `medium`, `large`, and `xlarge`
+  contract.
 
 The user requires this branch and PR to remain standalone. Merge and Deploy
 Dev are intentionally deferred until explicit approval.
