@@ -1,9 +1,7 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
-import KortixGrid from '@/components/ui/marketing/gridder';
+import { DitherShader } from '@/components/ui/wallpaper-shaders';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { cta } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -13,9 +11,8 @@ import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 /**
- * The closing CTA, kept in the shape it has always had: copy on the left, the
- * Kortix letter grid on the right. Copy now lives in content.ts rather than the
- * i18n bundle, matching the rest of the rebuilt page.
+ * Closing CTA above the site map. Copy lives in content.ts, not the i18n
+ * bundle, matching the rest of the rebuilt landing page.
  */
 export function CtaSection() {
   const { user } = useAuth();
@@ -27,40 +24,41 @@ export function CtaSection() {
   }, [user]);
 
   return (
-    <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 lg:px-0">
-      <Reveal>
-        <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
-          <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-            <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
-              <div className="space-y-2">
-                <Badge variant="kortix" className="rounded">
-                  {cta.badge}
-                </Badge>
-                <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                  {cta.title}
-                </h2>
-                <p className="text-muted-foreground mt-4 text-sm leading-relaxed">{cta.sub}</p>
-              </div>
+    <section id="cta" className="py-16 sm:py-24">
+      <div
+        className="pointer-events-none absolute inset-0 -top-4 [mask-image:linear-gradient(to_bottom,#000_0%,#000_30%,transparent_90%)] md:scale-110"
+        aria-hidden
+      >
+        <DitherShader />
+      </div>
 
-              <p className="text-muted-foreground text-xs tracking-wider">{cta.trust}</p>
+      <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center px-6 text-center">
+        <h2 className="text-foreground text-3xl leading-[1.15] font-medium tracking-tight text-balance sm:text-4xl lg:text-5xl">
+          {cta.title}
+        </h2>
+        <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed text-pretty sm:mt-6 sm:text-lg">
+          {cta.sub}
+        </p>
 
-              <div className="mt-auto grid w-full grid-cols-1 gap-2">
-                <Button size="lg" className="w-full" onClick={handleLaunch}>
-                  {cta.ctaPrimary}
-                  <ArrowRightIcon className="size-4" />
-                </Button>
-                <Button size="lg" className="w-full" variant="accent" onClick={() => openDemo()}>
-                  {cta.ctaSecondary}
-                </Button>
-              </div>
-            </div>
-            <div className="col-span-1 hidden md:block" />
-            <div className="col-span-7 mask-y-from-90% mask-x-from-90%">
-              <KortixGrid count={58} seed={4228} />
-            </div>
-          </div>
+        <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:mt-10 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
+          <Button
+            size="lg"
+            className="w-full active:scale-[0.97] sm:w-auto sm:min-w-36"
+            onClick={handleLaunch}
+          >
+            {cta.ctaPrimary}
+            <ArrowRightIcon className="size-4 shrink-0" />
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="w-full active:scale-[0.97] sm:w-auto sm:min-w-36"
+            onClick={() => openDemo()}
+          >
+            {cta.ctaSecondary}
+          </Button>
         </div>
-      </Reveal>
+      </div>
     </section>
   );
 }
