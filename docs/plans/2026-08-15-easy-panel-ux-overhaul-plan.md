@@ -142,3 +142,26 @@ the touched surface.
   scope strictly to memory update commands.
 - Connector strip must not regress the panel's zero-data-source rule: it
   reads connector state via existing stores/SDK hooks only.
+
+---
+
+## Phase 6 — Panel detail surface rework (addendum 2026-08-17, spec W11)
+
+16. **Panel surface becomes disclosure rows.**
+    Scope: `tool/shared/infrastructure.tsx` — replace the `surface === 'panel'` short-circuit's always-expanded `PanelTool` with a panel disclosure row: standard trigger (icon, title, subtitle, badge, chevron), `bg-popover rounded-md border` row, body expands in place; `defaultOpen`/`forceOpen`/`locked` become live on panel. `easy/detail-view.tsx` `ToolParts` passes `defaultOpen={parts.length === 1}`; `advanced-panel.tsx` passes `defaultOpen` for its single part. `show`/`show_user` fill mode untouched. No chain-of-thought rail.
+    Verify: rewrite the pinned panel-header tests (infrastructure, agent-status, get-mem, memory-search, project-delete, task-tool panel assertions) to the new contract in the same commit; multi-part = closed rows test; single-part = open test; conformance green.
+17. **Restore horizontal scrolling in panel details.**
+    Scope: drop `[&_[data-scrollable]]:overflow-visible` (keep `max-h-none`) at `easy/detail-view.tsx` and `advanced/advanced-panel.tsx`.
+    Verify: unit test on the wrapper class; memory/read long-line case renders with x-scroll container intact.
+18. **Memory documents render as documents.**
+    Scope: `memory-tool.tsx` `view`/`create` (and `insert` snippet if trivial) render markdown for `.md` via the skill-tool template (`UnifiedMarkdown` + `MD_FLUSH_CLASSES`, scrollable container); other extensions keep `ToolCodeCard`.
+    Verify: memory-tool tests for md-vs-other branch; overflow-safe.
+19. **Block rhythm normalization.**
+    Scope: one inset/radius/cap story across `ToolOutputCard`, `ToolCodeCard`, `ToolCode`, `ToolResultCard`, `OutputBlock`, `CommandBlock`; fix the `ml-7` vs `var(--tool-indent)` mismatch; per design system.
+    Verify: before/after table; all `tool/` suites green with deliberate contract updates only.
+20. **Calm the heavy tools.**
+    Scope: `get_mem` + `memory-search` secondary sections behind closed Disclosures; `session-get`'s hand-rolled collapsible → standard Disclosure; `pty_read` buffer capped/disclosed; `triggers`/`connector-tools` section stacks disclosed; skill body's duplicate "Files" header vs the new panel trigger deduped; generic MCP fallback inherits the task-16 row.
+    Verify: per-tool tests in sibling style; conformance green.
+21. **Phase 6 gate.**
+    Scope: /debug/tools gains minimal fixtures (multi-part memory group, skills ×2, bash, pty_read, get_mem, and a panel detail mount); full suites + light/dark screenshots of the reworked details.
+    Verify: `bun test src/features/session/` green; screenshot set delivered.

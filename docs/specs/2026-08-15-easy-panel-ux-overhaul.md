@@ -240,3 +240,31 @@ order: Web sources, Files read, then each tool family:
 9. Screenshots (light + dark) of: full panel home, context detail, empty
    context with CTAs, skill/task/memory/bash rows — reviewed against the
    design-system references before merge.
+
+---
+
+## Addendum (2026-08-17) — W11: the panel detail surface itself
+
+Jay's review of the shipped branch found the DETAIL surface (`ToolSurfaceContext === 'panel'`) below the bar. Verified causes:
+
+| # | Defect | Evidence |
+|---|---|---|
+| D13 | `PanelTool` ignores the disclosure system: every part renders fully expanded with its own sticky header, so a multi-part detail (memory ×3, skills, commands) stacks N identical headers over an unbroken wall | `infrastructure.tsx:1216-1229` short-circuit; `PanelTool` at `:1047-1088`; `ToolParts` passes `defaultOpen` but it is inert on panel |
+| D14 | Horizontal overflow: the panel uncap `[&_[data-scrollable]]:overflow-visible` kills the x-axis on `ToolCodeCard` (the only scroller for `whitespace-pre` shiki), so memory/read/edit/write content clips at the card edge | `detail-view.tsx:796`, `advanced-panel.tsx:88`, `infrastructure.tsx:1314` |
+| D15 | Memory `.md` content renders as raw highlighted markdown source (`# **bold**` literals), not a document | `memory-tool.tsx:190,201` → `ToolCodeCard`, ext defaults to `md` |
+| D16 | Block rhythm is incoherent: three insets (`p-3+pr-9/11`, `px-3 py-2`, `p-1`+body), three caps (72/96/19rem), two radii, plus an `ml-7` vs `var(--tool-indent)` (28 vs 22px) mismatch | §6 of the panel map: `ToolOutputCard/ToolCodeCard/ToolCode/ToolResultCard/OutputBlock/CommandBlock` |
+| D17 | Heavy tools dump always-expanded section stacks in the panel: `get_mem` (8 sections), `memory-search`, `session-get` (hand-rolled collapsible), `triggers`, `connector-tools`, `pty_read` full buffer | §5 classification |
+
+### W11 direction (Jay's words, distilled)
+- The panel uses **disclosures wherever a body exists**: each part is a standard trigger row (icon, plain title, subtitle, badge, chevron) that expands in place. **Multi-part details default closed** ("by default every disclosure should be closed so it will be minimal"); single-part details (step scrubber, Advanced) default open. No chain-of-thought rail in the detail.
+- Keep as-is: web-search panel view, read file view ("good enough"), `show`/`show_user` fill mode (the detail IS the tool).
+- Fix the overflow, render memory documents as documents, calm the block padding, and sweep pty_*, apply_patch, get_mem/memory-search, session/connector/trigger tools, and the generic MCP fallback to the same standard — "nothing feels odd."
+
+### W11 acceptance
+1. A context-group detail with N>1 parts shows N closed disclosure rows (one line each) and zero repeated sticky headers; expanding one shows only that part's body.
+2. Single-part details open expanded; `show` keeps fill mode.
+3. Long mono lines scroll horizontally inside their block in the panel (memory screenshot case fixed); no content escapes the card frame.
+4. Memory `view`/`create` of `.md` files renders markdown (frontmatter-aware), other extensions keep code.
+5. One block inset/radius/cap rhythm across the shared primitives; before/after table in the PR.
+6. Panel-surface tests updated to the new contract (pinned header tests rewritten deliberately); conformance green.
+7. Light+dark screenshots of the reworked detail views — /debug/tools gains the minimal fixtures this needs (multi-part memory group, skills group, bash, pty_read, get_mem).
