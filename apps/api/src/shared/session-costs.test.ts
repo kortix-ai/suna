@@ -34,6 +34,8 @@ describe('assembleSessionCostSummary', () => {
       updated_at: '2026-07-02T11:00:00.000Z',
       last_activity_at: null,
       llm_cost: 0,
+      llm_kortix_cost: 0,
+      llm_provider_cost: 0,
       compute_cost: 0,
       total_cost: 0,
       request_count: 0,

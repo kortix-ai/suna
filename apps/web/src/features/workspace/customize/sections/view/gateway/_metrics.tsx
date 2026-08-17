@@ -128,7 +128,9 @@ export function StatCard({
 }: {
   label: string;
   value: string;
-  sub?: string;
+  // ReactNode, not string: the spend card's sub-line carries a two-part
+  // Kortix / provider breakdown with its own dot markers.
+  sub?: ReactNode;
   icon: LucideIcon;
   accent: string;
   spark?: Record<string, unknown>[];
@@ -150,7 +152,7 @@ export function StatCard({
         {value}
       </div>
       <div className="mt-1 flex items-end justify-between gap-2">
-        <span className="text-muted-foreground min-h-4 text-xs">{sub ?? ''}</span>
+        <span className="text-muted-foreground min-h-4 text-xs leading-tight">{sub ?? ''}</span>
         {spark && sparkKey && <MiniSpark data={spark} dataKey={sparkKey} color={accent} />}
       </div>
     </div>

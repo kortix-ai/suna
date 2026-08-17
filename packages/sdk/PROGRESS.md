@@ -970,6 +970,74 @@ SDK packed-install smoke: passed
 
 ---
 
+### 2026-08-17 — session `gateway-spend` — spend types carry the Kortix / provider split
+
+**Done.** Every LLM spend rollup in the platform summed `final_cost` alone, which
+answers "what did Kortix bill you" — 0 for every BYOK request, because a BYOK
+route resolves to `billingMode: 'none'` with `markup: 0`. A self-hosted gateway
+therefore reported `$0.0000` beside 927M real tokens. The API now reports total
+spend (`final_cost + upstream_cost`, the upstream side excluded on Kortix-managed
+rows where it is Kortix's own COGS), so the SDK's cost types gained the matching
+split fields.
+
+Additive only — no exported name, signature, or existing field was renamed or
+removed:
+
+- `GatewayLogRow`: `+kortix_cost`, `+provider_cost`, `+total_cost`.
+  `upstream_cost` and `final_cost` stay, now `@deprecated` aliases of
+  `provider_cost` / `kortix_cost`. `upstream_cost`'s VALUE changes on
+  `billing_mode: 'credits'` rows only: the API now sends 0 instead of Kortix's
+  wholesale price, which was publishing the Kortix margin on every managed
+  request. No consumer can legitimately want that number.
+- `GatewayOverview`, `GatewaySeriesPoint`, `GatewayModelStat`: `+kortix_cost`,
+  `+provider_cost`. Their existing `total_cost` / `cost` fields now carry the
+  corrected total instead of the Kortix-billed slice.
+- `CostSummaryTotals`, `ProjectCostRow`, `SessionCostSummary`:
+  `+llm_kortix_cost`, `+llm_provider_cost`. `llm_cost` now carries the total.
+
+RED first. These are type-level assertions, so RED shows up under `tsc`, not
+`bun test`:
+
+```
+$ bun tsc --noEmit
+src/core/rest/projects-client/gateway.test.ts(61,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(62,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(63,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(64,9): error TS2322: Type 'true' is not assignable to type 'false'.
+src/core/rest/projects-client/gateway.test.ts(71,9): error TS2322: Type 'true' is not assignable to type 'false'.
+error: "tsc" exited with code 2
+```
+
+GREEN — all three gates:
+
+```
+$ pnpm run typecheck
+> tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+(clean, no output)
+
+$ pnpm test
+ 1943 pass
+ 2 skip
+ 0 fail
+ 7377 expect() calls
+Ran 1945 tests across 145 files. [22.47s]
+
+$ pnpm run smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed
+```
+
+Public-surface snapshots unchanged — this adds interface FIELDS, not exports.
+The `version` field was not touched.
+
+**Shippable to production: YES.** Verified against a live local API on real
+data (a project with 95 BYOK + 63 managed requests): `/gateway/overview`
+returns `total_cost 6.9148 = kortix_cost 2.1144 + provider_cost 4.8005`, where
+it previously returned `2.1144`. A `credits` log row now returns
+`provider_cost: 0` and no longer ships its `0.2174` wholesale cost.
+
+---
+
 ### 2026-08-13 — session `warm-index` — warm-session decline must not toast
 
 **Done.** `ensureWarmProjectSession` posted WITHOUT `showErrors: false`, so its

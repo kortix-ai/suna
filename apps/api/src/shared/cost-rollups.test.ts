@@ -179,6 +179,8 @@ describe('sortProjectRows', () => {
     project_name: 'Alpha',
     session_count: 1,
     llm_cost: 0,
+    llm_kortix_cost: 0,
+    llm_provider_cost: 0,
     compute_cost: 0,
     total_cost: 0,
     last_activity_at: null,
@@ -687,7 +689,12 @@ describe('getCostSummary', () => {
     // ordering alone leaves it to whatever order Postgres happens to scan
     // rows in, which can flip between refreshes.
     const [spend, provider, model] = renderOrderBy(modelsRecord());
-    expect(spend).toBe('sum("kortix"."gateway_request_logs"."final_cost_precise") desc');
+    // Ordered by TOTAL spend, matching the `cost` column it selects — ordering
+    // by final_cost alone would rank every BYOK model at 0 and hand the top-10
+    // cut to scan order. See shared/llm-spend.ts.
+    expect(spend).toContain('final_cost_precise');
+    expect(spend).toContain('upstream_cost_precise');
+    expect(spend?.endsWith(' desc')).toBe(true);
     expect(provider).toBe('"kortix"."gateway_request_logs"."provider" desc');
     expect(model).toBe('"kortix"."gateway_request_logs"."resolved_model" desc');
   });
@@ -786,6 +793,8 @@ describe('getCostSummary', () => {
 
     expect(summary.totals).toEqual({
       llm_cost: 10,
+      llm_kortix_cost: 0,
+      llm_provider_cost: 0,
       compute_cost: 5,
       total_cost: 15,
       request_count: 4,
