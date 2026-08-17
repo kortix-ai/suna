@@ -23,12 +23,16 @@ import {
  * `stores/settings-panel-store.test.ts`, so these reset it between tests
  * rather than mocking it.
  */
-function navFor(section: Parameters<typeof buildProjectSettingsNav>[0]['section'] = 'general') {
+function navFor(
+  section: Parameters<typeof buildProjectSettingsNav>[0]['section'] = 'general',
+  accountId?: string,
+) {
   const pushed: string[] = [];
   const nav = buildProjectSettingsNav({
     projectId: 'p1',
     section,
     membersTab: useSettingsPanelStore.getState().membersTab,
+    accountId,
     navigateTo: (href) => pushed.push(href),
   });
   return { nav, pushed };
@@ -177,6 +181,24 @@ describe('buildProjectSettingsNav', () => {
   test('navigate() to an id nobody owns does nothing at all', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('marketplace');
+    expect(pushed).toEqual([]);
+    expect(useSettingsPanelStore.getState().open).toBe(false);
+  });
+
+  test('navigate() to an ACCOUNT_GRADUATED id (groups, roles) routes to the account page', () => {
+    // Regression: Members' Access tab links "Create one in Groups" / "Create
+    // one in Roles" through this same navigate() vocabulary. Before this
+    // branch existed, `groups`/`roles` matched none of the three checks and
+    // the click did nothing — reported live as "when I click the groups
+    // link, it doesn't work either."
+    const { nav, pushed } = navFor('sandbox', 'acct-1');
+    nav.navigate('groups');
+    expect(pushed).toEqual(['/accounts/acct-1?tab=groups']);
+  });
+
+  test('an ACCOUNT_GRADUATED id with no accountId yet does nothing, not a broken URL', () => {
+    const { nav, pushed } = navFor('sandbox');
+    nav.navigate('roles');
     expect(pushed).toEqual([]);
     expect(useSettingsPanelStore.getState().open).toBe(false);
   });

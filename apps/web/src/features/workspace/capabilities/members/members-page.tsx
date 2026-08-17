@@ -31,7 +31,7 @@ export function MembersPage({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
 
-  const settingsNav = useStandaloneCapabilityNav(projectId, 'members');
+  const settingsNav = useStandaloneCapabilityNav(projectId, 'members', detail.data?.project.account_id);
 
   return (
     <SettingsNavProvider value={settingsNav}>

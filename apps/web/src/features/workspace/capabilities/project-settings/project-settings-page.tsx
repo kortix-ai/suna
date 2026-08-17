@@ -36,7 +36,11 @@ import {
 } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
+import {
+  ACCOUNT_GRADUATED,
+  isAccountGraduatedSection,
+  parseSettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 
 import {
@@ -152,8 +156,15 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
   const settingsNav = useMemo(
-    () => buildProjectSettingsNav({ projectId, section: active, membersTab, navigateTo }),
-    [projectId, active, membersTab, navigateTo],
+    () =>
+      buildProjectSettingsNav({
+        projectId,
+        section: active,
+        membersTab,
+        accountId: project?.account_id,
+        navigateTo,
+      }),
+    [projectId, active, membersTab, project?.account_id, navigateTo],
   );
 
   const activeSection = sections.find((s) => s.key === active);
@@ -393,6 +404,9 @@ export function buildProjectSettingsNav(state: {
   projectId: string;
   section: ProjectSettingsSectionKey;
   membersTab: MembersTab;
+  /** See the identical field on `buildStandaloneCapabilityNav` — resolves
+   *  `ACCOUNT_GRADUATED` ids (`groups`, `roles`, ...) to `/accounts/<id>`. */
+  accountId?: string;
   navigateTo: (href: string) => void;
 }): SettingsNav {
   return {
@@ -414,6 +428,14 @@ export function buildProjectSettingsNav(state: {
       const capabilityTarget = projectCapabilityNavTarget(tab);
       if (capabilityTarget) {
         state.navigateTo(projectCapabilityNavHref(state.projectId, tab, capabilityTarget));
+        return;
+      }
+      // See `standalone-settings-nav.ts`'s identical branch (and its comment
+      // on why this is NOT `legacySectionRedirect`): without this,
+      // `navigate('groups')` / `navigate('roles')` matched nothing and did
+      // nothing at all.
+      if (state.accountId && isAccountGraduatedSection(tab)) {
+        state.navigateTo(`/accounts/${state.accountId}?tab=${ACCOUNT_GRADUATED[tab]}`);
         return;
       }
       const overlayTab = parseSettingsTab(tab);

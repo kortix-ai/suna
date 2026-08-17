@@ -29,7 +29,11 @@ import {
   projectSettingsNavTarget,
 } from '@/features/workspace/capabilities/project-settings/project-settings-page';
 import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
-import { parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
+import {
+  ACCOUNT_GRADUATED,
+  isAccountGraduatedSection,
+  parseSettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
 import type { SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 
@@ -45,6 +49,11 @@ export function buildStandaloneCapabilityNav(state: {
   projectId: string;
   activeTab: string;
   membersTab: MembersTab;
+  /** Resolves `ACCOUNT_GRADUATED` ids (`groups`, `roles`, ...) to
+   *  `/accounts/<id>?tab=<...>`. Undefined while the project detail that
+   *  yields it is still loading — those ids no-op rather than mis-navigate,
+   *  same fail-open rule the capability-tab probes use. */
+  accountId?: string;
   navigateTo: (href: string) => void;
 }): SettingsNav {
   return {
@@ -68,19 +77,37 @@ export function buildStandaloneCapabilityNav(state: {
         }
         return;
       }
+      // Groups / Roles / Organization / ... — graduated OFF every project
+      // surface entirely, onto the account page. Members' Access tab links to
+      // both ("Create one in Groups", "Create one in Roles") and, without
+      // this branch, `tab` matched none of the checks above or below and the
+      // click did nothing at all. Deliberately NOT `legacySectionRedirect` —
+      // that helper's own fallback also resolves overlay-still ids
+      // (`preferences` -> `/projects/<id>/settings/preferences`, a route),
+      // which would bypass the store-based `openSettings()` call below and
+      // break `project-settings-page.test.ts`'s "opens the overlay, not a
+      // route" contract for this adapter.
+      if (state.accountId && isAccountGraduatedSection(tab)) {
+        state.navigateTo(`/accounts/${state.accountId}?tab=${ACCOUNT_GRADUATED[tab]}`);
+        return;
+      }
       const overlayTab = parseSettingsTab(tab);
       if (overlayTab) useSettingsPanelStore.getState().openSettings(overlayTab);
     },
   };
 }
 
-export function useStandaloneCapabilityNav(projectId: string, activeTab: string): SettingsNav {
+export function useStandaloneCapabilityNav(
+  projectId: string,
+  activeTab: string,
+  accountId?: string,
+): SettingsNav {
   const router = useRouter();
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
 
   return useMemo(
-    () => buildStandaloneCapabilityNav({ projectId, activeTab, membersTab, navigateTo }),
-    [projectId, activeTab, membersTab, navigateTo],
+    () => buildStandaloneCapabilityNav({ projectId, activeTab, membersTab, accountId, navigateTo }),
+    [projectId, activeTab, membersTab, accountId, navigateTo],
   );
 }
