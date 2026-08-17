@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A shared connector catalog needs one canonical credential scope (2026-08-18)
+
+**When:** rematerializing a credential-dependent connector catalog. Only the
+project-default credential may write project-wide `connectorActions`. Never use
+a member-owned or non-default connection credential. Store catalogs per
+connection before supporting credential-specific action sets.
+*Incident:* Strix found that PR #6507 let a member MCP credential overwrite the
+shared project catalog and expose tenant-specific tool metadata before merge.
+*Enforcer:* `sync-mcp.test.ts` rejects member and non-default rematerialization.
+
 ### Catalog discovery must use execution credentials and fail on upstream errors (2026-08-18)
 
 **When:** materializing a remote connector catalog, especially MCP

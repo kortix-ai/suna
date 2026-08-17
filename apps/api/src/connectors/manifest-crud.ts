@@ -365,6 +365,8 @@ export async function setConnectorCredentialShared(
     projectId,
     accountId: connector.accountId,
     provider: connector.providerType,
+    ownerType: 'project',
+    isDefault: true,
   });
   return { ok: true, ...(sync ? { sync } : {}) };
 }

@@ -97,12 +97,19 @@ export async function rematerializeCatalogAfterCredentialUpdate(
     projectId: string;
     accountId: string;
     provider: string;
+    ownerType: string;
+    isDefault: boolean;
     connectorId?: string;
     credential?: string | null;
   },
   sync: typeof syncProjectConnectors = syncProjectConnectors,
 ): Promise<SyncResult | undefined> {
-  if (input.provider !== 'mcp') return undefined;
+  // connectorActions is one project-wide catalog. Only its canonical shared
+  // credential may write it. A member-owned or non-default connection can have
+  // tenant-specific tools and must never publish those tools to other users.
+  if (input.provider !== 'mcp' || input.ownerType !== 'project' || !input.isDefault) {
+    return undefined;
+  }
   const mcpCredentialOverrides =
     input.connectorId && input.credential
       ? new Map([[input.connectorId, input.credential]])

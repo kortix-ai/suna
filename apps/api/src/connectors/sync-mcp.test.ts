@@ -148,7 +148,7 @@ describe('MCP catalog materialization', () => {
     ).toBe(false);
   });
 
-  test('credential updates force MCP rematerialization and skip unrelated providers', async () => {
+  test('only project-default credential updates can rematerialize the shared MCP catalog', async () => {
     const calls: Array<{
       projectId: string;
       accountId: string;
@@ -177,6 +177,8 @@ describe('MCP catalog materialization', () => {
           projectId: 'project-1',
           accountId: 'account-1',
           provider: 'mcp',
+          ownerType: 'project',
+          isDefault: true,
           connectorId: 'connector-1',
           credential: 'connection-access-token',
         },
@@ -185,7 +187,41 @@ describe('MCP catalog materialization', () => {
     ).toEqual({ synced: 1, errors: [] });
     expect(
       await rematerializeCatalogAfterCredentialUpdate(
-        { projectId: 'project-1', accountId: 'account-1', provider: 'openapi' },
+        {
+          projectId: 'project-1',
+          accountId: 'account-1',
+          provider: 'openapi',
+          ownerType: 'project',
+          isDefault: true,
+        },
+        sync,
+      ),
+    ).toBeUndefined();
+    expect(
+      await rematerializeCatalogAfterCredentialUpdate(
+        {
+          projectId: 'project-1',
+          accountId: 'account-1',
+          provider: 'mcp',
+          ownerType: 'member',
+          isDefault: true,
+          connectorId: 'connector-1',
+          credential: 'member-access-token',
+        },
+        sync,
+      ),
+    ).toBeUndefined();
+    expect(
+      await rematerializeCatalogAfterCredentialUpdate(
+        {
+          projectId: 'project-1',
+          accountId: 'account-1',
+          provider: 'mcp',
+          ownerType: 'project',
+          isDefault: false,
+          connectorId: 'connector-1',
+          credential: 'non-default-access-token',
+        },
         sync,
       ),
     ).toBeUndefined();
