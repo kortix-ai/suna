@@ -265,18 +265,20 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     enabled: open && reviewEnabled,
   }).totalNeedsYou;
 
-  const groups = useMemo(
-    () =>
-      railGroups({
-        marketplaceEnabled,
-        llmGatewayAvailable,
-        voiceEnabled,
-        reviewEnabled,
-      })
-        .map((g) => ({ ...g, items: g.items.filter((item) => isTabAllowed(item.tab)) }))
-        .filter((g) => g.items.length > 0),
-    [marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled, isTabAllowed],
-  );
+  const groups = useMemo(() => {
+    const allGroups = railGroups({
+      marketplaceEnabled,
+      llmGatewayAvailable,
+      voiceEnabled,
+      reviewEnabled,
+    });
+    const allowed: (typeof allGroups)[number][] = [];
+    for (const g of allGroups) {
+      const items = g.items.filter((item) => isTabAllowed(item.tab));
+      if (items.length > 0) allowed.push({ ...g, items });
+    }
+    return allowed;
+  }, [marketplaceEnabled, llmGatewayAvailable, voiceEnabled, reviewEnabled, isTabAllowed]);
   const upgradeAllowed = isTabAllowed('upgrades');
   const allItems = useMemo(
     () => [...groups.flatMap((g) => g.items), ...(upgradeAllowed ? [UPGRADE_ITEM] : [])],

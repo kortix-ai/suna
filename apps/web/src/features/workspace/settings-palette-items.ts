@@ -204,14 +204,15 @@ export function settingsPaletteGroups(params: SettingsPaletteParams): SettingsPa
   if (tail) tail.items.push(UPGRADE_ITEM);
   else rail.push({ label: 'Developer', items: [UPGRADE_ITEM] });
 
-  return rail
-    .map((group) => ({
-      label: group.label,
-      items: group.items
-        .filter((item) => isSettingsTabOfferable(item.tab, params))
-        .map((item) => toPaletteItem(item, group.label)),
-    }))
-    .filter((group) => group.items.length > 0);
+  const groups: SettingsPaletteGroup[] = [];
+  for (const group of rail) {
+    const items: SettingsPaletteItem[] = [];
+    for (const item of group.items) {
+      if (isSettingsTabOfferable(item.tab, params)) items.push(toPaletteItem(item, group.label));
+    }
+    if (items.length > 0) groups.push({ label: group.label, items });
+  }
+  return groups;
 }
 
 /**
@@ -247,10 +248,10 @@ export function filterSettingsPaletteGroups(
 ): SettingsPaletteGroup[] {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return groups;
-  return groups
-    .map((group) => ({
-      label: group.label,
-      items: group.items.filter((item) => settingsPaletteItemMatches(item, words)),
-    }))
-    .filter((group) => group.items.length > 0);
+  const filtered: SettingsPaletteGroup[] = [];
+  for (const group of groups) {
+    const items = group.items.filter((item) => settingsPaletteItemMatches(item, words));
+    if (items.length > 0) filtered.push({ label: group.label, items });
+  }
+  return filtered;
 }

@@ -21,6 +21,67 @@ linked, not inlined.
 
 ## Register
 
+### A reused speculative resource needs a consumption signal every holder can see (2026-08-17)
+
+**When:** caching a server-side find-or-create resource client-side (the warm
+session ready-store; any pre-provisioned handle). `POST /sessions/warm` reuses
+ONE still-unused session per user+project, so every tab, browser and device of
+that user holds the SAME id — and a per-tab in-memory store then trusts its
+held copy for its whole dwell. The moment ANY holder uses the resource, every
+other copy silently points at a session with a conversation in it; the next
+project-home send navigates there and auto-sends into it. Holding is not
+owning: consult a synchronous cross-holder registry at take time (localStorage
+is the only sync cross-tab channel), record every take AND every navigation
+into a session, and revalidate a held copy on visibility regain (scopes
+localStorage cannot cross). Corollary that let it ship: every session e2e flow
+`requires: ['daytona']`, so NO warm contract runs in local CI — green local
+gates proved nothing about this feature.
+*Incident:* 2026-08-17, dev, night before a customer release — home prompts
+delivered into previous sessions; newest session missing from the list (list
+seed wiped by refetches racing the `/start` marker drop; adoption stamped no
+activity or `updated_at`).
+*Enforcer:* `warm-session-taken-registry.test.ts` +
+`use-warm-project-session.test.ts` (cross-tab takes, navigation consumption,
+revalidation); SESS-18 pins `/start` adoption, list order and
+`exclude_session_id` — but only at staging gates (daytona-gated locally:
+still a gap).
+
+### Active-turn renewal cadence must stay below the shortest provider backstop (2026-08-17)
+
+**When:** changing sandbox maintenance cadence, provider lifecycle timers, or active-turn renewal. Run exact-turn renewal in a separate leader-owned loop capped at 30 seconds. Do not couple it to the five-minute project-maintenance sweep. Scope the fast lane to durable `activeTurn` or `activeTurns` authority only.
+*Incident:* Dev Daytona renewed once, then stopped an exact active OpenCode turn 68 seconds later because the next project-maintenance pass was scheduled five minutes later than the one-minute deterministic provider timeout.
+*Enforcer:* `active-turn-renewal.test.ts` caps the loop at 30 seconds and requires `activeTurnsOnly`; `sandbox-reaper.test.ts` excludes idle rows from the fast lane; the live provider harness uses a one-minute native timer.
+
+### Every sandbox stop must revoke all persisted turn authority (2026-08-17)
+
+**When:** changing provider webhooks, idle reaping, manual stop, or the shared stopped-state writer. Remove `activeTurn`, `activeTurns`, and `lifecycleStopClaim` in the same transaction that sets `status='stopped'`. Do not rely on the reaper to clear tokens first; a provider-native timer or webhook can win that race.
+*Incident:* the one-minute Dev Platinum proof stopped after `deadline_at`, but the provider webhook committed `status='stopped'` with a synthetic unknown `activeTurns` token still present.
+*Enforcer:* `sandbox-state-sync.test.ts` requires `applyStoppedState()` to remove every turn-authority key atomically for all stop paths. The live provider harness verifies the stopped row has zero active turns.
+
+### Presigned uploads must suppress runtime-inferred content types (2026-08-17)
+
+**When:** sending a body to a provider-generated signed upload URL. Send the exact signed headers. Set an explicit empty `Content-Type` when the signature omits it. Do not let Bun infer a MIME type from `Bun.file()`.
+*Incident:* E2B template uploads returned GCS `403 SignatureDoesNotMatch` because Bun added `application/gzip` to a URL signed with an empty content type. Template creation succeeded, but every new immutable image remained unbuildable.
+*Enforcer:* `unit-e2b-bun-upload-patch.test.ts` requires the E2B dependency patch to use `Bun.file()` and an explicit empty `Content-Type` in both bundles. A real E2B template build verifies the signed upload.
+
+### Provider lifecycle renewal must use the provider activity primitive (2026-08-17)
+
+**When:** implementing provider-neutral lifecycle renewal. Use the provider's native activity or deadline API. Do not assume a guest command updates the provider lifecycle clock. Reject renewal unless the provider reports the sandbox as running.
+*Incident:* Daytona accepted repeated `true` guest commands while its one-minute native autostop clock continued unchanged. The sandbox stopped 21 seconds before Kortix `deadline_at` during deterministic lifecycle testing.
+*Enforcer:* `daytona.test.ts` requires `refreshActivity()`, rejects stopped sandboxes, propagates failures, and bounds a hung refresh. The live provider harness forces a one-minute native timer.
+
+### A persisted user message is not proof that its OpenCode turn is active (2026-08-17)
+
+**When:** changing exact-turn lifecycle probes. Treat a user-only or incomplete assistant message as active only when `/session/status` reports that exact session as `busy` or `retry`. Treat an idle session as terminal. Treat an unreadable or unknown status as unknown and non-renewing.
+*Incident:* a native OpenCode prompt persisted its user message but created no assistant message; the exact-message probe returned active for 198 seconds and would have renewed an idle Platinum sandbox indefinitely.
+*Enforcer:* `orphaned-turn-finalize.test.ts` covers busy, retry, idle, and unreadable session status.
+
+### A sandbox lifecycle grant requires exact active-turn evidence (2026-08-17)
+
+**When:** changing session prompt delivery, sandbox reaping, or any sandbox provider lifecycle adapter. Persist token-bound `delivering` authority before upstream delivery. Promote only after OpenCode exposes the exact user `messageID`. Renew both `deadline_at` and the provider-native timer only from a fresh exact-turn probe. Treat unknown evidence as non-renewing. Linearize idle stop against prompt delivery with one database claim, and never let renewal wake a stopped sandbox.
+*Incident:* long OpenCode image analyses outlived E2B's absolute timeout and provider idle timers; Kortix displayed “Your session will be restored” while the agent still worked.
+*Enforcer:* `sandbox-turn-lifecycle.test.ts`, `integration-sandbox-turn-lifecycle.test.ts`, `sandbox-reaper.test.ts`, `initial-turn-lifecycle.test.ts`, and all three provider lifecycle suites.
+
 ### A platform-injected principal must never have its authority re-derived from user config (2026-08-13)
 
 **When:** touching code that RE-resolves an already-minted credential —
@@ -388,3 +449,46 @@ Do not read a fast `session_start_timeline.totalMs` as proof of a warm-pool box
 either: `KORTIX_WARM_SNAPSHOT_ENABLED` defaults false, and ~2s is also what
 creating a container from an ALREADY-BUILT image costs.
 *Incident:* the token-binding verification failed twice before the image landed.
+
+### A resource-scaled timeout moves the cliff, it never removes it (2026-08-16)
+
+**When:** sizing any timeout whose budget you are tempted to scale by how big
+the work is — prompt bytes, file size, row count, payload length.
+
+The LLM gateway gave a new upstream stream a first-byte budget of
+`30_000 + ceil((requestBytes - 64KiB) / 1MiB) * 15_000`, capped at `120_000`.
+Four size steps land on `90_000` exactly, so every request body between
+3,211,776 and 4,259,840 bytes got a 90-second budget and then died with
+`upstream stream probe timeout exceeded (90000ms with no bytes)` on a
+completely healthy upstream. Users saw a Claude Fable 5 turn fail identically
+on every retry once an analysis step pushed the context past ~3 MiB.
+
+The scaling was the bug, not an insufficient constant. Growing the context
+raises the budget linearly but raises the model's prefill + thinking time by
+more, so the cliff is reachable at every size — it just relocates. **Scale the
+budget and you have chosen which inputs fail, not whether they fail.**
+
+Three rules:
+
+- **A slow dependency is not a broken one.** Reserve timeouts for detecting
+  *death*. Where "slow" and "dead" are locally indistinguishable — which is
+  always, for a model that is prefilling — the deadline must pick a
+  *degradation*, not a failure. Here it became a COMMIT point: the stream is
+  handed to the relay, which sends headers and heartbeats while the model
+  works. Failing over is what silently downgraded users to a fallback model.
+- **A timeout you cannot observe from the outside will fire on healthy work.**
+  The transport emitted nothing for the AI SDK's `start` / `start-step` parts,
+  so a live prefill was byte-identical to a dead socket. One keep-alive byte at
+  stream open is what separates them.
+- **Check the edge before raising any budget.** Nothing is written downstream
+  while a pre-header probe runs, and the live `kortix.com` zone reports
+  `proxy_read_timeout = 125` with `editable: false` (Free plan). Raising the
+  probe past ~125s cannot work — Cloudflare 524s first. Measured, not assumed:
+  `GET /zones/$ZONE/settings/proxy_read_timeout`.
+
+**Enforcement:** `streaming.test.ts` sweeps request sizes 0–16 MiB and asserts
+the resolver returns one constant, so no size can reproduce 90,000 again.
+**Dead-telemetry corollary:** when a failure stops being reachable, delete the
+metric that counted it. `kortix.probe_timeout` was left pinned to false on
+every span — a dashboard built on it looks healthy by construction.
+*Incident:* PR #6473, merged `7e8a56badaef80374a189e0e427a08eb06b44697`.

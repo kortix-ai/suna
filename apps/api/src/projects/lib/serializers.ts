@@ -131,9 +131,9 @@ export function serializeSession(
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
-    // A row the caller cannot ACCESS is still listed (scope=project shows a
-    // manager the whole project) but must not carry the session's CONTENT.
-    // metadata holds initial_prompt — the literal text an end-user typed.
+    // Inventory filters inaccessible rows. Keep this boundary fail-closed for
+    // other callers that serialize with canAccess=false. Metadata holds
+    // initial_prompt — the literal text an end-user typed.
     metadata: canAccess ? (row.metadata ?? {}) : {},
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).

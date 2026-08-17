@@ -96,6 +96,7 @@ import {
   getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
@@ -1361,6 +1362,7 @@ let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
+  startActiveTurnRenewal();
   startProjectMaintenance();
   startProjectTriggerScheduler();
   // Mint the global platform-default sandbox image once per leadership term so
@@ -1385,6 +1387,7 @@ async function startSingletonWorkers() {
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
+  stopActiveTurnRenewal();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopSunaMigrationWorker();

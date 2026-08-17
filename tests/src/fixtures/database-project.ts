@@ -109,6 +109,27 @@ export async function createDatabaseProject(
   return { id: projectId, name: input.name };
 }
 
+export async function setDatabaseEnterpriseDemo(
+  env: Env,
+  accountId: string,
+  enabled: boolean,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "update enterprise demo for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `INSERT INTO kortix.credit_accounts (account_id, demo_enterprise)
+       VALUES ($1::uuid, $2)
+       ON CONFLICT (account_id)
+       DO UPDATE SET demo_enterprise = EXCLUDED.demo_enterprise`,
+      [accountId, enabled],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 export async function mergeDatabaseProjectMetadata(
   env: Env,
   projectId: string,
@@ -135,6 +156,8 @@ export async function createDatabaseSession(
     projectId: string;
     accountId: string;
     userId: string;
+    visibility?: "private" | "project" | "restricted";
+    metadata?: Record<string, unknown>;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
@@ -148,16 +171,27 @@ export async function createDatabaseSession(
          account_id,
          project_id,
          branch_name,
-         created_by
+         created_by,
+         visibility,
+         metadata
        )
        VALUES (
          $1,
          $2::uuid,
          $3::uuid,
          'session/' || $1,
-         $4::uuid
+         $4::uuid,
+         $5::kortix.project_session_visibility,
+         $6::jsonb
        )`,
-      [sessionId, input.accountId, input.projectId, input.userId],
+      [
+        sessionId,
+        input.accountId,
+        input.projectId,
+        input.userId,
+        input.visibility ?? "private",
+        JSON.stringify(input.metadata ?? {}),
+      ],
     );
   } finally {
     await client.end();

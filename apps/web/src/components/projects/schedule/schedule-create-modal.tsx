@@ -37,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import { createProjectTrigger, listProjectSessions, upsertProjectSecret } from '@kortix/sdk';
 import {
@@ -139,6 +140,11 @@ export function ScheduleCreateModal({
   const [conditions, setConditions] = useState<ConditionRow[]>([]);
   const [customId, setCustomId] = useState('');
   const [startActive, setStartActive] = useState(true);
+  const [sessionAccess, setSessionAccess] = useState<SharingSelection>({
+    mode: 'private',
+    memberIds: [],
+    groupIds: [],
+  });
 
   const [error, setError] = useState<string | null>(null);
 
@@ -170,6 +176,7 @@ export function ScheduleCreateModal({
     setConditions([]);
     setCustomId('');
     setStartActive(true);
+    setSessionAccess({ mode: 'private', memberIds: [], groupIds: [] });
     setError(null);
   }, [open]);
 
@@ -223,6 +230,7 @@ export function ScheduleCreateModal({
         enabled: startActive,
         ...(agentName ? { agent: agentName } : {}),
         ...(model ? { model: modelKeyToWire(model) } : {}),
+        session_access: sessionAccess,
         ...(mode !== 'fresh' ? { session_mode: mode } : {}),
         ...(mode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
         ...(mode === 'keyed' ? { session_key: sessionKey.trim() } : {}),
@@ -419,6 +427,33 @@ export function ScheduleCreateModal({
                         onSessionKeyChange={setSessionKey}
                         sessions={sessions.data ?? []}
                         sessionsLoading={sessions.isLoading}
+                      />
+                    </Field>
+
+                    <Field
+                      label="Session access"
+                      hint="Pinned sessions keep their own sharing settings. This policy applies when the trigger creates a session."
+                    >
+                      <SharingPicker
+                        projectId={projectId}
+                        value={sessionAccess}
+                        onChange={setSessionAccess}
+                        showHeading={false}
+                        copy={{
+                          heading: 'Who can access sessions created by this trigger',
+                          private: {
+                            label: 'Trigger agent and project managers',
+                            desc: 'Project managers can always open trigger-created sessions.',
+                          },
+                          members: {
+                            label: 'Selected teammates',
+                            desc: 'Choose additional members and groups. Project managers always have access.',
+                          },
+                          project: {
+                            label: 'Whole project',
+                            desc: 'Every project member can open these sessions.',
+                          },
+                        }}
                       />
                     </Field>
 

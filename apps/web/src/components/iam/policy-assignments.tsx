@@ -68,6 +68,10 @@ import {
 const RBAC_UPSELL_MESSAGE =
   'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
 
+// Hoisted so table rows do not rebuild an Intl formatter per render.
+// No-options Intl.DateTimeFormat matches `toLocaleDateString()` byte-for-byte.
+const expiresDateFormat = new Intl.DateTimeFormat();
+
 interface PolicyAssignmentsProps {
   accountId: string;
   canManage: boolean;
@@ -316,7 +320,7 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">{scopeLabel(p)}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '—'}
+                    {p.expires_at ? expiresDateFormat.format(new Date(p.expires_at)) : '—'}
                   </TableCell>
                   <TableCell>
                     {canManage && (

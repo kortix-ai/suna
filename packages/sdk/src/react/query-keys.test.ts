@@ -82,7 +82,6 @@ describe('qk.project', () => {
       qk.project.appAccessSession(id, 'app_1'),
       qk.project.appDeployments(id, 'app_1'),
       qk.project.triggers(id),
-      qk.project.starterSuggestions(id),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),
       qk.project.branches(id),
@@ -167,8 +166,9 @@ describe('qk.project', () => {
   });
 
   // `listProjectSessions(id, { scope })` is a DIFFERENT server request per
-  // scope ('visible' filters to what the caller can see; 'project' is the
-  // manager-only unfiltered full inventory) — not a client-side filter of one
+  // scope ('visible' filters ordinary lifecycle rows; 'project' is the
+  // manager-only lifecycle inventory, but both omit inaccessible sessions) —
+  // not a client-side filter of one
   // response. The scope therefore has to be part of the key: sharing one
   // scope-less slot let a 'project' reader and a default reader silently
   // overwrite what the other saw. The two scoped forms are SIBLINGS, not
@@ -271,24 +271,6 @@ describe('qk.project', () => {
     expect(qk.project.triggers(id)).not.toEqual(qk.project.secrets(id) as never);
     expect(startsWith(qk.project.triggers(id), qk.project.secrets(id))).toBe(false);
     expect(startsWith(qk.project.secrets(id), qk.project.triggers(id))).toBe(false);
-  });
-
-  // `GET /projects/:id/starter-suggestions` — same shape of guard as
-  // `triggers(id)` above: a literal discriminator segment, sibling of every
-  // other project-scoped key, never a prefix of one and never prefixed by one.
-  test('starterSuggestions(id) is a sibling of triggers(id) and files(id), not a prefix relationship', () => {
-    expect(qk.project.starterSuggestions(id)).not.toEqual(qk.project.triggers(id) as never);
-    expect(qk.project.starterSuggestions(id)).not.toEqual(qk.project.files(id) as never);
-    expect(startsWith(qk.project.starterSuggestions(id), qk.project.triggers(id))).toBe(false);
-    expect(startsWith(qk.project.triggers(id), qk.project.starterSuggestions(id))).toBe(false);
-    expect(startsWith(qk.project.starterSuggestions(id), qk.project.files(id))).toBe(false);
-    expect(startsWith(qk.project.files(id), qk.project.starterSuggestions(id))).toBe(false);
-  });
-
-  test('starterSuggestions(id) differs for different projects', () => {
-    expect(qk.project.starterSuggestions('proj-a')).not.toEqual(
-      qk.project.starterSuggestions('proj-b') as never,
-    );
   });
 
   test('App deployment history nests under its App inventory without colliding with it', () => {

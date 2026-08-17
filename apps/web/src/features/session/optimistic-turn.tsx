@@ -215,10 +215,17 @@ export function HighlightMentions({
 
   const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
 
-  const segments = useMemo(
-    () => buildMentionSegments({ text: cleanText, sessionTitles, agentNames }),
-    [cleanText, sessionTitles, agentNames],
-  );
+  const segments = useMemo(() => {
+    const built = buildMentionSegments({ text: cleanText, sessionTitles, agentNames });
+    // Key each segment by its source offset in the text — content-derived and
+    // unique per segment, even when the same mention appears twice.
+    let offset = 0;
+    return built.map((seg) => {
+      const key = `${offset}:${seg.type ?? 'text'}`;
+      offset += seg.text.length;
+      return { ...seg, key };
+    });
+  }, [cleanText, sessionTitles, agentNames]);
 
   const openSessionMention = (raw: string) => {
     // Direct session ID (ses_...) — navigate without title lookup
@@ -243,28 +250,28 @@ export function HighlightMentions({
 
   return (
     <>
-      {segments.map((seg, i) =>
+      {segments.map((seg) =>
         seg.type === 'file' ? (
           // Static when there is no runtime to open the file in yet (the
           // instant shell) — a chip that looks pressable and does nothing is
           // worse than one that plainly does not.
           <MentionChip
-            key={i}
+            key={seg.key}
             kind="file"
             label={seg.text.replace(/^@/, '')}
             onClick={onFileClick ? () => onFileClick(seg.text.replace(/^@/, '')) : undefined}
           />
         ) : seg.type === 'session' ? (
           <MentionChip
-            key={i}
+            key={seg.key}
             kind="session"
             label={seg.text.replace(/^@/, '')}
             onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
           />
         ) : seg.type === 'agent' ? (
-          <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
+          <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
         ) : (
-          <span key={i}>{seg.text}</span>
+          <span key={seg.key}>{seg.text}</span>
         ),
       )}
     </>

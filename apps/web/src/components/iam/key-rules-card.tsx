@@ -136,8 +136,8 @@ function KeyRulesForm({
 }) {
   const queryClient = useQueryClient();
   const [requireExpiry, setRequireExpiry] = useState(policy.require_expiry);
-  const [maxLifetime, setMaxLifetime] = useState(toField(policy.max_lifetime_days));
-  const [idleRevoke, setIdleRevoke] = useState(toField(policy.idle_revoke_days));
+  const [maxLifetime, setMaxLifetime] = useState(() => toField(policy.max_lifetime_days));
+  const [idleRevoke, setIdleRevoke] = useState(() => toField(policy.idle_revoke_days));
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({

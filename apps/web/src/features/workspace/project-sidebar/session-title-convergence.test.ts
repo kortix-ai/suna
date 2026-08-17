@@ -33,6 +33,7 @@ import {
   UNTITLED_SESSION_LABEL,
   getSessionDisplayTitle,
   hasSessionAwaitingTitle,
+  isAwaitingTitle,
   projectSessionsRefetchInterval,
   sessionTitleHasLanded,
 } from './project-session-list-helpers';
@@ -206,5 +207,42 @@ describe('projectSessionsRefetchInterval — converging on a pending title', () 
         }),
       ).toBe(false);
     }
+  });
+});
+
+describe('adopted warm sessions and the title window', () => {
+  // An adopted warm session was CREATED when the user landed on the project
+  // home — possibly long before the send. Its title generation starts at the
+  // first prompt, i.e. at adoption, which stamps metadata.last_activity_at
+  // (apps/api/src/projects/routes/warm-sessions.ts). Windowing on created_at
+  // alone skipped the fast title poll for exactly the sessions the home send
+  // produces, leaving "New session" in the sidebar for up to the 60s poll.
+  test('a titleless session adopted just now is awaiting its title even when created long ago', () => {
+    const adopted = session({
+      created_at: new Date(NOW - 30 * 60_000).toISOString(),
+      metadata: { last_activity_at: new Date(NOW - 3_000).toISOString() },
+    });
+
+    expect(isAwaitingTitle(adopted, NOW)).toBe(true);
+  });
+
+  test('an old session whose last activity is also old stays out of the fast poll', () => {
+    const dormant = session({
+      created_at: new Date(NOW - 30 * 60_000).toISOString(),
+      metadata: { last_activity_at: new Date(NOW - 20 * 60_000).toISOString() },
+    });
+
+    expect(isAwaitingTitle(dormant, NOW)).toBe(false);
+  });
+
+  test('an unparseable last_activity_at falls back to the created_at window', () => {
+    const young = session({ metadata: { last_activity_at: 'not-a-date' } });
+    expect(isAwaitingTitle(young, NOW)).toBe(true);
+
+    const old = session({
+      created_at: new Date(NOW - 30 * 60_000).toISOString(),
+      metadata: { last_activity_at: 'not-a-date' },
+    });
+    expect(isAwaitingTitle(old, NOW)).toBe(false);
   });
 });

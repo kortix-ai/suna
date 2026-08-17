@@ -223,8 +223,11 @@ export interface BulkDeleteSummary {
 export function summarizeBulkDelete(
   results: Array<{ sessionId: string; ok: boolean }>,
 ): BulkDeleteSummary {
-  const succeeded = results.filter((result) => result.ok).map((result) => result.sessionId);
-  const failed = results.filter((result) => !result.ok).map((result) => result.sessionId);
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+  for (const result of results) {
+    (result.ok ? succeeded : failed).push(result.sessionId);
+  }
   const total = results.length;
 
   if (failed.length === 0) {

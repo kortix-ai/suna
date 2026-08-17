@@ -4,7 +4,11 @@ import { readFileSync } from 'node:fs'
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
-import { opencodeTurnInFlight } from '../opencode-turn-state'
+import {
+  opencodeDeliveryInFlight,
+  opencodeTurnInFlight,
+  readPinnedSessionId,
+} from '../opencode-turn-state'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -54,6 +58,17 @@ export type SandboxBootState = {
   initialOpenCodeSessionError?: string | null
   /** Fatal local persistence failure in the OpenCode audit relay. */
   auditRelayError?: string | null
+}
+
+export function resolveTurnObservationIdentity(
+  requestedSession: string | undefined,
+  requestedMessage: string | undefined,
+  pinnedSession: string | null,
+): { sessionId: string | null; messageId: string | null } {
+  return {
+    sessionId: requestedSession || pinnedSession,
+    messageId: requestedMessage || null,
+  }
 }
 
 /**
@@ -117,6 +132,29 @@ export function createHealthRouter(
         ? 'error'
         : opencodeState
 
+    const requestedTurnSession = c.req.query('turn_session_id')?.trim()
+    const requestedTurnMessage = c.req.query('turn_message_id')?.trim()
+    const observedTurn = resolveTurnObservationIdentity(
+      requestedTurnSession,
+      requestedTurnMessage,
+      readPinnedSessionId(),
+    )
+    const turnInFlight =
+      c.req.query('turn') === '1'
+        ? observedTurn.sessionId && observedTurn.messageId
+          ? await opencodeDeliveryInFlight(
+              opencode.getInternalUrl(),
+              process.env.KORTIX_WORKSPACE || '/workspace',
+              observedTurn.sessionId,
+              observedTurn.messageId,
+            )
+          : await opencodeTurnInFlight(
+              opencode.getInternalUrl(),
+              process.env.KORTIX_WORKSPACE || '/workspace',
+              observedTurn.sessionId || undefined,
+            )
+        : undefined
+
     return c.json({
       daemon: 'ok',
       status,
@@ -156,10 +194,7 @@ export function createHealthRouter(
       // that is still running.
       ...(c.req.query('turn') === '1'
         ? {
-            turn_in_flight: await opencodeTurnInFlight(
-              opencode.getInternalUrl(),
-              process.env.KORTIX_WORKSPACE || '/workspace',
-            ),
+            turn_in_flight: turnInFlight,
           }
         : {}),
       boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,

@@ -9,7 +9,7 @@ function readRepoFile(path: string): string {
 }
 
 describe('E2B template uploads on Bun', () => {
-  test('uses Bun.file for the presigned S3 request body', () => {
+  test('uses Bun.file without a runtime-inferred content type', () => {
     const packageJson = JSON.parse(readRepoFile('package.json')) as {
       pnpm?: { patchedDependencies?: Record<string, string> };
     };
@@ -22,6 +22,7 @@ describe('E2B template uploads on Bun', () => {
 
     const patch = readRepoFile(patchPath as string);
     expect(patch.match(/globalThis\.Bun \? globalThis\.Bun\.file\(filePath\)/g)).toHaveLength(2);
+    expect(patch.match(/"Content-Type": ""/g)).toHaveLength(2);
     expect(patch).toContain('Readable.toWeb');
   });
 });

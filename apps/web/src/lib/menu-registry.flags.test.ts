@@ -99,7 +99,7 @@ describe('menu registry feature-flag gating', () => {
     );
     expect(flagged.map((item) => item.id)).toContain('proj-apps');
     expect(paletteSource).toContain(
-      'if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;',
+      'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );
   });
 

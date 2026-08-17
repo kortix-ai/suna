@@ -1548,13 +1548,13 @@ export function DiagnosticsDisplay({
 
   return (
     <div className="space-y-1 px-2 pb-2">
-      {diagnostics.map((d, i) => {
+      {diagnostics.map((d) => {
         const isError = d.severity === 1;
         const isWarning = d.severity === 2;
         return (
           <button
             type="button"
-            key={i}
+            key={`${d.range.start.line}:${d.range.start.character}:${d.severity ?? 0}:${d.message}`}
             disabled={!navigationEnabled || !filePath}
             className={cn(
               'group flex w-full items-start gap-1.5 text-left text-xs transition-colors',

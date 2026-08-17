@@ -232,10 +232,10 @@ export function ExpandableOutput({
     // Functional update, so an unchanged height is the SAME value and React
     // bails out of the render entirely — see `nextContentHeight` for why a
     // zero-height observation has to be rejected rather than stored.
-    const measure = () =>
-      setContentHeight((previous) =>
-        nextContentHeight(previous, el.getBoundingClientRect().height),
-      );
+    const measure = () => {
+      const observed = el.getBoundingClientRect().height;
+      setContentHeight((previous) => nextContentHeight(previous, observed));
+    };
 
     // First read after the next frame, so layout has settled.
     const rafId = requestAnimationFrame(measure);

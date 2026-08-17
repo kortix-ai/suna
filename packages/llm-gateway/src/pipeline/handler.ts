@@ -856,7 +856,30 @@ export async function handleChatCompletions(
     const probe = await probeStream(candidateUpstream.body, {
       inactivityTimeoutMs: streamProbeTimeoutMs,
     });
-    if (probe.hasContent) {
+    // A slow candidate is not a broken one. The probe holds the response back
+    // only so a DEAD candidate can be swapped out before headers are committed;
+    // once it has merely run out of patience, the correct move is to commit the
+    // stream and let relayStream heartbeat downstream while the model works —
+    // not to cancel a healthy upstream mid-prefill and fail the turn. Failing
+    // over here is what produced the deterministic
+    // `upstream stream probe timeout exceeded (90000ms with no bytes)` on large
+    // Fable contexts (see PROBE_COMMIT_DEADLINE_MS in streaming.ts).
+    //
+    // Only a TIMEOUT commits. Every other content-free probe outcome below
+    // (structured error frame, transport read failure, cleanly-closed empty
+    // stream) is a real failure and still fails over.
+    const probeTimedOut = probe.readError?.code === 'stream_probe_timeout';
+    if (probe.hasContent || probeTimedOut) {
+      if (probeTimedOut) {
+        logger.info(
+          `[llm-gateway] committing slow-but-live upstream from ${chosenDescriptor.provider} ${requestId} after ${streamProbeTimeoutMs}ms with no bytes — relaying with heartbeats instead of failing over`,
+        );
+        step('upstream_slow_commit', {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          probeTimeoutMs: streamProbeTimeoutMs,
+        });
+      }
       upstream = candidateUpstream;
       descriptor = chosenDescriptor;
       selectedRouteModel = chosenRouteModel;
@@ -1119,7 +1142,13 @@ export async function handleChatCompletions(
     throw new Error(`unreachable: streaming dispatch exited without a probe result (${requestId})`);
   }
   const readable = relayStream({
-    primed: { reader: streamProbe.reader, chunks: streamProbe.chunks },
+    primed: {
+      reader: streamProbe.reader,
+      chunks: streamProbe.chunks,
+      // Present only when the probe committed on its deadline rather than on
+      // content; adopting it keeps the first post-commit chunk from being lost.
+      ...(streamProbe.pendingRead ? { pendingRead: streamProbe.pendingRead } : {}),
+    },
     captureBodies,
     requestId,
     logger,

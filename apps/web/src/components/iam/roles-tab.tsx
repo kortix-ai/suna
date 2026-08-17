@@ -510,14 +510,14 @@ function RoleDialog({
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return groups;
-    return groups
-      .map((group) => ({
-        label: group.label,
-        entries: group.entries.filter(
-          (e) => e.label.toLowerCase().includes(q) || e.action.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((group) => group.entries.length > 0);
+    const result: typeof groups = [];
+    for (const group of groups) {
+      const entries = group.entries.filter(
+        (e) => e.label.toLowerCase().includes(q) || e.action.toLowerCase().includes(q),
+      );
+      if (entries.length > 0) result.push({ label: group.label, entries });
+    }
+    return result;
   }, [groups, search]);
 
   const keyValid = KEY_RE.test(keyValue);

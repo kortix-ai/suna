@@ -113,9 +113,15 @@ export function useEventStreamRefs(deps: {
   const markSessionAbortedLocally = useRef(
     (sessionID: string, message = 'The operation was aborted because the runtime shut down.') => {
       if (!sessionID) return;
+      // `reason: 'runtime-disposed'` — pure infrastructure (OpenCode
+      // disposed/respawned mid-stream), never a user action. Read via the
+      // SDK's `abortErrorReason` (`core/http/abort-error.ts`); apps/web
+      // renders this reason as nothing — no Interrupted row, no error
+      // banner — because a runtime that respawns cleanly must not scar the
+      // transcript.
       const error: SyntheticAbortError = {
         name: 'AbortError',
-        data: { message },
+        data: { message, reason: 'runtime-disposed' },
       };
       stopCompaction(sessionID);
       // Locally-synthesized event — not from the wire, so it intentionally

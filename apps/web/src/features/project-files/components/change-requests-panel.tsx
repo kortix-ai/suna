@@ -31,14 +31,16 @@ import { OpenChangeRequestDialog } from './open-change-request-dialog';
 // helpers
 // ---------------------------------------------------------------------------
 
+const fullTimestampFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatFull(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fullTimestampFormat.format(timestamp);
 }
 
 function tsFromCr(cr: ChangeRequest): number {

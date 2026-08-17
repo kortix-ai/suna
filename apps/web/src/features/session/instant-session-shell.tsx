@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
@@ -28,6 +28,8 @@ import type { SessionStartStage } from '@kortix/sdk';
 /** Stable empty list, so a session with nothing queued does not hand the
  *  zustand selector a fresh array on every render. */
 const EMPTY_PENDING: WebQueuedMessage[] = [];
+
+const subscribeToNothing = () => () => {};
 
 /**
  * The instant session shell — shown the moment a freshly-created session opens,
@@ -90,11 +92,17 @@ export function InstantSessionShell({
 
   // A pending prompt may already be staged (home composer send) → show the
   // booting view immediately in that case.
+  const hydrated = useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
   const [submission, setSubmission] = useState<{
     text: string;
     files: AttachedFile[];
-  } | null>(() => {
-    if (typeof window === 'undefined') return null;
+  } | null>(null);
+  const stashedSubmission = useMemo(() => {
+    if (!hydrated) return null;
     // `readStartStash` covers the canonical SDK stash (written under the route
     // session id by this shell, the project-home composer, and
     // `useConfigureThread` — all three producers now share the one canonical
@@ -106,8 +114,9 @@ export function InstantSessionShell({
       text,
       files: usePendingFilesStore.getState().files,
     };
-  });
-  const submitted = submission?.text ?? null;
+  }, [hydrated, sessionId]);
+  const effectiveSubmission = submission ?? stashedSubmission;
+  const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
@@ -268,7 +277,7 @@ export function InstantSessionShell({
           )}
         >
           <div className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6">
-            {submission && (
+            {effectiveSubmission && (
               <div className="flex min-w-0 flex-col">
                 {/* The optimistic turn, rendered by the component SessionChat
                     also renders — not a copy of it. `deferPreview` is the one
@@ -277,7 +286,10 @@ export function InstantSessionShell({
                     waiting row underneath says "Thinking" at every boot stage,
                     exactly as it will once the real chat takes over. */}
                 <OptimisticTurn
-                  text={buildOptimisticPromptTextWithUploads(submission.text, submission.files)}
+                  text={buildOptimisticPromptTextWithUploads(
+                    effectiveSubmission.text,
+                    effectiveSubmission.files,
+                  )}
                   agentNames={agentNames}
                   onFileClick={openFileInComputer}
                   deferPreview
@@ -318,12 +330,13 @@ export function InstantSessionShell({
  * the side panel opens. Falls back to inline on mobile (no layer). Must render
  * as a descendant of SessionLayout to read the layer from context.
  */
+const shellWallpaperEl = (
+  <div className="pointer-events-none absolute inset-0 z-0">
+    <SessionWelcome />
+  </div>
+);
+
 function ShellWallpaper() {
   const layer = useSessionWallpaperLayer();
-  const wallpaper = (
-    <div className="pointer-events-none absolute inset-0 z-0">
-      <SessionWelcome />
-    </div>
-  );
-  return layer ? createPortal(wallpaper, layer) : wallpaper;
+  return layer ? createPortal(shellWallpaperEl, layer) : shellWallpaperEl;
 }

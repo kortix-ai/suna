@@ -576,27 +576,6 @@ export function warmPipedreamCatalog(): void {
   getCatalogSnapshot(crawlPage);
 }
 
-/**
- * The current catalogue apps (ranked, `hasActions` only), or `null` while the
- * index is warming. Never blocks — same contract as {@link getCatalogSnapshot}:
- * it returns whatever is cached and schedules a refresh behind it, it never
- * awaits a crawl or falls back to the live paged API.
- *
- * For callers (e.g. starter-suggestions' signal collection) that must
- * fail-open to nothing rather than pay for a live fetch.
- */
-export function getPipedreamCatalogApps(): CatalogApp[] | null {
-  const { snapshot } = getCatalogSnapshot(crawlPage);
-  return snapshot?.apps ?? null;
-}
-
-/** `img_src` for one catalogue app by slug, or `null` if it isn't in the
- *  current snapshot (unknown slug, or the index hasn't crawled it yet).
- *  Non-blocking — same contract as {@link getPipedreamCatalogApps}. */
-export function pipedreamConnectorIcon(slug: string): string | null {
-  return getPipedreamCatalogApps()?.find((app) => app.slug === slug)?.imgSrc ?? null;
-}
-
 /** Execute a Pipedream action via the Connect API. `accountId` is the binding; `userId` scopes the external id. */
 export async function runPipedreamAction(
   projectId: string,

@@ -13,16 +13,21 @@ export async function saveToolKeys(
   entries: readonly (readonly [string, string])[],
   put: (key: string, value: string) => Promise<{ ok: boolean }>,
 ): Promise<{ succeeded: string[]; failed: string[] }> {
+  const results = await Promise.all(
+    entries.map(async ([key, value]) => {
+      try {
+        const { ok } = await put(key, value);
+        return { key, ok };
+      } catch {
+        return { key, ok: false };
+      }
+    }),
+  );
   const succeeded: string[] = [];
   const failed: string[] = [];
-  for (const [key, value] of entries) {
-    try {
-      const { ok } = await put(key, value);
-      if (ok) succeeded.push(key);
-      else failed.push(key);
-    } catch {
-      failed.push(key);
-    }
+  for (const { key, ok } of results) {
+    if (ok) succeeded.push(key);
+    else failed.push(key);
   }
   return { succeeded, failed };
 }

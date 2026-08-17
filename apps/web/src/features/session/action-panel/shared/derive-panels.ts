@@ -19,7 +19,12 @@ import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
 import { humanizeSearchQuery } from '../../tool/shared/search-query';
-import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
+import {
+  looksLikeHtml,
+  parseWebSearchOutput,
+  wsDomain,
+  type WebSearchSource,
+} from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
 import {
@@ -475,9 +480,12 @@ function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
   const input = (part.state?.input ?? {}) as Record<string, unknown>;
 
   if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
-    const results = parseWebSearchOutput(rawOutputOf(part))
-      .flatMap((r) => r.sources)
-      .filter((r) => !!r.url);
+    const results: WebSearchSource[] = [];
+    for (const parsed of parseWebSearchOutput(rawOutputOf(part))) {
+      for (const source of parsed.sources) {
+        if (source.url) results.push(source);
+      }
+    }
     if (results.length > 0) {
       return results.map((r) => ({ url: r.url, label: r.title || wsDomain(r.url) }));
     }

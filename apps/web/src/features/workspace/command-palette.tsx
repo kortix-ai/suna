@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionSharedBadge } from '@/components/projects/session-shared-badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -324,9 +325,9 @@ function FileSearchPage({
             }
             forceMount
           >
-            {matches.map((match, i) => (
+            {matches.map((match) => (
               <CommandItem
-                key={`${filePath}:${match.line_number}:${i}`}
+                key={`${filePath}:${match.line_number}:${match.lines || ''}`}
                 value={sanitizeCmdkValue(`content ${filePath} ${match.lines} ${match.line_number}`)}
                 onSelect={() => onSelect(filePath, match.line_number)}
               >
@@ -381,17 +382,16 @@ function MessagesPage({
   const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
 
   const items = useMemo(() => {
-    return turns
-      .map((turn) => {
-        const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-        const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-        return {
-          id: turn.userMessage.info.id,
-          text: stripped,
-        };
-      })
-      .filter((item) => item.text.length > 0);
+    const result: { id: string; text: string }[] = [];
+    for (const turn of turns) {
+      const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
+      const raw = textParts.map((p) => p.text).join(' ');
+      const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
+      if (stripped.length > 0) {
+        result.push({ id: turn.userMessage.info.id, text: stripped });
+      }
+    }
+    return result;
   }, [turns]);
 
   const filtered = useMemo(() => {
@@ -670,21 +670,21 @@ export function CommandPalette() {
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
   const allPaletteItems = useMemo(() => {
-    return getItemsForSurface('commandPalette')
-      .filter((item) => {
-        if (LEGACY_PALETTE_HIDDEN.has(item.id)) return false;
-        if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
-        if (item.requiresBilling && !billingEnabled) return false;
-        if (item.requiresSession && !currentSessionId) return false;
-        if (item.requiresProject && !projectId) return false;
-        if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;
-        return true;
-      })
-      .map((item) =>
+    const result: MenuItemDef[] = [];
+    for (const item of getItemsForSurface('commandPalette')) {
+      if (LEGACY_PALETTE_HIDDEN.has(item.id)) continue;
+      if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
+      if (item.requiresBilling && !billingEnabled) continue;
+      if (item.requiresSession && !currentSessionId) continue;
+      if (item.requiresProject && !projectId) continue;
+      if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
+      result.push(
         item.href?.includes('{projectId}') && projectId
           ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
           : item,
       );
+    }
+    return result;
   }, [billingEnabled, currentSessionId, projectId, sidebarCtx, projectFlags]);
 
   const filteredNavItems = useMemo(() => {
@@ -1750,6 +1750,7 @@ export function CommandPalette() {
                           >
                             <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
+                            <SessionSharedBadge session={session} />
                             <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
@@ -1912,6 +1913,7 @@ export function CommandPalette() {
                           >
                             <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
+                            <SessionSharedBadge session={session} />
                             {session.session_id === params?.sessionId && (
                               <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                             )}
@@ -2294,6 +2296,7 @@ export function CommandPalette() {
                     >
                       <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>
+                      <SessionSharedBadge session={session} />
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {formatRelativeTime(new Date(sessionLastActivityAt(session)).getTime())}
                       </span>

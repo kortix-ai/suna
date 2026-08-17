@@ -131,17 +131,14 @@ const Footer = () => {
               <div key={section.title}>
                 <h3 className="text-muted-foreground pb-2 text-sm">{section.title}</h3>
                 <ul className="space-y-0">
-                  {section.links
-                    .filter(
-                      (link) =>
-                        process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' ||
-                        link.href !== '/use-cases',
-                    )
-                    .map((link) => (
-                    <li key={link.label}>
-                      <FooterLink {...link} />
-                    </li>
-                  ))}
+                  {section.links.map((link) =>
+                    process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false' &&
+                    link.href === '/use-cases' ? null : (
+                      <li key={link.label}>
+                        <FooterLink {...link} />
+                      </li>
+                    ),
+                  )}
                 </ul>
               </div>
             ))}

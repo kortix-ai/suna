@@ -145,9 +145,10 @@ export function buildApiKeyRows({
 }: BuildApiKeyRowsInput): ApiKeyRow[] {
   const projectName = new Map(projects.map((p) => [p.project_id, p.name]));
 
-  const personal: ApiKeyRow[] = tokens
-    .filter((t) => !isRuntimeMintedKey(t))
-    .map((t) => ({
+  const personal: ApiKeyRow[] = [];
+  for (const t of tokens) {
+    if (isRuntimeMintedKey(t)) continue;
+    personal.push({
       id: t.token_id,
       kind: 'personal',
       name: t.name,
@@ -157,7 +158,8 @@ export function buildApiKeyRows({
       lastUsedAt: t.last_used_at,
       expiresAt: t.expires_at,
       scopeLabel: t.project_id ? (projectName.get(t.project_id) ?? shortId(t.project_id)) : null,
-    }));
+    });
+  }
 
   const automation: ApiKeyRow[] = serviceAccounts.map((sa) => ({
     id: sa.service_account_id,

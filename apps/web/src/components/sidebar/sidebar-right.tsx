@@ -150,8 +150,14 @@ export function SidebarRight() {
     [featureFlags],
   );
   const filterClusters = useCallback(
-    (clusters: MenuItemDef[][]) =>
-      clusters.map((cluster) => cluster.filter(flagAllows)).filter((cluster) => cluster.length > 0),
+    (clusters: MenuItemDef[][]) => {
+      const allowed: MenuItemDef[][] = [];
+      for (const cluster of clusters) {
+        const items = cluster.filter(flagAllows);
+        if (items.length > 0) allowed.push(items);
+      }
+      return allowed;
+    },
     [flagAllows],
   );
   const quickActionClusters = filterClusters(
@@ -290,7 +296,7 @@ export function SidebarRight() {
     <>
       {/* Gap element — takes space in flex layout so content area shrinks */}
       <div
-        className="relative shrink-0 transform-gpu bg-transparent transition-[width,opacity] duration-500 ease-out will-change-[width]"
+        className="relative shrink-0 transform-gpu bg-transparent transition-[width,opacity] duration-500 ease-out"
         style={{
           width: effectiveGap,
           opacity: obHide ? 0 : 1,
@@ -313,7 +319,7 @@ export function SidebarRight() {
 
       {/* Fixed sidebar panel */}
       <div
-        className="backface-visibility-hidden fixed inset-y-0 right-0 z-10 flex h-svh transform-gpu overflow-visible transition-[right,width,opacity] duration-500 ease-out will-change-[width,transform]"
+        className="backface-visibility-hidden fixed inset-y-0 right-0 z-10 flex h-svh transform-gpu overflow-visible transition-[right,width,opacity] duration-500 ease-out"
         style={{
           width: effectivePanel,
           opacity: obHide ? 0 : 1,

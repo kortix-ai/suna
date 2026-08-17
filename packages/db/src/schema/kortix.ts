@@ -1130,6 +1130,9 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // Account-local sharing policy for sessions created by this trigger. The
+    // portable manifest cannot contain member/group ids from one account.
+    sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
     // The project member this trigger's automated sessions provision AS (the
     // "owner") — the secret-visibility subject and provisioning actor for
     // cron/webhook/manual fires. NULL = fall back to the account owner
@@ -1175,6 +1178,33 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/** Member/group allow-list for a trigger's future and prior created sessions. */
+export const projectTriggerSessionAccessGrants = kortixSchema.table(
+  'project_trigger_session_access_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId, table.slug],
+      foreignColumns: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      name: 'project_trigger_session_access_grants_trigger_fk',
+    }).onDelete('cascade'),
+    index('idx_trigger_session_access_grants_trigger').on(table.projectId, table.slug),
+    uniqueIndex('idx_trigger_session_access_grants_unique').on(
+      table.projectId,
+      table.slug,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 
@@ -1751,17 +1781,14 @@ export const sessionSandboxes = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    // Start of this box's CURRENT continuous running stretch, and the anchor
-    // operand of the 24h cap. Assigned ONLY by the DB trigger
-    // kortix.session_sandboxes_anchor_guard(), which carries it forward on EVERY
-    // application UPDATE in EVERY status and re-anchors a new stretch only when
-    // resuming a park it witnessed itself. Never write this from TypeScript — a
-    // constraint on a difference whose left operand a caller can slide forward
-    // is a suggestion, not a bound.
+    // Start of this box's CURRENT continuous running stretch. The DB trigger
+    // kortix.session_sandboxes_anchor_guard() carries it through every update
+    // and re-anchors it only after a park the trigger witnessed itself.
     activeSince: timestamp('active_since', { withTimezone: true }).defaultNow().notNull(),
-    // When the control plane stops this box. Single TS writer:
-    // apps/api/src/projects/sandbox-deadline.ts. Bounded by a DB CHECK at
-    // active_since + 24h.
+    // When the control plane stops this box. Writers:
+    // apps/api/src/projects/sandbox-deadline.ts and
+    // apps/api/src/projects/sandbox-turn-lifecycle.ts. Active turns renew this
+    // value only after fresh control-plane observation.
     deadlineAt: timestamp('deadline_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

@@ -16,45 +16,60 @@ import { afterEach, describe, expect, test } from 'bun:test'
 
 
 import { finalizeOrphanedTurn } from '../main'
-import { inspectOpencodeRoot, opencodeTurnInFlight } from '../opencode-turn-state'
+import { inspectOpencodeRoot,
+  opencodeDeliveryInFlight,
+  opencodeTurnInFlight,
+} from '../opencode-turn-state';
 
-const BASE = 'http://127.0.0.1:4096'
-const WORKSPACE = '/workspace'
-const SESSION = 'ses_abc'
+const BASE = 'http://127.0.0.1:4096';
+const WORKSPACE = '/workspace';
+const SESSION = 'ses_abc';
 
-const ORIGINAL_FETCH = globalThis.fetch
-let calls: string[] = []
+const ORIGINAL_FETCH = globalThis.fetch;
+let calls: string[] = [];
 
-function stubFetch(messages: unknown, opts: { messagesOk?: boolean; abortThrows?: boolean } = {}) {
+function stubFetch(
+  messages: unknown,
+  opts: {
+    messagesOk?: boolean;
+    abortThrows?: boolean;
+    sessionStatus?: unknown;
+    sessionStatusOk?: boolean;
+  } = {},
+) {
   calls = []
   ;(globalThis as { fetch: unknown }).fetch = async (input: unknown, init?: { method?: string }) => {
-    const url = String(input)
-    calls.push(`${init?.method ?? 'GET'} ${url.split('?')[0]}`)
+    const url = String(input);
+    calls.push(`${init?.method ?? 'GET'} ${url.split('?')[0]}`);
     if (url.includes('/abort')) {
-      if (opts.abortThrows) throw new Error('connection refused')
-      return new Response('{}', { status: 200 })
+      if (opts.abortThrows) throw new Error('connection refused');
+      return new Response('{}', { status: 200 });
     }
-    if (opts.messagesOk === false) return new Response('nope', { status: 503 })
-    return new Response(JSON.stringify(messages), { status: 200 })
-  }
+    if (url.includes('/session/status')) {
+      if (opts.sessionStatusOk === false) return new Response('nope', { status: 503 });
+      return new Response(JSON.stringify(opts.sessionStatus ?? {}), { status: 200 });
+    }
+    if (opts.messagesOk === false) return new Response('nope', { status: 503 });
+    return new Response(JSON.stringify(messages), { status: 200 });
+  };
 }
 
 afterEach(() => {
-  ;(globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH
-})
+  (globalThis as { fetch: unknown }).fetch = ORIGINAL_FETCH;
+});
 
 const assistantTurn = (completed?: number) => [
   { info: { role: 'user', time: { completed: 1 } } },
   { info: { role: 'assistant', time: completed === undefined ? {} : { completed } } },
-]
+];
 
 describe('finalizeOrphanedTurn', () => {
   test('aborts an assistant turn that never completed', async () => {
     stubFetch(assistantTurn(undefined));
 
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(true)
-    expect(calls.some((c) => c.startsWith('POST') && c.endsWith('/abort'))).toBe(true)
-  })
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(true);
+    expect(calls.some((c) => c.startsWith('POST') && c.endsWith('/abort'))).toBe(true);
+  });
 
   test('leaves a COMPLETED turn alone', async () => {
     // Aborting a finished turn would be a visible lie in the transcript, and the
@@ -62,52 +77,57 @@ describe('finalizeOrphanedTurn', () => {
     // nothing was in flight.
     stubFetch(assistantTurn(1_700_000_000));
 
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false)
-    expect(calls.some((c) => c.includes('/abort'))).toBe(false)
-  })
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(calls.some((c) => c.includes('/abort'))).toBe(false);
+  });
 
   test('a session whose last message is the USER is not an orphaned turn', async () => {
     // The prompt never reached the model. There is no assistant message to end.
-    stubFetch([{ info: { role: 'user', time: { completed: 1 } } }])
+    stubFetch([{ info: { role: 'user', time: { completed: 1 } } }]);
 
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false)
-  })
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+  });
 
   test('an empty session is not an orphaned turn', async () => {
-    stubFetch([])
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false)
-  })
+    stubFetch([]);
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+  });
 
   test('an unreadable message list does NOT abort', async () => {
     // opencode may still be coming back up after the respawn. Aborting on a
     // failed read would end turns that are perfectly alive.
-    stubFetch(null, { messagesOk: false })
+    stubFetch(null, { messagesOk: false });
 
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false)
-    expect(calls.some((c) => c.includes('/abort'))).toBe(false)
-  })
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(false);
+    expect(calls.some((c) => c.includes('/abort'))).toBe(false);
+  });
 
   test('a failing abort is swallowed, never thrown at the supervisor', async () => {
     // This runs from the respawn path. A daemon that cannot finish bringing
     // opencode back because it could not tidy up a turn is worse than a spinner.
-    stubFetch(assistantTurn(undefined), { abortThrows: true })
+    stubFetch(assistantTurn(undefined), { abortThrows: true });
 
-    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(true)
-  })
+    expect(await finalizeOrphanedTurn(BASE, WORKSPACE, SESSION)).toBe(true);
+  });
 
   test('the session id and workspace are passed through url-encoded', async () => {
-    stubFetch(assistantTurn(undefined))
-    await finalizeOrphanedTurn(BASE, '/work space', 'ses/1')
+    stubFetch(assistantTurn(undefined));
+    await finalizeOrphanedTurn(BASE, '/work space', 'ses/1');
 
-    expect(calls.every((c) => !c.includes('ses/1'))).toBe(true)
-  })
-})
+    expect(calls.every((c) => !c.includes('ses/1'))).toBe(true);
+  });
+});
 
 describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
   test('a successful read is known', async () => {
     stubFetch(assistantTurn(undefined));
     const result = await inspectOpencodeRoot(BASE, WORKSPACE, SESSION);
-    expect(result).toEqual({ hasMessages: true, lastTurnIncomplete: true, known: true });
+    expect(result).toEqual({
+      hasMessages: true,
+      lastTurnIncomplete: true,
+      turnInFlight: true,
+      known: true,
+    });
   });
 
   test('an EMPTY session is known-idle, not unknown', async () => {
@@ -129,11 +149,16 @@ describe('inspectOpencodeRoot — could-not-tell is its own answer', () => {
 
 describe('opencodeTurnInFlight — the reload gate reads this', () => {
   test('no root is a definite false — nothing has ever run in this sandbox', async () => {
-    expect(await opencodeTurnInFlight(BASE, WORKSPACE, null)).toBe(false)
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, null)).toBe(false);
   });
 
   test('a running turn is true', async () => {
     stubFetch(assistantTurn(undefined));
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+  });
+
+  test('a queued command whose newest message is the user remains active', async () => {
+    stubFetch([{ info: { role: 'user', time: { completed: 1 } } }]);
     expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
   });
 
@@ -142,5 +167,116 @@ describe('opencodeTurnInFlight — the reload gate reads this', () => {
     // while a turn was running and opencode was merely slow to answer.
     stubFetch(null, { messagesOk: false });
     expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBeNull();
+  });
+});
+
+describe('opencodeDeliveryInFlight — lifecycle acceptance recovery', () => {
+  test('a delivered user message without an assistant is active only while OpenCode reports busy', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'busy' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
+  });
+
+  test('a user-only message in an idle OpenCode session is terminal', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'idle' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('an absent OpenCode session status is terminal', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], { sessionStatus: {} });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('a retrying OpenCode session keeps a user-only message active', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'retry' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
+  });
+
+  test('an unreadable OpenCode session status makes user-only evidence unknown', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], { sessionStatusOk: false });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
+  });
+
+  test('an unrecognized OpenCode session status makes user-only evidence unknown', async () => {
+    stubFetch([{ info: { id: 'msg_turn_1', role: 'user' } }], {
+      sessionStatus: { [SESSION]: { type: 'paused' } },
+    });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBeNull();
+  });
+
+  test('a later user message makes the exact older turn terminal even while the session is busy', async () => {
+    stubFetch(
+      [
+        { info: { id: 'msg_turn_1', role: 'user' } },
+        { info: { id: 'msg_turn_2', role: 'user' } },
+      ],
+      { sessionStatus: { [SESSION]: { type: 'busy' } } },
+    );
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+    expect(calls.some((url) => url.includes('/session/status'))).toBe(false);
+  });
+
+  test('an incomplete assistant for the exact user message remains active', async () => {
+    stubFetch([
+      { info: { id: 'msg_turn_1', role: 'user' } },
+      { info: { role: 'assistant', parentID: 'msg_turn_1', time: {} } },
+    ], { sessionStatus: { [SESSION]: { type: 'busy' } } });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
+  });
+
+  test('a terminal assistant error without a completion timestamp is terminal', async () => {
+    stubFetch([
+      { info: { id: 'msg_turn_1', role: 'user' } },
+      {
+        info: {
+          role: 'assistant',
+          parentID: 'msg_turn_1',
+          time: {},
+          error: { name: 'APIError', data: { isRetryable: false } },
+        },
+      },
+    ]);
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(false);
+  });
+
+  test('a retryable assistant error remains active during backoff', async () => {
+    stubFetch([
+      { info: { id: 'msg_turn_1', role: 'user' } },
+      {
+        info: {
+          role: 'assistant',
+          parentID: 'msg_turn_1',
+          time: {},
+          error: { name: 'APIError', data: { isRetryable: true } },
+        },
+      },
+    ], { sessionStatus: { [SESSION]: { type: 'retry' } } });
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(true);
+    expect(await opencodeTurnInFlight(BASE, WORKSPACE, SESSION)).toBe(true);
+  });
+
+  test('a completed assistant for the exact user message is terminal', async () => {
+    stubFetch([
+      { info: { id: 'msg_turn_1', role: 'user' } },
+      {
+        info: {
+          role: 'assistant',
+          parentID: 'msg_turn_1',
+          time: { completed: 1234 },
+        },
+      },
+    ]);
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
+  });
+
+  test('a missing user message after delivery grace is terminal', async () => {
+    stubFetch([]);
+    expect(await opencodeDeliveryInFlight(BASE, WORKSPACE, SESSION, 'msg_turn_1')).toBe(false);
   });
 });

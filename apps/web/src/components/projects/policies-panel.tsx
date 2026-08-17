@@ -189,9 +189,11 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
 
   const save = useMutation({
     mutationFn: async () => {
-      const payload: ProjectPolicy[] = draft
-        .map((d) => toPayloadRule(d))
-        .filter((p) => p.match.length > 0);
+      const payload: ProjectPolicy[] = [];
+      for (const d of draft) {
+        const p = toPayloadRule(d);
+        if (p.match.length > 0) payload.push(p);
+      }
       return setProjectPolicies(projectId, payload, defaultMode);
     },
     onSuccess: () => {
@@ -354,8 +356,8 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
             )}
           >
             <ul className="space-y-1">
-              {parseErrors.map((e, i) => (
-                <li key={i} className="text-xs">
+              {parseErrors.map((e) => (
+                <li key={`${e.path}:${e.error}`} className="text-xs">
                   <span className="font-mono">{e.path}</span>: {e.error}
                 </li>
               ))}
@@ -618,13 +620,14 @@ function matchHint(raw: string): string | null {
  * where it would be rejected as invalid and block the whole save.
  */
 export function toPayloadRule(d: DraftRule): ProjectPolicy {
-  const conditions = d.conditions
-    .map((c) => ({
-      arg: c.arg.trim(),
-      match: c.match.trim(),
-      ...(c.negate ? { negate: true } : {}),
-    }))
-    .filter((c) => c.arg.length > 0 && c.match.length > 0);
+  const conditions: NonNullable<ProjectPolicy['conditions']> = [];
+  for (const c of d.conditions) {
+    const arg = c.arg.trim();
+    const match = c.match.trim();
+    if (arg.length > 0 && match.length > 0) {
+      conditions.push({ arg, match, ...(c.negate ? { negate: true } : {}) });
+    }
+  }
   return {
     match: d.match.trim(),
     action: d.action,

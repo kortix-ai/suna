@@ -104,6 +104,16 @@ interface MessageQueueState {
   getInFlightIds: (sessionId: string) => string[];
 
   enqueue: (sessionId: string, input: EnqueueInput) => void;
+  /**
+   * Hand a queue from one session-id namespace to another — the queue twin of
+   * `migrateStash`. The instant shell enqueues under the ROUTE session id
+   * before the canonical OpenCode pin exists; SessionChat drains under the
+   * pin. Without this hand-off, messages typed during boot were orphaned
+   * under the route id — never rendered, never sent (#6110). Boot-time
+   * messages keep their ids and go BEFORE anything already queued at the
+   * target (they were typed earlier); the target's in-flight claim is kept.
+   */
+  adoptSessionQueue: (fromSessionId: string, toSessionId: string) => void;
   remove: (sessionId: string, id: string) => void;
   edit: (sessionId: string, id: string, text: string) => void;
   reorder: (sessionId: string, id: string, toIndex: number) => void;
@@ -292,6 +302,23 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => {
           createdAt: Date.now(),
         }),
       ),
+
+    adoptSessionQueue: (fromSessionId, toSessionId) => {
+      if (fromSessionId === toSessionId) return;
+      const state = get();
+      const from = state.queues[fromSessionId];
+      if (!from || (from.pending.length === 0 && from.failed.length === 0)) return;
+      const target = state.queues[toSessionId] ?? EMPTY;
+      const queues = { ...state.queues };
+      delete queues[fromSessionId];
+      queues[toSessionId] = {
+        ...target,
+        pending: [...from.pending, ...target.pending],
+        failed: [...from.failed, ...target.failed],
+      };
+      persist(queues);
+      set({ queues });
+    },
 
     remove: (sessionId, id) => mutate(sessionId, (queue) => removeQueued(queue, id)),
     edit: (sessionId, id, text) => mutate(sessionId, (queue) => editQueued(queue, id, text)),

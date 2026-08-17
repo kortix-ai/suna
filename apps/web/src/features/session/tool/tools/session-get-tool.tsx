@@ -161,11 +161,11 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
               </DisclosureTrigger>
               <DisclosureContent>
                 <div className="space-y-1 px-3 pb-2">
-                  {parsed.todos.map((todo, i) => {
+                  {parsed.todos.map((todo) => {
                     const isComplete = todo.status === 'completed';
                     const isProgress = todo.status === 'in_progress';
                     return (
-                      <div key={i} className="flex items-start gap-2 text-xs">
+                      <div key={todo.text} className="flex items-start gap-2 text-xs">
                         <div
                           className={cn(
                             'mt-[2px] flex h-3 w-3 shrink-0 items-center justify-center rounded border',

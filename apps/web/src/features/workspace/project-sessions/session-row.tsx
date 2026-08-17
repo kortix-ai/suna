@@ -1,6 +1,7 @@
 'use client';
 
 import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
+import { SessionSharedBadge } from '@/components/projects/session-shared-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -172,15 +173,18 @@ function SessionRowImpl({
       >
         <SourceIcon className={cn('size-4', statusTile.icon)} />
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm">
-        {/* Types itself in when the name changes — a session created moments
-            ago reads "New session" until the agent names it, and this is what
-            shows that the name was written rather than swapped. Plain text at
-            rest, so the row is unchanged (and still ellipsises) until then. */}
-        <TypedTitle text={title} />
-        {source.triggerSlug ? (
-          <span className="text-muted-foreground"> · {source.triggerSlug}</span>
-        ) : null}
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm">
+          {/* Types itself in when the name changes — a session created moments
+              ago reads "New session" until the agent names it, and this is what
+              shows that the name was written rather than swapped. Plain text at
+              rest, so the row is unchanged (and still ellipsises) until then. */}
+          <TypedTitle text={title} />
+          {source.triggerSlug ? (
+            <span className="text-muted-foreground"> · {source.triggerSlug}</span>
+          ) : null}
+        </span>
+        <SessionSharedBadge session={session} />
       </span>
     </>
   );

@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
-import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
@@ -20,10 +19,7 @@ import {
   isPreviewUseObservation,
   isSandboxAuthored,
   isTurnStartRequest,
-  observeTurnStart,
   previewGrantMs,
-  turnDeliveryGraceMs,
-  turnGrantMs,
 } from '../../projects/sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
@@ -66,6 +62,12 @@ import {
   shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  beginSandboxTurn,
+  extractTurnIdentity,
+} from '../../projects/sandbox-turn-lifecycle';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -877,57 +879,6 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
-  // OBSERVE THE TURN START **BEFORE** FORWARDING IT.
-  //
-  // Two reasons this is here and awaited rather than fire-and-forget after the
-  // response, which is where it used to be:
-  //
-  //  1. At the 24-hour absolute run cap the grant clamps to `active_since + 24h`
-  //     — already in the past — so the old ordering ACCEPTED the prompt and let
-  //     the reaper stop the box seconds later, mid-work, swallowing the user's
-  //     message. Accepting work you are about to kill is worse than refusing it.
-  //     Refuse, park the box so the retry re-anchors a fresh stretch, and say so
-  //     in a machine-readable body.
-  //  2. Before the dedupe claim, so a refusal does not burn the caller's
-  //     Idempotency-Key and turn their retry into a bogus 200 "duplicate".
-  //
-  // A lost/failed observation fails OPEN (see observeTurnStart) — the deadline is
-  // still bounded by the DB CHECK, and refusing a prompt on uncertainty is far
-  // worse than granting one turn too many.
-  if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const observed = await observeTurnStart({ externalId: sandboxId }, turnDeliveryGraceMs());
-    if (observed === 'at_cap') {
-      const capped = {
-        sandboxId: record.sandboxId,
-        sessionId: record.sessionId,
-        externalId: record.externalId,
-        provider: record.provider as ProviderName,
-      };
-      // Dynamic import: the reaper's stop path reaches back into this module's
-      // own package (invalidateProviderCache), and a static edge here would be a
-      // real cycle. This branch is rare by construction — once per 24h of
-      // continuous work — so the one-time load cost is irrelevant.
-      void import('../../projects/reaping/stop-box')
-        .then((m) => m.parkBoxAtRunCap(capped))
-        .catch((err) =>
-          console.warn(
-            `[deadline] run-cap park could not be scheduled for ${sandboxId}:`,
-            err instanceof Error ? err.message : err,
-          ),
-        );
-      console.warn(`[PREVIEW] Refused turn on sandbox ${sandboxId}: 24h run cap reached`);
-      return jsonProxyError(
-        {
-          error: 'This sandbox has reached its 24-hour continuous run limit and is restarting.',
-          code: 'sandbox_run_cap_reached',
-          retry: true,
-        },
-        503,
-        origin,
-      );
-    }
-  }
-
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
   //
@@ -962,6 +913,64 @@ export async function forwardToSandbox(
       projectId: record.projectId,
     });
   }
+
+  // `deadline_at` is the idle-stop clock. This separate record is the durable
+  // fact that a specific OpenCode turn is active. It is created immediately
+  // before the first upstream delivery attempt, promoted only after a confirmed
+  // or ambiguous acceptance, and removed by matching terminal evidence.
+  const turnIdentity =
+    !sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)
+      ? extractTurnIdentity(remainingPath, requestBody)
+      : null;
+  const turnToken = turnIdentity ? crypto.randomUUID() : null;
+  let turnLifecycleBegun = false;
+  let turnLifecycleAccepted = false;
+  const beginTurnLifecycle = async (): Promise<'granted' | 'unavailable'> => {
+    if (!turnIdentity || !turnToken || turnLifecycleBegun) return 'granted';
+    try {
+      const outcome = await beginSandboxTurn(
+        { externalId: sandboxId },
+        { token: turnToken, ...turnIdentity },
+      );
+      turnLifecycleBegun = outcome === 'granted';
+      return outcome === 'no_box' ? 'unavailable' : outcome;
+    } catch (error) {
+      console.error(
+        `[turn-lifecycle] refused prompt for ${sandboxId}: delivery authority is unavailable`,
+        error,
+      );
+      return 'unavailable';
+    }
+  };
+  const acceptTurnLifecycle = async (): Promise<void> => {
+    if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
+    try {
+      turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
+    } catch (error) {
+      // OpenCode already accepted this non-idempotent request. Do not convert a
+      // post-delivery database outage into a failed send or delete the durable
+      // `delivering` record. The provider-neutral reaper probes that exact
+      // token-bound record and promotes it when OpenCode reports the turn live.
+      console.error(
+        `[turn-lifecycle] acceptance persistence failed for ${sandboxId}; reaper will reconcile delivery`,
+        error,
+      );
+    }
+  };
+  const abandonTurnLifecycle = async (): Promise<void> => {
+    if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
+    try {
+      await abandonSandboxTurn({ externalId: sandboxId }, turnToken);
+      turnLifecycleBegun = false;
+    } catch (error) {
+      // Cleanup failure must not replace the upstream response. The durable
+      // delivery record expires through the reaper's exact-message probe.
+      console.error(
+        `[turn-lifecycle] delivery cleanup failed for ${sandboxId}; reaper will reconcile delivery`,
+        error,
+      );
+    }
+  };
 
   // 2. Forward with auto-wake retry.
   const MAX_RETRIES = 3;
@@ -1162,6 +1171,24 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        // Begin after every pre-prompt refusal point, but before the first byte
+        // can reach OpenCode. A fast session.idle can now delete this record;
+        // the success path below promotes it with a token CAS and cannot revive
+        // a turn that already ended.
+        const turnLifecycleStart = await beginTurnLifecycle();
+        if (turnLifecycleStart !== 'granted') {
+          if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+          return jsonProxyError(
+            {
+              error:
+                'The sandbox lifecycle authority is temporarily unavailable. The prompt was not delivered.',
+              code: 'sandbox_lifecycle_unavailable',
+              retry: true,
+            },
+            503,
+            origin,
+          );
+        }
         if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,
@@ -1179,6 +1206,7 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status >= 300 && upstream.status < 400) {
+        await abandonTurnLifecycle();
         const respHeaders = clientResponseHeaders(upstream.headers, origin);
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
@@ -1194,6 +1222,7 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status === 401 && serviceKey && userId) {
+        await abandonTurnLifecycle();
         console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
         return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
       }
@@ -1216,6 +1245,7 @@ export async function forwardToSandbox(
           // (once opencode is up) actually delivers instead of short-circuiting
           // to a bogus 200 "duplicate" that would drop the message.
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+          await abandonTurnLifecycle();
           const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
           return new Response(bodyText, {
             status: upstream.status,
@@ -1288,6 +1318,7 @@ export async function forwardToSandbox(
           continue;
         }
         // Not a Daytona stopped error — pass through.
+        await abandonTurnLifecycle();
         const errHeaders = clientResponseHeaders(upstream.headers, origin);
         return new Response(bodyText, {
           status: upstream.status,
@@ -1298,21 +1329,13 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
-      // A successful OpenCode response proves the prompt reached the agent
-      // runtime. Upgrade the short delivery grace to the full active-turn
-      // window only now. A failed env sync, connect attempt, or upstream 5xx
-      // never receives the four-hour grant.
-      if (
-        upstream.ok &&
-        !sandboxAuthored &&
-        isTurnStartRequest(upstreamPort, method, remainingPath)
-      ) {
-        void extendSandboxDeadline({ externalId: sandboxId }, turnGrantMs()).catch((err) =>
-          console.warn(
-            `[deadline] accepted-turn extend failed for sandbox ${sandboxId}:`,
-            err instanceof Error ? err.message : err,
-          ),
-        );
+      // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
+      // OpenCode may hold the message even though the response was lost. Both
+      // cases must preserve the turn. A definitive 4xx abandons delivery.
+      if (upstream.ok || (turnIdentity && upstream.status >= 500)) {
+        await acceptTurnLifecycle();
+      } else {
+        await abandonTurnLifecycle();
       }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
@@ -1402,6 +1425,7 @@ export async function forwardToSandbox(
   }
 
   if (sawLongTurnTimeout) {
+    await acceptTurnLifecycle();
     return longTurnTimeoutResponse(origin);
   }
 
@@ -1422,6 +1446,8 @@ export async function forwardToSandbox(
   if (promptDedupeKey && !promptDeliveryMaybeAccepted) {
     releasePromptDelivery(promptDedupeKey);
   }
+  if (promptDeliveryMaybeAccepted) await acceptTurnLifecycle();
+  else await abandonTurnLifecycle();
   return portUnreachableResponse({
     port,
     status: 502,

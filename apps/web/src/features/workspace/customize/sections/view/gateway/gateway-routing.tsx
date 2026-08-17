@@ -168,9 +168,10 @@ function RoutingModelSelector({
   unsetLabel?: string;
   exclude?: string[];
 }) {
+  const excluded = new Set(exclude);
   const options = models.filter((model) => {
     const wire = modelKeyToWire(model);
-    return !exclude.includes(wire) || wire === value;
+    return !excluded.has(wire) || wire === value;
   });
   if (value && !options.some((model) => modelKeyToWire(model) === value)) {
     options.push({
@@ -250,7 +251,8 @@ function ChainEditor({
   availability?: Record<string, boolean>;
 }) {
   const unavailable = [primary ?? '', ...chain.models];
-  const canAdd = models.some((model) => !unavailable.includes(modelKeyToWire(model)));
+  const unavailableSet = new Set(unavailable);
+  const canAdd = models.some((model) => !unavailableSet.has(modelKeyToWire(model)));
 
   return (
     <div className="space-y-4 border-t px-4 py-5">
@@ -272,7 +274,7 @@ function ChainEditor({
         <ul className="space-y-2">
           {chain.models.map((model, index) => (
             <li
-              key={`${model}-${index}`}
+              key={model}
               className="bg-background flex min-h-10 items-center gap-2 rounded-md border px-3 py-2"
             >
               <span className="text-muted-foreground w-5 shrink-0 text-center text-xs tabular-nums">
@@ -520,7 +522,8 @@ export function GatewayRouting({
   const primaryModel = projectDefaultWire ?? routing.data.effective.defaultModel;
   const validation = validateRoutingDraft({ ...draft, defaultModel: primaryModel }, fallbackMode);
   const usedRuleModels = draft.rules.map((rule) => rule.model);
-  const newRuleModel = models.find((model) => !usedRuleModels.includes(modelKeyToWire(model)));
+  const usedRuleModelSet = new Set(usedRuleModels);
+  const newRuleModel = models.find((model) => !usedRuleModelSet.has(modelKeyToWire(model)));
 
   const setRule = (index: number, rule: GatewayRoutingRule) => {
     setDraft((current) => {
@@ -732,7 +735,7 @@ export function GatewayRouting({
                 ) : null}
                 {draft.rules.map((rule, index) => (
                   <div
-                    key={`${rule.model}-${index}`}
+                    key={rule.model}
                     className="space-y-4 border-t pt-5 first:border-t-0 first:pt-0"
                   >
                     <div className="flex items-center gap-2">

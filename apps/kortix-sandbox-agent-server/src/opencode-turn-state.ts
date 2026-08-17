@@ -46,6 +46,8 @@ export interface RootInspection {
   hasMessages: boolean
   /** Its last message is an assistant turn with no completion time. */
   lastTurnIncomplete: boolean
+  /** A queued user message or an incomplete assistant turn still owns runtime. */
+  turnInFlight: boolean
   /**
    * False when the read failed — opencode unreachable, non-2xx, unparseable.
    *
@@ -62,7 +64,12 @@ export async function inspectOpencodeRoot(
   workspace: string,
   sessionId: string,
 ): Promise<RootInspection> {
-  const unknown = { hasMessages: false, lastTurnIncomplete: false, known: false }
+  const unknown = {
+    hasMessages: false,
+    lastTurnIncomplete: false,
+    turnInFlight: false,
+    known: false,
+  }
   try {
     const res = await fetch(
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
@@ -70,14 +77,24 @@ export async function inspectOpencodeRoot(
     )
     if (!res.ok) return unknown
     const msgs = (await res.json()) as Array<{
-      info?: { role?: string; time?: { completed?: number } }
+      info?: {
+        role?: string
+        time?: { completed?: number }
+        error?: { data?: { isRetryable?: boolean } }
+      }
     }>
     if (!Array.isArray(msgs) || msgs.length === 0)
-      return { hasMessages: false, lastTurnIncomplete: false, known: true }
+      return { hasMessages: false, lastTurnIncomplete: false, turnInFlight: false, known: true }
     const last = msgs[msgs.length - 1]
+    const lastTurnIncomplete = Boolean(
+      last?.info?.role === 'assistant' &&
+        !last?.info?.time?.completed &&
+        (!last?.info?.error || last.info.error.data?.isRetryable === true),
+    )
     return {
       hasMessages: true,
-      lastTurnIncomplete: Boolean(last?.info?.role === 'assistant' && !last?.info?.time?.completed),
+      lastTurnIncomplete,
+      turnInFlight: last?.info?.role === 'user' || lastTurnIncomplete,
       known: true,
     }
   } catch {
@@ -107,9 +124,89 @@ export async function opencodeTurnInFlight(
   if (!sessionId) return false
   try {
     const inspection = await inspectOpencodeRoot(baseUrl, workspace, sessionId)
-    return inspection.known ? inspection.lastTurnIncomplete : null
+    return inspection.known ? inspection.turnInFlight : null
   } catch (err) {
     logger.warn('[turn-state] could not read turn state', { err: (err as Error).message })
+    return null
+  }
+}
+
+async function opencodeSessionInFlight(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+): Promise<boolean | null> {
+  try {
+    const response = await fetch(
+      `${baseUrl}/session/status?directory=${encodeURIComponent(workspace)}`,
+      { signal: AbortSignal.timeout(5_000) },
+    )
+    if (!response.ok) return null
+    const statuses = (await response.json()) as unknown
+    if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return null
+    const status = (statuses as Record<string, unknown>)[sessionId]
+    if (status === undefined) return false
+    if (!status || typeof status !== 'object' || Array.isArray(status)) return null
+    const type = (status as { type?: unknown }).type
+    if (type === 'busy' || type === 'retry') return true
+    if (type === 'idle') return false
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Observe one client-minted OpenCode user message for lifecycle recovery.
+ *
+ * A matching user message is active only when it is the newest user message and
+ * OpenCode reports the exact root session as busy or retrying. Message
+ * persistence alone is not execution evidence. A successful list that lacks
+ * the exact message is terminal: the reaper calls this only after the full
+ * delivery grace has elapsed.
+ */
+export async function opencodeDeliveryInFlight(
+  baseUrl: string,
+  workspace: string,
+  rootSessionId: string,
+  messageId: string,
+): Promise<boolean | null> {
+  try {
+    const response = await fetch(
+      `${baseUrl}/session/${encodeURIComponent(rootSessionId)}/message?directory=${encodeURIComponent(workspace)}`,
+      { signal: AbortSignal.timeout(5_000) },
+    )
+    if (!response.ok) return null
+    const messages = (await response.json()) as Array<{
+      info?: {
+        id?: string
+        role?: string
+        parentID?: string
+        time?: { completed?: number }
+        error?: { data?: { isRetryable?: boolean } }
+      }
+    }>
+    if (!Array.isArray(messages)) return null
+    const userIndex = messages.findIndex(
+      (message) => message.info?.role === 'user' && message.info.id === messageId,
+    )
+    if (userIndex < 0) return false
+    if (messages.slice(userIndex + 1).some((message) => message.info?.role === 'user')) {
+      return false
+    }
+    const assistants = messages
+      .slice(userIndex + 1)
+      .filter(
+        (message) => message.info?.role === 'assistant' && message.info.parentID === messageId,
+      )
+    if (assistants.length === 0) {
+      return opencodeSessionInFlight(baseUrl, workspace, rootSessionId)
+    }
+    const latest = assistants[assistants.length - 1]?.info
+    if (latest?.error && latest.error.data?.isRetryable !== true) return false
+    if (latest?.time?.completed != null) return false
+    return opencodeSessionInFlight(baseUrl, workspace, rootSessionId)
+  } catch {
     return null
   }
 }

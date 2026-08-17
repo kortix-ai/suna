@@ -945,6 +945,19 @@ export const SessionCreateAcceptedSchema = z.object({
 });
 export type SessionCreateAccepted = z.infer<typeof SessionCreateAcceptedSchema>;
 
+/**
+ * Account-local access policy for sessions created by a trigger. Project
+ * managers always retain access; `private` excludes ordinary project members.
+ */
+export const TriggerSessionAccessSchema = z
+  .object({
+    mode: z.enum(['private', 'project', 'members']),
+    memberIds: z.array(z.string()),
+    groupIds: z.array(z.string()),
+  })
+  .strict();
+export type TriggerSessionAccess = z.infer<typeof TriggerSessionAccessSchema>;
+
 /** One trigger entry as emitted by `loadTriggersForResponse`. */
 export const TriggerSchema = z.object({
   slug: z.string(),
@@ -978,6 +991,8 @@ export const TriggerSchema = z.object({
   session_key: z.string().nullable(),
   /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
   filter: z.record(z.string(), z.string()).nullable(),
+  /** Account-local policy for sessions this trigger creates. */
+  session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

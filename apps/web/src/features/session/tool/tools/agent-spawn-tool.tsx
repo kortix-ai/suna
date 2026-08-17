@@ -120,11 +120,11 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
                 <OutputBlock text={cleanedOutput} markdown />
               ) : isCompleted && childToolParts.length > 0 ? (
                 <div className="space-y-0.5">
-                  {childToolParts.slice(-3).map((tp, i) => {
+                  {childToolParts.slice(-3).map((tp) => {
                     const info = getToolInfo(tp.tool, partInput(tp) as Record<string, any>);
                     return (
                       <div
-                        key={i}
+                        key={tp.id}
                         className="text-muted-foreground flex items-center gap-1.5 truncate text-xs"
                       >
                         <Check className="text-muted-foreground/50 size-2.5 shrink-0" />

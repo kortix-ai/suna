@@ -9,6 +9,16 @@ import type { SessionDeliveryOutcome } from './types';
 // even though the session was up. Slack/email delivery runs AFTER the inbound
 // webhook is acked, so we are NOT racing a 3s budget here — keep healing and
 // retrying the hand-off through the transient post-wake window before giving up.
+//
+// T13: this loop's OWN retries (below, within `deadlineMs`) send the
+// same `send(...)` body every attempt, so they are safe to repeat by
+// construction — `apps/api/src/sandbox-proxy/prompt-dedupe.ts`'s claim,
+// reached through the SAME `forwardToSandbox` call `send` makes, absorbs them.
+// A 'pending' RETURN from this function is a different case: the CALLER
+// (`executeQueuedContinue` in `engine.ts`) may re-invoke this whole loop later,
+// from a fresh queued-command drain. That re-invocation's no-blind-repost
+// guarantee is documented on `executeQueuedContinue`, not here — this file has
+// no knowledge of the caller's retry cadence.
 const DELIVER_DEADLINE_MS = 45_000;
 const DELIVER_RETRY_INTERVAL_MS = 1_500;
 

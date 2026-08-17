@@ -170,12 +170,6 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
-  // Personalized starter-prompt suggestions: fire-and-forget generation of
-  // per-project starter prompts via the internal LLM gateway, cached in
-  // `projects.metadata.starter_suggestions`. On by default; the kill-switch
-  // disables generation entirely — the route then falls back to its static
-  // default prompts, and no cache is ever written.
-  STARTER_SUGGESTIONS_ENABLED: optBoolTrue,
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -940,7 +934,6 @@ export const config = {
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
-  STARTER_SUGGESTIONS_ENABLED: env.STARTER_SUGGESTIONS_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,

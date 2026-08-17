@@ -144,12 +144,23 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
-import { childIdleGraceMs, shortenSandboxDeadlineOnTurnEnd } from '../sandbox-deadline';
+import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  parseTriggerSessionAccess,
+  setTriggerSessionAccess,
+  validateTriggerSessionAccessPrincipals,
+} from '../trigger-session-access';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  completeSandboxTurn,
+} from '../sandbox-turn-lifecycle';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -1080,6 +1091,16 @@ projectsApp.openapi(
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
+    const parsedAccess =
+      body.session_access === undefined
+        ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
+        : parseTriggerSessionAccess(body.session_access);
+    if (!parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+    const accessValidationError = await validateTriggerSessionAccessPrincipals(
+      loaded.row.accountId,
+      parsedAccess.access,
+    );
+    if (accessValidationError) return c.json({ error: accessValidationError }, 400);
 
     // A `pinned` trigger may only target a session that belongs to THIS project —
     // never a nonexistent or another project's session.
@@ -1125,6 +1146,13 @@ projectsApp.openapi(
     }
     if (!committedManifest) throw new Error('trigger create completed without a manifest');
     await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+    await setTriggerSessionAccess({
+      projectId,
+      accountId: loaded.row.accountId,
+      slug: draft.slug,
+      access: parsedAccess.access,
+      pinnedSessionId: draft.pinnedSessionId,
+    });
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -1228,14 +1256,28 @@ projectsApp.openapi(
     // Only commit the repo manifest when a manifest field actually changed; a
     // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
+    const parsedAccess =
+      body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
+    if (parsedAccess && !parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+    if (parsedAccess?.ok) {
+      const accessValidationError = await validateTriggerSessionAccessPrincipals(
+        loaded.row.accountId,
+        parsedAccess.access,
+      );
+      if (accessValidationError) return c.json({ error: accessValidationError }, 400);
+    }
     let committedManifest: ParsedManifest | undefined;
+    let effectivePinnedSessionId: string | null = null;
     const result = await mutateManifestWithRetry(
       loaded.row,
       `trigger ${slug} was being updated`,
       async (manifest) => {
         const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
         if (!current) return { ok: false, error: 'Not found', status: 404 };
-        if (!touchesManifest) return { ok: true, commitMessage: null };
+        if (!touchesManifest) {
+          effectivePinnedSessionId = current.pinnedSessionId;
+          return { ok: true, commitMessage: null };
+        }
 
         // Merge the patch onto the current spec so callers can send partial bodies
         // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
@@ -1249,6 +1291,7 @@ projectsApp.openapi(
         if (patchesKey && !patchesMode) delete base.session_mode;
         const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
         if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+        effectivePinnedSessionId = draft.pinnedSessionId;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
@@ -1283,6 +1326,15 @@ projectsApp.openapi(
     if (touchesManifest) {
       if (!committedManifest) throw new Error('trigger update completed without a manifest');
       await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+    }
+    if (parsedAccess?.ok) {
+      await setTriggerSessionAccess({
+        projectId,
+        accountId: loaded.row.accountId,
+        slug,
+        access: parsedAccess.access,
+        pinnedSessionId: effectivePinnedSessionId,
+      });
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -2241,6 +2293,8 @@ projectsApp.openapi(
       blocks?: unknown[];
       status?: string;
       opencode_session_id?: string;
+      turn_message_id?: string;
+      turn_token?: string;
       // Turn-end error detail (opencode AssistantMessage.error / session.error),
       // so Slack can render "out of credits" / rate-limit / the real error.
       error_name?: string;
@@ -2361,6 +2415,47 @@ projectsApp.openapi(
     // grace — the box wakes on demand when the coordinator returns to it.
     const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
 
+    // A daemon restart can discover that the pre-created initial message was
+    // never delivered because it reused a root with older messages. Remove only
+    // that token-bound `delivering` record. The sandbox cannot clear an active
+    // record through this operation.
+    if (body.kind === 'turn_abandoned') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'turn_abandoned requires a sandbox token' }, 403);
+      }
+      const turnToken = body.turn_token?.trim();
+      if (!turnToken) return c.json({ error: 'turn_token is required' }, 400);
+      const ok = await abandonSandboxTurn({ sandboxId: authenticatedSandboxId }, turnToken);
+      return c.json({ ok });
+    }
+
+    // The API created this token-bound `delivering` record before it provisioned
+    // the sandbox. The daemon can promote that exact record after OpenCode
+    // accepts the boot prompt. It cannot create a record or revive one removed
+    // by terminal evidence. Require the sandbox credential for this upward
+    // lifecycle transition; a project/session PAT is not sufficient.
+    if (body.kind === 'turn_accepted') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'turn_accepted requires a sandbox token' }, 403);
+      }
+      const turnToken = body.turn_token?.trim();
+      const opencodeSessionId = body.opencode_session_id?.trim();
+      const messageId = body.turn_message_id?.trim();
+      if (!turnToken || !opencodeSessionId || !messageId) {
+        return c.json(
+          {
+            error: 'turn_token, opencode_session_id, and turn_message_id are required',
+          },
+          400,
+        );
+      }
+      const ok = await acceptSandboxTurn({ sandboxId: authenticatedSandboxId }, turnToken, {
+        opencodeSessionId,
+        messageId,
+      });
+      return c.json({ ok });
+    }
+
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
     // finish (idle) or die (error) without the agent closing its Slack message;
     // finalize it gracefully instead of letting it rot into a timeout failure.
@@ -2392,16 +2487,21 @@ projectsApp.openapi(
       // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
       // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
       // cannot be re-wired here without it.
-      void shortenSandboxDeadlineOnTurnEnd(
+      // A 2xx acknowledges that terminal lifecycle evidence is durable. The
+      // daemon retries network/5xx failures and periodically reconciles a lost
+      // event. Returning before this write finished made a transient DB failure
+      // look successful, so the daemon deduped the event and the active record
+      // survived until reaper reconciliation.
+      await completeSandboxTurn(
         sessionId,
         status,
+        {
+          opencodeSessionId:
+            typeof body.opencode_session_id === 'string' ? body.opencode_session_id : undefined,
+          messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
+        },
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
-      ).catch((err) =>
-        console.warn(
-          `[deadline] shorten failed for session ${sessionId}:`,
-          err instanceof Error ? err.message : err,
-        ),
       );
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest

@@ -129,7 +129,7 @@ export function AnimatedComposerPlaceholder({
           animate={swap.animate}
           exit={swap.exit}
           transition={swap.transition}
-          className="block min-w-0 truncate will-change-transform"
+          className="block min-w-0 truncate"
         >
           {variants[index]}
         </m.span>

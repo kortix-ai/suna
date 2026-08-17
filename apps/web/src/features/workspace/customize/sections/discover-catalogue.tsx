@@ -127,13 +127,20 @@ export function DiscoverCatalogue({
     staleTime: 15 * 60_000,
   });
 
-  const connectorCards: DiscoverCard[] = (connectorsQuery.data?.pages ?? [])
-    .flatMap((page) => page.items)
-    .map((item) => ({ source: 'connector' as const, item }));
-  const pipedreamOAuthCards: DiscoverCard[] = (pipedreamQuery.data?.pages ?? [])
-    .flatMap((page) => page.apps)
-    .filter((app) => app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug))
-    .map((app) => ({ source: 'pipedream' as const, app }));
+  const connectorCards: DiscoverCard[] = [];
+  for (const page of connectorsQuery.data?.pages ?? []) {
+    for (const item of page.items) {
+      connectorCards.push({ source: 'connector' as const, item });
+    }
+  }
+  const pipedreamOAuthCards: DiscoverCard[] = [];
+  for (const page of pipedreamQuery.data?.pages ?? []) {
+    for (const app of page.apps) {
+      if (app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug)) {
+        pipedreamOAuthCards.push({ source: 'pipedream' as const, app });
+      }
+    }
+  }
   const discoverCards = [...connectorCards, ...pipedreamOAuthCards];
 
   const addConnector = useMutation({

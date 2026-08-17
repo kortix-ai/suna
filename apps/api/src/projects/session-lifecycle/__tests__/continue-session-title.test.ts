@@ -57,6 +57,7 @@ mock.module('../../routes/shared', () => ({
 }));
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => actor,
+  resolveAgentRunAttribution: async () => null,
 }));
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),

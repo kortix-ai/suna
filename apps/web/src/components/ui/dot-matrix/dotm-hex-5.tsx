@@ -109,7 +109,7 @@ export function DotmHex5({
   const om = clamp01(opacityMid);
   const op = clamp01(opacityPeak);
   const phase = reducedMotion || matrixPhase === "idle" ? 0.18 : cyclePhase;
-  const activePatternIndexes = getPatternIndexes(pattern);
+  const activePatternIndexSet = new Set(getPatternIndexes(pattern));
   const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset);
   const matrixStyle = {
     width: stylePx(matrixWidth),
@@ -153,7 +153,7 @@ export function DotmHex5({
         {ROW_COUNTS.map((count, row) => (
           <div key={row} style={{ display: "flex", justifyContent: "center", gap: stylePx(gap) }}>
             {Array.from({ length: count }).map((_, col) => {
-              const isActive = activePatternIndexes.includes(hexPatternIndex(row, count, col));
+              const isActive = activePatternIndexSet.has(hexPatternIndex(row, count, col));
               const opacity = isActive ? opacityForCell(row, col, phase) : 0;
 
                         const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);

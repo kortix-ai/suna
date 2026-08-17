@@ -59,6 +59,11 @@ const MONITOR_WIRE_ENTRY = {
   filter: null,
   last_fired_at: null,
   webhook_url: null,
+  session_access: {
+    mode: 'members',
+    memberIds: ['member-1'],
+    groupIds: ['group-1'],
+  },
 };
 
 test('listProjectTriggers reads a monitor entry off the wire without losing its fields', async () => {
@@ -79,6 +84,11 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
   expect(monitor.expect_event_within_seconds).toBe(86400);
   // A monitor defaults to `reuse`, not `fresh` — it fires repeatedly by design.
   expect(monitor.session_mode).toBe('reuse');
+  expect(monitor.session_access).toEqual({
+    mode: 'members',
+    memberIds: ['member-1'],
+    groupIds: ['group-1'],
+  });
 });
 
 test('a cron entry still parses with the monitor fields serialized as null', async () => {
@@ -128,6 +138,11 @@ test('createProjectTrigger POSTs the monitor draft fields the API parser accepts
     // manifest is a human-review surface.
     interval: '60s',
     expect_event_within: '24h',
+    session_access: {
+      mode: 'members',
+      memberIds: ['member-1'],
+      groupIds: ['group-1'],
+    },
   });
 
   expect(last().url).toContain('/projects/P1/triggers');
@@ -142,6 +157,11 @@ test('createProjectTrigger POSTs the monitor draft fields the API parser accepts
     mode: 'poll',
     interval: '60s',
     expect_event_within: '24h',
+    session_access: {
+      mode: 'members',
+      memberIds: ['member-1'],
+      groupIds: ['group-1'],
+    },
   });
 });
 
@@ -153,6 +173,7 @@ test('updateProjectTrigger PATCHes monitor fields, and null clears the silence w
     interval: null,
     expect_event_within: null,
     run: './monitors/checkout-stream.ts',
+    session_access: { mode: 'project', memberIds: [], groupIds: [] },
   });
 
   expect(last().url).toContain('/projects/P1/triggers/checkout-errors');
@@ -162,6 +183,19 @@ test('updateProjectTrigger PATCHes monitor fields, and null clears the silence w
     interval: null,
     expect_event_within: null,
     run: './monitors/checkout-stream.ts',
+    session_access: { mode: 'project', memberIds: [], groupIds: [] },
+  });
+});
+
+test('updateProjectTrigger can restore private trigger-created sessions', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
+
+  await updateProjectTrigger('P1', 'checkout-errors', {
+    session_access: { mode: 'private', memberIds: [], groupIds: [] },
+  });
+
+  expect(last().body).toEqual({
+    session_access: { mode: 'private', memberIds: [], groupIds: [] },
   });
 });
 
@@ -190,4 +224,18 @@ test('a mode outside poll/stream is rejected by the compiler', () => {
   const badCreate: CreateProjectTriggerInput['mode'] = 'tail';
 
   expect([badRead, badCreate]).toHaveLength(2);
+});
+
+test('the public trigger access type rejects unknown modes', () => {
+  const access: ProjectTrigger['session_access'] = {
+    mode: 'private',
+    memberIds: [],
+    groupIds: [],
+  };
+  const badAccess: CreateProjectTriggerInput['session_access'] = {
+    // @ts-expect-error "account" is not a trigger session access mode
+    mode: 'account',
+  };
+
+  expect([access, badAccess]).toHaveLength(2);
 });

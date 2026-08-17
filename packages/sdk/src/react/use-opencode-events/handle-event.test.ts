@@ -85,6 +85,7 @@ function buildHandler(
     messagesImpl?: () => Promise<{ data?: unknown }>;
     getImpl?: () => Promise<{ data?: unknown }>;
     projectId?: string;
+    reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -125,6 +126,7 @@ function buildHandler(
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
+    reconcileSessionTail: overrides.reconcileSessionTail,
   });
 
   return {
@@ -392,6 +394,83 @@ describe('session lifecycle cache mutations', () => {
 });
 
 // ============================================================================
+// T22 — session.created / session.updated seed the sync store's revert
+// mirror off `Session.revert` (the reload/cross-tab recovery path — see
+// `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment). `applySyncEvent`
+// is a spy in this harness (see the note above), so this reads the REAL
+// `useSyncStore` directly, exactly like the existing session.error tests do.
+// ============================================================================
+
+describe('session.created / session.updated — revert mirror (T22)', () => {
+  test('session.created with a revert field stages it, watermark off currently known messages', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().hydrate('ses_new', [
+      { info: userMessage('msg_1'), parts: [] },
+      { info: userMessage('msg_2'), parts: [] },
+    ]);
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: {
+        sessionID: 'ses_new',
+        info: session('ses_new', { revert: { messageID: 'msg_2' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_new).toEqual({
+      messageId: 'msg_2',
+      watermark: 'msg_2',
+      staged: true,
+    });
+  });
+
+  test('session.updated with a revert field seeds it too', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: {
+        sessionID: 'ses_a',
+        info: session('ses_a', { revert: { messageID: 'msg_1' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).toEqual({
+      messageId: 'msg_1',
+      watermark: 'msg_1',
+      staged: true,
+    });
+  });
+
+  test('an ordinary update with no revert field never clears an already-tracked one', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().stageSessionRevert('ses_a', 'msg_1');
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: { sessionID: 'ses_a', info: session('ses_a') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).not.toBeNull();
+  });
+
+  test('session.created / session.updated with no revert field never fabricates one', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: { sessionID: 'ses_b', info: session('ses_b') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_b).toBeUndefined();
+  });
+});
+
+// ============================================================================
 // Kortix session-title mirroring — a runtime title change lands in the cached
 // Kortix session reads immediately, without waiting for the server-side
 // opencode_sessions snapshot (~20s) to make the next refetch carry it.
@@ -649,7 +728,7 @@ describe('session.error', () => {
     useSyncStore.getState().optimisticAdd('ses_1', userMessage('msg_optimistic'), []);
 
     // A real `session.error` event's `error.name` is restricted to the SDK's
-    // typed union — but `looksLikeAbortError` (see `helpers.ts`) exists
+    // typed union — but `isAbortError` (see `core/http/abort-error.ts`) exists
     // precisely because some servers emit a differently-shaped abort error.
     // Bypass the strict type here (as the real synthetic-abort call site in
     // `use-event-stream-refs.ts` also must) to exercise that defensive path.
@@ -926,5 +1005,43 @@ describe('remaining event kinds — smoke coverage', () => {
       properties: { serverID: 'srv_1', path: 'src/app.ts' },
     });
     expect(fetchLspDiagnosticsDebounced.calls.length).toBe(1);
+  });
+});
+
+describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)', () => {
+  // The store's applyEvent refuses to guess-delete when this tab never saw
+  // the staging and raises `sessionRevertNeedsTailReconcile` instead.
+  // handle-event is the one consumer: it must fetch the server's truncated
+  // tail and clear the flag. applySyncEvent is a spy in this harness, so the
+  // flag is seeded directly — exactly the state the store leaves behind.
+  test('consumes the needs-reconcile flag: fetches the tail, clears the flag', () => {
+    useSyncStore.getState().markSessionRevertNeedsTailReconcile('ses_rw');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([['ses_rw', 'manual']]);
+    expect(useSyncStore.getState().sessionRevertNeedsTailReconcile['ses_rw']).toBeUndefined();
+  });
+
+  test('no flag (tracked-revert tab) → no reconcile fetch', () => {
+    useSyncStore.getState().clearSessionRevertNeedsTailReconcile('ses_rw2');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([]);
   });
 });

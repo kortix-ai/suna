@@ -85,11 +85,11 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           <ToolCodeCard code={content} language={ext} />
         ) : parsed?.type === 'directory' && parsed.entries && parsed.entries.length > 0 ? (
           <ToolResultCard bodyClassName="space-y-0.5 px-2 py-1.5">
-            {parsed.entries.map((entry, i) => {
+            {parsed.entries.map((entry) => {
               const isDir = entry.endsWith('/');
               return (
                 <div
-                  key={i}
+                  key={entry}
                   className="text-muted-foreground/80 flex items-center gap-1.5 font-mono text-xs"
                 >
                   {isDir ? (
@@ -116,13 +116,18 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       </BasicTool>
       {surface !== 'panel' && loaded.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-2">
-          {loaded.map((filepath, i) => (
+          {loaded.map((filepath) => (
             <div
-              key={i}
+              key={filepath}
               role="button"
               tabIndex={0}
               onClick={() => openPreview(filepath)}
-              onKeyDown={(e) => e.key === 'Enter' && openPreview(filepath)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openPreview(filepath);
+                }
+              }}
               className="text-muted-foreground hover:text-foreground group flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
             >
               <span className={STATUS_TEXT.success}>+</span>

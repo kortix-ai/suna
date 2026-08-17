@@ -436,9 +436,9 @@ export function SessionDiffViewer({
       />
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 p-3">
-          {diffs.map((diff, i) => (
+          {diffs.map((diff) => (
             <FileDiffCard
-              key={`${diff.file}-${i}`}
+              key={diff.file}
               diff={diff}
               viewMode={viewMode}
               isFullscreen={isFullscreen}

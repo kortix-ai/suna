@@ -419,16 +419,21 @@ function MdLine({ line }: { line: string }) {
 }
 
 function CodeBody({ file }: { file: RepoFile }) {
-  // Each file's lines are static and never reordered, so a content+position key is stable.
+  // Each file's lines are static and never reordered — key by content plus a
+  // per-content occurrence counter so repeated lines (e.g. blanks) stay unique.
+  const seen = new Map<string, number>();
   return (
     <>
-      {file.lines.map((line, i) =>
-        file.lang === 'toml' ? (
-          <TomlLine key={`${i}:${line}`} line={line} />
+      {file.lines.map((line) => {
+        const n = seen.get(line) ?? 0;
+        seen.set(line, n + 1);
+        const key = `${line}#${n}`;
+        return file.lang === 'toml' ? (
+          <TomlLine key={key} line={line} />
         ) : (
-          <MdLine key={`${i}:${line}`} line={line} />
-        ),
-      )}
+          <MdLine key={key} line={line} />
+        );
+      })}
     </>
   );
 }

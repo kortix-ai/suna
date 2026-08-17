@@ -204,6 +204,7 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     last_error: null,
     last_attempt_at: NOW,
     webhook_url: null,
+    session_access: { mode: 'private', memberIds: [], groupIds: [] },
     ...overrides,
   };
 }
@@ -526,6 +527,33 @@ describe('TriggerSchema', () => {
       }),
     ).not.toThrow();
     expect(TriggerListSchema.safeParse([triggerFixture()]).success).toBe(false);
+  });
+
+  test('requires a normalized trigger session access policy', () => {
+    expect(
+      TriggerSchema.safeParse(
+        triggerFixture({
+          session_access: {
+            mode: 'members',
+            memberIds: ['11111111-2222-4333-8444-555555555555'],
+            groupIds: ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'],
+          },
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      TriggerSchema.safeParse(
+        triggerFixture({
+          session_access: { mode: 'account', memberIds: [], groupIds: [] },
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      TriggerSchema.safeParse({
+        ...triggerFixture(),
+        session_access: undefined,
+      }).success,
+    ).toBe(false);
   });
 });
 

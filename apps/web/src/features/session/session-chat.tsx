@@ -21,7 +21,7 @@ import {
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hasOpenAssistantTurn } from './assistant-turn-open';
 import {
@@ -153,15 +153,17 @@ import {
   isToolPart,
   shouldShowToolPart,
 } from '@/ui';
-import { updateProjectSession } from '@kortix/sdk';
+import { abortErrorReason, isAbortError, updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
+  type AbortSettlement,
   type KortixSendError,
   type ModelKey,
   type UseSessionResult,
   abandonOptimisticSend,
   applyOptimisticAbort,
   ascendingId,
+  awaitAbortSettlement,
   beginOptimisticSend,
   classifySendError,
   clearStartStash,
@@ -376,7 +378,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <Button
           type="button"
           variant="popover"
-          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
         >
           <span className="text-foreground text-xs font-medium">Questions</span>
           <span className="text-muted-foreground text-xs tabular-nums">
@@ -391,12 +393,12 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         </Button>
       </DisclosureTrigger>
       <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-4 px-4 py-2.5">
+        <div className="space-y-2 px-3.5 py-2">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
             const answerText = answer.join(', ') || 'No answer';
             return (
-              <div key={i} className="space-y-1">
+              <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
                   <UnifiedMarkdown content={q.question} />
                 </div>
@@ -435,6 +437,15 @@ const ABORT_SETTLE_TIMEOUT_MS = 5000;
  * races the abort — the prompt can arrive while the old turn is still winding
  * down. Subscribing to the status the server actually reports is the only
  * version of this that is not a guess.
+ *
+ * T10: no longer the primary gate for "Stop & send" — see
+ * `stopThenSendNow` below. `applyOptimisticAbort` (run by `handleStop`) flips
+ * the very store this function polls to idle SYNCHRONOUSLY, before the abort
+ * request round-trips to the server, so gating a send on it lets the send
+ * race the still-in-flight abort. `stopThenSendNow` now awaits the abort's
+ * own `AbortSettlement` instead. This function survives as its defensive
+ * fallback for the (should-not-happen) case where a stop produced no
+ * trackable settlement to await.
  */
 function waitForSessionIdle(sessionId: string): Promise<void> {
   const isIdle = () => {
@@ -457,6 +468,76 @@ function waitForSessionIdle(sessionId: string): Promise<void> {
     // The status may have settled between the check above and the subscribe.
     if (isIdle()) finish();
   });
+}
+
+/** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
+ *  directly testable without React or a DOM. */
+export interface StopThenSendNowDeps {
+  /** True when a turn is currently running and must be stopped first. */
+  isRunning: () => boolean;
+  /** The still-pending `AbortSettlement` for a stop already issued by someone
+   *  else (e.g. a direct click on the Stop button), if one exists. Checked
+   *  BEFORE `isRunning()`: `applyOptimisticAbort` flips the store `isRunning`
+   *  reads to idle SYNCHRONOUSLY, before that earlier stop's settlement
+   *  arrives, so `isRunning()` alone cannot see an in-flight stop issued
+   *  outside this call. Returns `undefined` when no stop is currently
+   *  pending for this session. */
+  pendingSettlement: () => Promise<AbortSettlement> | undefined;
+  /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
+   *  stop produced no trackable settlement (defensive fallback only — see
+   *  `waitIdle`). Called only when `pendingSettlement()` is `undefined` and
+   *  `isRunning()` is true. Never expected to reject —
+   *  `AbortSettlement`-producing paths (`sessionState.cancel()`,
+   *  `awaitAbortSettlement`) never do. */
+  stop: () => Promise<AbortSettlement | null>;
+  /** Fallback wait, used only when `stop()` resolves `null`. */
+  waitIdle: () => Promise<void>;
+  /** Unpause the queue so the drain can dispatch again. */
+  resumeQueue: () => void;
+  /** The actual send-now dispatch. */
+  dispatch: () => Promise<void>;
+}
+
+/**
+ * Orchestrates "Stop & send": end the current turn (if one is running), wait
+ * for that to actually settle, then dispatch.
+ *
+ * T10: waits for the SERVER-confirmed `AbortSettlement` `stop()`
+ * returns — never the optimistic sync-store idle flip `waitForSessionIdle`
+ * polls, because `applyOptimisticAbort` sets that store to idle synchronously,
+ * before the abort request round-trips, so gating the send on it races the
+ * abort still in flight. `stop()`'s settlement is already bounded (~5s, see
+ * `awaitAbortSettlement`/`ABORT_SETTLE_TIMEOUT_MS`), never rejects, and a
+ * `{status:'failed'}` or `{status:'timed-out'}` result still lets `dispatch()`
+ * proceed once that bound elapses: whichever cancel path produced the
+ * settlement already cancelled any local in-flight delivery
+ * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
+ * the client to race even without a server acknowledgement.
+ *
+ * When nothing is running and no stop is pending, `stop()`/`waitIdle()` are
+ * never called and the send is not delayed at all.
+ *
+ * T10 (settlement race): a stop can already be in flight when this runs —
+ * e.g. the user clicked Stop directly, which ran `applyOptimisticAbort` and
+ * flipped the store `isRunning()` reads to idle SYNCHRONOUSLY, well before
+ * that stop's `AbortSettlement` arrives from the server. Gating on
+ * `isRunning()` alone would then see "idle" and dispatch immediately,
+ * racing the still-in-flight abort. `pendingSettlement()` is consulted
+ * FIRST for exactly this reason: if a settlement is already pending for this
+ * session, it is awaited (and `stop()` is NOT called again — a stop was
+ * already issued) before resuming/dispatching, regardless of what
+ * `isRunning()` reports.
+ */
+export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> {
+  const pending = deps.pendingSettlement();
+  if (pending) {
+    await pending;
+  } else if (deps.isRunning()) {
+    const settlement = await deps.stop();
+    if (settlement === null) await deps.waitIdle();
+  }
+  deps.resumeQueue();
+  await deps.dispatch();
 }
 
 // ============================================================================
@@ -484,10 +565,13 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
  *  inline with the conversation flow, styled like tool-call cards. */
 function NotificationTurn({ turn }: { turn: Turn }) {
   const rawText = useMemo(() => {
-    return turn.userMessage.parts
-      .filter((p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored)
-      .map((p) => (p as TextPart).text || '')
-      .join('\n');
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
+        texts.push((p as TextPart).text || '');
+      }
+    }
+    return texts.join('\n');
   }, [turn.userMessage.parts]);
 
   const { notifications } = useMemo(
@@ -499,8 +583,8 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 
   return (
     <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n, i) => (
-        <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+      {notifications.map((n) => (
+        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
       ))}
     </div>
   );
@@ -509,6 +593,31 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // ============================================================================
 // Session Turn — core turn component
 // ============================================================================
+
+/**
+ * Pure derivation of "was this turn's error an abort, and why" from a turn's
+ * assistant messages — the exact logic `turnErrorIsAbort`/`turnErrorAbortReason`
+ * below run per render. Extracted (T17) so it can be exercised by real
+ * behavior tests (`interrupted-label.test.ts`) instead of a source-text
+ * pattern match. No behavior change: both `useMemo`s below now call this one
+ * function instead of duplicating its two loops.
+ *
+ * Scans for the FIRST assistant message carrying an object error (matching
+ * `getTurnError`'s own "first wins" rule) and classifies THAT message once —
+ * see the two `useMemo`s below for why identity/reason must come from the
+ * SDK's single `isAbortError`/`abortErrorReason` classifier.
+ */
+export function deriveTurnErrorAbortState(turn: {
+  assistantMessages: ReadonlyArray<{ info: unknown }>;
+}): { isAbort: boolean; abortReason: string | undefined } {
+  for (const msg of turn.assistantMessages) {
+    const err = (msg.info as { error?: unknown }).error;
+    if (!err || typeof err !== 'object') continue;
+    const isAbort = isAbortError(err);
+    return { isAbort, abortReason: isAbort ? abortErrorReason(err) : undefined };
+  }
+  return { isAbort: false, abortReason: undefined };
+}
 
 interface SessionTurnProps {
   turn: Turn;
@@ -683,10 +792,11 @@ function SessionTurnImpl({
   }, [turn.assistantMessages]);
   const streamingResponseRaw = useMemo(() => {
     if (!activeAssistantMessage) return '';
-    return activeAssistantMessage.parts
-      .filter(isTextPart)
-      .map((p) => p.text ?? '')
-      .join('');
+    let text = '';
+    for (const p of activeAssistantMessage.parts) {
+      if (isTextPart(p)) text += p.text ?? '';
+    }
+    return text;
   }, [activeAssistantMessage]);
   const lastTextPart = useMemo(() => findLastTextPart(allParts), [allParts]);
   const responseRaw = lastTextPart?.text ?? '';
@@ -760,23 +870,26 @@ function SessionTurnImpl({
    * `getTurnError` flattens the structured error to a display string and drops
    * its `name`, so the banner was left substring-matching "abort" over arbitrary
    * prose — which renders a genuine failure as a muted "Interrupted" and hides
-   * what really went wrong. The identity is right here on the message; read it.
-   *
-   * Both real producers set `name: 'AbortError'`: opencode's own abort, and the
-   * optimistic patch applied when the user hits Stop.
+   * what really went wrong. The identity is right here on the message; read it
+   * through the SDK's single `isAbortError` classifier, which recognizes both
+   * real producers: the opencode wire's `MessageAbortedError` and the client's
+   * synthesized `AbortError` patch applied when the user hits Stop.
    */
-  const turnErrorIsAbort = useMemo(() => {
-    for (const msg of turn.assistantMessages) {
-      const err = (msg.info as { error?: unknown }).error;
-      if (!err || typeof err !== 'object') continue;
-      // Narrow to a string BEFORE comparing — `name` is `unknown` here, and
-      // comparing that to a literal is the inconvertible-types smell CodeQL
-      // flags (and would silently be false for a boxed String or a symbol).
-      const name = (err as { name?: unknown }).name;
-      return typeof name === 'string' && name === 'AbortError';
-    }
-    return false;
-  }, [turn]);
+  const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
+
+  /**
+   * The machine-readable WHY behind `turnErrorIsAbort`, when the abort was
+   * client-synthesized and tagged one (`data.reason` — see
+   * `core/http/abort-error.ts`'s `AbortReason` union).
+   *
+   * `undefined` covers two different cases the banner treats identically to
+   * `'user'`: no abort at all, and a genuine wire `MessageAbortedError`
+   * (opencode's own abort — never tagged, see the classifier's doc comment).
+   * Only a reason present AND not `'user'` (currently just
+   * `'runtime-disposed'`, from `markSessionAbortedLocally`) means "pure
+   * infrastructure, render nothing" — see `TurnErrorDisplay`.
+   */
+  const turnErrorAbortReason = useMemo(() => deriveTurnErrorAbortState(turn).abortReason, [turn]);
 
   // The gateway's structured fields (provider/suggestion/request_id) for
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
@@ -801,10 +914,9 @@ function SessionTurnImpl({
   // Only skip tool parts whose callID matches a currently-pending question.
   const answeredQuestionParts = useMemo(() => {
     const pendingCallIds = new Set(
-      questions
-        .filter((q) => q.sessionID === sessionId)
-        .map((q) => q.tool?.callID)
-        .filter(Boolean),
+      questions.flatMap((q) =>
+        q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [],
+      ),
     );
 
     // Collect ALL question tool parts first so we can determine which ones
@@ -1025,14 +1137,13 @@ function SessionTurnImpl({
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {
-    const textParts = turn.userMessage.parts.filter(
-      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-    return textParts
-      .map((p) => stripSystemPtyText(p.text))
-      .filter((t) => t.trim())
-      .join('\n')
-      .trim();
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
+      const text = stripSystemPtyText((p as TextPart).text);
+      if (text.trim()) texts.push(text);
+    }
+    return texts.join('\n').trim();
   }, [turn.userMessage.parts]);
 
   const commandForTurn = useMemo(() => {
@@ -1043,7 +1154,8 @@ function SessionTurnImpl({
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
   // ---- Status throttling (2.5s) ----
-  const lastStatusChangeRef = useRef(Date.now());
+  const [statusThrottleStart] = useState(() => Date.now());
+  const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
   const rawStatus = useMemo(
@@ -1108,9 +1220,11 @@ function SessionTurnImpl({
     // When inline content is active, copy all text parts (not just the last one)
     const textToCopy = inlineContentParts
       ? inlineContentParts
-          .filter((item) => item.type === 'text')
-          .map((item) => (item.part as TextPart).text?.trim())
-          .filter(Boolean)
+          .flatMap((item) => {
+            if (item.type !== 'text') return [];
+            const text = (item.part as TextPart).text?.trim();
+            return text ? [text] : [];
+          })
           .join('\n\n')
       : response;
     if (!textToCopy) return;
@@ -1120,12 +1234,12 @@ function SessionTurnImpl({
   };
 
   // Parts with a pending permission need a visible, actionable surface — they
-  // must never fold into a collapsed burst. Answered questions get the same
-  // standalone treatment for a different reason: they record a decision the
-  // USER made, not agent activity, so the "collapse the agent's work into one
-  // row" goal doesn't apply to them (they render via AnsweredQuestionCard, not
-  // ToolPartRenderer — see the standalone branch below). Pending/dismissed
-  // questions are deliberately NOT standalone: the real, actionable prompt for
+  // must never fold into a collapsed burst. Answered questions are NOT
+  // standalone: they are a step of the turn (the agent asked, the user
+  // answered, the work continued), so they render inside the activity burst as
+  // their own chain row (`AnsweredQuestionStep` in turn/answered-question-step)
+  // instead of a card that force-splits the burst around it. Pending/dismissed
+  // questions are not standalone either: the real, actionable prompt for
   // a pending question lives in the composer (SessionChatInput's questionSlot),
   // which has the answer-reply plumbing this component doesn't; surfacing an
   // inert, answer-less card here would only be a confusing duplicate. Those
@@ -1140,11 +1254,8 @@ function SessionTurnImpl({
         ids.add(permission.tool.callID);
       }
     }
-    for (const { part } of answeredQuestionParts) {
-      ids.add(part.callID);
-    }
     return ids;
-  }, [permissions, answeredQuestionParts, sessionId]);
+  }, [permissions, sessionId]);
 
   /**
    * The turn's parts, cut into bursts / standalone tools / text.
@@ -1162,23 +1273,25 @@ function SessionTurnImpl({
    * Memoised, the arrays keep their identity until the parts actually change,
    * which is what makes the memo boundaries downstream able to bite.
    */
-  const segments = useMemo(
-    () =>
-      segmentTurn(
-        allParts
-          .map(({ part }) => part)
-          .filter((part) => {
-            if (isToolPart(part) && part.tool === 'todowrite') return false;
-            if (isToolPart(part) && part.tool === 'question') {
-              // Keep only answered questions, and only if not rendering inline
-              return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
-            }
-            return true;
-          }),
-        { standaloneCallIds },
-      ),
-    [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds],
-  );
+  const segments = useMemo(() => {
+    const parts: (typeof allParts)[number]['part'][] = [];
+    for (const { part } of allParts) {
+      if (isToolPart(part) && part.tool === 'todowrite') continue;
+      if (isToolPart(part) && part.tool === 'question') {
+        // Keep only answered questions, and only if not rendering inline.
+        if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
+        // A kept question rides into its burst as the ANSWERED part — the
+        // one from answeredQuestionParts, possibly synthetic with
+        // optimistically-cached or output-parsed answers the raw store part
+        // does not carry yet. Without this substitution the burst row would
+        // show "0 answered" until the server confirms.
+        parts.push(answeredQuestionPartsById.get(part.id) ?? part);
+        continue;
+      }
+      parts.push(part);
+    }
+    return segmentTurn(parts, { standaloneCallIds });
+  }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
   // Shell mode — short-circuit rendering
@@ -1200,6 +1313,7 @@ function SessionTurnImpl({
             errorText={turnError}
             errorDetails={turnErrorDetails}
             isAbort={turnErrorIsAbort}
+            abortReason={turnErrorAbortReason}
             className="mt-2"
           />
         )}
@@ -1304,17 +1418,19 @@ function SessionTurnImpl({
 			    - `todowrite` — the plan card beneath the user message is now
 			      the single canonical todo surface; showing the same checklist
 			      again inside a burst would just duplicate it.
-			    - `question`: only answered questions are kept. Pending and
-			      dismissed questions are dropped entirely. Additionally,
-			      answered questions are dropped when rendering inline content
-			      (below), since that mode shows them already, in natural order. */}
+			    - `question`: only answered questions are kept — they fold into
+			      their burst as a "Questions · N answered" chain row
+			      (turn/answered-question-step.tsx). Pending and dismissed
+			      questions are dropped entirely. Additionally, answered
+			      questions are dropped when rendering inline content (below),
+			      since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-3">
           {segments.map((segment, index) => {
             if (segment.kind === 'burst') {
               return (
                 <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? index}`}
+                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
                   parts={segment.parts}
                   sessionId={sessionId}
                   working={working}
@@ -1327,14 +1443,6 @@ function SessionTurnImpl({
 
             if (segment.kind === 'standalone') {
               if (!shouldShowToolPart(segment.part)) return null;
-              // Render answered questions via AnsweredQuestionCard instead of
-              // ToolPartRenderer to avoid the "Question(s)" label and badge
-              // from QuestionTool; answered cards show "Questions · N answered" instead.
-              // Use the part from the map (may contain optimistically-cached answers).
-              if (answeredQuestionPartsById.has(segment.part.id)) {
-                const part = answeredQuestionPartsById.get(segment.part.id)!;
-                return <AnsweredQuestionCard key={segment.part.id} part={part} />;
-              }
               return (
                 <ToolPartRenderer
                   key={segment.part.id}
@@ -1493,6 +1601,7 @@ function SessionTurnImpl({
           errorText={turnError}
           errorDetails={turnErrorDetails}
           isAbort={turnErrorIsAbort}
+          abortReason={turnErrorAbortReason}
         />
       )}
 
@@ -1770,6 +1879,37 @@ export function SessionChat({
   const abortSession = useAbortRuntimeSession();
   const executeCommand = useExecuteRuntimeCommand();
 
+  // T10: the most recently issued stop/cancel's `AbortSettlement`
+  // promise for this session, so `stopThenSendNow` (used by
+  // `handleQueueSendNow`) can await the SERVER-confirmed settlement instead
+  // of racing the optimistic idle flip `applyOptimisticAbort` makes
+  // synchronously. Keyed by sessionId even though this component instance is
+  // 1:1 with a session, matching the sessionId-keyed conventions used
+  // elsewhere in this file (e.g. the zustand stores) rather than assuming the
+  // prop never changes across this instance's lifetime.
+  const pendingAbortSettlementRef = useRef<Map<string, Promise<AbortSettlement>>>(new Map());
+
+  /**
+   * The one place that issues a stop/cancel for this session's run, whether
+   * through the mounted `sessionState` hook or the fallback raw mutation.
+   * Both branches resolve a real `AbortSettlement` (never throwing — see
+   * `awaitAbortSettlement`) and stash it in `pendingAbortSettlementRef` for
+   * `stopThenSendNow` to await. Cleared once it settles so a stale settlement
+   * never gates an unrelated future send.
+   */
+  const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
+    const settlement = sessionState
+      ? sessionState.cancel()
+      : awaitAbortSettlement(() => abortSession.mutateAsync(sessionId));
+    pendingAbortSettlementRef.current.set(sessionId, settlement);
+    void settlement.finally(() => {
+      if (pendingAbortSettlementRef.current.get(sessionId) === settlement) {
+        pendingAbortSettlementRef.current.delete(sessionId);
+      }
+    });
+    return settlement;
+  }, [sessionId, sessionState, abortSession]);
+
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
     agents,
@@ -1895,12 +2035,14 @@ export function SessionChat({
   // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
   // pair — so pushState navigation still works with no `?new=true` dependency,
   // and no web code needs to know the storage key names directly.
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return readStartStash(sessionId)?.prompt ?? null;
-    }
-    return null;
-  });
+  // Starts null on the server AND the hydration render (identical trees), then
+  // seeds from the stash in a layout effect — before first paint, so the
+  // optimistic prompt still shows in the same frame the session mounts.
+  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    const stashed = readStartStash(sessionId)?.prompt;
+    if (stashed) setOptimisticPrompt(stashed);
+  }, [sessionId]);
 
   // Hydrate options from the SDK's start-stash and send the pending prompt for
   // new sessions. The dashboard/project page (or the instant session shell)
@@ -2682,15 +2824,15 @@ export function SessionChat({
    * changed. `turn` is the dependency of ~28 memos inside `SessionTurn`, so that
    * one fact invalidated all of them, for every turn, every frame.
    *
-   * Writing the ref during render is deliberate and safe: `stabilizeTurns` is
-   * idempotent, so StrictMode's double invocation lands on the same objects.
+   * The previous stable array is carried in a ref written after commit, so
+   * render stays pure; `stabilizeTurns` is idempotent, so StrictMode's double
+   * invocation lands on the same objects.
    */
   const stableTurnsRef = useRef<Turn[]>([]);
-  const turns = useMemo(() => {
-    const stable = stabilizeTurns(rawTurns, stableTurnsRef.current);
-    stableTurnsRef.current = stable;
-    return stable;
-  }, [rawTurns]);
+  const turns = useMemo(() => stabilizeTurns(rawTurns, stableTurnsRef.current), [rawTurns]);
+  useEffect(() => {
+    stableTurnsRef.current = turns;
+  }, [turns]);
 
   /**
    * One scan of the transcript, not one per turn.
@@ -2837,14 +2979,17 @@ export function SessionChat({
       } catch {
         // ignore — SSE "question.rejected" event will also remove it
       }
-      // Also abort the session so the "The operation was aborted." banner appears
+      // Also abort the session so the "The operation was aborted." banner
+      // appears. Routed through `issueSessionCancel` (T10) so this
+      // cancel's `AbortSettlement` is tracked the same as every other stop
+      // path, in case a queued "send now" follows a question rejection.
       if (sessionState) {
-        sessionState.cancel();
+        issueSessionCancel();
       } else if (!abortSession.isPending) {
-        abortSession.mutate(sessionId);
+        issueSessionCancel();
       }
     },
-    [sessionState, removeQuestion, abortSession, sessionId, suppressQuestionFor],
+    [sessionState, removeQuestion, abortSession, suppressQuestionFor, issueSessionCancel],
   );
   const hasCompactionTurn = useMemo(
     () =>
@@ -2903,6 +3048,16 @@ export function SessionChat({
     try {
       const { messageId, text } = rewindTarget;
       await sessionState.rewind(messageId);
+      // The queued messages belong to the abandoned trajectory, not merely to
+      // a turn that has not started yet — an edit-and-resend means "start
+      // over from here", and anything still waiting was written against the
+      // conversation the user just asked to discard. Clearing outright (not
+      // pausing) is deliberate: a pause needs an explicit resume, and nothing
+      // here should auto-resend text the user may not even want anymore once
+      // they see the rewound transcript. `revertStaged` (the queue-gate memo
+      // above) additionally blocks anything ELSE from queuing into this same
+      // staged window in the meantime.
+      useMessageQueueStore.getState().clearSession(sessionId);
       setRewindDraft({ text, id: ++rewindPrefillId.current });
       setRewindTarget(null);
     } catch (error) {
@@ -2910,7 +3065,7 @@ export function SessionChat({
         description: formatCommandError(error),
       });
     }
-  }, [rewindTarget, sessionState]);
+  }, [rewindTarget, sessionState, sessionId]);
 
   const handleRestoreRewind = useCallback(async () => {
     if (!sessionState?.rewindMessageId) return;
@@ -2969,12 +3124,13 @@ export function SessionChat({
       // File and agent refs from tracked @ mentions. File uploads still use
       // the separate <file path="..." mime="..." ...>…</file> block below —
       // these are only for plain @ references to existing files/agents.
-      const fileMentionRefs: FileRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'file' && m.label)
-        .map((m) => ({ path: m.label, name: m.label }));
-      const agentMentionRefs: AgentRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'agent' && m.label)
-        .map((m) => ({ name: m.label }));
+      const fileMentionRefs: FileRefLike[] = [];
+      const agentMentionRefs: AgentRefLike[] = [];
+      for (const m of mentions ?? []) {
+        if (!m.label) continue;
+        if (m.kind === 'file') fileMentionRefs.push({ path: m.label, name: m.label });
+        else if (m.kind === 'agent') agentMentionRefs.push({ name: m.label });
+      }
 
       // Play send sound
       playSound('send');
@@ -2998,10 +3154,14 @@ export function SessionChat({
       const rawOptimisticSessionIds: typeof sessionMentionsForOptimistic = [];
       const rawOptimisticRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawOptimisticMatch: RegExpExecArray | null;
+      let optimisticSessionsById: Map<string, any> | null = null;
       while ((rawOptimisticMatch = rawOptimisticRegex.exec(text)) !== null) {
         const rawId = rawOptimisticMatch[1];
         if (sessionMentionsForOptimistic.some((m) => m.value === rawId)) continue;
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        optimisticSessionsById ??= new Map(
+          (allSessions ?? []).map((s: any) => [s.id, s] as const),
+        );
+        const found = optimisticSessionsById.get(rawId);
         rawOptimisticSessionIds.push({
           kind: 'session',
           label: found?.title || rawId,
@@ -3094,12 +3254,14 @@ export function SessionChat({
       const rawSessionIdMentions: TrackedMention[] = [];
       const rawSessionIdRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawMatch: RegExpExecArray | null;
+      let sessionsById: Map<string, any> | null = null;
       while ((rawMatch = rawSessionIdRegex.exec(textPrompt.text)) !== null) {
         const rawId = rawMatch[1];
         // Skip if already covered by a tracked mention
         if (trackedSessionMentions.some((m) => m.value === rawId)) continue;
         // Look up session by ID
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        sessionsById ??= new Map((allSessions ?? []).map((s: any) => [s.id, s] as const));
+        const found = sessionsById.get(rawId);
         if (found) {
           rawSessionIdMentions.push({
             kind: 'session',
@@ -3319,6 +3481,12 @@ export function SessionChat({
       // releases it by itself when the box answers. This is what makes leaving
       // the composer ENABLED safe — see `sessionComposerReadiness`.
       runtimeReady,
+      // T22 — the web must never prompt across a staged session rewind. See
+      // `QueueDrainGates.revertStaged`'s doc comment for why the OTHER gates
+      // read wrong (open, not closed) during a staged revert and cannot
+      // stand in for this one. `rewindMessageId` is already exactly "staged,
+      // not yet committed" — null once committed or cleared.
+      revertStaged: !!sessionState?.rewindMessageId,
     }),
     [
       runtimeReady,
@@ -3330,6 +3498,7 @@ export function SessionChat({
       hasPendingApproval,
       pendingPermissions.length,
       readOnly,
+      sessionState?.rewindMessageId,
     ],
   );
 
@@ -3422,28 +3591,38 @@ export function SessionChat({
     // user was trying to get ahead of.
     queueDrain.pause();
 
-    if (sessionState) sessionState.cancel();
-    else abortSession.mutate(sessionId);
-  }, [sessionId, sessionState, abortSession, queueDrain]);
+    // Routed through `issueSessionCancel` (T10) so this stop's
+    // `AbortSettlement` is tracked for `handleQueueSendNow`'s
+    // `stopThenSendNow` to await — see that function's doc for why.
+    issueSessionCancel();
+  }, [sessionId, abortSession, queueDrain, issueSessionCancel]);
 
   /**
    * The per-row action: end the current turn if one is running, then send that
    * message. The only path that interrupts a running turn — automatic draining
    * never does — which is why it is a deliberate click and says what it does.
    *
-   * Waits for the server to actually report idle rather than guessing with a
-   * fixed delay, so the prompt cannot race the abort it just issued.
+   * T10: waits for the real `AbortSettlement` the stop it just issued
+   * produces (via `stopThenSendNow`), not a guess and not the optimistic
+   * idle flip `handleStop` makes synchronously — so the prompt cannot race
+   * the abort still in flight on the server.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
-      const status = useSessionStateStore.getState().sessionStatus[sessionId];
-      const running = status?.type === 'busy' || status?.type === 'retry';
-      if (running) {
-        handleStop();
-        await waitForSessionIdle(sessionId);
-      }
-      queueDrain.resume();
-      await queueDrain.dispatchNow(id);
+      await stopThenSendNow({
+        isRunning: () => {
+          const status = useSessionStateStore.getState().sessionStatus[sessionId];
+          return status?.type === 'busy' || status?.type === 'retry';
+        },
+        pendingSettlement: () => pendingAbortSettlementRef.current.get(sessionId),
+        stop: () => {
+          handleStop();
+          return pendingAbortSettlementRef.current.get(sessionId) ?? Promise.resolve(null);
+        },
+        waitIdle: () => waitForSessionIdle(sessionId),
+        resumeQueue: () => queueDrain.resume(),
+        dispatch: () => queueDrain.dispatchNow(id),
+      });
     },
     [sessionId, handleStop, queueDrain],
   );
@@ -3543,6 +3722,15 @@ export function SessionChat({
   useEffect(() => {
     if (!isBusy) clearEscHint();
   }, [isBusy, clearEscHint]);
+
+  // Unmount-only: a fade timer armed by a keydown must not outlive the chat.
+  useEffect(() => {
+    return () => {
+      if (escFadeTimerRef.current) {
+        clearTimeout(escFadeTimerRef.current);
+      }
+    };
+  }, []);
 
   // Ref-based guard against rapid double-fire of commands (replaces
   // the old executeCommand.isPending check from the TQ mutation).
@@ -3810,7 +3998,7 @@ export function SessionChat({
         {renderedQuestion ? (
           <div
             className={cn(
-              'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+              'overflow-hidden w-full transition-[max-height,opacity,transform] ease-in-out',
               questionPromptVisible
                 ? 'max-h-130 translate-y-0 opacity-100 duration-300'
                 : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
@@ -3998,7 +4186,16 @@ export function SessionChat({
               <div
                 ref={scrollContainerCallbackRef}
                 className={cn(
-                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
+                  // overflow-anchor:none — this scroll area does ALL of its own
+                  // anchoring (useAutoScroll's spacer + RAF follow, the send-path
+                  // turn anchor, and the history-prepend content-space restore in
+                  // session-history-scroll.ts). The browser's native scroll
+                  // anchoring (default `overflow-anchor: auto`) tries to
+                  // compensate for the SAME prepends independently, and the two
+                  // corrections stacking is the other half of the scroll-up
+                  // teleport: ours restores the reader's position, then the
+                  // native one nudges it again.
+                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
                   shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
@@ -4141,7 +4338,13 @@ export function SessionChat({
                     </ToolActivateContext.Provider>
 
                     {/* Busy indicator when no turns yet but session is busy */}
-                    {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                    {commandError && (
+                      <TurnErrorDisplay
+                        error={commandError}
+                        isAbort={isAbortError(commandError.cause)}
+                        className="mt-2"
+                      />
+                    )}
                     {/* A turn refused for a missing connector renders HERE — after
                     the last turn, directly under the message that triggered it —
                     rather than as a one-line pill. It is the one failure with a

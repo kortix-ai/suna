@@ -227,15 +227,19 @@ const PANE_META: Partial<Record<AccountSection, { title: string; description: st
 // 402 for non-entitled accounts — so the UI never offers a control that the
 // backend would reject. See `entitlements` on the account-state `tier` block.
 
+// Hoisted so render does not rebuild the formatter per call — same default
+// locale and options as the previous inline `toLocaleDateString` call.
+const MEMBER_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return MEMBER_DATE_FORMAT.format(d);
 }
 
 function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
@@ -1184,8 +1188,12 @@ function MembersCard({
     // filtered out of view shouldn't be silently included in the bulk
     // action just because it was clicked before the filter applied.
     const ids = Array.from(effectiveSelectedIds);
-    const results = await Promise.allSettled(ids.map(runOne));
-    setBulkBusy(false);
+    let results: PromiseSettledResult<unknown>[];
+    try {
+      results = await Promise.allSettled(ids.map(runOne));
+    } finally {
+      setBulkBusy(false);
+    }
     invalidateMembers();
 
     const failures: { userId: string; email: string; reason: string }[] = [];
@@ -1861,7 +1869,10 @@ function InviteMemberModal({
       else valid.push(t);
     }
     if (valid.length > 0) {
-      setEmails((prev) => [...prev, ...valid.filter((v) => !prev.includes(v))]);
+      setEmails((prev) => {
+        const existing = new Set(prev);
+        return [...prev, ...valid.filter((v) => !existing.has(v))];
+      });
     }
     if (invalid.length > 0) {
       setInputValue(invalid.join(', '));

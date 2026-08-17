@@ -135,9 +135,4 @@ export const FRESHNESS = {
    */
   gateway: 'inventory',
   triggers: 'config',
-  /** Personalized-or-static prompt chips shown before a project's first
-   *  message. No live writer announces a change (regenerated lazily server
-   *  side); `config` matches `triggers`/`files`, the other repo-manifest-ish
-   *  reads that only change through this app's own mutations. */
-  starterSuggestions: 'config',
 } as const satisfies Record<string, FreshnessTier>;

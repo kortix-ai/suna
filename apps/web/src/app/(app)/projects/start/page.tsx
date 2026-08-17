@@ -61,6 +61,7 @@ export default function ProjectStartPage() {
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
   const attempts = useRef(0);
   const resolving = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [failed, setFailed] = useState(false);
   const [terminal, setTerminal] = useState<ReturnType<typeof classifyLandingTerminal> | null>(
     null,
@@ -148,7 +149,7 @@ export default function ProjectStartPage() {
       if (attempts.current < MAX_RESOLVE_ATTEMPTS && delay !== undefined) {
         // A transient backend hiccup must not demote the user to the projects
         // list — retry in place, behind the same paint.
-        setTimeout(() => {
+        retryTimer.current = setTimeout(() => {
           resolving.current = false;
           void resolve();
         }, delay);
@@ -164,6 +165,12 @@ export default function ProjectStartPage() {
     if (attempts.current > 0) return;
     void resolve();
   }, [resolve]);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
+  }, []);
 
   if (terminal) {
     return (

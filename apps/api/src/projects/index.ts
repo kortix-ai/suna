@@ -27,7 +27,6 @@ import './routes/r4';
 import './routes/oauth2-connectors';
 import './routes/r5';
 import './routes/r6';
-import './routes/starter-suggestions';
 import './routes/group-grants';
 import './routes/warm-sessions';
 import './routes/project-sessions';

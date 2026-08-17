@@ -323,14 +323,25 @@ function GhostAction({ onClick, children }: { onClick: () => void; children: Rea
   );
 }
 
+const dateFormattersByLocale = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormatterFor(locale: string): Intl.DateTimeFormat {
+  let formatter = dateFormattersByLocale.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale);
+    dateFormattersByLocale.set(locale, formatter);
+  }
+  return formatter;
+}
+
 function formatWhen(iso: string, locale: string): string {
   const d = new Date(iso);
   const now = new Date();
   const msPerDay = 24 * 60 * 60 * 1000;
   const diffDays = Math.round((d.getTime() - now.getTime()) / msPerDay);
-  if (diffDays < -1) return d.toLocaleDateString(locale);
+  if (diffDays < -1) return dateFormatterFor(locale).format(d);
   if (diffDays < 14) {
     return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(diffDays, 'day');
   }
-  return d.toLocaleDateString(locale);
+  return dateFormatterFor(locale).format(d);
 }

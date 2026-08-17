@@ -535,11 +535,19 @@ function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
 }
 
+/** Shared formatter, hoisted so render does not rebuild the Intl machinery
+ *  per call. Same options as the old `toLocaleDateString` call — identical output. */
+const rowDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function formatDate(input: string | null | undefined) {
   if (!input) return 'Never';
   const date = new Date(input);
   if (Number.isNaN(date.getTime())) return 'Never';
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return rowDateFormatter.format(date);
 }
 
 /** The three underline tabs this pane is split into — see this file's header
@@ -2459,20 +2467,15 @@ function ProjectGroupGrantsCard({
     enabled: canManage,
     ...contract('config'),
   });
-  const groupsWithCustomRole = useMemo(
-    () =>
-      new Set(
-        toArray(policiesQuery.data)
-          .filter(
-            (p) =>
-              p.principal_type === 'group' &&
-              p.scope_type === 'project' &&
-              p.scope_id === projectId,
-          )
-          .map((p) => p.principal_id),
-      ),
-    [policiesQuery.data, projectId],
-  );
+  const groupsWithCustomRole = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of toArray(policiesQuery.data)) {
+      if (p.principal_type === 'group' && p.scope_type === 'project' && p.scope_id === projectId) {
+        ids.add(p.principal_id);
+      }
+    }
+    return ids;
+  }, [policiesQuery.data, projectId]);
 
   const grants = useMemo(() => {
     const raw = toArray(grantsQuery.data?.grants);

@@ -1900,8 +1900,8 @@ function EmailSenderPolicyEditor({
   const update = useUpdateEmailPolicy();
   const initial = normalizeEmailSenderPolicy(policy);
   const [restricted, setRestricted] = useState(initial.mode === 'restricted');
-  const [emails, setEmails] = useState(initial.allowedEmails.join('\n'));
-  const [domains, setDomains] = useState(initial.allowedDomains.join('\n'));
+  const [emails, setEmails] = useState(() => initial.allowedEmails.join('\n'));
+  const [domains, setDomains] = useState(() => initial.allowedDomains.join('\n'));
   const [regex, setRegex] = useState(initial.allowedRegex ?? '');
   const [error, setError] = useState<string | null>(null);
 
@@ -2879,21 +2879,24 @@ function policiesSig(
     .sort()
     .map(([k, a]) => `${k}=${a}`)
     .join(',');
-  const rl = rules
-    .filter((r) => r.match.trim())
-    .map((r) => `${r.match.trim()}=${r.action}`)
-    .join(',');
-  return `${pt}|${rl}`;
+  const rlParts: string[] = [];
+  for (const r of rules) {
+    const match = r.match.trim();
+    if (match) rlParts.push(`${match}=${r.action}`);
+  }
+  return `${pt}|${rlParts.join(',')}`;
 }
 
 function tsSignature(slug: string, action: ConnectorAction): string {
   const props =
     (action.inputSchema as { properties?: Record<string, { type?: string }> } | null)?.properties ??
     {};
-  const required: string[] = (action.inputSchema as { required?: string[] } | null)?.required ?? [];
+  const required = new Set(
+    (action.inputSchema as { required?: string[] } | null)?.required ?? [],
+  );
   const args = Object.entries(props).map(([k, v]) => {
     const t = v?.type === 'integer' ? 'number' : (v?.type ?? 'string');
-    return `  ${k}${required.includes(k) ? '' : '?'}: ${t};`;
+    return `  ${k}${required.has(k) ? '' : '?'}: ${t};`;
   });
   const argBlock = args.length ? `{\n${args.join('\n')}\n}` : '{}';
   return `connector.call("${slug}", "${action.path}", ${argBlock}): Promise<unknown>`;
@@ -2966,14 +2969,15 @@ export function PermissionsSection({
 
   const save = useMutation({
     mutationFn: () => {
-      const policies: ConnectorPolicyRule[] = [
-        ...tools
-          .filter((t) => perTool[t.path])
-          .map((t) => ({ match: t.path, action: perTool[t.path]! })),
-        ...rules
-          .filter((r) => r.match.trim())
-          .map((r) => ({ match: r.match.trim(), action: r.action })),
-      ];
+      const policies: ConnectorPolicyRule[] = [];
+      for (const t of tools) {
+        const action = perTool[t.path];
+        if (action) policies.push({ match: t.path, action });
+      }
+      for (const r of rules) {
+        const match = r.match.trim();
+        if (match) policies.push({ match, action: r.action });
+      }
       return setConnectorPolicies(projectId, connector.slug, policies);
     },
     onSuccess: () => {
@@ -4011,7 +4015,8 @@ function HeadersEditor({
   const [rows, setRows] = useState<Array<[string, string]>>(() => Object.entries(value));
   // Re-seed only when the saved value genuinely differs from what we're showing,
   // so a refetch can't wipe a row the user is mid-way through typing.
-  const seeded = useRef(JSON.stringify(Object.entries(value)));
+  const [initialSeed] = useState(() => JSON.stringify(Object.entries(value)));
+  const seeded = useRef(initialSeed);
   useEffect(() => {
     const incoming = JSON.stringify(Object.entries(value));
     if (incoming !== seeded.current && incoming !== JSON.stringify(rows)) {

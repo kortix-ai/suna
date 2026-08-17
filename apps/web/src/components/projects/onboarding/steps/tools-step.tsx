@@ -64,9 +64,10 @@ export function ToolsStep({
     staleTime: 60_000,
   });
 
-  const apps = (appsQuery.data?.pages ?? [])
-    .flatMap((p) => p.apps)
-    .filter((a) => !SLACK_SLUGS.has(a.slug));
+  const apps = (appsQuery.data?.pages ?? []).flatMap((p) =>
+    p.apps.filter((a) => !SLACK_SLUGS.has(a.slug)),
+  );
+  const existingSlugSet = new Set(existingSlugs);
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
 
@@ -120,7 +121,7 @@ export function ToolsStep({
               <>
                 <div className="flex flex-col gap-2">
                   {apps.map((app) => {
-                    const connected = existingSlugs.includes(app.slug);
+                    const connected = existingSlugSet.has(app.slug);
                     const connectedStatusId = `onboarding-tool-${app.slug}-connected`;
 
                     return (

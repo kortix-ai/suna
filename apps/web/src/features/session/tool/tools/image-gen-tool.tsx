@@ -14,7 +14,7 @@ import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const TITLE_BY_ACTION: Record<string, string> = {
   generate: 'Generate Image',
@@ -41,17 +41,21 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
     enabled: !!fileContentPath,
   });
 
-  const imageUrl = useMemo(() => {
-    if (fileContentData?.encoding === 'base64' && fileContentData?.content) {
-      const binary = atob(fileContentData.content);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes], {
-        type: fileContentData.mimeType || 'image/webp',
-      });
-      return URL.createObjectURL(blob);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!(fileContentData?.encoding === 'base64' && fileContentData?.content)) {
+      setImageUrl(null);
+      return;
     }
-    return null;
+    const binary = atob(fileContentData.content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {
+      type: fileContentData.mimeType || 'image/webp',
+    });
+    const url = URL.createObjectURL(blob);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [fileContentData]);
 
   const displayImageSrc = directUrl || imageUrl || '';

@@ -330,7 +330,9 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   // control: ↑/↓ or j/k to move, ↵ to open, ↑/↓ to step through an open entry,
   // Esc/← to go back.
   const state = useRef({ logs, selectedLogId, focused });
-  state.current = { logs, selectedLogId, focused };
+  useEffect(() => {
+    state.current = { logs, selectedLogId, focused };
+  });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;

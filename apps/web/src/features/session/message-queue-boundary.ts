@@ -78,6 +78,31 @@ export interface QueueDrainGates {
    * goes out by itself the moment the sandbox wakes.
    */
   runtimeReady: boolean;
+  /**
+   * A session rewind is staged (the user picked an earlier message to edit,
+   * `session.revert` has been called, and the replacement prompt has not
+   * been sent yet). Hard-closes the drain independent of every other gate.
+   *
+   * Without this, the OTHER gates read WRONG during a staged revert, and
+   * wrong in the dangerous direction: the local hide window
+   * (`messagesBeforeRewind`) removes the very messages
+   * `hasIncompleteAssistant` and `isServerBusy` would otherwise be reading —
+   * an in-progress or just-finished turn on the abandoned trajectory
+   * disappears from view, so those gates can read CLEAR while a staged
+   * revert sits open. That would let the drain open SOONER during a staged
+   * revert than during an ordinary idle session — backwards. Draining into a
+   * staged window sends the queued prompt into a trajectory the user has
+   * already asked to discard, and it lands ahead of the replacement they are
+   * about to type into the composer.
+   *
+   * `handleConfirmRewind` (`session-chat.tsx`) additionally clears this
+   * session's queue outright on confirm — the queued messages belong to the
+   * abandoned trajectory, not merely to a turn that has not started yet — so
+   * this gate's job is closing the door to anyone (a slower `enqueue`, a
+   * cross-tab enqueue) who queues something new WHILE staged, not draining
+   * what was already there.
+   */
+  revertStaged: boolean;
 }
 
 export function canDrainQueue(gates: QueueDrainGates): boolean {
@@ -91,7 +116,8 @@ export function canDrainQueue(gates: QueueDrainGates): boolean {
     gates.pendingPermissionCount === 0 &&
     !gates.isPaused &&
     !gates.readOnly &&
-    gates.runtimeReady
+    gates.runtimeReady &&
+    !gates.revertStaged
   );
 }
 

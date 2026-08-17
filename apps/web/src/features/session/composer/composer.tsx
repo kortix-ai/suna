@@ -218,7 +218,6 @@ export interface SessionChatInputProps {
   slashMenuPlacement?: 'above' | 'below';
 
   cardClassName?: string;
-  dockClassName?: string;
 
   replyTo?: { text: string } | null;
   onClearReply?: () => void;
@@ -287,6 +286,12 @@ const EMPTY_QUEUE: QueuedMessageView[] = [];
 /** Same, for the in-flight ids. */
 const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
+/** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
+const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_COMMANDS: Command[] = [];
+const EMPTY_MODELS: FlatModel[] = [];
+const EMPTY_VARIANTS: string[] = [];
+
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
 const NO_COMMAND_CHIP = () => null;
@@ -333,17 +338,17 @@ function ComposerImpl({
   stopDisabled = false,
   isSending = false,
   rewind,
-  agents = [],
+  agents = EMPTY_AGENTS,
   selectedAgent = null,
   onAgentChange,
   agentSelectorLocked = false,
-  commands = [],
+  commands = EMPTY_COMMANDS,
   onCommand,
-  models = [],
+  models = EMPTY_MODELS,
   selectedModel = null,
   onModelChange,
   modelDefaultControls,
-  variants = [],
+  variants = EMPTY_VARIANTS,
   selectedVariant = null,
   onVariantChange,
   messages,
@@ -366,8 +371,7 @@ function ComposerImpl({
   toolbarSlot,
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
-  dockClassName,
-    cardClassName,
+  cardClassName,
   replyTo,
   onClearReply,
   lockForQuestion = false,
@@ -1076,7 +1080,8 @@ function ComposerImpl({
    * the strip's padded, bordered shell rendered as an empty rounded sliver
    * floating above the notice bar whenever the queue was empty.
    */
-  const queueHasRows = (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
+  const queueHasRows =
+    (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
   const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
 
   return (
@@ -1132,19 +1137,19 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem] empty:hidden">
+            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
               <QueuedMessages
-                messages={queuedMessages ?? EMPTY_QUEUE}
-                failed={failedQueuedMessages}
-                inFlightIds={queueInFlightIds}
-                paused={queuePaused}
-                isRunning={queueIsRunning}
-                onRemove={onRemoveQueuedMessage}
-                onEdit={onEditQueuedMessage}
-                onReorder={onReorderQueuedMessage}
-                onSendNow={onSendQueuedMessageNow}
-                onRetry={onRetryQueuedMessage}
-              />
+                  messages={queuedMessages ?? EMPTY_QUEUE}
+                  failed={failedQueuedMessages}
+                  inFlightIds={queueInFlightIds}
+                  paused={queuePaused}
+                  isRunning={queueIsRunning}
+                  onRemove={onRemoveQueuedMessage}
+                  onEdit={onEditQueuedMessage}
+                  onReorder={onReorderQueuedMessage}
+                  onSendNow={onSendQueuedMessageNow}
+                  onRetry={onRetryQueuedMessage}
+                />
 
               {threadContext && (
                 <button
@@ -1222,7 +1227,8 @@ function ComposerImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border pt-3',
+          'bg-sidebar shadow-card border-border relative isolate z-10 w-full rounded-xl border shadow-xl',
+          'pt-3 shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
           'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
           'motion-reduce:transition-none',
           cardClassName,
@@ -1435,7 +1441,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className={cn("absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1", dockClassName)} />
+        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-3.5 z-99" />
       )}
     </div>
   );

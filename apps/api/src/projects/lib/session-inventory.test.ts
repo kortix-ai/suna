@@ -44,7 +44,7 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
-  test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
+  test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -67,19 +67,14 @@ describe('selectSessionRowsForViewer', () => {
 
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
-      'private-other',
       'stopped-lost',
       'deleted',
     ]);
     expect(selected.items[0]).toMatchObject({
-      canAccess: false,
-      runtimeStatus: null,
-    });
-    expect(selected.items[1]).toMatchObject({
       canAccess: true,
       runtimeStatus: null,
     });
-    expect(selected.items[2]).toMatchObject({
+    expect(selected.items[1]).toMatchObject({
       canAccess: true,
       deletedAt: '2026-07-20T10:00:00.000Z',
       deletedBy: VIEWER_ID,
@@ -98,6 +93,53 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     expect(selected).toEqual({ authorized: false, items: [] });
+  });
+
+  test('manager inventory includes trigger-created private rows and hides ordinary private rows', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('trigger-private', {
+          createdBy: OTHER_ID,
+          metadata: {
+            source: 'trigger:scheduler',
+            trigger_kind: 'git',
+            trigger_slug: 'daily-review',
+          },
+        }),
+        row('human-private', { createdBy: OTHER_ID, metadata: {} }),
+      ],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map(({ row: item, canAccess }) => [item.sessionId, canAccess])).toEqual([
+      ['trigger-private', true],
+    ]);
+  });
+
+  test('ordinary members still cannot access trigger-created private rows', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('trigger-private', {
+        createdBy: OTHER_ID,
+        metadata: {
+          source: 'trigger:scheduler',
+          trigger_kind: 'git',
+          trigger_slug: 'daily-review',
+        },
+      })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items).toEqual([]);
   });
 
   test('visible scope preserves the existing visibility and resumability filters', () => {

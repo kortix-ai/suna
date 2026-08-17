@@ -135,7 +135,8 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
     expect(selectorSource).not.toContain('useModelConnectionGate(models,');
   });
 
-  test('both model-connection-gate call sites still pass nothing at all', () => {
-    expect(chatGateSource.match(/useModelConnectionGate\(\)/g)?.length).toBe(2);
+  test('both model-connection-gate call sites still pass no live data and no options', () => {
+    expect(chatGateSource.match(/useModelConnectionGate\(EMPTY_MODELS\)/g)?.length).toBe(2);
+    expect(chatGateSource).not.toContain('useModelConnectionGate(EMPTY_MODELS,');
   });
 });

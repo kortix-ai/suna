@@ -79,8 +79,9 @@ export function IconsSection() {
           ))}
         </div>
         <div className="grid grid-cols-8 gap-3 rounded-md border p-4">
-          {SAMPLE_ICONS.map((SampleIcon, i) => (
-            <div key={i} className="flex items-center justify-center py-2">
+          {SAMPLE_ICONS.map((SampleIcon) => (
+            // Phosphor sets a unique displayName on every icon component.
+            <div key={SampleIcon.displayName} className="flex items-center justify-center py-2">
               <SampleIcon weight={weight} className="size-5" />
             </div>
           ))}

@@ -765,6 +765,7 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions/warm',
       'POST /v1/projects/:projectId/sessions/warm/claim',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'GET /v1/projects/:projectId/sessions',
     ],
   },
@@ -772,6 +773,7 @@ flow(
     const p = await ctx.fixtures.sharedSeededProject();
     const owner = ctx.client.as(ctx.P.OWNER);
     let warmSessionId = '';
+    let replacementId = '';
 
     await ctx.step('warming creates an ordinary session marked unused', async () => {
       const r = await owner.post(
@@ -861,11 +863,87 @@ flow(
         { params: { projectId: p.id } },
       );
       r.status(200).body().has('$.reused', false);
-      const replacementId = r.json<any>().session.session_id;
+      replacementId = r.json<any>().session.session_id;
       if (replacementId === warmSessionId) {
         throw new Error('The replacement reused the used session id');
       }
       ctx.track('session', replacementId, { projectId: p.id });
+    });
+
+    // The REAL adoption path. The browser never calls /warm/claim (deprecated):
+    // a home send navigates to the warm session and fires POST /start, which
+    // must drop the marker (listing the row) and stamp last_activity_at (so
+    // the just-started session sorts as the newest, not at its create time).
+    await ctx.step('adopting via POST /start drops the marker and stamps activity', async () => {
+      const start = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/start',
+        {},
+        { params: { projectId: p.id, sessionId: replacementId } },
+      );
+      start.status(200);
+
+      const visible = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+        query: { scope: 'visible' },
+      });
+      visible.status(200);
+      const row = visible
+        .json<any>()
+        .sessions.find((s: any) => s.session_id === replacementId);
+      if (!row) {
+        throw new Error('An adopted warm session is still hidden from the visible session list');
+      }
+      if ((row.metadata ?? {}).warm !== undefined) {
+        throw new Error('The warm marker survived adoption via POST /start');
+      }
+      if (typeof (row.metadata ?? {}).last_activity_at !== 'string') {
+        throw new Error('Adoption did not stamp last_activity_at — the session sorts at create time');
+      }
+      // Adoption also bumps updated_at (the API list's ORDER BY), so
+      // API-order consumers — CLI `sessions list`, mobile, external SDK —
+      // see the adopted session as newest. Deterministic even in the shared
+      // project: both rows belong to THIS flow, and the /claim of the first
+      // session happened strictly before this adoption.
+      const ids = visible.json<any>().sessions.map((s: any) => s.session_id);
+      if (ids.indexOf(replacementId) > ids.indexOf(warmSessionId)) {
+        throw new Error(
+          'The adopted session sorts below a session used earlier — adoption did not bump updated_at',
+        );
+      }
+    });
+
+    // The regression that shipped: after adoption, a later warm ensure handed
+    // the SAME (now used) session back, so the next project-home send landed
+    // its prompt inside an existing conversation.
+    await ctx.step('a later warm ensure never returns the adopted session', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        {},
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has('$.reused', false);
+      const nextId = r.json<any>().session.session_id;
+      if (nextId === replacementId) {
+        throw new Error('The warm ensure handed back a session that was already adopted');
+      }
+      ctx.track('session', nextId, { projectId: p.id });
+
+      // JAY-596, pinned BEHAVIORALLY: a replenish carries the id it just
+      // took as exclude_session_id, and the server must create a fresh
+      // session instead of echoing the excluded one back — even though its
+      // warm marker is still set at that moment. `nextId` is exactly such a
+      // still-markered, would-be-reused candidate.
+      const excluded = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        { exclude_session_id: nextId },
+        { params: { projectId: p.id } },
+      );
+      excluded.status(200).body().has('$.reused', false);
+      const freshId = excluded.json<any>().session.session_id;
+      if (freshId === nextId) {
+        throw new Error('exclude_session_id was ignored — the excluded warm session came back');
+      }
+      ctx.track('session', freshId, { projectId: p.id });
     });
   },
 );

@@ -1,5 +1,12 @@
-import { connectorCalls, projectSessions, projects, serviceAccounts } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import {
+  connectorCalls,
+  projectSessions,
+  projects,
+  serviceAccounts,
+  sessionSandboxes,
+} from '@kortix/db';
+import { and, desc, eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { mayRequeueFailedCreate } from './requeue-policy';
@@ -7,6 +14,8 @@ import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -16,6 +25,7 @@ import {
 } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
@@ -226,6 +236,7 @@ export async function createSession(
       projectId: command.project.projectId,
       sessionId: result.sessionId,
       actions: command.postCreate,
+      commandId: claimed.row.commandId,
     });
     if (!postCreate.ok) {
       await markCommandFailed(claimed.row.commandId, postCreate.error, {
@@ -324,8 +335,21 @@ export async function startSession(command: StartSessionCommand) {
 
 export async function continueSession(
   command: ContinueSessionCommand,
+  // F2: the queued `continue_session` row's stable identity, when this
+  // delivery originates from the durable queue (`executeQueuedContinue`,
+  // `applyPostCreateActions`'s `deliver_prompt` action). Sent to `postPrompt`
+  // as the `Idempotency-Key` — see the note there for why this must be
+  // STABLE across every retry of ONE command and DISTINCT across different
+  // commands, even when their prompt text is byte-identical. Callers with no
+  // durable row of their own (direct API/channel delivery) get a fresh
+  // `randomUUID()` per call instead — still stable across THIS call's own
+  // internal `deliverWithRetry` retries (computed once, below, outside that
+  // loop), just not across separate invocations, which those callers never
+  // rely on for dedupe.
+  commandId?: string,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
+  const idempotencyKey = commandId ?? randomUUID();
   const [session] = await db
     .select({
       accountId: projectSessions.accountId,
@@ -474,7 +498,7 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: (externalId, runtimeId) =>
-      postPrompt(externalId, runtimeId, text, userId, sessionId),
+      postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey),
   });
 }
 
@@ -517,6 +541,7 @@ export async function drainSessionLifecycleQueue(
         projectId: row.projectId,
         sessionId: result.sessionId,
         actions: payload.postCreate,
+        commandId: row.commandId,
       });
       if (!postCreate.ok) {
         await markCommandFailed(row.commandId, postCreate.error, {
@@ -558,8 +583,122 @@ export async function drainSessionLifecycleQueue(
  * consumed-marker check runs at DRAIN time, not enqueue time, so a live held
  * request that picked the decision up during the grace window cleanly turns
  * this into a no-op instead of a duplicate prompt.
+ *
+ * T13 — no-blind-repost on a retryable ('pending') delivery: below,
+ * `retryable = delivery === 'pending'` re-queues this SAME row, and a later
+ * drain calls `continueSession` again with the identical `sessionId`/`text` —
+ * so a delivery that actually reached opencode but was reported ambiguous
+ * (network reset after the daemon accepted it, a timed-out response read)
+ * must not re-POST blind on the next pass.
+ *
+ * This module does not re-check that itself — a cheap authoritative read
+ * (list opencode's messages by id, or ask the daemon "did you see this one?")
+ * is not available here without another round trip per retry. Instead the
+ * guarantee is carried by `postPrompt`'s own transport: it POSTs through
+ * `forwardToSandbox`, which is the SAME proxy path the SDK's browser/CLI
+ * sends run through, and that path claims a delivery in
+ * `apps/api/src/sandbox-proxy/prompt-dedupe.ts` before it ever reaches
+ * opencode. Two `postPrompt` calls for the same row carry byte-identical
+ * bodies (same `sessionId` + `text`, no messageID field — see `postPrompt`
+ * below), so the claim's content-hash key collides on the retry and the
+ * SECOND POST is answered `200 {"deduplicated":true}`, which `postPrompt`
+ * reads as accepted. That claim is held for `DEDUPE_TTL_MS` (10 minutes,
+ * `prompt-dedupe.ts`) — comfortably past both the scheduler's ~60s drain tick
+ * and this file's own `deliverWithRetry` deadline (45s), so an ordinary
+ * requeue-and-redrain cycle never outlives it. Pinned in
+ * `prompt-dedupe.test.ts`: the TTL boundary itself ("a key is claimable again
+ * once its TTL has elapsed") and, exercising `postPrompt`'s exact body shape
+ * (`{"parts":[{"type":"text","text":…}]}`, no messageID field), "a retried
+ * `continue_session` delivery — postPrompt's exact body shape — collides on
+ * the same dedupe key". Only a retry that is itself starved past 10 minutes
+ * (the same bound
+ * `UNDELIVERED_PROMPT_STARVATION_MS` in `undelivered-prompts.ts` treats as a
+ * dead scheduler) can outrun this — an accepted risk, not a silent one.
  */
-async function executeQueuedContinue(
+/**
+ * T22 — staged-revert guard for the queued `continue_session` backstop.
+ *
+ * OpenCode's `session.revert` is a STAGED pointer on the session row
+ * (`Session.revert?: { messageID, ... }`, `@opencode-ai/sdk` `types.gen`).
+ * Nothing is deleted until the NEXT prompt — from ANY producer — commits the
+ * truncation. A queued continue (an approval "resume", a trigger fire) that
+ * was enqueued BEFORE a user staged a revert must never be that committing
+ * prompt: the user is mid-edit of their own session history, and an
+ * automated continue queued against the pre-rewind trajectory is void once
+ * the rewind lands. This is checked at DRAIN time (same reasoning as the
+ * consumed-marker check above `executeQueuedContinue`) so a revert staged
+ * after enqueue but before this row's turn to drain is still caught.
+ *
+ * Reuses `sandboxOpencodeEndpoint` (the same signed-proxy resolution
+ * `session-transcript.ts` and `opencode-mapping.ts` already use — no new
+ * client) to read the sandbox's live OpenCode session row. Any resolution
+ * failure (no pin yet, sandbox unreachable, request timeout) fails OPEN —
+ * returns false, i.e. delivers exactly as before this guard existed — so a
+ * transient read failure never blocks a legitimate follow-up.
+ */
+async function queuedContinueHasStagedRevert(row: SessionLifecycleCommandRow): Promise<boolean> {
+  if (!row.sessionId) return false;
+  try {
+    const [session] = await db
+      .select({
+        opencodeSessionId: projectSessions.opencodeSessionId,
+        sandboxUrl: projectSessions.sandboxUrl,
+        accountId: projectSessions.accountId,
+        projectId: projectSessions.projectId,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, row.sessionId))
+      .limit(1);
+    if (!session?.opencodeSessionId) return false;
+
+    let externalId = externalIdFromSandboxUrlField(session.sandboxUrl);
+    if (!externalId) {
+      const [sandbox] = await db
+        .select({ externalId: sessionSandboxes.externalId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sessionId, row.sessionId),
+            eq(sessionSandboxes.projectId, session.projectId),
+            eq(sessionSandboxes.accountId, session.accountId),
+          ),
+        )
+        .orderBy(desc(sessionSandboxes.updatedAt))
+        .limit(1);
+      externalId = sandbox?.externalId ?? null;
+    }
+    if (!externalId) return false;
+
+    const endpoint = await sandboxOpencodeEndpoint(externalId, row.actorUserId ?? undefined);
+    if (!endpoint) return false;
+
+    const url = `${endpoint.url}/session/${encodeURIComponent(session.opencodeSessionId)}?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return false;
+    const info = (await res.json().catch(() => null)) as { revert?: unknown } | null;
+    return Boolean(info?.revert);
+  } catch (err) {
+    console.warn('[session-lifecycle] staged-revert check failed — proceeding as not staged', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/** `sandboxUrl` on the session row looks like `.../p/<external_id>/8000/...`. */
+function externalIdFromSandboxUrlField(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/\/p\/([^/]+)\//);
+  return match?.[1] ?? null;
+}
+
+export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
@@ -589,13 +728,33 @@ async function executeQueuedContinue(
     }
   }
 
-  try {
-    const delivery = await continueSession({
-      source: row.source as SessionInvocationSource,
+  if (await queuedContinueHasStagedRevert(row)) {
+    console.warn('[session-lifecycle] dropping queued continue — session has a staged revert', {
       sessionId: row.sessionId,
-      text,
-      userId: row.actorUserId,
+      commandId: row.commandId,
     });
+    await markCommandSucceeded(
+      row.commandId,
+      { status: 'skipped', reason: 'staged_revert' },
+      row.sessionId,
+    );
+    return 'succeeded';
+  }
+
+  try {
+    const delivery = await continueSession(
+      {
+        source: row.source as SessionInvocationSource,
+        sessionId: row.sessionId,
+        text,
+        userId: row.actorUserId,
+      },
+      // F2: stable across every drain-and-retry of THIS row — see
+      // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
+      // `commandId`s) with identical text now deliver independently instead
+      // of the second silently deduping against the first.
+      row.commandId,
+    );
     if (delivery === 'delivered') {
       await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       return 'succeeded';
@@ -745,6 +904,13 @@ async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
+  // F2: the CREATE command's own commandId, when this create can be retried
+  // against the same row (the idempotency-key and queued-create paths — see
+  // call sites). Forwarded to `continueSession` so `postPrompt`'s
+  // `Idempotency-Key` stays stable across those retries. Omitted by the
+  // one-shot, non-retryable create path, which falls back to a fresh
+  // `randomUUID()` per call inside `continueSession`.
+  commandId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!input.actions?.length) return { ok: true };
   try {
@@ -758,15 +924,24 @@ async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
         });
       } else if (action.type === 'deliver_prompt') {
-        const outcome = await continueSession({
-          source: action.source,
-          sessionId: input.sessionId,
-          text: action.text,
-          userId: action.userId ?? undefined,
-        });
+        const outcome = await continueSession(
+          {
+            source: action.source,
+            sessionId: input.sessionId,
+            text: action.text,
+            userId: action.userId ?? undefined,
+          },
+          input.commandId,
+        );
         if (outcome !== 'delivered') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };
         }
+      } else if (action.type === 'apply_trigger_session_access') {
+        await applyTriggerSessionAccess({
+          projectId: input.projectId,
+          sessionId: input.sessionId,
+          triggerSlug: action.triggerSlug,
+        });
       }
     }
     return { ok: true };
@@ -798,6 +973,30 @@ function isProviderName(value: string | null): value is ProviderName {
   );
 }
 
+/**
+ * T13 — this body deliberately carries NO `messageID` field, unlike
+ * the SDK's `promptOpenCodeMessage` payload. Minting one here would mean
+ * placing it correctly in opencode's id-ordered transcript (the id's clock
+ * prefix decides "already answered?" — see `messages.ts`'s
+ * `mintPromptMessageId`), which requires reading that transcript's current
+ * state; this call site has no cheap way to do that server-side, and a
+ * wrongly-ordered id silently drops the turn instead of merely losing dedupe
+ * precision.
+ *
+ * F2: without a messageID, `prompt-dedupe.ts`'s precedence used to fall all
+ * the way to its content-hash fallback — `sessionId` + `text` only. That is
+ * sound across retries of ONE command (identical body by construction, see
+ * `executeQueuedContinue`'s guarantee above), but unsound across TWO
+ * different commands that happen to carry byte-identical text (two approvals
+ * of one `actionPath`, a fixed-text trigger firing twice inside the TTL):
+ * both hash to the SAME key, so the second is answered `200
+ * {"deduplicated":true}` — which this function reads as delivered — and its
+ * turn silently never runs. `idempotencyKey` closes this: it outranks the
+ * content hash (`promptDeliveryKey`'s precedence, `prompt-dedupe.ts`), is
+ * STABLE across every retry of one command (the caller passes the same value
+ * every time — see `continueSession`), and is DISTINCT across different
+ * commands even when their text matches exactly.
+ */
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -806,6 +1005,9 @@ async function postPrompt(
   /** The session this prompt is FOR. Passed as the caller binding so the
    *  isolation guard proves the target matches, rather than being waived. */
   callerSessionId: string,
+  /** F2: per-command identity forwarded as `Idempotency-Key` — see the note
+   *  above. */
+  idempotencyKey: string,
 ): Promise<boolean> {
   const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
   try {
@@ -816,7 +1018,7 @@ async function postPrompt(
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       `?directory=${encodeURIComponent(WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json' }),
+      new Headers({ 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );

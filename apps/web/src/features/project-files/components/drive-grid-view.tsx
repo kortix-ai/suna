@@ -425,6 +425,7 @@ function FolderCard({
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') confirmRename();
                   if (e.key === 'Escape') setIsRenaming(false);
                 }}
@@ -572,6 +573,7 @@ function FileCard({
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') confirmRename();
                   if (e.key === 'Escape') setIsRenaming(false);
                 }}

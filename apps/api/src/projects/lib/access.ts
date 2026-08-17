@@ -1,6 +1,7 @@
 import {
   isSessionTargetVisibleToCaller,
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
+  isTriggerCreatedSessionMetadata,
   loadSessionGrants,
   resolveShareSubject,
   type SecretGrant,
@@ -118,12 +119,31 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
+  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   if (
-    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject, {
-      origin: row.origin ?? null,
-      sessionId,
-      callerSessionId,
-    })
+    !canManageProject &&
+    isSessionTargetVisibleToCaller(ownership) &&
+    isTriggerCreatedSessionMetadata(row.metadata)
+  ) {
+    canManageProject = (
+      await authorize(
+        loaded.userId,
+        loaded.row.accountId,
+        'project.members.manage',
+        { type: 'project', id: loaded.row.projectId },
+      )
+    ).allowed;
+  }
+  if (
+    !isProjectSessionVisibleTo(
+      row.visibility as 'private' | 'project' | 'restricted',
+      row.createdBy,
+      grants,
+      subject,
+      ownership,
+      { metadata: row.metadata, canManageProject },
+    )
   ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
@@ -140,7 +160,6 @@ export async function loadVisibleSession(
     });
   }
   const isOwner = row.createdBy === loaded.userId;
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 

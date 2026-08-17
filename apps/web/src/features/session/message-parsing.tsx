@@ -303,10 +303,12 @@ export function SystemNotificationCard({ notification }: { notification: SystemN
   // "1.2s", "us-east-1") have no spaces, so the longest value that does is the
   // closest thing to a sentence the tag gave us. Overflow is a truncated line,
   // never a second row.
-  const detail = notification.fields
-    .map(([, value]) => value)
-    .filter((value) => value.includes(' '))
-    .sort((a, b) => b.length - a.length)[0];
+  let detail: string | undefined;
+  for (const [, value] of notification.fields) {
+    if (value.includes(' ') && (!detail || value.length > detail.length)) {
+      detail = value;
+    }
+  }
 
   return (
     <Disclosure variant="outline" className="bg-secondary">
@@ -322,8 +324,8 @@ export function SystemNotificationCard({ notification }: { notification: SystemN
         <div className="space-y-1 px-3 pb-2 text-xs">
           {notification.fields.length > 0 && (
             <div className="space-y-0.5">
-              {notification.fields.map(([key, value], i) => (
-                <div key={i} className="flex min-w-0 gap-2">
+              {notification.fields.map(([key, value]) => (
+                <div key={`${key}:${value}`} className="flex min-w-0 gap-2">
                   <span className="text-muted-foreground shrink-0">{key}:</span>
                   <span className="text-foreground font-mono text-xs break-all">{value}</span>
                 </div>

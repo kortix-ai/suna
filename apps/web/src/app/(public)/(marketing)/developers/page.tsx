@@ -488,9 +488,9 @@ function HeroWorkspace() {
           {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheRepoIsf35cb375')}
         </div>
         <div className="text-foreground px-4 py-3 font-mono text-sm">
-          {REPO_TREE.map(([name, depth, kind], i) => (
+          {REPO_TREE.map(([name, depth, kind]) => (
             <div
-              key={i}
+              key={name}
               className="flex items-center gap-2 py-0.5"
               style={{ paddingLeft: `${depth * 14}px` }}
             >

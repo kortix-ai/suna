@@ -13,9 +13,10 @@
  */
 
 import { sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lte, not, sql } from 'drizzle-orm';
 import type { ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { sandboxStopClaimLeaseMs } from '../sandbox-deadline-policy';
 import { reapBatchSize } from '../reaper-constants';
 import { mergeMetadata } from './sandbox-state-sync';
 
@@ -31,49 +32,93 @@ export interface ReapCandidate {
 }
 
 /** Rows the sweep is allowed to examine: our own `active` rows with a box behind them. */
-export function reapCandidatePredicate() {
-  return and(eq(sessionSandboxes.status, 'active'), isNotNull(sessionSandboxes.externalId));
+export function reapCandidatePredicate(sandboxIds?: readonly string[], activeTurnsOnly = false) {
+  return and(
+    eq(sessionSandboxes.status, 'active'),
+    isNotNull(sessionSandboxes.externalId),
+    sandboxIds
+      ? sandboxIds.length > 0
+        ? inArray(sessionSandboxes.sandboxId, [...sandboxIds])
+        : sql`false`
+      : undefined,
+    activeTurnsOnly ? activeTurnAuthorityPredicate() : undefined,
+  );
+}
+
+/** Durable turn authority that must receive provider-native renewal service. */
+export function activeTurnAuthorityPredicate() {
+  return sql`(
+    (
+      coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
+      AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active')
+    )
+    OR EXISTS (
+      SELECT 1
+        FROM jsonb_each(CASE
+          WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
+            THEN ${sessionSandboxes.metadata}->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.key = entry.value->>'token'
+         AND entry.value->>'state' IN ('delivering', 'active'))
+  )`;
 }
 
 /**
- * One batch of candidates: EXPIRED first, then least-recently-visited.
+ * Two independent candidate lanes, each capped at REAP_BATCH_SIZE:
  *
- * ROTATION, NOT STARVATION: the candidate set is capped at REAP_BATCH_SIZE so a
- * pass can't stampede the provider, but before 2026-07-29 the query had no
- * ORDER BY — Postgres returned an arbitrary 100 of 279 matching prod rows, so
- * ~179 rows were structurally unreachable by the reaper FOREVER while
- * `tickRunningComputeCharges` kept settling their full wall-clock delta. The
- * rotation key below makes the cap FAIR; the leading `deadline_at <= now()`
- * key makes it also CORRECT, because a batch saturated with healthy rows can no
- * longer defer the one row that is actually over its deadline.
+ *   1. every row with durable turn authority, least-recently-visited first;
+ *   2. the normal expired/reconciliation lane, excluding lane 1's rows.
+ *
+ * One shared batch cannot satisfy both safety properties. An endless backlog
+ * of failed expired rows can otherwise starve active-turn renewal until E2B's
+ * provider timeout stops live work. Prioritising turns in that shared batch
+ * merely reverses the defect and starves idle stops. Separate rotating lanes
+ * reserve capacity for both contracts on every pass.
  */
 export async function selectReapCandidates(
   predicate: ReturnType<typeof reapCandidatePredicate>,
+  activeTurnsOnly = false,
 ): Promise<ReapCandidate[]> {
-  return (await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      sessionId: sessionSandboxes.sessionId,
-      accountId: sessionSandboxes.accountId,
-      provider: sessionSandboxes.provider,
-      externalId: sessionSandboxes.externalId,
-      metadata: sessionSandboxes.metadata,
-      deadlineAt: sessionSandboxes.deadlineAt,
-      createdAt: sessionSandboxes.createdAt,
-    })
+  const projection = {
+    sandboxId: sessionSandboxes.sandboxId,
+    sessionId: sessionSandboxes.sessionId,
+    accountId: sessionSandboxes.accountId,
+    provider: sessionSandboxes.provider,
+    externalId: sessionSandboxes.externalId,
+    metadata: sessionSandboxes.metadata,
+    deadlineAt: sessionSandboxes.deadlineAt,
+    createdAt: sessionSandboxes.createdAt,
+  };
+  const visitOrder = sql`${sessionSandboxes.metadata}->>'reaperVisitedAt' asc nulls first`;
+  const batchSize = reapBatchSize();
+
+  const turnRows = (await db
+    .select(projection)
     .from(sessionSandboxes)
-    .where(predicate)
+    .where(and(predicate, activeTurnAuthorityPredicate()))
     .orderBy(
-      // Expired rows always win the batch — the whole point of the sweep.
       sql`(${sessionSandboxes.deadlineAt} <= now()) desc`,
-      // Then least-recently-visited, so the RECONCILE half of the sweep (asking
-      // the provider its real state for every active row) still rotates rather
-      // than starving. `reaperVisitedAt` is always written by `toISOString()`,
-      // so lexicographic text order IS chronological order — no cast, so a
-      // hand-edited value can never make the whole sweep throw.
-      sql`${sessionSandboxes.metadata}->>'reaperVisitedAt' asc nulls first`,
+      visitOrder,
     )
-    .limit(reapBatchSize())) as ReapCandidate[];
+    .limit(batchSize)) as ReapCandidate[];
+
+  if (activeTurnsOnly) return turnRows;
+
+  const regularRows = (await db
+    .select(projection)
+    .from(sessionSandboxes)
+    .where(and(predicate, not(activeTurnAuthorityPredicate())))
+    .orderBy(
+      // Expired rows win this lane. Failed expiry work cannot consume the turn lane.
+      sql`(${sessionSandboxes.deadlineAt} <= now()) desc`,
+      // `reaperVisitedAt` is always ISO-8601. Text ordering is chronological and
+      // malformed hand-edited values cannot make the whole sweep throw.
+      visitOrder,
+    )
+    .limit(batchSize)) as ReapCandidate[];
+
+  return [...turnRows, ...regularRows];
 }
 
 /**
@@ -99,42 +144,75 @@ export async function countReapCandidates(
 }
 
 /**
- * Stamp the rotation cursor for a whole batch in one statement. Stamped for
- * EVERY row the pass examined — a row it deliberately left alone (deadline not
- * yet reached, provider-unknown) must still go to the back of the queue,
- * otherwise it re-wins the batch every pass and the rows behind it never get
- * looked at. That silent re-selection IS the starvation bug; one batched UPDATE
- * per pass is what makes coverage a property of the query instead of luck.
- */
-/**
- * Re-read ONE row's deadline, for the check immediately before a provider stop.
+ * Linearize an idle stop against prompt delivery.
  *
- * THE TOCTOU THIS CLOSES: the sweep reads its candidates, then spends a
- * multi-second provider round-trip per row asking `getStatus`, and only then
- * decides. A prompt that arrives inside that window extends `deadline_at` — and
- * the pass, still holding a snapshot from before the round-trip, stopped the box
- * anyway. The user's turn died on a box the control plane had already agreed to
- * keep. One extra indexed read per row that is ABOUT TO BE STOPPED (never on the
- * healthy path) is the whole cost.
- *
- * Returns null when the read FAILED or the row is gone — the caller then does
- * NOT stop (never act on uncertainty; the next pass retries in minutes).
+ * The claim and `beginSandboxTurn` use the same metadata key. Once this update
+ * commits, a new prompt fails closed before sending any byte. If a prompt wins
+ * first, its turn record or deadline makes this update return no row.
  */
-export async function reloadDeadlineAt(sandboxId: string): Promise<Date | null> {
-  try {
-    const [row] = await db
-      .select({ deadlineAt: sessionSandboxes.deadlineAt })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, sandboxId))
-      .limit(1);
-    return row?.deadlineAt ?? null;
-  } catch (err) {
-    console.warn(
-      `[reaper] deadline re-read failed for ${sandboxId}:`,
-      err instanceof Error ? err.message : err,
+export async function claimExpiredSandboxStop(
+  sandboxId: string,
+  token: string,
+  now = new Date(),
+): Promise<boolean> {
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`jsonb_set(
+        CASE
+          WHEN jsonb_typeof(${sessionSandboxes.metadata}) = 'object'
+            THEN ${sessionSandboxes.metadata}
+          ELSE '{}'::jsonb
+        END,
+        '{lifecycleStopClaim}',
+        jsonb_build_object(
+          'token', ${token}::text,
+          'claimedAtMs', ${now.getTime()}::bigint),
+        true)`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.status, 'active'),
+        lte(sessionSandboxes.deadlineAt, now),
+        sql`(
+          ${sessionSandboxes.metadata}->'lifecycleStopClaim' IS NULL
+          OR ${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
+          OR (${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'claimedAtMs')::bigint
+            <= ${now.getTime() - sandboxStopClaimLeaseMs()})`,
+        sql`NOT (
+          coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
+          AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active'))`,
+        sql`NOT EXISTS (
+              SELECT 1
+                FROM jsonb_each(CASE
+                  WHEN jsonb_typeof(${sessionSandboxes.metadata}->'activeTurns') = 'object'
+                    THEN ${sessionSandboxes.metadata}->'activeTurns'
+                  ELSE '{}'::jsonb
+                END) entry
+               WHERE entry.key = entry.value->>'token'
+                 AND entry.value->>'state' IN ('delivering', 'active'))`,
+      ),
+    )
+    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  return Boolean(claimed);
+}
+
+/** Release only this failed stop attempt's claim. */
+export async function releaseSandboxStopClaim(sandboxId: string, token: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'lifecycleStopClaim'`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        sql`${sessionSandboxes.metadata}->'lifecycleStopClaim'->>'token' = ${token}`,
+      ),
     );
-    return null;
-  }
 }
 
 export async function markReaperVisited(sandboxIds: string[], now: Date): Promise<void> {

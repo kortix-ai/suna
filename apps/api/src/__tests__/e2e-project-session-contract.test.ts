@@ -1597,17 +1597,6 @@ describe('project session API contract', () => {
 
   test('derives session origin from the caller token without session attribution fields', async () => {
     const app = createApp();
-    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'daytona',
-        base_ref: 'main',
-        metadata: { source: 'system:forged' },
-      }),
-    });
-    expect(bodySpoof.status).toBe(201);
-    expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
 
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1649,6 +1638,29 @@ describe('project session API contract', () => {
     expect(patBody.origin).toBe('backend');
     expect(patBody).not.toHaveProperty('end_user_ref');
     expect(patBody).not.toHaveProperty('origin_ref');
+  });
+
+  test('rejects client-supplied trigger authorization metadata at session create', async () => {
+    const app = createApp();
+    for (const [key, value] of [
+      ['source', 'trigger:scheduler'],
+      ['trigger_kind', 'git'],
+      ['trigger_slug', 'forged-trigger'],
+    ] as const) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'daytona',
+          base_ref: 'main',
+          metadata: { [key]: value },
+        }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: `metadata key is server-managed: ${key}`,
+      });
+    }
   });
 
   test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
@@ -2066,6 +2078,18 @@ describe('project session API contract', () => {
       {
         body: { metadata: { title_source: 'zzz' } },
         message: 'metadata key is server-managed: title_source',
+      },
+      {
+        body: { metadata: { source: 'trigger:scheduler' } },
+        message: 'metadata key is server-managed: source',
+      },
+      {
+        body: { metadata: { trigger_kind: 'git' } },
+        message: 'metadata key is server-managed: trigger_kind',
+      },
+      {
+        body: { metadata: { trigger_slug: 'forged-trigger' } },
+        message: 'metadata key is server-managed: trigger_slug',
       },
       {
         body: { random: 'field' },

@@ -212,15 +212,13 @@ export function AuditTab({ accountId }: { accountId: string }) {
     staleTime: 15_000,
   });
 
-  const emailByUserId = useMemo(
-    () =>
-      new Map(
-        (membersQuery.data ?? [])
-          .filter((member) => !!member.email)
-          .map((member) => [member.user_id, member.email as string]),
-      ),
-    [membersQuery.data],
-  );
+  const emailByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of membersQuery.data ?? []) {
+      if (member.email) map.set(member.user_id, member.email);
+    }
+    return map;
+  }, [membersQuery.data]);
   const projectNameById = useMemo(
     () => new Map((projectsQuery.data ?? []).map((project) => [project.project_id, project.name])),
     [projectsQuery.data],
@@ -385,6 +383,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
             value={qInput}
             onChange={(event) => setQInput(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
               if (event.key === 'Enter') {
                 setFilter((current) => ({ ...current, q: qInput.trim() }));
               }
@@ -1099,6 +1098,8 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
   );
 }
 
+const relativeDateFormatter = new Intl.DateTimeFormat();
+
 function formatRelative(date: Date): string {
   const diffMs = Date.now() - date.getTime();
   const minutes = Math.floor(diffMs / 60_000);
@@ -1108,5 +1109,5 @@ function formatRelative(date: Date): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return date.toLocaleDateString();
+  return relativeDateFormatter.format(date);
 }

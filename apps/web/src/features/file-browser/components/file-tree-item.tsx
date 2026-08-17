@@ -242,6 +242,7 @@ export function FileTreeItem({
           value={renameName}
           onChange={(e) => setRenameName(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === 'Enter' && !nameConflict) confirmRename();
             if (e.key === 'Escape') cancelRename();
           }}

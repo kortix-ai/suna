@@ -665,13 +665,14 @@ function SecretDialog({
     connectors
       .filter((connector) => connector.secretIdentifier === row?.identifier)
       .map((connector) => connector.slug);
+  const effectiveSelectedConnectorSlugSet = new Set(effectiveSelectedConnectorSlugs);
   const currentPolicy = row?.egressPolicy;
   const currentInjection = currentPolicy?.inject;
   const [brokerHosts, setBrokerHosts] = useState(
-    currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '',
+    () => currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '',
   );
   const [brokerMethods, setBrokerMethods] = useState(
-    currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST',
+    () => currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST',
   );
   const [brokerPath, setBrokerPath] = useState(currentPolicy?.rules[0]?.path ?? '/');
   const [injectionKind, setInjectionKind] = useState<'header' | 'query' | 'json_body_field'>(
@@ -1351,7 +1352,7 @@ function SecretDialog({
                               )}
                             >
                               <Checkbox
-                                checked={effectiveSelectedConnectorSlugs.includes(option.slug)}
+                                checked={effectiveSelectedConnectorSlugSet.has(option.slug)}
                                 disabled={option.disabled || save.isPending}
                                 onCheckedChange={(checked) => {
                                   setSelectedConnectorSlugs((current) =>

@@ -245,16 +245,18 @@ function formatRelative(input: string | null | undefined): string {
 /** The exact moment, for the detail grid — "how long ago" is already on the
  *  collapsed row, and a reader comparing a build against something that
  *  happened in their day needs the clock time, not an age. */
+const startedAtFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
 function formatStartedAt(input: string | null | undefined): string {
   if (!input) return '—';
   const t = new Date(input).getTime();
   if (!Number.isFinite(t)) return '—';
-  return new Date(t).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return startedAtFormat.format(t);
 }
 
 export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
