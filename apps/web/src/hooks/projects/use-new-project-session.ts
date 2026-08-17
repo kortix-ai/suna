@@ -13,7 +13,10 @@ import {
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { takeWarmSessionEntry } from '@/hooks/projects/use-warm-project-session';
-import { seedAdoptedWarmSession } from '@/hooks/projects/warm-session-seed';
+import {
+  reconcileSessionsAfterCreate,
+  seedAdoptedWarmSession,
+} from '@/hooks/projects/warm-session-seed';
 import {
   NEW_SESSION_GUARD_MAX_MS,
   hasLandedOnNewSession,
@@ -208,14 +211,22 @@ export function useNewProjectSession(projectId: string | undefined) {
           // say) never seeds a phantom row here — see warm-session-seed.ts.
           if (adoptedWarmSession) {
             queryClient.setQueryData<ProjectSession[]>(qk.project.sessions(projectId), (current) =>
-              seedAdoptedWarmSession(current, adoptedWarmSession!),
+              seedAdoptedWarmSession(current, adoptedWarmSession!, new Date().toISOString()),
             );
           }
           // The row exists — kick provisioning so it overlaps the navigation.
           // For an adopted warm session this is also the call that drops the
           // server's `metadata.warm` marker (apps/api/.../routes/r8.ts).
-          prefetchSessionStart(queryClient, projectId, sessionId);
-          queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+          const started = prefetchSessionStart(queryClient, projectId, sessionId);
+          // Warm adoption defers the list reconcile until that /start settles,
+          // so the refetch cannot observe the row still marker-hidden and wipe
+          // the seed above — see reconcileSessionsAfterCreate.
+          reconcileSessionsAfterCreate({
+            adoptedWarm: adoptedWarmSession !== null,
+            started,
+            invalidate: () =>
+              queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
+          });
           opts?.onNavigate?.(sessionId);
           router.push(`/projects/${projectId}/sessions/${sessionId}`);
         },

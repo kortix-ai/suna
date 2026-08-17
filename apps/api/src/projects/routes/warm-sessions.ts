@@ -16,6 +16,7 @@ import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionRe
 import { UUID_V4_REGEX, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { createProjectSession } from '../lib/sessions';
 import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
+import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -85,7 +86,8 @@ export async function findWarmProjectSession(scope: {
 }
 
 /**
- * Drop `metadata.warm` for one session — nothing else.
+ * Drop `metadata.warm` and stamp `last_activity_at` for one session — one
+ * UPDATE, one moment.
  *
  * Called from POST /start (routes/r8.ts), the earliest server signal a user
  * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
@@ -95,25 +97,40 @@ export async function findWarmProjectSession(scope: {
  * function at all already proves adoption; the drop can be unconditional,
  * with no separate "I really mean it" flag threaded through the request.
  *
- * Deliberately does NOT touch `last_activity_at` or `updated_at`.
- * `recordSessionActivity` (projects/session-activity.ts) owns that stamp,
- * coupled to the first accepted TURN, not to session readiness — a session
- * can sit open a while before the user sends anything, so stamping activity
- * here would make the sidebar's "last active" column lie.
+ * The activity stamp is a deliberate REVERSAL of the earlier "adoption is not
+ * a turn" rule. Adoption only ever happens because a user pressed Enter with a
+ * prompt (the warm take navigates and fires /start), so "last active" =
+ * adoption time is honest — while an unstamped row sorted at its CREATE time,
+ * the start of the user's dwell on the project home, burying the newest
+ * session in the sidebar until the first prompt round-tripped through
+ * `recordSessionActivity`. That first prompt re-stamps seconds later, so the
+ * two writes can never meaningfully disagree. `updated_at` is bumped for the
+ * same reason: `GET /sessions` orders by it, so leaving it untouched made
+ * every API-order consumer (CLI, mobile, external SDK) report a stale
+ * "latest session" for the adoption-to-first-prompt window. Both stamps
+ * mirror `recordSessionActivity` exactly.
  *
  * A no-op (0 rows touched) when the session was never warm: `WARM_SESSION_MARKER`
  * in the WHERE clause makes this safe to call unconditionally and concurrently
- * — a second call (a retried `/start`, a race) finds nothing left to drop.
- * Best-effort: a failure here degrades the sidebar's timing (the row stays
- * hidden until the first prompt's `recordSessionActivity` catches it), and
- * must never fail the readiness call itself.
+ * — a second call (a retried `/start`, a race) finds nothing left to drop and
+ * never re-stamps. Best-effort: a failure here degrades the sidebar's timing
+ * (the row stays hidden until the first prompt's `recordSessionActivity`
+ * catches it), and must never fail the readiness call itself.
  */
-export async function dropWarmSessionMarkerOnAdopt(sessionId: string): Promise<void> {
+export async function dropWarmSessionMarkerOnAdopt(
+  sessionId: string,
+  /** Epoch ms. Defaults to now; injectable so tests need no clock control. */
+  at?: number,
+): Promise<void> {
   try {
+    const adoptedAt = new Date(at ?? Date.now());
     await db
       .update(projectSessions)
       .set({
-        metadata: sql`${projectSessions.metadata} - ${WARM_SESSION_METADATA_KEY}::text`,
+        metadata: sql`(${projectSessionMetadataMerge({
+          [SESSION_LAST_ACTIVITY_KEY]: adoptedAt.toISOString(),
+        })}) - ${WARM_SESSION_METADATA_KEY}::text`,
+        updatedAt: adoptedAt,
       })
       .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER));
   } catch (err) {

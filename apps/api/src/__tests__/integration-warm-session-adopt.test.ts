@@ -4,10 +4,13 @@
  *
  * `dropWarmSessionMarkerOnAdopt` (projects/routes/warm-sessions.ts) is called
  * from POST /start (projects/routes/r8.ts) — the earliest server signal a
- * user actually entered a session, distinct from the first accepted TURN
- * (`recordSessionActivity`, projects/session-activity.ts), which stamps
- * `last_activity_at` too. These tests pin the marker drop AND that it never
- * touches the activity stamp `recordSessionActivity` owns.
+ * user actually entered a session. Adoption also stamps `last_activity_at` in
+ * the SAME statement (a deliberate reversal of the earlier "adoption is not a
+ * turn" pin — see the helper's doc comment): the warm take only ever fires
+ * /start because the user pressed Enter with a prompt, and an unstamped row
+ * sorted the just-started session at its CREATE time, burying it in the
+ * sidebar. `recordSessionActivity` (projects/session-activity.ts) still owns
+ * the per-turn stamp and re-stamps seconds later.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
@@ -77,20 +80,35 @@ describe('dropWarmSessionMarkerOnAdopt', () => {
     expect(metadata.source).toBe('ui');
   });
 
-  test('never stamps last_activity_at — adoption is not a turn', async () => {
+  test('stamps last_activity_at at adoption — the user just pressed Enter with a prompt', async () => {
     const sessionId = await seed({ warm: true });
 
-    await dropWarmSessionMarkerOnAdopt(sessionId);
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
 
     const { metadata } = await rowOf(sessionId);
-    expect(metadata.last_activity_at).toBeUndefined();
+    expect(metadata.warm).toBeUndefined();
+    expect(metadata.last_activity_at).toBe('2026-08-17T09:30:00.000Z');
   });
 
-  test('never bumps updated_at — a narrow metadata write, not a touch', async () => {
+  // REVERSED (with the activity stamp): `GET /sessions` orders by
+  // `updated_at DESC`, so an adoption that left it untouched made API-order
+  // consumers (CLI, mobile, external SDK) report a stale "latest session"
+  // until the first prompt's `recordSessionActivity` caught up. Adoption now
+  // stamps both, exactly like `recordSessionActivity`.
+  test('bumps updated_at to the adoption time — API-order consumers see the adopted session as newest', async () => {
     const sessionId = await seed({ warm: true });
+
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
+
+    const after = (await rowOf(sessionId)).updatedAt;
+    expect(after?.toISOString()).toBe('2026-08-17T09:30:00.000Z');
+  });
+
+  test('a session that was never warm keeps its updated_at — the WHERE guard bounds the touch', async () => {
+    const sessionId = await seed({ source: 'ui' });
     const before = (await rowOf(sessionId)).updatedAt;
 
-    await dropWarmSessionMarkerOnAdopt(sessionId);
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
 
     const after = (await rowOf(sessionId)).updatedAt;
     expect(after?.getTime()).toBe(before?.getTime());
@@ -105,14 +123,15 @@ describe('dropWarmSessionMarkerOnAdopt', () => {
     expect(metadata).toEqual({ source: 'ui' });
   });
 
-  test('idempotent — calling it twice is harmless', async () => {
+  test('idempotent — a second call finds no marker left and never re-stamps', async () => {
     const sessionId = await seed({ warm: true });
 
-    await dropWarmSessionMarkerOnAdopt(sessionId);
-    await dropWarmSessionMarkerOnAdopt(sessionId);
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:45:00.000Z'));
 
     const { metadata } = await rowOf(sessionId);
     expect(metadata.warm).toBeUndefined();
+    expect(metadata.last_activity_at).toBe('2026-08-17T09:30:00.000Z');
   });
 
   test('never throws on an unknown session id', async () => {

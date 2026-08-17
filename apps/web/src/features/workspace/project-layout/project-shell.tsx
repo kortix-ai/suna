@@ -85,7 +85,16 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // this is the client short-circuit that avoids a 403 on every project visit.
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
-  useWarmProjectSession(projectId, warmSessions.enabled && !billingLoading && canRun);
+  // `params.sessionId` (read again below for the tabs store) doubles as the
+  // hook's adoption signal: navigating to a session — from ANY surface,
+  // including the manager inventory's unbadged warm rows or a direct URL —
+  // consumes a matching held warm entry and publishes the id cross-tab.
+  const routeParams = useParams<{ sessionId?: string }>();
+  useWarmProjectSession(
+    projectId,
+    warmSessions.enabled && !billingLoading && canRun,
+    routeParams?.sessionId ?? null,
+  );
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');

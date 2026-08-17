@@ -13,7 +13,23 @@ export interface StartStash {
   model: { providerID: string; modelID: string } | null;
   agent: string | null;
   variant?: string | null;
+  /** Epoch ms of the last write. Stamped by {@link writeStartStash}; a stash
+   *  older than {@link START_STASH_TTL_MS} reads as absent. Absent on entries
+   *  written before this field existed (treated as fresh once, then
+   *  re-stamped by any rewrite). */
+  at?: number;
 }
+
+/**
+ * How long a stash stays deliverable. A stash is a hand-off for the
+ * navigation that wrote it — a failed replay restores it (re-stamped), but
+ * one that then sits unconsumed is a stale prompt, and replaying it into the
+ * session's by-then-real conversation on a much later visit is exactly the
+ * mis-delivery the warm-session work exists to prevent. 10 minutes matches
+ * the API's own bound for "how stale can a delivery be and still count"
+ * (UNDELIVERED_PROMPT_STARVATION_MS).
+ */
+export const START_STASH_TTL_MS = 10 * 60_000;
 
 export function startStashKey(sessionId: string): string {
   return `kortix:start:${sessionId}`;
@@ -31,7 +47,10 @@ function sanitizeStartStash(stash: StartStash): StartStash {
 
 export function writeStartStash(sessionId: string, stash: StartStash): void {
   try {
-    sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(sanitizeStartStash(stash)));
+    sessionStorage.setItem(
+      startStashKey(sessionId),
+      JSON.stringify({ ...sanitizeStartStash(stash), at: Date.now() }),
+    );
   } catch {}
 }
 
@@ -105,7 +124,19 @@ function clearLegacyStash(sessionId: string): void {
 export function readStartStash(sessionId: string): StartStash | null {
   try {
     const raw = sessionStorage.getItem(startStashKey(sessionId));
-    if (raw) return sanitizeStartStash(JSON.parse(raw) as StartStash);
+    if (raw) {
+      const stash = JSON.parse(raw) as StartStash;
+      // Expired: dead hand-off, not a pending prompt. Clear it so nothing —
+      // including the legacy fallback below — can resurrect it.
+      if (typeof stash.at === 'number' && Date.now() - stash.at > START_STASH_TTL_MS) {
+        clearStartStash(sessionId);
+        return null;
+      }
+      // The stamp is a storage detail — consumers get the hand-off payload
+      // exactly as it was written.
+      const { at: _at, ...payload } = stash;
+      return sanitizeStartStash(payload);
+    }
   } catch {
     // fall through to the legacy shape
   }

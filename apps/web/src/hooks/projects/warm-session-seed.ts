@@ -26,29 +26,63 @@ import type { ProjectSession } from '@kortix/sdk';
  * one, which is where every other creation path (the ordinary create POST)
  * already expects to see it once the list refetches.
  *
- * Tolerating the reconcile race: the invalidate that follows this seed
- * (`use-new-project-session.ts`) can lose a race with the server's own
- * marker-drop — the sessions-list GET and the adopting `/start` POST are two
- * independent requests with no ordering guarantee between them. If the GET
- * wins, its response still shows the row hidden, and `setQueryData`
- * overwrites this seed with that stale-but-real server list: the row
- * flickers out. This is accepted, not engineered around, because it is
- * bounded and self-healing: the marker-drop is the first thing `/start` does
- * (before any sandbox work), so losing the race is rare in practice, and
- * when it does happen the sidebar's own fast provisioning poll
- * (`projectSessionsRefetchInterval`, `PROVISIONING_POLL_MS`) re-fetches within
- * seconds and the row reappears on its own. The failure mode this replaces —
- * a session invisible for the ENTIRE sandbox boot window — is what actually
- * mattered; a possible one-frame flicker is not.
+ * The seeded copy is the row AS THE SERVER WILL REPORT IT once adoption
+ * lands: `metadata.warm` removed and `last_activity_at` stamped — the same
+ * two writes `/start`'s `dropWarmSessionMarkerOnAdopt` makes in one statement
+ * (`apps/api/src/projects/routes/warm-sessions.ts`). Seeding the raw
+ * create-time row instead carried `warm: true` and no activity stamp, so the
+ * sidebar's activity sort (`project-session-list-helpers.ts`) placed the
+ * just-started session at its CREATE time — the start of the user's dwell on
+ * the project home — burying it below sessions that were active more
+ * recently. `adoptedAtIso` is injected (never read from a clock here) so the
+ * transform stays pure and the caller's timestamp is the single truth.
+ *
+ * The reconcile that follows this seed no longer races the marker-drop:
+ * `use-new-project-session.ts` defers its sessions invalidate until the
+ * `/start` prefetch settles, by which point the drop is durable server-side.
  */
+/**
+ * When to reconcile the sessions-list cache with the server after a create.
+ *
+ * Ordinary create: the row is visible server-side the moment the POST returns,
+ * so invalidate immediately.
+ *
+ * Warm adoption: the row only becomes visible when `/start` drops
+ * `metadata.warm`. An invalidate issued alongside the `/start` prefetch races
+ * it — when the list GET wins, the server response (row still hidden)
+ * overwrites the optimistic seed above and, with `refetchOnWindowFocus`
+ * disabled, the just-started session stays missing from the sidebar for up to
+ * the 60s open-session poll. Deferring the invalidate until the prefetch
+ * settles makes the refetch observe the drop. `started` is
+ * `prefetchSessionStart`'s return, which never rejects; the rejection arm is
+ * belt-and-braces so a future caller cannot wedge the reconcile.
+ */
+export function reconcileSessionsAfterCreate(input: {
+  adoptedWarm: boolean;
+  started: Promise<unknown>;
+  invalidate: () => void;
+}): void {
+  if (!input.adoptedWarm) {
+    input.invalidate();
+    return;
+  }
+  void input.started.then(input.invalidate, input.invalidate);
+}
+
 export function seedAdoptedWarmSession(
   sessions: ProjectSession[] | undefined,
   session: ProjectSession,
+  adoptedAtIso: string,
 ): ProjectSession[] {
-  if (!sessions) return [session];
-  const index = sessions.findIndex((existing) => existing.session_id === session.session_id);
-  if (index === -1) return [session, ...sessions];
+  const { warm: _warm, ...metadata } = (session.metadata ?? {}) as Record<string, unknown>;
+  const adopted: ProjectSession = {
+    ...session,
+    metadata: { ...metadata, last_activity_at: adoptedAtIso },
+  };
+  if (!sessions) return [adopted];
+  const index = sessions.findIndex((existing) => existing.session_id === adopted.session_id);
+  if (index === -1) return [adopted, ...sessions];
   const next = sessions.slice();
-  next[index] = session;
+  next[index] = adopted;
   return next;
 }

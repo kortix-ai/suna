@@ -10165,3 +10165,51 @@ case).
   corrupts local state, but a consumer must still be wired to make the
   truncation appear promptly instead of only on the next unrelated
   reconcile/hydrate.
+
+### 2026-08-17 — session `warm-session-cross-tab`: `prefetchSessionStart` returns its promise
+
+Additive host-sequencing change, part of the project-home warm-session
+regression fix (prompt landing in a past session + newest session missing
+from the sidebar).
+
+- `react/prefetch-session-start.ts`: return type `void` → `Promise<void>`
+  (the promise `queryClient.prefetchQuery` already produced; it never
+  rejects). `apps/web` uses it to defer its sessions-list invalidate until
+  `/start` settles, so the list refetch cannot race the server-side
+  warm-marker drop and wipe the optimistic seed. Fire-and-forget callers are
+  unaffected.
+- New `react/prefetch-session-start.test.ts` (RED-proven: failed against the
+  `void` implementation, then green).
+- Verified: `bun test src` — 1664 pass / 428 fail, failure set byte-identical
+  to clean `main` (baseline re-run with the change stashed; all 428 are
+  pre-existing `makeRequest` transport-suite failures, untouched by this
+  change). `tsc --noEmit` clean. `smoke:install` passed
+  ("OK: @kortix/sdk … import and construct from packed tarballs").
+  `public-surface.test.ts` + `public-type-surface.test.ts` pass — no
+  snapshot drift.
+- Shippable: YES for this change in isolation. NOTE the pre-existing 428
+  `makeRequest` failures on `main` — real, unowned by this session, needs its
+  own investigation.
+
+### 2026-08-17 — session `warm-session-cross-tab` wave 2: title-ladder gate + stash TTL
+
+Follow-up to the same regression audit (four parallel auditors over commit
+bb7b36a41d), SDK-side residuals:
+
+- `react/session-title-sync.ts`: the title ladder's sessions-list refetch now
+  defers while the session's own `/start` query is fetching
+  (`getQueryState(sessionStartKey(...))`), so the t=0 pass can no longer beat
+  the warm-marker drop and wipe the adopting tab's optimistic list seed. The
+  detail refetch is ungated (the session route serves the owner regardless of
+  the marker). `SessionTitleQueryClient` gains an OPTIONAL `getQueryState` —
+  lean test fakes and older callers unaffected.
+- `react/session-start-stash.ts`: stashes are stamped (`at`) on write and
+  expire after `START_STASH_TTL_MS` (10 min, matching the API's
+  UNDELIVERED_PROMPT_STARVATION bound). A failure-restored stash that then
+  sits unconsumed can no longer auto-send a stale prompt into the session's
+  by-then-real conversation on a much later visit. The stamp is stripped on
+  read — the consumer payload shape is unchanged. `StartStash.at?` is
+  additive.
+- RED-proven: session-title-sync gate (1 failing test before the gate),
+  stash TTL (import failure then behavioral), both suites green after
+  (6 pass / 21 pass).

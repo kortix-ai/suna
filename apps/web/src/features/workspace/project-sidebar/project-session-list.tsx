@@ -174,7 +174,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         sessions: query.state.data as ProjectSession[] | undefined,
         hasOpenSession: Boolean(activeSessionId),
       }),
-    refetchOnWindowFocus: false,
+    // Focus IS the cross-tab signal this list has: a session started in
+    // another tab (the home send is the default creation path now) has no
+    // other way to appear here before the 60s open-session poll. The
+    // sessions page already refetches on focus for the same reason.
+    refetchOnWindowFocus: true,
     ...contract('inventory'),
   });
 

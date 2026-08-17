@@ -4,6 +4,8 @@ import type { ProjectSession } from '@kortix/sdk';
 
 import {
   createWarmSession,
+  recordSessionNavigation,
+  revalidateHeldWarmSession,
   takeWarmSession,
   takeWarmSessionEntry,
   useWarmSessionStore,
@@ -11,6 +13,7 @@ import {
   type WarmSession,
   type WarmSessionClient,
 } from './use-warm-project-session';
+import { resetWarmTakenRegistry } from './warm-session-taken-registry';
 
 const P = 'proj-1';
 const WARM = 'warm-session-1';
@@ -57,6 +60,7 @@ function client(overrides: Partial<WarmSessionClient> = {}): WarmSessionClient {
 
 beforeEach(() => {
   useWarmSessionStore.setState({ creating: {}, ready: {}, takenSessionIds: {} });
+  resetWarmTakenRegistry();
 });
 
 describe('warmSessionFitsSend', () => {
@@ -286,6 +290,265 @@ describe('takeWarmSession', () => {
 
     expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
     expect(takeWarmSession(P, { replenish: false })).toBeNull();
+  });
+});
+
+// --- Cross-tab staleness: the server hands the SAME warm session to every tab
+// of one user, so a take in one tab must invalidate the copy every other tab
+// holds. The shared taken registry (warm-session-taken-registry.ts) is that
+// signal; these tests pin how this store consumes and feeds it. -------------
+describe('cross-tab taken registry', () => {
+  function registryOf(...taken: string[]) {
+    const ids = new Set(taken);
+    return {
+      has: (id: string) => ids.has(id),
+      record: (id: string) => {
+        ids.add(id);
+      },
+      ids,
+    };
+  }
+
+  test('REGRESSION (project-home → past session): a held session another tab already took is never handed out', async () => {
+    // Tab B filed warm-1 (the server reuses one warm session per user), then
+    // tab A took it and prompted it. B's send must NOT land in it.
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const registry = registryOf('warm-1'); // tab A's take, seen through storage
+
+    const entry = takeWarmSessionEntry(P, { replenish: false, registry });
+
+    expect(entry).toBeNull();
+    // Consumed, not kept: the next take must not see it either.
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+  });
+
+  test('a stale-held take still replenishes, excluding the stale id', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const registry = registryOf('warm-1');
+    const calls: Array<string | undefined> = [];
+    const create = mock(async (_projectId: string, excludeSessionId?: string) => {
+      calls.push(excludeSessionId);
+      return warm({ sessionId: 'warm-2' });
+    });
+
+    expect(
+      takeWarmSessionEntry(P, { isPresent: PRESENT, client: { create }, registry }),
+    ).toBeNull();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toEqual(['warm-1']);
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-2');
+  });
+
+  test('a successful take publishes its id for other tabs', async () => {
+    await createWarmSession(P, client());
+    const registry = registryOf();
+
+    expect(takeWarmSessionEntry(P, { replenish: false, registry })?.sessionId).toBe(WARM);
+
+    expect(registry.ids.has(WARM)).toBe(true);
+  });
+
+  test('an abandoned (unfit) take is published too — it was consumed either way', async () => {
+    await createWarmSession(P, client());
+    const registry = registryOf();
+
+    expect(
+      takeWarmSessionEntry(P, { create: { agent_name: 'reviewer' }, replenish: false, registry }),
+    ).toBeNull();
+
+    expect(registry.ids.has(WARM)).toBe(true);
+  });
+
+  test('createWarmSession refuses to file a session another tab took, and retries excluding it', async () => {
+    const registry = registryOf('warm-1');
+    const calls: Array<string | undefined> = [];
+    const create = mock(async (_projectId: string, excludeSessionId?: string) => {
+      calls.push(excludeSessionId);
+      return warm({ sessionId: calls.length === 1 ? 'warm-1' : 'warm-2' });
+    });
+
+    await createWarmSession(P, { create }, { registry });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // First call had nothing to exclude; the retry excludes the refused id.
+    expect(calls).toEqual([undefined, 'warm-1']);
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-2');
+  });
+
+  test('the in-tab echo retry also carries the refused id as excludeSessionId', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    takeWarmSession(P, { replenish: false, registry: registryOf() });
+
+    const calls: Array<string | undefined> = [];
+    const create = mock(async (_projectId: string, excludeSessionId?: string) => {
+      calls.push(excludeSessionId);
+      return warm({ sessionId: 'warm-1' }); // server keeps echoing the taken id
+    });
+    await createWarmSession(P, { create }, { registry: registryOf() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toEqual([undefined, 'warm-1']);
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+  });
+
+  test('dropReadyBySessionId drops the matching held entry and reports its project', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+
+    const dropped = useWarmSessionStore.getState().dropReadyBySessionId('warm-1');
+
+    expect(dropped).toBe(P);
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+    // The dropped id is marked taken so a racing settleCreate cannot re-file it.
+    expect(useWarmSessionStore.getState().takenSessionIds['warm-1']).toBe(true);
+  });
+
+  test('dropReadyBySessionId is a no-op for an id nobody holds', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+
+    expect(useWarmSessionStore.getState().dropReadyBySessionId('warm-other')).toBeNull();
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-1');
+  });
+});
+
+// --- Adoption outside the take path. A warm session can be ENTERED without a
+// take: the manager inventory lists warm rows, and a direct URL opens one.
+// Navigating to a session is using it — the held copy and the cross-tab
+// registry must both learn that, or the next home send lands in its
+// conversation. ---------------------------------------------------------------
+describe('recordSessionNavigation', () => {
+  function registryOf(...taken: string[]) {
+    const ids = new Set(taken);
+    return {
+      has: (id: string) => ids.has(id),
+      record: (id: string) => {
+        ids.add(id);
+      },
+      ids,
+    };
+  }
+
+  test('REGRESSION: opening the held warm session by route consumes it — the next take never returns it', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const registry = registryOf();
+
+    const dropped = recordSessionNavigation('warm-1', registry);
+
+    expect(dropped).toBe(P);
+    expect(registry.ids.has('warm-1')).toBe(true);
+    expect(takeWarmSession(P, { replenish: false, registry })).toBeNull();
+  });
+
+  test('every visited session id is published — a session this browser opened is never a warm candidate', async () => {
+    const registry = registryOf();
+
+    const dropped = recordSessionNavigation('some-ordinary-session', registry);
+
+    expect(dropped).toBeNull();
+    expect(registry.ids.has('some-ordinary-session')).toBe(true);
+  });
+
+  test('null/empty ids are ignored', () => {
+    const registry = registryOf();
+    expect(recordSessionNavigation(null, registry)).toBeNull();
+    expect(recordSessionNavigation('', registry)).toBeNull();
+    expect(registry.ids.size).toBe(0);
+  });
+});
+
+// --- Held-entry revalidation. localStorage cannot cross browsers/profiles/
+// devices, so a held entry can go stale without any registry signal. On
+// visibility regain the hold is re-checked against the server: a session that
+// is no longer warm was used by someone — drop it. ---------------------------
+describe('revalidateHeldWarmSession', () => {
+  function registryOf(...taken: string[]) {
+    const ids = new Set(taken);
+    return {
+      has: (id: string) => ids.has(id),
+      record: (id: string) => {
+        ids.add(id);
+      },
+      ids,
+    };
+  }
+
+  test('a held session whose warm marker is gone server-side is dropped and published', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const registry = registryOf();
+
+    const dropped = await revalidateHeldWarmSession(P, {
+      registry,
+      fetchSession: async () => ({ metadata: {} }),
+    });
+
+    expect(dropped).toBe(true);
+    expect(useWarmSessionStore.getState().ready[P]).toBeUndefined();
+    expect(registry.ids.has('warm-1')).toBe(true);
+  });
+
+  test('a held session still warm server-side is kept', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+
+    const dropped = await revalidateHeldWarmSession(P, {
+      registry: registryOf(),
+      fetchSession: async () => ({ metadata: { warm: true } }),
+    });
+
+    expect(dropped).toBe(false);
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-1');
+  });
+
+  test('a fetch failure keeps the hold — never drop on a network error', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+
+    const dropped = await revalidateHeldWarmSession(P, {
+      registry: registryOf(),
+      fetchSession: async () => {
+        throw new Error('offline');
+      },
+    });
+
+    expect(dropped).toBe(false);
+    expect(useWarmSessionStore.getState().ready[P]?.sessionId).toBe('warm-1');
+  });
+
+  test('nothing held: no fetch, no drop', async () => {
+    let fetches = 0;
+    const dropped = await revalidateHeldWarmSession(P, {
+      registry: registryOf(),
+      fetchSession: async () => {
+        fetches += 1;
+        return { metadata: { warm: true } };
+      },
+    });
+
+    expect(dropped).toBe(false);
+    expect(fetches).toBe(0);
+  });
+
+  test('the hold is only dropped if it is STILL the same session after the fetch — a take mid-flight wins', async () => {
+    await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
+    const registry = registryOf();
+
+    const gate = new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    const pending = revalidateHeldWarmSession(P, {
+      registry,
+      fetchSession: async () => {
+        await gate;
+        return { metadata: {} };
+      },
+    });
+    // The user sends while the revalidation fetch is in flight: the take
+    // consumes the entry first.
+    expect(takeWarmSession(P, { replenish: false, registry })).toBe('warm-1');
+
+    const dropped = await pending;
+    expect(dropped).toBe(false);
   });
 });
 
