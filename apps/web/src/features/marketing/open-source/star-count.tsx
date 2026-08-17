@@ -12,7 +12,7 @@ const FORMATTER = new Intl.NumberFormat('en-US');
  * flips back — so the count-up runs exactly once per page load, not on every
  * scroll past.
  */
-function useHasBeenSeen<T extends HTMLElement>(): [React.RefObject<T | null>, boolean] {
+export function useHasBeenSeen<T extends HTMLElement>(): [React.RefObject<T | null>, boolean] {
   const ref = useRef<T>(null);
   const [seen, setSeen] = useState(false);
 
