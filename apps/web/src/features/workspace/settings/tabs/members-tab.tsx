@@ -399,6 +399,7 @@ import {
 } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
+import { SubjectPicker } from '@/features/workspace/shared/sharing-picker';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { cn } from '@/lib/utils';
 // Moved here from `members-view.tsx` when that file was deleted — it was the
@@ -415,6 +416,7 @@ import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descript
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -2064,12 +2066,7 @@ function MembersTabInner({
       }
       resourceAccessSlot={
         project?.account_id && canManage ? (
-          <ResourceAccessCard
-            projectId={projectId}
-            accountId={project.account_id}
-            canManage={!!canManage}
-            members={accessQuery.data?.members ?? []}
-          />
+          <ResourceAccessCard projectId={projectId} canManage={!!canManage} />
         ) : undefined
       }
       roleAssignmentsSlot={
@@ -2966,14 +2963,10 @@ function BlastRadiusPreview({
 
 function ResourceAccessCard({
   projectId,
-  accountId,
   canManage,
-  members,
 }: {
   projectId: string;
-  accountId: string;
   canManage: boolean;
-  members: ProjectAccessMember[];
 }) {
   const queryClient = useQueryClient();
   const grantsKey = qk.project.resourceGrants(projectId);
@@ -2984,12 +2977,6 @@ function ResourceAccessCard({
     // Manager-only endpoint (403s otherwise) — don't fire it for non-managers.
     enabled: canManage,
     ...contract('inventory'),
-  });
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId),
-    enabled: canManage,
-    staleTime: 60_000,
   });
 
   const resources = grantsQuery.data?.resources ?? { agents: [], skills: [], secrets: [] };
@@ -3002,7 +2989,6 @@ function ResourceAccessCard({
       return r !== 0 ? r : a.principal_label.localeCompare(b.principal_label);
     });
   }, [grantsQuery.data]);
-  const groups: AccountGroup[] = useMemo(() => toArray(groupsQuery.data), [groupsQuery.data]);
 
   // Display name for a resource id (falls back to the id itself).
   const resourceName = useMemo(() => {
@@ -3021,7 +3007,13 @@ function ResourceAccessCard({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pickerType] = useState<ResourceGrantType>('agent'); // agent-only grant flow
   const [pickerResourceId, setPickerResourceId] = useState<string>(''); // the agent
-  const [principalValue, setPrincipalValue] = useState<string>(''); // "member:id" | "group:id"
+  // Multi-select: grant the same agent to several members and/or groups in
+  // one action, instead of one grant per dialog open. Fires one
+  // createProjectResourceGrant call per selected principal — the API is one
+  // row per (resource, principal), there is no batch endpoint — but the
+  // person only ever picks a set and hits one button.
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -3048,7 +3040,8 @@ function ResourceAccessCard({
 
   function resetGrantForm() {
     setPickerResourceId('');
-    setPrincipalValue('');
+    setSelectedMemberIds([]);
+    setSelectedGroupIds([]);
   }
 
   function invalidate() {
@@ -3061,25 +3054,45 @@ function ResourceAccessCard({
     void invalidateProject(queryClient, projectId);
   }
 
-  function splitOnce(v: string): [string, string] {
-    const i = v.indexOf(':');
-    return i < 0 ? [v, ''] : [v.slice(0, i), v.slice(i + 1)];
-  }
+  const selectedPrincipalCount = selectedMemberIds.length + selectedGroupIds.length;
 
   const createMutation = useMutation({
-    mutationFn: () => {
-      const [principalType, principalId] = splitOnce(principalValue);
-      return createProjectResourceGrant(projectId, {
-        resourceType: pickerType as ResourceGrantType,
-        resourceId: pickerResourceId,
-        principalType: principalType as 'member' | 'group',
-        principalId,
-      });
+    mutationFn: async () => {
+      const principals: Array<{ principalType: 'member' | 'group'; principalId: string }> = [
+        ...selectedMemberIds.map((principalId) => ({ principalType: 'member' as const, principalId })),
+        ...selectedGroupIds.map((principalId) => ({ principalType: 'group' as const, principalId })),
+      ];
+      const results = await Promise.allSettled(
+        principals.map((p) =>
+          createProjectResourceGrant(projectId, {
+            resourceType: pickerType as ResourceGrantType,
+            resourceId: pickerResourceId,
+            principalType: p.principalType,
+            principalId: p.principalId,
+          }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      return { total: principals.length, failed };
     },
-    onSuccess: () => {
-      successToast('Resource scoped');
-      resetGrantForm();
-      setDialogOpen(false);
+    onSuccess: ({ total, failed }) => {
+      const ok = total - failed.length;
+      if (failed.length === 0) {
+        successToast(total === 1 ? 'Resource scoped' : `Resource scoped to ${total}`);
+        resetGrantForm();
+        setDialogOpen(false);
+      } else if (ok > 0) {
+        // Partial failure: leave the dialog open on the still-selected
+        // principals so the failed ones are easy to retry, instead of
+        // silently dropping which ones didn't go through.
+        errorToast(
+          `Granted to ${ok} of ${total} — ${failed.length} failed. Remove the granted ones and retry the rest.`,
+        );
+      } else {
+        errorToast(
+          failed[0]?.reason instanceof Error ? failed[0].reason.message : 'Failed to scope resource',
+        );
+      }
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to scope resource'),
@@ -3126,7 +3139,7 @@ function ResourceAccessCard({
   );
 
   const canSubmit =
-    !!pickerType && !!pickerResourceId && !!principalValue && !createMutation.isPending;
+    !!pickerType && !!pickerResourceId && selectedPrincipalCount > 0 && !createMutation.isPending;
 
   return (
     <>
@@ -3289,28 +3302,25 @@ function ResourceAccessCard({
               {selectedAgentDeclares && <BlastRadiusPreview declares={selectedAgentDeclares} />}
 
               <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs font-medium">2. Grant to</span>
-                <Select
-                  value={principalValue}
-                  onValueChange={setPrincipalValue}
-                  disabled={createMutation.isPending}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Member or group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {members.map((m) => (
-                      <SelectItem key={`member:${m.user_id}`} value={`member:${m.user_id}`}>
-                        {userLabel(m)}
-                      </SelectItem>
-                    ))}
-                    {groups.map((g) => (
-                      <SelectItem key={`group:${g.group_id}`} value={`group:${g.group_id}`}>
-                        {g.name} · group
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <span className="text-muted-foreground text-xs font-medium">
+                  2. Grant to
+                  {selectedPrincipalCount > 0 ? (
+                    <span className="ml-1 tabular-nums">({selectedPrincipalCount})</span>
+                  ) : null}
+                </span>
+                {/* Multi-select, not one-at-a-time: pick as many members and
+                    groups as should get this agent in a single grant action.
+                    Same allow-list component the trigger session-access
+                    picker uses — see SubjectPicker's own doc comment. */}
+                <SubjectPicker
+                  projectId={projectId}
+                  memberIds={selectedMemberIds}
+                  groupIds={selectedGroupIds}
+                  onChange={(memberIds, groupIds) => {
+                    setSelectedMemberIds(memberIds);
+                    setSelectedGroupIds(groupIds);
+                  }}
+                />
               </div>
             </ModalBody>
 
@@ -3325,7 +3335,9 @@ function ResourceAccessCard({
               </Button>
               <Button type="submit" size="sm" disabled={!canSubmit}>
                 {createMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                Grant access
+                {selectedPrincipalCount > 1
+                  ? `Grant access to ${selectedPrincipalCount}`
+                  : 'Grant access'}
               </Button>
             </ModalFooter>
           </form>
@@ -3447,7 +3459,9 @@ function ProjectRoleAssignmentsCard({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [subjectType, setSubjectType] = useState<PrincipalType | ''>(''); // step 1
-  const [subjectId, setSubjectId] = useState(''); // step 2
+  // Step 2, multi-select — bind the same role to several members/groups/agents
+  // of the chosen type in one action, instead of one binding per dialog open.
+  const [subjectIds, setSubjectIds] = useState<string[]>([]);
   const [roleId, setRoleId] = useState('');
   const [policyFilter, setPolicyFilter] = useState<'all' | PrincipalType>('all');
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
@@ -3499,27 +3513,48 @@ function ProjectRoleAssignmentsCard({
 
   function resetAssignForm() {
     setSubjectType('');
-    setSubjectId('');
+    setSubjectIds([]);
     setRoleId('');
   }
   function onSubjectTypeChange(t: PrincipalType) {
     setSubjectType(t);
-    setSubjectId(''); // the previous pick belongs to a different subject type
+    setSubjectIds([]); // the previous picks belong to a different subject type
+  }
+  function toggleSubject(id: string) {
+    setSubjectIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      createPolicy(accountId, {
-        principalType: subjectType as PrincipalType,
-        principalId: subjectId,
-        scopeType: 'project',
-        scopeId: projectId,
-        roleId,
-      }),
-    onSuccess: () => {
-      successToast('Role assigned');
-      resetAssignForm();
-      setDialogOpen(false);
+    mutationFn: async () => {
+      const results = await Promise.allSettled(
+        subjectIds.map((principalId) =>
+          createPolicy(accountId, {
+            principalType: subjectType as PrincipalType,
+            principalId,
+            scopeType: 'project',
+            scopeId: projectId,
+            roleId,
+          }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      return { total: subjectIds.length, failed };
+    },
+    onSuccess: ({ total, failed }) => {
+      const ok = total - failed.length;
+      if (failed.length === 0) {
+        successToast(total === 1 ? 'Role assigned' : `Role assigned to ${total}`);
+        resetAssignForm();
+        setDialogOpen(false);
+      } else if (ok > 0) {
+        errorToast(
+          `Assigned to ${ok} of ${total} — ${failed.length} failed. Remove the assigned ones and retry the rest.`,
+        );
+      } else {
+        errorToast(
+          failed[0]?.reason instanceof Error ? failed[0].reason.message : 'Failed to assign role',
+        );
+      }
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to assign role'),
@@ -3569,7 +3604,8 @@ function ProjectRoleAssignmentsCard({
     [policies, policyFilter],
   );
 
-  const canSubmit = !!subjectType && !!subjectId && !!roleId && !createMutation.isPending;
+  const canSubmit =
+    !!subjectType && subjectIds.length > 0 && !!roleId && !createMutation.isPending;
 
   return (
     <>
@@ -3733,24 +3769,43 @@ function ProjectRoleAssignmentsCard({
               <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs font-medium">
                   2.{' '}
-                  {subjectType === 'group' ? 'Group' : subjectType === 'token' ? 'Agent' : 'Member'}
+                  {subjectType === 'group'
+                    ? 'Groups'
+                    : subjectType === 'token'
+                      ? 'Agents'
+                      : 'Members'}
+                  {subjectIds.length > 0 ? (
+                    <span className="ml-1 tabular-nums">({subjectIds.length})</span>
+                  ) : null}
                 </span>
-                <Select
-                  value={subjectId}
-                  onValueChange={setSubjectId}
-                  disabled={!subjectType || createMutation.isPending}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={subjectType ? 'Select one' : 'Pick a type first'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeSubjects.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Multi-select: bind the same role to several subjects of this
+                    type in one action. `activeSubjects` is already
+                    type-filtered by step 1, so this is a plain checklist —
+                    no search needed for a project's own member/group/agent
+                    count. */}
+                {subjectType ? (
+                  <div className="border-border max-h-56 overflow-y-auto rounded-md border p-1">
+                    {activeSubjects.length === 0 ? (
+                      <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                        None available.
+                      </p>
+                    ) : (
+                      activeSubjects.map((s) => (
+                        <Checkbox
+                          key={s.id}
+                          label={s.name}
+                          checked={subjectIds.includes(s.id)}
+                          onCheckedChange={() => toggleSubject(s.id)}
+                          disabled={createMutation.isPending}
+                        />
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground border-border rounded-md border border-dashed px-3 py-6 text-center text-xs">
+                    Pick a type first.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -3785,7 +3840,7 @@ function ProjectRoleAssignmentsCard({
               </Button>
               <Button type="submit" size="sm" disabled={!canSubmit}>
                 {createMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                Assign role
+                {subjectIds.length > 1 ? `Assign role to ${subjectIds.length}` : 'Assign role'}
               </Button>
             </ModalFooter>
           </form>
