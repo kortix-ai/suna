@@ -131,13 +131,39 @@ export async function opencodeTurnInFlight(
   }
 }
 
+async function opencodeSessionInFlight(
+  baseUrl: string,
+  workspace: string,
+  sessionId: string,
+): Promise<boolean | null> {
+  try {
+    const response = await fetch(
+      `${baseUrl}/session/status?directory=${encodeURIComponent(workspace)}`,
+      { signal: AbortSignal.timeout(5_000) },
+    )
+    if (!response.ok) return null
+    const statuses = (await response.json()) as unknown
+    if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return null
+    const status = (statuses as Record<string, unknown>)[sessionId]
+    if (status === undefined) return false
+    if (!status || typeof status !== 'object' || Array.isArray(status)) return null
+    const type = (status as { type?: unknown }).type
+    if (type === 'busy' || type === 'retry') return true
+    if (type === 'idle') return false
+    return null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Observe one client-minted OpenCode user message for lifecycle recovery.
  *
- * A matching user message with no assistant reply is queued and therefore
- * active. A matching assistant reply is terminal only when it has a completed
- * timestamp. A successful list that lacks the exact message is terminal: the
- * reaper calls this only after the full delivery grace has elapsed.
+ * A matching user message is active only when it is the newest user message and
+ * OpenCode reports the exact root session as busy or retrying. Message
+ * persistence alone is not execution evidence. A successful list that lacks
+ * the exact message is terminal: the reaper calls this only after the full
+ * delivery grace has elapsed.
  */
 export async function opencodeDeliveryInFlight(
   baseUrl: string,
@@ -165,15 +191,21 @@ export async function opencodeDeliveryInFlight(
       (message) => message.info?.role === 'user' && message.info.id === messageId,
     )
     if (userIndex < 0) return false
+    if (messages.slice(userIndex + 1).some((message) => message.info?.role === 'user')) {
+      return false
+    }
     const assistants = messages
       .slice(userIndex + 1)
       .filter(
         (message) => message.info?.role === 'assistant' && message.info.parentID === messageId,
       )
-    if (assistants.length === 0) return true
+    if (assistants.length === 0) {
+      return opencodeSessionInFlight(baseUrl, workspace, rootSessionId)
+    }
     const latest = assistants[assistants.length - 1]?.info
     if (latest?.error && latest.error.data?.isRetryable !== true) return false
-    return latest?.time?.completed == null
+    if (latest?.time?.completed != null) return false
+    return opencodeSessionInFlight(baseUrl, workspace, rootSessionId)
   } catch {
     return null
   }

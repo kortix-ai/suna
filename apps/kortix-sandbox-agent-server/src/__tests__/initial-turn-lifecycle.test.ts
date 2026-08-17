@@ -157,6 +157,9 @@ describe('daemon-delivered initial turn lifecycle', () => {
       port: 0,
       async fetch(request) {
         if (request.method === 'GET') {
+          if (new URL(request.url).pathname === '/session/status') {
+            return Response.json({ ses_root: { type: 'busy' } });
+          }
           return Response.json([{ info: { id: 'msg_initial', role: 'user' } }]);
         }
         acceptanceRelays += 1;
