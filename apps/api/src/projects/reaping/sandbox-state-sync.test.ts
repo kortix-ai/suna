@@ -23,7 +23,7 @@ type UpdateCall = {
 let events: string[] = [];
 let updateCalls: UpdateCall[] = [];
 let cacheInvalidations: string[] = [];
-let selectedRows: any[] = [];
+let selectedRows: Array<Record<string, unknown>> = [];
 let revokedTokens: Array<{ sessionId: string; accountId: string }> = [];
 let preserveCalls: Array<{ sandboxId: string; reason: string; stopReason: string }> = [];
 let inTransaction = false;
@@ -105,18 +105,21 @@ const {
 /** Flatten a drizzle SQL expression (including its bound params) to text, so a
  *  test can assert what the write actually asks Postgres to do. */
 function describeSql(expression: unknown): string {
-  const chunks: unknown[] = (expression as any)?.queryChunks ?? [];
+  const chunks = (expression as { queryChunks?: unknown[] } | null)?.queryChunks ?? [];
   return chunks
-    .map((chunk: any) => {
+    .map((chunk) => {
       if (typeof chunk === 'string') return chunk;
-      if (Array.isArray(chunk?.value)) return chunk.value.join('');
-      if (typeof chunk?.value === 'string') return chunk.value;
-      return chunk?.name ?? '';
+      if (!chunk || typeof chunk !== 'object') return '';
+      const value = (chunk as { value?: unknown }).value;
+      if (Array.isArray(value)) return value.join('');
+      if (typeof value === 'string') return value;
+      return (chunk as { name?: string }).name ?? '';
     })
     .join(' ');
 }
 
-const isSqlExpression = (value: unknown): boolean => Array.isArray((value as any)?.queryChunks);
+const isSqlExpression = (value: unknown): boolean =>
+  Array.isArray((value as { queryChunks?: unknown[] } | null)?.queryChunks);
 const sandboxUpdate = () => updateCalls.find((c) => c.table === sessionSandboxes);
 const sessionUpdate = () => updateCalls.find((c) => c.table === projectSessions);
 
@@ -198,6 +201,15 @@ describe('applyStoppedState', () => {
     // stop wins the start/stop race in both orderings.
     expect(rendered).toContain('runtimeWakeId');
     expect(rendered).toContain('runtimeWakeStartedAt');
+  });
+
+  test('atomically removes all turn authority when any stop path parks the sandbox', async () => {
+    await applyStoppedState(write);
+
+    const rendered = describeSql(sandboxUpdate()?.updates.metadata);
+    expect(rendered).toContain("- 'activeTurn'");
+    expect(rendered).toContain("- 'activeTurns'");
+    expect(rendered).toContain("- 'lifecycleStopClaim'");
   });
 
   // The lost update: a whole-object write assembled from a stale SELECT drops
@@ -335,11 +347,11 @@ describe('applyStoppedState — stopReason', () => {
     expect(update).toBeDefined();
     // The write must be a jsonb MERGE, never a whole-object assign — a concurrent
     // writer's runtimeWakeId / lastAliveAt live in the same column.
-    expect(update!.updates.metadata).toBeDefined();
+    expect(update?.updates.metadata).toBeDefined();
     // `updates.metadata` is a drizzle SQL AST (circular via its column/table
     // refs) — describeSql renders it to text the same way every other test in
     // this file asserts against it; a raw JSON.stringify throws on the cycle.
-    expect(describeSql(update!.updates.metadata)).toContain('deadline_expired');
+    expect(describeSql(update?.updates.metadata)).toContain('deadline_expired');
   });
 
   // The top-level field is the one source of truth for WHY a box parked. A

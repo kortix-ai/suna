@@ -66,7 +66,11 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       err instanceof Error ? err.message : err,
     ),
   );
-  const patch = { ...(write.metadata ?? {}), stopReason: write.stopReason, stoppedAt: now.toISOString() };
+  const patch = {
+    ...(write.metadata ?? {}),
+    stopReason: write.stopReason,
+    stoppedAt: now.toISOString(),
+  };
   await db.transaction(async (tx) => {
     await tx
       .update(sessionSandboxes)
@@ -79,9 +83,12 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
         // user stop win both orderings of the start/stop race.
         //
         // `patch` always carries stopReason + stoppedAt, so this is never an
-        // empty merge: the wake keys are dropped AND the reason is recorded in
-        // one statement. Still a MERGE, never a whole-object assign — a
-        // concurrent writer's lastAliveAt lives in this column too.
+        // empty merge. The same statement drops wake fences and every turn
+        // authority record. A provider webhook can win the idle-stop race
+        // before the reaper clears an unknown turn. A stopped sandbox cannot
+        // retain authority that a later resume could misread. Still a MERGE,
+        // never a whole-object assign — a concurrent writer's lastAliveAt lives
+        // in this column too.
         metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
           - 'runtimeWakeStartedAt'
           - 'runtimeWakeId'
@@ -89,6 +96,8 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
           - 'runtimeWakeProviderStatus'
           - 'runtimeWakeCleanupId'
           - 'runtimeWakeCleanupLeaseExpiresAt'
+          - 'activeTurn'
+          - 'activeTurns'
           - 'lifecycleStopClaim') || ${JSON.stringify(patch)}::jsonb`,
       })
       .where(eq(sessionSandboxes.sandboxId, write.sandboxId));
