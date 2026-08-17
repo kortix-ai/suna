@@ -188,7 +188,12 @@ test.describe('21 — Trigger-created session access UI', () => {
 
       const { section } = await openTriggerAccess(page, projectId);
       const privateOption = section.getByRole('radio', {
-        name: /Trigger agent and project managers/,
+        // Capital "Managers" — matches `schedule-detail-sheet.tsx`'s copy
+        // override verbatim ("Trigger agent and project Managers", "Project
+        // Managers can always open trigger-created sessions."). A raw regex
+        // (unlike `getByText`'s string form) is case-sensitive by default, so
+        // the lowercase "managers" this used to read never matched.
+        name: /Trigger agent and project Managers/,
       });
       await expect(privateOption).toBeChecked();
       await expect(

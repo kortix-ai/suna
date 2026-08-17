@@ -51,9 +51,15 @@ async function openWorkspacePicker(page: Page): Promise<Locator> {
 }
 
 /** Every workspace row: the picker's menu items minus the "Create a workspace…"
- *  row, which is an action, not a destination. */
+ *  row and the "Account settings" row above the list — both are actions/
+ *  navigation, not a destination workspace (`workspace-menu-section.tsx`'s
+ *  standalone "Account settings" `DropdownMenuItem`, new since this test was
+ *  written; it lives in the same "Switch Workspace" menu). */
 function workspaceRows(picker: Locator): Locator {
-  return picker.getByRole("menuitem").filter({ hasNotText: "Create a" });
+  return picker
+    .getByRole("menuitem")
+    .filter({ hasNotText: "Create a" })
+    .filter({ hasNotText: "Account settings" });
 }
 
 test.describe("20 — Workspace switching", () => {
