@@ -505,10 +505,14 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           'aria-multiline': 'true',
           'aria-label': 'Message input',
           /**
-           * `min-h-[1.5em]` — ONE line, not three. The reference composer
-           * opens at a single line's height and grows with the text; a 3rem
-           * floor made an empty composer 27px taller than its content, which
-           * is what the card's padding is for.
+           * `min-h-[2.25em]` — slightly taller than one line by design (Jay's
+           * call, 2026-08-17: "increase the base height... just slightly").
+           * This used to be `1.5em`, exactly one line, on the reasoning that a
+           * taller floor made an empty composer look padded beyond its
+           * content — that reasoning still holds in spirit, `2.25em` is a
+           * deliberately modest bump (~1.5 lines), not a return to the old
+           * `3rem` floor it was written to avoid. It still grows with the
+           * text past this floor.
            *
            * The `vh` caps are the reference's, verbatim, including the fact
            * that the middle band is the SHORTEST. Tailwind emits base → sm →
@@ -518,7 +522,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * change the `sm:` step if the tablet cap turns out to be wrong.
            */
           class:
-            'outline-none min-h-[1.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
+            'outline-none min-h-[2.25em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },

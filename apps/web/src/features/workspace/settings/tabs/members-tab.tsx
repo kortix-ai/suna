@@ -343,7 +343,13 @@
  *
  * - **People** — the members table, the Invite action (now a labelled primary
  *   button beside a client-side search field, per Jay's reference shots), and
- *   Leave account as a quiet bordered row at the bottom. The search filters
+ *   two quiet account-scoped rows at the bottom in one bordered group:
+ *   "Organization account settings" (a `Link` to `/accounts/<accountId>`, the
+ *   account page's own default section) and Leave account. The first is
+ *   Jay's call, 2026-08-17 — this table edits ONE workspace's access, and
+ *   nothing on the pane said where the rest of the organization is
+ *   configured. It is a plain link: no probe gates it, because
+ *   `/accounts/<id>` gates its own sections. The search filters
  *   `userLabel(member)` — the email the table already renders — in the
  *   browser; it invents no field and hits no route. It is a controlled prop so
  *   `MembersTabView` stays hook-free.
@@ -380,6 +386,7 @@
  */
 
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Children,
@@ -506,6 +513,7 @@ import {
   ClockIcon as Clock,
   ArrowElbowDownRightIcon as CornerDownRight,
   KeyIcon as KeyRound,
+  LockIcon as Lock,
   EnvelopeIcon as Mail,
   PlugIcon as Plug,
   PlusIcon as Plus,
@@ -516,8 +524,9 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import Hint from '@/components/ui/hint';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { toArray } from '@/features/workspace/customize/shared/utils';
-import { SettingsTabHeader } from '../settings-tab-header';
 import { useSettingsAccountId } from '../use-settings-account-id';
 import { memberAccessLabel } from './member-access-label';
 
@@ -845,14 +854,22 @@ export function MembersTabView({
     : members;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
-      {/* The pane's page heading, above the tab bar — it titles the whole
-          pane, not one tab, and its copy comes from the rail (`rail.ts`) so it
-          can never drift from the "Members" row's own label. Only the role
-          explainer popover rides in its action slot now; the member count and
-          the Invite button belong to the People tab and moved there. */}
-      <SettingsTabHeader tab="members" action={permissionsHelpSlot} />
-
+    /* The page's own chrome, not a section header inside someone else's page.
+       `CapabilityPageShell` is what every sibling Customize tab renders
+       (Connectors, Agents, Skills, Triggers, Models, Secrets), so Members gets
+       their column, their heading, their header group — and, the reason this
+       moved, their scroll container and their `py-10 lg:py-14` gap below the
+       tab bar. The `(capabilities)` layout gives a page neither: it is a
+       bounded `h-svh` column that renders `{children}` with no padding, so a
+       page that brings its own bare `mx-auto` div sits flush against the tab
+       bar and cannot scroll. Only the role explainer popover rides in the
+       header's action slot; the member count and the Invite button belong to
+       the People tab and live there. */
+    <CapabilityPageShell
+      title="Members"
+      description="Who can reach this workspace, and what each person can do."
+      action={permissionsHelpSlot}
+    >
       <Tabs
         value={section}
         onValueChange={(next) => onSectionChange(next as MembersSection)}
@@ -1074,10 +1091,36 @@ export function MembersTabView({
                             ) : null}
                           </div>
                         ) : (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-foreground">{role}</span>
-                            {via ? (
-                              <span className="text-muted-foreground text-xs">{via}</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-foreground">{role}</span>
+                              {via ? (
+                                <span className="text-muted-foreground text-xs">{via}</span>
+                              ) : null}
+                            </div>
+                            {/* Explains why THIS row has no dropdown when the
+                                column next to it (Account role) might.
+                                Without this a locked row reads as a bug — see
+                                this task's report, "i can't even seem to be
+                                able to fucking change the workspace access."
+                                Scoped to `canManageMembers`: if the viewer
+                                cannot manage members at all, every row is a
+                                blank read view and a lock icon on each one
+                                would be page-level noise, not a per-row fact. */}
+                            {canManageMembers && member.has_implicit_access ? (
+                              <Hint
+                                side="top"
+                                label="Owners and admins always have Manager on every project. To set this directly, change their account role to Member first."
+                              >
+                                <Lock className="text-muted-foreground size-3.5 shrink-0" />
+                              </Hint>
+                            ) : canManageMembers && isInheritedFromGroupOnly(member) ? (
+                              <Hint
+                                side="top"
+                                label={`Inherited from the ${member.group_sources?.[0]?.group_name ?? 'group'} group. Change the group's project access to update this.`}
+                              >
+                                <Lock className="text-muted-foreground size-3.5 shrink-0" />
+                              </Hint>
                             ) : null}
                           </div>
                         )}
@@ -1093,32 +1136,57 @@ export function MembersTabView({
             </Table>
           )}
 
-          {/* Self-directed, and quiet: one row at the foot of the People tab
-              rather than its own titled section competing with the table. NO
-              permission probe gates it — leaving your own account is not an
-              IAM leaf. See this file's header comment, "JAY-548". */}
-          {showLeaveAccount ? (
-            isAccountRosterLoading ? (
-              <Skeleton className="mt-2 h-[68px] w-full rounded-md" />
-            ) : (
-              <SettingsRowGroup className="mt-2">
-                <SettingsRow
-                  label={`Leave ${accountName || 'this account'}`}
-                  description="You'll lose access to this account and its projects."
-                >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
-                    onClick={onOpenLeaveAccount}
+          {/* The two account-scoped rows, quiet and at the foot of the People
+              tab rather than in titled sections competing with the table.
+              Both need a resolved account id: one links to that account, the
+              other leaves it. */}
+          {accountId ? (
+            <SettingsRowGroup className="mt-2">
+              {/* This table edits ONE workspace's access. Everything else
+                  about the organization — account roles across every
+                  workspace, groups, custom roles, billing, audit — lives on
+                  `/accounts/<id>`, and nothing on this pane said so (Jay,
+                  2026-08-17: "have a link to the account settings somewhere").
+                  `/accounts/<id>` with no `?tab=` lands on that page's own
+                  Members section (`accounts/[id]/page.tsx`'s `VALID_TABS`
+                  falls back to `members`), which is the continuation of what
+                  a reader is already looking at. */}
+              <SettingsRow
+                label="Organization account settings"
+                description="Account roles, groups, custom roles, billing, and audit — for every workspace, not just this one."
+              >
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/accounts/${accountId}`}>Manage account</Link>
+                </Button>
+              </SettingsRow>
+
+              {/* Self-directed. NO permission probe gates it — leaving your
+                  own account is not an IAM leaf. See this file's header
+                  comment, "JAY-548". */}
+              {showLeaveAccount ? (
+                isAccountRosterLoading ? (
+                  <div className="px-4 py-3">
+                    <Skeleton className="h-8 w-full rounded-md" />
+                  </div>
+                ) : (
+                  <SettingsRow
+                    label={`Leave ${accountName || 'this account'}`}
+                    description="You'll lose access to this account and its projects."
                   >
-                    {isLeaveAccountPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                    Leave
-                  </Button>
-                </SettingsRow>
-              </SettingsRowGroup>
-            )
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
+                      onClick={onOpenLeaveAccount}
+                    >
+                      {isLeaveAccountPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                      Leave
+                    </Button>
+                  </SettingsRow>
+                )
+              ) : null}
+            </SettingsRowGroup>
           ) : null}
         </TabsContent>
 
@@ -1509,7 +1577,7 @@ export function MembersTabView({
 
       {inviteDialogSlot}
       {accountInviteDialogSlot}
-    </div>
+    </CapabilityPageShell>
   );
 }
 
@@ -2301,15 +2369,26 @@ function InviteToAccountDialog({
               <SelectTrigger id="invite-account-role">
                 <SelectValue />
               </SelectTrigger>
+              {/* `description`, not a concatenated "label — blurb" string.
+                  Each option used to read its full sentence inline
+                  ("Admin — Everything except deleting the account or
+                  transferring ownership."), which wrapped to two lines per
+                  row inside a `lg:max-w-md` modal and pushed the open
+                  popover past the bottom of the screen. `SelectItem`'s own
+                  `description` prop already renders label and blurb as two
+                  properly-laid-out lines — the exact pattern
+                  `ProjectRoleSelectItem` (`components/iam/role-select-item.tsx`)
+                  uses for the project-role picker right below this one in the
+                  same file. */}
               <SelectContent>
-                <SelectItem value="member">
-                  {ACCOUNT_ROLE_DESCRIPTORS.member.label} — {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                <SelectItem value="member" description={ACCOUNT_ROLE_DESCRIPTORS.member.blurb}>
+                  {ACCOUNT_ROLE_DESCRIPTORS.member.label}
                 </SelectItem>
-                <SelectItem value="admin">
-                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                <SelectItem value="admin" description={ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}>
+                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
                 </SelectItem>
-                <SelectItem value="owner">
-                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label} — {ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}
+                <SelectItem value="owner" description={ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}>
+                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
                 </SelectItem>
               </SelectContent>
             </Select>

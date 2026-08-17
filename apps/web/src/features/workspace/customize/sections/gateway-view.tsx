@@ -1,9 +1,31 @@
 'use client';
 
 /**
- * LLM — one Customize section that consolidates the per-project gateway surfaces
- * (Providers, Overview, Logs, Budgets, API keys) behind a single tab bar, so the
- * whole section reads as one consistent surface (no competing tab styles).
+ * LLM — one Customize section that consolidates the per-project gateway
+ * surfaces behind a single tab bar, so the whole section reads as one
+ * consistent surface (no competing tab styles).
+ *
+ * ## Six tabs, down from ten
+ *
+ * The bar carried ten, three of which should never have been tabs:
+ *
+ *  - **Playground is gone.** A prompt box that fanned one message across
+ *    models. Every project already has a real session for that, one click
+ *    away, with the full runtime behind it. Deleted, not hidden —
+ *    `gateway-playground.tsx` and its test are removed. The API route it
+ *    called (`POST /gateway/playground`) still exists and is untouched; this
+ *    is a UI removal.
+ *  - **`keys` and `api` folded into `providers`.** Two tabs both labelled
+ *    "API keys" sat four apart, and the reference for calling the gateway sat
+ *    next to neither of them. All three are sections of one tab now — see
+ *    `llm-api-keys-tab.tsx` for the direction-of-travel argument.
+ *  - **`budgets` folded into `overview`.** The cap belongs under the number
+ *    it caps — see `gateway-budgets.tsx`.
+ *
+ * Order follows the work: get a key, choose models, add your own provider,
+ * shape the routing, then watch what it costs and what it did. API keys is
+ * first because nothing else on this screen functions without one; Overview
+ * is no longer first because a dashboard is where you arrive second.
  *
  * The tab bar is one row: the section tabs sit on the left, the project default
  * model picker on the right. There's no duplicate default-model control inside
@@ -12,7 +34,7 @@
  * The active tab is LOCAL state, so switching tabs never touches the main
  * Customize rail. Deep-links / `openCustomize('llm-providers')` set the
  * hosting panel's section, read here via `useSettingsNav()` (once, and
- * followed on change) to pick the initial tab — Providers is the default,
+ * followed on change) to pick the initial tab — API keys is the default,
  * core surface.
  *
  * This view reads `useSettingsNav()`, never a store directly, so it mounts
@@ -25,37 +47,23 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { ProviderConnect } from '@/features/providers/provider-connect';
+import { LlmApiKeysTab } from '@/features/workspace/customize/sections/llm-api-keys-tab';
 import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
 import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
-import { GatewayApiReference } from '@/features/workspace/customize/sections/view/gateway/gateway-api-reference';
-import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
-import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
-import { GatewayPlayground } from '@/features/workspace/customize/sections/view/gateway/gateway-playground';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
-import { useModelDefaults } from '@kortix/sdk/react';
-import { useGatewayKeys } from '@/hooks/projects/use-project-gateway';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
+import { gatewayRoutingPolicyKey, useModelDefaults, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
 
-type LlmTab =
-  | 'providers'
-  | 'models'
-  | 'custom'
-  | 'routing'
-  | 'playground'
-  | 'overview'
-  | 'logs'
-  | 'budgets'
-  | 'keys'
-  | 'api';
+type LlmTab = 'providers' | 'models' | 'custom' | 'routing' | 'overview' | 'logs';
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
+  // Provider keys + gateway keys + the reference for calling the gateway.
+  // Three tabs before, two of them sharing a label — see `llm-api-keys-tab.tsx`.
   { id: 'providers', label: 'API keys' },
   { id: 'models', label: 'Models' },
   // The custom-provider form used to be section 4 of the Providers tab. It
@@ -63,12 +71,12 @@ const LLM_TABS: { id: LlmTab; label: string }[] = [
   // ending in a form almost nobody fills — see `custom-provider-panel.tsx`.
   { id: 'custom', label: 'Custom' },
   { id: 'routing', label: 'Routing' },
-  { id: 'playground', label: 'Playground' },
-  { id: 'overview', label: 'Overview' },
+  // Stats AND the spend cap — the former Budgets tab is a section of this one.
+  // Label is "Costs" — the id stays `overview` so the `llm-overview` /
+  // `llm-budgets` legacy deep-link re-points (settings-tabs.ts) and this
+  // file's own render switch keep working unchanged.
+  { id: 'overview', label: 'Costs' },
   { id: 'logs', label: 'Logs' },
-  { id: 'budgets', label: 'Budgets' },
-  { id: 'keys', label: 'API keys' },
-  { id: 'api', label: 'API' },
 ];
 
 /**
@@ -96,9 +104,12 @@ const TAB_BY_SECTION: Partial<Record<LegacyLlmSubTab, LlmTab>> = {
   'llm-providers': 'providers',
   'llm-overview': 'overview',
   'llm-logs': 'logs',
-  'llm-budgets': 'budgets',
-  'llm-keys': 'keys',
-  'llm-api': 'api',
+  // Budgets is a section of Overview now; keys and the API reference are
+  // sections of the API-keys tab. The legacy ids still resolve — they land on
+  // the tab that absorbed them rather than 404ing into the default.
+  'llm-budgets': 'overview',
+  'llm-keys': 'providers',
+  'llm-api': 'providers',
 };
 
 export function LlmManagementView({ projectId }: { projectId: string }) {
@@ -113,11 +124,6 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const models = useProjectModels(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
-  // Only fetched once the API tab is open — this call needs the manage-keys
-  // permission, and a read-only member should still see the reference (with
-  // the prod-default base URL fallback) rather than eating a 403 on tab open.
-  const gatewayKeysQuery = useGatewayKeys(projectId, tab === 'api');
-  const gatewayUrl = gatewayKeysQuery.data?.gateway_url ?? null;
   const effectiveDefault =
     modelDefaults.projectDefault ??
     modelDefaults.accountDefault ??
@@ -180,9 +186,15 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       {/* JAY-510: the settings-panel path mounts `ProviderConnect` DIRECTLY —
           no Modal, no dialog, so connecting Anthropic here opens nothing. The
           modal shell (`ProjectProviderModal`) is only for the model selector
-          and the Secrets tab, which are dialogs by construction. */}
+          and the Secrets tab, which are dialogs by construction. It is now
+          section 1 of `LlmApiKeysTab`, which mounts it the same way. */}
       <TabsContent value="providers" className="min-h-0 overflow-y-auto">
-        <ProviderConnect projectId={projectId} canWrite={canWrite} enabled={open} />
+        <LlmApiKeysTab
+          projectId={projectId}
+          canWrite={canWrite}
+          enabled={open}
+          onViewModels={() => setTab('models')}
+        />
       </TabsContent>
       {/* The model-visibility list used to sit one level deeper, inside the
           provider modal's own "Models" tab. Flattened to a sibling here so it
@@ -193,8 +205,10 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       <TabsContent value="custom" className="min-h-0 overflow-y-auto">
         <CustomProviderPanel projectId={projectId} canWrite={canWrite} />
       </TabsContent>
+      {/* Stats + the spend cap. `canWrite` reaches the budget controls that
+          used to live one tab over. */}
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
-        <GatewayOverview projectId={projectId} />
+        <GatewayOverview projectId={projectId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="routing" className="min-h-0 overflow-y-auto">
         <GatewayRouting
@@ -203,45 +217,8 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           projectDefaultPending={modelDefaults.isUpdating}
         />
       </TabsContent>
-      <TabsContent value="playground" className="min-h-0 overflow-y-auto">
-        <GatewayPlayground projectId={projectId} />
-      </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />
-      </TabsContent>
-      <TabsContent value="budgets" className="min-h-0 overflow-y-auto">
-        <GatewayBudgets projectId={projectId} canWrite={canWrite} />
-      </TabsContent>
-      <TabsContent value="keys" className="min-h-0 overflow-y-auto">
-        <GatewayKeys
-          projectId={projectId}
-          canWrite={canWrite}
-          onViewModels={() => setTab('providers')}
-        />
-      </TabsContent>
-      <TabsContent value="api" className="min-h-0 overflow-y-auto">
-        <div className="w-full space-y-4 p-5">
-          <div className="space-y-1">
-            <p className="text-foreground text-sm font-medium">Call the gateway</p>
-            <p className="text-muted-foreground text-pretty text-xs">
-              Drop-in OpenAI- and Anthropic-compatible endpoints for calling this project's gateway
-              from outside a Kortix session.{' '}
-              <button
-                type="button"
-                onClick={() => setTab('keys')}
-                className="text-foreground cursor-pointer underline underline-offset-2"
-              >
-                Create a key
-              </button>{' '}
-              in API keys to try these with a real key.
-            </p>
-          </div>
-          <GatewayApiReference
-            apiKey="kortix_gw_..."
-            gatewayUrl={gatewayUrl}
-            onViewModels={() => setTab('providers')}
-          />
-        </div>
       </TabsContent>
     </Tabs>
   );

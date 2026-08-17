@@ -15,12 +15,14 @@
  * `llmGatewayAvailable`, which gates the rail row only; do not substitute one
  * for the other.
  *
- * **The `llm-*` sub-sections are unchanged.** `LlmManagementView`
- * (`gateway-view.tsx`) still owns the whole sub-tab bar — Providers, Models,
- * Routing, Playground, Overview, Logs, Budgets, API keys, API — and still reads
- * `useSettingsNav()` to follow a deep link into one of them. The seven legacy
- * `llm-*` URL ids continue to resolve through `settings-tabs.ts`'s
- * `RENAMED_TABS` (all seven fold to `models`), which this file does not touch.
+ * **`LlmManagementView` (`gateway-view.tsx`) owns the whole sub-tab bar** —
+ * API keys, Models, Custom, Routing, Overview, Logs — and reads
+ * `useSettingsNav()` to follow a deep link into one of them. That bar carried
+ * ten tabs until Playground was deleted, the two "API keys" tabs and "API"
+ * merged into one, and Budgets folded into Overview; every legacy `llm-*` id
+ * still resolves, now to whichever tab absorbed it. The seven legacy `llm-*`
+ * URL ids continue to resolve through `settings-tabs.ts`'s `RENAMED_TABS` (all
+ * seven fold to `models`), which this file does not touch.
  *
  * **What DID change inside it (JAY-510):** the Providers sub-tab now mounts
  * `features/providers/provider-connect.tsx` directly instead of
@@ -36,7 +38,7 @@
  *
  * **The pane heading sits above the gateway's own sub-tab bar.**
  * `LlmManagementView` fills its tab with its OWN full-height `Tabs` shell
- * (Providers/Models/Routing/Playground/…, each an internally-scrolling
+ * (API keys/Models/Custom/Routing/Overview/Logs, each an internally-scrolling
  * `TabsContent`) and declares no width of its own — see `DELEGATING_TABS` in
  * `tab-content-width.test.ts`. `ModelsTabView` renders `SettingsTabHeader` as
  * a shrink-0 strip above that shell, in a `flex h-full min-h-0 flex-col`
@@ -51,8 +53,8 @@
 
 import type { ReactNode } from 'react';
 
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { LlmManagementView } from '@/features/workspace/customize/sections/gateway-view';
-import { SettingsTabHeader } from '../settings-tab-header';
 
 export interface ModelsTabViewProps {
   /** `LlmManagementView`, built by the container — see the header comment for
@@ -61,15 +63,37 @@ export interface ModelsTabViewProps {
   gatewaySlot?: ReactNode;
 }
 
-/** Presentational only — no hooks, no data fetching. */
+/**
+ * Presentational only — no hooks, no data fetching.
+ *
+ * The heading no longer comes from `SettingsTabHeader`, or from a local
+ * `SettingsSectionHeader`. Models graduated a SECOND time, off
+ * `/projects/[id]/config`'s sub-nav and onto its own top-level Customize
+ * tab — neither registry `SettingsTabHeader` reads (the overlay's rail, the
+ * project-settings sections) has a `models` entry any more, and that lookup
+ * silently rendering nothing is exactly the failure mode `schedule-view.tsx`
+ * hit for the same reason when Triggers graduated.
+ *
+ * The page-level chrome is `CapabilityPageShell` — the same shell Connectors,
+ * Agents, Skills, Triggers and Secrets use — so Models reads as the same
+ * `max-w-5xl` column with the same heading and header group as its five
+ * sibling tabs, instead of the bespoke `SettingsSectionHeader` strip it used
+ * to bring. `gatewaySlot` (`LlmManagementView`) is the shell's `children`: it
+ * owns its OWN sub-tab bar (API keys/Models/Custom/Routing/Overview/Logs)
+ * and per-section scrolling below that shared header, unchanged — it
+ * declares no width or height of its own (`DELEGATING_TABS` in
+ * `tab-content-width.test.ts`), so it fills whatever column the shell gives
+ * it, and it no longer needs a `min-h-0 flex-1` height handoff: the shell is
+ * the page's scroll container now, not a bounded flex row.
+ */
 export function ModelsTabView({ gatewaySlot }: ModelsTabViewProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 p-6 pb-0">
-        <SettingsTabHeader tab="models" />
-      </div>
-      <div className="min-h-0 flex-1">{gatewaySlot}</div>
-    </div>
+    <CapabilityPageShell
+      title="Models"
+      description="Which providers and models this project can use."
+    >
+      {gatewaySlot}
+    </CapabilityPageShell>
   );
 }
 

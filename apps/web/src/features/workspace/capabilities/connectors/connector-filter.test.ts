@@ -54,8 +54,19 @@ describe('the landing tab is Discovery, unconditionally', () => {
   // landing tab depend on a query, so the page could settle onto a different
   // tab than it first rendered.
   test('the default scope is a constant, not derived from the project', () => {
-    expect(page).toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
+    // The scope moved into `?scope=` so Channels could be linked to. The
+    // landing tab did not move: an absent or unrecognised param is Discovery,
+    // for every project, before any query resolves.
+    expect(page).toContain(
+      "const scope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
+    );
     expect(page).not.toContain('defaultConnectorScope');
+  });
+
+  test('Discovery writes no param, so the bare page URL stays bare', () => {
+    expect(page).toContain(
+      "next === 'discover' ? params.delete('scope') : params.set('scope', next),",
+    );
   });
 
   test('the helper is gone rather than left unused', () => {

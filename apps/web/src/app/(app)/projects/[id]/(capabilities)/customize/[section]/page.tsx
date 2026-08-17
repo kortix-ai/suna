@@ -12,12 +12,19 @@
  * ...) and every graduated section (`agents`, `connectors`, `skills`, ...)
  * onto its current home, and replaces straight there. An unresolvable
  * segment falls back to the bare `/settings` route.
+ *
+ * `useLegacySectionRedirect` rather than `legacySectionRedirect` directly:
+ * the account-scoped ids (`billing`, `api-keys`, `audit`, ...) resolve to
+ * `/accounts/[id]`, which needs an account id this route does not have in
+ * hand. The hook fetches one only for those ids, and reports `pending` while
+ * it does — replacing early would drop the destination and fall back to the
+ * bare overlay.
  */
 
 import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
+import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';
 
 export default function ProjectCustomizeSectionRedirect() {
   const params = useParams<{ id: string; section: string }>();
@@ -26,14 +33,16 @@ export default function ProjectCustomizeSectionRedirect() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  // The path segment wins; the legacy `?section=` query is the fallback. Both
+  // go through the hook, so either one can be an account-scoped id.
+  const fromSegment = useLegacySectionRedirect(projectId, rawSection);
+  const fromQuery = useLegacySectionRedirect(projectId, searchParams.get('section'));
+
   useEffect(() => {
     if (!projectId) return;
-    const redirect =
-      legacySectionRedirect(projectId, rawSection) ??
-      legacySectionRedirect(projectId, searchParams.get('section')) ??
-      `/projects/${projectId}/settings`;
-    router.replace(redirect);
-  }, [projectId, rawSection, searchParams, router]);
+    if (fromSegment.pending || fromQuery.pending) return;
+    router.replace(fromSegment.href ?? fromQuery.href ?? `/projects/${projectId}/settings`);
+  }, [projectId, fromSegment.href, fromSegment.pending, fromQuery.href, fromQuery.pending, router]);
 
   return null;
 }

@@ -152,8 +152,8 @@ describe('orderProviderRows — a saved key never moves a row', () => {
       search,
     }).map((provider) => provider.id);
 
-  test('with nothing connected, the list is the first-class three in declared order', () => {
-    expect(order([])).toEqual(['anthropic', 'openai', 'google']);
+  test('the whole catalog renders, first-class three first, then catalog order', () => {
+    expect(order([])).toEqual(['anthropic', 'openai', 'google', 'groq', 'mistral']);
   });
 
   // THE regression. Anthropic is first before it has a key and first after.
@@ -163,15 +163,19 @@ describe('orderProviderRows — a saved key never moves a row', () => {
   });
 
   test('connecting every one of them still does not reorder anything', () => {
-    expect(order(['google', 'openai', 'anthropic'])).toEqual(['anthropic', 'openai', 'google']);
+    expect(order(['google', 'openai', 'anthropic'])).toEqual(order([]));
   });
 
-  test('a connected long-tail provider joins the list, after the first-class three', () => {
-    expect(order(['groq'])).toEqual(['anthropic', 'openai', 'google', 'groq']);
+  // THE second regression, and the reason the long tail is not sorted by
+  // connectedness: a connected provider keeps its catalog position instead of
+  // being promoted above the ones next to it.
+  test('connecting a long-tail provider does not move it either', () => {
+    expect(order(['groq'])).toEqual(['anthropic', 'openai', 'google', 'groq', 'mistral']);
   });
 
-  test('an unconnected long-tail provider stays out of the default list', () => {
-    expect(order([])).not.toContain('groq');
+  test('an unconnected long-tail provider is listed anyway — every provider shows', () => {
+    expect(order([])).toContain('groq');
+    expect(order([])).toContain('mistral');
   });
 
   test('a connected provider is never listed twice', () => {
@@ -199,8 +203,8 @@ describe('orderProviderRows — a saved key never moves a row', () => {
     expect(find('aws_access')).toEqual(['amazon-bedrock']);
   });
 
-  test('whitespace is not a search — it shows the default list, not everything', () => {
-    expect(order([], '   ')).toEqual(['anthropic', 'openai', 'google']);
+  test('whitespace is not a search — it shows the ordered full list, unfiltered', () => {
+    expect(order([], '   ')).toEqual(['anthropic', 'openai', 'google', 'groq', 'mistral']);
   });
 
   test('a first-class id missing from the catalog is skipped, not rendered empty', () => {

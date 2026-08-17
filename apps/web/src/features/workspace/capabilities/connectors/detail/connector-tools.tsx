@@ -88,7 +88,7 @@ const SEARCH_THRESHOLD = 6;
 const POLICY_QUERY_STALE_MS = 5_000;
 
 const LOCKED_REASON =
-  'A project rule already decides this tool. Change it under Global rules in the capability tabs.';
+  'A project rule already decides this tool. Change it under Global rules on the Connectors page.';
 
 type PoliciesData = Awaited<ReturnType<typeof getConnectorPolicies>>;
 
@@ -347,7 +347,7 @@ export function ConnectorTools({
           title={`${projectLockedCount} ${projectLockedCount === 1 ? 'tool is' : 'tools are'} decided by a project rule`}
         >
           Project rules apply to every connector and are evaluated first, so those tools cannot be
-          changed here. Edit them under Global rules in the capability tabs.
+          changed here. Edit them under Global rules on the Connectors page.
         </InfoBanner>
       ) : null}
 

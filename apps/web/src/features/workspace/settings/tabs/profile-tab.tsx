@@ -94,6 +94,11 @@ import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
+import {
+  type AccountMembership,
+  AccountMembershipsSection,
+  useAccountMemberships,
+} from './account-memberships';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
 
@@ -203,6 +208,11 @@ export interface ProfileTabViewProps {
   // Email
   userEmail?: string;
 
+  // Organizations — every account this user is a member of. See
+  // `account-memberships.tsx` for why the list lives on this tab.
+  accounts?: readonly AccountMembership[];
+  accountsLoading?: boolean;
+
   // Two-factor authentication
   factors?: FactorInfo[];
   factorsLoading?: boolean;
@@ -266,6 +276,8 @@ export function ProfileTabView({
   isSavingName = false,
   onSaveName = () => {},
   userEmail = '',
+  accounts = [],
+  accountsLoading = false,
   factors = [],
   factorsLoading = false,
   factorsError = false,
@@ -407,6 +419,13 @@ export function ProfileTabView({
           ) : null}
         </SettingsRow>
       </SettingsRowGroup>
+
+      {/* Organizations — directly under the identity group and ABOVE Security,
+          because it answers the same question those rows do ("who am I here")
+          and because Jay asked for it to be EASY to reach: no scrolling, no tab
+          to find first. `account-memberships.tsx` carries the full rationale,
+          including why it is not a fourth rail row. */}
+      <AccountMembershipsSection accounts={accounts} isLoading={accountsLoading} />
 
       {/* Security */}
       <section className="space-y-3">
@@ -811,6 +830,11 @@ export function ProfileTab() {
     uploadAvatarMutation.mutate(file);
   };
 
+  // --- Organizations ----------------------------------------------------
+  // Same `['accounts']` entry `WorkspaceSwitcher` already primed on mount, so
+  // this costs no extra request inside a project shell.
+  const { accounts, isLoading: accountsLoading } = useAccountMemberships();
+
   // --- Two-factor authentication --------------------------------------
   // See hooks/account/use-mfa.ts — the factors/aal queries and the enroll /
   // verify / remove / cancel-enroll mutations live there now, shared with
@@ -883,6 +907,8 @@ export function ProfileTab() {
       isSavingName={saveNameMutation.isPending}
       onSaveName={() => saveNameMutation.mutate(nameDraft)}
       userEmail={profileQuery.data?.email ?? ''}
+      accounts={accounts}
+      accountsLoading={accountsLoading}
       factors={mfa.factors}
       factorsLoading={mfa.factorsLoading}
       factorsError={mfa.factorsError}

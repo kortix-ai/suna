@@ -67,7 +67,6 @@ async function copyWebhookAddress(url: string): Promise<void> {
 }
 
 export interface ScheduleTableProps {
-  kind: TriggerKind;
   triggers: ProjectTrigger[];
   canWrite: boolean;
   /** Slug of the row whose run is in flight, if any. */
@@ -80,8 +79,10 @@ export interface ScheduleTableProps {
   onDelete: (trigger: ProjectTrigger) => void;
 }
 
+/** A mixed list of schedules and webhooks — the type comes off each row's
+ *  own `trigger.type`, never a table-wide prop, so the two kinds can share
+ *  one table. */
 export function ScheduleTable({
-  kind,
   triggers,
   canWrite,
   runningSlug,
@@ -96,7 +97,7 @@ export function ScheduleTable({
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead>Name</TableHead>
-          <TableHead className="hidden sm:table-cell">{KIND_COPY[kind].column}</TableHead>
+          <TableHead className="hidden sm:table-cell">When</TableHead>
           <TableHead className="hidden lg:table-cell">Agent</TableHead>
           <TableHead className="hidden md:table-cell">Last run</TableHead>
           <TableHead className="w-[52px]">
@@ -108,7 +109,6 @@ export function ScheduleTable({
         {triggers.map((trigger) => (
           <ScheduleTableRow
             key={trigger.slug}
-            kind={kind}
             trigger={trigger}
             canWrite={canWrite}
             running={runningSlug === trigger.slug}
@@ -125,7 +125,6 @@ export function ScheduleTable({
 }
 
 function ScheduleTableRow({
-  kind,
   trigger,
   canWrite,
   running,
@@ -135,7 +134,6 @@ function ScheduleTableRow({
   onToggle,
   onDelete,
 }: {
-  kind: TriggerKind;
   trigger: ProjectTrigger;
   canWrite: boolean;
   running: boolean;
@@ -145,6 +143,7 @@ function ScheduleTableRow({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const kind = trigger.type;
   const name = triggerName(trigger);
   const status = triggerStatus(trigger.enabled);
   const when = describeWhen(trigger);
@@ -178,9 +177,7 @@ function ScheduleTableRow({
             >
               {name}
             </button>
-            <span className="text-muted-foreground block truncate text-xs sm:hidden">
-              {kind === 'cron' ? when : security.label}
-            </span>
+            <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
             {!status.active && (
               <span className="text-muted-foreground hidden text-xs sm:block">Paused</span>
             )}
@@ -189,18 +186,16 @@ function ScheduleTableRow({
       </TableCell>
 
       <TableCell className="hidden max-w-[14rem] align-middle sm:table-cell">
-        {kind === 'cron' ? (
-          <div className="min-w-0">
-            <p className="text-foreground truncate text-sm">{when}</p>
-            {!trigger.run_at && (
-              <p className="text-muted-foreground truncate text-xs">{trigger.timezone}</p>
-            )}
-          </div>
-        ) : (
-          <Badge variant={security.signed ? 'kortix' : 'warning'} size="sm">
-            {security.label}
-          </Badge>
-        )}
+        <div className="min-w-0 space-y-1">
+          <p className="text-foreground truncate text-sm">{when}</p>
+          {kind === 'cron' && !trigger.run_at ? (
+            <p className="text-muted-foreground truncate text-xs">{trigger.timezone}</p>
+          ) : kind === 'webhook' ? (
+            <Badge variant={security.signed ? 'kortix' : 'warning'} size="sm">
+              {security.label}
+            </Badge>
+          ) : null}
+        </div>
       </TableCell>
 
       <TableCell className="text-muted-foreground hidden max-w-[10rem] truncate align-middle text-sm lg:table-cell">
@@ -213,7 +208,6 @@ function ScheduleTableRow({
 
       <TableCell className="align-middle">
         <RowActions
-          kind={kind}
           trigger={trigger}
           canWrite={canWrite}
           busy={running || toggling}
@@ -229,7 +223,6 @@ function ScheduleTableRow({
 }
 
 function RowActions({
-  kind,
   trigger,
   canWrite,
   busy,
@@ -239,7 +232,6 @@ function RowActions({
   onToggle,
   onDelete,
 }: {
-  kind: TriggerKind;
   trigger: ProjectTrigger;
   canWrite: boolean;
   busy: boolean;
@@ -249,6 +241,9 @@ function RowActions({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  // Safe: `ScheduleView` filters every list to `isTriggerKind` before it
+  // reaches this table.
+  const kind = trigger.type as TriggerKind;
   const noun = KIND_COPY[kind].noun;
   const webhookUrl = trigger.webhook_url ?? '';
 

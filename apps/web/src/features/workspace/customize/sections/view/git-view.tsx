@@ -18,7 +18,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Github as GithubIcon } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { useDebounce } from '@/hooks/use-debounce';
 import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -694,8 +693,16 @@ export function GitView({ projectId }: { projectId: string }) {
   const managed = project ? isManagedGithubProject(project) : false;
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="repositories" />
+    <div className="space-y-8">
+      {/* No `SettingsTabHeader`/own width wrapper any more — Repositories
+          merged INTO the General section as a "Git repo" subsection (Jay's
+          call, 2026-08-17: "move the repository stuff into the general tab...
+          put it under a git repo section"). `GeneralTabView` already supplies
+          the shared `mx-auto w-full max-w-2xl` column and its own top-level
+          heading; a second one here would be a duplicate, the same fix
+          `snapshots-tab.tsx` got when Snapshots merged into Sandbox
+          templates. */}
+      <SettingsSubsectionHeader title="Git repo" />
 
       {detail.isLoading ? (
         <div className="space-y-5">

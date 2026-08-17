@@ -82,6 +82,25 @@ describe('MembersTabView', () => {
     expect(out).toContain('Who can reach this workspace, and what each person can do.');
   });
 
+  /**
+   * The pane is a routed Customize page, so its chrome is the shell every
+   * sibling tab renders — Connectors, Agents, Skills, Triggers, Models,
+   * Secrets, Channels. This is a RENDERED assertion, not a source grep,
+   * because what it guards is what the browser gets: the shell is the page's
+   * scroll container AND its `py-10 lg:py-14` gap below the tab bar. The
+   * `(capabilities)` layout supplies neither, so the bare
+   * `mx-auto w-full max-w-4xl` column this pane used to bring left the
+   * "Members" heading pressed flush against the tab bar with no way to
+   * scroll — the exact bug a screenshot caught on 2026-08-17.
+   */
+  test('the pane is the shared capability shell, not its own column', () => {
+    const out = renderToStaticMarkup(<MembersTabView />);
+    expect(out).toContain('max-w-5xl');
+    expect(out).toContain('overflow-y-auto');
+    expect(out).toContain('py-10');
+    expect(out).not.toContain('max-w-4xl');
+  });
+
   test('renders the permissions help slot in the header action', () => {
     const out = renderToStaticMarkup(
       <MembersTabView permissionsHelpSlot={<div>help-marker</div>} />,
@@ -581,6 +600,36 @@ describe('MembersTabView', () => {
     expect(withPerm).toContain('>Cancel<');
   });
 
+  /**
+   * This table edits ONE workspace's access; account roles across every
+   * workspace, groups, billing and audit live on `/accounts/<id>`. The row is
+   * a plain link with no probe on it — that page gates its own sections.
+   */
+  test('the organization-settings row links to /accounts/<accountId>, below the table', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
+    );
+    expect(out).toContain('Organization account settings');
+    expect(out).toContain('href="/accounts/acc1"');
+    expect(out.indexOf('</table>')).toBeLessThan(out.indexOf('Organization account settings'));
+  });
+
+  test('no accountId, no organization-settings row — the href would be /accounts/undefined', () => {
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
+    expect(out).not.toContain('Organization account settings');
+    expect(out).not.toContain('/accounts/undefined');
+  });
+
+  test('the sole owner still gets the organization-settings row, without a Leave row', () => {
+    // The two rows share one group but not one gate: `isLastOwner` hides only
+    // the leave control.
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" isLastOwner />,
+    );
+    expect(out).toContain('href="/accounts/acc1"');
+    expect(out).not.toContain('Leave Acme');
+  });
+
   test('the leave-account row sits at the foot of the People tab, only once an accountId resolves', () => {
     const withAccount = renderToStaticMarkup(
       <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
@@ -635,9 +684,16 @@ describe('MembersTabView', () => {
     const out = renderToStaticMarkup(
       <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
     );
-    const row = out.slice(out.indexOf('Leave Acme') - 2000);
-    expect(row).toContain('data-slot="settings-row-group"');
-    expect(row).toContain('data-slot="field-description"');
+    // From the group's opening tag through the leave row — the two
+    // account-scoped rows share ONE bordered group, so the marker sits above
+    // the organization-settings row rather than immediately above this one.
+    const group = out.slice(
+      out.indexOf('data-slot="settings-row-group"'),
+      out.indexOf('Leave Acme') + 2000,
+    );
+    expect(group).toContain('data-slot="settings-row-group"');
+    expect(group).toContain('data-slot="field-description"');
+    expect(group).toContain('Leave Acme');
   });
 
   // ── JAY-549: inviteAccountMember / updateAccountMemberRole /

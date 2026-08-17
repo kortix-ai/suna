@@ -66,12 +66,14 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(view).not.toContain('updateFeatureFlag');
   expect(view).not.toContain('Enable Apps');
 
-  // The shared screen opens the one place a flag can be flipped. `main`
+  // The shared screen links to the one place a flag can be flipped. `main`
   // authored this against the Customize overlay (`openCustomize('feature-
-  // flags')`); this branch deleted that overlay, so the same single control
-  // is the settings panel's Experimental tab.
-  expect(gate).toContain("openSettings('experimental')");
+  // flags')`); that overlay is gone, the settings overlay's Experimental tab
+  // that replaced it is gone too, and the single control is now a section of
+  // the Customize bar's Settings tab. A real link, not a store call.
+  expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
   expect(gate).not.toContain('useCustomizeStore');
+  expect(gate).not.toContain('useSettingsPanelStore');
   expect(gate).toContain('Feature flags');
   expect(gate).not.toContain('updateFeatureFlag');
   expect(gate).not.toContain('useMutation');

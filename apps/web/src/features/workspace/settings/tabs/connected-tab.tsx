@@ -1,12 +1,49 @@
 'use client';
 
+/**
+ * Connected accounts — the identities this ACCOUNT is linked to. One provider
+ * today: the GitHub App.
+ *
+ * **The ChatGPT row is gone (Jay, 2026-08-17):** "this just doesn't make any
+ * sense right because this is on a project level anyhow. i don't really get
+ * what this is supposed to be." He is right, and the row's own code said so —
+ * it was commented `// --- ChatGPT (project-scoped) ---`, it read
+ * `useChatGptSubscriptionConnected(projectId, …)`, and it reported
+ * `'unavailable'` whenever no project was open, which is the common case: this
+ * dialog opens from Cmd+, and from the workspace switcher, neither of which
+ * implies a project. A pane whose header says "for this account" is the wrong
+ * place to configure one workspace, and a disabled Connect button is a poor way
+ * to say so.
+ *
+ * **Where ChatGPT connect actually lives, and did before this deletion:** the
+ * project sidebar's "Connect GPT subscription" row
+ * (`project-sidebar/footer/project-chatgpt-connect-nav.tsx`, mounted at
+ * `project-sidebar.tsx:245`). It is not a link — it opens
+ * `ChatGptSubscriptionConnectDialog`, the complete device-code flow
+ * (`components/projects/chatgpt-subscription-connect.tsx:424`), scoped to the
+ * project whose sidebar it is in. Two further project-scoped surfaces host the
+ * same connect card: Models → Providers (`ProviderConnect` →
+ * `llm-api-keys-tab.tsx:97`) and `ProjectProviderModal`
+ * (`llm-provider-modal.tsx:136`). So the row deleted here was the fourth copy
+ * of a flow that already had a correct home — nothing about CONNECTING was
+ * lost.
+ *
+ * **One capability WAS lost, deliberately, and it is not connect:** this row
+ * held the only Disconnect in the product for a ChatGPT subscription
+ * (`providerDisconnectPlan({ id: 'codex', … })` → `deleteProjectProviderOAuth`
+ * + `deleteProjectSecret`). The sidebar row cannot carry it —
+ * `useShowChatGptConnectPrompt` hides that row once connected — and the
+ * provider list has no `codex` row to remove, because `codex` is synthetic
+ * (`use-connected-providers.ts:113`) while rows come from the static
+ * `LLM_PROVIDERS` catalog. Removing the OpenAI key does NOT disconnect it
+ * either: `providerDisconnectPlan` filters `CODEX_AUTH_JSON` out by hand
+ * (`llm-provider/utils.ts:17`). Its home is project-scoped and it should be
+ * rebuilt there — the natural place is the same sidebar row, ungated so it
+ * reads "Disconnect GPT subscription" once connected, or a `codex` row in
+ * `ProviderConnect`. Do NOT re-add it to this account-scoped pane.
+ */
+
 import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
-import {
-  ChatGptAuthChallenge,
-  CODEX_AUTH_JSON_SECRET_NAME,
-  useChatGptConnectFlow,
-  useChatGptSubscriptionConnected,
-} from '@/components/projects/chatgpt-subscription-connect';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
@@ -14,21 +51,13 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Github } from '@/features/icon/icons/github';
-import { OpenAI } from '@/features/icon/icons/open-ai';
-import { providerDisconnectPlan } from '@/features/workspace/customize/sections/llm-provider/utils';
 import {
   githubInstallationLabel,
   isGitHubAppInstallationId,
   rememberGitHubSetupReturn,
 } from '@/lib/github-installations';
 import { usePermission } from '@/lib/use-permission';
-import {
-  deleteGitHubInstallation,
-  deleteProjectProviderOAuth,
-  deleteProjectSecret,
-  listGitHubInstallations,
-} from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { deleteGitHubInstallation, listGitHubInstallations } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -49,25 +78,6 @@ export interface ConnectedAccountsTabViewProps {
   githubOtherInstallationsCount?: number;
   githubManageAllHref?: string;
   githubAppSetupSlot?: ReactNode;
-
-  chatgptStatus?: ProviderRowStatus;
-  /**
-   * The device-code step only — `ChatGptAuthChallenge`, not the whole
-   * `ChatGptSubscriptionConnect` card.
-   *
-   * This row used to render that entire card here, which brought its own
-   * border, logo, title, description and footer. Beside a row already labelled
-   * "ChatGPT" it said the same thing twice inside a box inside a box. The row
-   * owns the label and the button now; the slot carries only what the row
-   * cannot render itself — the code you copy and the link that opens OpenAI.
-   */
-  chatgptChallengeSlot?: ReactNode;
-  onConnectChatGpt?: () => void;
-  onCancelChatGpt?: () => void;
-  onDisconnectChatGpt?: () => void;
-  isChatGptActionPending?: boolean;
-  /** Authorization in flight — the row offers Cancel instead of Connect. */
-  isChatGptWaiting?: boolean;
 }
 
 /**
@@ -102,13 +112,6 @@ export function ConnectedAccountsTabView({
   githubOtherInstallationsCount = 0,
   githubManageAllHref,
   githubAppSetupSlot,
-  chatgptStatus = 'disconnected',
-  chatgptChallengeSlot,
-  onConnectChatGpt = () => {},
-  onCancelChatGpt = () => {},
-  onDisconnectChatGpt = () => {},
-  isChatGptActionPending = false,
-  isChatGptWaiting = false,
 }: ConnectedAccountsTabViewProps) {
   // `loading` gets its own branch rather than falling through to the
   // disconnected copy. Without it the row asserted "Install the GitHub App"
@@ -144,105 +147,54 @@ export function ConnectedAccountsTabView({
       </Button>
     );
 
-  // Same reasoning as `githubDescription` above — see that comment.
-  const chatgptDescription =
-    chatgptStatus === 'loading'
-      ? 'Checking this workspace for a connected ChatGPT subscription.'
-      : chatgptStatus === 'connected'
-        ? 'ChatGPT Plus/Pro connected for this workspace.'
-        : chatgptStatus === 'unavailable'
-          ? 'Open a project to connect a ChatGPT subscription for this workspace.'
-          : 'Sign in with a ChatGPT Plus or Pro subscription for this workspace.';
-
-  // One control at a time, and always the one the current state calls for:
-  // Cancel while authorizing, Disconnect once connected, Connect otherwise.
-  const chatgptAction =
-    chatgptStatus === 'loading' ? (
-      <ActionSkeleton />
-    ) : isChatGptWaiting ? (
-      <Button type="button" variant="secondary" size="sm" onClick={onCancelChatGpt}>
-        Cancel
-      </Button>
-    ) : chatgptStatus === 'connected' ? (
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        onClick={onDisconnectChatGpt}
-        disabled={isChatGptActionPending}
-      >
-        {isChatGptActionPending ? <Loading className="size-3.5 shrink-0" /> : null}
-        Disconnect
-      </Button>
-    ) : (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        onClick={onConnectChatGpt}
-        disabled={chatgptStatus === 'unavailable'}
-      >
-        <OpenAI /> Connect
-      </Button>
-    );
-
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <SettingsTabHeader tab="connected" />
 
-      {/* Managed GitHub — the instance's git backend — leads the pane, and the
-          pane then descends by scope: instance → account (the GitHub row,
-          "shared by every project") → workspace (ChatGPT, "for this
-          workspace"). That is the same descending scope the row descriptions
-          already state, and it puts the prerequisite above the things it
-          unblocks: without a managed-git connection no project gets a
-          repository at all.
+      {/* Managed GitHub — the instance's git backend — leads the pane, above
+          the account-level row it unblocks: without a managed-git connection no
+          project gets a repository at all.
 
-          It does NOT sit between the GitHub and ChatGPT rows, which is where
+          It does NOT sit below the row, which is where
           `accounts/[id]/page.tsx:579-583` put it relative to the account-level
           `GitHubConnectionCard` this row replaced. That order cannot be
           transplanted. The card is a titled section with its own bordered
-          panel; the rows are one `SettingsRowGroup`, a single bordered box
-          whose rows share hairlines. Landing the card between them splits the
-          group in two, orphans ChatGPT under a tall operator section, and
-          turns the provider list back into the stack of cards
-          `settings-row.tsx` exists to prevent. Leading the pane keeps the two
-          GitHub surfaces adjacent — which the old order also achieved — without
-          paying that cost. */}
+          panel; the row lives in a `SettingsRowGroup`, a bordered box whose
+          rows share hairlines. Leading the pane keeps the two GitHub surfaces
+          adjacent and ordered widest-scope-first — instance, then account. */}
       {canManageAccount ? githubAppSetupSlot : null}
 
-      <SettingsRowGroup>
-        {canManageAccount && (
-          <section className="space-y-3">
+      {canManageAccount ? (
+        <section className="space-y-3">
+          <SettingsRowGroup>
             <SettingsRow label="GitHub" description={githubDescription}>
               {githubAction}
             </SettingsRow>
-            {githubStatus === 'error' && githubError ? (
-              <InfoBanner tone="warning">{githubError}</InfoBanner>
-            ) : null}
-            {githubStatus === 'connected' &&
-            githubOtherInstallationsCount > 0 &&
-            githubManageAllHref ? (
-              <a
-                href={githubManageAllHref}
-                className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-              >
-                +{githubOtherInstallationsCount} more installation
-                {githubOtherInstallationsCount === 1 ? '' : 's'} on this account — manage all
-              </a>
-            ) : null}
-          </section>
-        )}
-
-        <section className="space-y-3">
-          <SettingsRow label="ChatGPT" description={chatgptDescription}>
-            {chatgptAction}
-          </SettingsRow>
-          {/* Only while authorizing, and only the code + auth link — the row
-              above already carries the name, the explanation, and the button. */}
-          {chatgptChallengeSlot ? <div className="px-4 pb-3">{chatgptChallengeSlot}</div> : null}
+          </SettingsRowGroup>
+          {githubStatus === 'error' && githubError ? (
+            <InfoBanner tone="warning">{githubError}</InfoBanner>
+          ) : null}
+          {githubStatus === 'connected' &&
+          githubOtherInstallationsCount > 0 &&
+          githubManageAllHref ? (
+            <a
+              href={githubManageAllHref}
+              className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
+            >
+              +{githubOtherInstallationsCount} more installation
+              {githubOtherInstallationsCount === 1 ? '' : 's'} on this account — manage all
+            </a>
+          ) : null}
         </section>
-      </SettingsRowGroup>
+      ) : (
+        /* Without `account.write` there is no row to render — GitHub is the
+           only provider on this pane, and installing it writes the account. An
+           empty `SettingsRowGroup` would draw a bordered box around nothing, so
+           the pane says why it is empty instead. */
+        <InfoBanner tone="info">
+          Only an account owner or admin can connect GitHub for this account.
+        </InfoBanner>
+      )}
     </div>
   );
 }
@@ -252,13 +204,7 @@ export function ConnectedAccountsTabView({
  *  mounted while this tab is active (`SettingsTabPane` in
  *  `settings-panel.tsx` returns `null` otherwise), so nothing here fetches
  *  on panel open unless the user actually lands on this tab. */
-export function ConnectedAccountsTab({
-  projectId,
-  accountId,
-}: {
-  projectId?: string;
-  accountId?: string;
-}) {
+export function ConnectedAccountsTab({ accountId }: { accountId?: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -320,38 +266,6 @@ export function ConnectedAccountsTab({
     }
   };
 
-  // --- ChatGPT (project-scoped) ------------------------------------------
-  const { connected: chatgptConnected, isLoading: chatgptLoading } =
-    useChatGptSubscriptionConnected(projectId ?? '', !!projectId);
-
-  // The flow, not the card: this tab renders its own label, description and
-  // button, and needs only the device-code step from the shared component.
-  const chatgptFlow = useChatGptConnectFlow({ projectId: projectId ?? '' });
-
-  const chatgptStatus: ProviderRowStatus = !projectId
-    ? 'unavailable'
-    : chatgptLoading
-      ? 'loading'
-      : chatgptConnected
-        ? 'connected'
-        : 'disconnected';
-
-  const disconnectChatGptMutation = useMutation({
-    mutationFn: async () => {
-      const plan = providerDisconnectPlan({ id: 'codex', envVars: [CODEX_AUTH_JSON_SECRET_NAME] });
-      await Promise.all([
-        ...(plan.oauthProvider ? [deleteProjectProviderOAuth(projectId!, plan.oauthProvider)] : []),
-        ...plan.secretNames.map((name) => deleteProjectSecret(projectId!, name)),
-      ]);
-    },
-    onSuccess: () => {
-      successToast('ChatGPT disconnected');
-      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId!) });
-      refreshProjectProviderState(queryClient, projectId!);
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect ChatGPT'),
-  });
-
   return (
     <ConnectedAccountsTabView
       canManageAccount={canManageAccount}
@@ -375,15 +289,6 @@ export function ConnectedAccountsTab({
       githubAppSetupSlot={
         canManageAccount ? <GitHubAppSetupCard canManage={canManageAccount} /> : undefined
       }
-      chatgptStatus={chatgptStatus}
-      chatgptChallengeSlot={
-        chatgptFlow.isWaiting ? <ChatGptAuthChallenge flow={chatgptFlow} bare /> : undefined
-      }
-      onConnectChatGpt={chatgptFlow.connect}
-      onCancelChatGpt={chatgptFlow.cancel}
-      isChatGptWaiting={chatgptFlow.isWaiting}
-      onDisconnectChatGpt={() => disconnectChatGptMutation.mutate()}
-      isChatGptActionPending={disconnectChatGptMutation.isPending}
     />
   );
 }

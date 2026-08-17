@@ -4,6 +4,8 @@ import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +26,6 @@ import {
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type ProjectSandboxHealth,
   type SandboxRuntimeStatus,
@@ -153,7 +154,13 @@ function SandboxAlertContent({
   severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const openSettings = useSettingsPanelStore((s) => s.openSettings);
+  const router = useRouter();
+  // Sandbox templates is a section of the Customize bar's Settings tab now, so
+  // "Details" is a route, not an overlay open.
+  const openSandboxSection = useCallback(
+    () => router.push(projectSettingsSectionHref(projectId, 'sandbox')),
+    [router, projectId],
+  );
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   const status = selectSandboxStatus(health);
   const failure = selectCurrentSandboxFailure(health);
@@ -175,7 +182,7 @@ function SandboxAlertContent({
             variant="transparent"
             size="sm"
             className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
-            onClick={() => openSettings('sandbox')}
+            onClick={openSandboxSection}
           >
             Details
           </Button>
@@ -198,7 +205,7 @@ function SandboxAlertContent({
               variant="link"
               size="sm"
               className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
-              onClick={() => openSettings('sandbox')}
+              onClick={openSandboxSection}
             >
               Details
             </Button>
@@ -217,7 +224,7 @@ function SandboxAlertContent({
             size="sm"
             variant="secondary"
             className="w-full border"
-            onClick={() => openSettings('sandbox')}
+            onClick={openSandboxSection}
           >
             Details
           </Button>

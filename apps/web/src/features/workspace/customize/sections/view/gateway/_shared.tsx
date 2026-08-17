@@ -48,6 +48,49 @@ export function CopyButton({ text, className }: { text: string; className?: stri
   );
 }
 
+/**
+ * The gateway surface's one panel shell — `bg-popover rounded-md border`
+ * (replaces the deprecated SectionCard). Header carries title / count /
+ * description / action; padding lives on the inner sections, never on the
+ * bordered shell.
+ *
+ * It was copy-pasted verbatim into `gateway-overview.tsx` and
+ * `gateway-budgets.tsx`. Budgets is now a section INSIDE Overview, so the two
+ * copies would sit inches apart on one screen and drift into two slightly
+ * different panels. One definition, here.
+ */
+export function Panel({
+  title,
+  count,
+  description,
+  action,
+  children,
+}: {
+  title: React.ReactNode;
+  count?: number;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-popover overflow-hidden rounded-md border">
+      <div className="border-border/60 flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-foreground text-sm font-medium">
+            {title}
+            {count != null && <span className="text-muted-foreground font-normal"> ({count})</span>}
+          </h3>
+          {description != null && (
+            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+          )}
+        </div>
+        {action != null && <div className="shrink-0">{action}</div>}
+      </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
+  );
+}
+
 export function MetricBar({
   icon: Icon,
   value,

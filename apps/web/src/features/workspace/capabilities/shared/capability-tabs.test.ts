@@ -43,56 +43,64 @@ describe('CapabilityTabs sidebar toggle', () => {
   test('the sidebar toggle sits in flow, not absolute over the tabs', () => {
     const body = code(source);
     const toggleStart = body.indexOf('function CapabilitySidebarToggle');
-    const toggleEnd = body.indexOf('function GlobalRulesControl');
+    const toggleEnd = body.indexOf('export function CapabilityTabs');
     const toggle = body.slice(toggleStart, toggleEnd);
     expect(toggle).not.toContain('absolute');
     expect(toggle).not.toContain('pl-12');
   });
 });
 
-describe('CapabilityTabs Global rules control', () => {
-  test('Global rules open in a Sheet, not a Modal', () => {
+/**
+ * This bar navigates. It does not act.
+ *
+ * "Global rules" is connector approval policy — it has nothing to say on
+ * Agents, Skills or Triggers, yet it rode above all four because the bar was
+ * the only shared surface. It now lives in the Connectors page header, pinned
+ * by `connectors/connectors-page.global-rules.test.ts`.
+ */
+describe('CapabilityTabs carries no capability-specific control', () => {
+  test('Global rules is gone from the bar', () => {
+    // Comment-stripped: the header comment above `CapabilityTabs` names the
+    // control on purpose, to say where it went.
     const body = code(source);
-    expect(body).toContain('<Sheet open={open}');
-    expect(body).toContain('SheetContent');
-    expect(body).toContain('Global rules');
-    expect(body).toContain('PoliciesPanel');
-    expect(body).not.toContain('Modal');
-    expect(body).not.toContain("from '@/components/ui/modal'");
+    expect(body).not.toContain('GlobalRulesControl');
+    expect(body).not.toContain('Global rules');
+    expect(body).not.toContain('PoliciesPanel');
+    expect(body).not.toContain("from '@/components/ui/sheet'");
   });
 
-  // A labeled button does not need a Hint. Hint + TooltipTrigger wrapping the
-  // button is what users saw firing when they thought they were on a tab.
-  test('Global rules does not wrap itself in a Hint', () => {
+  test('the whole row stays in flow — no absolute overlay, no hit-area expand', () => {
     const body = code(source);
-    const start = body.indexOf('function GlobalRulesControl');
-    const end = body.indexOf('export function CapabilityTabs');
-    const control = body.slice(start, end);
-    expect(control).not.toContain('<Hint');
+    expect(body).not.toContain('absolute');
+    expect(body).not.toContain('before:-inset');
+    expect(body).not.toContain('pr-12');
+    expect(body).not.toContain('pl-12');
+  });
+});
+
+/**
+ * Members and Settings read as "who's here / how it's configured" — a
+ * different register from the seven build-the-agent tabs (Connectors through
+ * Secrets) to their left. Jay's call (2026-08-17): push them to the far right
+ * of the row, in one `TabsList` — not a second list — so the underline
+ * indicator and keyboard roving stay unified.
+ */
+describe('CapabilityTabs right-aligns Members and Settings', () => {
+  test('the trailing group is exactly Members and Settings, in that order', () => {
+    const body = code(source);
+    const trailingStart = body.indexOf('TRAILING_TABS');
+    expect(trailingStart).toBeGreaterThan(-1);
+    const trailingDecl = body.slice(trailingStart, body.indexOf(';', trailingStart));
+    expect(trailingDecl).toContain("'members'");
+    expect(trailingDecl).toContain("'config'");
+    expect(trailingDecl.indexOf("'members'")).toBeLessThan(trailingDecl.indexOf("'config'"));
   });
 
-  // `before:absolute before:-inset-*` without `relative` on the button resolves
-  // against the bar's `relative` ancestor and paints an invisible hit layer
-  // across the entire tab row — stealing clicks from the tab triggers.
-  test('Global rules does not expand its hit area with a ::before inset', () => {
+  test('ml-auto lands on the first trailing tab, inside the one shared TabsList', () => {
     const body = code(source);
-    const start = body.indexOf('function GlobalRulesControl');
-    const end = body.indexOf('export function CapabilityTabs');
-    const control = body.slice(start, end);
-    expect(control).not.toContain('before:absolute');
-    expect(control).not.toContain('before:-inset');
-  });
-
-  test('Global rules sits in flow on the right — no absolute overlay', () => {
-    const body = code(source);
-    // Assert against the bar itself; SheetHeader uses `pr-12` to clear its
-    // own close button, which is unrelated to tab hit targets.
-    const barStart = body.indexOf('export function CapabilityTabs');
-    const bar = body.slice(barStart);
-    expect(bar).not.toContain('absolute');
-    expect(bar).not.toContain('pr-12');
-    expect(bar).not.toContain('pl-12');
-    expect(bar).toContain('<GlobalRulesControl');
+    expect(body).toContain("tab.key === TRAILING_TABS[0] && 'ml-auto'");
+    // One list, not two — this is a visual push, not a second `role="tablist"`.
+    expect((body.match(/<TabsList\b/g) ?? []).length).toBe(1);
   });
 });
 

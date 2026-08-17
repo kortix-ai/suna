@@ -5,8 +5,9 @@
  * this panel CRUDs the same file via the admin endpoint, then the gateway
  * enforces on every Connector call.
  *
- * Rendered in two places: the Global rules sheet on the capabilities pages, and
- * the Connectors section of the customize panel. Both are narrow columns, so
+ * Rendered in two places: the Global rules sheet on the Connectors page
+ * (`capabilities/connectors/connectors-page.tsx`), and the Connectors section
+ * of the customize panel. Both are narrow columns, so
  * the layout is a single stack of `Label` + `bg-popover rounded-md border`
  * panels — the `settings-view.tsx` dialect. No `SectionCard`, no `List`.
  *

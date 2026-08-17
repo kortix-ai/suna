@@ -9,11 +9,9 @@ import {
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { listProjectSessions } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -21,6 +19,8 @@ import {
   useGatewaySeries,
   useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
+import { listProjectSessions } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 
 import {
   MeterRow,
@@ -31,7 +31,8 @@ import {
   fmtCompact,
   fmtUsd,
 } from './_metrics';
-import { displayModel, modelAccent } from './_shared';
+import { Panel, displayModel, modelAccent } from './_shared';
+import { GatewayBudgetSection } from './gateway-budgets';
 
 type MetricKey = 'cost' | 'traffic' | 'tokens' | 'latency';
 
@@ -59,10 +60,24 @@ const METRICS: {
 
 /**
  * The gateway dashboard — one scannable analytics surface that folds the former
- * Overview, Cost and Usage tabs together: headline stats, a single chart you
- * pivot across metrics, and the spend/error breakdowns underneath.
+ * Overview, Cost, Usage and Budgets tabs together: headline stats, the spend
+ * cap that governs them, a single chart you pivot across metrics, and the
+ * spend/error breakdowns underneath.
+ *
+ * Budgets used to be the tab next door, and it opened by restating this
+ * screen's "Total spend" figure in its own 2xl type. Reading a number and
+ * capping it are one job; the cap now sits directly under the number
+ * (`GatewayBudgetSection`), before the trend chart, because a limit is a
+ * setting about the headline and not a footnote to the breakdowns.
  */
-export function GatewayOverview({ projectId }: { projectId: string }) {
+export function GatewayOverview({
+  projectId,
+  canWrite = false,
+}: {
+  projectId: string;
+  /** Gates the budget controls. Read-only members still see the cap. */
+  canWrite?: boolean;
+}) {
   const [days, setDays] = useState(30);
   const [metric, setMetric] = useState<MetricKey>('cost');
 
@@ -163,6 +178,10 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
             index={3}
           />
         </div>
+
+        {/* The cap on the figure directly above it — the whole former Budgets
+            tab, as one panel. */}
+        <GatewayBudgetSection projectId={projectId} canWrite={canWrite} />
 
         {/* One chart, pivoted across metrics */}
         <Panel
@@ -291,43 +310,5 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * Hand-composed analytics panel — the design-system `bg-popover rounded-md
- * border` surface (replaces the deprecated SectionCard). Header carries the
- * title / count / description / action; padding lives on the inner sections,
- * never the bordered shell.
- */
-function Panel({
-  title,
-  count,
-  description,
-  action,
-  children,
-}: {
-  title: ReactNode;
-  count?: number;
-  description?: ReactNode;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="bg-popover overflow-hidden rounded-md border">
-      <div className="border-border/60 flex items-start justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0">
-          <h3 className="text-foreground text-sm font-medium">
-            {title}
-            {count != null && <span className="text-muted-foreground font-normal"> ({count})</span>}
-          </h3>
-          {description != null && (
-            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
-          )}
-        </div>
-        {action != null && <div className="shrink-0">{action}</div>}
-      </div>
-      <div className="px-4 py-4">{children}</div>
-    </section>
   );
 }

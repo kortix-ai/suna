@@ -1,18 +1,26 @@
 import type { AdminConnector } from '@kortix/sdk';
 
 /**
- * The three tabs.
+ * The four tabs.
  *
- * Two used to be here and are gone for the same reason: a tab that hides part
- * of the list makes the list you are looking at never the whole list.
+ * Three of them narrow one list of connectors. Two more used to and are gone
+ * for the same reason: a tab that hides part of the list makes the list you
+ * are looking at never the whole list.
  *
  * `attention` became a sort key inside `connected` (`compareConnectors`) plus
  * a badge on the card — a connector that needs setting up is still one of your
  * connectors. `available` was the catalogue minus what the project already
  * has, which only ever removed cards the other tabs already mark `✓`; see
  * `SCOPES` in `connectors-page.tsx`.
+ *
+ * `channels` is the odd one and is deliberate: it does not filter the connector
+ * list, it replaces it with the inbound side of the same job — Slack, Teams and
+ * email reaching the agent. It was a top-level Customize tab until the two were
+ * merged into one page; see `capability-tab-routes.ts`. It is a member of this
+ * union rather than a second piece of page state so that ONE value drives the
+ * strip, the `?scope=` param, and the body.
  */
-export type ConnectorScope = 'discover' | 'all' | 'connected';
+export type ConnectorScope = 'discover' | 'all' | 'connected' | 'channels';
 
 /**
  * A connector the user has to act on: the server flagged it, or it declares a

@@ -382,11 +382,13 @@ describe('SnapshotsTabView', () => {
     expect(out).toContain('One of them failed. Is that a problem?');
   });
 
-  test('offers the docs page from the pane heading', () => {
+  test('renders no pane heading of its own — SandboxTabView, mounted above it, owns the shared one', () => {
+    // Snapshots merged into the Sandbox templates section on
+    // `/projects/[id]/config`. `SandboxTabView` carries the shared heading
+    // (title, description, and the `/docs/work/runtime` Docs link) for the
+    // whole merged pane; a second one here would be a duplicate, not a fix.
     const out = renderToStaticMarkup(<SnapshotsTabView />);
-
-    expect(out).toContain('/docs/work/runtime');
-    expect(out).toContain('>Docs<');
+    expect(out).not.toContain('>Docs<');
   });
 
   test('loading state shows a skeleton, not the build log', () => {
