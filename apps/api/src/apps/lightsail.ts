@@ -110,6 +110,10 @@ function pullPolicySid(externalId: string): string {
   return `AllowLightsailPull-${externalId}`;
 }
 
+function isLightsailThrottling(error: unknown): boolean {
+  return (error as { name?: string } | null)?.name === 'ThrottlingException';
+}
+
 function codeBuildSpec(): string {
   return [
     'version: 0.2',
@@ -430,7 +434,7 @@ export class LightsailAppHostingBackend {
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes('transition state')) throw error;
+        if (!message.includes('transition state') && !isLightsailThrottling(error)) throw error;
         await this.dependencies.sleep(2_000);
       }
     }
@@ -438,9 +442,13 @@ export class LightsailAppHostingBackend {
       throw new Error(`Lightsail service ${externalId} stayed transitional for 6 minutes`);
     }
     for (let attempt = 0; attempt < 180; attempt += 1) {
-      if (!(await this.service(externalId))) {
-        await this.removeRepositoryAccess(externalId);
-        return;
+      try {
+        if (!(await this.service(externalId))) {
+          await this.removeRepositoryAccess(externalId);
+          return;
+        }
+      } catch (error) {
+        if (!isLightsailThrottling(error)) throw error;
       }
       await this.dependencies.sleep(2_000);
     }

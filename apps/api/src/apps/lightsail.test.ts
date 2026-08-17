@@ -281,6 +281,55 @@ describe('AWS Lightsail Apps hosting backend', () => {
     ]);
   });
 
+  test('retries Lightsail throttling during both delete and absence polling', async () => {
+    const throttled = Object.assign(
+      new Error('The maximum API request rate has been exceeded for your account.'),
+      { name: 'ThrottlingException', $metadata: { httpStatusCode: 400 } },
+    );
+    const commands: string[] = [];
+    const sleeps: number[] = [];
+    let deleteAttempts = 0;
+    let listAttempts = 0;
+    const backend = new LightsailAppHostingBackend({
+      lightsail: {
+        send: async (command: { constructor: { name: string } }) => {
+          const name = command.constructor.name;
+          commands.push(name);
+          if (name === 'DeleteContainerServiceCommand') {
+            deleteAttempts += 1;
+            if (deleteAttempts === 1) throw throttled;
+          }
+          if (name === 'GetContainerServicesCommand') {
+            listAttempts += 1;
+            if (listAttempts === 1) throw throttled;
+            return { containerServices: [] };
+          }
+          return {};
+        },
+      },
+      codebuild: commandClient({}).client as never,
+      ecr: commandClient({}).client as never,
+      s3: commandClient({}).client as never,
+      region: 'us-west-2',
+      buildBucket: 'builds',
+      ecrRepositoryUri: 'repo',
+      codebuildProject: 'build',
+      environment: 'test',
+      controlSecret: 'control-secret-for-tests',
+      sleep: async (milliseconds) => { sleeps.push(milliseconds); },
+    });
+
+    await backend.stop('kortix-test-app-throttled');
+
+    expect(commands).toEqual([
+      'DeleteContainerServiceCommand',
+      'DeleteContainerServiceCommand',
+      'GetContainerServicesCommand',
+      'GetContainerServicesCommand',
+    ]);
+    expect(sleeps).toEqual([2_000, 2_000]);
+  });
+
   test('reconciles only old, unprotected artifacts in this environment', async () => {
     const old = new Date('2026-08-16T00:00:00.000Z');
     const lightsail = commandClient({

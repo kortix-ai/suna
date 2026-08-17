@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Provider deletion must retry throttling through absence proof (2026-08-17)
+
+**When:** deleting a paid provider resource from a user-facing delete route.
+Retry the delete call and the following absence poll when the provider returns
+its typed throttling error. A best-effort catch may close local billing while
+the external resource continues billing. *Near-miss:* Lightsail throttled three
+App delete calls after PR #6478 E2E returned `200`; the service remained
+`RUNNING`. *Enforcer:* `lightsail.test.ts` pins throttling retries in both phases.
+
 ### Access logs must delete secret-bearing request headers (2026-08-17)
 
 **When:** configuring access logs for a proxy that authenticates its origin by
