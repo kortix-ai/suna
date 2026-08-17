@@ -19,6 +19,7 @@ const marketingButtonVariants = cva(
           'border-[0.5px] border-white/10 bg-destructive text-destructive-foreground  hover:bg-destructive/90 dark:border-transparent',
         ghost: 'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground',
         transparent: 'bg-transparent text-foreground hover:bg-transparent',
+        link: 'text-muted-foreground hover:text-foreground decoration-foreground/20 hover:decoration-foreground/50 mt-6 inline-block text-sm underline underline-offset-4 transition-colors',
       },
       size: {
         default: 'h-9 px-3.5 text-md rounded-[calc(var(--radius)-3px)]',
