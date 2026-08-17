@@ -73,7 +73,7 @@ function code(path: string): string {
 
 const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
 const gatewaySource = code(join(import.meta.dir, '../../customize/sections/gateway-view.tsx'));
-const keysTabSource = code(join(import.meta.dir, '../../customize/sections/llm-api-keys-tab.tsx'));
+const keysTabSource = code(join(import.meta.dir, '../../customize/sections/gateway-access-tab.tsx'));
 const overviewSource = code(
   join(import.meta.dir, '../../customize/sections/view/gateway/gateway-overview.tsx'),
 );
@@ -154,7 +154,7 @@ describe('Models tab — gate and gateway sub-sections', () => {
   });
 
   // JAY-510's invariant, one level down now that the provider list is a
-  // section of `llm-api-keys-tab.tsx`: still mounted directly, still no dialog.
+  // section of `gateway-access-tab.tsx`: still mounted directly, still no dialog.
   test('the provider list mounts ProviderConnect directly — no dialog', () => {
     expect(keysTabSource).toContain('<ProviderConnect');
     expect(keysTabSource).not.toContain('ProjectProviderModal');
