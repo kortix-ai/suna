@@ -1164,7 +1164,7 @@ function DocxViewerContent({
   // Imports mutate the shared editor instance; concurrent calls (effect
   // re-runs, StrictMode double-invoke) race inside the parser and surface as
   // bogus "Invalid DOCX ZIP" errors, so every import is chained through here.
-  const importQueueRef = React.useRef<Promise<void>>(Promise.resolve());
+  const importQueueRef = React.useRef<Promise<void> | null>(null);
 
   React.useEffect(() => {
     let isCurrent = true;
@@ -1202,7 +1202,7 @@ function DocxViewerContent({
       }
     }
 
-    importQueueRef.current = importQueueRef.current.then(load);
+    importQueueRef.current = (importQueueRef.current ?? Promise.resolve()).then(load);
 
     return () => {
       isCurrent = false;

@@ -279,6 +279,12 @@ const EMPTY_QUEUE: QueuedMessageView[] = [];
 /** Same, for the in-flight ids. */
 const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
+/** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
+const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_COMMANDS: Command[] = [];
+const EMPTY_MODELS: FlatModel[] = [];
+const EMPTY_VARIANTS: string[] = [];
+
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
 const NO_COMMAND_CHIP = () => null;
@@ -325,17 +331,17 @@ function ComposerImpl({
   stopDisabled = false,
   isSending = false,
   rewind,
-  agents = [],
+  agents = EMPTY_AGENTS,
   selectedAgent = null,
   onAgentChange,
   agentSelectorLocked = false,
-  commands = [],
+  commands = EMPTY_COMMANDS,
   onCommand,
-  models = [],
+  models = EMPTY_MODELS,
   selectedModel = null,
   onModelChange,
   modelDefaultControls,
-  variants = [],
+  variants = EMPTY_VARIANTS,
   selectedVariant = null,
   onVariantChange,
   messages,

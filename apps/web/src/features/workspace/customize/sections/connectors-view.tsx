@@ -4011,7 +4011,8 @@ function HeadersEditor({
   const [rows, setRows] = useState<Array<[string, string]>>(() => Object.entries(value));
   // Re-seed only when the saved value genuinely differs from what we're showing,
   // so a refetch can't wipe a row the user is mid-way through typing.
-  const seeded = useRef(JSON.stringify(Object.entries(value)));
+  const [initialSeed] = useState(() => JSON.stringify(Object.entries(value)));
+  const seeded = useRef(initialSeed);
   useEffect(() => {
     const incoming = JSON.stringify(Object.entries(value));
     if (incoming !== seeded.current && incoming !== JSON.stringify(rows)) {

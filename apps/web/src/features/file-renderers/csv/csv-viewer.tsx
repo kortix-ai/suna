@@ -573,11 +573,15 @@ export function CsvViewer({
   React.useEffect(() => {
     let mounted = true;
 
-    void import('@glideapps/glide-data-grid').then((module) => {
-      if (mounted) {
-        setGlide(module);
-      }
-    });
+    import('@glideapps/glide-data-grid')
+      .then((module) => {
+        if (mounted) {
+          setGlide(module);
+        }
+      })
+      .catch((error) => {
+        console.error('[CsvViewer] Failed to load data grid:', error);
+      });
 
     return () => {
       mounted = false;

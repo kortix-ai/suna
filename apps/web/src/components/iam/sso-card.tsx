@@ -20,7 +20,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -186,7 +186,10 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
   const provider = providerQuery.data;
   const mappings = mappingsQuery.data ?? [];
-  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  const [spUrls, setSpUrls] = useState<SamlSpUrls | null>(null);
+  useEffect(() => {
+    setSpUrls(buildSamlSpUrls(getEnv().SUPABASE_URL));
+  }, []);
 
   // Off by default — orgs opt in once their SAML connection is proven. Re-sends
   // every other stored field unchanged (the PUT route is a full upsert), only
@@ -629,7 +632,10 @@ function EditProviderDialog({
     /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim()) &&
     (importing ? metadataReady : true);
 
-  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  const [spUrls, setSpUrls] = useState<SamlSpUrls | null>(null);
+  useEffect(() => {
+    setSpUrls(buildSamlSpUrls(getEnv().SUPABASE_URL));
+  }, []);
 
   return (
     <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>

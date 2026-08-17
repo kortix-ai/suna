@@ -775,14 +775,16 @@ export function ProviderConnect({
       // invisible to the gateway's shared-row resolution and every model turn
       // dies with "No upstream configured" (2026-07-07 prod incident). Ported
       // verbatim from the deleted `api-key-connect-form.tsx:52-62`.
-      for (const envVar of entry.envVars) {
-        await upsertProjectSecret(projectId, {
-          name: envVar,
-          value: (values[`${providerId}:${envVar}`] ?? '').trim(),
-          strategy: 'broker',
-          consumer: 'llm_gateway',
-        });
-      }
+      await Promise.all(
+        entry.envVars.map((envVar) =>
+          upsertProjectSecret(projectId, {
+            name: envVar,
+            value: (values[`${providerId}:${envVar}`] ?? '').trim(),
+            strategy: 'broker',
+            consumer: 'llm_gateway',
+          }),
+        ),
+      );
       return entry;
     },
     onSuccess: (entry) => {

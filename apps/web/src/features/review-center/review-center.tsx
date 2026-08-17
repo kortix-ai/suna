@@ -635,10 +635,10 @@ export function ReviewCenter({
       setSelectedIds(new Set());
       return;
     }
+    const itemIds = new Set(items.map((x) => x.id));
     let next = items;
     for (const id of ids) {
-      const it = items.find((x) => x.id === id);
-      if (!it) continue;
+      if (!itemIds.has(id)) continue;
       next = setStatus(next, id, 'approved');
     }
     apply(

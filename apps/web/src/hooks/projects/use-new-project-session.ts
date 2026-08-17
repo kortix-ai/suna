@@ -269,6 +269,8 @@ export function useNewProjectSession(projectId: string | undefined) {
       release,
     ],
   );
-  startRef.current = startSession;
+  useEffect(() => {
+    startRef.current = startSession;
+  }, [startSession]);
   return startSession;
 }

@@ -1303,17 +1303,16 @@ export default function BrandPage() {
    * to open one, so the caller knows to wait for the height animation before
    * scrolling. Safe to call for the always-open sections — it is a no-op.
    */
-  const revealSection = useCallback((id: string) => {
-    const owner = owningSection(id);
-    if (!owner) return false;
-    let opened = false;
-    setOpenSections((prev) => {
-      if (prev.includes(owner)) return prev;
-      opened = true;
-      return [...prev, owner];
-    });
-    return opened;
-  }, []);
+  const revealSection = useCallback(
+    (id: string) => {
+      const owner = owningSection(id);
+      if (!owner) return false;
+      if (openSections.includes(owner)) return false;
+      setOpenSections((prev) => (prev.includes(owner) ? prev : [...prev, owner]));
+      return true;
+    },
+    [openSections],
+  );
 
   // A deep link must open what it points at: /design-system#comp-button opens
   // Components and scrolls to the button demo, on load and on later hash changes.

@@ -237,6 +237,8 @@ function MainDiffColumn({ sha, file }: { sha: string; file: ProjectCommitFile | 
 // Dialog root
 // ---------------------------------------------------------------------------
 
+const EMPTY_SHA_LIST: string[] = [];
+
 interface CheckpointDetailDialogProps {
   sha: string | null;
   /** Ordered list of all checkpoint hashes shown in the panel. Enables
@@ -249,7 +251,7 @@ interface CheckpointDetailDialogProps {
 
 export function CheckpointDetailDialog({
   sha,
-  shaList = [],
+  shaList = EMPTY_SHA_LIST,
   onSelectSha,
   onClose,
 }: CheckpointDetailDialogProps) {

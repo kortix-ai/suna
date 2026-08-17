@@ -21,7 +21,7 @@ import {
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hasOpenAssistantTurn } from './assistant-turn-open';
 import {
@@ -909,10 +909,9 @@ function SessionTurnImpl({
   // Only skip tool parts whose callID matches a currently-pending question.
   const answeredQuestionParts = useMemo(() => {
     const pendingCallIds = new Set(
-      questions
-        .filter((q) => q.sessionID === sessionId)
-        .map((q) => q.tool?.callID)
-        .filter(Boolean),
+      questions.flatMap((q) =>
+        q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [],
+      ),
     );
 
     // Collect ALL question tool parts first so we can determine which ones
@@ -1151,7 +1150,8 @@ function SessionTurnImpl({
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
   // ---- Status throttling (2.5s) ----
-  const lastStatusChangeRef = useRef(Date.now());
+  const [statusThrottleStart] = useState(() => Date.now());
+  const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
   const rawStatus = useMemo(
@@ -1217,8 +1217,10 @@ function SessionTurnImpl({
     const textToCopy = inlineContentParts
       ? inlineContentParts
           .filter((item) => item.type === 'text')
-          .map((item) => (item.part as TextPart).text?.trim())
-          .filter(Boolean)
+          .flatMap((item) => {
+            const text = (item.part as TextPart).text?.trim();
+            return text ? [text] : [];
+          })
           .join('\n\n')
       : response;
     if (!textToCopy) return;
@@ -2027,12 +2029,14 @@ export function SessionChat({
   // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
   // pair — so pushState navigation still works with no `?new=true` dependency,
   // and no web code needs to know the storage key names directly.
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return readStartStash(sessionId)?.prompt ?? null;
-    }
-    return null;
-  });
+  // Starts null on the server AND the hydration render (identical trees), then
+  // seeds from the stash in a layout effect — before first paint, so the
+  // optimistic prompt still shows in the same frame the session mounts.
+  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    const stashed = readStartStash(sessionId)?.prompt;
+    if (stashed) setOptimisticPrompt(stashed);
+  }, [sessionId]);
 
   // Hydrate options from the SDK's start-stash and send the pending prompt for
   // new sessions. The dashboard/project page (or the instant session shell)
@@ -2814,15 +2818,15 @@ export function SessionChat({
    * changed. `turn` is the dependency of ~28 memos inside `SessionTurn`, so that
    * one fact invalidated all of them, for every turn, every frame.
    *
-   * Writing the ref during render is deliberate and safe: `stabilizeTurns` is
-   * idempotent, so StrictMode's double invocation lands on the same objects.
+   * The previous stable array is carried in a ref written after commit, so
+   * render stays pure; `stabilizeTurns` is idempotent, so StrictMode's double
+   * invocation lands on the same objects.
    */
   const stableTurnsRef = useRef<Turn[]>([]);
-  const turns = useMemo(() => {
-    const stable = stabilizeTurns(rawTurns, stableTurnsRef.current);
-    stableTurnsRef.current = stable;
-    return stable;
-  }, [rawTurns]);
+  const turns = useMemo(() => stabilizeTurns(rawTurns, stableTurnsRef.current), [rawTurns]);
+  useEffect(() => {
+    stableTurnsRef.current = turns;
+  }, [turns]);
 
   /**
    * One scan of the transcript, not one per turn.
@@ -3143,10 +3147,14 @@ export function SessionChat({
       const rawOptimisticSessionIds: typeof sessionMentionsForOptimistic = [];
       const rawOptimisticRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawOptimisticMatch: RegExpExecArray | null;
+      let optimisticSessionsById: Map<string, any> | null = null;
       while ((rawOptimisticMatch = rawOptimisticRegex.exec(text)) !== null) {
         const rawId = rawOptimisticMatch[1];
         if (sessionMentionsForOptimistic.some((m) => m.value === rawId)) continue;
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        optimisticSessionsById ??= new Map(
+          (allSessions ?? []).map((s: any) => [s.id, s] as const),
+        );
+        const found = optimisticSessionsById.get(rawId);
         rawOptimisticSessionIds.push({
           kind: 'session',
           label: found?.title || rawId,
@@ -3239,12 +3247,14 @@ export function SessionChat({
       const rawSessionIdMentions: TrackedMention[] = [];
       const rawSessionIdRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawMatch: RegExpExecArray | null;
+      let sessionsById: Map<string, any> | null = null;
       while ((rawMatch = rawSessionIdRegex.exec(textPrompt.text)) !== null) {
         const rawId = rawMatch[1];
         // Skip if already covered by a tracked mention
         if (trackedSessionMentions.some((m) => m.value === rawId)) continue;
         // Look up session by ID
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        sessionsById ??= new Map((allSessions ?? []).map((s: any) => [s.id, s] as const));
+        const found = sessionsById.get(rawId);
         if (found) {
           rawSessionIdMentions.push({
             kind: 'session',
@@ -3705,6 +3715,15 @@ export function SessionChat({
   useEffect(() => {
     if (!isBusy) clearEscHint();
   }, [isBusy, clearEscHint]);
+
+  // Unmount-only: a fade timer armed by a keydown must not outlive the chat.
+  useEffect(() => {
+    return () => {
+      if (escFadeTimerRef.current) {
+        clearTimeout(escFadeTimerRef.current);
+      }
+    };
+  }, []);
 
   // Ref-based guard against rapid double-fire of commands (replaces
   // the old executeCommand.isPending check from the TQ mutation).

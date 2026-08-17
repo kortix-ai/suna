@@ -372,10 +372,10 @@ function SpValueRows({
 }) {
   // The SP-initiated sign-in page is this app's own origin — the exact value
   // we set live ({origin}/auth), computed instead of described.
-  const signOnUrl = useMemo(
-    () => (typeof window === 'undefined' ? null : `${window.location.origin}/auth`),
-    [],
-  );
+  const [signOnUrl, setSignOnUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setSignOnUrl(`${window.location.origin}/auth`);
+  }, []);
   if (!urls) return null;
   const entityRow = <CopyRow label={entityIdLabel} value={urls.entityId} />;
   const acsRow = <CopyRow label={acsLabel} value={urls.acsUrl} />;

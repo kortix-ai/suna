@@ -376,7 +376,9 @@ export function CodeEditor({
 
   // Store callback in ref to avoid it being a dependency
   const onUnsavedChangeRef = useRef(onUnsavedChange);
-  onUnsavedChangeRef.current = onUnsavedChange;
+  useEffect(() => {
+    onUnsavedChangeRef.current = onUnsavedChange;
+  }, [onUnsavedChange]);
 
   // After a save, briefly ignore external content prop changes so a stale
   // refetch doesn't flash the old content back into the editor.

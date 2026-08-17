@@ -208,21 +208,16 @@ const CardGroup = forwardRef<HTMLDivElement, CardGroupProps>(
               <m.div
                 key={sessionRef.current}
                 aria-hidden
+                layout
                 className="bg-hover pointer-events-none absolute z-0 rounded-xl"
-                initial={{
-                  opacity: 0,
+                style={{
                   top: activeRect.top,
                   left: activeRect.left,
                   width: activeRect.width,
                   height: activeRect.height,
                 }}
-                animate={{
-                  opacity: 1,
-                  top: activeRect.top,
-                  left: activeRect.left,
-                  width: activeRect.width,
-                  height: activeRect.height,
-                }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0, transition: spring.fast.exit }}
                 transition={{ ...spring.fast, opacity: { duration: 0.08 } }}
               />

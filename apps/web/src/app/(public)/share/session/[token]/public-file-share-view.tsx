@@ -7,7 +7,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -115,16 +115,17 @@ function usePublicBinaryBlob(
     },
   });
 
-  const blobUrl = useMemo(() => {
-    if (!query.data) return null;
-    return URL.createObjectURL(query.data);
-  }, [query.data]);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
+    if (!query.data) {
+      setBlobUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(query.data);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [query.data]);
 
   return {
     blobUrl,

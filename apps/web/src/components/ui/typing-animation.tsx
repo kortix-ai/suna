@@ -185,7 +185,9 @@ export function TypingAnimation({
     phase !== 'deleting';
 
   const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
   const didFireCompleteRef = useRef(false);
 
   useEffect(() => {

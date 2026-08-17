@@ -124,7 +124,9 @@ export function SessionOverridesToolbar({
     agentName,
   });
   const committedDraftRef = useRef(onCommittedDraft);
-  committedDraftRef.current = onCommittedDraft;
+  useEffect(() => {
+    committedDraftRef.current = onCommittedDraft;
+  }, [onCommittedDraft]);
 
   const initializationKey = useMemo(() => {
     if (!catalog) return null;
