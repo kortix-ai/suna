@@ -311,7 +311,7 @@ type AgentDef = {
 
 const AGENTS: AgentDef[] = [
   {
-    name: 'kortix',
+    name: 'Kortix',
     desc: 'General knowledge worker — full tool access; codes, researches, writes and runs ops end-to-end in an isolated sandbox.',
     icon: Bot,
     trigger: 'primary',
@@ -322,7 +322,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'pr-bot',
+    name: 'PR Bot',
     desc: 'Runs a thermo-nuclear review and stands up a one-click preview on every pull request to kortix-ai/kortix.',
     icon: GitPullRequest,
     trigger: 'webhook',
@@ -333,7 +333,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'memory-reflector',
+    name: 'Memory Reflector',
     desc: 'Reflects on recent activity and curates .kortix/memory, opening a memory CR each run.',
     icon: Brain,
     trigger: 'cron',
@@ -344,7 +344,7 @@ const AGENTS: AgentDef[] = [
     on: false,
   },
   {
-    name: 'researcher',
+    name: 'Researcher',
     desc: 'Deep multi-source research with structured synthesis, inline citations and charts.',
     icon: Search,
     trigger: 'manual',
@@ -355,7 +355,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'analyst',
+    name: 'Analyst',
     desc: 'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.',
     icon: Database,
     trigger: 'manual',
@@ -366,7 +366,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'support-triage',
+    name: 'Support Triage',
     desc: 'Categorizes, prioritizes and routes inbound tickets, drafting an empathetic first reply.',
     icon: MessageSquare,
     trigger: 'webhook',
@@ -377,7 +377,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'deck-builder',
+    name: 'Deck Builder',
     desc: 'Turns a prompt and your latest data into board decks and polished presentations.',
     icon: FileText,
     trigger: 'manual',
@@ -388,7 +388,7 @@ const AGENTS: AgentDef[] = [
     on: false,
   },
   {
-    name: 'sdr',
+    name: 'SDR',
     desc: 'Enriches leads from the CRM, researches each account and drafts tailored outreach.',
     icon: FaUsers,
     trigger: 'manual',
@@ -778,7 +778,7 @@ function ModelsPage({
 type ScheduleJob = { name: string; cron: string; when: string; next: string; on: boolean };
 
 const INITIAL_JOBS: ScheduleJob[] = [
-  { name: 'memory-reflector', cron: '0 */6 * * *', when: 'every 6 hours', next: 'in 2h', on: true },
+  { name: 'Memory reflector', cron: '0 */6 * * *', when: 'every 6 hours', next: 'in 2h', on: true },
   { name: 'Daily briefing', cron: '0 8 * * *', when: 'every day · 08:00', next: 'in 6h', on: true },
   {
     name: 'Weekly PR digest',
