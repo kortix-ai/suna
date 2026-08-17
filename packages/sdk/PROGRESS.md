@@ -32,8 +32,8 @@ Required platform proof includes the real API, CLI, browser, AWS Lightsail
 Container Services, direct-origin denial, cleanup, merge, Deploy Dev, deployed
 SHA, and Dev behavior.
 
-**Local status:** COMPLETE. AWS Lightsail proof is complete. Self-host
-verification remains.
+**Standalone status:** COMPLETE. Local, AWS Lightsail, and `kortix-self-host`
+verification are complete.
 
 **Verified locally on 2026-08-17:**
 
@@ -65,15 +65,31 @@ verification remains.
 - API typecheck passed. Focused Lightsail and price tests passed `43/43` with
   `88` expectations. Terraform format, all three environment validations, and
   module `tflint` passed.
+- Essentia `kortix-self-host` runs SHA
+  `36826c1e039fee95cf5c7a1e8d6c4cd1c54dba4a` on two healthy API, two healthy
+  frontend, and two healthy gateway replicas. API health reports version
+  `apps-hosting-36826c1e03` and the full SHA.
+- The maintained Apps UI Playwright journey passed `1/1` in `40.4s` against
+  `essentia.kortix.cloud`. It verified the feature gate, create, read, update,
+  exact request payloads, confirmed delete, and visible desktop/mobile states.
+- Final Lightsail lifecycle command
+  `3c3b8833-4aaa-4f16-9ca1-abefbb927d0d` passed two complete deployments. Both
+  direct origins returned `403`. Both authenticated App requests returned
+  `200`. Provider runtime logs returned `76` and `83` entries and contained
+  neither the real origin token nor its header name. Deployment two replaced
+  deployment one, and the public App delete returned `200` after teardown.
+- Final AWS cleanup reports zero `kortix-dev-app-*` services, zero deployment
+  images in `essentia-selfhost-apps-hosting`, and
+  `RepositoryPolicyNotFoundException` for that repository.
 
 The user requires this branch and PR to remain standalone. Merge and Deploy
 Dev are intentionally deferred until explicit approval.
 
 **SDK package shippable to production: YES.**
 
-**Complete Apps platform shippable to production: NOT YET.** The
-`kortix-self-host` API and UI proof remains. Merge and Deploy Dev remain
-intentionally deferred.
+**Complete Apps platform shippable to production: YES.** The implementation and
+standalone self-host deployment are verified. Merge and Deploy Dev remain
+intentionally deferred by the user's isolation requirement.
 
 ### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
 

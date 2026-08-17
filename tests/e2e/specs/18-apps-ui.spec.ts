@@ -19,6 +19,8 @@ import {
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+const appsBaseDomain = process.env.E2E_APPS_BASE_DOMAIN || 'apps.kortix.com';
+const appsEnvironment = process.env.E2E_APPS_ENVIRONMENT;
 const password = 'E2eAppsUi123!';
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
@@ -192,9 +194,9 @@ test.describe('18 — Kortix Apps UI', () => {
       if (env.target === 'local') {
         expect(createdUrl.hostname).toMatch(/\.apps\.localhost$/);
       } else {
-        const environmentPrefix = env.target === 'prod' ? 'prod' : env.target;
+        const environmentPrefix = appsEnvironment || (env.target === 'prod' ? 'prod' : env.target);
         expect(createdUrl.hostname).toMatch(
-          new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
+          new RegExp(`^${environmentPrefix}-.+\\.${appsBaseDomain.replaceAll('.', '\\.')}$`),
         );
       }
       await expect(createDialog).toBeHidden();

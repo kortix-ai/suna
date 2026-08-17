@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A self-host image must carry the exact source commit before rollout (2026-08-17)
+
+**When:** building a local or branch-only self-host image. Pass the frozen SHA as
+`KORTIX_COMMIT` to every API and gateway Docker build. A tag names operator
+intent. Only the baked commit lets `/v1/health` prove source provenance. Reject
+an image that reports `unknown` before any migration or service swap.
+*Near-miss:* the PR #6478 Essentia build initially omitted both build arguments.
+The command was cancelled before deployment. *Enforcer:* deployment runbook
+preflight; no automated local-image gate exists yet.
+
 ### Provider deletion must retry throttling through absence proof (2026-08-17)
 
 **When:** deleting a paid provider resource from a user-facing delete route.
