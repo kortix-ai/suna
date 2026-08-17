@@ -335,3 +335,14 @@ describe('ToolParts summary line (W3, opt-in)', () => {
     expect(children.some((c) => c.type === 'p')).toBe(false);
   });
 });
+
+describe('ToolParts wrapper — un-cap keeps height only (Task 17, W11/D14)', () => {
+  test('max-h-none stays; overflow-visible is gone so ToolCodeCard keeps its x-axis scrollbar', () => {
+    const provider = ToolParts({ parts: [part('bash')], sessionId: 's1' }) as ReactElement<{
+      children: ReactElement<{ className: string }>;
+    }>;
+    const wrapperClassName = provider.props.children.props.className;
+    expect(wrapperClassName).toContain('[&_[data-scrollable]]:max-h-none');
+    expect(wrapperClassName).not.toContain('overflow-visible');
+  });
+});

@@ -85,7 +85,12 @@ export const AdvancedPanel = memo(function AdvancedPanel({
         key={current?.id}
         className={cn(
           'min-h-0 flex-1 overflow-auto',
-          '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
+          // Uncapped so the focused tool fills the panel instead of scrolling
+          // in its own inner box (see detail-view.tsx for the same un-cap).
+          // Height only, not overflow: overflow-visible kills the x-axis
+          // scrollbar ToolCodeCard needs for long mono lines, clipping
+          // memory/read/edit/write output at the card frame.
+          '[&_[data-scrollable]]:max-h-none',
         )}
       >
         {current && (

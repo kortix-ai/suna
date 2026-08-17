@@ -793,7 +793,10 @@ export function ToolParts({
           // search that shows 5 of its 20 results behind an inner scrollbar is
           // hiding what the user opened it to see. The detail's own container
           // scrolls instead. Same un-cap the Advanced stepper applies.
-          '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
+          // Height only, not overflow: overflow-visible kills the x-axis
+          // scrollbar ToolCodeCard needs for long mono lines, clipping
+          // memory/read/edit/write output at the card frame.
+          '[&_[data-scrollable]]:max-h-none',
         )}
       >
         {summary && <p className="text-muted-foreground text-sm text-pretty">{summary}</p>}
