@@ -55,13 +55,14 @@ export function ToolResultCard({
         // where it belongs.
         'rounded-md border p-1',
         TONE_CLASS[tone],
-        // The same `mt-1.5` + shared indent every other card under a tool row
-        // uses (`ToolCodeCard`, `ToolOutputCard`, `bash`'s command card). The
-        // indent was `ml-7` — 28px, derived from a `gap-3` this row class does
-        // not have — so this card and `ToolCodeCard` disagreed by 6px on the
-        // very same expanded row. `mt-1.5` is unconditional like theirs; the
-        // seam is the card's, not the surface's.
-        'mt-1.5',
+        // The same `mt-1.5` seam + shared indent every other card under a tool
+        // row uses (`ToolCodeCard`, `ToolOutputCard`, `bash`'s command card),
+        // and gated the same way. The indent was `ml-7` — 28px, derived from a
+        // `gap-3` this row class does not have — so this card and
+        // `ToolCodeCard` disagreed by 6px on the very same expanded row. Both
+        // are inline-only: on the panel the card IS the disclosure body, whose
+        // `px-3 py-3` is the whole inset.
+        indent && 'mt-1.5',
         indent,
         className,
       )}

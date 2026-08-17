@@ -504,6 +504,9 @@ describe('BashTool indent is surface-aware', () => {
     const html = renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />));
 
     expect(html).toContain(INDENT);
+    // NEW (Task 19): the seam is gated on the same condition as the indent, so
+    // the command card lands on the inline surface exactly as it always did.
+    expect(html).toContain('mt-1.5');
   });
 
   test('the panel drops it', () => {
@@ -517,5 +520,8 @@ describe('BashTool indent is surface-aware', () => {
 
     expect(html).not.toContain(INDENT);
     expect(html).not.toContain('--tool-indent');
+    // NEW (Task 19): and the seam with it — the panel body is already
+    // `px-3 py-3`, so a card that adds `mt-1.5` double-spaces its own top.
+    expect(html).not.toContain('mt-1.5');
   });
 });

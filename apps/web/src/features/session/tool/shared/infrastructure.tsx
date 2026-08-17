@@ -714,12 +714,15 @@ function ToolOutputCard({ copyText, children }: { copyText?: string; children: R
   return (
     <div
       className={cn(
-        // `mt-1.5` + the shared indent is the seam every bordered card under a
-        // tool row sits on — `ToolCodeCard`, `ToolResultCard` and edit's
-        // instructions line all use the same pair, and this card used to be the
-        // one that hugged its trigger and started 6px further right (a
-        // hardcoded `ml-7` against the row's real 22px text column).
-        'border-border bg-popover relative mt-1.5 rounded-md border',
+        'border-border bg-popover relative rounded-md border',
+        // The seam and the indent are ONE inline-surface concern, so they are
+        // gated together. Inline, the card hangs under a trigger row and needs
+        // both: 6px of air and the row's 22px text column (this card used to
+        // hardcode `ml-7`, 28px, against a `gap-3` the row class does not
+        // have). On the panel the card IS the disclosure body, which already
+        // supplies `px-3 py-3` — a top margin there is double-spacing, 18px
+        // over 12px at the bottom.
+        indent && 'mt-1.5',
         indent,
       )}
     >
@@ -1371,8 +1374,12 @@ export function BasicTool({
  * A file's contents inside an expanded tool row, in the same card `bash` draws
  * around a command — so read / write / edit / bash all present code the one way.
  *
- * The indent comes from {@link useToolIndent}; `pr-11` is the shared reserve
- * every floating copy button gets (see {@link ToolOutputCard}) — `CopyOverlay`
+ * The indent comes from {@link useToolIndent}, and the `mt-1.5` seam rides with
+ * it: both are the inline surface's business (see {@link ToolOutputCard}). On
+ * the panel this card IS the disclosure body and the body already brings
+ * `px-3 py-3`.
+ *
+ * `pr-11` is the shared reserve every floating copy button gets — `CopyOverlay`
  * pins its button at `top-3 right-3`, and without the reserve the first line of
  * a wrapped file ran underneath it.
  */
@@ -1388,7 +1395,7 @@ export function ToolCodeCard({
   const indent = useToolIndent();
   if (!code) return null;
   return (
-    <div className={cn('mt-1.5', indent, className)}>
+    <div className={cn(indent && 'mt-1.5', indent, className)}>
       <div className="border-border bg-popover relative rounded-md border">
         {/* The scroller sits INSIDE the overlay so the copy button stays pinned
             to the card while long content scrolls under it. */}

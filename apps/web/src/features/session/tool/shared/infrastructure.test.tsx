@@ -183,8 +183,11 @@ describe('BasicTool panel surface — the disclosure row', () => {
 // `ToolCodeCard` indented 22px and capped at 384px — so a `read` and a `memory`
 // row in one turn drew their cards on two different left edges. The law now:
 //
-//   • frame  — `bg-popover border-border rounded-md border`, `mt-1.5` seam;
-//   • indent — the shared `--tool-indent` variable (22px), inline only;
+//   • frame  — `bg-popover border-border rounded-md border`;
+//   • seam + indent — `mt-1.5` and the shared `--tool-indent` variable (22px),
+//              gated TOGETHER on the inline surface. On the panel the card is
+//              the disclosure body, which already brings `px-3 py-3`; a seam
+//              there is double-spacing (18px top over 12px bottom);
 //   • cap    — `max-h-96`, one value (bash's 64/80 panes are the stated
 //              exception and are pinned in `bash-tool.test.tsx`);
 //   • reserve — `pr-11` wherever a copy button floats over the body.
@@ -228,7 +231,12 @@ describe('the bordered tool cards share one rhythm', () => {
     expect(html).not.toContain('max-h-[19rem]');
   });
 
-  test('the panel drops the indent on all three — it has no icon gutter', () => {
+  test('the panel drops BOTH the indent and the seam on all three', () => {
+    // The panel row's body is `px-3 py-3`. A card that also brings `mt-1.5`
+    // sits 18px from the trigger seam and 12px from the bottom — the body's
+    // own inset, doubled at the top. The indent goes for the reason it always
+    // did (no icon gutter to line up with); the seam goes with it, so the
+    // gate is one condition and not two rules that can drift apart.
     const html = renderPanel(
       <>
         <RawOutputBlock output="plain log line" />
@@ -241,6 +249,7 @@ describe('the bordered tool cards share one rhythm', () => {
 
     expect(html).not.toContain('--tool-indent');
     expect(html).not.toContain('ml-7');
+    expect(html).not.toContain('mt-1.5');
   });
 });
 

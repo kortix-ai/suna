@@ -271,7 +271,10 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {command && (
-        <div className={cn('mt-1.5', indent)}>
+        // `CommandBlock` is a bordered card like the shared three, so it takes
+        // the same gate: the seam belongs to the inline row it hangs under, not
+        // to the panel body that already supplies `px-3 py-3`.
+        <div className={cn(indent && 'mt-1.5', indent)}>
           <CommandBlock
             command={command}
             output={plainOutput}

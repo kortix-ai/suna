@@ -130,7 +130,8 @@ function MemoryMarkdownCard({ code }: { code: string }) {
   if (!code) return null;
   const { frontmatter, body } = parseFrontmatter(code);
   return (
-    <div className={cn('mt-1.5', indent)}>
+    // Seam and indent gated together, exactly as `ToolCodeCard` gates them.
+    <div className={cn(indent && 'mt-1.5', indent)}>
       <div className="border-border bg-popover relative rounded-md border">
         <CopyOverlay code={code}>
           {/* `MD_FLUSH_CLASSES` strips the nested code-block chrome (border,
