@@ -287,9 +287,18 @@ export function AppsView({ projectId }: { projectId: string }) {
   return (
     <CustomizeSectionWrapper
       title="Apps"
-      description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
       docs="/docs/feature-flags/apps"
-      className="max-w-5xl"
+      // `CustomizeSectionWrapper`'s content column carries no horizontal
+      // padding of its own — every other consumer stays inside `max-w-2xl`,
+      // narrow enough that the column's own margin (`mx-auto` against a much
+      // wider viewport) reads as a gutter. This page overrides to `max-w-5xl`
+      // for its card grid, and once viewport width gets close to that 1024px
+      // cap — an ordinary laptop window, not just a phone — the column fills
+      // the full width and "Learn more." presses flush against the browser
+      // edge. `px-4` matches `CapabilityPageShell`'s own gutter (the sibling
+      // shell the other capability routes use), so the header never touches
+      // the edge regardless of viewport width.
+      className="max-w-5xl px-4"
       showSidebarToggleButton
     >
       {appsGate.isLoading ? (
