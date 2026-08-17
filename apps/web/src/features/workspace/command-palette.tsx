@@ -99,6 +99,7 @@ import { useWorkspaceSearch } from '@/features/files';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
+import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
@@ -806,13 +807,20 @@ export function CommandPalette() {
       { providerID: string; providerName: string; models: typeof visibleModels }
     >();
     for (const m of visibleModels) {
-      const existing = groups.get(m.providerID);
+      // Under the gateway every model is registered as opencode provider
+      // `kortix`, so `m.providerName` is always "Kortix" — even for a BYOK
+      // Anthropic/Bedrock model. Group/label by the resolved REAL upstream
+      // provider instead. Safe to call unconditionally: for a native
+      // (non-gateway) model `pickerGroupId` already returns `m.providerID`
+      // as-is. See model-grouping.ts's doc comment.
+      const groupID = pickerGroupId(m);
+      const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
       } else {
-        groups.set(m.providerID, {
-          providerID: m.providerID,
-          providerName: m.providerName,
+        groups.set(groupID, {
+          providerID: groupID,
+          providerName: pickerGroupLabel(groupID, m),
           models: [m],
         });
       }
