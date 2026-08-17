@@ -1,103 +1,38 @@
 'use client';
 
 /**
- * The Models tab — the settings-panel home of the per-project LLM gateway.
- * `settings-panel.tsx:1129-1133` used to mount `LlmManagementView` directly on
- * `case 'models'`; this file gives it the container / pure-view shape every
- * other migrated tab has (`sandbox-tab.tsx`, `experimental-tab.tsx`, …).
+ * The Models tab — the gate, and nothing else.
  *
  * **The `llmGatewayEnabled` gate is preserved EXACTLY, not re-derived.** The
- * panel computes it once as `isLlmGatewayEnabled(project)`
- * (`settings-panel.tsx:659`) and threads it down; this tab renders `null` while
- * it is false, mirroring the legacy panel's
+ * host computes it once as `isLlmGatewayEnabled(project)`
+ * (`capabilities/models/models-page.tsx`) and threads it down; this tab renders
+ * `null` while it is false, mirroring the legacy panel's
  * `if (section.startsWith('llm-') && !llmGatewayEnabled) return null;` — nothing
  * (not the placeholder), same as before. It is a DIFFERENT flag from
  * `llmGatewayAvailable`, which gates the rail row only; do not substitute one
  * for the other.
  *
- * **`LlmManagementView` (`gateway-view.tsx`) owns the whole sub-tab bar** —
- * API keys, Models, Custom, Routing, Overview, Logs — and reads
- * `useSettingsNav()` to follow a deep link into one of them. That bar carried
- * ten tabs until Playground was deleted, the two "API keys" tabs and "API"
- * merged into one, and Budgets folded into Overview; every legacy `llm-*` id
- * still resolves, now to whichever tab absorbed it. The seven legacy `llm-*`
- * URL ids continue to resolve through `settings-tabs.ts`'s `RENAMED_TABS` (all
- * seven fold to `models`), which this file does not touch.
+ * **The page itself is `LlmManagementView` (`gateway-view.tsx`).** It renders
+ * `CapabilityPageShell` — the same shell Connectors, Agents, Skills, Triggers
+ * and Secrets use — with the seven-tab strip in the shell's `filters` slot, the
+ * project-default model picker in its `action` slot, and the selected section
+ * as its `children`.
  *
- * **What DID change inside it (JAY-510):** the Providers sub-tab now mounts
- * `features/providers/provider-connect.tsx` directly instead of
- * `ProjectProviderModal asPanel`, so connecting a provider from this tab opens
- * no dialog, needs no accordion and passes no search field; and the provider
- * modal's old nested "Models" tab was flattened up to a sibling sub-tab so that
- * capability keeps a home.
- *
- * `LlmManagementView` is a SLOT, not rendered inline: it owns
- * `useProjectModels`/`useModelDefaults`/`useIsMutating`/`useSettingsNav` and
- * cannot render under `renderToStaticMarkup` with no provider tree — same
- * reasoning as `sandbox-tab.tsx`'s `templatesSlot`.
- *
- * **The pane heading sits above the gateway's own sub-tab bar.**
- * `LlmManagementView` fills its tab with its OWN full-height `Tabs` shell
- * (API keys/Models/Custom/Routing/Overview/Logs, each an internally-scrolling
- * `TabsContent`) and declares no width of its own — see `DELEGATING_TABS` in
- * `tab-content-width.test.ts`. `ModelsTabView` renders `SettingsTabHeader` as
- * a shrink-0 strip above that shell, in a `flex h-full min-h-0 flex-col`
- * column, with `gatewaySlot` given `min-h-0 flex-1` so the gateway's own sub-
- * tab bar and per-section scrolling are unchanged — same split
- * `sandbox-tab.tsx` uses for its templates slot.
+ * There is no `ModelsTabView` any more, and this file renders no chrome. It had
+ * one: a pass-through that took `LlmManagementView` as a `gatewaySlot` and put
+ * it inside a `CapabilityPageShell` here — while `LlmManagementView` built a
+ * SECOND shell of its own inside it (its own tab root, its own bordered tab
+ * row, its own per-panel scrollers). Two shells for one page is what made
+ * Models look like a different product beside its five siblings; the page owns
+ * its shell now, and this file owns only the flag.
  *
  * `ModelsTab` is the container: it only exists once this tab is active, which
- * `SettingsTabPane` guarantees (`if (!active) return null;`), so nothing here
- * fetches on panel open.
+ * the route guarantees, so nothing here fetches before the page opens.
  */
 
-import type { ReactNode } from 'react';
-
-import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { LlmManagementView } from '@/features/workspace/customize/sections/gateway-view';
 
-export interface ModelsTabViewProps {
-  /** `LlmManagementView`, built by the container — see the header comment for
-   *  why it's a slot. `undefined` (nothing rendered) lets this view render
-   *  under `renderToStaticMarkup` with no providers. */
-  gatewaySlot?: ReactNode;
-}
-
-/**
- * Presentational only — no hooks, no data fetching.
- *
- * The heading no longer comes from `SettingsTabHeader`, or from a local
- * `SettingsSectionHeader`. Models graduated a SECOND time, off
- * `/projects/[id]/config`'s sub-nav and onto its own top-level Customize
- * tab — neither registry `SettingsTabHeader` reads (the overlay's rail, the
- * project-settings sections) has a `models` entry any more, and that lookup
- * silently rendering nothing is exactly the failure mode `schedule-view.tsx`
- * hit for the same reason when Triggers graduated.
- *
- * The page-level chrome is `CapabilityPageShell` — the same shell Connectors,
- * Agents, Skills, Triggers and Secrets use — so Models reads as the same
- * `max-w-5xl` column with the same heading and header group as its five
- * sibling tabs, instead of the bespoke `SettingsSectionHeader` strip it used
- * to bring. `gatewaySlot` (`LlmManagementView`) is the shell's `children`: it
- * owns its OWN sub-tab bar (API keys/Models/Custom/Routing/Overview/Logs)
- * and per-section scrolling below that shared header, unchanged — it
- * declares no width or height of its own (`DELEGATING_TABS` in
- * `tab-content-width.test.ts`), so it fills whatever column the shell gives
- * it, and it no longer needs a `min-h-0 flex-1` height handoff: the shell is
- * the page's scroll container now, not a bounded flex row.
- */
-export function ModelsTabView({ gatewaySlot }: ModelsTabViewProps) {
-  return (
-    <CapabilityPageShell
-      title="Models"
-      description="Which providers and models this project can use."
-    >
-      {gatewaySlot}
-    </CapabilityPageShell>
-  );
-}
-
-/** Container. Renders nothing at all while the gateway is disabled. */
+/** Renders nothing at all while the gateway is disabled. */
 export function ModelsTab({
   projectId,
   llmGatewayEnabled,
@@ -106,5 +41,5 @@ export function ModelsTab({
   llmGatewayEnabled: boolean;
 }) {
   if (!llmGatewayEnabled) return null;
-  return <ModelsTabView gatewaySlot={<LlmManagementView projectId={projectId} />} />;
+  return <LlmManagementView projectId={projectId} />;
 }

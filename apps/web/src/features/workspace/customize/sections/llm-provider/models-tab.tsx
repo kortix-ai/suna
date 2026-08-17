@@ -125,8 +125,11 @@ export function ModelsTab({
     );
   }
 
+  // No horizontal padding of its own: `CapabilityPageShell` supplies the page
+  // column, and 20px more here indented this tab's content past the tab strip
+  // that selects it.
   return (
-    <div className="px-5 pt-3 pb-4">
+    <div className="pb-4">
       {/*
         The search field and "Start over" share ONE row, and that row's height
         never changes.

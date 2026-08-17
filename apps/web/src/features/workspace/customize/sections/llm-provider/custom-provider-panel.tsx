@@ -143,7 +143,7 @@ export function CustomProviderPanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 px-5 py-5">
+    <div className="flex flex-col gap-4">
       {/* The one sentence on the screen, in the same slot the API keys tab puts
           its own — this tab is for the endpoint the catalog does not carry. */}
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">

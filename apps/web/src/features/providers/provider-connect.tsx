@@ -31,9 +31,16 @@
  * with no search text the list was the three first-class ids plus whatever
  * already had a key, so 185 providers only existed for someone who typed a
  * name they already knew. That reads as "Kortix supports three providers".
- * The whole catalog now renders (`orderProviderRows`), first-class ids first,
- * everything else in catalog order — the search field narrows a list that is
- * already all there instead of being the only door to it.
+ * The whole catalog is in the list now (`orderProviderRows`), first-class ids
+ * first, everything else in catalog order — the search field narrows a list
+ * that is already all there instead of being the only door to it.
+ *
+ * **The list pages; the search does not.** Rendering all 184 rows on arrival
+ * traded the wall for a different one, so `PROVIDER_PAGE_SIZE` rows render and
+ * `Load more` adds a page at a time. That is a floor on what is shown, never a
+ * ceiling on what is reachable: a query renders every match in the catalogue
+ * regardless of the window, and a provider with a stored key is always inside
+ * it. See `PROVIDER_PAGE_SIZE` and `lastConnectedIndex`.
  *
  * Custom providers moved out entirely, to their own tab
  * (`custom-provider-panel.tsx`) — a job almost nobody does should not be the
@@ -56,6 +63,7 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import {
@@ -151,9 +159,19 @@ export interface ProviderConnectViewProps {
    * moment you finished typing in it. See `ProviderConnectView`.
    */
   rows: ProviderConnectRow[];
-  /** How many providers exist in total. Equals `rows.length` until a search
-   *  narrows the list, and is what the search placeholder counts. */
+  /** How many providers exist in total. This is the CATALOGUE's size — never
+   *  `rows.length` — because it is what the search placeholder counts, and
+   *  search always covers the catalogue whatever the list is showing. */
   totalCount: number;
+  /**
+   * Matching providers this list is NOT rendering, because the reader has not
+   * asked for them yet. `0` while searching: a query is a request for its
+   * matches, all of them, so `Load more` never stands between a search and its
+   * result. See `PROVIDER_PAGE_SIZE`.
+   */
+  hiddenCount?: number;
+  /** Reveal the next page. Omitted (with `hiddenCount` 0) when there is none. */
+  onLoadMore?: () => void;
   /** Keyed `${providerId}:${envVar}`. */
   values: Record<string, string>;
   onValueChange: (providerId: string, envVar: string, value: string) => void;
@@ -242,10 +260,21 @@ function CredentialField({
    * from here and reappear in a "Connected" block above with its own
    * "Replace key" button — so finishing a field made the row jump somewhere
    * else, and the same provider was on screen twice.
+   *
+   * **A multi-field provider keeps each field's own name in that report.** The
+   * saved sentence used to replace the placeholder outright, so Bedrock's two
+   * fields — "Bearer token bedrock" and "Region" — both collapsed to the same
+   * "Saved — paste a new key to replace it" the moment they were stored, and
+   * the only thing distinguishing one row from the other went with it. The
+   * field name is the ONLY visible identity these rows have (the `<label>`
+   * below is `sr-only`), so it leads and the saved state follows it.
    */
+  const fieldName = row.placeholders?.[envVar] ?? prettyFieldLabel(envVar);
   const placeholder =
     row.connected && !value
-      ? 'Saved — paste a new key to replace it'
+      ? row.envVars.length > 1
+        ? `${fieldName} — saved, paste a new one to replace it`
+        : 'Saved — paste a new key to replace it'
       : (row.placeholders?.[envVar] ?? envVar);
   return (
     <Field className="min-w-0">
@@ -350,6 +379,11 @@ function ProviderKeyFields({
   className,
 }: ProviderKeyFieldsProps) {
   const untouched = row.envVars.every((envVar) => !values[`${row.id}:${envVar}`]);
+  /**
+   * Stored, and not being edited right now. Provider-wide: the credential is
+   * one thing however many fields carry it, and it is saved and removed as one.
+   */
+  const savedAndIdle = row.connected && untouched && status === 'idle';
   const fields = row.envVars.map((envVar, index) => (
     <CredentialField
       key={envVar}
@@ -359,41 +393,43 @@ function ProviderKeyFields({
       revealed={!!revealedFields[`${row.id}:${envVar}`]}
       onReveal={() => onToggleReveal(row.id, envVar)}
       onValueChange={onValueChange}
-      // The trailing controls ride the LAST field: they report the provider's
-      // one save, and the last field is where focus was when it fired.
       trailing={
-        index === row.envVars.length - 1 ? (
+        savedAndIdle ? (
+          /* EVERY saved field gets the check and the remove, not just the last
+             one. They rode `index === envVars.length - 1` along with the status
+             glyph, which is right for the glyph and wrong for these: Bedrock
+             then showed two stored fields of which only the lower one looked
+             stored and only the lower one could be cleared. The check is a
+             per-field report ("this one is filled in"), so it belongs on each
+             field. Remove is provider-wide — one credential, one delete — and
+             is offered wherever the check is, so the row you are looking at is
+             always the row you can act on. */
           <>
-            {/* A saved, untouched row reports itself with a check — and offers
-                the only destructive action on this screen, right where the key
-                is. It used to take a separate "Connected" section with its own
-                "Replace key" and unplug buttons to say the same thing. */}
-            {row.connected && untouched && status === 'idle' ? (
-              <>
-                <span
-                  role="status"
-                  title="Key saved"
-                  aria-label="Key saved"
-                  className="flex shrink-0 items-center"
-                >
-                  <Check className="text-kortix-green size-3.5 shrink-0" weight="fill" />
-                </span>
-                {onRemoveKey && (
-                  <InputGroupButton
-                    size="icon-xs"
-                    onClick={() => onRemoveKey(row.id)}
-                    title="Remove key"
-                    aria-label={`Remove the ${row.label} key`}
-                    className="text-muted-foreground/60 hover:text-destructive"
-                  >
-                    <Remove className="size-3.5" />
-                  </InputGroupButton>
-                )}
-              </>
-            ) : (
-              <KeyStatusGlyph status={status} />
+            <span
+              role="status"
+              title="Key saved"
+              aria-label="Key saved"
+              className="flex shrink-0 items-center"
+            >
+              <Check className="text-kortix-green size-3.5 shrink-0" weight="fill" />
+            </span>
+            {onRemoveKey && (
+              <InputGroupButton
+                size="icon-xs"
+                onClick={() => onRemoveKey(row.id)}
+                title="Remove key"
+                aria-label={`Remove the ${row.label} key`}
+                className="text-muted-foreground/60 hover:text-destructive"
+              >
+                <Remove className="size-3.5" />
+              </InputGroupButton>
             )}
           </>
+        ) : index === row.envVars.length - 1 ? (
+          // The save status DOES ride the last field only: one save covers the
+          // whole provider, so one indicator reports it, and the last field is
+          // where focus was when it fired.
+          <KeyStatusGlyph status={status} />
         ) : undefined
       }
     />
@@ -580,17 +616,19 @@ function KeyStatusGlyph({ status }: { status: ProviderKeyStatus }) {
  * `ProviderConnect` so it renders under `renderToStaticMarkup`; every slot
  * defaults to `undefined` so the bare view needs no provider tree.
  *
- * ## One list. No sections. Every provider.
+ * ## One list. No sections.
  *
- * A search field, one line of instruction, and rows — all of them. That is
- * the entire screen. See the file header for the four sections this replaced
- * and for why "three rows unless you search" was not a smaller version of
- * the same list, it was a different (wrong) answer to "which providers can I
- * use?".
+ * A search field, one line of instruction, rows, and a `Load more` under them.
+ * That is the entire screen. See the file header for the four sections this
+ * replaced, for why "three rows unless you search" was not a smaller version
+ * of the same list but a different (wrong) answer to "which providers can I
+ * use?", and for why paging the rows is not a return to it.
  */
 export function ProviderConnectView({
   rows,
   totalCount,
+  hiddenCount = 0,
+  onLoadMore,
   values,
   onValueChange,
   onCommit,
@@ -663,6 +701,24 @@ export function ProviderConnectView({
           ))}
         </div>
       )}
+
+      {/* A page at a time, with the remainder stated. This is NOT the "Show 181
+          more providers" disclosure this screen deleted: that was a closed door
+          with a number on it, and behind it was the whole catalogue and the
+          only way to reach any of it. This is the bottom of a list that is
+          already rendering providers, it says how many of how many, and the
+          search above it reaches all 184 whether or not this button is ever
+          pressed. */}
+      {hiddenCount > 0 && onLoadMore ? (
+        <div className="flex items-center justify-center gap-3 pt-1" data-provider-load-more="">
+          <Button variant="outline" size="sm" onClick={onLoadMore}>
+            Load more
+          </Button>
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {rows.length} of {rows.length + hiddenCount}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -670,6 +726,23 @@ export function ProviderConnectView({
 // ─── Container ───────────────────────────────────────────────────────────────
 
 const CONNECTION_REFRESH_TIMEOUT_MS = 45_000;
+
+/**
+ * How many providers render before `Load more`, and how many each press adds.
+ *
+ * 12, because the list leads with the three first-class ids and 12 is the point
+ * where a screen's worth of rows stops being a list and starts being a scroll:
+ * ~9 rows past the ones almost everybody wants, enough that OpenRouter, Vercel
+ * AI Gateway, GitHub Copilot, Groq and xAI are all on the page without a
+ * click, and short enough that Costs, Routing and Logs are still one flick
+ * away. 184 rows rendered unconditionally — the previous behaviour — put ~172
+ * providers nobody asked for between the reader and the bottom of the page.
+ *
+ * A batch, not "reveal everything": one press that dumps the remaining 172
+ * rebuilds the wall this screen removed. The search field, not this button, is
+ * how you reach a provider deep in the catalogue, and it searches all of it.
+ */
+export const PROVIDER_PAGE_SIZE = 12;
 
 function toRow(entry: LlmProviderEntry, connectedIds: Set<string>): ProviderConnectRow {
   return {
@@ -756,6 +829,31 @@ export function ProviderConnect({
       }).map((entry) => toRow(entry, connectedIds)),
     [search, searchable, connectedIds],
   );
+
+  /**
+   * Pagination and search are INDEPENDENT, and search wins.
+   *
+   * A query is a request for its matches — all of them — so it renders the
+   * whole match set whatever the window happens to be. `Load more` between a
+   * reader and the provider they just typed the name of would be the disclosure
+   * this screen deleted, wearing a different label.
+   */
+  const [visibleCount, setVisibleCount] = useState(PROVIDER_PAGE_SIZE);
+  const searching = search.trim().length > 0;
+  /**
+   * A stored key is never behind `Load more`. The order is fixed catalogue
+   * order and never hoists a connected provider (`orderProviderRows` —
+   * hoisting is the row-teleport defect this list exists to prevent), so a key
+   * on provider #58 sits past the window. The window stretches to reach it
+   * instead: the rows before it come too, and nothing moves.
+   */
+  const lastConnectedIndex = useMemo(
+    () => rows.reduce((last, row, index) => (row.connected ? index : last), -1),
+    [rows],
+  );
+  const limit = searching ? rows.length : Math.max(visibleCount, lastConnectedIndex + 1);
+  const visibleRows = useMemo(() => rows.slice(0, limit), [rows, limit]);
+  const hiddenCount = rows.length - visibleRows.length;
 
   const connect = useMutation({
     mutationFn: async (providerId: string) => {
@@ -944,8 +1042,10 @@ export function ProviderConnect({
     <>
       <ProviderConnectView
         className={className}
-        rows={rows}
+        rows={visibleRows}
         totalCount={searchable.length}
+        hiddenCount={hiddenCount}
+        onLoadMore={() => setVisibleCount((shown) => shown + PROVIDER_PAGE_SIZE)}
         values={values}
         onValueChange={handleValueChange}
         onCommit={handleCommit}

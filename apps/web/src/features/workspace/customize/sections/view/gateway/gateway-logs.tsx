@@ -7,7 +7,7 @@ import {
   CaretUpIcon as ChevronUp,
   ScrollIcon as ScrollText,
 } from '@phosphor-icons/react';
-import { forwardRef, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, forwardRef, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code/code-block';
 import { Badge } from '@/components/ui/badge';
@@ -59,15 +59,63 @@ const EMPTY_COPY: Record<LogFilter, string> = {
   err: 'No failed requests',
 };
 
+/**
+ * Clock time only — the DATE is not on the row.
+ *
+ * Every row printed "Aug 17, 10:16:54 PM". On a log of 45 calls fired seconds
+ * apart, 45 of those characters are the same three and the eye has to walk past
+ * them to reach the two digits that differ. The date is a property of a RUN of
+ * rows, not of a row, so it is hoisted to `DayDivider` and printed once per
+ * day. This is the ordinary log/transcript convention and it is what makes a
+ * dense list scannable: what repeats becomes a heading, what varies stays.
+ */
+function fmtClock(iso: string) {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+/** Full date + time. The DETAIL pane shows one request, so the date costs
+ *  nothing there and answering "when exactly" is the point of the field. */
 function fmtTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString([], {
+  return new Date(iso).toLocaleString([], {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function fmtDay(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  if (isToday) return 'Today';
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: undefined });
+}
+
+export function sameDay(a: string, b: string): boolean {
+  return new Date(a).toDateString() === new Date(b).toDateString();
+}
+
+/**
+ * Latency, at the precision a reader can act on.
+ *
+ * `5735ms` and `1788ms` are four significant figures of which two matter, and
+ * they are the same WIDTH, so a slow call and a fast one look alike in a
+ * column. `5.7s` next to `1.8s` differ in the first character.
+ */
+export function fmtLatency(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 1000)}s`;
 }
 
 /**
@@ -87,6 +135,46 @@ export function logMeta(parts: (string | null | undefined | false)[]): string {
   return parts.filter((p): p is string => typeof p === 'string' && p.length > 0).join(' · ');
 }
 
+/**
+ * Outcome, sized by how much it should interrupt you.
+ *
+ * A success used to render a full green pill reading "200" — 45 identical
+ * badges down a list where every call succeeded, the loudest element on the
+ * row and the one carrying the least information. A success is now a 6px dot:
+ * present, checkable, silent. A FAILURE keeps the pill and gains its code, so
+ * the one row worth looking at is the only row shouting.
+ */
+function StatusMark({ ok, status }: { ok: boolean; status: number }) {
+  // Both states occupy the SAME fixed column and share its right edge, so the
+  // request text below starts at one x on every row. A pill here would have to
+  // size the column for the widest failure and then centre a 6px dot in it —
+  // and, at 0.75rem, overflowed into the model name instead.
+  if (ok) {
+    return (
+      <span
+        title={`${status || 200}`}
+        aria-label={`Status ${status || 200}`}
+        className="bg-kortix-green/70 size-1.5 shrink-0 justify-self-end rounded-full"
+      />
+    );
+  }
+  return (
+    <span
+      aria-label={`Status ${status || 'error'}`}
+      className="text-kortix-red justify-self-end text-xs font-medium whitespace-nowrap tabular-nums"
+    >
+      {status || 'err'}
+    </span>
+  );
+}
+
+/**
+ * The same outcome, at full size, for the DETAIL pane.
+ *
+ * One request on screen instead of forty-five, so the status is not repetition
+ * — it is the answer to the question the pane was opened to ask, and it gets
+ * the pill in both directions.
+ */
 function StatusBadge({ ok, status }: { ok: boolean; status: number }) {
   return (
     <Badge
@@ -105,6 +193,52 @@ function StatusBadge({ ok, status }: { ok: boolean; status: number }) {
   );
 }
 
+/** The shared column grid. The header and every row use THIS and nothing else —
+ *  two grids that merely look alike drift the first time a column changes. */
+const LOG_GRID =
+  // Time gets 5.5rem because a 12-hour clock with AM/PM does not fit in less,
+  // and a wrapped time cell puts the two-line row straight back.
+  'grid w-full grid-cols-[2rem_minmax(0,1fr)_5.5rem_3.25rem_4rem_4.5rem_1rem] items-center gap-x-3 px-2';
+
+/**
+ * The numeric columns, named once at the top instead of per row.
+ *
+ * The units used to ride every cell — `5735ms`, `38,390 tok` — because nothing
+ * said what the columns were. That is 45 copies of "ms" and 45 of "tok" in a
+ * list whose whole problem is repetition. A header states each one once and the
+ * cells go back to being numbers.
+ */
+function LogListHeader() {
+  return (
+    <div
+      className={cn(
+        LOG_GRID,
+        'text-muted-foreground/70 border-border/40 sticky top-0 z-10 border-b py-1.5 text-[11px]',
+        'bg-background/95 backdrop-blur',
+      )}
+    >
+      <span />
+      <span>Request</span>
+      <span className="text-right">Time</span>
+      <span className="hidden text-right sm:block">Latency</span>
+      <span className="hidden text-right md:block">Tokens</span>
+      <span className="text-right">Cost</span>
+      <span />
+    </div>
+  );
+}
+
+/**
+ * The date, once per run of rows that share it — see `fmtClock`.
+ */
+function DayDivider({ iso }: { iso: string }) {
+  return (
+    <div className="text-muted-foreground/60 bg-muted/20 border-border/40 border-b px-4 py-1 text-[11px] font-medium">
+      {fmtDay(iso)}
+    </div>
+  );
+}
+
 const LogRow = forwardRef<
   HTMLButtonElement,
   { row: GatewayLogRow; focused: boolean; onClick: () => void; onHover: () => void }
@@ -117,37 +251,52 @@ const LogRow = forwardRef<
       onMouseMove={onHover}
       aria-current={focused ? 'true' : undefined}
       className={cn(
-        'group border-border/40 grid w-full scroll-mt-2 grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 border-b px-4 py-2.5 text-left transition-colors duration-150',
+        // ONE line, not two. The second line held the provider and a date that
+        // was the same on every row, and it doubled the height of a list whose
+        // job is to show many rows at once.
+        LOG_GRID,
+        'group border-border/40 scroll-mt-2 border-b py-2 text-left transition-colors duration-150',
         focused ? 'bg-primary/[0.06]' : 'hover:bg-muted/50',
       )}
     >
-      <div className="min-w-0">
-        <div className="text-foreground truncate text-sm font-medium">{logTitle(row)}</div>
-        <div className="text-muted-foreground truncate text-xs">
-          {logMeta([row.provider, fmtTime(row.created_at), !row.ok && row.error_code])}
-        </div>
-      </div>
-      <span className="text-muted-foreground hidden w-16 text-right text-xs tabular-nums sm:block">
-        {row.latency_ms}ms
-      </span>
-      <span className="text-muted-foreground hidden w-20 text-right text-xs tabular-nums md:block">
-        {(row.input_tokens + row.output_tokens).toLocaleString()} tok
-      </span>
-      <StatusBadge ok={row.ok} status={row.status} />
-      <span className="flex items-center gap-1">
-        <span className="text-foreground w-16 text-right text-xs tabular-nums">
-          {/* What the request cost YOU — the full caller-facing total, not
-              just the Kortix-billed slice (`kortix_cost`, 0 on a plain BYOK
-              call with no platform fee). */}
-          ${row.total_cost.toFixed(4)}
-        </span>
-        <ChevronRight
+      <StatusMark ok={row.ok} status={row.status} />
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className="text-foreground truncate text-sm">{logTitle(row)}</span>
+        {/* Provider and any error code sit BESIDE the model at lower contrast,
+            not under it. They qualify the model; they are not a second line of
+            equal standing. */}
+        <span
           className={cn(
-            'text-muted-foreground/40 size-4 transition-transform duration-150',
-            focused ? 'text-muted-foreground translate-x-0.5' : 'group-hover:translate-x-0.5',
+            'truncate text-xs',
+            // A failed row carries its reason in the same red as its status, so
+            // the two cues that matter read as one.
+            row.ok ? 'text-muted-foreground/70' : 'text-kortix-red/80',
           )}
-        />
+        >
+          {logMeta([row.provider, !row.ok && row.error_code])}
+        </span>
       </span>
+      <span className="text-muted-foreground/80 text-right text-xs whitespace-nowrap tabular-nums">
+        {fmtClock(row.created_at)}
+      </span>
+      <span className="text-muted-foreground hidden text-right text-xs whitespace-nowrap tabular-nums sm:block">
+        {fmtLatency(row.latency_ms)}
+      </span>
+      <span className="text-muted-foreground hidden text-right text-xs whitespace-nowrap tabular-nums md:block">
+        {(row.input_tokens + row.output_tokens).toLocaleString()}
+      </span>
+      <span className="text-foreground text-right text-xs whitespace-nowrap tabular-nums">
+        {/* What the request cost YOU — the full caller-facing total, not
+            just the Kortix-billed slice (`kortix_cost`, 0 on a plain BYOK
+            call with no platform fee). */}
+        ${row.total_cost.toFixed(4)}
+      </span>
+      <ChevronRight
+        className={cn(
+          'text-muted-foreground/40 size-4 transition-transform duration-150',
+          focused ? 'text-muted-foreground translate-x-0.5' : 'group-hover:translate-x-0.5',
+        )}
+      />
     </button>
   );
 });
@@ -602,15 +751,21 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
           />
         ) : (
           <>
+            <LogListHeader />
             {logs.map((row, i) => (
-              <LogRow
-                key={row.log_id}
-                ref={i === focusedIndex ? focusedRowRef : undefined}
-                row={row}
-                focused={i === focusedIndex}
-                onHover={() => setFocused(i)}
-                onClick={() => setSelectedLogId(row.log_id)}
-              />
+              <Fragment key={row.log_id}>
+                {/* The date, once, above the run of rows it covers. */}
+                {(i === 0 || !sameDay(logs[i - 1].created_at, row.created_at)) && (
+                  <DayDivider iso={row.created_at} />
+                )}
+                <LogRow
+                  ref={i === focusedIndex ? focusedRowRef : undefined}
+                  row={row}
+                  focused={i === focusedIndex}
+                  onHover={() => setFocused(i)}
+                  onClick={() => setSelectedLogId(row.log_id)}
+                />
+              </Fragment>
             ))}
             {hasNextPage && (
               <div className="flex justify-center px-4 py-3">

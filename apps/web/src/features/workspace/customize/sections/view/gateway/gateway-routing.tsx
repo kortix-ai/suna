@@ -89,7 +89,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { ModelSelector } from '@/features/session/model-selector';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useModelDefaults } from '@kortix/sdk/react';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
 import type {
@@ -486,6 +485,36 @@ function ChainRows({
   );
 }
 
+/**
+ * Routing's heading band — a SECTION heading, in the page's own column.
+ *
+ * This was `CustomizeSectionWrapper`, which is the settings PANEL's shell: it
+ * brings `mx-auto max-w-2xl` and its own `overflow-y-auto`. Routing is not
+ * panel content any more — it is one tab of `/projects/[id]/models`, whose
+ * column is `CapabilityPageShell`'s `max-w-5xl` — so the wrapper drew this tab
+ * 320px narrower than the six tabs beside it, off the column's left edge, and
+ * opened a second scroller inside the page's one. The heading and the Reset
+ * action are all that was wanted from it, and they are cheaper written out:
+ * same `h3`/`p` pair `gateway-access-tab.tsx` uses, so the two tabs that carry
+ * section headings carry the same one.
+ */
+function RoutingSection({ action, children }: { action?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="w-full space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <h3 className="text-foreground text-sm font-medium">Routing</h3>
+          <p className="text-muted-foreground text-xs text-pretty">
+            Where a request goes when the project default can&apos;t take it.
+          </p>
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export function GatewayRouting({
   projectId,
   canWrite,
@@ -591,31 +620,25 @@ export function GatewayRouting({
 
   if (routing.isError) {
     return (
-      <CustomizeSectionWrapper
-        title="Routing"
-        description="Where a request goes when the project default can't take it."
-      >
+      <RoutingSection>
         <div className="bg-popover rounded-md border px-4 py-3">
           <p className="text-destructive text-sm">Could not load the routing policy.</p>
           <Button className="mt-3" variant="outline" size="sm" onClick={() => routing.refetch()}>
             Retry
           </Button>
         </div>
-      </CustomizeSectionWrapper>
+      </RoutingSection>
     );
   }
 
   if (routing.isPending || !draft || !routing.data) {
     return (
-      <CustomizeSectionWrapper
-        title="Routing"
-        description="Where a request goes when the project default can't take it."
-      >
+      <RoutingSection>
         <div className="space-y-3">
           <Skeleton className="h-40 rounded-md" />
           <Skeleton className="h-12 rounded-md" />
         </div>
-      </CustomizeSectionWrapper>
+      </RoutingSection>
     );
   }
 
@@ -686,9 +709,7 @@ export function GatewayRouting({
   };
 
   return (
-    <CustomizeSectionWrapper
-      title="Routing"
-      description="Where a request goes when the project default can't take it."
+    <RoutingSection
       action={
         writable ? (
           <Button
@@ -1018,6 +1039,6 @@ export function GatewayRouting({
           })
         }
       />
-    </CustomizeSectionWrapper>
+    </RoutingSection>
   );
 }

@@ -132,8 +132,12 @@ export function GatewayOverview({
   const activeMetric = METRICS.find((m) => m.key === metric) ?? METRICS[0];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="w-full space-y-5 p-5">
+    // No scroller and no padding of its own: this is a tab of
+    // `/projects/[id]/models`, and `CapabilityPageShell` owns the page's one
+    // scroll container and its column. The `p-5` here indented the stat tiles
+    // 20px past the heading and the tab strip above them.
+    <div className="flex flex-col">
+      <div className="w-full space-y-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-foreground text-sm font-medium">Last {days} days</h2>
           <RangeSelector days={days} setDays={setDays} />

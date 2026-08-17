@@ -261,9 +261,20 @@ describe('settings tab content width', () => {
  * own — the same delegation `models-tab.tsx` does via `DELEGATING_TABS`
  * above, just for a section rather than a tab.
  */
-const PANEL_SECTIONS_VIA_WRAPPER = [
-  'features/workspace/customize/sections/view/gateway/gateway-routing.tsx',
-];
+/**
+ * Empty since 2026-08-17, and kept rather than deleted: the rule still holds
+ * for the next section that mounts the wrapper.
+ *
+ * `gateway-routing.tsx` was its last member and left the same way Secrets and
+ * Channels did — it stopped being panel content. Routing is a tab of
+ * `/projects/[id]/models` now, whose column is `CapabilityPageShell`'s
+ * `max-w-5xl`, so the wrapper's `max-w-2xl` was not "the panel column" for it
+ * any more but 320px narrower than the six tabs beside it, plus a second
+ * scroll container inside the page's one. It writes its own section heading
+ * (`RoutingSection`) and takes the page's column — pinned in
+ * `settings/tabs/models-tab.test.tsx` with the rest of that page's chrome.
+ */
+const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
 
 /**
  * Panel sections that declare their own container instead of the wrapper's.
