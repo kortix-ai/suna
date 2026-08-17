@@ -69,6 +69,11 @@ verification are complete.
   `36826c1e039fee95cf5c7a1e8d6c4cd1c54dba4a` on two healthy API, two healthy
   frontend, and two healthy gateway replicas. API health reports version
   `apps-hosting-36826c1e03` and the full SHA.
+- Persistence audit command `15f53f15-5ca5-4c1e-9f8f-d48b668bc204`
+  found the live updater still had `KORTIX_AUTO_UPDATE=true` after `.env` was
+  changed to `false`. The updater was recreated with `false`. Post-fix command
+  `74ba8e6e-18a7-40cf-91fe-6940d4d5da3a` verified the pinned `.env`, the updater
+  environment, all six healthy feature replicas, and public health SHA.
 - The maintained Apps UI Playwright journey passed `1/1` in `40.4s` against
   `essentia.kortix.cloud`. It verified the feature gate, create, read, update,
   exact request payloads, confirmed delete, and visible desktop/mobile states.

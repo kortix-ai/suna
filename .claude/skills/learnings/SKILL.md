@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### An updater flag change is live only after updater recreation (2026-08-17)
+
+**When:** changing self-host `.env` values consumed by the updater container.
+Stop or recreate the updater before relying on the new value. Recreating only
+the API, frontend, and gateway leaves the updater's old environment active.
+*Near-miss:* Essentia's `.env` said `KORTIX_AUTO_UPDATE=false`, but its live
+updater still had `true` and replaced PR #6478 images with `dev-latest`.
+*Enforcer:* deployment runbook preflight; no automated gate exists yet.
+
 ### A self-host image must carry the exact source commit before rollout (2026-08-17)
 
 **When:** building a local or branch-only self-host image. Pass the frozen SHA as
