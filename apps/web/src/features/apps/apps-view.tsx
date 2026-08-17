@@ -59,7 +59,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 function deploymentTone(
   status: AppDeployment['status'],
@@ -152,6 +152,86 @@ export function AppPreviewOverlay({
   );
 }
 
+/**
+ * The logical viewport a CARD thumbnail renders the App into.
+ *
+ * A card tile is 300-450px wide, and an iframe that wide is a 300-450px
+ * viewport — so the App answers with its mobile layout. Every thumbnail on the
+ * page was a hamburger over a single stacked column: the one view of the App
+ * nobody deploys an App for, and nothing like what opening it actually shows.
+ *
+ * Render at a desktop width instead and scale the result down. The App lays
+ * out at 1280px, the tile shows that layout in miniature, and the thumbnail
+ * finally looks like the App — the same thing a screenshot would give you.
+ *
+ * 1280x720 is 16:9 exactly, which is the tile's own `aspect-video`, so the
+ * scaled frame fills it edge to edge with no letterboxing and no cropping.
+ *
+ * This is the house pattern, not a new one: `presentations/engine/deck.tsx`
+ * renders its slide thumbnails into the same fixed 1280x720 box scaled from
+ * `origin-top-left`, and `FullScreenPresentationViewer` does it at 1920x1080.
+ * Note what does NOT solve this — `showAspectRatioToCSS` in
+ * `show-content-renderer.tsx` reshapes the BOX and leaves the guest laying out
+ * at the host's width, which is the thing that produced the mobile layout here.
+ */
+export const PREVIEW_VIEWPORT_WIDTH = 1280;
+export const PREVIEW_VIEWPORT_HEIGHT = 720;
+
+/**
+ * How far to shrink the desktop frame so it fits the tile. `null` for a width
+ * nothing can be concluded from — a detached node, a display:none ancestor, a
+ * server render with no layout at all — which the caller paints as "not yet
+ * measured" rather than scaling by a garbage factor.
+ */
+export function previewScale(
+  containerWidth: number,
+  viewportWidth: number = PREVIEW_VIEWPORT_WIDTH,
+): number | null {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) return null;
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return null;
+  return containerWidth / viewportWidth;
+}
+
+/**
+ * Measures the tile and keeps the scale honest as it changes.
+ *
+ * A layout effect, not an effect: it runs after DOM mutation and BEFORE paint,
+ * so the browser never shows the unscaled 1280px frame cropped to the tile's
+ * top-left corner. The `ResizeObserver` then covers every later change — the
+ * responsive grid going one-column, a sidebar opening, a window drag — none of
+ * which fire anything else this component would hear.
+ */
+function useDesktopViewportScale(enabled: boolean) {
+  // A callback ref held in state, not a `useRef`: the node is an INPUT to the
+  // measurement, so the effect has to re-run when it arrives. A ref object
+  // would also have to be read during render to be handed to `<div ref>`,
+  // which is the thing `react-hooks/refs` correctly refuses.
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!enabled || !node) return;
+
+    const measure = () => setScale(previewScale(node.getBoundingClientRect().width));
+    measure();
+
+    // Guarded for a runtime without it (jsdom-less unit renders, older Safari):
+    // the one synchronous measurement above still lands, so the frame is scaled
+    // correctly at its mounted size and simply stops tracking resizes.
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, node]);
+
+  // A tuple, not an object. `react-hooks/refs` treats every property read on an
+  // object whose member lands in a `ref=` prop as a ref access during render —
+  // true for a `useRef` container, wrong for a callback ref. Destructuring to
+  // plain locals says what this is and keeps the rule meaningful where it does
+  // apply.
+  return [setNode, scale] as const;
+}
+
 export function AppPreview({
   app,
   url,
@@ -175,6 +255,9 @@ export function AppPreview({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const slow = useSlowPreview(!loaded && !failed);
+  // Cards only. In the modal the frame IS the App at the size you are using it,
+  // so a fixed desktop viewport there would scale the thing you came to click.
+  const [attachViewport, viewportScale] = useDesktopViewportScale(!interactive);
   const frame = cn(
     'bg-muted/20 relative overflow-hidden',
     !interactive && 'aspect-video',
@@ -217,11 +300,26 @@ export function AppPreview({
   }
 
   return (
-    <div className={frame}>
+    <div className={frame} ref={attachViewport}>
       <iframe
         key={app.active_deployment_id}
         src={url}
         title={`${app.name} live preview`}
+        style={
+          interactive
+            ? undefined
+            : {
+                width: PREVIEW_VIEWPORT_WIDTH,
+                height: PREVIEW_VIEWPORT_HEIGHT,
+                // Hidden, not unmounted, until the tile has been measured: an
+                // unmounted frame would restart the document load on every
+                // resize, and a visible unscaled one would flash the App's
+                // top-left 1280px corner. It still loads while hidden.
+                ...(viewportScale === null
+                  ? { visibility: 'hidden' as const }
+                  : { transform: `scale(${viewportScale})` }),
+              }
+        }
         // The card thumbnail is one of many below the fold, so defer it. In the
         // modal the frame IS the content and it is already on screen — `lazy`
         // there makes the browser wait for layout before it even starts the
@@ -231,8 +329,13 @@ export function AppPreview({
         allow={CLIPBOARD_IFRAME_ALLOW}
         sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
         className={cn(
-          'bg-background absolute inset-0 size-full border-0',
-          !interactive && 'pointer-events-none',
+          'bg-background absolute border-0',
+          interactive
+            ? 'inset-0 size-full'
+            : // Anchored top-left because that is the scale's origin: the frame
+              // shrinks toward the corner it starts in, so the miniature lands
+              // flush in the tile instead of drifting toward the middle.
+              'top-0 left-0 origin-top-left pointer-events-none',
         )}
         {...(interactive ? {} : { tabIndex: -1, 'aria-hidden': true })}
         data-testid="app-live-preview"
@@ -287,9 +390,18 @@ export function AppsView({ projectId }: { projectId: string }) {
   return (
     <CustomizeSectionWrapper
       title="Apps"
-      description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
       docs="/docs/feature-flags/apps"
-      className="max-w-5xl"
+      // `CustomizeSectionWrapper`'s content column carries no horizontal
+      // padding of its own — every other consumer stays inside `max-w-2xl`,
+      // narrow enough that the column's own margin (`mx-auto` against a much
+      // wider viewport) reads as a gutter. This page overrides to `max-w-5xl`
+      // for its card grid, and once viewport width gets close to that 1024px
+      // cap — an ordinary laptop window, not just a phone — the column fills
+      // the full width and "Learn more." presses flush against the browser
+      // edge. `px-4` matches `CapabilityPageShell`'s own gutter (the sibling
+      // shell the other capability routes use), so the header never touches
+      // the edge regardless of viewport width.
+      className="max-w-5xl px-4"
       showSidebarToggleButton
     >
       {appsGate.isLoading ? (

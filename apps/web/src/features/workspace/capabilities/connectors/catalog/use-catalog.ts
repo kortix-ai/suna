@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  getConnectStatus,
   listDiscoverConnectors,
   listPipedreamApps,
   listPipedreamSections,
@@ -14,8 +15,8 @@ import { useDebounce } from '@/hooks/use-debounce';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
-  computersCatalogEntry,
   catalogSections,
+  computersCatalogEntry,
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
@@ -84,6 +85,50 @@ export interface CatalogState {
 }
 
 /**
+ * What this DEPLOYMENT knows about Easy Connect (Pipedream).
+ *
+ * `absent` is the only actionable answer: it means the surface must not be
+ * offered at all. `unknown` and `asking` both mean "carry on as before" — one
+ * because the probe has not answered yet, the other because it never will.
+ */
+export type PipedreamStatus = 'asking' | 'configured' | 'absent' | 'unknown';
+
+/**
+ * Is Easy Connect (Pipedream) configured on this deployment?
+ *
+ * `listPipedreamApps` / `listPipedreamSections` are wired into the API router
+ * only when `pipedreamConfigured()` is true — three env vars, checked in
+ * `apps/api/src/connectors/pipedream.ts`. Without them every call answers
+ * `501 FEATURE_NOT_SUPPORTED`, and a self-host that never set them is the
+ * entire population of that branch. The page used to spend a request per load
+ * discovering that, then paint the generic "Server error … (501)" card over a
+ * catalogue it could never have had.
+ *
+ * **Deployment-wide, so it is keyed without the project** — `['connect-status']`
+ * is the same entry `customize/sections/connectors-view.tsx` reads, so the two
+ * surfaces share one request — and it never goes stale: the answer is an
+ * environment variable on the server and cannot change while the tab is open.
+ *
+ * **Not retried.** A probe that cannot run is not evidence that the provider is
+ * missing, so a failure resolves to `unknown` and the catalogue proceeds. Three
+ * backed-off retries would only hold the grid on skeletons for seconds before
+ * reaching the same conclusion.
+ */
+export function usePipedreamStatus(enabled: boolean): PipedreamStatus {
+  const query = useQuery({
+    queryKey: ['connect-status'],
+    queryFn: getConnectStatus,
+    staleTime: Infinity,
+    retry: false,
+    enabled,
+  });
+  if (!enabled) return 'unknown';
+  if (query.isSuccess) return query.data.configured ? 'configured' : 'absent';
+  if (query.isError) return 'unknown';
+  return 'asking';
+}
+
+/**
  * The catalogue behind the Discovery and All tabs, from whichever of the two
  * sources this project actually has.
  *
@@ -107,6 +152,14 @@ export interface CatalogState {
  * `category` are query keys, so changing either starts a new list rather than
  * re-slicing an accumulated one. Pipedream's own API cannot filter by category
  * at all — see `apps/api/src/connectors/pipedream-index.ts`.
+ *
+ * **Easy Connect waits for the deployment probe.** No Pipedream request is sent
+ * until `usePipedreamStatus` has ruled out `absent`, because on a deployment
+ * without Pipedream credentials every one of them is a `501` — and one landing
+ * before the probe would paint the error card the probe exists to prevent. The
+ * cost is one round trip on the first load of the session, spent on a route that
+ * only reads env vars, and the wait is reported as `isLoading` so the grid holds
+ * its skeletons instead of flashing an empty result.
  */
 export function useCatalog(
   projectId: string,
@@ -122,6 +175,19 @@ export function useCatalog(
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
   const category = opts.focusCategory ?? null;
   const searching = activeQuery.length > 0;
+
+  // Probed whenever Easy Connect is the source, whether or not the catalogue is
+  // `enabled`. `ConnectorsPage` turns Discovery and All OFF when this answers
+  // `absent`, which turns `enabled` off with them — a probe gated on `enabled`
+  // would then have nothing left to keep it answered, and the tabs would
+  // oscillate. It is one cached request either way.
+  const pipedreamStatus = usePipedreamStatus(source === 'easy-connect');
+
+  // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
+  // may well exist is the worse of the two mistakes.
+  const easyConnectRunnable =
+    source === 'easy-connect' &&
+    (pipedreamStatus === 'configured' || pipedreamStatus === 'unknown');
 
   const discoverQuery = useInfiniteQuery({
     queryKey: ['discover-connectors', projectId, activeQuery],
@@ -146,7 +212,7 @@ export function useCatalog(
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 60_000,
-    enabled: opts.enabled && source === 'easy-connect',
+    enabled: opts.enabled && easyConnectRunnable,
     placeholderData: keepPreviousData,
   });
 
@@ -161,7 +227,7 @@ export function useCatalog(
         maxCategories: SECTION_COUNT,
       }),
     staleTime: 5 * 60_000,
-    enabled: opts.enabled && source === 'easy-connect' && !searching && category === null,
+    enabled: opts.enabled && easyConnectRunnable && !searching && category === null,
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
@@ -261,7 +327,16 @@ export function useCatalog(
     // `isLoading` is the COLD state only — no cards on screen at all. A search
     // over a populated catalogue keeps its results and reports `isRefreshing`,
     // so the grid dims instead of blanking to skeletons.
-    isLoading: opts.enabled && (active.isLoading || (showingSections && sectionsQuery.isLoading)),
+    //
+    // `asking` counts as loading: the Easy Connect queries are held disabled
+    // until the deployment probe answers, and a disabled query reports neither
+    // loading nor data — without this the grid would render "no results" for a
+    // round trip before the real request had started.
+    isLoading:
+      opts.enabled &&
+      (pipedreamStatus === 'asking' ||
+        active.isLoading ||
+        (showingSections && sectionsQuery.isLoading)),
     isRefreshing: opts.enabled && isPlaceholderData,
     isError: active.isError,
     error: active.error,
