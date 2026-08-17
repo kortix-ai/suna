@@ -374,8 +374,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Github className="size-4" />
-                  <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
+                  <Github className="size-4 text-foreground" />
+                  <span className={cn('font-medium text-foreground tabular-nums', starsLoading && 'opacity-50')}>
                     {formattedStars}
                   </span>
                 </Link>
