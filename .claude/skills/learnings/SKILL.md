@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### Access logs must delete secret-bearing request headers (2026-08-17)
+
+**When:** configuring access logs for a proxy that authenticates its origin by
+request header. Caddy's JSON access log records request headers by default.
+Delete the origin header in the log encoder before sending logs to users or a
+provider. Stripping the header only before proxying does not redact the access
+record. *Near-miss:* Lightsail App logs exposed the direct-origin token during
+PR #6478 self-host E2E. *Enforcer:* `main_test.go` pins the Caddy filter.
+
 ### Tagged provider creates and immutable build retries need explicit contracts (2026-08-17)
 
 **When:** adding a tagged provider resource or retrying a build with a fixed tag.

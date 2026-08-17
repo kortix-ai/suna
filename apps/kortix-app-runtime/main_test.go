@@ -170,6 +170,7 @@ func TestManagedOriginAuthenticationGuardsHTTPAndWebSockets(t *testing.T) {
 		"header X-Kortix-Origin-Token origin-secret",
 		"respond @origin_denied 403",
 		"header_up -X-Kortix-Origin-Token",
+		"request>headers>X-Kortix-Origin-Token delete",
 	} {
 		if !strings.Contains(config, expected) {
 			t.Fatalf("missing %q in managed Caddyfile:\n%s", expected, config)

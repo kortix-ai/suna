@@ -225,7 +225,12 @@ func renderCaddyfile(spec appSpec, originToken string) (string, error) {
 	encode zstd gzip
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>headers>X-Kortix-Origin-Token delete
+			}
+		}
 	}
 %s%s}
 `, ingressPort, auth, body), nil
