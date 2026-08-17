@@ -10,7 +10,6 @@ let appRuntimeRows: Array<{
   externalId: string;
 }> = [];
 let sandboxQueryError: Error | null = null;
-let appRuntimeQueryError: Error | null = null;
 let stops: string[] = [];
 let appRemovals: string[] = [];
 let appComputePauses: string[] = [];
@@ -24,7 +23,6 @@ mock.module('../../shared/db', () => ({
       from: () => ({
         where: async () => {
           if ('runtimeId' in fields) {
-            if (appRuntimeQueryError) throw appRuntimeQueryError;
             return appRuntimeRows;
           }
           if (sandboxQueryError) throw sandboxQueryError;
@@ -107,7 +105,6 @@ beforeEach(() => {
   sandboxRows = [];
   appRuntimeRows = [];
   sandboxQueryError = null;
-  appRuntimeQueryError = null;
   stops = [];
   appRemovals = [];
   appComputePauses = [];

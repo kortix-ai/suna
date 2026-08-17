@@ -5,10 +5,11 @@ AWS Lightsail Container Services backend.
 
 It creates:
 
-- One private, versioned, AES-256 S3 bucket for short-lived build contexts.
-- One immutable, scan-on-push ECR repository for deployment images.
+- One private, versioned, KMS-encrypted S3 bucket for short-lived build contexts.
+- One immutable, scan-on-push, KMS-encrypted ECR repository for deployment images.
 - One privileged CodeBuild project for Docker builds.
-- One CloudWatch log group with 365-day retention.
+- One KMS-encrypted CloudWatch log group with 365-day retention.
+- One rotating customer-managed KMS key shared by those three resources.
 - One least-privilege policy document for the Kortix API ECS task role.
 
 The API task can start and inspect CodeBuild jobs. It can manage only the
