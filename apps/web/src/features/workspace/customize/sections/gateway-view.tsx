@@ -18,7 +18,7 @@
  *  - **`keys` and `api` folded into `providers`.** Two tabs both labelled
  *    "API keys" sat four apart, and the reference for calling the gateway sat
  *    next to neither of them. All three are sections of one tab now — see
- *    `llm-api-keys-tab.tsx` for the direction-of-travel argument.
+ *    `gateway-access-tab.tsx` for the direction-of-travel argument.
  *  - **`budgets` folded into `overview`.** The cap belongs under the number
  *    it caps — see `gateway-budgets.tsx`.
  *
@@ -47,7 +47,7 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
-import { LlmApiKeysTab } from '@/features/workspace/customize/sections/llm-api-keys-tab';
+import { LlmApiKeysTab } from '@/features/workspace/customize/sections/gateway-access-tab';
 import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
 import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
@@ -63,7 +63,7 @@ type LlmTab = 'providers' | 'models' | 'custom' | 'routing' | 'overview' | 'logs
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   // Provider keys + gateway keys + the reference for calling the gateway.
-  // Three tabs before, two of them sharing a label — see `llm-api-keys-tab.tsx`.
+  // Three tabs before, two of them sharing a label — see `gateway-access-tab.tsx`.
   { id: 'providers', label: 'API keys' },
   { id: 'models', label: 'Models' },
   // The custom-provider form used to be section 4 of the Providers tab. It
