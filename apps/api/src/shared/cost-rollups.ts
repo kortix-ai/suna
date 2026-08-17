@@ -3,6 +3,7 @@ import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
+import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from './llm-spend';
 import { billedComputeSecondsExpression } from './session-costs';
 
 export interface ProjectCostRow {
@@ -10,6 +11,10 @@ export interface ProjectCostRow {
   project_name: string;
   session_count: number;
   llm_cost: number;
+  /** The `llm_cost` slice debited from the Kortix wallet. */
+  llm_kortix_cost: number;
+  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   last_activity_at: string | null;
@@ -26,6 +31,8 @@ export interface ProjectCostPage {
 interface LlmProjectAggregateRow {
   projectId: string | null;
   llmCost: number | string;
+  llmKortixCost?: number | string;
+  llmProviderCost?: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
 }
@@ -73,6 +80,8 @@ export function mergeProjectCostRows(
       project_name: projectNames.get(projectId) ?? projectId,
       session_count: 0,
       llm_cost: 0,
+      llm_kortix_cost: 0,
+      llm_provider_cost: 0,
       compute_cost: 0,
       total_cost: 0,
       last_activity_at: null,
@@ -85,6 +94,8 @@ export function mergeProjectCostRows(
     if (!row.projectId) continue;
     const target = ensure(row.projectId);
     target.llm_cost = numberValue(row.llmCost);
+    target.llm_kortix_cost = numberValue(row.llmKortixCost);
+    target.llm_provider_cost = numberValue(row.llmProviderCost);
     target.session_count = Math.max(target.session_count, numberValue(row.sessionCount));
     target.last_activity_at = laterIso(target.last_activity_at, isoValue(row.lastAt));
   }
@@ -153,7 +164,9 @@ export async function listCostByProject(input: {
     db
       .select({
         projectId: gatewayRequestLogs.projectId,
-        llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        llmCost: totalSpendSql,
+        llmKortixCost: kortixBilledSpendSql,
+        llmProviderCost: providerBilledSpendSql,
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
         lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
       })
@@ -273,6 +286,10 @@ export function buildCostSeries(
 
 export interface CostSummaryTotals {
   llm_cost: number;
+  /** The `llm_cost` slice debited from the Kortix wallet. */
+  llm_kortix_cost: number;
+  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   request_count: number;
@@ -457,7 +474,9 @@ export async function getCostSummary(input: {
   ] = await Promise.all([
     db
       .select({
-        llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        llmCost: totalSpendSql,
+        llmKortixCost: kortixBilledSpendSql,
+        llmProviderCost: providerBilledSpendSql,
         requestCount: sql<number>`count(*)::int`,
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
       })
@@ -466,7 +485,7 @@ export async function getCostSummary(input: {
     db
       .select({
         day: LLM_DAY_EXPRESSION,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
       })
       .from(gatewayRequestLogs)
       .where(llmScope(window))
@@ -475,7 +494,7 @@ export async function getCostSummary(input: {
       .select({
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
         requestCount: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -485,13 +504,13 @@ export async function getCostSummary(input: {
       // tie-break — without it, which model lands on the 10th row of a tie
       // is unspecified and can flip between refreshes.
       .orderBy(
-        desc(sql`sum(${gatewayRequestLogs.finalCost})`),
+        desc(totalSpendSql),
         desc(gatewayRequestLogs.provider),
         desc(gatewayRequestLogs.resolvedModel),
       )
       .limit(10),
     db
-      .select({ cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8` })
+      .select({ cost: totalSpendSql })
       .from(gatewayRequestLogs)
       .where(llmScope(previous)),
     llmProjectIdsQuery,
@@ -512,6 +531,8 @@ export async function getCostSummary(input: {
 
   const totals: CostSummaryTotals = {
     llm_cost: llmCost,
+    llm_kortix_cost: numberValue(llmTotals?.llmKortixCost),
+    llm_provider_cost: numberValue(llmTotals?.llmProviderCost),
     compute_cost: computeCost,
     total_cost: Number((llmCost + computeCost).toFixed(10)),
     request_count: numberValue(llmTotals?.requestCount),

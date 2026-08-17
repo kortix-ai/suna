@@ -193,9 +193,13 @@ test.describe('18 — Kortix Apps UI', () => {
 
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
       await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
-      await expect(page.getByText('Deploy from a terminal', { exact: true })).toBeVisible();
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toHaveCount(0);
-      await expect(page.getByText('kortix apps deploy .', { exact: true })).toBeVisible();
+      // The "Deploy from a terminal" banner is gone. It sat under the grid on
+      // every visit repeating a command you need exactly once, and it is the
+      // docs link in the header's job. The deploy command still lives where it
+      // is actionable — the detail modal's Versions panel, asserted below.
+      await expect(page.getByText('Deploy from a terminal')).toHaveCount(0);
+      await expect(page.getByText('kortix apps deploy .', { exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
       await expect(page.getByRole('dialog', { name: 'Create App' })).toHaveCount(0);
 

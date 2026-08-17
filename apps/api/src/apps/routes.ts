@@ -41,6 +41,7 @@ import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import {
   appAccessibleToUser,
+  appsOpenableByUser,
   appAccessSessionUrl,
   appVisibleToUser,
   filterAppsVisibleToUser,
@@ -160,7 +161,17 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
 
 export { appPublicUrl } from './hostnames';
 
-function serializeApp(row: typeof apps.$inferSelect) {
+/**
+ * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the
+ * verdict that put this App in their list — a project manager sees every App so
+ * that a private one stays manageable, and may or may not be allowed to open
+ * it. The client needs both: without this it optimistically mints an access
+ * session per card and collects a 403 for every App it may only manage.
+ *
+ * Defaults to true so the single-App serializations that have already run the
+ * check are not forced to restate it.
+ */
+function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
   return {
     app_id: row.appId,
     account_id: row.accountId,
@@ -176,6 +187,7 @@ function serializeApp(row: typeof apps.$inferSelect) {
     idle_timeout_seconds: row.idleTimeoutSeconds,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
+    viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -305,7 +317,8 @@ projectsApp.openapi(
       .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
       .orderBy(desc(apps.createdAt));
     const visible = await filterAppsVisibleToUser(rows, loaded.userId);
-    return c.json({ apps: visible.map(serializeApp) });
+    const openable = await appsOpenableByUser(visible, loaded.userId);
+    return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
   },
 );
 

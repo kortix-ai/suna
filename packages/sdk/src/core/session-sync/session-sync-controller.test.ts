@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import {
+  PROMPT_OBSERVATION_STALL_MS,
   SESSION_SYNC_PAGE_SIZE,
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
+  type SessionSyncControllerOptions,
   type SessionSyncPage,
   type SessionSyncScheduler,
 } from './session-sync-controller';
@@ -628,5 +630,153 @@ describe('SessionSyncController', () => {
     await pending;
 
     expect(hydrated).toEqual([['message-newest']]);
+  });
+});
+
+/**
+ * A scheduler whose interval AND timeouts are both driven by `advance`, so a
+ * test can move the prompt-observation state machine through real time.
+ */
+function createClock() {
+  let now = 0;
+  let interval: { handler: () => void; everyMs: number; nextAt: number } | undefined;
+  const timeouts = new Map<number, { handler: () => void; dueAt: number }>();
+  let nextTimeoutId = 1;
+  const scheduler: SessionSyncScheduler = {
+    now: () => now,
+    setInterval: (handler, everyMs) => {
+      interval = { handler, everyMs, nextAt: now + everyMs };
+      return 1;
+    },
+    clearInterval: () => {
+      interval = undefined;
+    },
+    setTimeout: (handler, delayMs) => {
+      const id = nextTimeoutId++;
+      timeouts.set(id, { handler, dueAt: now + delayMs });
+      return id;
+    },
+    clearTimeout: (handle) => {
+      timeouts.delete(handle as number);
+    },
+  };
+  return {
+    scheduler,
+    /** Move time forward, firing every timer that comes due, in due order. */
+    advance(ms: number) {
+      const target = now + ms;
+      for (;;) {
+        const dueTimeout = [...timeouts.entries()]
+          .filter(([, timeout]) => timeout.dueAt <= target)
+          .sort((a, b) => a[1].dueAt - b[1].dueAt)[0];
+        const dueInterval = interval && interval.nextAt <= target ? interval : undefined;
+        if (!dueTimeout && !dueInterval) break;
+        const timeoutAt = dueTimeout?.[1].dueAt ?? Number.POSITIVE_INFINITY;
+        const intervalAt = dueInterval?.nextAt ?? Number.POSITIVE_INFINITY;
+        if (timeoutAt <= intervalAt) {
+          now = timeoutAt;
+          timeouts.delete(dueTimeout![0]);
+          dueTimeout![1].handler();
+        } else {
+          now = intervalAt;
+          dueInterval!.nextAt = now + dueInterval!.everyMs;
+          dueInterval!.handler();
+        }
+      }
+      now = target;
+    },
+  };
+}
+
+describe('SessionSyncController prompt observation', () => {
+  function createObservedController(
+    overrides: Partial<SessionSyncControllerOptions> = {},
+  ): { controller: SessionSyncController; clock: ReturnType<typeof createClock> } {
+    const clock = createClock();
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => page([]),
+      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+      ...overrides,
+    });
+    return { controller, clock };
+  }
+
+  test('releases the busy override when the accepted prompt never starts work', () => {
+    const { controller, clock } = createObservedController();
+
+    controller.beginPromptObservation();
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    // The runtime is idle and stays idle: the prompt never became a turn.
+    // Every idle observation lands while the phase is still "awaiting-work",
+    // which is exactly the state that used to ignore idle forever.
+    for (let elapsed = 0; elapsed < PROMPT_OBSERVATION_STALL_MS; elapsed += 1_000) {
+      controller.observePromptStatus({ type: 'idle' } as SessionStatus);
+      clock.advance(1_000);
+    }
+
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+  });
+
+  test('releases the busy override when the runtime goes quiet without an idle event', () => {
+    const { controller, clock } = createObservedController();
+
+    controller.beginPromptObservation();
+    controller.observePromptActivity();
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    // Work started, then every completion signal is lost — no session.idle,
+    // no status poll, no further events.
+    clock.advance(PROMPT_OBSERVATION_STALL_MS);
+
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+  });
+
+  test('holds the busy override while the stream keeps proving the turn is alive', () => {
+    const { controller, clock } = createObservedController();
+
+    controller.beginPromptObservation();
+    for (let tick = 0; tick < 6; tick++) {
+      clock.advance(PROMPT_OBSERVATION_STALL_MS - 1_000);
+      controller.noteActivity();
+    }
+
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+
+    controller.observePromptStatus({ type: 'busy' } as SessionStatus);
+    controller.observePromptStatus({ type: 'idle' } as SessionStatus);
+    clock.advance(499);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    clock.advance(1);
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+  });
+
+  test('reconciles runtime status even when the transcript read never resolves', async () => {
+    const statuses: SessionStatus[] = [];
+    const { controller, clock } = createObservedController({
+      // The sandbox proxy can park a read forever — this promise models that.
+      loadPage: () => new Promise<SessionSyncPage>(() => {}),
+      setStatus: (status) => statuses.push(status),
+    });
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    await flush();
+    clock.advance(10_001);
+    await flush();
+    // The tail read is parked. Status must not be parked behind it.
+    expect(statuses).toEqual([]);
+
+    clock.advance(10_001);
+    await flush();
+
+    expect(statuses).toEqual([{ type: 'idle' } as SessionStatus]);
+    controller.destroy();
   });
 });

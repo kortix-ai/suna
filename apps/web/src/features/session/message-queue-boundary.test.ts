@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  OPEN_TURN_HUSK_MS,
   QUEUE_SETTLE_MS,
   canDrainQueue,
   createDrainMachine,
@@ -166,14 +167,20 @@ describe('stepDrainMachine', () => {
     expect(stepDrainMachine(armed.machine, CLEAR, settle, settle).dispatch).toBe(true);
   });
 
-  test('the machine carries nothing but the settle clock', () => {
+  test('the machine carries exactly the settle clock and the husk clock', () => {
     // The removed field was `sawBusySinceDispatch`, a latch that refused to
     // release anything until a NEW busy period had been observed by this tab.
     // The busy GATE already enforces one-message-per-turn — `beginOptimisticSend`
     // flips the session busy synchronously inside the send — so the latch only
     // ever added a way to fail closed: no observed busy period meant the queue
     // stopped forever.
-    expect(Object.keys(createDrainMachine())).toEqual(['clearSince']);
+    //
+    // `openTurnOnlySince` is NOT that latch coming back: it fails in the
+    // opposite direction. It never blocks anything the gates would release —
+    // it only bounds how long a dead turn's permanently-open assistant message
+    // (no `time.completed`, no error — a sandbox that died mid-turn) may keep
+    // the queue wedged. See OPEN_TURN_HUSK_MS.
+    expect(Object.keys(createDrainMachine())).toEqual(['clearSince', 'openTurnOnlySince']);
   });
 
   test('the message behind the head does not follow it into the same turn', () => {
@@ -246,7 +253,7 @@ describe('planDrainTick', () => {
   const base = { machine: createDrainMachine(), gates: CLEAR, sending: false, settleMs: settle };
 
   test('does nothing on an empty queue, and does not touch the clock', () => {
-    const armed = { clearSince: 0 };
+    const armed = { clearSince: 0, openTurnOnlySince: null };
     const { machine, action } = planDrainTick({ ...base, machine: armed, pendingCount: 0, now: 0 });
 
     expect(action).toEqual({ kind: 'idle' });
@@ -403,5 +410,71 @@ describe('revertStaged gate', () => {
       expect(step.dispatch).toBe(false);
     }
     expect(machine.clearSince).toBeNull();
+  });
+});
+
+describe('dead-turn husk override', () => {
+  // A sandbox that dies mid-turn and boots fresh leaves the last assistant
+  // message permanently open: `time.completed` never set, no error ever
+  // patched. The session status is idle (the runtime is doing nothing), yet
+  // `hasIncompleteAssistant` stayed true for the lifetime of the transcript —
+  // wedging the queue forever, hard refresh included, because the husk is in
+  // the server's own data. After OPEN_TURN_HUSK_MS of "idle in every way
+  // except the dangling message", the husk stops blocking.
+  const HUSK_ONLY = { ...CLEAR, hasIncompleteAssistant: true };
+
+  test('an open assistant turn still blocks the drain while fresh', () => {
+    const machine = createDrainMachine();
+    let step = stepDrainMachine(machine, HUSK_ONLY, 0);
+    expect(step.dispatch).toBe(false);
+    step = stepDrainMachine(step.machine, HUSK_ONLY, OPEN_TURN_HUSK_MS - 1);
+    expect(step.dispatch).toBe(false);
+  });
+
+  test('a husk outlasting OPEN_TURN_HUSK_MS stops blocking and the queue drains after the settle window', () => {
+    let machine = createDrainMachine();
+    machine = stepDrainMachine(machine, HUSK_ONLY, 0).machine;
+    // Husk expired — the settle clock starts now.
+    machine = stepDrainMachine(machine, HUSK_ONLY, OPEN_TURN_HUSK_MS).machine;
+    const step = stepDrainMachine(machine, HUSK_ONLY, OPEN_TURN_HUSK_MS + QUEUE_SETTLE_MS);
+    expect(step.dispatch).toBe(true);
+  });
+
+  test('a real running turn never husks — server busy resets the husk clock', () => {
+    let machine = createDrainMachine();
+    machine = stepDrainMachine(machine, HUSK_ONLY, 0).machine;
+    // The server reports busy mid-wait: this is a live turn, not a husk.
+    machine = stepDrainMachine(machine, { ...HUSK_ONLY, isServerBusy: true }, 5_000).machine;
+    // Open-assistant again with the server idle — the clock must restart.
+    machine = stepDrainMachine(machine, HUSK_ONLY, 6_000).machine;
+    const step = stepDrainMachine(machine, HUSK_ONLY, OPEN_TURN_HUSK_MS + 1_000);
+    expect(step.dispatch).toBe(false);
+  });
+
+  test('any other closed gate resets the husk clock', () => {
+    let machine = createDrainMachine();
+    machine = stepDrainMachine(machine, HUSK_ONLY, 0).machine;
+    machine = stepDrainMachine(machine, { ...HUSK_ONLY, runtimeReady: false }, 5_000).machine;
+    machine = stepDrainMachine(machine, HUSK_ONLY, 6_000).machine;
+    const step = stepDrainMachine(machine, HUSK_ONLY, OPEN_TURN_HUSK_MS + 5_999);
+    expect(step.dispatch).toBe(false);
+  });
+
+  test('planDrainTick schedules a wake-up while waiting out the husk', () => {
+    // Nothing re-renders while a husk merely ages, so the planner must hand
+    // back a timer — otherwise the override only fires on an unrelated render.
+    let machine = createDrainMachine();
+    machine = stepDrainMachine(machine, HUSK_ONLY, 0).machine;
+    const { action } = planDrainTick({
+      machine,
+      gates: HUSK_ONLY,
+      pendingCount: 1,
+      sending: false,
+      now: 1_000,
+    });
+    expect(action.kind).toBe('wait');
+    if (action.kind === 'wait') {
+      expect(action.ms).toBe(OPEN_TURN_HUSK_MS - 1_000);
+    }
   });
 });

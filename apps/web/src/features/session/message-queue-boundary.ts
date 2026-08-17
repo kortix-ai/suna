@@ -40,6 +40,25 @@
 export const QUEUE_SETTLE_MS = 700;
 
 /**
+ * How long an open assistant turn may block the drain while every OTHER gate —
+ * server status included — says the session is idle.
+ *
+ * `hasIncompleteAssistant` exists to survive missed status events: a stale
+ * idle status must not drain the queue into a turn that is really running. But
+ * a sandbox that dies mid-turn and boots fresh leaves the last assistant
+ * message permanently open — `time.completed` never set, no error ever patched
+ * (no `session.error`, no `server.instance.disposed`: the process that owned
+ * the turn is simply gone). That husk lives in the server's own transcript, so
+ * it survives a hard refresh, and the queue wedged forever behind it.
+ *
+ * A live turn produces evidence: the status poll reports busy within one
+ * liveness interval (10s), which resets this clock via the `isServerBusy`
+ * gate. So an open message that goes this long with the server continuously
+ * idle is a husk of a dead turn, not a running one — release the queue.
+ */
+export const OPEN_TURN_HUSK_MS = 10_000;
+
+/**
  * Everything that means "do not send yet". All of these already exist in
  * `session-chat.tsx` — the drain simply reads the honest ones.
  */
@@ -198,10 +217,16 @@ export function shouldClearPause(previousQueueSize: number, nextQueueSize: numbe
 export interface DrainMachine {
   /** When the gates last became clear, or null while any gate is closed. */
   clearSince: number | null;
+  /**
+   * When `hasIncompleteAssistant` became the ONLY closed gate, or null. After
+   * `OPEN_TURN_HUSK_MS` of that state the open message is treated as a dead
+   * turn's husk and stops blocking — see the constant's doc comment.
+   */
+  openTurnOnlySince: number | null;
 }
 
 export function createDrainMachine(): DrainMachine {
-  return { clearSince: null };
+  return { clearSince: null, openTurnOnlySince: null };
 }
 
 /**
@@ -215,20 +240,38 @@ export function stepDrainMachine(
   gates: QueueDrainGates,
   now: number,
   settleMs: number = QUEUE_SETTLE_MS,
+  huskMs: number = OPEN_TURN_HUSK_MS,
 ): { machine: DrainMachine; dispatch: boolean } {
   // `isServerBusy` is one of the gates, so a running turn lands here too and
   // resets the clock. There is no separate busy branch to keep in sync.
-  if (!canDrainQueue(gates)) return { machine: { clearSince: null }, dispatch: false };
+  if (!canDrainQueue(gates)) {
+    // The husk clock runs only while the open assistant message is the SOLE
+    // reason the drain is blocked. Any other closed gate — the server saying
+    // busy above all — is evidence of a real turn and resets it.
+    const openTurnOnly =
+      gates.hasIncompleteAssistant && canDrainQueue({ ...gates, hasIncompleteAssistant: false });
+    if (!openTurnOnly) {
+      return { machine: { clearSince: null, openTurnOnlySince: null }, dispatch: false };
+    }
+    const openTurnOnlySince = machine.openTurnOnlySince ?? now;
+    if (now - openTurnOnlySince < huskMs) {
+      return { machine: { clearSince: null, openTurnOnlySince }, dispatch: false };
+    }
+    // Husk expired — fall through with the gate overridden; the normal settle
+    // window still applies from this point.
+  }
 
   const clearSince = machine.clearSince ?? now;
-  if (now - clearSince < settleMs) return { machine: { clearSince }, dispatch: false };
+  if (now - clearSince < settleMs) {
+    return { machine: { ...machine, clearSince }, dispatch: false };
+  }
 
   // Reset the clock on dispatch, so the message behind this one starts its wait
   // from scratch. Normally it never gets that far — the send closes the busy
   // gate synchronously — but when a send fails without ever reaching the server
   // the gates stay clear, and this is what keeps the next message a full settle
   // window behind rather than following it in the same instant.
-  return { machine: { clearSince: null }, dispatch: true };
+  return { machine: { clearSince: null, openTurnOnlySince: null }, dispatch: true };
 }
 
 /**
@@ -272,9 +315,17 @@ export function planDrainTick(input: {
   const { machine, dispatch } = stepDrainMachine(input.machine, input.gates, input.now, settleMs);
   if (dispatch) return { machine, action: { kind: 'dispatch' } };
 
-  // Armed and counting down. A closed gate leaves `clearSince` null and will
-  // re-render when it opens, so there is nothing to poll for.
-  if (machine.clearSince === null) return { machine, action: { kind: 'idle' } };
+  if (machine.clearSince === null) {
+    // Waiting out a dead-turn husk. Nothing re-renders while it merely ages,
+    // so hand back a timer — otherwise the override only fires when some
+    // unrelated render happens to tick the drain.
+    if (machine.openTurnOnlySince !== null) {
+      const elapsed = input.now - machine.openTurnOnlySince;
+      return { machine, action: { kind: 'wait', ms: Math.max(0, OPEN_TURN_HUSK_MS - elapsed) } };
+    }
+    // A closed gate will re-render when it opens; there is nothing to poll for.
+    return { machine, action: { kind: 'idle' } };
+  }
 
   const elapsed = input.now - machine.clearSince;
   return { machine, action: { kind: 'wait', ms: Math.max(0, settleMs - elapsed) } };

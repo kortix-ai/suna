@@ -19,6 +19,17 @@ export interface SessionCostSummary {
   updated_at: string;
   last_activity_at: string | null;
   llm_cost: number;
+  /**
+   * The `llm_cost` slice Kortix debited from your wallet — managed inference,
+   * or the platform fee on a BYOK route.
+   */
+  llm_kortix_cost: number;
+  /**
+   * The `llm_cost` slice you paid your own provider directly, on your own key.
+   * Always 0 for Kortix-managed traffic, where the upstream price is Kortix's
+   * wholesale cost rather than yours.
+   */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   request_count: number;
@@ -200,6 +211,17 @@ export interface ProjectCostRow {
   project_name: string;
   session_count: number;
   llm_cost: number;
+  /**
+   * The `llm_cost` slice Kortix debited from your wallet — managed inference,
+   * or the platform fee on a BYOK route.
+   */
+  llm_kortix_cost: number;
+  /**
+   * The `llm_cost` slice you paid your own provider directly, on your own key.
+   * Always 0 for Kortix-managed traffic, where the upstream price is Kortix's
+   * wholesale cost rather than yours.
+   */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   last_activity_at: string | null;
@@ -238,6 +260,17 @@ export async function listCostByProject(
 
 export interface CostSummaryTotals {
   llm_cost: number;
+  /**
+   * The `llm_cost` slice Kortix debited from your wallet — managed inference,
+   * or the platform fee on a BYOK route.
+   */
+  llm_kortix_cost: number;
+  /**
+   * The `llm_cost` slice you paid your own provider directly, on your own key.
+   * Always 0 for Kortix-managed traffic, where the upstream price is Kortix's
+   * wholesale cost rather than yours.
+   */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   request_count: number;

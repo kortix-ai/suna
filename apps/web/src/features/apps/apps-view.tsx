@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -55,7 +54,6 @@ import {
   LockKeyIcon,
   PauseIcon,
   PlayIcon,
-  TerminalWindowIcon,
   TrashIcon,
   XIcon,
 } from '@phosphor-icons/react';
@@ -83,7 +81,78 @@ function appCommand(app: App): string {
   return `kortix apps deploy . --app ${app.app_id}`;
 }
 
-function AppPreview({
+/**
+ * How long a frame may take before we admit out loud that it is loading.
+ *
+ * A warm App paints far inside this — the card thumbnail already fetched the
+ * signed URL, so the modal's frame is the second request for a document the
+ * browser has cached. Painting the overlay from mount made every one of those
+ * flash a spinner for a single frame on the way in, which reads as SLOWER than
+ * showing nothing. Below the threshold the frame area stays on its calm
+ * `bg-muted/20` surface and the App simply appears.
+ */
+export const PREVIEW_SPINNER_DELAY_MS = 280;
+
+/**
+ * The delay timer, extracted from the effect so the threshold is testable.
+ * `apps/web` has no DOM test harness, so a hook's effect cannot be driven from
+ * a test — this seam can, with fake timers.
+ */
+export function scheduleSlowPreview(
+  onSlow: () => void,
+  delayMs: number = PREVIEW_SPINNER_DELAY_MS,
+): () => void {
+  const timer = setTimeout(onSlow, delayMs);
+  return () => clearTimeout(timer);
+}
+
+/**
+ * True once a still-pending frame has passed the threshold above.
+ *
+ * There is no reset branch because there is nothing to reset: `pending` only
+ * ever goes true → false (the frame loads, or it errors), and a frame that has
+ * settled is covered by `loaded` / `failed`. A remount — a new deployment — gets
+ * a fresh `key` from the caller and therefore fresh state.
+ */
+function useSlowPreview(pending: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!pending) return;
+    return scheduleSlowPreview(() => setSlow(true));
+  }, [pending]);
+  return slow;
+}
+
+/**
+ * What covers the frame while it is not showing the App.
+ *
+ * Exported for its own test: the whole point of this component is the state it
+ * DOESN'T render (no spinner before the threshold), which is only assertable
+ * against markup.
+ */
+export function AppPreviewOverlay({
+  loaded,
+  failed,
+  slow,
+}: {
+  loaded: boolean;
+  failed: boolean;
+  slow: boolean;
+}) {
+  // A failure is never worth waiting to report — `onError` means the frame is
+  // done and it is not going to paint.
+  if (!failed && (loaded || !slow)) return null;
+  return (
+    <div className="bg-background/95 absolute inset-0 flex items-center justify-center px-6 text-center backdrop-blur-sm">
+      <div className="text-muted-foreground flex items-center gap-2 text-xs">
+        {failed ? null : <Loading className="size-4 shrink-0" />}
+        <span>{failed ? 'Preview unavailable. Open the App to retry.' : 'Loading preview'}</span>
+      </div>
+    </div>
+  );
+}
+
+export function AppPreview({
   app,
   url,
   accessError,
@@ -105,6 +174,7 @@ function AppPreview({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const slow = useSlowPreview(!loaded && !failed);
   const frame = cn(
     'bg-muted/20 relative overflow-hidden',
     !interactive && 'aspect-video',
@@ -152,7 +222,12 @@ function AppPreview({
         key={app.active_deployment_id}
         src={url}
         title={`${app.name} live preview`}
-        loading="lazy"
+        // The card thumbnail is one of many below the fold, so defer it. In the
+        // modal the frame IS the content and it is already on screen — `lazy`
+        // there makes the browser wait for layout before it even starts the
+        // fetch, which is pure added latency on the one open that must feel
+        // instant.
+        loading={interactive ? 'eager' : 'lazy'}
         allow={CLIPBOARD_IFRAME_ALLOW}
         sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
         className={cn(
@@ -170,14 +245,7 @@ function AppPreview({
           setFailed(true);
         }}
       />
-      {!loaded ? (
-        <div className="bg-background/95 absolute inset-0 flex items-center justify-center px-6 text-center backdrop-blur-sm">
-          <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            {failed ? null : <Loading className="size-4 shrink-0" />}
-            <span>{failed ? 'Preview unavailable. Open the App to retry.' : 'Loading preview'}</span>
-          </div>
-        </div>
-      ) : null}
+      <AppPreviewOverlay loaded={loaded} failed={failed} slow={slow} />
     </div>
   );
 }
@@ -220,7 +288,7 @@ export function AppsView({ projectId }: { projectId: string }) {
     <CustomizeSectionWrapper
       title="Apps"
       description="Deploy apps to stable Kortix URLs. They wake on request and stop when idle."
-      docs="/docs/sdk/apps"
+      docs="/docs/feature-flags/apps"
       className="max-w-5xl"
       showSidebarToggleButton
     >
@@ -286,27 +354,6 @@ export function AppsView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {appsGate.enabled ? (
-        <InfoBanner
-          tone="neutral"
-          icon={TerminalWindowIcon}
-          title="Deploy from a terminal"
-          action={
-            <Hint label="Copy deploy command">
-              <CopyButton code="kortix apps deploy ." size="md" />
-            </Hint>
-          }
-        >
-          <span className="text-muted-foreground block text-xs text-pretty">
-            Run this in a linked project. A v2 <code className="text-foreground">kortix.yaml</code>{' '}
-            can define build, resources, environment, and secret mappings.
-          </span>
-          <code className="text-foreground mt-2 block overflow-x-auto font-mono text-xs">
-            kortix apps deploy .
-          </code>
-        </InfoBanner>
-      ) : null}
-
       {openApp ? (
         <AppDetailModal
           key={openApp.app_id}
@@ -333,9 +380,13 @@ function AppCard({
   app: App;
   onOpen: () => void;
 }) {
-  // SESSION only. The access POLICY is an administrative read that 403s for an
-  // ordinary member, and the card never renders it — the detail modal asks.
-  const access = useAppAccess(projectId, app.app_id, { policy: false });
+  // SESSION only, and only when the viewer may actually open this App. The
+  // access POLICY is an administrative read that 403s for an ordinary member,
+  // and the card never renders it — the detail modal asks. The SESSION 403s for
+  // any App the viewer may see but not open, which is a state the server now
+  // reports up front instead of leaving the card to discover it by failing.
+  const canAccess = app.viewer_can_access !== false;
+  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
   const deployed = Boolean(app.active_deployment_id);
   const live = deployed && app.desired_state === 'running';
 
@@ -359,7 +410,7 @@ function AppCard({
             key={app.active_deployment_id ?? app.app_id}
             app={app}
             url={access.session.data?.url ?? null}
-            accessError={access.session.isError}
+            accessError={!canAccess || access.session.isError}
             interactive={false}
           />
           {/* Hairline so the thumbnail never bleeds into the panel edge. */}
@@ -415,7 +466,8 @@ function AppDetailModal({
 }) {
   const apps = useProjectApps(projectId);
   const deployments = useAppDeployments(projectId, app.app_id);
-  const access = useAppAccess(projectId, app.app_id, { policy: canWrite });
+  const canAccess = app.viewer_can_access !== false;
+  const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess });
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
@@ -558,7 +610,7 @@ function AppDetailModal({
               key={app.active_deployment_id ?? app.app_id}
               app={app}
               url={access.session.data?.url ?? null}
-              accessError={access.session.isError}
+              accessError={!canAccess || access.session.isError}
               interactive
               className="absolute inset-0 size-full"
             />

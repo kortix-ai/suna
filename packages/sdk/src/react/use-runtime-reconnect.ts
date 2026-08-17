@@ -43,6 +43,29 @@ export const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 
 export const CHECK_TIMEOUT = 20_000;
 
+/**
+ * How recently a live SSE event must have arrived to veto a failed probe.
+ * An event that just came over the wire is stronger evidence of reachability
+ * than a probe timeout: a box saturated by a heavy turn (PDF rendering, asset
+ * builds) can miss the probe deadline while streaming that same turn's events.
+ * Without the veto, two such misses flipped the UI to "Waking this session
+ * up…", tore down the SSE stream (gated on status === 'connected'), and queued
+ * every send — against a runtime that was demonstrably up and mid-turn.
+ */
+export const RUNTIME_EVIDENCE_FRESH_MS = 15_000;
+
+/**
+ * Whether a failed health probe should be discarded because live runtime
+ * events prove reachability. Pure — see RUNTIME_EVIDENCE_FRESH_MS.
+ */
+export function shouldIgnoreProbeFailure(
+  lastRuntimeEvidenceAt: number | null,
+  now: number,
+): boolean {
+  if (lastRuntimeEvidenceAt === null) return false;
+  return now - lastRuntimeEvidenceAt < RUNTIME_EVIDENCE_FRESH_MS;
+}
+
 /** Statuses whose HTTP response itself signals "nothing is home" — no threshold needed. */
 export function isImmediateOfflineStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;
@@ -253,6 +276,20 @@ export function useRuntimeReconnect() {
         failed = true;
         immediateOffline = false;
       } finally {
+        // Live SSE events for the active runtime veto probe failures — even an
+        // "immediate offline" HTTP status, which on a loaded box can be one
+        // proxy hop timing out while the event stream keeps delivering. The
+        // probe simply retries; if the stream really is dead, the evidence
+        // goes stale within RUNTIME_EVIDENCE_FRESH_MS and failures count again.
+        if (
+          failed &&
+          shouldIgnoreProbeFailure(
+            useSandboxConnectionStore.getState().lastRuntimeEvidenceAt,
+            Date.now(),
+          )
+        ) {
+          failed = false;
+        }
         if (failed) {
           incrementSandboxFail();
           if (immediateOffline) {
