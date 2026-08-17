@@ -77,6 +77,23 @@ export interface SessionChatInputProps {
     mentions?: TrackedMention[],
   ) => void | Promise<void>;
   isBusy?: boolean;
+  /**
+   * The un-faded busy signal, read fresh every render — `effectiveBusy` in
+   * `session-chat.tsx` (`isServerBusy || pendingSendInFlight ||
+   * isOptimisticCompacting`), not the 300ms-fade `isBusy` above.
+   *
+   * `isBusy` is `useState` mirroring `effectiveBusy` through a `useEffect`,
+   * so it lags the real transition by at least one extra render — the
+   * `useEffect` that flips it commits after the render that made
+   * `effectiveBusy` true. A submit whose event lands inside that window
+   * (a fast second Enter, a paste of two prompts) reads the OLD `isBusy`
+   * closure and skips the queue: the message goes straight to `onSend`
+   * while a turn is genuinely already starting, and can be lost. Gating
+   * `shouldQueueInsteadOfSend` on this prop instead removes the window
+   * rather than narrowing it. Defaults to `isBusy` so a caller that never
+   * passes it keeps the old (racy) behavior instead of a crash.
+   */
+  queueGateBusy?: boolean;
   queuedMessages?: QueuedMessageView[];
   failedQueuedMessages?: QueuedMessageView[];
   /** The queued messages currently on the wire. Cannot be edited, moved or removed.
@@ -158,6 +175,14 @@ export interface SessionChatInputProps {
    * a spinner with no explanation, which was indistinguishable from broken.
    */
   notice?: string | null;
+  /**
+   * Renders a "Retry" action inline in the notice bar when set. Wired to
+   * `requestRuntimeReconnect()` for a confirmed-unreachable runtime — see
+   * `SessionComposerReadiness.retryable`. Omitted (no button) for the
+   * ordinary booting/waking notice, where the background poller is expected
+   * to resolve things on its own shortly.
+   */
+  onNoticeRetry?: () => void;
   clearOnSend?: boolean;
   modelRequired?: boolean;
   modelsLoading?: boolean;
@@ -323,6 +348,7 @@ function setDocumentWithoutStealingFocus(
 function ComposerImpl({
   onSend,
   isBusy = false,
+  queueGateBusy = isBusy,
   failedQueuedMessages,
   queuedMessages,
   queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
@@ -357,6 +383,7 @@ function ComposerImpl({
   disabled = false,
   runtimeReady = true,
   notice = null,
+  onNoticeRetry,
   clearOnSend = true,
   modelRequired = false,
   modelsLoading = false,
@@ -905,7 +932,7 @@ function ComposerImpl({
       if (
         onQueueMessage &&
         shouldQueueInsteadOfSend({
-          isBusy,
+          isBusy: queueGateBusy,
           pendingCount: queuedMessages?.length ?? 0,
           hasInFlight: queueInFlightIds.length > 0,
           runtimeReady,
@@ -964,7 +991,7 @@ function ComposerImpl({
     if (
       onQueueMessage &&
       shouldQueueInsteadOfSend({
-        isBusy,
+        isBusy: queueGateBusy,
         pendingCount: queuedMessages?.length ?? 0,
         hasInFlight: queueInFlightIds.length > 0,
         runtimeReady,
@@ -1015,6 +1042,7 @@ function ComposerImpl({
     clearOnSend,
     onSend,
     isBusy,
+    queueGateBusy,
     onQueueMessage,
     queuedMessages,
     queueInFlightIds,
@@ -1183,6 +1211,17 @@ function ComposerImpl({
               <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                 {notice}
               </span>
+              {onNoticeRetry && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="text-muted-foreground hover:text-foreground h-auto shrink-0 px-1.5 py-0.5 text-xs"
+                  onClick={onNoticeRetry}
+                >
+                  {'Retry'}
+                </Button>
+              )}
             </div>
           )}
 

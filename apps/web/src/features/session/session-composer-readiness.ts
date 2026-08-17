@@ -37,17 +37,48 @@ export interface SessionComposerReadiness {
    * is about to be queued — and it cannot say what happens next.
    */
   notice: string | null;
+  /**
+   * Whether the notice should offer a manual retry.
+   *
+   * `useRuntimeReconnect` (SDK) keeps probing forever in the background either
+   * way — `POLL_UNREACHABLE` (5s) once it gives up on a fast boot — so this is
+   * never "retry because polling stopped" (that was a real bug: an uncaught
+   * throw from the auth/config lookup used to kill the poll loop outright; see
+   * `use-runtime-reconnect.ts`). It is "tell the truth about which kind of wait
+   * this is." A booting sandbox and a sandbox that has been declared
+   * unreachable after `FAIL_THRESHOLD_*` consecutive failures produced the
+   * SAME "Waking this session up…" copy forever, with no visible change, no
+   * elapsed time, and nothing to do — which is indistinguishable from stuck
+   * even when the retry loop underneath is perfectly healthy. The only escape
+   * hatch anyone found was a hard refresh (which works purely by accident: it
+   * remounts the poller and resets its failure count, same as pressing retry
+   * would). Surfacing the real phase and a `requestRuntimeReconnect()` button
+   * gives the user that same reset without the reload.
+   */
+  retryable: boolean;
 }
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
+  /** `useRuntimePhase() === 'unreachable'` — confirmed unreachable, not
+   *  merely still connecting/booting. See `retryable` above. */
+  unreachable?: boolean;
 }): SessionComposerReadiness {
-  if (input.runtimeReady) return { ready: true, notice: null };
+  if (input.runtimeReady) return { ready: true, notice: null, retryable: false };
+  if (input.unreachable) {
+    return {
+      ready: false,
+      notice:
+        "Lost contact with this session's sandbox. Messages you send will be queued until it reconnects.",
+      retryable: true,
+    };
+  }
   return {
     ready: false,
     // Says what is happening AND what a send will do, because the send button
     // stays live — without the second half, pressing it looks like nothing
     // happened.
     notice: 'Waking this session up… messages you send will be queued and go out automatically.',
+    retryable: false,
   };
 }

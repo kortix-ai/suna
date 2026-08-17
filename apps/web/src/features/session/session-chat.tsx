@@ -182,6 +182,7 @@ import {
   replayStartStash,
   replyToPermission,
   replyToQuestion,
+  requestRuntimeReconnect,
   sendAndRecover,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
@@ -192,6 +193,7 @@ import {
   useRuntimeCommands,
   useRuntimeConfig,
   useRuntimePendingStore,
+  useRuntimePhase,
   useRuntimeProviders,
   useRuntimeReady,
   useRuntimeSession,
@@ -4097,7 +4099,18 @@ export function SessionChat({
   // therefore reports isLoading=false) or the lookup is in flight, we know
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
-  const composerReadiness = sessionComposerReadiness({ runtimeReady });
+  // `useRuntimePhase()` distinguishes a booting/reconnecting sandbox from one
+  // confirmed unreachable past the poll loop's failure threshold — plain
+  // `runtimeReady` collapses both into the same false. Without the split, the
+  // composer's notice said "Waking this session up…" forever for BOTH, so a
+  // connection that had already given up looked identical to one still
+  // booting: no visible change, nothing to do. See `retryable` on
+  // `SessionComposerReadiness`.
+  const runtimePhase = useRuntimePhase();
+  const composerReadiness = sessionComposerReadiness({
+    runtimeReady,
+    unreachable: runtimePhase === 'unreachable',
+  });
   const { isNotFound, isDataLoading } = resolveSessionContentState({
     runtimeReady,
     sessionFetched,
@@ -4521,6 +4534,13 @@ export function SessionChat({
                 }
                 attachRequestId={attachRequestId}
                 isBusy={isBusy}
+                // The queue entry decision needs the un-faded signal: `isBusy`
+                // is `useState` mirroring `effectiveBusy` through a
+                // `useEffect`, so it commits one render late. A submit whose
+                // event lands in that window reads a stale "not busy" and
+                // skips the queue instead of holding the message — see
+                // `queueGateBusy` on `SessionChatInputProps`.
+                queueGateBusy={effectiveBusy}
                 rewind={composerRewind}
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
@@ -4579,6 +4599,7 @@ export function SessionChat({
                 // reading. See sessionComposerReadiness.
                 runtimeReady={composerReadiness.ready}
                 notice={composerReadiness.notice}
+                onNoticeRetry={composerReadiness.retryable ? requestRuntimeReconnect : undefined}
               />
               <ConfirmDialog
                 open={!!rewindTarget}

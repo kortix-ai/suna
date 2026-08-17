@@ -201,17 +201,36 @@ export function useRuntimeReconnect() {
     async function check() {
       if (!alive) return;
 
-      const url = useServerStore.getState().getActiveServerUrl();
-      if (!url) {
-        scheduleNext();
-        return;
-      }
+      let url: string | null;
+      let token: string | null;
+      try {
+        url = useServerStore.getState().getActiveServerUrl();
+        if (!url) {
+          scheduleNext();
+          return;
+        }
 
-      // Don't fire health checks until auth is ready — avoids naked requests
-      // that return synthetic 401s and cause false "unreachable" status.
-      const token = await getSupabaseAccessToken();
-      if (!token) {
-        scheduleNext();
+        // Don't fire health checks until auth is ready — avoids naked requests
+        // that return synthetic 401s and cause false "unreachable" status.
+        token = await getSupabaseAccessToken();
+        if (!token) {
+          scheduleNext();
+          return;
+        }
+      } catch {
+        // `getActiveServerUrl()` and `getSupabaseAccessToken()` are host
+        // config/auth lookups, not network calls guarded by the `try` below
+        // — a throw here (e.g. `createClient()`'s "Missing Supabase browser
+        // environment variables" during an env hydration race) used to
+        // escape `check()` uncaught. `check()` runs detached (fire-and-forget
+        // from the effect, and from this same `setTimeout` callback), so an
+        // uncaught rejection silently ended the poll loop: `scheduleNext()`
+        // never ran again, `healthy` stayed whatever it last was, and
+        // "Waking this session up…" (gated on `runtimeReady`, which reads
+        // this store) stayed up forever — recoverable only by a hard reload
+        // remounting this effect. Retry next tick exactly like the `!token`
+        // early-return above, instead of dying.
+        if (alive) scheduleNext();
         return;
       }
 

@@ -14,6 +14,8 @@ import { MentionChip } from '@/features/session/mention-chip';
 import { buildMentionSegments } from '@/features/session/mention-segments';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
+  BUBBLE_SURFACE,
+  BUBBLE_TEXT,
   MessageAttachments,
   type NormalizedAttachment,
   UserMessageActions,
@@ -22,22 +24,12 @@ import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
 
-/**
- * Matches `BUBBLE_SURFACE` / `BUBBLE_TEXT` in `turn/user-message.tsx`.
- *
- * The dark fill was `dark:bg-sidebar-accent-foreground/9` here and
- * `dark:bg-muted` there — the exact drift this file's header warns about,
- * introduced a day apart (2c7a689aca, then 4ea9ffb620) and visible as the
- * bubble changing shade the instant the optimistic turn handed over to the
- * server turn. `dark:bg-muted` is the later decision, so it wins.
- */
-const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col rounded-lg px-3 py-2.5 select-none',
-);
-const BUBBLE_TEXT = cn(
-  'text-[0.9rem] leading-[22px] font-medium',
-  'wrap-break-word whitespace-pre-wrap select-text',
-);
+// `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
+// not redeclared here. A local copy drifted twice already — first the dark
+// fill (`dark:bg-sidebar-accent-foreground/9` vs `dark:bg-muted`, fixed), then
+// the padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`)
+// — each drift a visible bubble jump the instant the optimistic turn handed
+// over to the real server turn. One constant, imported, cannot drift.
 
 /**
  * The optimistic turn — the user's message plus the assistant's waiting row,

@@ -7,6 +7,7 @@ describe('sessionComposerReadiness', () => {
     expect(sessionComposerReadiness({ runtimeReady: true })).toEqual({
       ready: true,
       notice: null,
+      retryable: false,
     });
   });
 
@@ -33,5 +34,28 @@ describe('sessionComposerReadiness', () => {
 
   test('the notice is null when ready, so the bar cannot render on a live session', () => {
     expect(sessionComposerReadiness({ runtimeReady: true }).notice).toBeNull();
+  });
+
+  test('booting/connecting (not yet unreachable) is not retryable', () => {
+    // The default — still within the poll loop's failure threshold. No
+    // manual retry offered; the background poller is expected to resolve
+    // this on its own shortly.
+    const readiness = sessionComposerReadiness({ runtimeReady: false, unreachable: false });
+
+    expect(readiness.retryable).toBe(false);
+    expect(readiness.notice).toMatch(/waking/i);
+  });
+
+  test('confirmed unreachable offers a retry and says so, distinctly from "waking"', () => {
+    // Past `FAIL_THRESHOLD_*` — `useRuntimePhase() === 'unreachable'`. Same
+    // "not ready" bucket as a booting sandbox, but this one has been failing
+    // for a while and the user needs to know an escape hatch exists instead
+    // of staring at an unchanging "waking up" forever. See `retryable`'s doc.
+    const readiness = sessionComposerReadiness({ runtimeReady: false, unreachable: true });
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.retryable).toBe(true);
+    expect(readiness.notice).not.toMatch(/waking/i);
+    expect(readiness.notice).toMatch(/queue/i);
   });
 });
