@@ -115,8 +115,7 @@ describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 
  * deep link has to do two things, not one: select `people` AND open the
  * dialog. `MembersTabInner` can't render here (no `SettingsNavProvider`, no
  * `QueryClientProvider`, no DOM library — this app has none), so the wiring is
- * pinned at source level, the same mechanism `member-role-safety.test.ts` uses
- * against this exact file.
+ * pinned at source level, reading `members-tab.tsx`'s own source below.
  *
  * **Comments are stripped first.** This file's own header comment quotes the
  * statement sequence; matching the raw source would let the documentation
@@ -143,11 +142,15 @@ describe('the invite deep link lands on the People tab, not just any tab', () =>
   });
 
   test('the invite dialog slot is mounted outside Tabs, so it survives a tab switch', () => {
-    // Both dialog slots are rendered after `</Tabs>`; if either moved inside a
-    // `TabsContent`, Radix would unmount it the moment the user changed tab.
+    // Rendered after `</Tabs>`; if it moved inside a `TabsContent`, Radix
+    // would unmount it the moment the user changed tab. This pane has one
+    // dialog slot now — the account-scope one (`accountInviteDialogSlot`)
+    // was removed along with every other account-scope control on this page
+    // (2026-08-18, "Account controls moved out" — see members-tab.tsx's
+    // header comment).
     const closingTabs = flatMembersTab.indexOf('</Tabs>');
     expect(closingTabs).toBeGreaterThan(-1);
     expect(flatMembersTab.indexOf('{inviteDialogSlot}')).toBeGreaterThan(closingTabs);
-    expect(flatMembersTab.indexOf('{accountInviteDialogSlot}')).toBeGreaterThan(closingTabs);
+    expect(flatMembersTab).not.toContain('accountInviteDialogSlot');
   });
 });
