@@ -3,12 +3,13 @@ import { Reveal } from '@/components/home/reveal';
 type Props = {
   eyebrow: string;
   title: string;
+  description?: string;
 };
 
-const SectionHeader = ({ eyebrow, title }: Props) => {
+const SectionHeader = ({ eyebrow, title, description }: Props) => {
   return (
     <Reveal>
-      <div className="flex flex-col w-full gap-4 select-none">
+      <div className="flex w-full flex-col gap-4 select-none">
         <span
           className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
           data-text="true"
@@ -22,6 +23,10 @@ const SectionHeader = ({ eyebrow, title }: Props) => {
           {title}
         </h2>
       </div>
+
+      <p className="text-muted-foreground mt-4 max-w-2xl text-base leading-relaxed">
+        {description}
+      </p>
     </Reveal>
   );
 };
