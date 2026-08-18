@@ -35,7 +35,11 @@ import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import {
+  ACCOUNT_ROLE_DESCRIPTORS,
+  PROJECT_ROLES_ASCENDING,
+  PROJECT_ROLE_DESCRIPTORS,
+} from '@/components/iam/project-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -104,6 +108,7 @@ import {
   type AccountInvitation,
   type AccountMember,
   type AccountRole,
+  type ProjectRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
   getAccount,
@@ -112,6 +117,7 @@ import {
   listAccountInvites,
   listAccountMembers,
   listGitHubInstallations,
+  listProjectsForAccount,
   removeAccountMember,
   resendAccountInvite,
   updateAccountMemberRole,
@@ -1582,7 +1588,7 @@ function MembersCard({
                                       className="gap-2"
                                     >
                                       <TrashIcon className="size-3.5" />
-                                      Remove from team
+                                      Remove from account
                                     </DropdownMenuItem>
                                   </>
                                 ) : null}
@@ -1595,7 +1601,7 @@ function MembersCard({
                                       className="gap-2"
                                     >
                                       <TrashIcon className="size-3.5" />
-                                      Leave team
+                                      Leave account
                                     </DropdownMenuItem>
                                   </>
                                 ) : null}
@@ -1690,7 +1696,7 @@ function MembersCard({
       <ConfirmDialog
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
-        title="Leave team"
+        title="Leave account"
         description={
           <span>
             You&apos;ll lose access to{' '}
@@ -1772,18 +1778,54 @@ function InviteMemberModal({
   const [inputValue, setInputValue] = useState('');
   const [role, setRole] = useState<AccountRole>('member');
   const [inlineError, setInlineError] = useState<string | null>(null);
+  // Project access to grant alongside the invite — rides on the same
+  // account_invitations.bootstrap_grants column POST /projects/:id/access/
+  // invite already writes (see members.ts's project_grants field), applied
+  // to every invited email uniformly. Only meaningful for `role === 'member'`
+  // — an admin already holds implicit Manager on every project, so the
+  // backend silently drops grants on a non-member invite; the UI hides the
+  // section for the same reason rather than offering a control that does
+  // nothing.
+  const [projectGrants, setProjectGrants] = useState<Array<{ project_id: string; role: ProjectRole }>>(
+    [],
+  );
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const projectsQuery = useQuery({
+    queryKey: ['account-projects-for-invite', accountId],
+    queryFn: () => listProjectsForAccount(accountId),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  const availableProjects = (projectsQuery.data ?? []).filter((p) => p.status === 'active');
+
+  function addProjectGrantRow() {
+    setProjectGrants((prev) => [...prev, { project_id: '', role: 'member' }]);
+  }
+  function updateProjectGrant(index: number, patch: Partial<{ project_id: string; role: ProjectRole }>) {
+    setProjectGrants((prev) => prev.map((g, i) => (i === index ? { ...g, ...patch } : g)));
+  }
+  function removeProjectGrantRow(index: number) {
+    setProjectGrants((prev) => prev.filter((_, i) => i !== index));
+  }
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const mutation = useMutation({
-    mutationFn: async (list: string[]) =>
-      Promise.all(
+    mutationFn: async (list: string[]) => {
+      const grants =
+        role === 'member'
+          ? projectGrants
+              .filter((g) => g.project_id)
+              .map((g) => ({ project_id: g.project_id, role: g.role }))
+          : [];
+      return Promise.all(
         list.map(async (addr) => {
           try {
             const res = await inviteAccountMember(accountId, {
               email: addr,
               role,
+              ...(grants.length > 0 ? { project_grants: grants } : {}),
             });
             return { email: addr, ok: true as const, res };
           } catch (err) {
@@ -1795,7 +1837,8 @@ function InviteMemberModal({
             };
           }
         }),
-      ),
+      );
+    },
     onSuccess: (results) => {
       type Ok = Extract<(typeof results)[number], { ok: true }>;
       type Failed = Extract<(typeof results)[number], { ok: false }>;
@@ -1869,6 +1912,7 @@ function InviteMemberModal({
     setInputValue('');
     setRole('member');
     setInlineError(null);
+    setProjectGrants([]);
   }
 
   /**
@@ -2058,6 +2102,84 @@ function InviteMemberModal({
                 </SelectContent>
               </Select>
             </div>
+
+            {role === 'member' ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Project access</Label>
+                  <span className="text-muted-foreground text-xs">Optional</span>
+                </div>
+                {projectGrants.map((grant, i) => {
+                  const usedElsewhere = new Set(
+                    projectGrants.filter((_, j) => j !== i).map((g) => g.project_id),
+                  );
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <Select
+                        value={grant.project_id}
+                        onValueChange={(v) => updateProjectGrant(i, { project_id: v })}
+                        disabled={mutation.isPending}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Choose a project" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableProjects
+                            .filter(
+                              (p) => p.project_id === grant.project_id || !usedElsewhere.has(p.project_id),
+                            )
+                            .map((p) => (
+                              <SelectItem key={p.project_id} value={p.project_id}>
+                                {p.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={grant.role}
+                        onValueChange={(v) => updateProjectGrant(i, { role: v as ProjectRole })}
+                        disabled={mutation.isPending}
+                      >
+                        <SelectTrigger className="w-32 shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PROJECT_ROLES_ASCENDING.map((r) => (
+                            <SelectItem key={r} value={r} description={PROJECT_ROLE_DESCRIPTORS[r].blurb}>
+                              {PROJECT_ROLE_DESCRIPTORS[r].label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <button
+                        type="button"
+                        onClick={() => removeProjectGrantRow(i)}
+                        disabled={mutation.isPending}
+                        aria-label="Remove project"
+                        className="text-muted-foreground hover:text-foreground shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Close className="size-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+                {availableProjects.length > projectGrants.length ? (
+                  <button
+                    type="button"
+                    onClick={addProjectGrantRow}
+                    disabled={mutation.isPending}
+                    className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus className="size-3.5" />
+                    {projectGrants.length === 0 ? 'Add project access' : 'Add another project'}
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <InfoBanner tone="neutral">
+                Admins already have access to every project in this account — nothing to grant here.
+              </InfoBanner>
+            )}
 
             {inlineError ? <InfoBanner tone="destructive">{inlineError}</InfoBanner> : null}
           </ModalBody>
