@@ -1,11 +1,11 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
+import { SelfHostedHeroVisual } from '@/features/marketing/self-hosted/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { BoundaryDiagram } from '@/features/marketing/self-hosted/boundary-diagram';
 import { CodePanel } from '@/features/marketing/self-hosted/code-panel';
 import {
-  closing,
   commands,
   firstRun,
   hero,
@@ -15,10 +15,8 @@ import {
   targets,
   yours,
 } from '@/features/marketing/self-hosted/content';
-import { SectionHeading } from '@/features/marketing/self-hosted/section-heading';
 import { StackDiagram } from '@/features/marketing/self-hosted/stack-diagram';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -92,54 +90,20 @@ function RowList({
 export default function SelfHostedPage(): ReactNode {
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className="relative px-6 pt-32 pb-12 sm:pt-36">
-        <div className="mx-auto max-w-7xl">
-          <Reveal>
-            <Badge variant="kortix" className="rounded">
-              {hero.eyebrow}
-            </Badge>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              {hero.title}
-            </h1>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              {hero.sub}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
-              </Button>
-            </div>
-            <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-              {hero.microline}
-            </p>
-          </Reveal>
-
-          <Reveal delay={0.1}>
-            <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-              {hero.specs.map((spec, i) => (
-                <div key={spec.k} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
-                  <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                    {spec.k}
-                  </dt>
-                  <dd className="text-foreground mt-2.5 font-mono text-[13px] leading-snug">
-                    {spec.v}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </Reveal>
-        </div>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.sub}
+        ctaPrimary={hero.ctaPrimary}
+        ctaPrimaryHref={hero.ctaPrimaryHref}
+        ctaSecondary={hero.ctaSecondary}
+        ctaSecondaryHref={hero.ctaSecondaryHref}
+        visual={<SelfHostedHeroVisual />}
+      />
 
       {/* ── 1 · what you keep ───────────────────────────────────────────── */}
       <section id="what-you-keep" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={yours.eyebrow} title={yours.title} sub={yours.sub} />
+        <SectionHeader eyebrow={yours.eyebrow} title={yours.title} description={yours.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -152,7 +116,11 @@ export default function SelfHostedPage(): ReactNode {
 
       {/* ── 2 · the commands ────────────────────────────────────────────── */}
       <section id="commands" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={commands.eyebrow} title={commands.title} sub={commands.sub} />
+        <SectionHeader
+          eyebrow={commands.eyebrow}
+          title={commands.title}
+          description={commands.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -179,7 +147,11 @@ export default function SelfHostedPage(): ReactNode {
 
       {/* ── 3 · the first run ───────────────────────────────────────────── */}
       <section id="first-run" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={firstRun.eyebrow} title={firstRun.title} sub={firstRun.sub} />
+        <SectionHeader
+          eyebrow={firstRun.eyebrow}
+          title={firstRun.title}
+          description={firstRun.sub}
+        />
 
         <Reveal delay={0.06}>
           <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-3">
@@ -233,7 +205,7 @@ export default function SelfHostedPage(): ReactNode {
 
       {/* ── 4 · the stack ───────────────────────────────────────────────── */}
       <section id="stack" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={stack.eyebrow} title={stack.title} sub={stack.sub} />
+        <SectionHeader eyebrow={stack.eyebrow} title={stack.title} description={stack.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -260,7 +232,7 @@ export default function SelfHostedPage(): ReactNode {
 
       {/* ── 5 · parity ──────────────────────────────────────────────────── */}
       <section id="parity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={parity.eyebrow} title={parity.title} sub={parity.sub} />
+        <SectionHeader eyebrow={parity.eyebrow} title={parity.title} description={parity.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -273,7 +245,7 @@ export default function SelfHostedPage(): ReactNode {
 
       {/* ── 6 · models ──────────────────────────────────────────────────── */}
       <section id="models" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={models.eyebrow} title={models.title} sub={models.sub} />
+        <SectionHeader eyebrow={models.eyebrow} title={models.title} description={models.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="lg:col-span-7">
@@ -302,7 +274,7 @@ export default function SelfHostedPage(): ReactNode {
 
       {/* ── 7 · where it runs ───────────────────────────────────────────── */}
       <section id="targets" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={targets.eyebrow} title={targets.title} sub={targets.sub} />
+        <SectionHeader eyebrow={targets.eyebrow} title={targets.title} description={targets.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -323,41 +295,6 @@ export default function SelfHostedPage(): ReactNode {
           </dl>
         </Reveal>
       </section>
-
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              {closing.eyebrow}
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              {closing.title}
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">{closing.sub}</p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={closing.ctaSecondaryHref}>{closing.ctaSecondary}</Link>
-              </Button>
-            </div>
-            <p className="text-muted-foreground border-border w-full border-t pt-6 text-sm leading-relaxed">
-              {closing.tertiary}{' '}
-              <Link
-                href={closing.tertiaryHref}
-                className="text-foreground underline underline-offset-4"
-              >
-                {closing.tertiaryLabel}
-              </Link>
-              .
-            </p>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }
