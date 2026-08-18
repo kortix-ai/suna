@@ -29,12 +29,17 @@ const source = readFileSync(join(import.meta.dir, 'general-tab.tsx'), 'utf8');
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
 // general-tab.tsx declares two `useMutation({…})` calls inside
-// `GeneralWorkspaceCard` (rename, icon) plus a third inside `SandboxProviderRow`
-// and a fourth inside `GeneralTab` (archive) — scope the scan to
-// `GeneralWorkspaceCard`'s own body so a match can only come from the rename
-// mutation, not a sibling's.
+// `GeneralWorkspaceCard` (rename, icon) plus a third inside `GeneralTab`
+// (archive) — scope the scan to `GeneralWorkspaceCard`'s own body so a match
+// can only come from the rename mutation, not a sibling's.
+//
+// The end marker used to be `const AUTO_PROVIDER`, the sandbox-provider row
+// that sat between the two components. That row moved to `sandbox-tab.tsx`
+// (see `general-tab.tsx`'s header comment), so the boundary is now the next
+// declaration after the card: `GeneralTab` itself. The "scan found the rename
+// mutation" test below fails loudly if this marker ever stops matching.
 const cardStart = code.indexOf('function GeneralWorkspaceCard(');
-const cardEnd = code.indexOf('const AUTO_PROVIDER', cardStart);
+const cardEnd = code.indexOf('export function GeneralTab(', cardStart);
 const cardBody = cardStart < 0 || cardEnd < 0 ? '' : code.slice(cardStart, cardEnd);
 
 const mutationStart = cardBody.indexOf('useMutation({');

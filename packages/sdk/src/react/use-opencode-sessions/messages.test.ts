@@ -34,6 +34,7 @@ mock.module('../../core/http/logger', () => ({
   logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
 }));
 
+import wireIdVectors from '../../../../../tests/spec/wire-message-id.vectors.json';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { isAbortError } from '../../core/http/abort-error';
 import {
@@ -44,8 +45,10 @@ import {
   getSendRetryDelayMs,
   isOpenCodeNotReadyError,
   isTransientSendStatus,
+  mintSessionWireMessageId,
   promptOpenCodeMessage,
 } from './messages';
+
 
 beforeEach(() => {
   promptImpl = async () => ({ data: {} });
@@ -583,6 +586,40 @@ describe('promptOpenCodeMessage messageID', () => {
     const minted = encodedOf(captured[0].messageID as string);
     expect(minted).toBeLessThan(encodedAt(before + 60_000));
   });
+
+  // ── Golden vectors shared with apps/api ────────────────────────────────
+  //
+  // The control plane re-mints a wire id when it redelivers an abandoned
+  // prompt (`apps/api/src/projects/wire-message-id.ts`). It cannot import this
+  // module — `apps/api` has no `@kortix/sdk` dependency, and the minter here
+  // reads the browser sync store — so there are two implementations of one
+  // ordering contract. A silent divergence drops turns: OpenCode decides "has
+  // this prompt already been answered?" by id order. This fixture is what
+  // makes a divergence fail TWO suites instead of zero.
+  describe('golden vectors — tests/spec/wire-message-id.vectors.json', () => {
+    for (const [index, vector] of wireIdVectors.vectors.entries()) {
+      test(vector.name, async () => {
+        const sessionId = `sess-vector-${index}`;
+        if (vector.newestKnownTime !== null) {
+          useSyncStore.setState({
+            messages: {
+              [sessionId]: [
+                { id: `msg_${vector.newestKnownTime}AAAAAAAAAAAAAA`, role: 'user' } as never,
+              ],
+            },
+          });
+        }
+        const realNow = Date.now;
+        Date.now = () => vector.nowMs;
+        try {
+          await promptOpenCodeMessage({ sessionId, parts: [{ type: 'text', text: 'hi' }] });
+        } finally {
+          Date.now = realNow;
+        }
+        expect((captured[0].messageID as string).slice(4, 16)).toBe(vector.expectedTime);
+      });
+    }
+  });
 });
 
 // ── T9: cancel() cancels in-flight delivery and awaits the abort ───
@@ -934,5 +971,100 @@ describe('useSendOpenCodeMessage retry policy', () => {
     expect(start).toBeGreaterThan(-1);
     const body = SRC.slice(start, SRC.indexOf('\n}', start));
     expect(body).toContain('retry: false');
+  });
+});
+
+// ── mintSessionWireMessageId — the id a host hands the SERVER-SIDE inbox ─────
+//
+// `createSessionPrompt` needs the wire id up front, because the control plane
+// cannot place one: ordering an id means reading THIS session's transcript.
+describe('mintSessionWireMessageId', () => {
+  beforeEach(() => {
+    useSyncStore.setState({ messages: {} });
+  });
+
+  test('encodes the LOW 48 bits of the clock, the field opencode orders by', async () => {
+    // The regression this guards: `ascendingId` keeps the HIGH 12 hex digits of
+    // the same number, which is a different quantity entirely — an id in that
+    // shape mis-sorts against every server-minted id and the turn is read as
+    // already answered. The bound below is what tells the two apart.
+    const before = Date.now();
+    const id = mintSessionWireMessageId('sess-inbox');
+    const after = Date.now();
+    expect(id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+    const BACKDATE_MS = 2 * 60 * 1000;
+    expect(encodedOf(id)).toBeGreaterThanOrEqual(encodedAt(before - BACKDATE_MS));
+    expect(encodedOf(id)).toBeLessThanOrEqual(encodedAt(after - BACKDATE_MS) + 1000n);
+  });
+
+  test('one clientMessageId always resolves to one id, so a retry keeps its claim', () => {
+    const first = mintSessionWireMessageId('sess-inbox', 'q_1');
+    expect(mintSessionWireMessageId('sess-inbox', 'q_1')).toBe(first);
+    expect(mintSessionWireMessageId('sess-inbox', 'q_2')).not.toBe(first);
+  });
+
+  test('places the id above the session transcript it will be delivered into', () => {
+    const skewed = wireMessageId(Date.now() + 10 * 60_000);
+    useSyncStore.setState({
+      messages: { 'sess-inbox-skew': [{ id: skewed, role: 'user' } as never] },
+    });
+    expect(encodedOf(mintSessionWireMessageId('sess-inbox-skew'))).toBeGreaterThan(
+      encodedOf(skewed),
+    );
+  });
+
+  test('an OPTIMISTIC `ascendingId` message in the store does not disable the lift', () => {
+    // THE LIVE DEFECT THIS PINS (reproduced in the browser on the worktree
+    // stack, 2026-08-18): every send puts an OPTIMISTIC user message into the
+    // same sync store, and that message's id comes from `ascendingId`, which
+    // keeps the HIGH hex digits of the id clock (`msg_1a01…`) where opencode
+    // keeps the LOW ones (`msg_0141…`). It is therefore ~2.8e13 above every
+    // real id. `newestKnownMessageTime` returned it as "newest", the
+    // out-of-range guard then refused the correction, and the lift NEVER
+    // engaged in the real app — so a prompt sent inside `CLOCK_SKEW_BACKDATE_MS`
+    // of the previous reply got a wire id BELOW that reply. OpenCode reads such
+    // a prompt as already answered: no turn, no error, the message just sits
+    // there. Exactly the silent loss this whole id scheme exists to remove.
+    //
+    // The scan must therefore ignore ids it cannot place instead of letting one
+    // of them veto the correction for the whole session.
+    const real = wireMessageId(Date.now() + 10 * 60_000);
+    useSyncStore.setState({
+      messages: {
+        'sess-inbox-optimistic': [
+          { id: real, role: 'assistant' } as never,
+          // `ascendingId('msg')`'s exact shape for this clock.
+          {
+            id: `msg_${((BigInt(Date.now()) * 0x1000n).toString(16).padStart(12, '0')).slice(0, 12)}OPTIMISTICxxxx`,
+            role: 'user',
+          } as never,
+        ],
+      },
+    });
+    expect(encodedOf(mintSessionWireMessageId('sess-inbox-optimistic'))).toBeGreaterThan(
+      encodedOf(real),
+    );
+  });
+
+  test('the SECOND prompt of a session outranks the reply to the first', () => {
+    // The end-to-end shape of the same defect, stated in wall-clock terms: the
+    // sandbox answered 70s ago, well inside the 2-minute backdate. Without the
+    // lift the mint lands ~50s BELOW that reply and the turn never runs.
+    const answeredAt = Date.now() - 70_000;
+    useSyncStore.setState({
+      messages: {
+        'sess-inbox-recent': [
+          { id: wireMessageId(answeredAt - 2_000), role: 'user' } as never,
+          { id: wireMessageId(answeredAt), role: 'assistant' } as never,
+          {
+            id: `msg_${((BigInt(Date.now()) * 0x1000n).toString(16).padStart(12, '0')).slice(0, 12)}OPTIMISTICxxxx`,
+            role: 'user',
+          } as never,
+        ],
+      },
+    });
+    expect(encodedOf(mintSessionWireMessageId('sess-inbox-recent'))).toBeGreaterThan(
+      encodedOf(wireMessageId(answeredAt)),
+    );
   });
 });

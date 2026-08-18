@@ -66,6 +66,58 @@ export function groupWorkspacesByAccount({
 }
 
 /**
+ * The account the switcher is currently scoped to — what "Account settings"
+ * in this menu opens.
+ *
+ * Resolution order, most specific first:
+ *
+ * 1. the account owning the workspace you have open. A user in two accounts
+ *    reads the menu as "settings for where I am", and the open workspace is
+ *    the only unambiguous statement of that;
+ * 2. `selectedAccountId`, for a mount with no workspace in the URL. It is
+ *    persisted (`stores/current-account-store`) so it is present on the first
+ *    paint of a returning visit, before any query resolves;
+ * 3. the first account, matching the seed `useEnsureSelectedAccount` writes.
+ *
+ * `null` only while the user's accounts are genuinely unknown. Callers MUST
+ * treat that as "render no link" rather than building `/accounts/null`.
+ */
+export function resolveSwitcherAccountId({
+  accounts,
+  workspaces,
+  activeWorkspaceId,
+  selectedAccountId,
+}: GroupWorkspacesInput & { selectedAccountId: string | null }): string | null {
+  const activeWorkspace = activeWorkspaceId
+    ? workspaces.find((workspace) => workspace.project_id === activeWorkspaceId)
+    : undefined;
+  return activeWorkspace?.account_id ?? selectedAccountId ?? accounts[0]?.account_id ?? null;
+}
+
+export type WorkspaceRowNavigation =
+  { kind: 'switch'; href: string } | { kind: 'account-settings'; href: string };
+
+/**
+ * Where clicking a workspace row goes.
+ *
+ * The row you are already in cannot switch anywhere: `switchProject` returned
+ * early on it, so the click spent the menu and did nothing. It is also the one
+ * row in the product that unambiguously names an account you are a member of,
+ * so it now opens that account's settings — the same destination as the
+ * "Account settings" row at the top of this menu. Every other row keeps the
+ * switch it always had.
+ */
+export function resolveWorkspaceRowNavigation(
+  workspace: Pick<KortixProject, 'project_id' | 'account_id'>,
+  activeWorkspaceId: string | null | undefined,
+): WorkspaceRowNavigation {
+  if (activeWorkspaceId && workspace.project_id === activeWorkspaceId) {
+    return { kind: 'account-settings', href: `/accounts/${workspace.account_id}` };
+  }
+  return { kind: 'switch', href: `/projects/${workspace.project_id}` };
+}
+
+/**
  * Filter grouped workspaces by a free-text query.
  *
  * NEVER caps the result. The old switcher sliced to 8 because `/projects` was

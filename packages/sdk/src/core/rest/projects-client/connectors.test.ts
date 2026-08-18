@@ -681,13 +681,15 @@ test('setConnectorCredential PUTs { value }', async () => {
 
 test('setConnectorCredential PUTs a native OAuth2 client-credentials configuration', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  const oauth2 = {
+  const oauth2: import('./connectors').OAuth2ClientCredentials = {
     type: 'oauth2_client_credentials' as const,
     token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
     client_id: 'client-id',
     token_endpoint_auth_method: 'client_secret_post' as const,
     client_secret: 'client-secret',
     scopes: ['https://graph.microsoft.com/.default'],
+    resource: 'https://resource.example.com',
+    token_params: { tenant_hint: 'tenant-123' },
   };
   await setConnectorCredential('P1', 'sharepoint', { oauth2 });
   expect(last().url).toContain('/connectors/projects/P1/connectors/sharepoint/credential');

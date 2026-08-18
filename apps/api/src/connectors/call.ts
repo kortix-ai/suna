@@ -583,15 +583,15 @@ function buildGraphqlRequest(opts: {
   return { url, method: 'POST', headers, body: JSON.stringify({ query }) };
 }
 
-/** Build a JSON-RPC `tools/call` request for an MCP (http transport) connector. */
-function buildMcpRequest(opts: {
+/** Build one JSON-RPC request for an MCP streamable-HTTP connector. */
+function buildMcpJsonRpcRequest(opts: {
   url: string;
   auth?: ConnectorAuth;
   /** Connector-level static headers (kortix.yaml `headers:`). */
   headers?: Record<string, string> | null;
   secret?: string | null;
-  toolName: string;
-  args?: Record<string, unknown>;
+  method: string;
+  params: Record<string, unknown>;
 }): BuiltRequest {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -607,10 +607,29 @@ function buildMcpRequest(opts: {
   const body = JSON.stringify({
     jsonrpc: '2.0',
     id: 1,
+    method: opts.method,
+    params: opts.params,
+  });
+  return { url, method: 'POST', headers, body };
+}
+
+/** Build a JSON-RPC `tools/call` request for an MCP (http transport) connector. */
+function buildMcpRequest(opts: {
+  url: string;
+  auth?: ConnectorAuth;
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  toolName: string;
+  args?: Record<string, unknown>;
+}): BuiltRequest {
+  return buildMcpJsonRpcRequest({
+    url: opts.url,
+    auth: opts.auth,
+    headers: opts.headers,
+    secret: opts.secret,
     method: 'tools/call',
     params: { name: opts.toolName, arguments: opts.args ?? {} },
   });
-  return { url, method: 'POST', headers, body };
 }
 
 export type FetchImpl = (
@@ -668,6 +687,89 @@ async function performRequest(
   });
   const text = await res.text();
   return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
+}
+
+function redactExactValue(value: string, secret: string | null | undefined): string {
+  if (!secret) return value;
+  const formEncoded = new URLSearchParams({ value: secret }).toString().slice('value='.length);
+  const representations = new Set([
+    secret,
+    encodeURIComponent(secret),
+    formEncoded,
+    Buffer.from(secret).toString('base64'),
+  ]);
+  let redacted = value;
+  for (const representation of representations) {
+    if (representation) redacted = redacted.split(representation).join('[REDACTED]');
+  }
+  return redacted;
+}
+
+function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
+  if (!data || typeof data !== 'object' || !('error' in data)) return null;
+  const error = (data as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return 'unknown error';
+  const record = error as { code?: unknown; message?: unknown };
+  const code =
+    typeof record.code === 'number' || typeof record.code === 'string'
+      ? String(record.code)
+      : 'unknown';
+  const message =
+    typeof record.message === 'string'
+      ? redactExactValue(
+          record.message
+            .replace(/[\r\n\t\0-\x1f\x7f]/g, ' ')
+            .trim()
+            .slice(0, 512),
+          secret,
+        )
+      : 'unknown error';
+  return `${code} ${message}`;
+}
+
+/** List an MCP connector's tools through the same auth path used for tool calls. */
+export async function listMcpTools(opts: {
+  url: string;
+  auth?: ConnectorAuth;
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  now?: () => Date;
+  fetchImpl: FetchImpl;
+}): Promise<any[]> {
+  const auth = opts.auth ?? NO_AUTH;
+  let result: ExecResult;
+  try {
+    result = await performRequest(
+      buildMcpJsonRpcRequest({
+        url: opts.url,
+        auth,
+        headers: opts.headers,
+        secret: opts.secret,
+        method: 'tools/list',
+        params: {},
+      }),
+      opts.fetchImpl,
+      auth,
+      opts.secret ?? null,
+      opts.now ?? (() => new Date()),
+    );
+  } catch {
+    // Fetch implementations commonly include the full URL in thrown errors.
+    // Query-auth credentials are part of that URL, so never persist or return
+    // the raw transport exception from catalog discovery.
+    throw new Error('MCP tools/list failed: transport error');
+  }
+  if (!result.ok) throw new Error(`MCP tools/list failed: HTTP ${result.status}`);
+  const rpcError = mcpJsonRpcError(result.data, opts.secret);
+  if (rpcError) throw new Error(`MCP tools/list failed: JSON-RPC ${rpcError}`);
+  const tools =
+    result.data && typeof result.data === 'object'
+      ? (result.data as { result?: { tools?: unknown } }).result?.tools
+      : null;
+  if (!Array.isArray(tools)) {
+    throw new Error('MCP tools/list failed: response has no result.tools array');
+  }
+  return tools;
 }
 
 /**

@@ -6,7 +6,10 @@
  * separate sandbox-turn-lifecycle.ts module owns durable active-turn renewal.
  *
  *   extendSandboxDeadline  — a CONTROL-PLANE-OBSERVED event. Monotone and
- *                            capped: LEAST(active_since + CAP, GREATEST(...)).
+ *                            capped: GREATEST(deadline_at, LEAST(active_since +
+ *                            CAP, now() + grant)). In that order: the cap bounds
+ *                            what this grant may ADD, never what another writer
+ *                            already granted (see cappedDeadline).
  *   shortenSandboxDeadline — a SANDBOX-REPORTED terminal turn end. LEAST only,
  *                            so it is structurally incapable of extending, which
  *                            is why the payload's provenance does not matter and
@@ -36,6 +39,7 @@ import {
   isWarmPoolBox,
   turnGrantMs,
   turnDeliveryGraceMs,
+  turnUnconfirmedDripMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 
@@ -53,6 +57,7 @@ export {
   previewGrantMs,
   turnGrantMs,
   turnDeliveryGraceMs,
+  turnUnconfirmedDripMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
 
@@ -67,15 +72,46 @@ function targetPredicate(t: DeadlineTarget) {
 const secs = (ms: number) => Math.round(ms / 1000);
 
 /**
+ * The bounded deadline every non-turn grant writes: monotone (GREATEST against
+ * the stored deadline, so nothing this statement does can ever SHORTEN a box's
+ * life) and capped within one provider run (LEAST against the immutable
+ * anchor, so what it GRANTS can never outlive that cap). One definition,
+ * because two copies of this expression is exactly how a grant loses its cap.
+ *
+ * THE NESTING ORDER IS THE WHOLE SAFETY ARGUMENT, and it was wrong once. With
+ * the cap on the OUTSIDE — LEAST(anchor + 24h, GREATEST(deadline, now+grant)) —
+ * every extend truncated the deadline of any box whose provider run had already
+ * passed `active_since + 24h`. Such boxes are legal and routine: active-turn
+ * renewal is deliberately uncapped (sandbox-turn-lifecycle.ts) and migration
+ * 20260817150000000 dropped the `session_sandboxes_deadline_within_cap` CHECK
+ * precisely so an OBSERVED turn may outlive the anchor cap. So a 30h-old box
+ * holding a turn renewed to `now + 4h` had its deadline rewritten ~6h into the
+ * PAST by the very next observation, and the following reaper pass cleared the
+ * record and parked it MID-TURN.
+ *
+ * GREATEST on the outside keeps both properties and removes the contraction:
+ * the result is never below `s.deadline_at`, and the only value this statement
+ * can introduce is bounded by the anchor cap. A non-turn observation still
+ * cannot push a box past 24h of its run; it simply cannot pull one back either.
+ * Contraction has exactly one owner — `shortenSandboxDeadline`, which is
+ * LEAST-only and structurally unable to extend.
+ */
+function cappedDeadline(grantMs: number) {
+  return sql`GREATEST(
+             s.deadline_at,
+             LEAST(
+               s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
+               now() + make_interval(secs => ${secs(grantMs)})))`;
+}
+
+/**
  * The non-turn extend statement. It is monotone and capped within one provider
  * run. Active-turn renewal uses a separate exact-token statement.
  */
 function extendStatement(target: DeadlineTarget, grantMs: number) {
   return sql`
     UPDATE kortix.session_sandboxes s
-       SET deadline_at = LEAST(
-             s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
-             GREATEST(s.deadline_at, now() + make_interval(secs => ${secs(grantMs)}))),
+       SET deadline_at = ${cappedDeadline(grantMs)},
            updated_at = now()
      WHERE ${targetPredicate(target)} AND s.status IN ('active', 'provisioning')
     RETURNING true AS extended`;
@@ -100,6 +136,68 @@ export async function extendSandboxDeadline(
   grantMs: number = turnGrantMs(),
 ): Promise<void> {
   await db.execute(extendStatement(target, grantMs));
+}
+
+/**
+ * The BOUNDED DRIP for a provider-running box whose daemon says nothing about a
+ * turn the control plane can prove it minted.
+ *
+ * This is a control-plane observation, not a sandbox-reported one, and it
+ * satisfies the invariant at the top of this file: the box authors no part of
+ * it. The provider — not the box — reports the VM running, and the turn record
+ * it is measured against was written by the API before any prompt left it. The
+ * sandbox cannot create a record, choose its token, or refuse the probe into
+ * being drip-fed: the caller (reaping/box-reaper.ts) grants this only while
+ * that record is fresher than the turn grant, so a box that stays mute simply
+ * ages out of the drip.
+ *
+ * `deadlineGrant` is stamped because the incident that produced this function
+ * was diagnosed from that key, and it read `boot_floor` for a box nothing was
+ * keeping alive. A drip-fed box now says so in its own row.
+ *
+ * NOT `cappedDeadline`, and that is deliberate. `active_since` is the immutable
+ * anchor of the current provider run, so on a box running longer than
+ * NON_TURN_DEADLINE_CAP_MS the capped expression's inner LEAST is already in
+ * the PAST and GREATEST returns `deadline_at` untouched: the drip did nothing
+ * at all for exactly the long-running mid-turn boxes it exists to save, while
+ * still RETURNING a row and stamping `deadlineGrant`, so the row and the log
+ * both claimed a box was being kept alive whose deadline never moved.
+ *
+ * The anchor cap bounds NON-TURN observations. This box holds turn authority
+ * the control plane minted, and `renewActiveSandboxTurn` — the same evidence
+ * class, only stronger — is uncapped for that reason. What bounds THIS grant is
+ * the caller's freshness gate (reaping/box-reaper.ts): a `delivering` record
+ * stops earning horizons at its delivery grace, an accepted one at the turn
+ * grant, and a daemon that answers nothing at all never earns one.
+ */
+export async function extendUnconfirmedTurnDeadline(
+  sandboxId: string,
+  grantMs: number = turnUnconfirmedDripMs(),
+): Promise<boolean> {
+  try {
+    const result = await db.execute(sql`
+      UPDATE kortix.session_sandboxes s
+         SET deadline_at = GREATEST(
+               s.deadline_at,
+               now() + make_interval(secs => ${secs(grantMs)})),
+             metadata = coalesce(s.metadata, '{}'::jsonb)
+               || jsonb_build_object('deadlineGrant', 'turn_unconfirmed'),
+             updated_at = now()
+       WHERE s.sandbox_id = ${sandboxId}::uuid AND s.status = 'active'
+      RETURNING true AS extended`);
+    const rows = Array.isArray(result)
+      ? result
+      : (result as { rows?: unknown[] } | null | undefined)?.rows;
+    return Array.isArray(rows) && rows.length > 0;
+  } catch (err) {
+    // The pass must survive a failed drip: losing it costs this box one horizon
+    // of life, never the sweep that stops every other expired box.
+    console.warn(
+      `[deadline] turn_unconfirmed drip failed for ${sandboxId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
 }
 
 /**

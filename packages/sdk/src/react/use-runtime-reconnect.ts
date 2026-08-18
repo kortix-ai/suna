@@ -2,7 +2,12 @@
 
 import { useEffect, useRef } from 'react';
 import { getSupabaseAccessToken } from '../core/http/auth';
-import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../core/session';
+import {
+  getSessionHealth,
+  isRuntimeReady,
+  type ProxyHop,
+  type SessionHealthResponse,
+} from '../core/session';
 import {
   incrementSandboxFail,
   markInitialCheckDone,
@@ -66,6 +71,50 @@ export function shouldIgnoreProbeFailure(
   return now - lastRuntimeEvidenceAt < RUNTIME_EVIDENCE_FRESH_MS;
 }
 
+/**
+ * Whether a failed probe is evidence that the RUNTIME is unreachable, and may
+ * therefore move this session toward "unreachable".
+ *
+ * TWO independent facts can clear a failure, and they cover disjoint failures.
+ *
+ * 1. WHICH HOP the proxy blamed (`X-Kortix-Proxy-Hop`). Two of the four say
+ *    nothing about the runtime:
+ *
+ *      - `control_plane` — the platform answered from the session row without
+ *        ever dialling the box (`503 sandbox not ready (status: stopped)`). An
+ *        answer is not silence; counting it drove a session to "unreachable"
+ *        while `/start` was still resuming it.
+ *      - `upstream_port` — the user's own dev server on an app port is down.
+ *        That is their process, not our runtime, and it must never render
+ *        "Waking".
+ *
+ * 2. WHETHER SSE FRAMES ARE STILL ARRIVING. The hop cannot answer this and
+ *    never will: the health probe addresses the daemon port, so every failure
+ *    it can observe is `daemon` (the proxy reached the box, the runtime did
+ *    not answer), `provider_ingress`, or — for a `CHECK_TIMEOUT` abort — no hop
+ *    at all. All three count. On a box saturated by a heavy turn that is the
+ *    2026-08-17 incident verbatim: two missed probes flip `sandboxStatus` to
+ *    `unreachable`, `useOpenCodeEventStream` (gated on `=== 'connected'`) tears
+ *    the live stream down, and the transcript freezes mid-turn on a runtime
+ *    that is provably up — it is delivering the frames. A frame is a fact from
+ *    the runtime itself, not an inference, and it outranks a probe that timed
+ *    out behind it.
+ *
+ * An UNATTRIBUTED failure with no fresh frames still counts. A network error,
+ * a `CHECK_TIMEOUT` abort, or a response from something that is not our proxy
+ * carries no hop, and refusing to count those would leave a browser that lost
+ * its connection reading "connected" forever — the poller's only job.
+ */
+export function shouldCountProbeFailure(input: {
+  hop: ProxyHop | null;
+  lastRuntimeEvidenceAt: number | null;
+  nowMs: number;
+}): boolean {
+  if (input.hop === 'control_plane' || input.hop === 'upstream_port') return false;
+  if (shouldIgnoreProbeFailure(input.lastRuntimeEvidenceAt, input.nowMs)) return false;
+  return true;
+}
+
 /** Statuses whose HTTP response itself signals "nothing is home" — no threshold needed. */
 export function isImmediateOfflineStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;
@@ -92,7 +141,13 @@ export function isImmediateOfflineSignal(status: number, body: string): boolean 
 export type ProbeOutcome =
   | { kind: 'auth-error' }
   | { kind: 'booting'; health: SessionHealthResponse | null }
-  | { kind: 'failure'; immediateOffline: boolean }
+  | {
+      kind: 'failure';
+      immediateOffline: boolean;
+      /** Which proxy hop produced it — see `shouldCountProbeFailure`. */
+      hop: ProxyHop | null;
+      upstreamStatus: number | null;
+    }
   | { kind: 'healthy'; health: SessionHealthResponse | null };
 
 export interface ProbeResultLike {
@@ -100,6 +155,15 @@ export interface ProbeResultLike {
   ok: boolean;
   health: SessionHealthResponse | null;
   body: string;
+  /**
+   * OPTIONAL, and it has to stay that way. This interface is published on
+   * `@kortix/sdk/react` and appears only in INPUT position — constructing one
+   * is the only way an external caller reaches `classifyProbeResult`. The two
+   * fields below landed after 0.12.8, so requiring them would break every such
+   * caller at compile time for a value the SDK's own probe always supplies.
+   */
+  hop?: ProxyHop | null;
+  upstreamStatus?: number | null;
 }
 
 export function classifyProbeResult(result: ProbeResultLike): ProbeOutcome {
@@ -119,7 +183,12 @@ export function classifyProbeResult(result: ProbeResultLike): ProbeOutcome {
   }
 
   if (!result.ok) {
-    return { kind: 'failure', immediateOffline: isImmediateOfflineSignal(result.status, result.body) };
+    return {
+      kind: 'failure',
+      immediateOffline: isImmediateOfflineSignal(result.status, result.body),
+      hop: result.hop ?? null,
+      upstreamStatus: result.upstreamStatus ?? null,
+    };
   }
 
   return { kind: 'healthy', health: result.health };
@@ -201,17 +270,36 @@ export function useRuntimeReconnect() {
     async function check() {
       if (!alive) return;
 
-      const url = useServerStore.getState().getActiveServerUrl();
-      if (!url) {
-        scheduleNext();
-        return;
-      }
+      let url: string | null;
+      let token: string | null;
+      try {
+        url = useServerStore.getState().getActiveServerUrl();
+        if (!url) {
+          scheduleNext();
+          return;
+        }
 
-      // Don't fire health checks until auth is ready — avoids naked requests
-      // that return synthetic 401s and cause false "unreachable" status.
-      const token = await getSupabaseAccessToken();
-      if (!token) {
-        scheduleNext();
+        // Don't fire health checks until auth is ready — avoids naked requests
+        // that return synthetic 401s and cause false "unreachable" status.
+        token = await getSupabaseAccessToken();
+        if (!token) {
+          scheduleNext();
+          return;
+        }
+      } catch {
+        // `getActiveServerUrl()` and `getSupabaseAccessToken()` are host
+        // config/auth lookups, not network calls guarded by the `try` below
+        // — a throw here (e.g. `createClient()`'s "Missing Supabase browser
+        // environment variables" during an env hydration race) used to
+        // escape `check()` uncaught. `check()` runs detached (fire-and-forget
+        // from the effect, and from this same `setTimeout` callback), so an
+        // uncaught rejection silently ended the poll loop: `scheduleNext()`
+        // never ran again, `healthy` stayed whatever it last was, and
+        // "Waking this session up…" (gated on `runtimeReady`, which reads
+        // this store) stayed up forever — recoverable only by a hard reload
+        // remounting this effect. Retry next tick exactly like the `!token`
+        // early-return above, instead of dying.
+        if (alive) scheduleNext();
         return;
       }
 
@@ -221,6 +309,9 @@ export function useRuntimeReconnect() {
 
       let immediateOffline = false;
       let failed = false;
+      // Which hop the proxy blamed, when it blamed one. Stays null for a thrown
+      // probe — there is no response to read it from.
+      let hop: ProxyHop | null = null;
 
       try {
         const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT);
@@ -252,6 +343,7 @@ export function useRuntimeReconnect() {
           case 'failure': {
             failed = true;
             immediateOffline = outcome.immediateOffline;
+            hop = outcome.hop;
             break;
           }
           case 'healthy': {
@@ -275,18 +367,20 @@ export function useRuntimeReconnect() {
         if (!alive) return;
         failed = true;
         immediateOffline = false;
+        hop = null;
       } finally {
-        // Live SSE events for the active runtime veto probe failures — even an
-        // "immediate offline" HTTP status, which on a loaded box can be one
-        // proxy hop timing out while the event stream keeps delivering. The
-        // probe simply retries; if the stream really is dead, the evidence
-        // goes stale within RUNTIME_EVIDENCE_FRESH_MS and failures count again.
+        // A failure the proxy attributed to a hop that is not the runtime (our
+        // own control-plane answer, or the user's app port), or one raised
+        // while live SSE frames are still arriving, is discarded here rather
+        // than in `computeFailureStatus` — so it moves neither the counter nor
+        // the status, an "immediate offline" 502/503 included.
         if (
           failed &&
-          shouldIgnoreProbeFailure(
-            useSandboxConnectionStore.getState().lastRuntimeEvidenceAt,
-            Date.now(),
-          )
+          !shouldCountProbeFailure({
+            hop,
+            lastRuntimeEvidenceAt: useSandboxConnectionStore.getState().lastRuntimeEvidenceAt,
+            nowMs: Date.now(),
+          })
         ) {
           failed = false;
         }

@@ -12,6 +12,517 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-18 — session `server-truth-m1` — step 10: the proxy names the hop that failed — DONE
+
+**Files:** `core/session/health.ts` (+`core/session/session.test.ts`),
+`react/use-runtime-reconnect.ts` (+`.test.ts`),
+`browser/stores/sandbox-connection-store.ts`,
+`react/use-opencode-events/index.ts`, both surface snapshots. The API half (a
+new `apps/api/src/sandbox-proxy/proxy-hop.ts`, the three
+`portUnreachableResponse` call sites, and `middleware/cors.ts`) and the
+`apps/web` half (the composer's waking notice) are outside this package.
+
+**What.** A failed health probe used to arrive as a bare 502/503 with no way to
+tell four very different failures apart. The sandbox proxy now stamps
+`X-Kortix-Proxy-Hop` (`control_plane` | `provider_ingress` | `daemon` |
+`upstream_port`) and `X-Kortix-Upstream-Status` on every unreachable response,
+CORS-exposed so a cross-origin browser probe can actually read them.
+
+`SessionHealthResult` gains `hop: ProxyHop | null` and `upstreamStatus: number |
+null`, read from the headers with the JSON body as fallback (a deployment whose
+CORS config predates this would otherwise yield a silent `null`). The type is
+published on root `.`; the two fields are ADDITIVE on a value this package
+returns and never asks a caller to construct. `ProbeResultLike` is published on
+`./react` and appears only in INPUT position, so its two new fields are
+OPTIONAL — requiring them would break every external `classifyProbeResult`
+caller at compile time.
+
+`shouldCountProbeFailure({ hop, lastRuntimeEvidenceAt, nowMs })` is the one gate
+on the failure counter. `control_plane` and `upstream_port` never move it — the
+first is our own answer, the second is the user's dev server. `provider_ingress`,
+`daemon`, and an UNATTRIBUTED failure (`null`: network error, `CHECK_TIMEOUT`
+abort, a response from something that is not our proxy) all count. Refusing to
+count `null` would leave a browser that lost its network reading "connected"
+forever, which is a deliberate departure from the spec's literal "only
+`provider_ingress` | `daemon`".
+
+**The SSE-evidence veto STAYS.** Spec §10.1 asks for its deletion; that is
+refused, and the refusal is the second deliberate deviation. The health probe
+addresses the daemon port (`${backend}/p/<external_id>/8000/kortix/health`), so
+EVERY failure it can observe is `daemon`, `provider_ingress`, or hop-less — the
+hop can never clear the case the veto exists for. That case is the 2026-08-17
+incident: a box saturated by a heavy turn streams frames fine and misses the 20s
+probe deadline, two misses flip `sandboxStatus` to `unreachable`,
+`useOpenCodeEventStream` (gated on `=== 'connected'`) tears the live stream down,
+and the transcript freezes mid-turn on a runtime that is provably up. So
+`RUNTIME_EVIDENCE_FRESH_MS`, `shouldIgnoreProbeFailure`, `noteRuntimeEvidence`
+and `lastRuntimeEvidenceAt` all remain, now composed INTO
+`shouldCountProbeFailure` so the interaction of the two facts is asserted in one
+pure function instead of assumed across two.
+
+**Review fix — `WorkingProjection.serverOpenTurnId` → `serverOpenTurnToken`.**
+The field was `turns[0].message_id`, and `message_id` is the WIRE id of the
+prompt that opened the turn. `postPrompt` sends none for triggers,
+Slack/Teams/Telegram, approval-resume or email, and `buildSessionCommandInput`
+sends none for any `/` command — so `GET .../turn` answers `message_id: null`
+(`r8.ts`, `z.string().nullable()`) for that whole class of LIVE turns. Every
+"does the control plane hold authority" reader therefore answered NO for them:
+`apps/web`'s new `serverHoldsOpenTurn` (the waking notice painted over a running
+`/compact`) and the pre-existing `commandBlockedByRetry` gate, which was
+permanently open for exactly the producer it guards. Now `turns[0].turn_token`,
+which the control plane mints for every turn and never leaves null. `turnId`
+still carries `message_id` and is still honestly nullable. Unpublished field,
+renamed rather than duplicated so the wrong one cannot be picked again; the
+snapshots record names only, so they are unchanged. Web callers updated in the
+same commit.
+
+**Review fix — suppressing the waking notice may not go silent.** The comment
+claiming `serverOpenTurn*` "cannot latch — a dead box's turn is husk-finalized"
+is false for a wedged daemon on a box the provider still reports RUNNING:
+`finalizeHuskTurn` returns unreadable, and `box-reaper`'s `observation ===
+'unknown'` branch clears the record only once `row.deadlineAt <= now` — an
+accepted turn's deadline being `turnGrantMs()`, 240 minutes by default. So
+`GET .../turn` reports the turn for up to ~4h while every probe fails.
+`sessionComposerReadiness` gains `runtimeUnreachable` (the connection store's
+`status === 'unreachable'`, which `!runtimeReady` does not say) and renders a
+distinct line for that state instead of nothing.
+
+**Gates.** `bun test --isolate src` 2210 pass / 0 fail; `tsc --noEmit` +
+examples clean. Snapshot diff is 3 additions (`ProxyHop`, `parseProxyHop`,
+`shouldCountProbeFailure`) and nothing else — no deletions.
+
+---
+
+### 2026-08-18 — session `server-truth-m1` — step 9: `@kortix/sdk/message-queue` frozen at its published surface, `send-queue` deleted — DONE
+
+**Files:** `core/session/message-queue.ts` (+`.test.ts`), DELETED
+`core/session/send-queue.ts` (+`.test.ts`), both surface snapshots. The
+`apps/web` half of this commit (the localStorage queue store, its drain hook,
+the eleven-field boundary gate set, and the one-time localStorage→inbox
+migration) is outside this package.
+
+**What.** The browser message queue is gone: prompts are durable server rows
+(`POST .../prompts`, step 7) and one projection answers "is this session
+working?" (step 8), so the two SDK modules that existed to serve a client-side
+queue have no host left.
+
+`core/session/send-queue.ts` is DELETED. It was emitted into the 0.12.8 dist but
+is reachable from no entry point — no `exports` subpath names it, and
+`core/session/index.d.ts` does not re-export it — so nothing on npm could ever
+import it.
+
+`core/session/message-queue.ts` CANNOT be deleted: `./message-queue` IS a
+published `exports` subpath on 0.12.8, so an external consumer's import must
+keep resolving. It becomes a `@deprecated` shim frozen at exactly the eleven
+names 0.12.8 published, with a banner naming the replacement. Two exports are
+removed rather than deprecated because they were added AFTER 0.12.8 and are
+absent from the published `.d.ts` — verified by `npm pack @kortix/sdk@0.12.8`:
+
+  - `claimBatch` — the batch drain's claim. No host batches any more; the server
+    delivers one row at a time in `created_at` order.
+  - `inFlightIdsOf` — the batch lock's reader, now the module-private `inFlight`.
+    Every transition still writes `inFlightIds`, and every read still tolerates a
+    state persisted before that field existed, so a rehydrated legacy queue with
+    several ids in flight is still refused edit/remove/reorder.
+
+Both snapshots re-recorded: the diff is 2 deletions under `./message-queue` and
+nothing else. `package.json` `exports`, `publishConfig.exports`, and
+`SUBPATH_TIERS` are untouched — the subpath must keep resolving, which is the
+whole point.
+
+`message-queue.test.ts` is TRIMMED, not deleted: a deprecated published export
+still has a contract. Its `claimBatch` cases are rewritten against `claimNext`,
+and two new cases pin the shim itself — the export set is exactly the 0.12.8
+list (so nothing can be added back), and the file header actually carries the
+`@deprecated` banner and names `/prompts`.
+
+**Gates.** `bun test --isolate src` 2193 pass / 0 fail; `tsc --noEmit` + examples
+clean; `smoke:install` packs and imports the tarballs OK.
+
+**Amendment (same commit).** `CreateSessionPromptInput` gains one optional
+field, `remintOnDelivery`, sent as `remint_on_delivery`. A caller that minted
+its wire message id where the live transcript was NOT readable says so, and the
+control plane re-mints against the live root before delivering. Only one caller
+sets it: the localStorage→inbox migration, which mints at page load, for a
+message the user typed before their last reload. Without it that id can sort
+below the transcript, and OpenCode reads such a prompt as already answered —
+the row is marked succeeded, drops out of `GET /prompts`, and never runs. The
+field is ADDITIVE and optional, so both surface snapshots are unchanged (they
+record exported names, not their members) and no published signature moves.
+Re-gated: `bun test --isolate src` 2194 pass / 0 fail; `tsc --noEmit` +
+examples clean.
+
+---
+
+### 2026-08-18 — session `server-truth-m1` — step 8: one working projection, and the demolition of the guessing machines — DONE
+
+**Files:** NEW `packages/sdk/src/core/session/working.ts` (+`.test.ts`), NEW
+`packages/sdk/src/react/use-session-working.ts` (+`.test.ts`),
+`core/session/index.ts`, `react/opencode.ts`, `react/query-keys.ts`,
+`core/session-sync/session-sync-controller.ts` (+`.test.ts`),
+`browser/session-sync/session-sync-registry.ts` (+`.test.ts`),
+`react/use-session-sync.ts`, `react/use-session.ts` (+`.test.ts`),
+`react/use-opencode-events/{index,use-event-stream-refs}.ts` (+`.test.ts`), NEW
+`browser/stores/session-working-store.ts` (+`.test.ts`), NEW
+`react/use-session-sync.test.ts`, `react/use-session-prompts.ts` (+`.test.ts`),
+both surface snapshots. `apps/web` work in the same commit is outside this
+package.
+
+**What.** "Is this session working?" had FOUR answers and they disagreed: a
+prompt-observation phase machine in the sync controller (stall timer, retry
+budget, epoch counter, settlement window), a busy override in `useSessionSync`
+that rewrote an idle runtime status to busy, a `pendingSendInFlight` boolean in
+`apps/web` with a 30s safety timer, and a 5s polling grace beside it. Every one
+of them inferred work from silence, and every one could latch — which is the
+"stuck working forever" report. There is one answer now:
+
+```ts
+projectWorking({ optimistic, inbox, server, stream, nowMs })
+  -> { state, source, turnId, since }
+```
+
+Pure, no timers, no latch, and provenance-tagged: `source` says WHICH
+observation decided. Precedence is stated once — a turn the server is holding
+open outranks every OLDER observation; the session's durable prompt inbox
+outranks a "no turns" read; a server read with no turns outranks a stream frame
+it is newer than; the stream decides otherwise; this tab's send receipt covers
+only the gap before a server source that CAN know about it answers, bounded by
+`OPTIMISTIC_RECEIPT_MAX_MS` (60s).
+
+**Four rules the program did not have, added because the code needs them:**
+
+1. **No observation outranks a FRESHER one, including an open turn.** Rule 1
+   originally had no freshness comparison, so a cached open-turn read beat the
+   SSE idle frame that ended it: the composer held Stop for up to one poll
+   interval after the last token, and `rewind()` threw "Cannot rewind a busy
+   session" on the Edit a user clicked the moment the reply landed. Nothing
+   invalidated the `/turn` query either, so `useSessionWorking` now refetches it
+   on every observed status frame.
+2. **`SERVER_OBSERVATION_MAX_MS` (45s).** react-query hands back the last
+   SUCCESSFUL read while every read after it fails, so the failure shape the
+   hook actually produces is a RETAINED open turn, not `undefined`. Unbounded,
+   one success plus a run of 503s latched `working` for the lifetime of the tab
+   — the reported bug itself. A server observation older than three idle
+   cadences now decides nothing, in either direction.
+3. **`SendReceipt.acceptedAtMs`, and two floors instead of one.** "Issued after
+   the receipt" is not the same as "could see the send": `POST .../prompts`
+   returns 202 long before the row is delivered, so a `/turn` read issued while
+   the POST is on the wire truthfully answers "no turns". The server floor is
+   therefore the ACCEPTANCE instant (infinite until then); the stream floor
+   stays the send instant, because the store stamps a status frame when this tab
+   observed it — a frame stamped after the send is a new transition, and
+   blocking it would leave a slash command's receipt (nothing ever accepts a
+   command) claiming `working` for a minute after its turn ended.
+4. **The inbox is a working signal, not just a list.** Between "durable" and "a
+   turn exists" the box may still be resuming (18.9s Daytona / 24.5s Platinum,
+   measured), and `/turn` answers "no turns" for all of it. Every read of
+   `useSessionPrompts` feeds `countLiveInboxPrompts` into the projection, and
+   `POST .../prompts` returning raises the floor immediately so the gap before
+   the list refetches is covered too. `held` rows are excluded: that is the Stop
+   button's own state.
+
+**The receipt and the inbox reading live in a per-session STORE**
+(`browser/stores/session-working-store.ts`), not in each caller's `useState`.
+`useSession`, the composer, and the session panel all mount `useSessionWorking`
+for the same session and share one `/turn` cache entry; with a receipt each, the
+observer that had none polled on its own timer and wrote an uninformed "no
+turns" read into that shared entry, defeating the receipt the other one held.
+`UseSessionWorkingOptions.optimistic` is removed for the same reason — one set
+of inputs per session is what makes "one answer" true for every mount point.
+
+**Deleted with their features** (none of them published — verified by the
+snapshot diff being purely additive, 0 deletions): `PROMPT_OBSERVATION_STALL_MS`,
+`PROMPT_STALL_MAX_ATTEMPTS`, `PROMPT_IDLE_SETTLEMENT_MS`, `PromptObservationPhase`,
+`SessionSyncSnapshot.isPromptObservedBusy`, `beginPromptObservation`,
+`observePromptStatus`, `observePromptActivity`, `endPromptObservation`,
+`markPromptRunning`, `schedulePromptSettlement`, `armPromptStallTimer`,
+`resolvePromptStall`, `raceStatusDeadline`, `clearPromptObservation`,
+`containsNewPromptReply`, `beginSessionPromptObservation`,
+`endSessionPromptObservation`, `BUSY_STATUS`, `beginRestPromptObservation`,
+`endRestPromptObservation`, `sendRestPromptWithObservation`.
+
+**`setBusy` SURVIVES, deliberately** (the program said delete it). With the
+prompt machine gone it is not an opinion about busy any more — it is the
+liveness-poll switch, and its callers are the host's working signal and the
+registry's last-consumer release. Deleting it left two bad options: poll every
+mounted session's transcript unconditionally (20 controllers × one read per 10s
+for nothing), or rename it and break `apps/mobile`'s only call site. Its doc
+comment now says what it is.
+
+**`use-event-stream-refs.ts` SURVIVES** (the program said delete the file). Only
+`markSessionAbortedLocally` was ever going to move, and its three tests are the
+whole of `use-event-stream-refs.test.ts` — deleting the file would have deleted
+live behaviour's only coverage to save a pure move.
+
+**`reconcileMissingBusySessions` + `markSessionIdleLocally` SURVIVE too**, and
+this is a correction to the first pass, which deleted them as fabricators.
+`client.session.status()` is a REST read of the runtime's COMPLETE set of
+non-idle sessions, so a session's ABSENCE from it is a positive statement, not
+an inference from silence — and it is the only repair the raw `sessionStatus`
+slot has for a terminal frame this tab never saw. Two live surfaces still read
+that slot: the session panel (now repointed at the projection where a Kortix
+session exists) and `SubAgentStatusBanner`'s retry countdown for CHILD sessions,
+which have no Kortix session row at all, so `GET .../turn` can never answer
+about them and the projection cannot cover them. Three tests were added for it.
+
+**`setBusy` is now actually called with the working state**, which the first
+pass claimed and no call site implemented: `useSessionSync` takes a `working`
+option, `livenessBusy()` states the precedence (projection first, stream slot
+only when the caller has no projection — apps/mobile), and `useSession` computes
+the projection BEFORE `useSessionSync` so it can pass it. Without this, a
+dropped busy frame left the transcript liveness poll off through a turn the
+server's own authority said was running.
+
+**Adversarial review pass r2 — 8 majors, all fixed in the same commit, RED
+first.** Every one was a way the ONE projection could still latch or still lie.
+
+1. **Every observation now has a maximum age, not just the server read.**
+   `STREAM_OBSERVATION_MAX_MS` (45s) and `INBOX_OBSERVATION_MAX_MS` (10s). The
+   outage `SERVER_OBSERVATION_MAX_MS` was written for does NOT produce
+   `stream: null` — the SSE stream reaches the tab through the API that serves
+   `/turn`, so when that API drains both stop refreshing and the last `busy`
+   frame stays in the store. Bounding one source moved the latch to the other:
+   `{open turn, busy frame, +10 min}` projected `working / stream` forever. The
+   inbox bound is three cadences of the PROMPT list's own 3s poll, not of
+   `/turn`'s: a reading that a delivered row is pending decays fast, and held
+   for 45s it kept the composer on Stop with the reply already on screen.
+2. **`workingExpiryAtMs`, and a hook timer armed from it.** The bounds were
+   only ever evaluated during a render, and in that exact outage there are no
+   more renders: react-query retains the last successful `data` across every
+   failure and does not notify an observer that reads only `data`. The hook now
+   arms one timer at the earliest input deadline (the old one covered the
+   optimistic receipt alone), so the bound applies whether or not anything else
+   re-renders.
+3. **`AbortReceipt` — the stop's own receipt, the mirror of the send's.**
+   `handleStop`'s optimistic idle FRAME invalidates the `/turn` query, and the
+   read that comes back still shows the turn, because the cancel needs ~1.6s to
+   reach the daemon. Measured: `idle / stream` at T+0, `working / server` at
+   T+120ms — the composer flipped Send back to Stop for the whole abort.
+   `settledAtMs` is the floor, built exactly like `acceptedAtMs`, bounded by
+   `OPTIMISTIC_ABORT_MAX_MS` (15s) so an unanswered cancel cannot pin `idle`
+   over a turn that is really running. `noteSendReceipt` releases it: sending is
+   the user saying they are not stopping.
+4. **`clearSendReceipt(sessionId, messageId?)` is guarded like
+   `acceptSendReceipt`.** It took no id at all, so an older send's failure path
+   deleted a NEWER send's unaccepted receipt — a `/compact` rejected at T+600ms
+   dropped the receipt of a prompt submitted at T+500ms whose POST was still on
+   the wire, and an uninformed read then flipped the composer mid-send. Every
+   caller that has an id now passes it; Stop and unmount deliberately do not.
+5. **`hasRetryingAssistantTurn`** in `core/turns/open-turn.ts` — the narrow half
+   of `hasOpenAssistantTurn`, and the only half that carries proof. `apps/web`'s
+   drain gate on the wide predicate was removed by the first pass, which
+   reverted the fix in `f5abaeac9a`: during a provider 429 OpenCode keeps
+   writing the SAME assistant message while the status frame can read non-busy,
+   and the projection cannot substitute because a frame stamped after the last
+   `/turn` read outranks that read by design. The wide predicate could not be
+   restored — a husk (dead sandbox, no error, no completion) is true forever and
+   wedged the queue, which is what the deleted 10s husk clock existed to escape.
+6. **`WorkingProjection.serverOpenTurnId`** — the raw fact behind rule 1,
+   reported even when something fresher decides the state. It is what lets the
+   host pair (5) with the control plane's own authority, so the gate cannot
+   wedge: a dead box's turn is husk-finalized and the field goes null.
+
+Gates: `bun test --isolate src` 2222 pass / 0 fail / 154 files; `tsc --noEmit`
+(+ examples) clean; `smoke:install` passed. Snapshots re-recorded twice, both
+purely additive: 16 insertions on the first pass, then 10 value / 12 type names
+for the r2 fixes (`AbortReceipt`, `INBOX_OBSERVATION_MAX_MS`,
+`OPTIMISTIC_ABORT_MAX_MS`, `STREAM_OBSERVATION_MAX_MS`, `workingExpiryAtMs`,
+`hasRetryingAssistantTurn`), 0 deletions.
+
+### 2026-08-18 — session `server-truth-m1` — step 7: the server-side prompt inbox (client half) — DONE
+
+**Files:** `packages/sdk/src/core/rest/projects-client/sessions.ts` (+`.test.ts`),
+`packages/sdk/src/core/client/kortix.ts` (`session().prompts` only),
+`packages/sdk/src/react/use-session-prompts.ts` (new),
+`packages/sdk/src/react/opencode.ts`, `packages/sdk/src/react/query-keys.ts`,
+`packages/sdk/src/react/use-opencode-sessions/messages.ts` (+`.test.ts`),
+both public-surface snapshots. API/daemon/web work in the same commit is outside
+this package.
+
+**What.** A user prompt is now a DURABLE SERVER ROW from the instant the composer
+accepts it, not a browser object. Before this the queue lived in `apps/web`'s
+localStorage, so a closed tab, a second device, or a crash lost queued messages
+silently, and two tabs on one session each believed their own list. Four readers
+(`createSessionPrompt` / `listSessionPrompts` / `deleteSessionPrompt` /
+`retrySessionPrompt`), the `kortix.session(p, s).prompts` facade, and one React
+hook (`useSessionPrompts`).
+
+**The client still mints the wire `messageID`, and that is deliberate.** OpenCode
+resolves "has this prompt already been answered?" by ID ORDER, so an id has to be
+placed above everything already in THAT session's transcript — and only a process
+holding the transcript can do it. The control plane mints one exactly once, on
+redelivery, after re-reading the transcript itself
+(`apps/api/src/projects/wire-message-id.ts`). Hosts that do not send through
+`promptOpenCodeMessage` need the same minter, so `submissionWireId` is now
+exported as **`mintSessionWireMessageId`**. `ascendingId('msg')` must never be
+substituted: it encodes the HIGH bits of the id clock, mis-sorts against every
+server id, and the turn silently never runs.
+
+**Two implementations of one ordering contract, held by a shared fixture.**
+`apps/api` has no `@kortix/sdk` dependency and this minter reads the browser sync
+store, so the API has its own. `tests/spec/wire-message-id.vectors.json` is
+asserted by BOTH suites — a divergence fails two, not zero. Verified as a
+positive control: corrupting one vector failed
+`packages/sdk/.../messages.test.ts` and `apps/api/src/projects/wire-message-id.test.ts`
+in the same edit.
+
+**Polling is conditional on purpose.** An empty inbox is the overwhelmingly common
+state; polling it would cost every idle session a request every 3s for nothing.
+`refetchInterval` is a function of the data, so it polls only while prompts
+exist. The delivery receipt arrives out of band — the transcript message IS the
+proof the prompt ran.
+
+Snapshots regenerated with `UPDATE_SURFACE_SNAPSHOT=1` /
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1`; the diff is **purely additive** (0 deletions, 0
+renames): the four readers under `.`/`./react`, the six prompt types,
+`mintSessionWireMessageId`, `useSessionPrompts`, `SESSION_PROMPTS_POLL_MS`,
+`UseSessionPromptsResult`. No published name changed shape.
+
+Gates: `bun test --isolate src` 2156 pass / 0 fail; `tsc --noEmit` (+ examples)
+clean.
+
+**Amended 2026-08-18 — `holdSessionPrompts`, the queue's Stop.** Review found
+that Stop no longer held anything: `handleStop` paused the browser drain, which
+by then held no prompts, while the server's admission gate delivered the queued
+prompt about one scheduler tick after the abort cleared turn authority — the
+exact message the user pressed Stop to get ahead of. A queue that lives on the
+server needs its hold on the server, so the reader set gained
+`holdSessionPrompts(projectId, sessionId, held)` (facade `prompts.hold`, hook
+`hold`), and `retrySessionPrompt`'s doc now says what it actually is: the ONE
+primitive behind both "retry" and "send now", which promotes the row past the
+ordering gate and releases the hold. Snapshot diff again purely additive (one
+name, both entries). Gates: `bun test --isolate src` 2157 pass / 0 fail;
+`tsc --noEmit` clean.
+
+**Amended 2026-08-18 (second review round) — two client-half defects.**
+
+1. *A prompt could not come BACK into an open tab.* `useSessionPrompts` returned
+   `refetchInterval: false` at zero rows, and nothing invalidated the key from
+   SSE. But a prompt can ENTER this list with the tab doing nothing at all: the
+   reaper redelivers one whose turn never ran, and parking a box requeues its
+   in-flight prompt as `held` — a row that is durable, visible, and deliberately
+   not due, which the user releases by SEEING it. Both were invisible until a
+   full page load, as was a prompt queued from a second tab. An empty list now
+   polls at `SESSION_PROMPTS_IDLE_POLL_MS` (15s) and the query opts into focus
+   refetching, which the host disables globally. The cadence is a pure function,
+   `sessionPromptsPollMs`, tested rather than inlined in the hook.
+2. *An undo silently truncated the prompt it restored.* `deleteSessionPrompt`
+   returned `void`, so the host's undo re-POSTed `SessionPrompt.text` — a
+   2000-char server-side PREVIEW carrying no parts at all — dropping every
+   attachment and the agent/model/variant picks under a button that says "Undo".
+   The row is hard-deleted, so the DELETE response is the only place the full
+   body still exists: it now resolves with `RemovedSessionPrompt`
+   (`client_message_id`, `message_id`, `parts`, `overrides`), which is exactly
+   what `createSessionPrompt` takes back.
+
+Snapshot diff again purely additive (`RemovedSessionPrompt`,
+`SESSION_PROMPTS_IDLE_POLL_MS`, `sessionPromptsPollMs`; 0 deletions, 0 renames).
+Gates: `bun test --isolate src` 2160 pass / 0 fail; `tsc --noEmit` (+ examples)
+clean.
+
+**Amended 2026-08-18 (live-browser proof) — the lift never engaged in the real
+app, and every prompt sent inside 2 minutes of a reply was silently lost.**
+
+Found by driving the real UI on the worktree stack, not by a test: prompt B was
+accepted (`POST …/prompts` → `202`), reached OpenCode as a user message, and NO
+assistant message was ever created. Its wire id `msg_01410f1e6000…` sorted ~50s
+BELOW the assistant reply it had to follow (`msg_01411b7b8001…`), so OpenCode
+read the prompt as already answered. Reproduced deterministically a second time
+(prompt D, id `msg_0141715fe000…` vs reply `msg_01417f3c9001…`).
+
+Cause: `newestKnownMessageTime` took a plain max over `useSyncStore` messages,
+and every send inserts an OPTIMISTIC user message whose id comes from
+`ascendingId` — the HIGH hex digits of the id clock (`msg_1a01…`), ~2.8e13 above
+any real id, and still 12-hex-shaped. That optimistic id was always "newest",
+the `MAX_WIRE_ID_CLOCK_CORRECTION` bound then refused it, and the lift was
+therefore dead in every real session. Only the 2-minute backdate remained, so a
+prompt landed below any reply newer than 2 minutes.
+
+Fix: the bound moved INTO the scan — `newestKnownMessageTime(sessionId, ceiling)`
+skips an id it cannot place instead of letting it veto the correction for the
+whole session. A wrapped/garbage id is handled by the same rule, which is what
+the bound was for. No signature on the wire changed and the golden vectors are
+untouched (they carry one id each, so a ceiling filter cannot alter them).
+
+TDD: two tests written RED first — the optimistic-id case failed
+`Expected: > 1384425984000n, Received: 1381476864000n`, and the wall-clock
+restatement (reply 70s ago) failed by the same ~50s — then GREEN. Gates:
+`bun test --isolate src/react/use-opencode-sessions/messages.test.ts` 63 pass /
+0 fail; full SDK suite and typecheck below.
+
+### 2026-08-17 — session `server-truth-m1` — step 2: `getSessionTurn`, the server-truth turn reader — DONE
+
+**Files:** `packages/sdk/src/core/rest/projects-client/sessions.ts` (+`.test.ts`),
+`packages/sdk/src/core/client/kortix.ts` (the `session()` handle only),
+`packages/sdk/src/public-surface.snapshot.json`,
+`packages/sdk/src/public-type-surface.snapshot.json`. API-side work in the same
+commit is outside this package (`apps/api/src/projects/routes/r8.ts`).
+
+**What.** Step 1 landed `kortix.session_turns`, a durable per-turn ledger that
+retains terminal rows. Step 2 exposes the answer it was built for: `GET
+/v1/projects/:projectId/sessions/:sessionId/turn` and a framework-free reader.
+**Exposure only** — no phase-machine change, no drain change, no React hook, no
+`apps/web` consumer.
+
+New public names (permanent): `getSessionTurn`, `SessionTurn`, `SessionTurnEnded`,
+`SessionTurnStatus`, `SessionTurnState`. No new subpath: `src/index.ts` already
+re-exports `./core/rest/projects-client`, whose barrel already re-exports
+`./sessions`, so the three-synchronized-edit rule does not apply here. Facade:
+`kortix.session(p, s).turn()`.
+
+**`turns` is a LIST, and liveness is NOT read from the ledger.** Two properties
+of the server decide the published shape, so they are recorded here:
+
+1. The lifecycle authority (`session_sandboxes.metadata.activeTurns`) is
+   token-keyed and holds N concurrent open turns — a trigger delivery and a web
+   prompt are separate tokens, and `session_turns` has no unique constraint on
+   `session_id`. `turn: SessionTurn | null` would have reported the older of two
+   genuinely running turns as not running, and widening a published field later
+   is a major. So: `turns: SessionTurn[]`, newest start first, empty === idle.
+2. Every ledger write is a best-effort SECOND round trip whose failure the API
+   swallows. A running turn can therefore have NO row (a boot prompt has none
+   until the runtime accepts it, ~19–25s into a session start) and a finished
+   turn can keep an OPEN row for ever. `turns` is answered from the authority
+   and only decorated from the ledger; `last_ended` is history, which only the
+   ledger retains.
+
+`started_at` is therefore `string | null` — null for a legacy authority record
+that carries no start instant. A running turn is still reported; a missing
+timestamp is not a reason to publish "idle".
+
+**Wire keys are snake_case**, matching every other payload on this surface
+(`opencode_session_id`, `change_requests`, `session_id`). A camelCase body would
+have been the only one on the session surface, and these are published type names
+that cannot be renamed later without a major.
+
+`last_ended` is **optional, not nullable** — its absence is the only thing that
+separates "this session has never run a turn" from "the last one just ended".
+`activeTurns` cannot answer that at all: it is erased when a turn ends.
+
+**RED first.** Added five tests to `sessions.test.ts`, ran them, watched all five
+fail on `SyntaxError: Export named 'getSessionTurn' not found in module
+.../sessions.ts` — then implemented. The list shape added a sixth (`carries every
+concurrent turn through`); that file is 51 pass / 0 fail (was 45).
+
+**Gates (real output).**
+- baseline before any edit: `2122 pass, 0 fail`, `Ran 2122 tests across 148 files`
+- `pnpm --filter @kortix/sdk test` → `2128 pass, 0 fail`, `Ran 2128 tests across
+  148 files` (+6, exactly the new tests)
+- `pnpm --filter @kortix/sdk typecheck` → clean. The fixtures are annotated
+  (`const turn: SessionTurn`, `satisfies SessionTurnStatus`) so the annotation is
+  a second assertion. Proven load-bearing: renaming `turns` on the interface
+  makes `tsc` fail with `TS2353 ... 'turns' does not exist in type
+  'SessionTurnStatus'` in four places.
+- `pnpm --filter @kortix/sdk run smoke:install` → `OK: @kortix/sdk and
+  @kortix/executor-sdk import and construct from packed tarballs` / `✔ install
+  smoke test passed`
+- snapshots regenerated with `UPDATE_SURFACE_SNAPSHOT=1` /
+  `UPDATE_TYPE_SURFACE_SNAPSHOT=1`; diff reviewed and **purely additive** — 12
+  insertions, 0 deletions, exactly the five names above under `.`. No removal, no
+  rename. The shape change above touches field names inside those types, which
+  the snapshots do not record; it is pre-release either way, since no consumer
+  reads this endpoint yet.
+
 ### 2026-08-16 — session `session-middle-stop` — T22 (client half, JAY-600): a rewind renders truthfully and the web never prompts across it — DONE
 
 **Files:** `packages/sdk/src/core/session/rewind.ts` (+`.test.ts`),
@@ -10337,3 +10848,155 @@ stream really is dead, evidence goes stale in 15s and failures count again.
 clean. `smoke:install` passed. Surface snapshots re-recorded — additive only
 (`RUNTIME_EVIDENCE_FRESH_MS`, `shouldIgnoreProbeFailure`,
 `noteRuntimeEvidence`).
+
+### 2026-08-17 (same session, follow-up 3) — adversarial audit fixes
+
+An 82-agent adversarial workflow attacked the day's five fixes: 22 raw claims,
+10 survived 3-lens verification with executed-test proofs. All confirmed
+defects fixed:
+
+1. **Blind stall expiry (critical class).** The 10s override expiry could
+   unmask a LIVE turn (no SSE frame for 10s + a stale idle in the store) and —
+   by flipping isBusy false — stop the liveness polling that was its own
+   justification (`checkLiveness`'s guard makes the first poll land at 2×
+   interval, never within the stall window). Expiry is now authoritative:
+   `resolvePromptStall` polls `/session/status` first; busy keeps the override
+   and re-arms; idle settles through the settlement window; unreachable
+   releases. 3 new controller tests.
+2. **Husk dispatch into a live turn.** `stepDrainMachine`/`planDrainTick` now
+   flag a husk-released dispatch (`viaHusk`), and the drain hook confirms
+   idleness via new `loadSessionRuntimeStatus` (SDK react export; registry +
+   3 tests) before sending — a busy answer heals the store instead.
+3. **`gates.runtimeReady` missing from the drain effect deps** — a message
+   queued against a sleeping sandbox never sent on wake. Added.
+4. **Retry was a silent no-op** — the wake selector summed pending+failed,
+   invariant under retry. Split into two lane selectors; pause-lift now keys
+   on pending-lane growth (enqueue AND retry lift it).
+5. **Failed-lane preservation reverted** (`git revert b66158a311`): proven
+   double-preservation (the composer already restores text+files on a failed
+   await), an unimplemented dedupe promise, and no agent/model capture. The
+   composer restore is the single mechanism; the refresh-mid-flight hole is a
+   documented residual.
+
+**Evidence** — `pnpm --filter @kortix/sdk test`: 2115 pass, 0 fail, 148 files.
+`typecheck` clean. `smoke:install` passed. apps/web `tsc` clean apart from the
+known `test.each` baseline; eslint clean on changed files. Snapshots additive
+only (`loadSessionRuntimeStatus`).
+
+### 2026-08-17 (same session, follow-up 4) — confirmation-fleet fixes
+
+A 4-agent confirmation fleet re-attacked the audit fixes; 2 of 4 dimensions
+survived with executed proofs. All fixed:
+
+1. **Detached client method (latent on main, root cause).** Both
+   `loadSessionRuntimeStatus` and the registry controller's `loadStatus`
+   detached `client.session.status` before calling it; the real SDK method
+   dereferences `this.client`, so every status reconciliation against a real
+   client threw TypeError silently — only plain-object fakes passed. Bound
+   calls now; class-based regression test added.
+2. **Stall resolve epoched + deadlined + retried.** `resolvePromptStall` now
+   captures `promptObservationEpoch` (bumped on begin/clear) and discards
+   late answers from prior observations; the status read is deadlined at
+   `livenessIntervalMs`; a failed/timed-out read retries next window up to
+   `PROMPT_STALL_MAX_ATTEMPTS = 3` (transient 502 never unmasks a live turn;
+   a dead runtime still releases in ~30s). 3 new controller tests.
+3. **Husk-confirm window.** The confirmation round-trip is capped at
+   `HUSK_CONFIRM_TIMEOUT_MS = 5s` (never strands the queue), and after the
+   await the dispatch rechecks every gate except the husk itself via new pure
+   `shouldAbortHuskDispatch` (Stop pressed / revert staged / server busy
+   during the round-trip now abort). 5 new boundary tests.
+
+Confirmation fleet also proved: drain-wake originals CLOSED (real-React
+harness, pre-fix counterfactuals), revert of b66158a311 residue-free.
+
+**Evidence** — SDK: 2119 pass, 0 fail, 148 files; typecheck clean;
+smoke:install passed. Web: boundary tests 54 pass / 0 fail; tsc clean apart
+from the known baseline; eslint clean.
+
+### 2026-08-17 (same session, follow-up 5) — round-2 confirmation fixes
+
+The r2 confirmation fleet verified all prior fixes closed, and found 2 new
+holes + 2 hygiene issues. All fixed, TDD RED first (3 new tests):
+
+1. **Intra-observation staleness.** A stall status read issued while the
+   runtime was honestly idle could be OVERTAKEN by the turn starting mid-
+   flight; the late idle answer then released the override and wrote stale
+   idle into the store — a stuck-IDLE latch over a live turn. `resolvePromptStall`
+   now stamps `promptRunningGeneration` + `lastActivityAt` at issue time and
+   discards overtaken answers entirely (fresh evidence has already re-armed
+   the deadline). Also: an idle answer whose re-entrant setStatus wrapper
+   moved the phase to 'settling' now lets settlement own the release instead
+   of clearing instantly (the 500ms window was being skipped).
+2. **Husk confirm escapes the component lifetime.** The detached confirmation
+   IIFE could approve a dispatch AFTER unmount, with frozen refs that by
+   construction approve, through a runtime pointer re-aimed at ANOTHER
+   session's sandbox. `aliveRef` liveness guard checked before the claim.
+3. **`loadSessionRuntimeStatus` laundered failures into idle.** The generated
+   client RESOLVES with `{error}` on HTTP failure; mapping that to idle
+   starved every thrown-error retry budget. Now throws on `error`/missing data.
+4. **destroy() leak**: the stall deadline timer is tracked and cancelled.
+
+**Evidence** — SDK: 2122 pass, 0 fail, 148 files; typecheck clean;
+smoke:install passed. Web tsc clean apart from the known baseline; eslint
+clean on the drain hook.
+
+### 2026-08-18 — session `fix-mcp-catalog-auth` claim
+
+Completed the additive, provider-neutral `token_params` field on
+`OAuth2ClientCredentials` and fixed authenticated MCP catalog discovery.
+Connector authors can supply bounded provider-required token form parameters;
+OAuth-owned fields cannot be overridden. The API now uses `oauth4webapi` for
+all five supported endpoint authentication methods (`none`,
+`client_secret_post`, `client_secret_basic`, `client_secret_jwt`, and
+`private_key_jwt`). MCP `tools/list` uses the same credential/static-header
+path as execution, rejects HTTP and JSON-RPC failures, redacts raw and encoded
+credential representations, retries broken zero-action catalogs, and refreshes
+after both shared and connection-specific credential updates.
+
+**Evidence:** focused OAuth/MCP/contract/SDK matrix **166 pass / 0 fail**;
+API unit suite **7051 pass / 74 skip / 0 fail** across 630 files; SDK suite
+**2125 pass / 0 fail** across 148 files; API-contract suite **73 pass / 0
+fail**; API, SDK, and API-contract typechecks clean; SDK packed-install smoke
+passed; `git diff --check` clean. The OAuth tests make real token requests for
+all five methods and verify PS256 assertions both with and without an optional
+certificate thumbprint.
+
+**Status:** COMPLETE. **Shippable to production: YES** for the implementation.
+Repository merge, Deploy Dev, and live Intacct verification are release proof,
+tracked separately from the SDK/API code verdict.
+
+### 2026-08-18 — step5: shared open-turn predicate with retryable semantics (branch `server-truth-m1`)
+
+`apps/web/src/features/session/assistant-turn-open.ts` carried a private copy of
+the open-turn rule and it had drifted from the sandbox daemon's
+(`apps/kortix-sandbox-agent-server/src/opencode-turn-state.ts:89-93`). The web
+ended the turn on ANY `info.error`; the daemon keeps it open when
+`error.data.isRetryable === true`. During a provider 429/5xx backoff OpenCode
+stamps `info.error` and keeps writing the SAME assistant message, so
+`hasIncompleteAssistant` (session-chat.tsx:2278) flipped false, the queue's drain
+gate opened, and the web sent the next queued message into a live turn.
+
+- NEW `src/core/turns/open-turn.ts` — `hasOpenAssistantTurn`,
+  `isRetryableTurnError`, `OpenTurnMessageLike`. Zero imports, no globals
+  (`isomorphic-core`). Strict `data.isRetryable === true`; completion outranks
+  retry; a terminal error (AbortError et al.) still CLOSES the turn — that is the
+  original queue-wedge fix and it is pinned by its own test.
+- Barrel: one line in `src/core/turns/index.ts`. No new subpath, no
+  `package.json` edit — `src/index.ts:403` already re-exports `./core/turns`.
+- `apps/web/.../assistant-turn-open.ts` is now a 2-line re-export shim; the
+  `AssistantTurnMessage` type alias is kept so no importer breaks.
+- Snapshots re-recorded: +10 lines, 0 removals — the 3 new names under `.` and
+  `./turns` only.
+
+TDD: SDK test written and run RED first (`Cannot find module './open-turn'`), then
+GREEN 14/14. Web test 15 run RED against the old implementation for the right
+reason (`Expected: true, Received: false` on the retryable case) before the shim
+conversion, then GREEN 10/10.
+
+**Evidence** — SDK: baseline 2128 pass / 148 files → 2142 pass, 0 fail, 149 files
+(+14, exactly the new file); typecheck clean; smoke:install passed. Web:
+assistant-turn-open 10 pass / 0 fail; `tsc --noEmit` 15 lines, all the known
+`@types/bun` `test.each` noise in the 3 documented files; eslint clean (no output)
+on both touched web files.
+
+**Shippable to production: YES.**

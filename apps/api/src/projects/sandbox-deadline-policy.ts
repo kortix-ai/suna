@@ -64,6 +64,35 @@ export function turnDeliveryGraceMs(): number {
 }
 
 /**
+ * Granted when a provider-RUNNING box holds a recent control-plane-minted turn
+ * record and its daemon ANSWERS the probe without saying anything about that
+ * turn.
+ *
+ * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box's
+ * `deadlineGrant` never left `boot_floor`. The daemon on that warm snapshot
+ * answered the turn probe with neither `true` nor `false`, so
+ * `observeSandboxTurn` returned `unknown` on every pass,
+ * `renewActiveSandboxTurn` never ran, and the box reached its 15-minute resume
+ * floor WHILE ITS TURN WAS RUNNING.
+ *
+ * ONE liveness horizon, deliberately NOT {@link turnGrantMs}. This is a drip,
+ * not a grant: a box that cannot describe its own turn has not earned four
+ * hours. It buys the turn one more horizon at a time for as long as the record
+ * is still fresh FOR ITS STATE — {@link turnGrantMs} for an accepted record,
+ * {@link turnDeliveryGraceMs} for a `delivering` one nothing has confirmed
+ * reached OpenCode — so a runtime that stays silent stops receiving it within
+ * one horizon of that bound.
+ *
+ * The wall-clock anchor cap is NOT the bound here: `renewActiveSandboxTurn` is
+ * uncapped for the same reason, because a box holding turn authority is exactly
+ * the box whose deadline may legitimately outlive one 24h provider run. The
+ * bound is the record's freshness, which the box cannot author.
+ */
+export function turnUnconfirmedDripMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_UNCONFIRMED_DRIP_MINUTES', 15) * 60_000;
+}
+
+/**
  * Maximum time an idle-stop claim may block prompt delivery.
  *
  * Provider stop calls are bounded below this value. If an API process exits

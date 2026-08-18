@@ -82,7 +82,13 @@ describe('memberAccessLabel', () => {
     expect(memberAccessLabel(member({}))).toEqual({ role: '—', via: 'no access' });
   });
 
-  test('the first group source wins when several contribute', () => {
+  test('the first group source wins the role when several contribute, and the rest are counted, not dropped', () => {
+    // The role shown ("Editor") is genuinely explained by Engineering alone
+    // — Viewers contributes nothing to it. But Viewers is still real access
+    // this member has on this project via a second group, and used to be
+    // fully invisible without leaving to the account page. "+1 more" keeps
+    // that discoverable in one line instead of silently naming only the
+    // winner.
     expect(
       memberAccessLabel(
         member({
@@ -94,6 +100,22 @@ describe('memberAccessLabel', () => {
           ],
         }),
       ).via,
-    ).toBe('via Engineering');
+    ).toBe('via Engineering +1 more');
+  });
+
+  test('three or more group sources count all the extras, not just one', () => {
+    expect(
+      memberAccessLabel(
+        member({
+          effective_project_role: 'editor',
+          effective_source: 'group',
+          group_sources: [
+            { group_id: 'g1', group_name: 'Engineering', role: 'editor' },
+            { group_id: 'g2', group_name: 'Viewers', role: 'viewer' as ProjectRole },
+            { group_id: 'g3', group_name: 'Contractors', role: 'viewer' as ProjectRole },
+          ],
+        }),
+      ).via,
+    ).toBe('via Engineering +2 more');
   });
 });

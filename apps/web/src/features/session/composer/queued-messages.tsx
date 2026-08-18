@@ -90,8 +90,6 @@ import {
 export interface QueuedMessageView {
   id: string;
   text: string;
-  /** Attachments that did not survive being stored. Non-zero means say so. */
-  lostAttachments?: number;
   /** Present on a message in the failed list. */
   lastError?: string;
 }
@@ -314,18 +312,6 @@ function QueuedRow({
           {message.text}
         </button>
       )}
-
-      {message.lostAttachments ? (
-        <Hint
-          label={`${message.lostAttachments} attachment${message.lostAttachments === 1 ? '' : 's'} could not be restored after reload and will not be sent`}
-          side="top"
-        >
-          <span className="text-kortix-orange flex shrink-0 items-center gap-1 text-xs tabular-nums">
-            <PaperclipIcon className="size-3" />
-            {message.lostAttachments}
-          </span>
-        </Hint>
-      ) : null}
 
       <span className="flex shrink-0 items-center gap-0.5">
         {onSendNow && (

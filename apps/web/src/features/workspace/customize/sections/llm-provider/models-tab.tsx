@@ -60,9 +60,9 @@ import {
 } from '@/components/ui/input-group';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 
+import { Copy } from '@/features/icon/icons/copy';
 import { buildModelGroups } from './model-rows';
 import { modelPlainSummary } from './utils';
-import { Copy } from '@/features/icon/icons/copy';
 
 /**
  * `search` used to be driven by the provider modal's always-on search bar,
@@ -125,43 +125,57 @@ export function ModelsTab({
     );
   }
 
+  // No horizontal padding of its own: `CapabilityPageShell` supplies the page
+  // column, and 20px more here indented this tab's content past the tab strip
+  // that selects it.
   return (
-    <div className="px-5 pt-3 pb-4">
-      {ownsSearch && (
-        <InputGroupSearch className="mb-3">
-          <InputGroupSearchIcon>
-            <Search />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            type="text"
-            placeholder="Search models…"
-            autoComplete="off"
-            value={ownSearch}
-            onChange={(event) => setOwnSearch(event.target.value)}
-          />
-          <InputGroupSearchClear onClick={() => setOwnSearch('')} />
-        </InputGroupSearch>
-      )}
+    <div className="pb-4">
+      {/*
+        The search field and "Start over" share ONE row, and that row's height
+        never changes.
 
-      {/* The count is a fact about the whole list, so it hides while a search
-          is narrowing that list — "8 of 34 are on" beside three search hits
-          describes a list that is not on screen. */}
-      {!search && (
-        <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
-          <p className="flex-1" />
-          <div className="flex shrink-0 items-center gap-1">
-            {!enablement.usingDefaults && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={enablement.isUpdating}
-                className="text-muted-foreground hover:text-foreground h-7 px-2 text-xs"
-                onClick={() => void enablement.resetToDefaults()}
-              >
-                Start over
-              </Button>
-            )}
-          </div>
+        They used to be two stacked blocks: the search box, then a spacer row
+        (`flex items-center justify-between … pb-2.5`) whose only content was a
+        conditional "Start over" button. The button appears the instant you
+        flip your first switch — `usingDefaults` goes false — so selecting a
+        model inserted a 26px band into the layout and pushed the whole list
+        down under the cursor that had just clicked it, leaving a 46px gap
+        between the search field and the first provider where 20px had been.
+        Measured on localhost:26300: `firstGroupTop` 233.7px → 259.4px, shift
+        +25.75px. That is the "too big a gap when you select the models".
+
+        A control that only sometimes exists cannot own a row of its own. Here
+        it rides the search field's row, which is always that height, so the
+        list below is fixed no matter what the toggles say.
+      */}
+      {(ownsSearch || !enablement.usingDefaults) && (
+        <div className="mb-3 flex items-center gap-2">
+          {ownsSearch && (
+            <InputGroupSearch className="min-w-0 flex-1">
+              <InputGroupSearchIcon>
+                <Search />
+              </InputGroupSearchIcon>
+              <InputGroupSearchInput
+                type="text"
+                placeholder="Search models…"
+                autoComplete="off"
+                value={ownSearch}
+                onChange={(event) => setOwnSearch(event.target.value)}
+              />
+              <InputGroupSearchClear onClick={() => setOwnSearch('')} />
+            </InputGroupSearch>
+          )}
+          {!enablement.usingDefaults && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={enablement.isUpdating}
+              className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
+              onClick={() => void enablement.resetToDefaults()}
+            >
+              Start over
+            </Button>
+          )}
         </div>
       )}
 

@@ -15,7 +15,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { dismissOnboarding, openSettingsTab, selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -43,7 +43,14 @@ interface TriggerList {
 }
 
 async function openTriggerAccess(page: Page, projectId: string) {
-  const panel = await openSettingsTab(page, 'Schedules');
+  // Schedules graduated out of the Settings overlay before this branch (it
+  // already redirected to the merged Triggers capability page —
+  // `settings-tabs.ts` GRADUATED map: `schedules: (p) => \`/projects/${p}/triggers\``).
+  // Navigate straight there instead of through the now-gone overlay tab; the
+  // row click / detail-sheet mechanics below are unchanged.
+  await page.goto(`/projects/${projectId}/triggers`, { waitUntil: 'domcontentloaded' });
+  await dismissOnboarding(page);
+  const panel = page.locator('body');
   await panel.getByRole('button', { name: 'Access policy UI', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'Access policy UI', exact: true });
   await expect(sheet).toBeVisible();
@@ -181,7 +188,12 @@ test.describe('21 — Trigger-created session access UI', () => {
 
       const { section } = await openTriggerAccess(page, projectId);
       const privateOption = section.getByRole('radio', {
-        name: /Trigger agent and project managers/,
+        // Capital "Managers" — matches `schedule-detail-sheet.tsx`'s copy
+        // override verbatim ("Trigger agent and project Managers", "Project
+        // Managers can always open trigger-created sessions."). A raw regex
+        // (unlike `getByText`'s string form) is case-sensitive by default, so
+        // the lowercase "managers" this used to read never matched.
+        name: /Trigger agent and project Managers/,
       });
       await expect(privateOption).toBeChecked();
       await expect(

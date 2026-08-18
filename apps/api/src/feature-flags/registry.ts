@@ -253,7 +253,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'network_boundary_shim',
-    name: 'Network boundary without Platinum',
+    name: 'Network boundary in-guest shim',
     description:
       'Use network-boundary secrets on a project that does not run on Platinum. The credential is injected by Kortix at request time instead of by a provider edge, so the sandbox still never receives the value. Requires a sandbox image that runs the in-guest shim; without it a boundary secret saves but nothing in the sandbox can spend it.',
     stability: 'experimental',

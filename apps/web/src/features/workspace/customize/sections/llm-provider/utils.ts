@@ -259,20 +259,23 @@ export interface OrderableProvider {
 /**
  * Which providers the API-keys list shows, and IN WHAT ORDER.
  *
- * The order is FIXED and does not depend on whether a provider has a key.
- * That is the whole point, and it is the defect this function exists to make
- * untestable-to-reintroduce: the list used to sort connected providers into a
- * separate block above the rest, so finishing a key field made that row jump
- * out of the list you were reading and a new section appear under your cursor.
+ * **Every provider, always.** The list used to show three (the first-class
+ * ids) plus whatever already had a key, and hid the other ~185 behind the
+ * search field. That is the thing this screen was asked to stop doing: a
+ * settings page that answers "which providers can I use?" with three, and
+ * only tells you the rest exist if you happen to type a name you already
+ * know, is not a list — it is a guess. The whole catalog renders; the search
+ * field narrows it.
  *
- *  - **No search** — the first-class three, in their declared order, then any
- *    OTHER provider that already has a key. A short, stable list; a provider's
- *    position never changes because you typed in it.
+ * The ORDER is fixed and never depends on whether a provider has a key —
+ * that invariant survives unchanged, and it is the defect this function
+ * exists to make untestable-to-reintroduce. The list used to sort connected
+ * providers into a block above the rest, so finishing a key field made that
+ * row jump out of the list you were reading. Now:
+ *
+ *  - **No search** — the first-class ids in their declared order, then EVERY
+ *    other provider in catalog order. Connecting one does not move it.
  *  - **Search** — every catalog match, connected or not, in catalog order.
- *    This is the long tail's only entrance, and it is enough: nobody scrolls
- *    181 providers, they look for the one they hold an account with. It
- *    replaced a "Show 181 more providers" disclosure whose number read as a
- *    warning rather than an invitation.
  *
  * Matching covers label, id and env-var name, so both "bedrock" and
  * "AWS_ACCESS_KEY_ID" find AWS.
@@ -298,10 +301,11 @@ export function orderProviderRows<T extends OrderableProvider>(input: {
     .map((id) => byId.get(id))
     .filter((provider): provider is T => !!provider);
   const shown = new Set(firstClass.map((provider) => provider.id));
-  const connectedExtras = input.providers.filter(
-    (provider) => input.connectedIds.has(provider.id) && !shown.has(provider.id),
-  );
-  return [...firstClass, ...connectedExtras];
+  // Catalog order for the rest — NOT "connected first". A provider that moves
+  // the moment you finish typing in it is the exact regression the fixed order
+  // above exists to prevent.
+  const rest = input.providers.filter((provider) => !shown.has(provider.id));
+  return [...firstClass, ...rest];
 }
 
 // ─── Plain-English model descriptions ────────────────────────────────────────

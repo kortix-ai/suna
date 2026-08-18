@@ -13,6 +13,7 @@ import {
   type MessageWithParts,
 } from '@/ui';
 import { useRuntimeMessages } from '@kortix/sdk/react';
+import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
@@ -24,7 +25,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const agentName = (input.agent as string) || 'kortix';
+  const agentName = capitalizeWords((input.agent as string) || 'kortix');
   const description = (input.description as string) || '';
   const projectName = (input.project as string) || '';
   const fullPrompt = (input.prompt as string) || '';

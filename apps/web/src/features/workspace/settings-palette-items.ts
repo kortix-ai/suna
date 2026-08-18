@@ -33,7 +33,7 @@
 
 import { GearSixIcon } from '@phosphor-icons/react';
 
-import { UPGRADE_ITEM, railGroups, type RailFlags } from '@/features/workspace/settings/rail';
+import { railGroups } from '@/features/workspace/settings/rail';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import type { RailItem } from '@/features/workspace/settings/type';
 
@@ -45,21 +45,16 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'profile',
   'preferences',
   'connected',
-  'organization',
-  'billing',
-  'usage',
-  'groups',
-  'roles',
-  'identity',
-  'audit',
-  'api-keys',
 ];
 
 /**
  * Mirrors `STANDALONE_DEFAULT_SETTINGS_TAB` (standalone-settings-route.tsx).
  * The tab a settings destination with no named tab resolves to when there is
- * no project — NOT `DEFAULT_SETTINGS_TAB` (`general`), which is itself the
- * project workspace tab and is filtered out of a project-less rail.
+ * no project. It equals `DEFAULT_SETTINGS_TAB` today — every tab left in the
+ * overlay is user-scoped, so the "no project" case no longer picks a
+ * different destination — and stays a separate constant because the two
+ * answer different questions and a future project-scoped tab would split them
+ * again.
  */
 export const PALETTE_NO_PROJECT_DEFAULT_TAB: SettingsTab = 'profile';
 
@@ -101,33 +96,16 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   preferences:
     'preferences appearance theme color mode dark light wallpaper shader shaders background sounds audio volume notification sound effects mute shortcuts keyboard hotkeys keybindings',
   connected: 'connected accounts linked oauth google github identities social sign in providers',
-  general:
-    'general project settings workspace repository danger zone rename delete customize configure',
-  members: 'members team access collaborators people invite',
-  secrets: 'secrets env environment variables values',
-  channels: 'channels slack email agent mail agentmail agentic mail inbox messaging notifications',
-  repositories: 'git repository repositories provider github code storage clone proxy branch sync',
-  schedules: 'schedules cron triggers timed recurring',
-  webhooks: 'webhooks triggers http endpoint',
-  models:
-    'llm gateway providers models budgets logs api keys overview anthropic openai openrouter google groq xai',
-  marketplace: 'marketplace store install templates agents skills browse community',
-  review: 'review center inbox approvals change requests approve reject needs you',
-  voice: 'voice call speak spoken conversation livekit bot name',
-  sandbox: 'sandbox templates image runtime environment machine',
-  snapshots: 'snapshots snapshot builds prepared machine image history',
-  organization: 'organization org account company name sign in rules teams manage',
-  billing:
-    'billing payment credit card subscription manage wallet tier plan limits overview spend',
-  usage: 'usage credits ledger transactions history purchases receipts spend consumption',
-  groups: 'groups teams directory scim membership sets',
-  roles: 'roles permissions access rbac policy custom role',
-  identity: 'identity sso saml oidc scim login provider single sign on directory',
-  audit: 'audit log logs events history trail compliance',
-  'api-keys':
-    'api keys tokens personal access pat cli command line authentication service account',
-  experimental: 'experimental feature flags beta preview labs toggles',
-  upgrades: 'upgrades upgrade migrate migration registry manifest one-off runner change request',
+  // Every other bag is gone with the tab it named. Thirteen project-
+  // configuration tabs (General, Members, Secrets, Channels, Repositories,
+  // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature
+  // flags, Upgrades) moved to `/projects/<id>/config`, and eight
+  // account-scoped ones to `/accounts/[id]`. Their words moved with them, onto
+  // the `proj-settings` and `account-*` rows in `lib/menu-registry.ts` — the
+  // same place every other out-of-overlay destination is searched from. A tab
+  // that no longer exists must not be searchable here;
+  // `Record<SettingsTab, ...>` enforces that, so re-adding any key fails the
+  // typecheck.
 };
 
 export interface SettingsPaletteItem {
@@ -151,24 +129,27 @@ export interface SettingsPaletteGroup {
 export interface SettingsPaletteParams {
   /** True only where `SettingsPanel` is mounted — see `openSettingsTab` in command-palette.tsx. */
   hasProject: boolean;
-  flags: RailFlags;
-  billingEnabled: boolean;
+  // `flags: RailFlags` used to sit here. Marketplace, Review and Voice were
+  // the only flag-gated rows and all three moved to `/projects/<id>/config`,
+  // whose own sub-nav composes them
+  // (`capabilities/project-settings/project-settings-sections.ts`). Nothing
+  // left in this rail varies by flag, so `railGroups()` takes none either.
 }
 
 /**
  * Whether the palette may offer a tab at all.
  *
- * Mirrors the two flag-free clauses of `isSettingsTabAllowed`
- * (settings-panel.tsx): a project-scoped tab is unreachable without a project,
- * and Billing is unreachable when billing is off. The remaining clauses in
- * that function are IAM probes keyed off `GATED_TAB_SECTION`, which is
- * module-private to `settings-panel.tsx`; the panel itself fail-opens on them
- * until they resolve and falls back to a visible tab when they deny, so an
+ * Mirrors the one flag-free clause of `isSettingsTabAllowed`
+ * (settings-panel.tsx): a project-scoped tab is unreachable without a project.
+ * The `billingEnabled` clause that used to sit beside it is gone with the
+ * Billing tab, which now lives on `/accounts/[id]`. The remaining clause in
+ * that function is an IAM probe keyed off `GATED_TAB_SECTION`, which is
+ * module-private to `settings-panel.tsx`; the panel itself fail-opens on it
+ * until it resolves and falls back to a visible tab when it denies, so an
  * offered-then-denied tab lands on a real pane rather than on nothing.
  */
 export function isSettingsTabOfferable(tab: SettingsTab, params: SettingsPaletteParams): boolean {
   if (!params.hasProject && !PALETTE_ACCOUNT_SCOPED_TABS.includes(tab)) return false;
-  if (tab === 'billing' && !params.billingEnabled) return false;
   return true;
 }
 
@@ -189,23 +170,14 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
  * it. Groups that lose all their rows disappear whole, so the palette never
  * renders an empty heading.
  *
- * `UPGRADE_ITEM` is appended to the LAST group. The rail pins it below the
- * scrolling groups in a footer of its own; a command palette has no footer to
- * pin it to, and a one-row group named after its only row is noise — so it
- * joins the trailing group (`Developer`) instead of inventing a heading.
+ * `UPGRADE_ITEM` used to be appended to the last group here. It left the rail
+ * with the rest of project configuration and is a section of
+ * `/projects/<id>/config` now, reached through the `proj-settings` registry
+ * row like every other out-of-overlay destination.
  */
 export function settingsPaletteGroups(params: SettingsPaletteParams): SettingsPaletteGroup[] {
-  const rail = railGroups(params.flags).map((group) => ({
-    label: group.label,
-    items: [...group.items],
-  }));
-
-  const tail = rail[rail.length - 1];
-  if (tail) tail.items.push(UPGRADE_ITEM);
-  else rail.push({ label: 'Developer', items: [UPGRADE_ITEM] });
-
   const groups: SettingsPaletteGroup[] = [];
-  for (const group of rail) {
+  for (const group of railGroups()) {
     const items: SettingsPaletteItem[] = [];
     for (const item of group.items) {
       if (isSettingsTabOfferable(item.tab, params)) items.push(toPaletteItem(item, group.label));

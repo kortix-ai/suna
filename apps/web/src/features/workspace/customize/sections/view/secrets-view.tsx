@@ -94,6 +94,7 @@ import {
 } from '@phosphor-icons/react';
 import {
   type NetworkBoundaryAvailability,
+  type NetworkBoundaryMode,
   type SecretDeliveryBlockedReason,
   agentGrantActionLabel,
   agentGrantCandidateHint,
@@ -112,6 +113,7 @@ import {
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
   networkBoundaryEchoNotice,
+  networkBoundaryMode,
   secretDeliveryBlockedReason,
   secretDeliveryOptions,
   secretDeliveryPresentation,
@@ -182,6 +184,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const networkBoundary = networkBoundaryAvailability(projectDetailQuery.data?.project);
+  const boundaryMode = networkBoundaryMode(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey,
@@ -361,6 +364,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 connectors={connectorsQuery.data?.connectors ?? []}
                 connectorsLoading={connectorsQuery.isLoading}
                 networkBoundary={networkBoundary}
+                boundaryMode={boundaryMode}
                 onSaved={refreshSecretsAndProviders}
               />
             </>
@@ -638,6 +642,7 @@ function SecretDialog({
   connectors,
   connectorsLoading,
   networkBoundary,
+  boundaryMode,
   onSaved,
 }: {
   open: boolean;
@@ -647,6 +652,8 @@ function SecretDialog({
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
   networkBoundary: NetworkBoundaryAvailability;
+  /** Which mechanism will carry the header, null while none is armed. */
+  boundaryMode: NetworkBoundaryMode | null;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -963,7 +970,10 @@ function SecretDialog({
     networkBoundary,
   );
   const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);
-  const echoNotice = networkBoundaryEchoNotice(brokerHosts);
+  // A blocked project runs neither mechanism yet, and the fix above leads with
+  // the shim flag — so describe the symptom the user will actually meet after
+  // taking it, not the provider edge's opposite one.
+  const echoNotice = networkBoundaryEchoNotice(brokerHosts, boundaryMode ?? 'in-guest-shim');
   // The dialog keeps the row it opened with, so a completed grant clears its own
   // warning — the refetch only reaches the table behind it.
   const grantNotice =

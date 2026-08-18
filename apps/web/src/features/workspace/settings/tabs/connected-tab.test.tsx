@@ -40,26 +40,48 @@ const rowLabelIndex = (html: string, label: string): number => {
 const skeletons = (html: string): number => [...html.matchAll(/animate-pulse/g)].length;
 
 describe('ConnectedAccountsTabView', () => {
-  test('renders one row per provider, in order', () => {
+  test('renders exactly one provider row — GitHub', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
     expect(headings(out)).toEqual(['Connected accounts']);
-    expect(rowLabels(out)).toEqual(['GitHub', 'ChatGPT']);
+    expect(rowLabels(out)).toEqual(['GitHub']);
   });
 
-  test('every row states which scope it writes to', () => {
+  test('the row states which scope it writes to', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
     expect(out).toMatch(/for this account/i);
-    expect(out).toMatch(/for this workspace/i);
   });
 
-  test('the GitHub row is absent without account.write', () => {
-    const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount={false} />);
-    expect(rowLabels(out)).toEqual(['ChatGPT']);
-  });
-
-  test('each row carries exactly one action button', () => {
+  /**
+   * Jay, 2026-08-17: "this just doesn't make any sense right because this is on
+   * a project level anyhow." The ChatGPT row was project-scoped
+   * (`useChatGptSubscriptionConnected(projectId, …)`, `'unavailable'` with no
+   * project open) on an account-scoped pane, and its connect flow already had a
+   * project-scoped home — the sidebar's "Connect GPT subscription" modal
+   * (`project-sidebar.tsx:245`). This pins the deletion: neither the row nor
+   * any of its copy may come back to this pane.
+   */
+  test('carries no ChatGPT row and no workspace-scoped copy', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
-    expect([...out.matchAll(/<button/g)]).toHaveLength(2);
+    expect(rowLabels(out)).not.toContain('ChatGPT');
+    expect(out).not.toMatch(/ChatGPT/i);
+    expect(out).not.toMatch(/for this workspace/i);
+  });
+
+  /**
+   * GitHub is the only provider on this pane and installing it writes the
+   * account, so a reader without `account.write` gets an explanation rather
+   * than a bordered box drawn around nothing.
+   */
+  test('without account.write the pane explains itself instead of rendering an empty group', () => {
+    const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount={false} />);
+    expect(rowLabels(out)).toEqual([]);
+    expect(out).not.toContain('data-slot="settings-row-group"');
+    expect(out).toMatch(/Only an account owner or admin can connect GitHub/);
+  });
+
+  test('the row carries exactly one action button', () => {
+    const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
+    expect([...out.matchAll(/<button/g)]).toHaveLength(1);
   });
 
   // Fix round 1, finding 1 — proof that the GitHub row renders purely off
@@ -91,9 +113,10 @@ describe('ConnectedAccountsTabView', () => {
       const out = renderToStaticMarkup(
         <ConnectedAccountsTabView canManageAccount githubStatus="loading" />,
       );
-      // One skeleton (GitHub's action slot), one button (ChatGPT's, resolved).
+      // One skeleton (GitHub's action slot), and no button at all — GitHub is
+      // the only row, and its control has not resolved.
       expect(skeletons(out)).toBe(1);
-      expect([...out.matchAll(/<button/g)]).toHaveLength(1);
+      expect([...out.matchAll(/<button/g)]).toHaveLength(0);
     });
 
     test('shape-matches the button it replaces, so the row height never changes', () => {
@@ -108,12 +131,10 @@ describe('ConnectedAccountsTabView', () => {
 
     test('does not assert a connection state it cannot know yet', () => {
       const out = renderToStaticMarkup(
-        <ConnectedAccountsTabView canManageAccount githubStatus="loading" chatgptStatus="loading" />,
+        <ConnectedAccountsTabView canManageAccount githubStatus="loading" />,
       );
       expect(out).not.toMatch(/Install the GitHub App/);
-      expect(out).not.toMatch(/Sign in with a ChatGPT Plus/);
       expect(out).toMatch(/Checking this account/);
-      expect(out).toMatch(/Checking this workspace/);
     });
   });
 
@@ -130,7 +151,7 @@ describe('ConnectedAccountsTabView', () => {
         githubManageAllHref="/accounts/acc_1?tab=git"
       />,
     );
-    expect([...out.matchAll(/<button/g)]).toHaveLength(2);
+    expect([...out.matchAll(/<button/g)]).toHaveLength(1);
     expect(out).toContain('href="/accounts/acc_1?tab=git"');
     expect(out).toMatch(/\+2 more installations/);
   });
@@ -156,24 +177,12 @@ describe('ConnectedAccountsTabView', () => {
   // `<div>` in for it — same pattern `api-keys-tab.test.tsx` uses for its
   // slots.
   //
-  // ORDERING, 2026-08-12. This test used to require the slot to sit BETWEEN
-  // the GitHub row and the ChatGPT row, copying `page.tsx:579-583` where the
-  // account-level `GitHubConnectionCard` was followed by this card. That order
-  // cannot be transplanted, because the surface it was ported onto is a
-  // different shape: the two provider rows are one `SettingsRowGroup` (a
-  // single bordered box whose rows share hairlines), and the setup card is a
-  // titled section owning its own bordered panel. Landing it between the rows
-  // means splitting the group in two — ChatGPT orphaned under a tall operator
-  // section, the provider list back to the stack of cards `settings-row.tsx`
-  // exists to prevent. See the ordering comment in `connected-tab.tsx`.
-  //
-  // The slot leads the pane instead, and what this test pins is the invariant
-  // that carries the meaning: the two GitHub surfaces stay CONTIGUOUS, ordered
-  // widest scope first — instance ("every project on this instance") →
-  // account ("shared by every project") → workspace ("for this workspace") —
-  // the same descending scope the row copy already states. Nothing may
-  // separate the setup section from the GitHub row it configures, and nothing
-  // may push it past ChatGPT.
+  // ORDERING. The slot leads the pane, and what this test pins is the
+  // invariant that carries the meaning: the two GitHub surfaces stay
+  // CONTIGUOUS, ordered widest scope first — instance ("every project on this
+  // instance") then account ("shared by every project"). Nothing may separate
+  // the setup section from the GitHub row it configures. See the ordering
+  // comment in `connected-tab.tsx`.
   test('the GitHub App setup slot leads the pane, contiguous with the GitHub row it configures', () => {
     const out = renderToStaticMarkup(
       <ConnectedAccountsTabView
@@ -186,14 +195,11 @@ describe('ConnectedAccountsTabView', () => {
     const slot = out.indexOf('github-app-setup-marker');
     expect(slot).toBeGreaterThan(-1);
 
-    // Descending scope: instance-level setup, then the account-level row, then
-    // the workspace-level one.
+    // Descending scope: instance-level setup, then the account-level row.
     expect(slot).toBeLessThan(rowLabelIndex(out, 'GitHub'));
-    expect(rowLabelIndex(out, 'GitHub')).toBeLessThan(rowLabelIndex(out, 'ChatGPT'));
 
     // Contiguous: the first provider row after the setup section is the GitHub
-    // one. Moving the slot below the group, between the two rows, or past
-    // ChatGPT each fails one of these.
+    // one. Moving the slot below the group fails this.
     expect(rowLabels(out.slice(slot))[0]).toBe('GitHub');
   });
 

@@ -711,3 +711,185 @@ flow(
     );
   },
 );
+
+// ─── SESS-25: the server-side prompt inbox ────────────────────────────────
+// A prompt is a DURABLE SERVER ROW from the instant the composer accepts it.
+// Before the inbox the queue lived in the browser's localStorage, so a closed
+// tab, a second device, or a crash lost queued messages silently and two tabs
+// on one session disagreed about what was pending.
+//
+// Deliberately NOT gated on a booted sandbox: everything asserted here is the
+// control plane's own contract — the durable row, the idempotency key, the
+// state projection, and the two write gates. Whether the runtime then answers
+// the prompt is SESS-23's business, not this flow's.
+flow(
+  'SESS-25',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 300_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.sharedSeededProject();
+    const session = await ctx.fixtures.session(project);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id, sessionId: session.id };
+    const clientMessageId = `q_sess25_${Date.now()}`;
+    // The CLIENT mints the wire id: OpenCode orders its transcript by the id's
+    // clock prefix, and only a process holding the transcript can place one.
+    const wireMessageId = `msg_${((Date.now() - 120_000) * 0x1000)
+      .toString(16)
+      .slice(-12)
+      .padStart(12, '0')}AbCdEfGhIjKlMn`;
+    let promptId = '';
+
+    await ctx.step('POST a prompt → 202 with the durable row it created', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts',
+        {
+          client_message_id: clientMessageId,
+          message_id: wireMessageId,
+          parts: [{ type: 'text', text: 'SESS-25 inbox prompt' }],
+          overrides: { directory: '/workspace' },
+        },
+        { params },
+      );
+      r.status(202).body().has('$.deduped', false).has('$.message_id', wireMessageId);
+      promptId = String(r.json<any>().prompt_id);
+      if (!promptId) throw new Error('POST /prompts returned no prompt_id');
+    });
+
+    await ctx.step(
+      'a malformed wire id is REFUSED — a mis-ordered id silently drops the turn',
+      async () => {
+        const r = await owner.post(
+          '/v1/projects/:projectId/sessions/:sessionId/prompts',
+          {
+            client_message_id: `${clientMessageId}_bad`,
+            message_id: 'cm_12',
+            parts: [{ type: 'text', text: 'nope' }],
+          },
+          { params },
+        );
+        r.status(400);
+      },
+    );
+
+    await ctx.step(
+      're-POSTing the SAME client_message_id names the SAME row, never a second one',
+      async () => {
+        // Enforced by the unique index on `idempotency_key`, not by a cache a
+        // second pod would not share.
+        const r = await owner.post(
+          '/v1/projects/:projectId/sessions/:sessionId/prompts',
+          {
+            client_message_id: clientMessageId,
+            message_id: wireMessageId,
+            parts: [{ type: 'text', text: 'SESS-25 inbox prompt' }],
+          },
+          { params },
+        );
+        r.status(200).body().has('$.deduped', true).has('$.prompt_id', promptId);
+      },
+    );
+
+    await ctx.step('GET the inbox → the prompt, with its own client id and text', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params });
+      r.status(200);
+      const prompts = r.json<any>().prompts ?? [];
+      const mine = prompts.find((p: any) => p.prompt_id === promptId);
+      if (!mine) {
+        // A delivered prompt is omitted on purpose — it is in the transcript
+        // now — so an empty list here is a PASS for the delivery half.
+        return;
+      }
+      if (mine.client_message_id !== clientMessageId) {
+        throw new Error(`inbox row carries the wrong client id: ${mine.client_message_id}`);
+      }
+      if (!['queued', 'waiting', 'delivering', 'failed'].includes(mine.state)) {
+        throw new Error(`unexpected prompt state: ${mine.state}`);
+      }
+    });
+
+    await ctx.step('holding the queue is a SERVER fact, not a browser one', async () => {
+      // What the Stop button writes. A client-side pause would leave the
+      // admission gate free to deliver the very message the user pressed Stop
+      // to get ahead of, one scheduler tick after the abort.
+      const held = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+        { held: true },
+        { params },
+      );
+      held.status(200);
+      for (const prompt of held.json<any>().prompts ?? []) {
+        if (prompt.prompt_id !== promptId) continue;
+        if (prompt.state !== 'waiting' || prompt.reason !== 'held') {
+          throw new Error(`a held prompt must read waiting/held, got ${prompt.state}/${prompt.reason}`);
+        }
+      }
+
+      const bad = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+        { held: 'yes' },
+        { params },
+      );
+      bad.status(400);
+
+      const released = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+        { held: false },
+        { params },
+      );
+      released.status(200);
+      for (const prompt of released.json<any>().prompts ?? []) {
+        if (prompt.prompt_id === promptId && prompt.reason === 'held') {
+          throw new Error('release left the prompt held');
+        }
+      }
+    });
+
+    await ctx.step('retry/send-now names the row, and refuses one on the wire', async () => {
+      // One primitive for retry AND "send now": both are the user pointing at a
+      // row and asking for that message. A `running` row is already on the wire
+      // and answers 404 — re-queueing it would double-deliver.
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
+        {},
+        { params: { ...params, promptId } },
+      );
+      r.status([200, 404]);
+    });
+
+    await ctx.step('DELETE removes the prompt, or refuses it honestly if it is on the wire', async () => {
+      const r = await owner.del('/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId', {
+        params: { ...params, promptId },
+      });
+      // 200 removed — and the response CARRIES the prompt it removed, because
+      // the row is hard-deleted and the UI offers an undo. 409 already being
+      // delivered (cancelling would be a lie), 404 already delivered and gone
+      // from the inbox. Never a 5xx.
+      r.status([200, 409, 404]);
+      if (r.statusCode === 200) {
+        const removed = r.json<any>().removed;
+        if (typeof removed?.client_message_id !== 'string' || !Array.isArray(removed?.parts)) {
+          throw new Error(`DELETE did not return the removed prompt: ${JSON.stringify(removed)}`);
+        }
+      }
+    });
+
+    await ctx.step('a prompt id from another session is never addressable here', async () => {
+      const other = await ctx.fixtures.session(project);
+      const r = await owner.del('/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId', {
+        params: { projectId: project.id, sessionId: other.id, promptId },
+      });
+      r.status(404);
+    });
+  },
+);

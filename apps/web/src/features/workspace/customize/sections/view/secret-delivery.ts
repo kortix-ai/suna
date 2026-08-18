@@ -133,6 +133,14 @@ export function secretDeliveryPresentation(
 
 export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | 'unsupported';
 
+/** The slice of project detail the boundary questions read. Structural, because
+ *  a capability-filtered response omits fields the SDK type declares. */
+export type NetworkBoundaryProject = {
+  available_sandbox_providers?: readonly string[] | null;
+  default_sandbox_provider?: string | null;
+  experimental?: Partial<Record<string, boolean>> | null;
+};
+
 /**
  * Two independent mechanisms deliver a network-boundary secret, and a project
  * needs only one.
@@ -148,24 +156,56 @@ export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | '
  * which nothing here can verify.
  */
 export function networkBoundaryAvailability(
-  project?: {
-    available_sandbox_providers?: readonly string[] | null;
-    default_sandbox_provider?: string | null;
-    experimental?: Partial<Record<string, boolean>> | null;
-  } | null,
+  project?: NetworkBoundaryProject | null,
 ): NetworkBoundaryAvailability {
   if (project?.experimental?.network_boundary_shim) return 'available';
   if (!project?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
   return project.default_sandbox_provider === 'platinum' ? 'available' : 'project_not_pinned';
 }
 
-/** The flag's name in Feature flags → Experimental, quoted so the sentence below
- *  points at something the user can actually find. */
-const SHIM_FLAG = 'Network boundary without Platinum';
+export type NetworkBoundaryMode = 'provider-edge' | 'in-guest-shim';
 
-/** Why network-boundary delivery cannot run here, and how to fix it. Both
- *  states are now fixable, so neither says "not available" — the shim flag is
- *  an escape hatch from either one. */
+/**
+ * WHICH mechanism serves this project, not merely whether one does.
+ *
+ * Mirrors `networkBoundaryMode` in
+ * apps/api/src/secrets/network-boundary-availability.ts, including its
+ * precedence: the provider edge wins where it exists, because it needs nothing
+ * in the guest and injects for every client in the sandbox. The deployment-wide
+ * `config.isPlatinumEnabled()` half of that check reads here as Platinum being
+ * among the project's offered providers.
+ *
+ * Availability alone is not enough to write copy with: the two mechanisms
+ * produce OPPOSITE symptoms for the same working request, so a panel that knows
+ * only "yes" describes half the projects wrongly.
+ */
+export function networkBoundaryMode(
+  project?: NetworkBoundaryProject | null,
+): NetworkBoundaryMode | null {
+  if (
+    project?.available_sandbox_providers?.includes('platinum') &&
+    project.default_sandbox_provider === 'platinum'
+  ) {
+    return 'provider-edge';
+  }
+  return project?.experimental?.network_boundary_shim ? 'in-guest-shim' : null;
+}
+
+/** The flag's name in Feature flags → Experimental, quoted so the sentences
+ *  below point at something the user can actually find. Must match the
+ *  `network_boundary_shim` entry in the API's feature-flag registry, which is
+ *  what that screen renders. */
+const SHIM_FLAG = 'Network boundary in-guest shim';
+
+/**
+ * Why network-boundary delivery cannot run here, and how to fix it. Both states
+ * are now fixable, so neither says "not available".
+ *
+ * The flag leads in both. A project on a provider with no credential edge is
+ * one opt-in away from a working boundary, whereas re-pinning it to Platinum
+ * moves every session in the project onto another provider to solve a
+ * per-secret problem.
+ */
 export function networkBoundaryBlockedReason(
   availability: NetworkBoundaryAvailability,
 ): string | null {
@@ -173,7 +213,7 @@ export function networkBoundaryBlockedReason(
   if (availability === 'unsupported') {
     return `Turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
   }
-  return `This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider, or turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
+  return `Turn on "${SHIM_FLAG}" in Feature flags → Experimental, or pin this project to Platinum in Feature flags → Runtime → Sandbox provider.`;
 }
 
 export type SecretDeliveryOption = SecretDeliveryPresentation & {
@@ -605,22 +645,39 @@ export type NetworkBoundaryEchoNotice = {
 };
 
 /**
- * The one thing about this mode nobody can deduce from inside the sandbox.
+ * The one thing about this mode nobody can deduce from inside the sandbox: what
+ * a WORKING boundary looks like when the upstream echoes the credential back.
  *
- * The boundary cuts any response that would carry the value back into the
- * guest, so an echo endpoint answers `curl: (52) Empty reply from server` —
- * byte-identical to a dead host. A product owner lost days to exactly that
- * reading, and their agent invented a TLS explanation for it. The panel that
- * configures the mode is the last place to say so before someone tests it.
+ * The two mechanisms answer that oppositely, which is why the mode is a
+ * required argument rather than a default. The provider edge cuts the response,
+ * so an echo endpoint answers `curl: (52) Empty reply from server` —
+ * byte-identical to a dead host, and an agent with nothing else to go on
+ * invents a network explanation for it. The in-guest shim relays through the
+ * broker instead and returns an ordinary 200 with `[REDACTED]` in place of the
+ * value; showing the edge's symptom there makes a working boundary look broken,
+ * and a genuinely dead host look like success. The agent is told exactly one of
+ * these two stories (apps/api/src/projects/secret-capabilities.ts), so the panel
+ * that configures the mode has to tell the user the same one.
  *
- * The probe names the first declared host so it can be pasted as-is; with no
- * host typed yet it falls back to a placeholder rather than an empty URL.
+ * The probe is shared: under both mechanisms an endpoint that SPENDS the
+ * credential answers 200 or 401, which is what makes it the one worth pasting.
+ * It names the first declared host so it can be run as-is; with no host typed
+ * yet it falls back to a placeholder rather than an empty URL.
  */
-export function networkBoundaryEchoNotice(hosts: string): NetworkBoundaryEchoNotice {
+export function networkBoundaryEchoNotice(
+  hosts: string,
+  mode: NetworkBoundaryMode,
+): NetworkBoundaryEchoNotice {
   const host = parseBoundaryHosts(hosts)[0] ?? 'api.example.com';
   return {
-    title: 'A blocked echo looks exactly like a dead host',
-    body: 'A response that would carry this value back into the sandbox is cut, so curl reports "curl: (52) Empty reply from server". On an allowed host that is the boundary working, not the host being down.',
+    title:
+      mode === 'in-guest-shim'
+        ? 'A blocked echo comes back as [REDACTED]'
+        : 'A blocked echo looks exactly like a dead host',
+    body:
+      mode === 'in-guest-shim'
+        ? 'A response that would carry this value back into the sandbox comes back with [REDACTED] in its place, so an ordinary 200 is the boundary working. An empty reply or a connection error on an allowed host is a real failure here, not the boundary doing its job.'
+        : 'A response that would carry this value back into the sandbox is cut, so curl reports "curl: (52) Empty reply from server". On an allowed host that is the boundary working, not the host being down.',
     probe: [
       '# Probe an endpoint that USES the credential, never one that echoes headers.',
       `curl -s -o /dev/null -w '%{http_code}\\n' https://${host}/<authenticated-path>`,

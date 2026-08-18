@@ -25,6 +25,7 @@ import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
+  AlarmIcon as AlarmClock,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
@@ -366,15 +367,15 @@ export const menuRegistry: MenuItemDef[] = [
     // fallback for any surface that consumes the registry without that picker —
     // same arrangement as `proj-sessions` below.
     //
-    // It used to be `/accounts`, the page JAY-505 deletes. The account-scoped
-    // surfaces (Organization, Billing, Usage, Groups, Roles, Identity, Audit)
-    // live in the settings panel now, and `/settings/*` mounts that panel
-    // without a project. Note the fallback path changes shape as well as
-    // destination: `handleRegistryItem` runs `resolveSettingsOverlayHref` first
-    // (command-palette.tsx), so a `/settings/<tab>` href OPENS THE OVERLAY on
-    // that tab in place rather than navigating away, which is what the
-    // `/accounts` href used to do.
-    href: '/settings/organization',
+    // Back to `/accounts`, the account picker. It pointed at
+    // `/settings/organization` while the account-scoped surfaces
+    // (Organization, Billing, Usage, Groups, Roles, Identity, Audit, API keys)
+    // lived in the project settings overlay. They do not: every one of them is
+    // a section of `/accounts/[id]` again, reachable from the `account-*` rows
+    // below, and `parseSettingsTab('organization')` now returns `null` — so
+    // that href would have fallen through `resolveSettingsOverlayHref` to a
+    // bare navigation at a route that renders no such tab.
+    href: '/accounts',
     // 'members' is deliberately absent. It names the SETTINGS MEMBERS TAB and
     // the 'proj-invite' action, not the account switcher, so typing "member"
     // used to return Accounts ahead of the two rows that actually answer it.
@@ -402,18 +403,19 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-customize',
-    label: 'Customize',
+    label: 'Settings',
     icon: SlidersHorizontal,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // Names a tab. The bare `/projects/{projectId}/settings` this used to
-    // carry resolved to `{ tab: undefined }` (resolveSettingsOverlayHref),
-    // which `openSettings` reads as "keep whatever was last open" — so the
-    // one entry labelled "Customize" landed somewhere different on every
-    // click. `general` is the project workspace tab and survives every flag,
-    // matching `DEFAULT_SETTINGS_TAB`.
-    href: '/projects/{projectId}/settings/general',
+    // The project's own configuration — thirteen sections of the Customize
+    // bar's Settings tab. This used to be `/projects/{projectId}/settings/
+    // general`, the same content when it was still an overlay tab; the bare
+    // `/settings` before that, which resolved to `{ tab: undefined }`
+    // (resolveSettingsOverlayHref) and landed somewhere different on every
+    // click. A section-less `/config` opens the default section, `general`,
+    // which is exactly where the old href went.
+    href: '/projects/{projectId}/config',
     requiresProject: true,
     // 'agents' and 'skills' were deliberately dropped: both graduated out of
     // the overlay into their own palette entries (proj-agents, proj-skills).
@@ -430,10 +432,17 @@ export const menuRegistry: MenuItemDef[] = [
     // The inverse leak has been closed too: five sibling rows (proj-agents,
     // proj-skills, proj-connectors, proj-connectors-policies, proj-invite)
     // used to end in the legacy tail 'project customize', so "customize"
-    // returned six rows. Only this one, whose LABEL is Customize, keeps the
-    // word here; on the settings side only the Workspace General tab keeps it,
-    // which is where this row's href lands.
-    keywords: 'customize configure',
+    // returned six rows. Only this one keeps the word — it is the row that
+    // lands where "customize" means something.
+    //
+    // The long tail is the combined bag of the thirteen settings tabs that
+    // moved here from the overlay's rail (`settings-palette-items.ts` no
+    // longer carries any of them, and its `Record<SettingsTab, …>` enforces
+    // that). One row, like `proj-triggers`, rather than thirteen rows onto one
+    // page: a section is not separately routable, so thirteen rows would be
+    // thirteen links to the same URL.
+    keywords:
+      'settings customize configure general workspace rename delete danger zone members team access collaborators people invite secrets env environment variables channels slack email agentmail inbox repositories git repository github provider clone branch models llm gateway providers budgets anthropic openai openrouter sandbox templates image runtime machine snapshots builds marketplace store install templates review center approvals voice call spoken livekit feature flags experimental beta labs toggles upgrades upgrade migrate migration manifest runner',
   },
   {
     id: 'proj-files',
@@ -500,18 +509,36 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'proj-connectors-policies',
     // Was "Customize · Connectors · Policies" — no longer accurate: this no
-    // longer lives under Customize, and the href below cannot deep-link into
-    // a Policies tab (the connectors page doesn't host one yet), so the label
-    // must not promise a destination it does not reach.
+    // longer lives under Customize.
     label: 'Connectors · Policies',
     icon: Plug,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // TODO(capabilities): restore deep link to Global rules once the connectors page hosts PoliciesPanel
-    href: '/projects/{projectId}/connectors',
+    // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
+    // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
+    // this entry now reaches the destination its label names.
+    href: '/projects/{projectId}/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
+  },
+  {
+    id: 'proj-triggers',
+    label: 'Triggers',
+    icon: AlarmClock,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Schedules and Webhooks merged into one Triggers capability page,
+    // alongside Connectors / Agents / Skills — a trigger is one resource with
+    // two ways to start it, not two separate rows. `/projects/{id}/settings/
+    // schedules` and `/settings/webhooks` no longer resolve to a tab; both
+    // redirect here via `legacySectionRedirect`.
+    href: '/projects/{projectId}/triggers',
+    requiresProject: true,
+    // The combined bag both retired rows carried, so neither query goes dark.
+    keywords:
+      'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
     id: 'proj-invite',
@@ -746,11 +773,15 @@ export const menuRegistry: MenuItemDef[] = [
   // destination here: it will double-list against the derived row, and a
   // hand-written list is what let nine tabs ship with no palette entry at all.
   //
+  // That rule is about SETTINGS TABS. The `account-*` rows below are not
+  // settings tabs and cannot double-list: their destinations left the overlay
+  // for `/accounts/[id]`, so `railGroups()` has no row to derive and a
+  // hand-written row is the only way to reach them — same as `proj-triggers`.
+  //
   // `pref-appearance`, `pref-sounds`, `pref-shortcuts` (all superseded by the
-  // derived `preferences` row) and `account-transactions` (superseded by
-  // `usage`) declared no surface other than the palette and are gone
-  // entirely. `LEGACY_SETTINGS_TAB_MAP` still maps their `SettingsTabId`s,
-  // which is what the three below rely on.
+  // derived `preferences` row) and `account-transactions` (superseded by the
+  // `account-usage` row below) declared no surface other than the palette and
+  // are gone entirely.
   //
   // `account-referrals` is gone for a different reason: `referrals` is not a
   // member of `SettingsTab` at all, so it fell through to `general` — a
@@ -760,40 +791,135 @@ export const menuRegistry: MenuItemDef[] = [
   // entry at it would reproduce the "store with no renderer" defect this
   // change exists to remove.
   // ──────────────────────────────────────────────────────────────────────────
+  // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
+  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/config` now, not
+  // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
+  // there is no user-scoped tab this row meant, so it was removed rather than
+  // repointed at an unrelated pane. Nothing rendered it: its only declared
+  // surface was `userMenu`, and `user-menu.tsx` builds its own rows.
+  // ──────────────────────────────────────────────────────────────────────────
+  // ACCOUNT SECTIONS — `/accounts/[id]`, NOT the project settings overlay.
+  //
+  // These eight rows are the palette's only route to the account-scoped
+  // surfaces. They spent one release as settings tabs, derived from
+  // `railGroups()` like every other tab; they are not settings tabs any more
+  // (`ACCOUNT_GRADUATED` in `features/workspace/settings/settings-tabs.ts`
+  // redirects every stale `/settings/<id>` bookmark onto this page), so the
+  // derived list cannot produce them and they are hand-written here — the same
+  // arrangement `proj-triggers` uses for the same reason.
+  //
+  // Each `href` carries the `{accountId}` token, resolved at render exactly
+  // like `{projectId}`. A row whose href still holds an unresolved token is
+  // DROPPED by the palette rather than navigated to — see `allPaletteItems` in
+  // `features/workspace/command-palette.tsx`. Every keyword bag below is the
+  // one its retired settings row carried, so no query that used to find these
+  // destinations goes dark.
+  // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'pref-general',
-    label: 'General',
+    id: 'account-general',
+    // "Settings", not "General": the destination's own rail row and pane
+    // heading both say Settings, and a palette row must not promise a name the
+    // page does not use. `general` and `organization` stay in the keyword bag,
+    // which is where the overlay-era names belong.
+    label: 'Account · Settings',
     icon: CogOne,
-    group: 'preferences',
-    showIn: ['userMenu'],
-    kind: 'settings',
-    settingsTab: 'general',
-    // 'profile name email' left with the palette surface: they name the USER
-    // profile, and `settingsTab: 'general'` is the project WORKSPACE tab.
-    // The derived `profile` row carries them now.
-    keywords: 'settings preferences general language',
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // It holds the account name, the MFA/session policy, the enterprise
+    // preview, and deletion.
+    href: '/accounts/{accountId}?tab=settings',
+    keywords:
+      'general organization org company name sign in rules teams manage security mfa danger zone rename delete',
+  },
+  {
+    id: 'account-members',
+    label: 'Account · Members',
+    icon: UsersSolid,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=members',
+    // 'members' alone stays off this row: it names the project settings
+    // Members tab, which is a different roster. These words name the ACCOUNT
+    // roster specifically.
+    keywords: 'account members organization roster owners admins seats',
   },
   {
     id: 'account-billing',
-    label: 'Billing',
+    label: 'Account · Billing',
     icon: CreditCardSolid,
     group: 'account',
-    showIn: ['userMenu'],
-    kind: 'settings',
-    settingsTab: 'billing',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=billing',
     keywords:
-      'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
+      'billing payment credit card subscription manage wallet tier plan limits overview spend',
     requiresBilling: true,
   },
   {
+    id: 'account-usage',
+    label: 'Account · Usage',
+    icon: Coins,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // The account page calls this section `transactions`.
+    href: '/accounts/{accountId}?tab=transactions',
+    keywords: 'usage credits ledger transactions history purchases receipts spend consumption',
+  },
+  {
+    id: 'account-groups',
+    label: 'Account · Groups',
+    icon: UsersSolid,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=groups',
+    keywords: 'groups teams directory scim membership sets',
+  },
+  {
+    id: 'account-roles',
+    label: 'Account · Roles',
+    icon: ShieldCheck,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=roles',
+    keywords: 'roles permissions access rbac policy custom role',
+  },
+  {
+    id: 'account-identity',
+    label: 'Account · Identity',
+    icon: ShieldCheck,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=identity',
+    keywords: 'identity sso saml oidc scim login provider single sign on directory',
+  },
+  {
+    id: 'account-audit',
+    label: 'Account · Audit log',
+    icon: ScrollText,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts/{accountId}?tab=audit',
+    keywords: 'audit log logs events history trail compliance',
+  },
+  {
     id: 'account-tokens',
-    label: 'API keys',
+    label: 'Account · API keys',
     icon: KeyRound,
     group: 'account',
-    showIn: ['userMenu'],
-    kind: 'settings',
-    settingsTab: 'tokens',
-    keywords: 'api keys tokens personal access pat cli command line authentication',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // The account page calls this section `tokens`; it mounts the same
+    // `ApiKeysSection` + `KeyRulesCard` pair the retired settings tab did.
+    href: '/accounts/{accountId}?tab=tokens',
+    keywords:
+      'api keys tokens personal access pat cli command line authentication service account',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

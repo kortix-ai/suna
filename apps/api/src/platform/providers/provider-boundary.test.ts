@@ -12,6 +12,15 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-env-sync.ts',
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
+  // Network-boundary delivery. Which mechanism a project gets is decided in one
+  // place, from the provider's capabilities
+  // (secrets/network-boundary-availability.ts); everything downstream of that
+  // decision reads the verdict. A name comparison anywhere in here is how a
+  // provider silently loses a feature it already had for free.
+  'projects/secrets.ts',
+  'projects/secret-capabilities.ts',
+  'secrets/network-boundary.ts',
+  'secrets/http-broker.ts',
 ];
 
 describe('sandbox provider architecture boundary', () => {

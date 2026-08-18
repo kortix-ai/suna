@@ -41,7 +41,7 @@ import {
   settingsPaletteGroups,
   settingsPaletteSearchText,
 } from '@/features/workspace/settings-palette-items';
-import type { RailFlags } from '@/features/workspace/settings/rail';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
   DEFAULT_SETTINGS_TAB,
   resolveSettingsOverlayHref,
@@ -99,6 +99,7 @@ import { useWorkspaceSearch } from '@/features/files';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
+import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
@@ -130,7 +131,7 @@ import {
   useModelStore,
   useRuntimeMessages,
 } from '@kortix/sdk/react';
-import { chalkColors, formatRelativeTime } from '@kortix/shared';
+import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 
@@ -207,10 +208,14 @@ export function buildPaletteSearchText(item: { label: string; keywords?: string 
  * entry was removed rather than mapped — see `menu-registry.ts`.
  */
 export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
-  general: 'general',
-  billing: 'billing',
-  tokens: 'api-keys',
-  transactions: 'usage',
+  // `billing`, `tokens` and `transactions` are gone. They mapped onto the
+  // overlay's `billing` / `api-keys` / `usage` tabs, and all three tabs left
+  // the overlay for `/accounts/[id]`. There is no `SettingsTab` to map them
+  // to any more, and mapping them to a survivor would open Settings on an
+  // unrelated pane — so the registry rows that spoke those ids became plain
+  // `kind: 'navigate'` rows pointed straight at the account page instead
+  // (`account-billing`, `account-tokens`, `account-usage` in
+  // `lib/menu-registry.ts`).
   appearance: 'preferences',
   sounds: 'preferences',
   shortcuts: 'preferences',
@@ -678,14 +683,33 @@ export function CommandPalette() {
       if (item.requiresSession && !currentSessionId) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
-      result.push(
-        item.href?.includes('{projectId}') && projectId
-          ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
-          : item,
-      );
+      // Token substitution. An href that still holds an UNRESOLVED token after
+      // this is dropped, not offered: navigating to a literal
+      // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that
+      // cannot go anywhere is worse than not offering it. `{projectId}` rows
+      // already declare `requiresProject: true` and are filtered above;
+      // `{accountId}` rows are filtered here, off the token itself, so a new
+      // account-scoped row can never ship without the guard.
+      let href = item.href;
+      if (href?.includes('{projectId}')) {
+        if (!projectId) continue;
+        href = href.replaceAll('{projectId}', projectId);
+      }
+      if (href?.includes('{accountId}')) {
+        if (!selectedAccountId) continue;
+        href = href.replaceAll('{accountId}', selectedAccountId);
+      }
+      result.push(href === item.href ? item : { ...item, href });
     }
     return result;
-  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, projectFlags]);
+  }, [
+    billingEnabled,
+    currentSessionId,
+    projectId,
+    selectedAccountId,
+    sidebarCtx,
+    projectFlags,
+  ]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -715,32 +739,12 @@ export function CommandPalette() {
     });
   }, [allPaletteItems, hasQuery, query]);
 
-  /**
-   * The settings rail's flags, in the rail's own vocabulary.
-   *
-   * `llmGatewayAvailable` is passed for completeness only — `railGroups`
-   * never reads it (rail.ts documents that the Models row is ungated on
-   * purpose), which is exactly why the derived Models row no longer inherits
-   * the `llm_gateway` gate the old `proj-llm` registry entry carried.
-   */
-  const railFlags = useMemo<RailFlags>(
-    () => ({
-      marketplaceEnabled: projectFlags.marketplace,
-      llmGatewayAvailable: projectFlags.llm_gateway,
-      voiceEnabled: projectFlags.voice,
-      reviewEnabled: projectFlags.review_center,
-    }),
-    [projectFlags],
-  );
-
+  // No `flags` argument any more: Marketplace, Review and Voice were the only
+  // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
+  // own sub-nav composes them. Nothing left in the rail varies by flag.
   const allSettingsGroups = useMemo(
-    () =>
-      settingsPaletteGroups({
-        hasProject: !!projectId,
-        flags: railFlags,
-        billingEnabled,
-      }),
-    [projectId, railFlags, billingEnabled],
+    () => settingsPaletteGroups({ hasProject: !!projectId }),
+    [projectId],
   );
 
   const filteredSettingsGroups = useMemo(
@@ -803,13 +807,20 @@ export function CommandPalette() {
       { providerID: string; providerName: string; models: typeof visibleModels }
     >();
     for (const m of visibleModels) {
-      const existing = groups.get(m.providerID);
+      // Under the gateway every model is registered as opencode provider
+      // `kortix`, so `m.providerName` is always "Kortix" — even for a BYOK
+      // Anthropic/Bedrock model. Group/label by the resolved REAL upstream
+      // provider instead. Safe to call unconditionally: for a native
+      // (non-gateway) model `pickerGroupId` already returns `m.providerID`
+      // as-is. See model-grouping.ts's doc comment.
+      const groupID = pickerGroupId(m);
+      const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
       } else {
-        groups.set(m.providerID, {
-          providerID: m.providerID,
-          providerName: m.providerName,
+        groups.set(groupID, {
+          providerID: groupID,
+          providerName: pickerGroupLabel(groupID, m),
           models: [m],
         });
       }
@@ -1321,10 +1332,20 @@ export function CommandPalette() {
     setDiffOpen(true);
   }, [currentSessionId, close]);
 
+  /**
+   * "Invite members" — Members is its own top-level Customize tab
+   * (`/projects/<id>/members`), so this routes there instead of opening the
+   * overlay. The `invite` intent still rides on the settings-panel store: it
+   * is one-shot state the Members pane consumes and clears on mount
+   * (`settings/tabs/members-tab-intent.ts`), and it must NOT be a query
+   * param, or a reload or a shared link would replay it.
+   */
   const handleInviteMembers = useCallback(() => {
-    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
+    if (!projectId) return;
+    useSettingsPanelStore.setState({ membersTab: 'invite' });
+    router.push(capabilityTabHref(projectId, 'members'));
     close();
-  }, [close]);
+  }, [close, projectId, router]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {
@@ -2057,7 +2078,9 @@ export function CommandPalette() {
                             <Bot className="size-5 shrink-0" />
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm font-medium">{agent.name}</span>
+                            <span className="truncate text-sm font-medium">
+                              {capitalizeWords(agent.name)}
+                            </span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}
@@ -2100,7 +2123,7 @@ export function CommandPalette() {
                             )}
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm capitalize">{agent.name}</span>
+                            <span className="truncate text-sm">{capitalizeWords(agent.name)}</span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}

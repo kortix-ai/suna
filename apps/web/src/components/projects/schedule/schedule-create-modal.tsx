@@ -1,19 +1,22 @@
 'use client';
 
 /**
- * Creating a schedule or a webhook.
+ * Creating a trigger — a schedule or a webhook.
  *
  * **What changed and why.** The wizard used to open on "Trigger source" —
  * a Cron / Webhook picker that could never be used, because both entry points
- * always pass a fixed type. Step one then asked for a cron expression or a
+ * always passed a fixed type. Step one then asked for a cron expression or a
  * signing secret before asking what the thing was for, and step two dumped
  * seven equal sections on you (Name, Prompt, Agent, Model, Session strategy,
  * Delivery filter, Activation).
  *
- * Now it asks what you want to happen first, and how it should be triggered
- * second — the order people actually think in. Everything that has a sane
- * default (memory between runs, conditions, a custom id, starting paused) sits
- * under one Advanced block on the second step instead of on the main path.
+ * Schedules and Webhooks merged into one Triggers page, so that Cron/Webhook
+ * picker is no longer dead weight — it's back as this wizard's real first
+ * step, now that there IS a choice to make. After that it asks what you want
+ * to happen, then how it should be triggered — the order people actually
+ * think in. Everything that has a sane default (memory between runs,
+ * conditions, a custom id, starting paused) sits under one Advanced block on
+ * the last step instead of on the main path.
  */
 
 import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
@@ -53,7 +56,10 @@ import {
   ArrowRightIcon,
   ArrowsClockwiseIcon,
   CaretDownIcon,
+  CaretRightIcon,
   CheckIcon,
+  TimerIcon,
+  WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -73,7 +79,7 @@ import {
   rowsToConditions,
 } from './schedule-fields';
 
-type Step = 'what' | 'how';
+type Step = 'type' | 'what' | 'how';
 
 /** A random signing key, hex-encoded. */
 function generateSigningKey(): string {
@@ -107,21 +113,20 @@ function slugify(input: string): string {
 
 export function ScheduleCreateModal({
   projectId,
-  kind,
   open,
   onOpenChange,
   onCreated,
 }: {
   projectId: string;
-  kind: TriggerKind;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (slug: string) => void;
 }) {
-  const copy = KIND_COPY[kind];
+  const [kind, setKind] = useState<TriggerKind | null>(null);
+  const copy = kind ? KIND_COPY[kind] : null;
   const isCron = kind === 'cron';
 
-  const [step, setStep] = useState<Step>('what');
+  const [step, setStep] = useState<Step>('type');
   const [name, setName] = useState('');
   const [instruction, setInstruction] = useState('');
   const [agentName, setAgentName] = useState<string | null>(null);
@@ -160,7 +165,8 @@ export function ScheduleCreateModal({
 
   useEffect(() => {
     if (open) return;
-    setStep('what');
+    setStep('type');
+    setKind(null);
     setName('');
     setInstruction('');
     setAgentName(null);
@@ -182,7 +188,7 @@ export function ScheduleCreateModal({
 
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
-    if (!name.trim()) return `Give this ${copy.noun} a name.`;
+    if (!name.trim()) return `Give this ${copy?.noun ?? 'trigger'} a name.`;
     if (!instruction.trim()) return 'Say what the agent should do.';
     return null;
   }
@@ -209,6 +215,12 @@ export function ScheduleCreateModal({
 
   const create = useMutation({
     mutationFn: async () => {
+      // `submit()` only reaches here from the 'how' step, which is
+      // unreachable until a card on the 'type' step sets this. Captured into
+      // a local so the narrowing survives the `await` below.
+      if (!kind) throw new Error('Choose a trigger type first.');
+      const triggerKind = kind;
+
       const trimmedName = name.trim();
       const slug = slugify(customId.trim() || trimmedName);
 
@@ -225,7 +237,7 @@ export function ScheduleCreateModal({
       return createProjectTrigger(projectId, {
         name: trimmedName,
         slug,
-        type: kind,
+        type: triggerKind,
         prompt_template: instruction.trim(),
         enabled: startActive,
         ...(agentName ? { agent: agentName } : {}),
@@ -259,8 +271,15 @@ export function ScheduleCreateModal({
   });
 
   const stepLabels: Record<Step, string> = {
+    type: 'Type',
     what: 'What it does',
     how: isCron ? 'When it runs' : "How it's called",
+  };
+
+  const chooseKind = (next: TriggerKind) => {
+    setKind(next);
+    setError(null);
+    setStep('what');
   };
 
   const goForward = () => {
@@ -293,17 +312,34 @@ export function ScheduleCreateModal({
     >
       <ModalContent className="gap-0 overflow-hidden p-0 sm:max-w-lg" modalClassName="lg:max-w-lg">
         <ModalHeader className="pb-1">
-          <ModalTitle>{copy.createLabel}</ModalTitle>
+          <ModalTitle>{copy ? copy.createLabel : 'New trigger'}</ModalTitle>
           <ModalDescription>
-            {isCron
-              ? 'Have an agent do something on its own, on a schedule you set.'
-              : 'Let another app start an agent by sending a request.'}
+            {step === 'type'
+              ? 'Choose how this trigger starts.'
+              : isCron
+                ? 'Have an agent do something on its own, on a schedule you set.'
+                : 'Let another app start an agent by sending a request.'}
           </ModalDescription>
           <StepIndicator step={step} labels={stepLabels} />
         </ModalHeader>
 
         <ModalBody className="max-h-[min(64vh,600px)] space-y-6 overflow-y-auto px-5 py-5">
-          {step === 'what' ? (
+          {step === 'type' ? (
+            <div className="space-y-2">
+              <TypeCard
+                icon={TimerIcon}
+                title="Scheduled"
+                description="Runs automatically on a repeating schedule, or once at a set time."
+                onClick={() => chooseKind('cron')}
+              />
+              <TypeCard
+                icon={WebhooksLogoIcon}
+                title="Webhook"
+                description="Starts when another app sends a request to a private address."
+                onClick={() => chooseKind('webhook')}
+              />
+            </div>
+          ) : step === 'what' && copy ? (
             <>
               <Field label="Name" hint={`Shown in your list of ${copy.noun}s.`}>
                 <Input
@@ -442,12 +478,12 @@ export function ScheduleCreateModal({
                         copy={{
                           heading: 'Who can access sessions created by this trigger',
                           private: {
-                            label: 'Trigger agent and project managers',
-                            desc: 'Project managers can always open trigger-created sessions.',
+                            label: 'Trigger agent and project Managers',
+                            desc: 'Project Managers can always open trigger-created sessions.',
                           },
                           members: {
                             label: 'Selected teammates',
-                            desc: 'Choose additional members and groups. Project managers always have access.',
+                            desc: 'Choose additional members and groups. Project Managers always have access.',
                           },
                           project: {
                             label: 'Whole project',
@@ -531,6 +567,11 @@ export function ScheduleCreateModal({
               <ArrowLeftIcon className="size-4 shrink-0" />
               Back
             </Button>
+          ) : step === 'what' ? (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setStep('type')}>
+              <ArrowLeftIcon className="size-4 shrink-0" />
+              Back
+            </Button>
           ) : (
             <span />
           )}
@@ -538,7 +579,7 @@ export function ScheduleCreateModal({
             <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            {step === 'what' ? (
+            {step === 'type' ? null : step === 'what' ? (
               <Button size="sm" className="gap-1.5" onClick={goForward}>
                 Continue
                 <ArrowRightIcon className="size-4 shrink-0" />
@@ -546,7 +587,7 @@ export function ScheduleCreateModal({
             ) : (
               <Button size="sm" className="gap-1.5" onClick={submit} disabled={create.isPending}>
                 {create.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                {copy.createLabel}
+                {copy ? copy.createLabel : 'Create'}
               </Button>
             )}
           </div>
@@ -578,8 +619,41 @@ function Field({
   );
 }
 
+/** A selectable card on the 'type' step — clicking it both picks the kind
+ *  and advances, so there's no separate "Continue" to press here. */
+function TypeCard({
+  icon: Icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string; weight?: 'fill' }>;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="hover:border-foreground/20 hover:bg-accent/50 group flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors"
+    >
+      <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-sm">
+        <Icon className="text-foreground size-4 shrink-0" weight="fill" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block text-sm font-medium">{title}</span>
+        <span className="text-muted-foreground block text-xs leading-relaxed text-pretty">
+          {description}
+        </span>
+      </span>
+      <CaretRightIcon className="text-muted-foreground group-hover:text-foreground size-4 shrink-0 transition-colors" />
+    </button>
+  );
+}
+
 function StepIndicator({ step, labels }: { step: Step; labels: Record<Step, string> }) {
-  const order: Step[] = ['what', 'how'];
+  const order: Step[] = ['type', 'what', 'how'];
   return (
     <div
       className="flex items-center gap-2 pt-3"

@@ -2,8 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { toArray } from '@/features/workspace/customize/shared/utils';
-
 // Regression test for the Better Stack error pattern
 //   `f9603a4344ea892980086cc75a9f15d6457da1e8bfa88ffbcfa7b08f1c2dcb0b` —
 //   `TypeError: (intermediate value)(intermediate value)(intermediate value).filter is not a function`
@@ -24,63 +22,26 @@ import { toArray } from '@/features/workspace/customize/shared/utils';
 // `ResourceAccessCard` and `ProjectRoleAssignmentsCard`, which share the same
 // `toArray(policiesQuery.data)` / `toArray(groupsQuery.data)` derivation
 // shape — was rehomed (cut, not copied) from `members-view.tsx` into
-// `members-tab.tsx`; see that file's header comment. This guard follows the
-// code it protects: the invariant is about the derivation, not about which
-// file happens to hold it, so it now reads `members-tab.tsx`'s source
-// instead. `members-view.tsx` no longer contains this card at all.
+// `members-tab.tsx`; see that file's header comment.
 //
-// These tests (a) reproduce the exact prod throw on the unguarded path and
-// (b) keep a future refactor from silently restoring the `(x ?? []).filter`
-// shape via source-level assertions (same convention as chunk22256-guard.test.ts
-// and policies-panel.test.ts).
+// **`ProjectGroupGrantsCard` and its `groupsWithCustomRole` derivation are
+// gone.** Both it and `ProjectRoleAssignmentsCard` were removed outright,
+// not just fixed — they duplicated proper account-level homes (a group's own
+// "Projects" tab, the account Roles page's `PolicyAssignments`) and were
+// never a resource concern the project's Access tab should own. The exact
+// `policiesQuery.data` derivation this file used to reproduce no longer
+// exists anywhere in `members-tab.tsx`, so the reproduction tests below it
+// were removed with it — they tested a synthetic copy of logic that has no
+// real counterpart left to protect. What remains is the general hygiene
+// guard: this file's own history proves the `(query.data ?? []).filter`
+// shape is a recurring mistake, worth catching for ANY query in this file,
+// present or future, not just the one that actually threw.
+//
+// These tests keep a future refactor from silently reintroducing the
+// `(x ?? []).filter` shape via source-level assertions (same convention as
+// chunk22256-guard.test.ts and policies-panel.test.ts).
 
 const membersTabSource = readFileSync(join(import.meta.dir, 'members-tab.tsx'), 'utf8');
-
-/**
- * The exact derivation that threw in prod, lifted out of the useMemo so it can
- * be exercised without a react-query harness. Mirrors the
- * `ProjectGroupGrantsCard` `groupsWithCustomRole` derivation: filter the
- * project-scoped group policies and collect their principal ids.
- */
-function groupsWithCustomRoleFrom(policiesData: unknown, projectId: string): Set<string> {
-  return new Set(
-    toArray(policiesData)
-      .filter(
-        (p: any) =>
-          p.principal_type === 'group' && p.scope_type === 'project' && p.scope_id === projectId,
-      )
-      .map((p: any) => p.principal_id),
-  );
-}
-
-describe('members-tab non-array guard — ProjectGroupGrantsCard derivation', () => {
-  test('does NOT throw on the exact prod failure shape: a defined non-array policies value', () => {
-    // The shape that fired in prod: `policiesQuery.data` is a defined non-array
-    // (e.g. an empty object or an error envelope). The old `(data ?? []).filter`
-    // path threw `(intermediate value)...filter is not a function` here.
-    expect(() => groupsWithCustomRoleFrom({}, 'p1')).not.toThrow();
-    expect(() => groupsWithCustomRoleFrom({ error: 'x' }, 'p1')).not.toThrow();
-    expect(() => groupsWithCustomRoleFrom('not-an-array', 'p1')).not.toThrow();
-    expect(() => groupsWithCustomRoleFrom(42, 'p1')).not.toThrow();
-    expect(groupsWithCustomRoleFrom({}, 'p1')).toEqual(new Set());
-  });
-
-  test('absorbs null/undefined (the ?? [] cases) without throwing', () => {
-    expect(() => groupsWithCustomRoleFrom(null, 'p1')).not.toThrow();
-    expect(() => groupsWithCustomRoleFrom(undefined, 'p1')).not.toThrow();
-    expect(groupsWithCustomRoleFrom(null, 'p1')).toEqual(new Set());
-    expect(groupsWithCustomRoleFrom(undefined, 'p1')).toEqual(new Set());
-  });
-
-  test('happy path: filters project-scoped group policies and collects principal ids', () => {
-    const policies = [
-      { principal_type: 'group', scope_type: 'project', scope_id: 'p1', principal_id: 'g1' },
-      { principal_type: 'group', scope_type: 'project', scope_id: 'p2', principal_id: 'g2' },
-      { principal_type: 'member', scope_type: 'project', scope_id: 'p1', principal_id: 'u1' },
-    ];
-    expect(groupsWithCustomRoleFrom(policies, 'p1')).toEqual(new Set(['g1']));
-  });
-});
 
 describe('members-tab source guard — no unguarded (query.data ?? []).filter/.map', () => {
   // The prod throw was a `(policiesQuery.data ?? []).filter(...)` inside a
@@ -89,12 +50,6 @@ describe('members-tab source guard — no unguarded (query.data ?? []).filter/.m
   test('imports toArray from the shared customize utils', () => {
     expect(membersTabSource).toContain("from '@/features/workspace/customize/shared/utils'");
     expect(membersTabSource).toContain('toArray(');
-  });
-
-  test('ProjectGroupGrantsCard groupsWithCustomRole routes through toArray, not (data ?? []).filter', () => {
-    // The exact line that threw in prod.
-    expect(membersTabSource).not.toContain('(policiesQuery.data ?? []).filter(');
-    expect(membersTabSource).toContain('toArray(policiesQuery.data)');
   });
 
   test('no remaining unguarded (query.data ?? []).filter or .map in the file', () => {

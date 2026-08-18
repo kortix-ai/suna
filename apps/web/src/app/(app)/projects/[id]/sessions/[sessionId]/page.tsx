@@ -15,7 +15,6 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
-import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
   pendingSessionPromptForRecovery,
@@ -367,9 +366,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // see the comment on `sawTranscript` above); reading it again here, rather
   // than re-deriving cache presence, is what keeps this additive to the
   // existing chat-mount path instead of a second cache implementation.
-  // Sending still waits on the runtime — `sessionComposerReadiness` /
-  // `canDrainQueue`'s `runtimeReady` gate (unchanged) queue a submit instead
-  // of dropping it, and show their own "waking" notice above the composer.
+  // Sending still waits on the runtime — `sessionComposerReadiness` shows its
+  // own "waking" notice above the composer, and a prompt submitted meanwhile
+  // becomes a durable inbox row the control plane delivers once the box is up,
+  // rather than being dropped.
   const showCachedTranscriptWhileDown = canRenderCachedTranscriptWhileSandboxDown({
     sandboxStatus: sandbox?.status,
     hasCachedContent: hasTranscript,
@@ -875,9 +875,11 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
-    // Same hand-off for the message queue: the instant shell enqueues under
-    // the ROUTE id, SessionChat drains under the pin — see adoptSessionQueue.
-    useMessageQueueStore.getState().adoptSessionQueue(sessionId, chatSessionId);
+    // No queue hand-off beside it any more. The browser queue was keyed by the
+    // OpenCode session id, which changes as the pin resolves, so the instant
+    // shell's messages had to be moved from the route id onto the pin or they
+    // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
+    // route id — which never changes, so there is nothing to adopt.
   }, [sessionId, chatSessionId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

@@ -4,6 +4,7 @@ import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
 const cfg: { DAYTONA_WEBHOOK_SECRET?: string; PLATINUM_WEBHOOK_SECRET?: string } = {};
 let stoppedCalls: string[] = [];
+let stoppedOptions: Array<Record<string, unknown> | undefined> = [];
 let removedCalls: string[] = [];
 let dedupSeen: Set<string> = new Set();
 
@@ -20,8 +21,13 @@ mock.module('../../billing/services/webhook-concurrency', () => ({
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../projects/sandbox-reaper', () => ({
   ...realSandboxReaper,
-  reconcileSandboxStoppedByExternalId: async (externalId: string) => {
+  reconcileSandboxStoppedByExternalId: async (
+    externalId: string,
+    _now?: Date,
+    options?: Record<string, unknown>,
+  ) => {
     stoppedCalls.push(externalId);
+    stoppedOptions.push(options);
     return true;
   },
   reconcileSandboxRemovedByExternalId: async (externalId: string) => {
@@ -42,6 +48,7 @@ beforeEach(() => {
   cfg.DAYTONA_WEBHOOK_SECRET = undefined;
   cfg.PLATINUM_WEBHOOK_SECRET = undefined;
   stoppedCalls = [];
+  stoppedOptions = [];
   removedCalls = [];
   dedupSeen = new Set();
 });
@@ -129,6 +136,19 @@ describe('handleDaytonaWebhook', () => {
     const r = await handleDaytonaWebhook(body, svixHeaders(secret, 'm1', '100', body));
     expect(r.status).toBe(200);
     expect(stoppedCalls).toEqual(['sbA']);
+  });
+  // `classifyLifecycle` folds `stopping` and `archiving` — both TRANSITIONAL —
+  // into `stopped`. A delivery is an unsolicited observation, so mid-turn it
+  // must be confirmed by a second one before the box is durably parked
+  // (incident 2026-08-17T20:40:03Z, session 0fc6897a: one such observation
+  // parked a running turn with `stopReason: provider_reconcile`).
+  test('a stopped delivery is an OBSERVATION, and says so', async () => {
+    cfg.DAYTONA_WEBHOOK_SECRET = secret;
+    const body = JSON.stringify({ event: 'sandbox.state.updated', id: 'sbC', newState: 'stopping', updatedAt: 't1' });
+    await handleDaytonaWebhook(body, svixHeaders(secret, 'm3', '100', body));
+
+    expect(stoppedCalls).toEqual(['sbC']);
+    expect(stoppedOptions).toEqual([{ confirmMidTurnStop: true }]);
   });
   test('dedupes a repeated delivery', async () => {
     cfg.DAYTONA_WEBHOOK_SECRET = secret;

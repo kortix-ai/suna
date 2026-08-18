@@ -9,6 +9,14 @@ import { stopThenSendNow, type StopThenSendNowDeps } from './session-chat';
 // extracted, framework-free orchestration that fixes this: it awaits the
 // real `AbortSettlement` the stop produces instead.
 //
+// It also dispatches WITHOUT touching the session's inbox hold. "Send now" is
+// `POST .../prompts/:id/retry`, which promotes the row the user pointed at and
+// THEN releases the hold (`retryInboxPrompt`). Releasing the hold first made
+// every held row due at the same instant and kicked a drain, and the drain
+// claims by `available_at, created_at` — so the OLDEST prompt ran instead of
+// the one the user clicked. The correct order is a property of the server
+// primitive; the client must not invert it by lifting the hold on the side.
+//
 // `stopThenSendNow` is a real (not source-sliced) import — unlike this
 // directory's other `session-chat.tsx` tests, which source-slice because the
 // component itself has no DOM harness to render. This logic is plain async
@@ -31,7 +39,6 @@ function baseDeps(overrides: Partial<StopThenSendNowDeps> = {}): StopThenSendNow
     pendingSettlement: () => undefined,
     stop: async () => null,
     waitIdle: async () => {},
-    resumeQueue: () => {},
     dispatch: async () => {},
     ...overrides,
   };
@@ -49,7 +56,6 @@ describe('stopThenSendNow', () => {
       waitIdle: async () => {
         calls.push('waitIdle');
       },
-      resumeQueue: () => calls.push('resumeQueue'),
       dispatch: async () => {
         calls.push('dispatch');
       },
@@ -57,7 +63,7 @@ describe('stopThenSendNow', () => {
 
     await stopThenSendNow(deps);
 
-    expect(calls).toEqual(['resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['dispatch']);
   });
 
   test('stop then immediate send-now: dispatch fires only after the settlement resolves', async () => {
@@ -71,7 +77,6 @@ describe('stopThenSendNow', () => {
           calls.push('stop-issued');
           return settlement.promise;
         },
-        resumeQueue: () => calls.push('resumeQueue'),
         dispatch: async () => {
           calls.push('dispatch');
         },
@@ -87,7 +92,7 @@ describe('stopThenSendNow', () => {
     settlement.resolve({ status: 'aborted' });
     await runPromise;
 
-    expect(calls).toEqual(['stop-issued', 'resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['stop-issued', 'dispatch']);
   });
 
   test('a failed settlement still lets the send dispatch once resolved', async () => {
@@ -98,7 +103,6 @@ describe('stopThenSendNow', () => {
       baseDeps({
         isRunning: () => true,
         stop: () => settlement.promise,
-        resumeQueue: () => calls.push('resumeQueue'),
         dispatch: async () => {
           calls.push('dispatch');
         },
@@ -111,7 +115,7 @@ describe('stopThenSendNow', () => {
     settlement.resolve({ status: 'failed', error: new Error('abort request rejected') });
     await runPromise;
 
-    expect(calls).toEqual(['resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['dispatch']);
   });
 
   test('a timed-out settlement still lets the send dispatch after the bound', async () => {
@@ -122,7 +126,6 @@ describe('stopThenSendNow', () => {
       baseDeps({
         isRunning: () => true,
         stop: () => settlement.promise,
-        resumeQueue: () => calls.push('resumeQueue'),
         dispatch: async () => {
           calls.push('dispatch');
         },
@@ -135,7 +138,7 @@ describe('stopThenSendNow', () => {
     settlement.resolve({ status: 'timed-out' });
     await runPromise;
 
-    expect(calls).toEqual(['resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['dispatch']);
   });
 
   test('a `null` settlement (no trackable AbortSettlement) falls back to waitIdle before dispatching', async () => {
@@ -151,14 +154,13 @@ describe('stopThenSendNow', () => {
         waitIdle: async () => {
           calls.push('waitIdle');
         },
-        resumeQueue: () => calls.push('resumeQueue'),
         dispatch: async () => {
           calls.push('dispatch');
         },
       }),
     );
 
-    expect(calls).toEqual(['stop', 'waitIdle', 'resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['stop', 'waitIdle', 'dispatch']);
   });
 
   test('stop already issued (settlement pending, store already idle): send-now awaits the pending settlement instead of trusting isRunning()', async () => {
@@ -180,7 +182,6 @@ describe('stopThenSendNow', () => {
           calls.push('stop');
           return { status: 'aborted' };
         },
-        resumeQueue: () => calls.push('resumeQueue'),
         dispatch: async () => {
           calls.push('dispatch');
         },
@@ -196,7 +197,7 @@ describe('stopThenSendNow', () => {
     settlement.resolve({ status: 'aborted' });
     await runPromise;
 
-    expect(calls).toEqual(['resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['dispatch']);
   });
 
   test('a real (non-null) settlement never falls back to waitIdle', async () => {
@@ -209,13 +210,12 @@ describe('stopThenSendNow', () => {
         waitIdle: async () => {
           calls.push('waitIdle');
         },
-        resumeQueue: () => calls.push('resumeQueue'),
         dispatch: async () => {
           calls.push('dispatch');
         },
       }),
     );
 
-    expect(calls).toEqual(['resumeQueue', 'dispatch']);
+    expect(calls).toEqual(['dispatch']);
   });
 });

@@ -26,7 +26,7 @@ import { useProjectCan } from '@/lib/use-project-can';
  *
  * Connectors / Skills / Commands used to sit beside this entry, one row each,
  * plus a Customize row below them. They are tabs of one `(capabilities)`
- * layout, so four rows bought nothing over one: ProjectSettingsNavItem
+ * layout, so four rows bought nothing over one: ProjectCustomizeNavItem
  * replaced them and moved to the top of the panel, under New session.
  */
 export function ProjectFilesNavItem() {

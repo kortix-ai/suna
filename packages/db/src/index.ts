@@ -76,6 +76,7 @@ export {
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
+  sessionTurns,
   providerEvents,
   sandboxes,
   sandboxMembers,

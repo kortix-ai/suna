@@ -17,7 +17,7 @@ import {
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep. See docs/specs/connector.md §3, §7.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
@@ -33,6 +33,7 @@ import {
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
+import { getProjectSecretValueForConsumer } from '../projects/secrets';
 import { extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { db } from '../shared/db';
@@ -42,8 +43,8 @@ import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { COMPUTER_SLUG, computerCatalog } from './computers';
-import { ensureDefaultConnection } from './credentials';
-import { parseResponseBody } from './call';
+import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
+import { listMcpTools, type FetchImpl } from './call';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
@@ -70,6 +71,83 @@ import type { HttpRouteSpec, NormalizedAction } from './types';
 export interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+export function shouldReuseConnectorCatalog(input: {
+  force: boolean;
+  hasExisting: boolean;
+  existingStatus: string | null;
+  provider: ConnectorSpec['provider'];
+  mcpHasActions: boolean;
+  manifestMatches: boolean;
+}): boolean {
+  return (
+    !input.force &&
+    input.hasExisting &&
+    input.existingStatus !== 'error' &&
+    input.provider !== 'channel' &&
+    input.provider !== 'computer' &&
+    (input.provider !== 'mcp' || input.mcpHasActions) &&
+    input.manifestMatches
+  );
+}
+
+export async function rematerializeCatalogAfterCredentialUpdate(
+  input: {
+    projectId: string;
+    accountId: string;
+    provider: string;
+    ownerType: string;
+    isDefault: boolean;
+    connectorId?: string;
+    credential?: string | null;
+  },
+  sync: typeof syncProjectConnectors = syncProjectConnectors,
+): Promise<SyncResult | undefined> {
+  // connectorActions is one project-wide catalog. Only its canonical shared
+  // credential may write it. A member-owned or non-default connection can have
+  // tenant-specific tools and must never publish those tools to other users.
+  if (input.provider !== 'mcp' || input.ownerType !== 'project' || !input.isDefault) {
+    return undefined;
+  }
+  const mcpCredentialOverrides =
+    input.connectorId && input.credential
+      ? new Map([[input.connectorId, input.credential]])
+      : undefined;
+  return sync(input.projectId, input.accountId, {
+    force: true,
+    ...(mcpCredentialOverrides ? { mcpCredentialOverrides } : {}),
+  });
+}
+
+export function catalogPersistenceState(
+  enabled: boolean,
+  catalog: { error?: string } | null,
+): { status: 'active' | 'disabled' | 'error'; lastError: string | null } {
+  return {
+    status: catalog?.error ? 'error' : enabled ? 'active' : 'disabled',
+    lastError: catalog?.error ?? null,
+  };
+}
+
+export function mcpCatalogCredentialError(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (
+    /^OAuth2 token request failed \([1-5][0-9]{2}\): [A-Za-z0-9_.-]{1,128}$/.test(message) ||
+    message === 'OAuth2 token response has no access_token' ||
+    message === 'Invalid stored OAuth2 credential'
+  ) {
+    return `MCP catalog credential resolution failed: ${message}`;
+  }
+  return 'MCP catalog credential resolution failed';
+}
+
+export async function resolveMcpCatalogCredential(
+  connectorId: string,
+  overrides: ReadonlyMap<string, string> | undefined,
+  resolve: typeof resolveCredentialValue = resolveCredentialValue,
+): Promise<string | null> {
+  return overrides?.get(connectorId) ?? resolve(connectorId, null);
 }
 
 /**
@@ -299,6 +377,8 @@ export interface SyncOptions {
    * an unchanged connector skips its (network) catalog fetch.
    */
   force?: boolean;
+  /** Exact connection credentials used only for this in-memory MCP refresh. */
+  mcpCredentialOverrides?: ReadonlyMap<string, string>;
 }
 
 interface ResolvedCatalog {
@@ -409,6 +489,17 @@ export async function syncProjectConnectors(
     .from(connectors)
     .where(eq(connectors.projectId, projectId));
   const existingBySlug = new Map(existing.map((e) => [e.slug, e]));
+  const existingIds = existing.map((connector) => connector.connectorId);
+  const connectorsWithActions = new Set(
+    existingIds.length === 0
+      ? []
+      : (
+          await db
+            .selectDistinct({ connectorId: connectorActions.connectorId })
+            .from(connectorActions)
+            .where(inArray(connectorActions.connectorId, existingIds))
+        ).map((row) => row.connectorId),
+  );
   const desiredSlugs = new Set(specs.map((s) => s.slug));
 
   let synced = 0;
@@ -458,14 +549,40 @@ export async function syncProjectConnectors(
       // projects, and the same was true of any Slack/Teams/email action ever
       // added. Re-resolving locally on every sync is free and keeps deployed
       // projects honest.
-      const catalogUnchanged =
-        !opts.force &&
-        !!ex &&
-        ex.status !== 'error' &&
-        spec.provider !== 'channel' &&
-        spec.provider !== 'computer' &&
-        ex.manifestHash === manifestHashForConnector(spec);
-      const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
+      const catalogUnchanged = shouldReuseConnectorCatalog({
+        force: opts.force === true,
+        hasExisting: !!ex,
+        existingStatus: ex?.status ?? null,
+        provider: spec.provider,
+        mcpHasActions: ex ? connectorsWithActions.has(ex.connectorId) : false,
+        manifestMatches: ex?.manifestHash === manifestHashForConnector(spec),
+      });
+      let catalogCredential: string | null = null;
+      let catalogCredentialError: string | null = null;
+      if (!catalogUnchanged && spec.provider === 'mcp') {
+        try {
+          catalogCredential = ex
+            ? await resolveMcpCatalogCredential(ex.connectorId, opts.mcpCredentialOverrides)
+            : null;
+          if (catalogCredential === null && spec.auth.secret) {
+            catalogCredential = await getProjectSecretValueForConsumer({
+              projectId,
+              accountId,
+              name: spec.auth.secret,
+              consumer: 'connector',
+            });
+          }
+        } catch (error) {
+          catalogCredentialError = mcpCatalogCredentialError(error);
+        }
+      }
+      const catalog = catalogUnchanged
+        ? null
+        : catalogCredentialError
+          ? { actions: [], server: null, error: catalogCredentialError }
+          : await resolveCatalog(gitProject, spec, {
+              credential: catalogCredential,
+            });
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
@@ -611,7 +728,7 @@ async function upsertConnector(
 ): Promise<void> {
   const isNew = !existingId;
   const manifestHash = manifestHashForConnector(spec);
-  const status = catalog?.error ? 'error' : spec.enabled ? 'active' : 'disabled';
+  const { status, lastError } = catalogPersistenceState(spec.enabled, catalog);
   // New connector definitions never carry a secret reference. An existing
   // authSecret is an explicit control-plane binding and must survive sync.
   const authSecret = spec.auth.secret ?? null;
@@ -627,7 +744,7 @@ async function upsertConnector(
     authorizationStrategy: spec.authorizationStrategy,
     manifestHash,
     status,
-    lastError: catalog?.error ?? null,
+    lastError,
     lastSyncedAt: new Date(),
     updatedAt: new Date(),
   } as const;
@@ -752,6 +869,7 @@ export async function materializeComputerConnectorProfile(input: {
 export async function resolveCatalog(
   project: GitBackedProject,
   spec: ConnectorSpec,
+  options: { credential?: string | null; mcpFetchImpl?: FetchImpl } = {},
 ): Promise<ResolvedCatalog> {
   try {
     switch (spec.provider) {
@@ -799,7 +917,21 @@ export async function resolveCatalog(
         };
       }
       case 'mcp': {
-        const tools = await listMcpTools(spec.url!);
+        assertAllowedSourceAddress(spec.url!);
+        const tools = await listMcpTools({
+          url: spec.url!,
+          auth: spec.auth,
+          headers: spec.headers,
+          secret: options.credential ?? null,
+          fetchImpl:
+            options.mcpFetchImpl ??
+            (async (url, init) =>
+              safeEgressFetch(url, {
+                method: init.method,
+                headers: init.headers,
+                body: init.body,
+              })),
+        });
         return { actions: normalizeMcp(tools), server: spec.url };
       }
       case 'pipedream': {
@@ -1063,24 +1195,4 @@ async function reconcileProjectPolicies(
     if (!isUniqueViolation(error)) throw error;
     if ((await updateExisting()).length === 0) throw error;
   }
-}
-
-async function listMcpTools(url: string): Promise<any[]> {
-  assertAllowedSourceAddress(url);
-  const res = await safeEgressFetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/list',
-      params: {},
-    }),
-  });
-  // Streamable-HTTP MCP responds with SSE-framed JSON, not plain JSON.
-  const json: any = parseResponseBody(await res.text());
-  return json?.result?.tools ?? [];
 }

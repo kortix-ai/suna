@@ -141,7 +141,9 @@ describe('sandbox template provider coverage presentation', () => {
       coverage: [coverageEntry({ provider: 'daytona', status: 'ready', observed_at: null })],
     });
     expect(noStamp).not.toContain('Checked');
-    expect(latestObservedAt([coverageEntry({ provider: 'daytona', observed_at: null })])).toBeNull();
+    expect(
+      latestObservedAt([coverageEntry({ provider: 'daytona', observed_at: null })]),
+    ).toBeNull();
   });
 
   test('renders pinned matrix with only available providers and their states', () => {
@@ -212,6 +214,47 @@ describe('SandboxTabView', () => {
     );
     expect(out).toContain('Sandbox templates');
     expect(out).toContain('template-row-marker');
+  });
+
+  /**
+   * The provider pin moved here from `general-tab.tsx` — see this tab's header
+   * comment. Three properties matter and none of them is "it renders": it must
+   * be FIRST (it decides where a session runs, before the templates decide
+   * what it runs), and it must survive both the loading and the error branch,
+   * because it is fed by the project query while those branches describe the
+   * SNAPSHOTS query. A failed template read hiding the provider control would
+   * be the same class of defect as the two tabs disagreeing about the pin.
+   */
+  test('renders the sandbox provider slot above the templates content', () => {
+    const out = renderToStaticMarkup(
+      <SandboxTabView
+        isEmpty={false}
+        sandboxProviderSlot={<div>provider-row-marker</div>}
+        templatesSlot={<li>template-row-marker</li>}
+      />,
+    );
+    expect(out).toContain('provider-row-marker');
+    expect(out.indexOf('provider-row-marker')).toBeLessThan(out.indexOf('template-row-marker'));
+    expect(out.indexOf('provider-row-marker')).toBeLessThan(
+      out.indexOf('Every session starts from a sandbox template'),
+    );
+  });
+
+  test('the provider slot survives the loading and error branches — it reads the project, not the snapshots query', () => {
+    const loading = renderToStaticMarkup(
+      <SandboxTabView isLoading sandboxProviderSlot={<div>provider-row-marker</div>} />,
+    );
+    expect(loading).toContain('provider-row-marker');
+
+    const errored = renderToStaticMarkup(
+      <SandboxTabView
+        isError
+        errorMessage="boom"
+        sandboxProviderSlot={<div>provider-row-marker</div>}
+      />,
+    );
+    expect(errored).toContain('provider-row-marker');
+    expect(errored).toContain('boom');
   });
 
   test('renders the empty state with its action when there are no templates', () => {

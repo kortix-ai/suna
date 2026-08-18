@@ -78,9 +78,9 @@ export interface StoppedSandboxCacheState {
  * used to defeat it by replacing the whole chat before Gate B ever ran.
  *
  * The composer stays gated separately: `sessionComposerReadiness` disables
- * nothing (it queues instead — see `message-queue-boundary.ts`'s
- * `runtimeReady` gate) but shows its own "waking" notice while the runtime is
- * down. Only the READ path is freed here; SENDING still waits on the runtime,
+ * nothing (a submit becomes a durable inbox row the control plane delivers once
+ * the box answers) but shows its own "waking" notice while the runtime is down.
+ * Only the READ path is freed here; SENDING still waits on the runtime,
  * unchanged.
  *
  * A sandbox status outside `'stopped'`/`'error'` — or no cached content —

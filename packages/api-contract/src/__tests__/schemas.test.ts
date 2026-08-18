@@ -10,6 +10,7 @@ import {
   OkResponseSchema,
   OAuth2ApplicationInputSchema,
   OAuth2AuthorizationStartInputSchema,
+  OAuth2ClientCredentialsSchema,
   OAuth2DeviceAuthorizationStartInputSchema,
   ProjectSchema,
   ProjectSessionSandboxSchema,
@@ -886,6 +887,8 @@ describe('session connection contracts', () => {
           token_endpoint_auth_method: 'client_secret_post',
           client_secret: 'client-secret',
           scopes: ['https://graph.microsoft.com/.default'],
+          resource: 'https://resource.example.com',
+          token_params: { tenant_hint: 'tenant-123' },
         },
       }).success,
     ).toBe(true);
@@ -897,6 +900,52 @@ describe('session connection contracts', () => {
           client_id: 'client-id',
           token_endpoint_auth_method: 'client_secret_post',
           client_secret: 'client-secret',
+        },
+      }).success,
+    ).toBe(false);
+    for (const reserved of [
+      'grant_type',
+      'client_id',
+      'client_secret',
+      'client_assertion',
+      'client_assertion_type',
+      'scope',
+      'resource',
+      'audience',
+    ]) {
+      expect(
+        UpdateConnectionCredentialInputSchema.safeParse({
+          oauth2: {
+            type: 'oauth2_client_credentials',
+            token_url: 'https://identity.example.com/token',
+            client_id: 'client-id',
+            token_endpoint_auth_method: 'none',
+            token_params: { [reserved]: 'override' },
+          },
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      UpdateConnectionCredentialInputSchema.safeParse({
+        oauth2: {
+          type: 'oauth2_client_credentials',
+          token_url: 'https://identity.example.com/token',
+          client_id: 'client-id',
+          token_endpoint_auth_method: 'none',
+          token_params: Object.fromEntries(
+            Array.from({ length: 33 }, (_, index) => [`hint_${index}`, 'value']),
+          ),
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateConnectionCredentialInputSchema.safeParse({
+        oauth2: {
+          type: 'oauth2_client_credentials',
+          token_url: 'https://identity.example.com/token',
+          client_id: 'client-id',
+          token_endpoint_auth_method: 'none',
+          token_params: { 'invalid parameter': 'value' },
         },
       }).success,
     ).toBe(false);
@@ -1050,6 +1099,75 @@ describe('required connection contracts', () => {
 });
 
 describe('native OAuth2 lifecycle schemas', () => {
+  test('accepts every client-credentials endpoint authentication method', () => {
+    const base = {
+      type: 'oauth2_client_credentials' as const,
+      token_url: 'https://identity.example.com/token',
+      client_id: 'client-123',
+      token_params: { tenant_hint: 'tenant-123' },
+    };
+    expect(
+      OAuth2ClientCredentialsSchema.safeParse({
+        ...base,
+        token_endpoint_auth_method: 'none',
+      }).success,
+    ).toBe(true);
+    for (const token_endpoint_auth_method of [
+      'client_secret_post',
+      'client_secret_basic',
+      'client_secret_jwt',
+    ] as const) {
+      expect(
+        OAuth2ClientCredentialsSchema.safeParse({
+          ...base,
+          token_endpoint_auth_method,
+          client_secret: 'secret-123',
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      OAuth2ClientCredentialsSchema.safeParse({
+        ...base,
+        token_endpoint_auth_method: 'private_key_jwt',
+        private_key: 'pem-private-key',
+        certificate_thumbprint: 'certificate-thumbprint',
+      }).success,
+    ).toBe(true);
+  });
+
+  test('requires all key material selected by the endpoint authentication method', () => {
+    const base = {
+      type: 'oauth2_client_credentials' as const,
+      token_url: 'https://identity.example.com/token',
+      client_id: 'client-123',
+    };
+    for (const token_endpoint_auth_method of [
+      'client_secret_post',
+      'client_secret_basic',
+      'client_secret_jwt',
+    ] as const) {
+      expect(
+        OAuth2ClientCredentialsSchema.safeParse({
+          ...base,
+          token_endpoint_auth_method,
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      OAuth2ClientCredentialsSchema.safeParse({
+        ...base,
+        token_endpoint_auth_method: 'private_key_jwt',
+        private_key: 'pem-private-key',
+      }).success,
+    ).toBe(true);
+    expect(
+      OAuth2ClientCredentialsSchema.safeParse({
+        ...base,
+        token_endpoint_auth_method: 'private_key_jwt',
+      }).success,
+    ).toBe(false);
+  });
+
   test('accepts a provider-independent Authorization Code application with PKCE', () => {
     expect(
       OAuth2ApplicationInputSchema.parse({

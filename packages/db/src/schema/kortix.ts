@@ -1803,6 +1803,69 @@ export const sessionSandboxes = kortixSchema.table(
 );
 
 /**
+ * Durable per-turn ledger.
+ *
+ * `session_sandboxes.metadata.activeTurns` is the LIFECYCLE authority: the
+ * reaper's deadline math reads it and nothing else, and it is deliberately
+ * erased the moment a turn ends. That makes it unable to answer the question a
+ * client actually asks — "is a turn running, and if not, how did the last one
+ * end?". A cleared record and a turn that never existed are indistinguishable.
+ *
+ * This table is the append-and-settle history beside it. Terminal rows are
+ * RETAINED on purpose: `end_reason` is the only place "the runtime went away
+ * mid-turn" is ever written down. Nothing here is read by the reaper.
+ *
+ * No foreign keys — `session_sandboxes` has none either, and a ledger row must
+ * survive the session row it describes.
+ */
+export const sessionTurns = kortixSchema.table(
+  'session_turns',
+  {
+    // The opaque delivery token minted by the control plane. Text, not uuid:
+    // ledger writes are best-effort and must never throw on a token shape the
+    // lifecycle authority happily accepted.
+    turnToken: text('turn_token').primaryKey().notNull(),
+    sessionId: text('session_id').notNull(),
+    sandboxId: uuid('sandbox_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // OpenCode root this turn runs in. Null until the daemon reports it.
+    opencodeSessionId: text('opencode_session_id'),
+    // Client-minted OpenCode user message id. Null for command turns.
+    messageId: text('message_id'),
+    state: varchar('state', { length: 16 }).default('delivering').notNull(),
+    endReason: text('end_reason'),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('session_turns_state_check', sql`${table.state} IN ('delivering', 'active', 'ended')`),
+    check(
+      'session_turns_end_reason_check',
+      // Every value here is written by a real call site: 'completed' by a
+      // daemon-confirmed end, 'failed' by a terminal model error, 'abandoned'
+      // by a delivery that never reached OpenCode, 'runtime_gone' by the stop
+      // writer and by the reaper's deadline expiry, 'unknown' by an observer
+      // that proved the turn is over but could not say how. A value no caller
+      // writes teaches a reader a distinction the data does not carry.
+      sql`${table.endReason} IS NULL OR ${table.endReason} IN ('completed', 'runtime_gone', 'failed', 'abandoned', 'unknown')`,
+    ),
+    index('session_turns_session_idx').on(table.sessionId, table.startedAt.desc()),
+    // The stop writer settles every unsettled row of one sandbox in the same
+    // transaction that erases its lifecycle authority. PARTIAL, on the exact
+    // predicate that query uses: terminal rows are retained forever, so an
+    // index over all of them would grow without bound to answer a question
+    // only ever asked about the handful that are still open.
+    index('session_turns_open_idx')
+      .on(table.sandboxId)
+      .where(sql`${table.state} <> 'ended'`),
+  ],
+);
+
+/**
  * Provider analytics — an append-only telemetry log, one row per terminal
  * provisioning/migration outcome. Written fire-and-forget from the provision
  * path (the `provisionTimeline` is already computed, so capture is ~free) and

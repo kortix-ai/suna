@@ -304,8 +304,29 @@ const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 let lastMintedSessionId = '';
 let lastMintedWireId = BigInt(0);
 
-/** The highest id-clock value this session's transcript already shows, or null. */
-function newestKnownMessageTime(sessionId: string): bigint | null {
+/**
+ * The highest id-clock value this session's transcript already shows that a
+ * mint may place itself above, or null.
+ *
+ * `ceiling` is what makes this a bounded scan rather than a plain max, and it
+ * is load-bearing. The same store also holds ids that are NOT opencode wire
+ * ids: every send inserts an OPTIMISTIC user message keyed by `ascendingId`,
+ * which keeps the HIGH hex digits of the id clock (`msg_1a01…`) where opencode
+ * keeps the LOW ones (`msg_0141…`) — about 2.8e13 above every real id, and it
+ * still matches the 12-hex shape. Taking the max over everything therefore
+ * returned that optimistic id, the correction bound then refused it, and the
+ * lift never engaged AT ALL in the real app. A prompt sent inside
+ * {@link CLOCK_SKEW_BACKDATE_MS} of the previous reply then went out with a
+ * wire id BELOW that reply, opencode read it as already answered, and the turn
+ * never ran — no error, nothing on screen. (Reproduced in the browser on the
+ * worktree stack: reply at T, prompt at T+70s, id 50s below it, no assistant
+ * message ever created.)
+ *
+ * So an id this mint could not possibly have to sort against is skipped, not
+ * allowed to veto the correction for the whole session. A wrapped or garbage
+ * id is handled by the same rule, which is what the bound was for originally.
+ */
+function newestKnownMessageTime(sessionId: string, ceiling: bigint): bigint | null {
   const messages = useSyncStore.getState().messages[sessionId];
   if (!messages?.length) return null;
   let newest: bigint | null = null;
@@ -313,6 +334,7 @@ function newestKnownMessageTime(sessionId: string): bigint | null {
     const match = WIRE_MESSAGE_ID_TIME.exec(message?.id ?? '');
     if (!match) continue;
     const encoded = BigInt(`0x${match[1]}`);
+    if (encoded > ceiling) continue;
     if (newest === null || encoded > newest) newest = encoded;
   }
   return newest;
@@ -339,8 +361,10 @@ function newestKnownMessageTime(sessionId: string): bigint | null {
 function mintPromptMessageId(sessionId: string): string {
   let encoded =
     (BigInt(Date.now() - CLOCK_SKEW_BACKDATE_MS) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
-  const newest = newestKnownMessageTime(sessionId);
-  if (newest !== null && newest >= encoded && newest - encoded <= MAX_WIRE_ID_CLOCK_CORRECTION) {
+  // The bound lives in the scan, so one unplaceable id skips itself instead of
+  // cancelling the correction for every id in the transcript.
+  const newest = newestKnownMessageTime(sessionId, encoded + MAX_WIRE_ID_CLOCK_CORRECTION);
+  if (newest !== null && newest >= encoded) {
     encoded = newest + BigInt(1);
   }
   if (sessionId === lastMintedSessionId && encoded <= lastMintedWireId) {
@@ -387,6 +411,28 @@ function submissionWireId(sessionId: string, clientMessageId: string | undefined
     submissionWireIds.delete(oldest);
   }
   return minted;
+}
+
+/**
+ * The wire `messageID` for one submission, for a host that does NOT send
+ * through `promptOpenCodeMessage`.
+ *
+ * The server-side prompt inbox (`createSessionPrompt`) needs the id up front:
+ * the control plane cannot mint one, because placing an id correctly means
+ * reading THIS session's transcript, and only this process holds it. Do not
+ * substitute `ascendingId('msg')` — it encodes the HIGH bits of the id clock,
+ * so it sorts below every server-minted id and OpenCode reads the prompt as
+ * already answered. See the warning on `ascendingId`.
+ *
+ * Same memo as an in-band send: one `clientMessageId` always resolves to one
+ * wire id, so a retry of a submission keeps the id the proxy's delivery claim
+ * is keyed on.
+ */
+export function mintSessionWireMessageId(
+  sessionId: string,
+  clientMessageId?: string,
+): string {
+  return submissionWireId(sessionId, clientMessageId);
 }
 
 // ============================================================================

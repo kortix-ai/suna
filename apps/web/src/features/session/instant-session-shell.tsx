@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
+import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -15,19 +15,12 @@ import { buildOptimisticPromptTextWithUploads } from '@/features/session/uploade
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import type { Command } from '@kortix/sdk/react';
 import { readStartStash, useRuntimeAgents, writeStartStash } from '@kortix/sdk/react';
+import { infoToast } from '@/components/ui/toast';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import {
-  useMessageQueueStore,
-  type WebQueuedMessage,
-} from '@/stores/message-queue-store';
-import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import { useCarriedDraftStore, usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
-
-/** Stable empty list, so a session with nothing queued does not hand the
- *  zustand selector a fresh array on every render. */
-const EMPTY_PENDING: WebQueuedMessage[] = [];
 
 const subscribeToNothing = () => () => {};
 
@@ -126,7 +119,36 @@ export function InstantSessionShell({
 
   const handleSend = useCallback(
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
-      if ((!text.trim() && !files?.length) || submitted) return;
+      if (!text.trim() && !files?.length) return;
+      // A SECOND message, typed while the first one is still booting, is
+      // REFUSED — and refused by throwing, which is what keeps the draft.
+      //
+      // The three answers this has had, in order: `return` outright (the
+      // composer had already cleared the input, so the draft was simply gone);
+      // then a browser-local queue, because the FIRST message is still
+      // travelling through the start stash and is not an inbox row yet, so a
+      // row created now would be admitted — and answered — BEFORE it; and now
+      // this. The local queue is gone with the rest of the browser queue, and
+      // POSTing here would reintroduce exactly that ordering inversion.
+      //
+      // Throwing rather than returning is half of it: `dispatchSubmission`
+      // catches it and `planFailedSendRecovery` puts the text and the
+      // attachments back in the editor.
+      //
+      // The other half is `carryDraft`. That editor is THIS component's, and
+      // this component is unmounted by the crossfade the moment the sandbox is
+      // ready — so the recovered draft used to die with it, right after a toast
+      // that promised it was kept. The boot it dies at the end of is 19-25 s
+      // (measured), which is exactly when a follow-up gets typed. The draft is
+      // handed to the session instead, and `SessionChat` picks it up when it
+      // mounts. Nothing is SENT: the ordering rule above is untouched.
+      if (submitted) {
+        useCarriedDraftStore.getState().carryDraft(sessionId, text, files ?? []);
+        infoToast('Still starting this session', {
+          description: 'Your message is kept in the composer — send it again in a moment.',
+        });
+        throw new Error('The first message is still starting — send this one in a moment');
+      }
       playSound('send');
 
       // Hand the message to the real chat: it auto-sends from this stash once
@@ -154,46 +176,6 @@ export function InstantSessionShell({
     [sessionId, submitted, onSubmit],
   );
 
-  // Messages typed AFTER the first send, while the computer is still booting.
-  // The composer's isBusy queue path routes them here instead of onSend — the
-  // old onSend fallback silently swallowed them (handleSend ignores everything
-  // while `submitted` is set) AFTER the input had already cleared, losing the
-  // draft. They render as the standard queued chips above the input and hand
-  // off to the real SessionChat, which seeds its own queue from this store and
-  // drains it at the first safe boundary.
-  // Written straight into THIS session's queue. The old handoff store was a
-  // single global bucket with no session id, so `consumePendingQueue()` handed
-  // its contents to whichever SessionChat mounted first — a message typed for
-  // one session could surface in another. `SessionChat` reads the same store
-  // under the same key, so there is no handoff step left to get wrong.
-  const queuedMessages = useMessageQueueStore(
-    (s) => s.queues[sessionId]?.pending ?? EMPTY_PENDING,
-  );
-  const handleQueueMessage = useCallback(
-    (
-      text: string,
-      files?: AttachedFile[],
-      mentions?: TrackedMention[],
-      // A `/` command submitted while the computer is still booting queues like
-      // anything else. This parameter was missing, so the composer's fourth
-      // argument landed nowhere: the entry was stored as a plain message whose
-      // text is the command's ARGUMENTS — empty, for an argument-less command —
-      // and SessionChat later drained it as a prompt with no command at all.
-      command?: { name: string; split?: { before: string; after: string } },
-    ) => {
-      // No agent/model/variant: nothing is resolved yet during boot, and
-      // `undefined` correctly means "decide when this actually sends".
-      useMessageQueueStore.getState().enqueue(sessionId, { text, files, mentions, command });
-    },
-    [sessionId],
-  );
-  const handleRemoveQueuedMessage = useCallback(
-    (id: string) => {
-      useMessageQueueStore.getState().remove(sessionId, id);
-    },
-    [sessionId],
-  );
-
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       // Defer slash-commands through the same handoff as a normal first message.
@@ -215,14 +197,13 @@ export function InstantSessionShell({
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
-      // chat's live stop takes over the instant it crossfades in. Further
-      // messages typed during boot queue (see handleQueueMessage above) rather
-      // than falling into handleSend, which drops everything once `submitted`.
+      // chat's live stop takes over the instant it crossfades in.
       isBusy={!!submitted}
+      // The first message IS the turn as far as this shell is concerned, so a
+      // `/` command submitted now is refused with the same message a command
+      // typed mid-turn gets, rather than racing the boot.
+      sessionWorking={!!submitted}
       stopDisabled={!!submitted}
-      queuedMessages={queuedMessages}
-      onQueueMessage={handleQueueMessage}
-      onRemoveQueuedMessage={handleRemoveQueuedMessage}
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
       // card radius once docked so the crossfade into SessionChat doesn't pop.

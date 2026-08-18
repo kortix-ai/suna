@@ -63,7 +63,6 @@ import {
   answerPermission,
   answerQuestion,
   beginOptimisticPlainTextSend,
-  beginRestPromptObservation,
   buildSessionCommandInput,
   cachedStartResultIsReady,
   classifySendError,
@@ -72,7 +71,7 @@ import {
   markDispatchedForPartIds,
   nextInconclusiveSince,
   rejectQuestion,
-  sendRestPromptWithObservation,
+  sendReceiptId,
   sendStateOnError,
   sendStateOnStart,
   sessionStartStaleTime,
@@ -80,6 +79,7 @@ import {
   shouldRetrySessionStart,
 } from './use-session';
 import { derivePhase } from './use-session-phase';
+import { OPTIMISTIC_RECEIPT_MAX_MS, projectWorking } from '../core/session/working';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
   useOpenCodePendingStore.getState().addQuestion({
@@ -110,39 +110,77 @@ beforeEach(() => {
   sessionPromptImpl = async () => ({ data: {} });
 });
 
-describe('REST prompt observation scope', () => {
-  test('targets the selected sandbox when two runtimes contain the same OpenCode id', () => {
-    const sessionId = 'shared-session';
-    const runtimeA = getSessionSyncController(sessionId, undefined, 'runtime-a');
-    const runtimeB = getSessionSyncController(sessionId, undefined, 'runtime-b');
-
-    beginRestPromptObservation(sessionId, 'runtime-b');
-
-    expect(runtimeA.getSnapshot().isPromptObservedBusy).toBe(false);
-    expect(runtimeB.getSnapshot().isPromptObservedBusy).toBe(true);
+/**
+ * What replaced the prompt-observation machine.
+ *
+ * The three tests here used to assert `isPromptObservedBusy` — a busy override
+ * a phase machine set on send and released from a stall timer. The send half
+ * of that contract is now one value, the send receipt, and the deciding half is
+ * `projectWorking`: the receipt claims `working` until a server source answers,
+ * and it is bounded so a send whose answer never comes cannot latch the UI.
+ */
+describe('send receipts', () => {
+  test('names the submission by the host\'s own key when it gave one', () => {
+    expect(sendReceiptId('ses_1', [{ type: 'text', text: 'hi', id: 'prt_1' }], 'queue-7')).toBe(
+      'queue-7',
+    );
   });
 
-  test('keeps observation active after an accepted sendParts prompt', async () => {
-    const sessionId = 'send-parts-session';
-    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
-
-    await sendRestPromptWithObservation(sessionId, 'runtime-a', async () => {});
-
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+  test('falls back to the optimistic part id the send is correlated by', () => {
+    expect(sendReceiptId('ses_1', [{ type: 'text', text: 'hi', id: 'prt_1' }])).toBe('prt_1');
   });
 
-  test('ends observation when a sendParts prompt is rejected', async () => {
-    const sessionId = 'failed-send-parts-session';
-    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
-    const rejection = new Error('prompt rejected');
+  test('falls back to the session when no part carries an id', () => {
+    expect(sendReceiptId('ses_1', [{ type: 'text', text: 'hi' }])).toBe('ses_1');
+  });
 
-    await expect(
-      sendRestPromptWithObservation(sessionId, 'runtime-a', async () => {
-        throw rejection;
+  test('an accepted send reads as working until a server read that saw it', () => {
+    const sentAt = 1_000_000;
+    const pending = { messageId: 'prt_1', atMs: sentAt };
+    const accepted = { ...pending, acceptedAtMs: sentAt + 400 };
+
+    // The poll in flight when the user pressed send cannot answer for it.
+    expect(
+      projectWorking({
+        optimistic: pending,
+        server: { turns: [], atMs: sentAt - 200 },
+        stream: null,
+        nowMs: sentAt + 50,
       }),
-    ).rejects.toBe(rejection);
+    ).toMatchObject({ state: 'working', source: 'optimistic' });
 
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+    // Nor can one issued while the send is still on the wire: it is stamped
+    // after the receipt and still cannot see the prompt.
+    expect(
+      projectWorking({
+        optimistic: pending,
+        server: { turns: [], atMs: sentAt + 100 },
+        stream: null,
+        nowMs: sentAt + 150,
+      }),
+    ).toMatchObject({ state: 'working', source: 'optimistic' });
+
+    // One issued after the server ACCEPTED it can.
+    expect(
+      projectWorking({
+        optimistic: accepted,
+        server: { turns: [], atMs: sentAt + 3_000 },
+        stream: null,
+        nowMs: sentAt + 3_100,
+      }),
+    ).toMatchObject({ state: 'idle', source: 'server' });
+  });
+
+  test('a receipt nobody ever answers stops claiming working — no latch', () => {
+    const receipt = { messageId: 'prt_1', atMs: 0 };
+    expect(
+      projectWorking({
+        optimistic: receipt,
+        server: null,
+        stream: null,
+        nowMs: OPTIMISTIC_RECEIPT_MAX_MS,
+      }).state,
+    ).toBe('idle');
   });
 });
 

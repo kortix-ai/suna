@@ -61,6 +61,12 @@ import {
   releasePromptDelivery,
   shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
+import {
+  PROXY_HOP_HEADER,
+  PROXY_UPSTREAM_STATUS_HEADER,
+  portFailureHop,
+  type ProxyHop,
+} from '../proxy-hop';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
 import {
   abandonSandboxTurn,
@@ -280,28 +286,53 @@ function portUnreachableHtml(port: number): string {
 // Response for an unreachable / not-yet-ready sandbox port: a friendly HTML page
 // for browser navigations, machine-readable JSON otherwise. Marked no-store so a
 // retry always re-hits the upstream instead of a cached error.
-function portUnreachableResponse(opts: {
+//
+// `hop` is mandatory: the status alone cannot distinguish a parked row from a
+// dead runtime from a dev server the agent never started, and a caller that has
+// to guess guesses wrong (see `proxy-hop.ts`). `upstreamStatus` is the status
+// the failing hop actually returned, when there was one — a thrown/refused
+// connection has none.
+export function portUnreachableResponse(opts: {
   port: number;
   status: number;
   origin: string;
   incomingHeaders: Headers;
   reason: string;
+  hop: ProxyHop;
+  upstreamStatus?: number | null;
 }): Response {
-  const { port, status, origin, incomingHeaders, reason } = opts;
+  const { port, status, origin, incomingHeaders, reason, hop } = opts;
+  const upstreamStatus = opts.upstreamStatus ?? null;
   const headers = new Headers({ 'Cache-Control': 'no-store' });
+  // Set on EVERY variant, HTML included: a `fetch` probe that lands on the
+  // browser-navigation branch (it sends `Accept: text/html`) must still be able
+  // to attribute the failure.
+  headers.set(PROXY_HOP_HEADER, hop);
+  if (upstreamStatus !== null) {
+    headers.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstreamStatus));
+  }
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Credentials', 'true');
+    // Without this the browser hides both headers from JS and the probe is back
+    // to guessing — the web app and the API are always different origins.
+    headers.set(
+      'Access-Control-Expose-Headers',
+      `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
+    );
   }
   if (isBrowserNavigation(incomingHeaders)) {
     headers.set('Content-Type', 'text/html; charset=utf-8');
     return new Response(portUnreachableHtml(port), { status, headers });
   }
   headers.set('Content-Type', 'application/json');
-  return new Response(JSON.stringify({ error: reason, port, status }), {
-    status,
-    headers,
-  });
+  return new Response(
+    JSON.stringify({ error: reason, port, status, hop, upstream_status: upstreamStatus }),
+    {
+      status,
+      headers,
+    },
+  );
 }
 
 // Response for a blocking session-turn (`POST /session/:id/message`) that
@@ -874,6 +905,10 @@ export async function forwardToSandbox(
         origin,
         incomingHeaders,
         reason: `sandbox not ready (status: ${record.status})`,
+        // We never dialled the box. This is our own row read, so it says
+        // nothing about whether the runtime is reachable — a probe that counts
+        // it as evidence of a dead box is counting our own answer.
+        hop: 'control_plane',
       });
     }
   }
@@ -1018,11 +1053,20 @@ export async function forwardToSandbox(
   // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
   const proxyStartedAt = Date.now();
 
+  // Which hop the LAST attempt got as far as, for the give-up response below.
+  // An attempt that never resolved an ingress address failed at the provider
+  // edge; once it has one, everything after it is the box itself. Never dialling
+  // at all (out of budget on the first pass) is the provider-edge case too — we
+  // have no evidence about the box.
+  let lastAttemptHop: ProxyHop = 'provider_ingress';
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
+      lastAttemptHop = 'provider_ingress';
       const ingress = await resolveSandboxIngress(record, ingressRequest);
+      lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
@@ -1281,6 +1325,11 @@ export async function forwardToSandbox(
             origin,
             incomingHeaders,
             reason: 'sandbox port unreachable',
+            // The provider edge answered — it reached the box and found the
+            // port shut. So the hop is whatever lives on that port: the runtime
+            // (8000/4096/4097) or the user's own process.
+            hop: portFailureHop(upstreamPort),
+            upstreamStatus: upstream.status,
           });
         }
       }
@@ -1454,6 +1503,9 @@ export async function forwardToSandbox(
     origin,
     incomingHeaders,
     reason: 'sandbox upstream unreachable',
+    // No upstream STATUS exists here — every attempt threw (refused, reset,
+    // connect timeout), so there is nothing to report but which hop we got to.
+    hop: lastAttemptHop,
   });
 }
 

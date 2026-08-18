@@ -338,13 +338,24 @@ describe('appended cards do not stagger', () => {
   });
 });
 
-describe('the connectors page has three tabs', () => {
-  test('Discovery, All, Connected — and no Available', () => {
+describe('the connectors page has four tabs', () => {
+  test('Discovery, All, Connected, Channels — and no Available', () => {
     expect(page).toContain(
-      "const SCOPES: readonly ConnectorScope[] = ['discover', 'all', 'connected'];",
+      "const SCOPES: readonly ConnectorScope[] = ['discover', 'all', 'connected', 'channels'];",
     );
     expect(page).toContain("discover: 'Discovery'");
+    expect(page).toContain("channels: 'Channels'");
     expect(page).not.toContain("'available'");
+  });
+
+  // Channels is the one scope that is not a narrower view of the connector
+  // list — it replaces the body. So the two controls that only act on that
+  // list come off with it: the search box searches the catalogue, and Add
+  // opens a custom-CONNECTOR form.
+  test('the Channels scope drops the connector search and the Add button', () => {
+    expect(page).toContain("const channelsActive = scope === 'channels';");
+    expect(page).toContain('channelsActive ? undefined : (');
+    expect(page).toContain('canWrite && !channelsActive ?');
   });
 
   test('no tab filters connected apps out of the catalogue', () => {

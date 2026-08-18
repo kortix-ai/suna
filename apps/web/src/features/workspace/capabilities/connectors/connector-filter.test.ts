@@ -61,11 +61,24 @@ describe('the landing tab is Discovery, unconditionally', () => {
   // both are removed and Connected is the only tab left to land on. See
   // `connectors-page.pipedream-unconfigured.test.ts`.
   test('the default scope is a constant, not derived from the project', () => {
+    // The scope moved into `?scope=` so Channels could be linked to. The
+    // landing tab did not move: an absent or unrecognised param is Discovery,
+    // for every project, before any query resolves — unless the deployment
+    // has no catalogue to land on, in which case it falls back to Connected.
     expect(page).toContain(
-      "const scope: ConnectorScope = catalogueAvailable ? (scopeChoice ?? 'discover') : 'connected';",
+      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
+    );
+    expect(page).toContain(
+      "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
     );
     expect(page).not.toContain('defaultConnectorScope');
     expect(page).not.toContain('connectors.length ?');
+  });
+
+  test('Discovery writes no param, so the bare page URL stays bare', () => {
+    expect(page).toContain(
+      "next === 'discover' ? params.delete('scope') : params.set('scope', next),",
+    );
   });
 
   test('the helper is gone rather than left unused', () => {

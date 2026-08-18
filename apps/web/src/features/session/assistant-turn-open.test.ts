@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { hasOpenAssistantTurn } from './assistant-turn-open';
+import { hasOpenAssistantTurn, isRetryableTurnError } from './assistant-turn-open';
 
 function assistant(fields: Record<string, unknown> = {}) {
   return { info: { role: 'assistant', ...fields } };
@@ -52,5 +52,27 @@ describe('hasOpenAssistantTurn', () => {
 
   test('a user message after the assistant does not reopen a finished turn', () => {
     expect(hasOpenAssistantTurn([assistant({ time: { completed: 1 } }), user()])).toBe(false);
+  });
+
+  test('a retryable provider error keeps the turn open', () => {
+    // OpenCode stamps `info.error` while it backs off a 429 and keeps writing
+    // the SAME assistant message. Ending the turn here opened the queue's drain
+    // gate mid-turn and double-sent into a live turn.
+    expect(
+      hasOpenAssistantTurn([assistant({ error: { name: 'APIError', data: { isRetryable: true } } })]),
+    ).toBe(true);
+  });
+
+  test('a non-retryable provider error still ends the turn', () => {
+    expect(
+      hasOpenAssistantTurn([
+        assistant({ error: { name: 'APIError', data: { isRetryable: false } } }),
+      ]),
+    ).toBe(false);
+  });
+
+  test('isRetryableTurnError is re-exported for host use', () => {
+    expect(isRetryableTurnError({ name: 'APIError', data: { isRetryable: true } })).toBe(true);
+    expect(isRetryableTurnError({ name: 'AbortError' })).toBe(false);
   });
 });

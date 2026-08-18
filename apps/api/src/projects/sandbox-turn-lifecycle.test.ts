@@ -4,6 +4,10 @@ import { mockConfigModule } from './reaping/test-support/mock-config';
 let executed: string[] = [];
 let executeResults: unknown[] = [];
 let executeError: Error | null = null;
+// Fails one specific statement in a multi-statement call. The ledger writes are
+// appended after the authority write, so "the ledger is down" is only
+// expressible per statement, not with the global `executeError`.
+let executeErrorByIndex: Record<number, Error> = {};
 
 function render(query: unknown): string {
   if (query === null || query === undefined) return '';
@@ -20,7 +24,10 @@ mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
   db: {
     execute: async (query: unknown) => {
+      const callIndex = executed.length;
       executed.push(render(query));
+      const scoped = executeErrorByIndex[callIndex];
+      if (scoped) throw scoped;
       if (executeError) throw executeError;
       return executeResults.shift() ?? [];
     },
@@ -47,6 +54,7 @@ beforeEach(() => {
   executed = [];
   executeResults = [];
   executeError = null;
+  executeErrorByIndex = {};
   process.env.KORTIX_SANDBOX_TURN_GRANT_MINUTES = '1';
   process.env.KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES = '1';
 });
@@ -97,6 +105,10 @@ describe('daemon-delivered initial turn authority', () => {
       state: 'delivering',
       opencodeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
+      // A legacy `activeTurn` record predates `startedAtMs`. Null, never a
+      // synthesized "now": GET .../turn publishes this instant, and inventing
+      // one would report a start nobody measured.
+      startedAtMs: null,
     });
     expect(
       deliveringSandboxTurn({ activeTurn: { token: 'turn-token', state: 'active' } }),
@@ -123,12 +135,15 @@ describe('daemon-delivered initial turn authority', () => {
             state: 'active',
             opencodeSessionId: 'ses_a',
             messageId: 'msg_a',
+            startedAtMs: 1700,
           },
           'token-delivering': {
             token: 'token-delivering',
             state: 'delivering',
             opencodeSessionId: 'ses_b',
             messageId: 'msg_b',
+            // Not a number: a corrupt instant reads as "unknown", not as 1970.
+            startedAtMs: 'soon',
           },
         },
         activeTurn: {
@@ -144,18 +159,21 @@ describe('daemon-delivered initial turn authority', () => {
         state: 'active',
         opencodeSessionId: 'ses_a',
         messageId: 'msg_a',
+        startedAtMs: 1700,
       },
       {
         token: 'token-delivering',
         state: 'delivering',
         opencodeSessionId: 'ses_b',
         messageId: 'msg_b',
+        startedAtMs: null,
       },
       {
         token: 'legacy-token',
         state: 'active',
         opencodeSessionId: 'ses_legacy',
         messageId: null,
+        startedAtMs: null,
       },
     ]);
   });
@@ -250,6 +268,10 @@ describe('control-plane active-turn state', () => {
     expect(executed[0]).toContain('turn-token');
     expect(executed[0]).toContain("- 'activeTurn'");
     expect(executed[0]).toContain('-  turn-token');
+    // The record has to be read before it is erased: RETURNING sees the new row
+    // version, so the entry the ledger settle needs is gone by then.
+    expect(executed[0]).toContain('FOR UPDATE OF s');
+    expect(executed[0]).toContain('AS turn');
   });
 });
 
@@ -350,5 +372,303 @@ describe('maintenance renewal', () => {
   test('stale evidence for a different turn receives no renewal', async () => {
     executeResults = [[]];
     expect(await renewActiveSandboxTurn('sb-1', 'stale-token')).toBe('inactive');
+  });
+});
+
+describe('session_turns ledger dual-write', () => {
+  const OWNER = {
+    sandbox_id: '11111111-1111-4111-8111-111111111111',
+    session_id: 'sess-1',
+    project_id: '22222222-2222-4222-8222-222222222222',
+    account_id: '33333333-3333-4333-8333-333333333333',
+  };
+
+  test('beginSandboxTurn returns the ledger identity from the authority write', async () => {
+    executeResults = [[{ ...OWNER, granted: true }]];
+    await beginSandboxTurn(
+      { externalId: 'ext-1' },
+      { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+    );
+
+    expect(executed[0]).toContain('s.sandbox_id');
+    expect(executed[0]).toContain('s.session_id');
+    expect(executed[0]).toContain('s.project_id');
+    expect(executed[0]).toContain('s.account_id');
+  });
+
+  test('beginSandboxTurn inserts a delivering ledger row', async () => {
+    executeResults = [[{ ...OWNER, granted: true }]];
+    expect(
+      await beginSandboxTurn(
+        { externalId: 'ext-1' },
+        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      ),
+    ).toBe('granted');
+
+    expect(executed).toHaveLength(2);
+    expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
+    expect(executed[1]).toContain('delivering');
+    expect(executed[1]).toContain('turn-token');
+    expect(executed[1]).toContain('ON CONFLICT');
+    // This INSERT is a SECOND round trip; a stop can commit before it lands and
+    // would leave a row nothing could ever close. It therefore selects its
+    // identity from the sandbox that still holds this token's authority, and
+    // LOCKS that row so a stop mid-commit is waited for instead of raced.
+    expect(executed[1]).toContain('FROM kortix.session_sandboxes');
+    expect(executed[1]).toContain("s.status IN ('active', 'provisioning')");
+    expect(executed[1]).toContain("s.metadata->'activeTurns'->");
+    expect(executed[1]).toContain('FOR UPDATE');
+    // Identity is read from that same locked row, never re-bound from the
+    // authority write's RETURNING: one read cannot disagree with itself.
+    expect(executed[1]).toContain('owner.session_id');
+    expect(executed[1]).not.toContain('sess-1');
+  });
+
+  test('beginSandboxTurn skips the ledger when the authority write returned no identity', async () => {
+    executeResults = [[{ live: true }]];
+    expect(
+      await beginSandboxTurn(
+        { externalId: 'ext-1' },
+        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      ),
+    ).toBe('granted');
+
+    expect(executed).toHaveLength(1);
+  });
+
+  test('a failed ledger insert never fails the prompt path', async () => {
+    executeResults = [[{ ...OWNER, granted: true }]];
+    executeErrorByIndex = { 1: new Error('ledger down') };
+
+    expect(
+      await beginSandboxTurn(
+        { externalId: 'ext-1' },
+        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      ),
+    ).toBe('granted');
+    expect(executed).toHaveLength(2);
+  });
+
+  test('acceptSandboxTurn upserts the ledger row to active', async () => {
+    executeResults = [[{ ...OWNER, accepted: true }]];
+    expect(
+      await acceptSandboxTurn({ externalId: 'ext-1' }, 'turn-token', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+      }),
+    ).toBe(true);
+
+    expect(executed[1]).toContain('ON CONFLICT (turn_token) DO UPDATE');
+    expect(executed[1]).toContain('active');
+    expect(executed[1]).toContain('accepted_at');
+    expect(executed[1]).toContain("state <> 'ended'");
+  });
+
+  test('acceptSandboxTurn creates the ledger row for a daemon-delivered initial turn', async () => {
+    executeResults = [[{ ...OWNER, accepted: true }]];
+    await acceptSandboxTurn({ externalId: 'ext-1' }, 'boot-token', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_boot',
+    });
+
+    // The boot turn is written straight into metadata by
+    // initialSandboxTurnMetadata, so acceptance is its FIRST ledger write.
+    expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
+    expect(executed[1]).toContain('boot-token');
+    expect(executed[1]).toContain('msg_boot');
+  });
+
+  test("acceptSandboxTurn's insert carries the same authority guard as begin's", async () => {
+    // Being an INSERT in a second round trip, it can open a row after a stop has
+    // committed — a row on a parked box that no settle can ever reach again.
+    executeResults = [[{ ...OWNER, accepted: true }]];
+    await acceptSandboxTurn({ externalId: 'ext-1' }, 'boot-token', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_boot',
+    });
+
+    expect(executed[1]).toContain("s.status IN ('active', 'provisioning')");
+    expect(executed[1]).toContain('FOR UPDATE');
+    // The legacy single-record arm counts as authority too, or a whole rolling
+    // deploy would record no history at all.
+    expect(executed[1]).toContain("s.metadata->'activeTurn'->>'token'");
+  });
+
+  const ENDED_TURN = {
+    token: 'turn-token',
+    opencodeSessionId: 'ses_root',
+    messageId: 'msg_turn_1',
+    startedAtMs: 1_700_000_000_000,
+  };
+
+  test('completeSandboxTurn ends the ledger row instead of deleting it', async () => {
+    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+
+    expect(executed).toHaveLength(2);
+    expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
+    expect(executed[1]).toContain('ON CONFLICT (turn_token) DO UPDATE');
+    expect(executed[1]).toContain("state = 'ended'");
+    expect(executed[1]).toContain('end_reason');
+    expect(executed[1]).not.toContain('DELETE');
+  });
+
+  test('completeSandboxTurn writes history for a turn that has no ledger row yet', async () => {
+    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+
+    // A boot turn never passes through beginSandboxTurn, and beginSandboxTurn's
+    // own INSERT is a second round trip a fast terminal end can beat. Both
+    // leave nothing to UPDATE, so the settle has to be able to CREATE the row —
+    // with the identity the erased metadata entry carried.
+    expect(executed[1]).toContain('turn-token');
+    expect(executed[1]).toContain('sess-1');
+    expect(executed[1]).toContain('ses_root');
+    expect(executed[1]).toContain('msg_turn_1');
+    expect(executed[1]).toContain(new Date(ENDED_TURN.startedAtMs).toISOString());
+  });
+
+  test("completeSandboxTurn records 'failed' for an error end and 'completed' for idle", async () => {
+    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
+    await completeSandboxTurn('sess-1', 'error', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+    expect(executed[1]).toContain('failed');
+
+    executed = [];
+    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+    expect(executed[1]).toContain('completed');
+  });
+
+  test('completeSandboxTurn aggregates TOKENS, not metadata keys', async () => {
+    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+
+    // The legacy single-record arm's KEY is the literal 'activeTurn'; the
+    // aggregate must carry the record's TOKEN instead, or the settle ends a row
+    // that never existed. Asserting the ledger statement's text cannot prove
+    // this — that statement is built from whatever this mock returned. The real
+    // guard drives the legacy shape through real Postgres:
+    // __tests__/integration-sandbox-turn-lifecycle.test.ts, "the legacy
+    // activeTurn record settles its ledger row under its own token".
+    expect(executed[0]).toContain("entry.value->>'token'");
+    expect(executed[0]).toContain("'token', selected.token");
+    expect(executed[0]).toContain('ended_turns');
+  });
+
+  test('completeSandboxTurn skips the ledger when the authority write returned no identity', async () => {
+    executeResults = [[{ ended_turns: [ENDED_TURN], completed: true }]];
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+
+    expect(executed).toHaveLength(1);
+  });
+
+  test('abandonSandboxTurn settles the ledger row as abandoned', async () => {
+    executeResults = [
+      [
+        {
+          ...OWNER,
+          turn: {
+            token: 'turn-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+            startedAtMs: 1_700_000_000_000,
+          },
+          abandoned: true,
+        },
+      ],
+    ];
+
+    expect(await abandonSandboxTurn({ externalId: 'ext-1' }, 'turn-token')).toBe(true);
+
+    // Without this the row beginSandboxTurn inserted stays 'delivering' for
+    // ever, and every failed delivery (preview.ts 3xx/401/503/4xx/unreachable,
+    // r4.ts turn_abandoned) leaves one behind.
+    expect(executed).toHaveLength(2);
+    expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
+    expect(executed[1]).toContain('abandoned');
+    expect(executed[1]).toContain('turn-token');
+    expect(executed[1]).toContain('msg_turn_1');
+  });
+
+  test('abandonSandboxTurn settles a boot turn that carries no stored record', async () => {
+    executeResults = [[{ ...OWNER, turn: null, abandoned: true }]];
+
+    expect(await abandonSandboxTurn({ sandboxId: OWNER.sandbox_id }, 'boot-token')).toBe(true);
+
+    expect(executed[1]).toContain('boot-token');
+    expect(executed[1]).toContain('abandoned');
+  });
+
+  test('a failed abandon ledger write never fails the cleanup path', async () => {
+    executeResults = [[{ ...OWNER, turn: null, abandoned: true }]];
+    executeErrorByIndex = { 1: new Error('ledger down') };
+
+    expect(await abandonSandboxTurn({ externalId: 'ext-1' }, 'turn-token')).toBe(true);
+  });
+
+  test("clearSandboxTurn ends the ledger row with the caller's reason", async () => {
+    executeResults = [[{ ...OWNER, cleared: true }]];
+    expect(await clearSandboxTurn('sb-1', 'turn-token', 60_000, 'completed')).toBe(true);
+
+    expect(executed).toHaveLength(2);
+    expect(executed[1]).toContain('completed');
+    expect(executed[1]).toContain('turn-token');
+  });
+
+  test('clearSandboxTurn defaults the reason to runtime_gone', async () => {
+    executeResults = [[{ ...OWNER, cleared: true }]];
+    await clearSandboxTurn('sb-1', 'turn-token');
+
+    expect(executed[1]).toContain('runtime_gone');
+  });
+
+  test('a terminal delivery with no reported reason is recorded abandoned', async () => {
+    executeResults = [[{ ...OWNER, cleared: true }]];
+
+    // This function only ever sees `delivering` turns — turns nothing has
+    // confirmed reached OpenCode. `terminal` is turn_in_flight === false, which
+    // the daemon answers for a prompt it never received exactly as for one that
+    // finished, so 'completed' here would be a guess about the very case the
+    // column exists to name.
+    expect(await reconcileSandboxTurnDelivery('sb-1', 'turn-token', 'terminal')).toBe('inactive');
+    expect(executed[1]).toContain('abandoned');
+    expect(executed[1]).not.toContain('completed');
+    expect(executed[1]).not.toContain('runtime_gone');
+  });
+
+  test('a terminal delivery the daemon explains keeps the reported reason', async () => {
+    executeResults = [[{ ...OWNER, cleared: true }]];
+
+    expect(await reconcileSandboxTurnDelivery('sb-1', 'turn-token', 'terminal', 'completed')).toBe(
+      'inactive',
+    );
+    expect(executed[1]).toContain('completed');
+    expect(executed[1]).not.toContain('abandoned');
+  });
+
+  test('clearSandboxTurn keeps graceMs as its third positional argument', async () => {
+    executeResults = [[{ cleared: true }]];
+    await clearSandboxTurn('sb-1', 'turn-token', 60_000);
+
+    expect(executed[0]).toContain('60');
   });
 });

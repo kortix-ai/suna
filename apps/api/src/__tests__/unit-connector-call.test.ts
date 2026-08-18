@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   executeCall,
+  listMcpTools,
   oauth1Header,
   oauth1Signature,
   paramHintsFromSchema,
@@ -300,6 +301,132 @@ describe('MCP execution request shape', () => {
       method: 'tools/call',
       params: { name: 'search', arguments: { q: 'a' } },
     });
+  });
+
+  test('lists tools with the connector credential and static headers', async () => {
+    const { fetchImpl, calls } = recordingFetch(
+      200,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          tools: [{ name: 'queryRecords', inputSchema: { type: 'object' } }],
+        },
+      }),
+    );
+    const tools = await listMcpTools({
+      url: 'https://mcp.example.com/mcp',
+      auth: BEARER,
+      secret: 'access-token',
+      headers: { 'X-Tenant': 'sandbox' },
+      fetchImpl,
+    });
+
+    expect(calls[0]!.headers.Authorization).toBe('Bearer access-token');
+    expect(calls[0]!.headers['X-Tenant']).toBe('sandbox');
+    expect(JSON.parse(calls[0]!.body!)).toMatchObject({
+      method: 'tools/list',
+      params: {},
+    });
+    expect(tools.map((tool) => tool.name)).toEqual(['queryRecords']);
+  });
+
+  test('rejects an MCP catalog HTTP error instead of materializing zero tools', async () => {
+    const { fetchImpl } = recordingFetch(401, '');
+    await expect(
+      listMcpTools({
+        url: 'https://mcp.example.com/mcp',
+        auth: BEARER,
+        secret: 'expired-token',
+        fetchImpl,
+      }),
+    ).rejects.toThrow('MCP tools/list failed: HTTP 401');
+  });
+
+  test('rejects a JSON-RPC error instead of materializing zero tools', async () => {
+    const { fetchImpl } = recordingFetch(
+      200,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32001, message: 'Unauthorized' },
+      }),
+    );
+    await expect(listMcpTools({ url: 'https://mcp.example.com/mcp', fetchImpl })).rejects.toThrow(
+      'MCP tools/list failed: JSON-RPC -32001 Unauthorized',
+    );
+  });
+
+  test('redacts the connector credential if an MCP JSON-RPC error echoes it', async () => {
+    const { fetchImpl } = recordingFetch(
+      200,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: -32001,
+          message: 'credential access-token-123 is invalid',
+        },
+      }),
+    );
+    let message = '';
+    try {
+      await listMcpTools({
+        url: 'https://mcp.example.com/mcp',
+        auth: BEARER,
+        secret: 'access-token-123',
+        fetchImpl,
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('credential [REDACTED] is invalid');
+    expect(message).not.toContain('access-token-123');
+  });
+
+  test('does not expose a query credential from an MCP transport error', async () => {
+    const secret = 'query-secret-123';
+    let message = '';
+    try {
+      await listMcpTools({
+        url: 'https://mcp.example.com/mcp',
+        auth: { type: 'custom', in: 'query', name: 'api_key', prefix: null },
+        secret,
+        fetchImpl: async (url) => {
+          throw new Error(`connect failed for ${url}`);
+        },
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe('MCP tools/list failed: transport error');
+    expect(message).not.toContain(secret);
+  });
+
+  test('redacts a form-encoded query credential from an MCP JSON-RPC error', async () => {
+    const secret = 'query secret+123';
+    const encoded = new URLSearchParams({ api_key: secret }).toString();
+    const { fetchImpl } = recordingFetch(
+      200,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32001, message: `request failed: ?${encoded}` },
+      }),
+    );
+    let message = '';
+    try {
+      await listMcpTools({
+        url: 'https://mcp.example.com/mcp',
+        auth: { type: 'custom', in: 'query', name: 'api_key', prefix: null },
+        secret,
+        fetchImpl,
+      });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('api_key=[REDACTED]');
+    expect(message).not.toContain('query+secret%2B123');
   });
 });
 

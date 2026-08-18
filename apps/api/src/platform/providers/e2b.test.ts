@@ -6,6 +6,9 @@ process.env.E2B_TEMPLATE = 'kortix-test';
 process.env.KORTIX_URL = 'https://api.example.com';
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.DATABASE_URL ??= 'postgres://x';
+// The persisted runtime environment is sealed with a key derived from this, so
+// the cases below cover the real envelope rather than a bypass.
+process.env.API_KEY_SECRET ??= 'e2b-test-runtime-env-secret';
 process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.FRONTEND_URL = 'https://app.example.com';
 
@@ -40,6 +43,10 @@ function fakeSandbox(sandboxId: string, trafficAccessToken = `traffic-${sandboxI
   const pauses: Array<Record<string, unknown>> = [];
   const runs: Array<{ command: string; opts: Record<string, unknown> }> = [];
   const fileWrites: Array<{ path: string; data: string; opts: Record<string, unknown> }> = [];
+  // The pre-envelope plain JSON map. Boxes paused before the runtime env was
+  // sealed still hold this shape, and a resume is the one moment they have no
+  // other copy of their own environment — so it stays the default fixture and
+  // every resume case below doubles as the back-compat case.
   const files = new Map<string, string>([
     ['/etc/kortix/runtime-env.json', JSON.stringify({ KORTIX_SANDBOX_TOKEN: 'persisted-token' })],
   ]);
@@ -257,10 +264,8 @@ describe('E2B provider lifecycle', () => {
       path: '/etc/kortix/runtime-env.json',
       opts: { user: 'root' },
     });
-    expect(JSON.parse(sandbox.fileWrites[0].data)).toMatchObject({
-      KORTIX_SANDBOX_TOKEN: 'sandbox-token',
-      KORTIX_API_URL: 'https://api.example.com/v1',
-    });
+    expect(sandbox.fileWrites[0].data).not.toContain('sandbox-token');
+    expect(sandbox.fileWrites[0].data).not.toContain('KORTIX_API_URL');
     expect(sandbox.runs).toHaveLength(3);
     expect(sandbox.runs[0].command).toBe('chmod 600 /etc/kortix/runtime-env.json');
     expect(sandbox.runs[1]).toMatchObject({
@@ -278,6 +283,72 @@ describe('E2B provider lifecycle', () => {
       externalId: 'sb-secure',
       metadata: { lifecycle: 'pause-filesystem-explicit-resume' },
     });
+  });
+
+  test('the session credential never lands readable on the guest disk yet survives a resume', async () => {
+    const sandbox = fakeSandbox('sb-sealed');
+    createFactory = () => sandbox;
+    const provider = new E2BProvider();
+
+    await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'tpl',
+      envVars: {
+        KORTIX_SANDBOX_TOKEN: 'sandbox-token',
+        KORTIX_CLI_TOKEN: 'kortix_pat_session',
+        STRIPE_API_KEY: 'sk_live_project_secret',
+      },
+    });
+
+    const persisted = sandbox.persistedFiles.get('/etc/kortix/runtime-env.json')!;
+    expect(persisted).not.toContain('kortix_pat_session');
+    expect(persisted).not.toContain('sk_live_project_secret');
+
+    // A fresh handle on the same identity is what a cold resume after an API
+    // restart actually has: the paused box's file and nothing else.
+    const resumed = fakeSandbox('sb-sealed');
+    resumed.persistedFiles.set('/etc/kortix/runtime-env.json', persisted);
+    connectFactory = () => resumed;
+
+    await provider.start('sb-sealed');
+
+    expect(resumed.runs[0]).toMatchObject({
+      command: expect.stringContaining('/usr/local/bin/kortix-entrypoint'),
+      opts: {
+        envs: expect.objectContaining({
+          KORTIX_SANDBOX_TOKEN: 'sandbox-token',
+          KORTIX_CLI_TOKEN: 'kortix_pat_session',
+          STRIPE_API_KEY: 'sk_live_project_secret',
+        }),
+      },
+    });
+  });
+
+  test('a runtime environment sealed for one sandbox does not open on another', async () => {
+    const original = fakeSandbox('sb-seal-origin');
+    createFactory = () => original;
+    const provider = new E2BProvider();
+    await provider.create({
+      accountId: 'acc-1',
+      userId: 'usr-1',
+      name: 'session-1',
+      snapshot: 'tpl',
+      envVars: { KORTIX_SANDBOX_TOKEN: 'sandbox-token', KORTIX_CLI_TOKEN: 'kortix_pat_session' },
+    });
+
+    const stolen = fakeSandbox('sb-seal-thief');
+    stolen.persistedFiles.set(
+      '/etc/kortix/runtime-env.json',
+      original.persistedFiles.get('/etc/kortix/runtime-env.json')!,
+    );
+    connectFactory = () => stolen;
+
+    await expect(provider.start('sb-seal-thief')).rejects.toThrow(
+      'cannot restore runtime environment',
+    );
+    expect(stolen.runs).toHaveLength(0);
   });
 
   test('private sandbox creation fails closed when E2B omits the traffic token', async () => {
@@ -325,10 +396,7 @@ describe('E2B provider lifecycle', () => {
     expect(sandbox.runs.map((run) => run.command).join('\n')).not.toContain(
       '/usr/local/bin/kortix-entrypoint',
     );
-    expect(JSON.parse(sandbox.fileWrites[0]!.data)).toMatchObject({
-      KORTIX_WORKLOAD_TYPE: 'app',
-      KORTIX_APPD_TOKEN: 'appd-token',
-    });
+    expect(sandbox.fileWrites[0]!.data).not.toContain('appd-token');
   });
 
   test('App cold resume relaunches appd and skips the session entrypoint', async () => {

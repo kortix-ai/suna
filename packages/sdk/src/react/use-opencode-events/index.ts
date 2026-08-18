@@ -201,21 +201,26 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       client.session
         .status()
         .then((res) => {
-          if (res.data) {
-            const statuses = res.data;
-            for (const [sessionID, status] of Object.entries(statuses)) {
-              // Locally-synthesized event (this is a REST poll, not an SSE
-              // frame) — omits the `id` field every real `Event` union member
-              // carries, hence the assertion.
-              applySyncEvent({
-                type: 'session.status',
-                properties: { sessionID, status },
-              } as unknown as OpenCodeSdkEvent);
-            }
-            reconcileMissingBusySessions.current(statuses);
-          } else {
-            reconcileMissingBusySessions.current({});
+          // This snapshot is the runtime's COMPLETE set of non-idle sessions,
+          // so it carries two facts: what each listed session is doing, and
+          // that every UNLISTED one is not busy. The second is the only repair
+          // the raw status slot has for a terminal frame this tab never saw,
+          // and the surfaces that still read that slot directly — the session
+          // panel, and the sub-agent banner for CHILD sessions, which have no
+          // Kortix session row for `GET .../turn` to answer about — depend on
+          // it. `useSessionWorking` answers for Kortix sessions; this answers
+          // for the rest.
+          const statuses = res.data ?? {};
+          for (const [sessionID, status] of Object.entries(statuses)) {
+            // Locally-synthesized event (this is a REST poll, not an SSE
+            // frame) — omits the `id` field every real `Event` union member
+            // carries, hence the assertion.
+            applySyncEvent({
+              type: 'session.status',
+              properties: { sessionID, status },
+            } as unknown as OpenCodeSdkEvent);
           }
+          reconcileMissingBusySessions.current(statuses);
         })
         .catch((err) => {
           logger.error('Failed to hydrate session statuses', {

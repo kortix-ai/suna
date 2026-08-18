@@ -6,10 +6,14 @@
  *   2. mint a CA, start the listener, make the guest trust the CA
  *   3. hand back the env vars that point the agent's clients at it
  *
+ * A fourth, `syncEgressShim`, re-does all three when the rules move under a
+ * running session.
+ *
  * See ./shim.ts for the architecture and ./rules.ts for where the rules and the
  * credential come from.
  */
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import type http from 'node:http'
 import { dirname } from 'node:path'
@@ -17,7 +21,7 @@ import { dirname } from 'node:path'
 import { logger } from '../logger'
 import { createEphemeralCa } from './ca'
 import { createEgressShim } from './shim'
-import { resolveShimConfig, shimUnavailableReason } from './rules'
+import { resolveShimConfig, type ShimConfig, shimUnavailableReason } from './rules'
 
 /** Loopback only. Follows the daemon's `4319`/`4320` proxy convention. */
 const DEFAULT_SHIM_PORT = 4321
@@ -106,7 +110,7 @@ function installSystemTrust(certPem: string): boolean {
 
 /**
  * The env an agent's clients need. Measured per runtime — see
- * docs/NETWORK_BOUNDARY_ON_DAYTONA.md §7.6, which found the earlier assumption
+ * docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7.6, which found the earlier assumption
  * (that this needed an LD_PRELOAD shim) was wrong and a handful of variables is
  * enough.
  *
@@ -158,6 +162,34 @@ export function egressShimAgentEnv(port: number, apiUrl: string): Record<string,
  */
 let started: StartedEgressShim | null = null
 
+/**
+ * The configuration the running listener was armed with, as a comparable
+ * string. Null whenever nothing is armed.
+ *
+ * Kept so a live re-arm (`syncEgressShim`) can tell a real rule change from a
+ * routine env push. Restarting on an unchanged catalog would tear down the
+ * agent's in-flight tunnels for nothing, and the hot push arrives on every
+ * secret-CRUD fan-out, not only the ones that touch a boundary secret.
+ *
+ * Covers the WHOLE resolved config rather than the rules alone: the broker
+ * target and the session credential are baked into the listener at start, so a
+ * move in either leaves a shim that relays to the wrong place or with a dead
+ * token. The credential is hashed, so this string is inert.
+ */
+let armedSignature: string | null = null
+
+function shimConfigSignature(config: ShimConfig | null): string | null {
+  if (!config) return null
+  return JSON.stringify({
+    rules: config.rules
+      .map((rule) => `${rule.identifier}:${[...rule.hosts].sort().join(',')}`)
+      .sort(),
+    apiUrl: config.apiUrl,
+    projectId: config.projectId,
+    token: createHash('sha256').update(config.token).digest('hex').slice(0, 16),
+  })
+}
+
 export function egressShimEnv(): Readonly<Record<string, string>> {
   return started?.env ?? {}
 }
@@ -175,9 +207,10 @@ export function egressShimPort(env: NodeJS.ProcessEnv = process.env): number {
   return Number(env.KORTIX_EGRESS_SHIM_PORT) || DEFAULT_SHIM_PORT
 }
 
-/** Test seam: reset the module singleton. */
+/** Test seam: reset the module singletons. */
 export function __resetEgressShimForTests(): void {
   started = null
+  armedSignature = null
 }
 
 /** Stop the listener and drop the in-memory CA key. Safe to call with no shim. */
@@ -254,6 +287,7 @@ export async function startEgressShim(
     env: egressShimAgentEnv(port, config.apiUrl),
     stop: () => {
       started = null
+      armedSignature = null
       try {
         ;(server as http.Server).close()
       } catch {
@@ -261,5 +295,80 @@ export async function startEgressShim(
       }
     },
   }
+  armedSignature = shimConfigSignature(config)
   return started
+}
+
+/** What a live re-arm did. `failed` means this session has no working shim. */
+export interface EgressShimSyncResult {
+  readonly outcome: 'unchanged' | 'started' | 'restarted' | 'stopped' | 'failed'
+  /** Hosts the shim now terminates; empty when none runs. */
+  readonly hosts: readonly string[]
+  readonly error?: string
+}
+
+/**
+ * Re-arm the shim from the CURRENT env, after a mid-session capability push.
+ *
+ * `startEgressShim` runs at most twice in a daemon's life — cold boot and fork
+ * adoption — and both are long past by the time a user adds a secret to a live
+ * session. That push does deliver a new `KORTIX_SECRET_CAPABILITIES` and does
+ * respawn opencode, but the respawn spreads `egressShimEnv()`, which is still
+ * `{}` because nothing ever started a listener. So the boundary secret silently
+ * did nothing until the session was restarted, while on a provider that injects
+ * at its own credential edge the same action took effect immediately — the two
+ * mechanisms disagreed on whether a mid-session add works at all.
+ *
+ * Stop-then-start rather than a reconfigure: the rules are baked into the
+ * listener (and into every leaf it has issued) at construction. The listening
+ * socket is released by `close()` before it returns, so the rebind does not
+ * race even while a tunnel is still draining. It does mint a fresh CA, which a
+ * client holding the old trust bundle in memory will not accept — one more
+ * reason the unchanged case must not restart.
+ *
+ * Never throws. A shim that will not come up is a boundary secret that will not
+ * work, but it is not a reason to fail the rest of an env push — the project
+ * secrets, model and gateway mode in the same body are independent of it.
+ */
+export async function syncEgressShim(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<EgressShimSyncResult> {
+  const next = resolveShimConfig(env)
+  const nextSignature = shimConfigSignature(next)
+  if (nextSignature === armedSignature) {
+    return { outcome: 'unchanged', hosts: started?.hosts ?? [] }
+  }
+
+  const wasArmed = started !== null
+  if (wasArmed) stopEgressShim()
+
+  if (!next) {
+    // The last boundary secret went away. Stopping is not enough on its own:
+    // the caller must rewrite the agent env file straight after, or the agent's
+    // shells keep pointing HTTPS_PROXY at a listener that is gone — worse than
+    // never having armed one.
+    logger.info('[egress-shim] no boundary rules remain; listener stopped')
+    return { outcome: 'stopped', hosts: [] }
+  }
+
+  try {
+    const shim = await startEgressShim(env)
+    if (!shim) {
+      // `resolveShimConfig` said yes a moment ago, so this is the unavailable
+      // path and startEgressShim has already logged which piece is missing.
+      return { outcome: 'failed', hosts: [], error: 'shim did not start' }
+    }
+    logger.info('[egress-shim] re-armed from a live env push', {
+      hosts: shim.hosts,
+      restarted: wasArmed,
+    })
+    return { outcome: wasArmed ? 'restarted' : 'started', hosts: shim.hosts }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    logger.error('[egress-shim] failed to arm on a live env push', {
+      error,
+      consequence: 'requests will leave without the credential until the session restarts',
+    })
+    return { outcome: 'failed', hosts: [], error }
+  }
 }

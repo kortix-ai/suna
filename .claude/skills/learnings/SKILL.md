@@ -21,6 +21,31 @@ linked, not inlined.
 
 ## Register
 
+### A shared connector catalog needs one canonical credential scope (2026-08-18)
+
+**When:** rematerializing a credential-dependent connector catalog. Only the
+project-default credential may write project-wide `connectorActions`. Never use
+a member-owned or non-default connection credential. Store catalogs per
+connection before supporting credential-specific action sets.
+*Incident:* Strix found that PR #6507 let a member MCP credential overwrite the
+shared project catalog and expose tenant-specific tool metadata before merge.
+*Enforcer:* `sync-mcp.test.ts` rejects member and non-default rematerialization.
+
+### Catalog discovery must use execution credentials and fail on upstream errors (2026-08-18)
+
+**When:** materializing a remote connector catalog, especially MCP
+`tools/list`. Resolve the same effective connection credential and static
+headers used by tool execution, including OAuth refresh. Reject non-2xx,
+protocol-error, and malformed responses; persist a safe error instead of an
+apparently healthy empty catalog. Re-run discovery after credentials change,
+and never include raw or encoded credential material in diagnostics.
+*Incident:* Essentia Dev Sage Intacct authenticated successfully and exposed
+four MCP tools, while Kortix sent no credential, parsed an empty HTTP 401 body,
+and materialized zero actions without an error.
+*Enforcer:* `sync-mcp.test.ts`, `unit-connector-call.test.ts`, and
+`oauth2.test.ts` cover authenticated discovery, refresh/rematerialization,
+HTTP/JSON-RPC failures, and credential redaction.
+
 ### A reused speculative resource needs a consumption signal every holder can see (2026-08-17)
 
 **When:** caching a server-side find-or-create resource client-side (the warm
@@ -492,3 +517,34 @@ the resolver returns one constant, so no size can reproduce 90,000 again.
 metric that counted it. `kortix.probe_timeout` was left pinned to false on
 every span — a dashboard built on it looks healthy by construction.
 *Incident:* PR #6473, merged `7e8a56badaef80374a189e0e427a08eb06b44697`.
+
+### A user-visible string is a shared resource; file ownership cuts through it (2026-08-18)
+
+**When:** any change that renames a label, error message, remedy or flag name —
+especially work split across parallel agents by file ownership.
+
+Renaming the network-boundary flag from "Network boundary without Platinum" to
+"Network boundary in-guest shim" touched EIGHT files: the feature-flag registry
+(which is what the Feature-flags screen actually renders), two route error
+bodies, a provisioning-error remedy, its test, two docs pages and the web
+constant. An agent that owned only the web file renamed it there and nowhere
+else. Nothing failed — no typecheck, no test, no lint — and the result would
+have shipped a UI telling users to turn on a flag by a name the screen never
+displays. The one guard that existed was a source-text assertion in a file the
+agent did not own, which is what eventually caught a sibling change.
+
+The rule: before renaming any user-visible string, grep the OLD string across
+the whole repo (`--include='*.ts' --include='*.tsx' --include='*.md'
+--include='*.mdx' --include='*.json'`) and change every hit in ONE commit. Then
+grep it again and expect zero. A partial rename is worse than no rename: the old
+name at least matched the UI.
+
+Corollary for parallel agents: **file ownership is the wrong boundary for a
+shared string.** Assign the whole rename to one agent, or do it yourself after
+the fan-out lands. Two other same-shaped catches in the same batch — a test
+pinning the exact `networkBoundaryEchoNotice(...)` call site, and one pinning
+the exact `sudo -u kortix --` invocation — both lived in files the changing
+agent did not own, and both only surfaced in CI. Reproducing CI's own command
+locally (`pnpm --filter ./packages/** --filter ./apps/** … test`) found them in
+one pass instead of one CI round-trip each.
+*Incident:* PR #6511, caught in review before merge; two CI round-trips spent.

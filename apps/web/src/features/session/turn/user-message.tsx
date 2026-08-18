@@ -406,12 +406,21 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
   );
 }
 
-const BUBBLE_TEXT = cn(
+/**
+ * Exported so `optimistic-turn.tsx` imports these instead of keeping its own
+ * copy. It used to keep one, "matching this file" by comment only — the two
+ * drifted on background shade once already (fixed), then drifted again on
+ * padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`),
+ * which is a visible bubble-size jump the instant a sent message's optimistic
+ * turn hands over to the real server turn. A shared constant makes that
+ * handover a no-op instead of a maintenance promise.
+ */
+export const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 
-const BUBBLE_SURFACE = cn(
+export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-4.5 py-3.5 select-none rounded-xl',
 );
 

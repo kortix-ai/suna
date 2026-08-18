@@ -54,6 +54,7 @@ export {
 } from './use-opencode-sessions/projects';
 export { useOpenCodeProviders as useRuntimeProviders } from './use-opencode-sessions/providers';
 export {
+  mintSessionWireMessageId,
   promptOpenCodeMessage as promptRuntimeMessage,
   useOpenCodeMessages as useRuntimeMessages,
 } from './use-opencode-sessions/messages';
@@ -163,7 +164,25 @@ export {
   type UseSessionOptions,
 } from './use-session';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
+export {
+  useSessionPrompts,
+  sessionPromptsPollMs,
+  SESSION_PROMPTS_POLL_MS,
+  SESSION_PROMPTS_IDLE_POLL_MS,
+  type UseSessionPromptsResult,
+} from './use-session-prompts';
+export { useSessionWorkingStore } from '../browser/stores/session-working-store';
+export {
+  useSessionWorking,
+  workingPollMs,
+  buildWorkingInputs,
+  WORKING_POLL_ACTIVE_MS,
+  WORKING_POLL_IDLE_MS,
+  type SessionTurnObservation,
+  type UseSessionWorkingOptions,
+} from './use-session-working';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
+export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
 export {
   useQuestionSelfHeal,
   hasRunningQuestionTool,

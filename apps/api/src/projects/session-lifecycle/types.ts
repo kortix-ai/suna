@@ -1,4 +1,5 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
+import type { PromptOverridesWire, PromptPartWire } from './store';
 import type { SessionCreateError } from '../lib/sessions';
 import type { SessionStartResult } from '../routes/shared';
 
@@ -100,10 +101,25 @@ export interface QueuedCreateSessionPayload {
 export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
+  /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;
   /** Allow-listed env applied to OpenCode before server-side prompt delivery. */
   opencodeEnv?: Record<string, string | null>;
+  /** The full prompt body, when the producer has one (the prompt inbox). Text-only
+   *  producers keep sending `text` and get the same single-part body as before. */
+  parts?: PromptPartWire[];
+  /** Agent/model/variant/directory captured at submit time — see PromptOverridesWire. */
+  overrides?: PromptOverridesWire;
+  /**
+   * Sent verbatim as the body's `messageID`.
+   *
+   * It binds the turn record (`extractTurnIdentity` reads it off the POST body,
+   * so the turn becomes message-scoped instead of root-scoped) and it outranks
+   * the content hash in the proxy's dedupe precedence. Omitted by producers
+   * that hold no transcript and therefore cannot place an id correctly.
+   */
+  wireMessageId?: string;
 }
 
 export interface StartSessionCommand {

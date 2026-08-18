@@ -43,6 +43,8 @@ export function ComposerChatInput({
   sessionId,
   projectId,
   isBusy,
+  sessionWorking,
+  runtimeReady,
   stopDisabled,
   isSending,
   disabled,
@@ -63,7 +65,6 @@ export function ComposerChatInput({
   queuePaused,
   queueIsRunning,
   onSendQueuedMessageNow,
-  onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
@@ -76,6 +77,11 @@ export function ComposerChatInput({
   sessionId?: string;
   projectId?: string;
   isBusy?: boolean;
+  /** Server turn authority, distinct from the busy fade. See the composer. */
+  sessionWorking?: boolean;
+  /** The sandbox is up and switched. Gates `/` COMMANDS only — see the
+   *  composer. */
+  runtimeReady?: boolean;
   /** Show a disabled stop button while busy (e.g. the computer is still booting). */
   stopDisabled?: boolean;
   /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
@@ -109,11 +115,6 @@ export function ComposerChatInput({
   queuePaused?: SessionChatInputProps['queuePaused'];
   queueIsRunning?: SessionChatInputProps['queueIsRunning'];
   onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
-  // Mirrored from the composer rather than re-typed, like every other queue
-  // prop here. The re-typed copy silently lagged a parameter behind: it stopped
-  // at `mentions`, so the `command` argument the composer has passed since
-  // 27279d2232 was invisible to every host reading this file for the contract.
-  onQueueMessage?: SessionChatInputProps['onQueueMessage'];
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
@@ -208,12 +209,13 @@ export function ComposerChatInput({
       queuePaused={queuePaused}
       queueIsRunning={queueIsRunning}
       onSendQueuedMessageNow={onSendQueuedMessageNow}
-      onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}
       onReorderQueuedMessage={onReorderQueuedMessage}
       onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
+      sessionWorking={sessionWorking}
+      runtimeReady={runtimeReady}
       stopDisabled={stopDisabled}
       isSending={isSending}
       disabled={disabled}

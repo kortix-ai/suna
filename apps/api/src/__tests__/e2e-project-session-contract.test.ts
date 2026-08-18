@@ -2566,6 +2566,190 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  // ═══ THE MID-TURN PARK THIS CLOSES ═══
+  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
+  // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
+  // This endpoint is polled every second and Daytona folds `stopping` and
+  // `pending_stop` into `stopped` (platform/providers/daytona-state.ts), so ONE
+  // transitional read parked the row, settled the live turn's ledger
+  // `runtime_gone` and kicked the client into the wake flow with the turn's work
+  // lost. Unlike account deletion or the orphan sweep, this caller has NOT
+  // stopped the box itself — it is a pure observation, so it must confirm.
+  test('dashboard start does NOT park a box mid-turn on one stopped provider read', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_stop_unconfirmed',
+    });
+    // The row keeps its turn authority, the box is never stopped, and nothing
+    // is woken: the next poll either sees `running` again or earns the
+    // confirmation one window later.
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+    expect(providerStartCalls).toBe(0);
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toEqual(expect.any(Number));
+  });
+
+  test('dashboard start parks a mid-turn box once a SECOND stopped read confirms it', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-confirmed',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // An earlier poll recorded the first observation, longer ago than
+          // MIDTURN_STOP_CONFIRMATION_MS.
+          pendingStopObservedAtMs: Date.now() - 20_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_waking',
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  // ═══ THE ARMED-AND-NEVER-DISARMED MARKER THIS CLOSES ═══
+  // This endpoint is polled about once a second, and it can ARM the mid-turn
+  // stop confirmation. If it never disarms it, two transient `pending_stop`
+  // misreads MINUTES apart — with hundreds of healthy `running` reads in
+  // between — read as one confirmed provider transition and park a live box.
+  // A confirmation is about ONE transition, so a `running` answer from any
+  // observer ends it.
+  test('dashboard start drops the pending-stop marker when the provider says running', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-recovered',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // Armed by an earlier poll that read the transitional `pending_stop`.
+          pendingStopObservedAtMs: Date.now() - 5_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'ready' });
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toBeUndefined();
+    // The turn authority is untouched — only the confirmation is.
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+  });
+
   // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
   // provider lost the box — the provider just answered `stopped`, which proves
   // the box exists. The row parks retriable instead of being preserved as

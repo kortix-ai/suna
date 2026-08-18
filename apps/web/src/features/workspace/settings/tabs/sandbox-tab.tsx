@@ -121,6 +121,23 @@
  * own domain" — so this tab shows `EmptyState` whenever `templates.length
  * === 0`, independent of whatever `snapshots-tab.tsx` has to show.
  *
+ * **The provider pin moved here (2026-08-17).** `SandboxProviderRow` — the
+ * per-project "Sandbox provider" control, with its `updateProjectSandboxProvider`
+ * mutation and the durable-transition polling behind it — was a "Sandbox"
+ * sub-section on the General tab. It is CUT from `general-tab.tsx`, not copied,
+ * so there is one implementation and General no longer mentions sandboxes at
+ * all. It renders first on this tab, above the templates list: the pin decides
+ * where a session runs, the templates decide what it runs, and the product
+ * owner's ask was to "combine truly everything in one place that is sandbox
+ * related".
+ *
+ * With both on one screen they must never disagree, so the pin is read ONCE,
+ * from the project query — the exact field the row writes — instead of from
+ * this tab's own `listProjectSnapshots` payload. Both derive from the same
+ * server-side `projects.metadata.default_sandbox_provider`, but they are two
+ * query caches and only the project one is invalidated after a switch. See
+ * `pinnedProvider` in `SandboxTab` for the full trace.
+ *
  * `SandboxTabView` is the pure, props-only half — `templatesSlot` is a slot
  * because each `TemplateCard` owns its own `useMutation`/`useQueryClient`
  * (build, delete) and can't render under `renderToStaticMarkup` with no
@@ -142,21 +159,35 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
+  type KortixProject,
+  type SandboxProviderName,
   type SandboxTemplate,
   buildSandboxTemplate,
   deleteSandboxTemplate,
   getProject,
   listProjectSnapshots,
+  updateProjectSandboxProvider,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon,
   CheckCircleIcon,
@@ -165,10 +196,10 @@ import {
   CubeIcon,
   FileCodeIcon,
   HardDrivesIcon,
-  type Icon as PhosphorIcon,
   MemoryIcon,
   PackageIcon,
   PencilSimpleIcon,
+  type Icon as PhosphorIcon,
   PlusIcon,
   PushPinIcon,
   ShippingContainerIcon,
@@ -179,13 +210,17 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  SandboxProviderBadge,
   type SandboxProvider,
+  SandboxProviderBadge,
   type SandboxProviderMode,
   availableProviderCoverage,
   describeProviderMode,
   latestObservedAt,
 } from '../../customize/sections/view/sandbox-provider-coverage';
+import {
+  applySandboxProviderResult,
+  pollSandboxProviderTransition,
+} from '../../customize/sections/view/sandbox-provider-result';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 /** Three, not five: each skeleton is now a full card, so five of them
@@ -546,12 +581,7 @@ function TemplateCard({
           <TemplateFact icon={CpuIcon} label="Processor" value={`${template.cpu} vCPU`} />
           <TemplateFact icon={MemoryIcon} label="Memory" value={`${template.memory_gb} GiB`} />
           <TemplateFact icon={HardDrivesIcon} label="Storage" value={`${template.disk_gb} GiB`} />
-          <TemplateFact
-            icon={base.icon}
-            label={base.label}
-            value={base.value}
-            mono={base.mono}
-          />
+          <TemplateFact icon={base.icon} label={base.label} value={base.value} mono={base.mono} />
           <TemplateFact
             icon={source.icon}
             label="Defined in"
@@ -598,6 +628,121 @@ function TemplateCard({
  */
 const TEMPLATE_SKELETON_HEIGHT = 'h-60';
 
+/**
+ * Per-project sandbox-provider pin. **Moved here from `general-tab.tsx`, not
+ * copied** — General no longer mentions sandboxes at all. The move is the
+ * product owner's own call ("just combine truly everything in one place that
+ * is sandbox related"), and it puts the control that SETS the pin directly
+ * above the cards that REPORT it: every `TemplateCard`'s "Routing" cell and
+ * runtime footer read the same pin this row writes.
+ *
+ * The mutation, the prepare-vs-immediate branch, the durable-transition
+ * polling and every toast are carried over unchanged from `general-tab.tsx` —
+ * only the enclosing tab and the section label ("Sandbox" -> "Routing", the
+ * word the template cards already use for this) are different.
+ *
+ * Overrides the platform's weighted distribution for THIS project only.
+ * Options come from the project payload (`available_sandbox_providers`).
+ * Hidden only when no provider is usable.
+ */
+const AUTO_PROVIDER = '__auto__';
+function SandboxProviderRow({
+  project,
+  canManage,
+}: {
+  project: KortixProject;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const available = project.available_sandbox_providers ?? [];
+  const current = project.default_sandbox_provider ?? null;
+  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
+
+  const mutation = useMutation({
+    mutationFn: (next: SandboxProviderName | null) =>
+      updateProjectSandboxProvider(project.project_id, next),
+    onSuccess: (result, next) => {
+      // FIX-L: the PATCH returns EITHER the updated project (immediate) OR a
+      // preparation object (the prepare branch — a switch to a different enabled
+      // provider). Write the project cache ONLY for the immediate result; a
+      // preparation is a transition, not a project, and must not clobber the
+      // cached project shape.
+      const kind = applySandboxProviderResult(queryClient, project.project_id, result);
+      if (kind === 'preparation') {
+        successToast(
+          `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
+        );
+        // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
+        // and refresh the project once it settles so the now-active provider shows.
+        void pollSandboxProviderTransition(project.project_id, {
+          onSettled: (state) => {
+            // invalidateProject() reaches qk.project.scope(project.project_id),
+            // which qk.project.summary(project.project_id) nests under — so it
+            // already covers the bare-project row too; no separate summary
+            // invalidation needed here.
+            void invalidateProject(queryClient, project.project_id);
+            // qk.projects.scope(): restores the reach the old bare
+            // projects-literal prefix match had. A sandbox-provider switch
+            // is rare — over-invalidating a few extra account lists costs
+            // nothing measurable.
+            queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+            const status = state?.latest?.status;
+            if (status === 'activated') {
+              successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
+            } else if (status === 'failed') {
+              errorToast(state?.latest?.label || 'Sandbox provider switch failed');
+            }
+          },
+        });
+      }
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to update sandbox provider'),
+  });
+
+  if (available.length === 0) return null;
+
+  return (
+    <section className="space-y-3">
+      <SettingsSubsectionHeader title="Routing" />
+      <SettingsRowGroup>
+        <SettingsRow
+          label={
+            <>
+              Sandbox provider
+              <Badge variant="highlight" size="sm">
+                Experimental
+              </Badge>
+            </>
+          }
+          description="Pin this project to a specific sandbox provider, overriding the platform default. New sessions here run on the chosen provider — “Automatic” follows the platform default."
+        >
+          <Select
+            value={current ?? AUTO_PROVIDER}
+            onValueChange={(v) =>
+              mutation.mutate(
+                v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
+              )
+            }
+            disabled={!canManage || mutation.isPending}
+          >
+            <SelectTrigger aria-label="Sandbox provider" className="h-8 w-40 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
+              {available.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {label(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+      </SettingsRowGroup>
+    </section>
+  );
+}
+
 export interface SandboxTabViewProps {
   isLoading?: boolean;
   isError?: boolean;
@@ -607,6 +752,15 @@ export interface SandboxTabViewProps {
    *  by the container from the same `canManage` gate as everything else in
    *  this tab. `undefined` (not rendered) for a non-manager. */
   headerAction?: ReactNode;
+  /** `SandboxProviderRow` — the per-project provider pin, moved here from
+   *  `general-tab.tsx`. A slot for the same reason `templatesSlot` is one: it
+   *  owns a `useMutation`/`useQueryClient` and cannot render under
+   *  `renderToStaticMarkup` with no `QueryClientProvider`.
+   *
+   *  Rendered ABOVE the loading/error branch on purpose. It is fed by the
+   *  PROJECT query, not the snapshots query, so a slow or failed template read
+   *  must not hide a control that has nothing to do with it. */
+  sandboxProviderSlot?: ReactNode;
   /** `1 | 2 | null` — drives whether the manifest hint below reads
    *  `kortix.toml` or `kortix.yaml`. `null`/anything else falls back to
    *  `kortix.toml`, matching `sandbox-view.tsx`'s own ternary default. */
@@ -635,6 +789,7 @@ export function SandboxTabView({
   errorMessage = '',
   onRetry = () => {},
   headerAction,
+  sandboxProviderSlot,
   manifestVersion = null,
   templatesError = null,
   isEmpty = true,
@@ -645,6 +800,7 @@ export function SandboxTabView({
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <div className="space-y-8">
         <SettingsTabHeader tab="sandbox" action={headerAction} />
+        {sandboxProviderSlot}
         {isLoading ? (
           <div className="space-y-2">
             {TEMPLATE_SKELETON_ROWS.map((row) => (
@@ -721,6 +877,12 @@ export function SandboxTab({ projectId }: { projectId: string }) {
   // Byte-identical to `sandbox-view.tsx`'s own gate — see this file's header
   // comment, "Gate — preserved exactly".
   const canManage = projectQuery.data?.effective_project_role === 'manager';
+  // Deliberately WIDER than `canManage`, and deliberately not merged with it:
+  // `SandboxProviderRow` was gated by `manager OR project.write` in
+  // `general-tab.tsx`, and moving the row must not silently take the control
+  // away from a writer. The template CRUD gate above stays manager-only.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  const canEditProvider = canManage || canWrite;
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
 
   const snapshotsQuery = useQuery({
@@ -745,9 +907,29 @@ export function SandboxTab({ projectId }: { projectId: string }) {
 
   const data = snapshotsQuery.data;
   const templates = Array.isArray(data?.templates) ? data.templates : [];
-  const providerMode: SandboxProviderMode =
-    data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
-  const selectedProvider = data?.selected_provider ?? null;
+
+  /**
+   * ONE pin, read once — the control and the badges must never disagree.
+   *
+   * `SandboxProviderRow` writes `project.default_sandbox_provider`;
+   * `listProjectSnapshots` derives its own `provider_mode`/`selected_provider`
+   * from the SAME `projects.metadata.default_sandbox_provider` server-side
+   * (`apps/api/src/projects/routes/r2.ts` -> `templateProviderObservation` ->
+   * `resolveConfiguredProjectProviderPin`). They agree at the source, but they
+   * are two independent query caches and the switch only invalidates the
+   * project one — so reading the pin off the snapshots payload would leave
+   * every card's "Routing" cell showing the provider the row just changed away
+   * from, on the same screen, until the snapshots query happened to refetch.
+   *
+   * The project query is therefore authoritative. The snapshots payload is the
+   * fallback for the window before it lands, which keeps this exactly as
+   * correct as it was before the move.
+   */
+  const pinnedProvider: SandboxProvider | null = projectQuery.data
+    ? (projectQuery.data.default_sandbox_provider ?? null)
+    : (data?.selected_provider ?? null);
+  const providerMode: SandboxProviderMode = pinnedProvider ? 'pinned' : 'automatic';
+  const selectedProvider = pinnedProvider;
 
   const openNewForm = () => {
     setEditingTemplate(null);
@@ -791,6 +973,11 @@ export function SandboxTab({ projectId }: { projectId: string }) {
               <PlusIcon className="size-4 shrink-0" />
               New template
             </Button>
+          ) : undefined
+        }
+        sandboxProviderSlot={
+          projectQuery.data ? (
+            <SandboxProviderRow project={projectQuery.data} canManage={canEditProvider} />
           ) : undefined
         }
         manifestVersion={manifestVersion}

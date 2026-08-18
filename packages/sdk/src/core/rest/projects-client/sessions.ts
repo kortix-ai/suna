@@ -504,6 +504,274 @@ export async function getSessionTranscript(
   );
 }
 
+/** 'delivering' — the control plane minted the turn but has not confirmed
+ *  OpenCode received it. 'active' — the runtime accepted it and is working. */
+export type SessionTurnState = 'delivering' | 'active';
+
+/** A turn the control plane's lifecycle authority is holding open right now. */
+export interface SessionTurn {
+  turn_token: string;
+  state: SessionTurnState;
+  message_id: string | null;
+  opencode_session_id: string | null;
+  /** Null only for a legacy authority record written before the control plane
+   *  recorded a start instant. The turn is running either way — a missing
+   *  timestamp is not a reason to read it as idle. */
+  started_at: string | null;
+  /** When the runtime confirmed the turn. Null while it is still `delivering`,
+   *  and null for an accepted turn whose ledger row never landed. */
+  accepted_at: string | null;
+}
+
+/** How the most recent turn ended. Present only when no turn is running —
+ *  it is what separates "this session has never run a turn" from "the last
+ *  one just finished". */
+export interface SessionTurnEnded {
+  turn_token: string;
+  end_reason: string | null;
+  ended_at: string | null;
+}
+
+export interface SessionTurnStatus {
+  /** Every turn running right now, newest start first. EMPTY means idle —
+   *  a session can hold more than one open turn (a trigger delivery and a web
+   *  prompt, say), so this is a list and never a single turn. */
+  turns: SessionTurn[];
+  last_ended?: SessionTurnEnded;
+}
+
+/** Server truth about this session's running turns (`GET .../turn`), answered
+ *  independently of the live stream.
+ *
+ *  `turns` comes from the control plane's LIFECYCLE AUTHORITY — the same record
+ *  the reaper renews deadlines from — so it is true for a turn the durable
+ *  ledger has not recorded yet (a boot prompt has no ledger row until the
+ *  runtime accepts it) and false for a stale ledger row left open by a write
+ *  that failed. `last_ended` is history, and history comes from the ledger,
+ *  which retains terminal rows the authority erases. */
+export async function getSessionTurn(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionTurnStatus> {
+  return unwrap(
+    await backendApi.get<SessionTurnStatus>(
+      `/projects/${projectId}/sessions/${sessionId}/turn`,
+    ),
+  );
+}
+
+// ── The prompt inbox ────────────────────────────────────────────────────────
+//
+// A user prompt is a DURABLE SERVER ROW from the instant the composer accepts
+// it, not a browser object. The queue used to live in localStorage, so closing
+// the tab, moving to another device, or a crash lost queued messages silently,
+// and two tabs on one session disagreed about what was pending.
+//
+// The client still mints the wire `messageID` and sends it here verbatim:
+// OpenCode decides "has this prompt already been answered?" by id ORDER, and
+// only a process holding the transcript can place an id correctly. The server
+// re-mints one exactly once — when it redelivers a prompt whose turn provably
+// never ran, after re-reading the transcript itself.
+
+export interface SessionPromptPart {
+  type: 'text' | 'file' | 'agent';
+  text?: string;
+  mime?: string;
+  url?: string;
+  filename?: string;
+  name?: string;
+  source?: unknown;
+}
+
+/** The agent/model/variant/directory captured at SUBMIT time. A prompt that
+ *  waits out a long turn still runs with the picks the user made then. */
+export interface SessionPromptOverrides {
+  agent?: string | null;
+  model?: { providerID: string; modelID: string } | null;
+  variant?: string | null;
+  directory?: string | null;
+}
+
+/**
+ * `queued` — accepted, waiting its turn to be claimed.
+ * `delivering` — claimed and on the wire to the runtime.
+ * `waiting` — refused admission for now; `reason` says why.
+ * `failed` — delivery gave up; retryable through `retrySessionPrompt`.
+ *
+ * A DELIVERED prompt has no state here at all: it is in the transcript, and
+ * listing it as well would render it twice.
+ */
+export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
+
+export interface SessionPrompt {
+  prompt_id: string;
+  /** The host's own stable submission name — the same value re-POSTing is a
+   *  no-op on, and the key an optimistic row is matched by. */
+  client_message_id: string;
+  /** The OpenCode wire id this prompt will be delivered under. */
+  message_id: string;
+  state: SessionPromptState;
+  /** Why the prompt is `waiting`: `turn_active` (a turn is running),
+   *  `older_prompt_pending` (its own queue is ahead of it), or `held` (the user
+   *  pressed Stop — only an explicit send or send-now releases it). */
+  reason: string | null;
+  /** Flattened text preview, capped server-side. */
+  text: string;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  available_at: string;
+}
+
+export interface CreateSessionPromptResult {
+  prompt_id: string;
+  state: SessionPromptState;
+  message_id: string;
+  /** The submission name already named a row: this call added nothing. */
+  deduped: boolean;
+}
+
+export interface CreateSessionPromptInput {
+  clientMessageId: string;
+  messageId: string;
+  parts: SessionPromptPart[];
+  overrides?: SessionPromptOverrides;
+  /**
+   * Ask the server to re-mint `messageId` against the live transcript before
+   * it delivers.
+   *
+   * OpenCode resolves "has this prompt been answered?" by id ORDER, so an id
+   * that sorts below what is on record is accepted and then silently never
+   * runs. A caller that minted its id where the live transcript was NOT
+   * readable — the one-time localStorage migration, which mints at page load
+   * for a message typed before the last reload — says so here, and the control
+   * plane places the id correctly at delivery time.
+   *
+   * Leave it unset for an ordinary send: that id is minted against a
+   * transcript the tab can see, and re-minting it would put a sandbox read on
+   * the delivery path of every message.
+   */
+  remintOnDelivery?: boolean;
+}
+
+/** Put one prompt in the session's server-side inbox (`POST .../prompts`).
+ *  Resolving means the prompt is DURABLE, not that it has been delivered. */
+export async function createSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  input: CreateSessionPromptInput,
+): Promise<CreateSessionPromptResult> {
+  return unwrap(
+    await backendApi.post<CreateSessionPromptResult>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      {
+        client_message_id: input.clientMessageId,
+        message_id: input.messageId,
+        parts: input.parts,
+        ...(input.overrides ? { overrides: input.overrides } : {}),
+        ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
+      },
+    ),
+  );
+}
+
+/** Every prompt this session still owes the user, oldest first. Delivered
+ *  prompts are omitted — they are in the transcript. */
+export async function listSessionPrompts(
+  projectId: string,
+  sessionId: string,
+): Promise<{ prompts: SessionPrompt[] }> {
+  return unwrap(
+    await backendApi.get<{ prompts: SessionPrompt[] }>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts`,
+    ),
+  );
+}
+
+/**
+ * The prompt a DELETE removed, in the shape that re-creates it exactly.
+ *
+ * Deliberately not a `SessionPrompt`: that carries a truncated text PREVIEW and
+ * no parts at all, because it is what a queue row RENDERS. Undoing a removal
+ * from that shape silently drops every attachment, the agent/model/variant
+ * picks, and anything past the truncation — under a button labelled "Undo".
+ */
+export interface RemovedSessionPrompt {
+  prompt_id: string;
+  client_message_id: string;
+  message_id: string;
+  parts: SessionPromptPart[];
+  overrides: SessionPromptOverrides | null;
+}
+
+/**
+ * Drop a prompt that has not gone out yet. A prompt already on the wire cannot
+ * be cancelled and the server answers 409.
+ *
+ * Returns the removed prompt, because the row is HARD-deleted: re-POSTing this
+ * result with its original `client_message_id` is the only lossless undo.
+ */
+export async function deleteSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<RemovedSessionPrompt> {
+  const body = unwrap(
+    await backendApi.delete<{ removed: RemovedSessionPrompt }>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+    ),
+  );
+  return body.removed;
+}
+
+/**
+ * Run THIS prompt next — the one primitive behind both "retry" and "send now".
+ *
+ * They are one intent: the user pointed at a row and asked for that message.
+ * The row is re-queued, put ahead of the ordering rule, and the session's hold
+ * is released so the rest drains at the next boundary. Its wire id is
+ * UNCHANGED, so a delivery that actually landed is still absorbed by the proxy
+ * instead of running twice.
+ */
+export async function retrySessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<SessionPrompt> {
+  return unwrap(
+    await backendApi.post<SessionPrompt>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
+      {},
+    ),
+  );
+}
+
+/**
+ * Hold — or release — every queued prompt of this session.
+ *
+ * What the Stop button writes. "Stopping means stop doing things, and that
+ * includes the queue" was a browser-local pause while the queue was
+ * browser-local; with the queue in Postgres, a client-side pause leaves the
+ * server free to admit the prompt the user pressed Stop to get ahead of, about
+ * one scheduler tick after the abort clears turn authority.
+ *
+ * A hold is released by an ACTION, never by a timer: sending anything new, or
+ * `retrySessionPrompt` on a row, releases it — the same rule the browser queue
+ * always had.
+ */
+export async function holdSessionPrompts(
+  projectId: string,
+  sessionId: string,
+  held: boolean,
+): Promise<{ prompts: SessionPrompt[] }> {
+  return unwrap(
+    await backendApi.post<{ prompts: SessionPrompt[] }>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
+      { held },
+    ),
+  );
+}
+
 /** One line of a session's voice-call transcript (`kortix.voice_call_turns`).
  *  'user'/'agent' are either side of the spoken conversation; 'tool' is a
  *  record of an `ask_kortix`/`run_command` call the voice-agent worker made

@@ -23,11 +23,9 @@ import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  beginSessionPromptObservation,
-  endSessionPromptObservation,
-} from '../browser/session-sync/session-sync-registry';
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
+import { useSessionWorkingStore } from '../browser/stores/session-working-store';
+import type { SendReceipt } from '../core/session/working';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   markRuntimeReadyVerified,
@@ -76,6 +74,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
+import { useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
 
 /** Coarse session lifecycle for the host's top-level gating. */
@@ -655,28 +654,24 @@ export function sendStateOnError(error: unknown): SendState {
   return { pending: null, sendError: classifySendError(error) };
 }
 
-export function beginRestPromptObservation(sessionId: string, runtimeScope?: string): void {
-  beginSessionPromptObservation(sessionId, runtimeScope);
-  useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
-}
+/** This tab's own record that a send went out, and when. Re-exported from the
+ *  projection that consumes it so there is exactly one shape — a second
+ *  declaration here would drift from `acceptedAtMs`, which is the field that
+ *  decides whether a server read may answer for the send at all. */
+export type { SendReceipt };
 
-export function endRestPromptObservation(sessionId: string, runtimeScope?: string): void {
-  endSessionPromptObservation(sessionId, runtimeScope);
-  useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-}
-
-export async function sendRestPromptWithObservation(
+/** The submission's tab-local name: the host's own key when it gave one, else
+ *  the optimistic part id this send is correlated by. Never sent anywhere —
+ *  it exists so a `working` state can say WHICH send it is standing on. */
+export function sendReceiptId(
   sessionId: string,
-  runtimeScope: string | undefined,
-  sendPrompt: () => Promise<void>,
-): Promise<void> {
-  beginRestPromptObservation(sessionId, runtimeScope);
-  try {
-    await sendPrompt();
-  } catch (error) {
-    endRestPromptObservation(sessionId, runtimeScope);
-    throw error;
-  }
+  parts: PromptPart[],
+  clientMessageId?: string,
+): string {
+  const identified = parts.find(
+    (part): part is PromptPart & { id: string } => 'id' in part && typeof part.id === 'string',
+  );
+  return clientMessageId ?? identified?.id ?? sessionId;
 }
 
 export async function rewindOpenCodeSession(sessionId: string, messageId: string): Promise<void> {
@@ -986,6 +981,32 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     },
     [projectId, sessionId],
   );
+  // ONE answer to "is this session working?", and it says where it came from.
+  //
+  // Four machines used to answer it and disagree: a prompt-observation phase
+  // machine with a stall timer, a busy override in the sync layer, a 30s
+  // safety timeout, and a 5s polling grace. `working` is a pure projection
+  // over the server's turn authority, the session's durable prompt inbox, the
+  // live stream, and — only until a server source that CAN know about it
+  // answers — this tab's own send receipt.
+  //
+  // Computed BEFORE `useSessionSync` because it is that hook's liveness switch:
+  // the transcript poll must follow the projection, not the stream slot a
+  // dropped frame can leave idle through a whole turn.
+  const working = useSessionWorking(projectId, sessionId, {
+    enabled,
+    runtimeSessionId: ocSessionId,
+  });
+  // The receipt lives in a per-session store, not in this component: the
+  // composer mounts its own `useSessionWorking` for the same session and they
+  // share one `/turn` cache entry. Two private receipts meant the observer
+  // without one wrote an uninformed read into that entry and defeated the
+  // other's. Nothing clears it on a server answer and nothing needs to — an
+  // observation the server could make AFTER accepting the send outranks it —
+  // so only the paths that know nothing is coming drop it.
+  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt, noteAbortReceipt, settleAbortReceipt } =
+    useSessionWorkingStore.getState();
+
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
   // is off — `useSessionSync('')` fetches/polls nothing (its effects no-op on
@@ -994,6 +1015,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     networkEnabled: switched,
+    working: working.state === 'working',
   });
   const sync = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
   const runtimePhase = useRuntimePhase();
@@ -1138,14 +1160,30 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // of being deleted by a rehydrate that only carries older turns.
     markDispatchedForPartIds(ocSessionId, parts);
 
-    await sendRestPromptWithObservation(ocSessionId, sandbox?.external_id ?? undefined, () =>
-      sendMutation.mutateAsync({
+    const receipt: SendReceipt = {
+      messageId: sendReceiptId(ocSessionId, parts, override?.clientMessageId),
+      atMs: Date.now(),
+    };
+    noteSendReceipt(sessionId, receipt);
+    try {
+      await sendMutation.mutateAsync({
         sessionId: ocSessionId,
         parts,
         ...(Object.keys(opts).length ? { options: opts } : {}),
         ...(override?.clientMessageId ? { clientMessageId: override.clientMessageId } : {}),
-      }),
-    );
+      });
+      // The server has the prompt. From here — and NOT before — a `/turn` read
+      // is able to see it, so one is allowed to answer for it.
+      acceptSendReceipt(sessionId, receipt.messageId, Date.now());
+    } catch (error) {
+      // The prompt never reached the server, so there is nothing to wait for.
+      // Dropping the receipt here is what stops a refused send from claiming
+      // `working` for a minute over a turn that will never start. NAMED, so a
+      // slow failure cannot drop a later send's receipt while its own request
+      // is still on the wire.
+      clearSendReceipt(sessionId, receipt.messageId);
+      throw error;
+    }
     useSyncStore.getState().commitSessionRevert(ocSessionId);
   };
 
@@ -1168,7 +1206,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // The send never reached (or was refused by) the server — nothing to
       // rehydrate, so drop the optimistic message outright rather than leave
       // it stranded forever (mirrors `abandonOptimisticSend`).
-      // `sendRestPromptWithObservation` already dropped busy on this path.
+      // `sendParts` already dropped this tab's send receipt on this path.
       useSyncStore.getState().optimisticRemove(ocSessionId, messageId);
       setSendState(sendStateOnError(error));
     });
@@ -1189,7 +1227,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const rewind = async (messageId: string): Promise<void> => {
     if (!runtimeActionReady) throw new RuntimeNotReadyError();
     if (!messageId) throw new Error('Session rewind requires a message id');
-    if (sync.isBusy || pending || rewindPending) {
+    if (working.state === 'working' || rewindPending) {
       throw new Error('Cannot rewind a busy session');
     }
     setRewindPending(true);
@@ -1237,14 +1275,30 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // exactly the same synchronous effects as before.
   const cancel = (): Promise<AbortSettlement> => {
     if (runtimeActionReady) {
-      endRestPromptObservation(ocSessionId);
+      clearSendReceipt(sessionId);
+      // The stop's own receipt. The cancel needs a round trip through the
+      // control plane and the daemon before turn authority is released, so
+      // every `/turn` read issued before it settles still reports the doomed
+      // turn — including the one the optimistic idle frame below triggers.
+      // Without this the composer flipped Send back to Stop ~120ms after the
+      // click and stayed there for the whole abort. See `AbortReceipt`.
+      noteAbortReceipt(sessionId, Date.now());
+      // Optimistic idle paint, the mirror of the send's optimistic busy one.
+      // Neither is a source of truth: any newer server or stream observation
+      // outranks both — see `projectWorking`.
+      useSyncStore.getState().setStatus(ocSessionId, { type: 'idle' });
       abortInFlightDeliveries(ocSessionId);
     }
     questions.forEach((q) => removeQuestion(q.id));
     permissions.forEach((p) => removePermission(p.id));
     setSendState(IDLE_SEND_STATE);
     if (!runtimeActionReady) return Promise.resolve({ status: 'skipped' });
-    return awaitAbortSettlement(() => abortMutation.mutateAsync(ocSessionId));
+    const settlement = awaitAbortSettlement(() => abortMutation.mutateAsync(ocSessionId));
+    // `awaitAbortSettlement` never rejects — it resolves with how the abort
+    // ended (acknowledged, failed, or timed out). Any of those is the instant
+    // from which a server read can see the abort's effect, or fail to.
+    void settlement.then(() => settleAbortReceipt(sessionId, Date.now()));
+    return settlement;
   };
 
   const runtimeSessionError = canonicalSession.error;
@@ -1322,7 +1376,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     failure: startData?.failure ?? null,
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
-    isBusy: sync.isBusy || !!pending,
+    /** Provenance-tagged working state — WHICH observation decided it, when,
+     *  and for which turn. The one answer; `isBusy` is its boolean face. */
+    working,
+    isBusy: working.state === 'working',
     isCompacting,
     isLoading: sync.isLoading,
     isError: terminal || !!startError || !!runtimeSessionError,

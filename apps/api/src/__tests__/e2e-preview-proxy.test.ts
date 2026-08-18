@@ -742,11 +742,17 @@ describe('Preview proxy: ownership', () => {
         headers: { Authorization: 'Bearer test' },
       });
       expect(res.status).toBe(503);
+      // `hop: control_plane` — this answer came off our own row read, so a
+      // client must not count it as evidence that the box is unreachable.
+      expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('control_plane');
+      expect(res.headers.get('X-Kortix-Upstream-Status')).toBeNull();
       const body = await res.json();
       expect(body).toEqual({
         error: `sandbox not ready (status: ${status})`,
         port: TEST_PORT,
         status: 503,
+        hop: 'control_plane',
+        upstream_status: null,
       });
     },
   );
@@ -1441,14 +1447,43 @@ describe('Preview proxy: retry exhaustion', () => {
     globalThis.fetch = savedFetch;
 
     expect(res.status).toBe(502);
+    // Every attempt resolved an ingress address and then had its connection
+    // refused, on an ordinary app port — so this is the user's own process, and
+    // a probe must not read it as "the runtime is gone".
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('upstream_port');
     const body = await res.json();
     expect(body).toEqual({
       error: 'sandbox upstream unreachable',
       port: TEST_PORT,
       status: 502,
+      hop: 'upstream_port',
+      upstream_status: null,
     });
     // Should have made 4 attempts (0, 1, 2, 3)
     expect(callCount).toBe(4);
+  });
+
+  // Same failure, session-data port: now it IS the runtime, and the probe must
+  // count it. The two cases differ ONLY by the port, which is the whole point of
+  // the hop.
+  test('the same connection failure on the daemon port is attributed to the daemon', async () => {
+    const savedFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('Connection refused'))) as any;
+
+    const app = createProxyTestApp();
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+
+    const res = await app.request('/v1/p/sandbox-retry-exhaust-daemon-001/8000/kortix/health', {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('daemon');
+    expect(await res.json()).toMatchObject({ hop: 'daemon' });
   });
 
   test('returns last 400 when all retries get sandbox-down (HTTP 400 path)', async () => {

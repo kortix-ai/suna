@@ -1,5 +1,6 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
 import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
@@ -32,6 +33,8 @@ const E2B_RUNTIME_BACKSTOP_MS = configuredTimeoutMs(
 const KORTIX_ENTRYPOINT = '/usr/local/bin/kortix-entrypoint';
 const KORTIX_ENTRYPOINT_COMMAND = `exec flock -n /run/kortix-entrypoint.lock ${KORTIX_ENTRYPOINT}`;
 const RUNTIME_ENV_PATH = '/etc/kortix/runtime-env.json';
+const RUNTIME_ENV_ENVELOPE = 'kortix-e2b-runtime-env-v1';
+const RUNTIME_ENV_TAG_LENGTH = 16;
 const KORTIX_HEALTH_WAIT =
   'for attempt in $(seq 1 180); do ' +
   'if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8000/kortix/health >/dev/null; then exit 0; fi; ' +
@@ -109,8 +112,91 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
   return envs;
 }
 
+/**
+ * E2B is the only provider that has to park the session environment on the
+ * GUEST's own disk. Daytona and Platinum hand it back from their control plane
+ * on resume, so on those two the session credential and the project's runtime
+ * secrets exist only in a live process — the same reason the daemon keeps the
+ * agent's env on tmpfs (kortix-sandbox-agent-server/src/agent-env-file.ts).
+ * Here the file has to survive the pause, and `chmod 600 root` is thin cover:
+ * the sandbox user has NOPASSWD sudo (packages/shared/src/sandbox/dockerfile-layer.ts).
+ * What differs from a live process env is DURABILITY — the plaintext outlived
+ * every pause, resume and filesystem snapshot of the box.
+ *
+ * Sealing it costs nothing operationally because the guest never reads this
+ * file: apps/api reads it back and hands the values to the entrypoint as
+ * command `envs`. So the key can stay entirely server-side, and the sandbox
+ * keeps resuming exactly as before. Keyed per sandbox so a blob lifted off one
+ * box cannot be opened on another.
+ */
+function runtimeEnvKey(externalId: string): Buffer {
+  return Buffer.from(
+    hkdfSync(
+      'sha256',
+      Buffer.from(config.API_KEY_SECRET, 'utf8'),
+      Buffer.from(externalId, 'utf8'),
+      Buffer.from(RUNTIME_ENV_ENVELOPE, 'utf8'),
+      32,
+    ),
+  );
+}
+
+function sealRuntimeEnv(externalId: string, envs: Record<string, string>): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', runtimeEnvKey(externalId), iv, {
+    authTagLength: RUNTIME_ENV_TAG_LENGTH,
+  });
+  const sealed = Buffer.concat([cipher.update(JSON.stringify(envs), 'utf8'), cipher.final()]);
+  return JSON.stringify({
+    v: RUNTIME_ENV_ENVELOPE,
+    iv: iv.toString('base64url'),
+    tag: cipher.getAuthTag().toString('base64url'),
+    env: sealed.toString('base64url'),
+  });
+}
+
+function isSealedRuntimeEnv(
+  value: unknown,
+): value is { v: string; iv: string; tag: string; env: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const envelope = value as Record<string, unknown>;
+  if (envelope.v !== RUNTIME_ENV_ENVELOPE) return false;
+  return (
+    typeof envelope.iv === 'string' &&
+    typeof envelope.tag === 'string' &&
+    typeof envelope.env === 'string'
+  );
+}
+
+/**
+ * Sandboxes paused before the env was sealed hold a plain JSON map at this
+ * path. They must keep resuming — a resume is the one moment a box has no other
+ * copy of its own environment — so an unsealed map is read as-is and left
+ * alone rather than rejected or rewritten on the resume hot path.
+ */
+function openRuntimeEnv(externalId: string, raw: string): unknown {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isSealedRuntimeEnv(parsed)) return parsed;
+  const tag = Buffer.from(parsed.tag, 'base64url');
+  if (tag.length !== RUNTIME_ENV_TAG_LENGTH) {
+    throw new Error('sealed runtime environment has an unsupported auth tag length');
+  }
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    runtimeEnvKey(externalId),
+    Buffer.from(parsed.iv, 'base64url'),
+    { authTagLength: RUNTIME_ENV_TAG_LENGTH },
+  );
+  decipher.setAuthTag(tag);
+  const opened = Buffer.concat([
+    decipher.update(Buffer.from(parsed.env, 'base64url')),
+    decipher.final(),
+  ]);
+  return JSON.parse(opened.toString('utf8'));
+}
+
 async function persistRuntimeEnv(sandbox: E2BSandbox, envs: Record<string, string>): Promise<void> {
-  await sandbox.files.write(RUNTIME_ENV_PATH, JSON.stringify(envs), {
+  await sandbox.files.write(RUNTIME_ENV_PATH, sealRuntimeEnv(sandbox.sandboxId, envs), {
     user: 'root',
     requestTimeoutMs: 10_000,
   });
@@ -126,7 +212,7 @@ async function loadRuntimeEnv(sandbox: E2BSandbox): Promise<Record<string, strin
       user: 'root',
       requestTimeoutMs: 10_000,
     });
-    return validateRuntimeEnv(JSON.parse(raw), sandbox.sandboxId);
+    return validateRuntimeEnv(openRuntimeEnv(sandbox.sandboxId, raw), sandbox.sandboxId);
   } catch (error) {
     throw new Error(
       `[e2b] cannot restore runtime environment for sandbox ${sandbox.sandboxId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -267,8 +353,9 @@ export class E2BProvider implements SandboxProvider {
       // E2B preserves the filesystem but not Sandbox.create(...envs) across a
       // keepMemory:false pause. Persist the complete per-session environment on
       // the private rootfs so a cold resume (including after an API restart)
-      // can relaunch the authenticated daemon. Never put these secrets in E2B
-      // metadata or Kortix DB metadata.
+      // can relaunch the authenticated daemon — sealed, because the guest never
+      // needs to read it back (see persistRuntimeEnv). Never put these secrets
+      // in E2B metadata or Kortix DB metadata.
       await persistRuntimeEnv(sandbox, envVars);
       if (workloadType === 'app') await ensureAppEntrypoint(sandbox, envVars);
       else await ensureKortixEntrypoint(sandbox, envVars);

@@ -97,3 +97,53 @@ describe('markSessionAbortedLocally', () => {
     expect(() => refs.markSessionAbortedLocally.current('')).not.toThrow();
   });
 });
+
+/**
+ * The repair for a MISSED terminal frame, and the only one the raw status slot
+ * has.
+ *
+ * `client.session.status()` is a REST read of the runtime's COMPLETE set of
+ * non-idle sessions, so a session's ABSENCE from it is a positive statement —
+ * "this one is not busy" — not an inference from silence. Removing it left a
+ * lost `session.idle` (a laptop sleeping mid-turn, a stream reconnect) latched
+ * in `sessionStatus[...]` for the lifetime of the tab, and two live surfaces
+ * still read that slot directly: the session panel's `isSessionBusy`, and
+ * `SubAgentStatusBanner`'s retry countdown for CHILD sessions — which have no
+ * Kortix session row, so `GET .../turn` can never cover them and the working
+ * projection cannot either.
+ */
+describe('reconcileMissingBusySessions', () => {
+  test('walks a session the runtime no longer reports as busy back to idle', () => {
+    useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+
+    const refs = renderEventStreamRefs();
+    refs.reconcileMissingBusySessions.current({});
+
+    expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: 'idle' });
+  });
+
+  test('a session the runtime STILL reports is left alone', () => {
+    useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+
+    const refs = renderEventStreamRefs();
+    refs.reconcileMissingBusySessions.current({ ses_1: { type: 'busy' } as never });
+
+    expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: 'busy' });
+  });
+
+  test('a brand-new session with an unsent optimistic message is never idled', () => {
+    // Its first prompt has not reached the server, so it is absent from the
+    // snapshot for an innocent reason. Idling it runs `clearOptimisticMessages`
+    // and wipes the user's own bubble before the real `message.updated` — the
+    // "message sent from home vanishes" bug.
+    useSyncStore.getState().setStatus('ses_new', { type: 'busy' });
+    useSyncStore
+      .getState()
+      .optimisticAdd('ses_new', { id: 'opt_1', sessionID: 'ses_new', role: 'user' } as never, []);
+
+    const refs = renderEventStreamRefs();
+    refs.reconcileMissingBusySessions.current({});
+
+    expect(useSyncStore.getState().sessionStatus.ses_new).toEqual({ type: 'busy' });
+  });
+});
