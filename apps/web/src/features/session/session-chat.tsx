@@ -1863,6 +1863,7 @@ export function SessionChat({
     hasOlder,
     isLoadingOlder,
     loadOlder,
+    promptLikelyDropped,
   } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
@@ -4118,6 +4119,34 @@ export function SessionChat({
     unreachable: runtimePhase === 'unreachable',
     stalled: runtimeStalled,
   });
+  // A message can be ACCEPTED (204) and never turn into a turn — observed
+  // live 2026-08-18 (session `749045da`, 3 of 5 sent messages, zero reply,
+  // zero error, zero visible sign anything went wrong). `promptLikelyDropped`
+  // (SDK `SessionSyncController`) is the one place that already asks the
+  // runtime "did this ever start?" before dropping the busy override; this
+  // just keeps that answer instead of discarding it. Independent of
+  // `composerReadiness` — the RUNTIME is fine here (that's the whole point:
+  // no wake/reconnect notice would ever fire), so this only ever fills the
+  // notice bar when `composerReadiness` has nothing to say, and resends
+  // through the exact same `sendParts(lastSubmittedRef.current)` path the
+  // connector-required card already uses below.
+  const promptDroppedRetry = useCallback(() => {
+    const last = lastSubmittedRef.current;
+    if (!sessionState || !last) return;
+    void sessionState
+      .sendParts(
+        last.parts as Parameters<typeof sessionState.sendParts>[0],
+        last.options as Parameters<typeof sessionState.sendParts>[1],
+      )
+      .catch((err: unknown) => setCommandError(classifySessionError(err)));
+  }, [sessionState, setCommandError]);
+  const promptDroppedNotice =
+    !composerReadiness.notice && promptLikelyDropped && sessionState && lastSubmittedRef.current
+      ? {
+          notice: 'Your last message may not have gone through. Resend it?',
+          retryable: true,
+        }
+      : null;
   const { isNotFound, isDataLoading } = resolveSessionContentState({
     runtimeReady,
     sessionFetched,
@@ -4605,8 +4634,16 @@ export function SessionChat({
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
                 runtimeReady={composerReadiness.ready}
-                notice={composerReadiness.notice}
-                onNoticeRetry={composerReadiness.retryable ? requestRuntimeReconnect : undefined}
+                notice={composerReadiness.notice ?? promptDroppedNotice?.notice ?? null}
+                onNoticeRetry={
+                  composerReadiness.notice
+                    ? composerReadiness.retryable
+                      ? requestRuntimeReconnect
+                      : undefined
+                    : promptDroppedNotice
+                      ? promptDroppedRetry
+                      : undefined
+                }
               />
               <ConfirmDialog
                 open={!!rewindTarget}

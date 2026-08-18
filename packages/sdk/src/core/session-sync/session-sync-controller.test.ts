@@ -764,6 +764,53 @@ describe('SessionSyncController prompt observation', () => {
     expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
   });
 
+  // `promptLikelyDropped` — observed live 2026-08-18 (session `749045da`): a
+  // message accepted by the proxy (204) that never became a turn at all. The
+  // "never starts work" test above already exercises this exact scenario for
+  // `isPromptObservedBusy`; these assert the OTHER flag it now also sets.
+  test('flags promptLikelyDropped when the accepted prompt never starts work', async () => {
+    const { controller, clock } = createObservedController();
+
+    controller.beginPromptObservation();
+    expect(controller.getSnapshot().promptLikelyDropped).toBe(false);
+
+    for (let elapsed = 0; elapsed < PROMPT_OBSERVATION_STALL_MS; elapsed += 1_000) {
+      controller.observePromptStatus({ type: 'idle' } as SessionStatus);
+      clock.advance(1_000);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(controller.getSnapshot().promptLikelyDropped).toBe(true);
+  });
+
+  test('does NOT flag promptLikelyDropped for a turn that started and settled normally', async () => {
+    const { controller, clock } = createObservedController();
+
+    controller.beginPromptObservation();
+    controller.observePromptActivity();
+    clock.advance(PROMPT_OBSERVATION_STALL_MS);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    clock.advance(600);
+
+    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+    expect(controller.getSnapshot().promptLikelyDropped).toBe(false);
+  });
+
+  test('a fresh send (beginPromptObservation) clears a prior promptLikelyDropped verdict', async () => {
+    const { controller, clock } = createObservedController();
+
+    controller.beginPromptObservation();
+    for (let elapsed = 0; elapsed < PROMPT_OBSERVATION_STALL_MS; elapsed += 1_000) {
+      controller.observePromptStatus({ type: 'idle' } as SessionStatus);
+      clock.advance(1_000);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.getSnapshot().promptLikelyDropped).toBe(true);
+
+    controller.beginPromptObservation();
+    expect(controller.getSnapshot().promptLikelyDropped).toBe(false);
+  });
+
   test('reconciles runtime status even when the transcript read never resolves', async () => {
     const statuses: SessionStatus[] = [];
     const { controller, clock } = createObservedController({

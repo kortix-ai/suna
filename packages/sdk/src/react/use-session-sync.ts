@@ -198,5 +198,9 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     loadOlder: controller.loadOlder,
     diffs: diffs ?? EMPTY_DIFFS,
     todos: todos ?? EMPTY_TODOS,
+    // See `SessionSyncSnapshot.promptLikelyDropped` — true when a sent
+    // message's stall deadline confirmed the runtime idle with zero
+    // proof-of-life the turn ever started. Cleared on the next send.
+    promptLikelyDropped: sync.promptLikelyDropped ?? false,
   };
 }

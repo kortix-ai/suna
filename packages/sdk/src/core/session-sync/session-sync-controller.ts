@@ -30,6 +30,20 @@ export interface SessionSyncSnapshot {
   isLoadingOlder: boolean;
   /** True while an accepted REST prompt has not reached stable runtime idle. */
   isPromptObservedBusy?: boolean;
+  /**
+   * True once an accepted REST prompt's stall deadline fired with NO
+   * proof-of-life ever observed (no busy status, no SSE frame, no new
+   * assistant reply in a tail reconcile — `promptObservationPhase` never left
+   * `'awaiting-work'`) AND an authoritative `/session/status` read confirms
+   * the runtime is genuinely idle. That combination means the turn most
+   * likely never ran at all — a message accepted (204) but silently never
+   * answered, observed live 2026-08-18 (session `749045da`, 3 of 5 sent
+   * messages). `resolvePromptStall` already had to ask this exact question to
+   * decide whether to drop the busy override; this only keeps the answer
+   * instead of discarding it. Cleared by the next `beginPromptObservation()`
+   * (a fresh send attempt) — never sticks past the message it describes.
+   */
+  promptLikelyDropped?: boolean;
 }
 
 export interface SessionSyncScheduler {
@@ -226,6 +240,7 @@ export class SessionSyncController {
     hasOlder: false,
     isLoadingOlder: false,
     isPromptObservedBusy: false,
+    promptLikelyDropped: false,
   };
   private nextCursor: string | undefined;
   private knownUserMessageIds = new Set<string>();
@@ -323,7 +338,9 @@ export class SessionSyncController {
     this.promptStallFailures = 0;
     this.promptObservationPhase = 'awaiting-work';
     this.armPromptStallTimer();
-    this.update({ isPromptObservedBusy: true });
+    // A fresh send attempt — any prior "likely dropped" verdict described the
+    // message THAT resolved, not this new one.
+    this.update({ isPromptObservedBusy: true, promptLikelyDropped: false });
     this.setBusy(true);
   }
 
@@ -659,7 +676,12 @@ export class SessionSyncController {
           this.schedulePromptSettlement();
           return;
         }
-        this.clearPromptObservation();
+        // Only 'awaiting-work' reaches here (the branches above return for
+        // 'settling'/'running'): nothing EVER proved this turn started — no
+        // busy status, no SSE frame, no new reply — and the runtime just
+        // confirmed, authoritatively, that it is idle right now. The prompt
+        // most likely never ran. See `promptLikelyDropped`'s doc.
+        this.clearPromptObservation({ likelyDropped: true });
         return;
       }
       // Failed read: one transient failure must not unmask a possibly-live
@@ -710,13 +732,16 @@ export class SessionSyncController {
   }
 
   /** Drop the busy override and its timers, leaving the liveness timer alone. */
-  private clearPromptObservation(): void {
+  private clearPromptObservation(options: { likelyDropped?: boolean } = {}): void {
     this.clearPromptSettlementTimer();
     this.clearPromptStallTimer();
     this.promptObservationEpoch += 1;
     this.promptStallFailures = 0;
     this.promptObservationPhase = 'idle';
-    this.update({ isPromptObservedBusy: false });
+    this.update({
+      isPromptObservedBusy: false,
+      ...(options.likelyDropped ? { promptLikelyDropped: true } : {}),
+    });
   }
 
   private clearPromptSettlementTimer(): void {
@@ -750,7 +775,8 @@ export class SessionSyncController {
       snapshot.freshness === this.snapshot.freshness &&
       snapshot.hasOlder === this.snapshot.hasOlder &&
       snapshot.isLoadingOlder === this.snapshot.isLoadingOlder &&
-      snapshot.isPromptObservedBusy === this.snapshot.isPromptObservedBusy
+      snapshot.isPromptObservedBusy === this.snapshot.isPromptObservedBusy &&
+      snapshot.promptLikelyDropped === this.snapshot.promptLikelyDropped
     ) {
       return;
     }
