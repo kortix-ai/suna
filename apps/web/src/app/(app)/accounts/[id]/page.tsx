@@ -1957,9 +1957,10 @@ function InviteMemberModal({
     >
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
-          <ModalTitle>Invite members</ModalTitle>
+          <ModalTitle>Invite to account</ModalTitle>
           <ModalDescription>
-            Invite by email. If they don&apos;t have an account yet, the invite waits for them.
+            They&apos;ll get account access at the role you pick, across every workspace. If they
+            don&apos;t have an account yet, the invite waits for them.
           </ModalDescription>
         </ModalHeader>
         <form onSubmit={handleSubmit}>
@@ -2020,13 +2021,23 @@ function InviteMemberModal({
                 <SelectTrigger id="invite-role">
                   <SelectValue />
                 </SelectTrigger>
+                {/* `description`, not a concatenated "label — blurb" string.
+                    Each option used to read its full sentence inline
+                    ("Admin — Everything except deleting the account or
+                    transferring ownership."), which wrapped to two lines per
+                    row inside this modal and pushed the open popover past
+                    the bottom of the screen. `SelectItem`'s own
+                    `description` prop already renders label and blurb as two
+                    properly-laid-out lines — the same fix already applied to
+                    `InviteToAccountDialog`
+                    (`features/workspace/settings/tabs/members-tab.tsx`),
+                    never ported back to this older duplicate until now. */}
                 <SelectContent>
-                  <SelectItem value="member">
-                    {ACCOUNT_ROLE_DESCRIPTORS.member.label} —{' '}
-                    {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
+                  <SelectItem value="member" description={ACCOUNT_ROLE_DESCRIPTORS.member.blurb}>
+                    {ACCOUNT_ROLE_DESCRIPTORS.member.label}
                   </SelectItem>
-                  <SelectItem value="admin">
-                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
+                  <SelectItem value="admin" description={ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}>
+                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
                   </SelectItem>
                 </SelectContent>
               </Select>
