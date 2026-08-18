@@ -180,7 +180,7 @@ export function AutomationsHeroVisual(): ReactNode {
 
         {/* ── what happens next ───────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[3%] bottom-[5%] left-[22%] rounded-lg border p-4 shadow-2xl"
+          className="border-border/70 bg-card absolute right-[3%] bottom-[5%] left-[22%] rounded-lg border p-4 "
           {...panel(reduceMotion)}
         >
           <span className="text-muted-foreground/45 block font-mono text-[10px] tracking-widest uppercase">

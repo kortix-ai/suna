@@ -99,7 +99,7 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
           aria-label={tI18nHardcoded.raw(
             'autoComponentsHomeThemeToggleJsxAttrAriaLabelDarkThemebf1de1f0',
           )}
-          className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
+          className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-[calc(var(--radius)-6px)] transition-colors duration-150 ease-out"
           type="button"
           style={{ backgroundColor: theme === 'dark' ? 'var(--background)' : 'transparent' }}
           onClick={() => setTheme('dark')}
@@ -123,7 +123,7 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
             aria-label={tI18nHardcoded.raw(
               'autoComponentsHomeThemeToggleJsxAttrAriaLabelSystemThemeb9e760e3',
             )}
-            className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
+            className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-[calc(var(--radius)-6px)] transition-colors duration-150 ease-out"
             type="button"
             style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}
             onClick={() => setTheme('system')}

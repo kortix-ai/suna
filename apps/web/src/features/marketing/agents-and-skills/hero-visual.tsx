@@ -86,7 +86,7 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
 
         {/* ── the sheet in front ──────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[8%] bottom-[4%] left-[2%] overflow-hidden rounded-lg border shadow-2xl"
+          className="border-border/70 bg-card absolute right-[8%] bottom-[4%] left-[2%] overflow-hidden rounded-lg border "
           {...panel(reduceMotion)}
         >
           <div className="border-border/50 border-b px-5 py-3">

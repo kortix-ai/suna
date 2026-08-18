@@ -131,7 +131,7 @@ export function ChannelsHeroVisual(): ReactNode {
 
         {/* ── the decision ────────────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[2%] bottom-[3%] left-[8%] z-30 rounded-xl border p-5 shadow-2xl"
+          className="border-border/70 bg-card absolute right-[2%] bottom-[3%] left-[8%] z-30 rounded-xl border p-5 "
           {...panel(reduceMotion)}
         >
           <p className="text-foreground text-[14.5px] leading-snug font-medium text-pretty">

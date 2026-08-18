@@ -94,7 +94,7 @@ export function SecurityHeroVisual(): ReactNode {
 
         {/* ── the chamber ─────────────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute inset-y-[5%] right-[1%] rounded-xl border p-5 shadow-2xl"
+          className="border-border/70 bg-card absolute inset-y-[5%] right-[1%] rounded-xl border p-5"
           style={{ left: `${WALL}%` }}
           {...panel(reduceMotion)}
         >

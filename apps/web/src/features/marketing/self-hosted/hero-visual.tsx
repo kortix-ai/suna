@@ -129,7 +129,7 @@ export function SelfHostedHeroVisual(): ReactNode {
 
         {/* ── the command that brought it up ──────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[8%] bottom-[3%] left-[1%] z-30 overflow-hidden rounded-xl border shadow-2xl"
+          className="border-border/70 bg-card absolute right-[8%] bottom-[3%] left-[1%] z-30 overflow-hidden rounded-xl border"
           {...panel(reduceMotion)}
         >
           <div className="border-border/50 flex items-center gap-3 border-b px-4 py-2.5">

@@ -96,7 +96,7 @@ export function EnterpriseHeroVisual(): ReactNode {
 
         {/* ── the one lifted out ──────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[4%] bottom-[8%] left-[8%] rounded-xl border p-5 shadow-2xl"
+          className="border-border/70 bg-card absolute right-[4%] bottom-[8%] left-[8%] rounded-xl border p-5"
           {...panel(reduceMotion)}
         >
           <span className="text-muted-foreground/50 block font-mono text-[10px] tracking-widest uppercase">

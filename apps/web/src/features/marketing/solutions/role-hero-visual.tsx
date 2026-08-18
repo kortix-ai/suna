@@ -193,7 +193,7 @@ export function RoleHeroVisual({ role }: { role: RoleContent }): ReactNode {
 
         {/* ── the specimen ────────────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute top-[7%] right-[8%] bottom-[9%] left-[1%] flex flex-col overflow-hidden rounded-xl border shadow-2xl"
+          className="border-border/70 bg-card absolute top-[7%] right-[8%] bottom-[9%] left-[1%] flex flex-col overflow-hidden rounded-xl border"
           {...panel(reduceMotion)}
         >
           <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
