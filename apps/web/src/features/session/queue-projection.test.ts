@@ -19,7 +19,15 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
 }
 
 describe('projectQueueRows', () => {
-  test('server rows land in the queue, and a delivering one is locked', () => {
+  test('a delivering row is RENDERED, and locked — not dropped from the strip', () => {
+    // A prompt typed mid-turn is forwarded within seconds and reads
+    // `delivering` for the whole of the turn in front of it. It is not painted
+    // into the transcript either (`willWaitInInbox`), so leaving it out of the
+    // strip is the user's message vanishing from the screen entirely until
+    // OpenCode persists and syncs it.
+    //
+    // It stays in `inFlightIds` because it is on the wire: not editable, not
+    // removable, not reorderable.
     const projection = projectQueueRows({
       prompts: [
         prompt({ prompt_id: 'a' }),
@@ -28,16 +36,62 @@ describe('projectQueueRows', () => {
       ],
     });
 
-    expect(projection.queued.map((r) => r.id)).toEqual(['a']);
+    expect(projection.queued.map((r) => r.id)).toEqual(['a', 'b']);
     expect(projection.inFlightIds).toEqual(['b']);
     expect(projection.failed).toEqual([
       { id: 'c', text: 'say hi', lastError: 'delivery outcome: failed' },
     ]);
   });
 
+  test('a row whose message is ALREADY IN THE TRANSCRIPT leaves the strip', () => {
+    // The other half of rendering `delivering` rows. "Not painted into the
+    // transcript" holds for the OPTIMISTIC bubble — `willWaitInInbox` decides
+    // that — but not for the server message: an idle send paints the bubble
+    // immediately, and a mid-turn one arrives over SSE once OpenCode persists
+    // it. From that moment the same text is on screen twice, once as the
+    // answer being streamed and once as a pending queue row.
+    //
+    // The transcript is the authority: a message that is in it is not queued.
+    const projection = projectQueueRows({
+      prompts: [
+        prompt({ prompt_id: 'painted', message_id: 'msg_painted', state: 'delivering' }),
+        prompt({ prompt_id: 'unpainted', message_id: 'msg_unpainted', state: 'delivering' }),
+      ],
+      transcriptMessageIds: new Set(['msg_painted']),
+    });
+
+    expect(projection.queued.map((r) => r.id)).toEqual(['unpainted']);
+    expect(projection.inFlightIds).toEqual(['unpainted']);
+  });
+
+  test('a HELD row stays even once its message is in the transcript', () => {
+    // A stop-paused prompt IS in the transcript — OpenCode persisted it before
+    // the user pressed Stop — and it is unanswered and parked. The strip is the
+    // only place its remove and "send now" controls exist, so dropping it would
+    // leave the user with an unanswered message and no way to act on it.
+    const projection = projectQueueRows({
+      prompts: [prompt({ state: 'waiting', reason: 'held', message_id: 'msg_a' })],
+      transcriptMessageIds: new Set(['msg_a']),
+    });
+
+    expect(projection.queued).toHaveLength(1);
+    expect(projection.held).toBe(true);
+  });
+
+  test('a row with no wire id yet is never matched against the transcript', () => {
+    // An automation-shaped or not-yet-minted row carries an empty `message_id`,
+    // and an empty string must not match an empty transcript entry.
+    const projection = projectQueueRows({
+      prompts: [prompt({ message_id: '' })],
+      transcriptMessageIds: new Set(['']),
+    });
+
+    expect(projection.queued).toHaveLength(1);
+  });
+
   test('a `waiting` row is still a queued row — waiting is WHY, not a lane', () => {
     const projection = projectQueueRows({
-      prompts: [prompt({ state: 'waiting', reason: 'turn_active' })],
+      prompts: [prompt({ state: 'waiting', reason: 'older_prompt_pending' })],
     });
 
     expect(projection.queued).toHaveLength(1);

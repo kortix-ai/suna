@@ -9,7 +9,37 @@ import { getActiveOpenCodeUrl } from '../../browser/stores/server-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import type { SyntheticAbortError } from '../../browser/stores/sync-store/types';
 import { type Project, type PathInfo, type SessionStatus, opencodeKeys } from '../use-opencode-sessions';
+import { qk } from '../query-keys';
 import type { NormalizeDiagnosticPaths } from './types';
+
+// Read off the key factory rather than hand-typed, so the matcher moves with
+// `qk` instead of silently missing every key after a segment is renamed.
+const [KEY_ROOT, PROJECT_SEGMENT] = qk.project.scope('');
+const TURN_SEGMENT = qk.project.sessionTurn('', '').at(-1);
+const PROMPTS_SEGMENT = qk.project.sessionPrompts('', '').at(-1);
+
+/**
+ * Every `GET .../turn` and `GET .../prompts` entry in the cache, for any
+ * project and any session.
+ *
+ * Matched by SHAPE rather than by `qk.project.sessionTurn(projectId,
+ * sessionId)`, because `server.instance.disposed` carries neither id: it is
+ * scoped to a runtime instance, and the handler only ever holds OpenCode WIRE
+ * session ids, while those keys are built from the Kortix `(projectId,
+ * sessionId)` pair. The instance going away affects every session the tab was
+ * watching on it, so re-reading all of them is the honest breadth — and both
+ * families are cheap server reads that the working projection is about to ask
+ * for anyway.
+ */
+function isSessionTruthQuery(query: { queryKey: readonly unknown[] }): boolean {
+  const key = query.queryKey;
+  const tail = key[key.length - 1];
+  return (
+    key[0] === KEY_ROOT &&
+    key[1] === PROJECT_SEGMENT &&
+    (tail === TURN_SEGMENT || tail === PROMPTS_SEGMENT)
+  );
+}
 
 /**
  * Creates the stable per-stream refs used by the event hook. Each ref captures
@@ -134,8 +164,23 @@ export function useEventStreamRefs(deps: {
         type: 'session.error',
         properties: { sessionID, error },
       } as unknown as OpenCodeSdkEvent);
-      useSyncStore.getState().setStatus(sessionID, { type: 'idle' });
-      useSyncStore.getState().clearOptimisticMessages(sessionID);
+      // A brand-new session whose first prompt has not been echoed yet is the
+      // one case this must not touch: the prompt is a durable server row and
+      // the inbox will redeliver it, so wiping the bubble here deletes text the
+      // user typed for a turn that is about to run. Its sibling
+      // `reconcileMissingBusySessions` has guarded exactly this since the
+      // "message sent from home vanishes" bug; this path never did, and it runs
+      // for EVERY non-idle session in the tab on one `server.instance.disposed`
+      // frame.
+      if (!useSyncStore.getState().hasOptimisticMessages(sessionID)) {
+        useSyncStore.getState().clearOptimisticMessages(sessionID);
+      }
+      // No status write. One runtime instance going away is not evidence that
+      // the session is idle: the control plane may still hold the turn, and the
+      // box may already be resuming under it. Re-read the sources that CAN know
+      // — the turn authority and the durable prompt inbox — and let
+      // `projectWorking` answer.
+      void queryClient.invalidateQueries({ predicate: isSessionTruthQuery });
     },
   );
 
@@ -158,11 +203,14 @@ export function useEventStreamRefs(deps: {
    * read of the runtime's COMPLETE set of non-idle sessions, so a session's
    * absence from it is a positive statement about that session. It is the only
    * repair the raw `sessionStatus` slot has for a MISSED terminal frame — a
-   * laptop sleeping mid-turn, a stream reconnect — and two live surfaces still
-   * read that slot directly rather than the working projection: the session
-   * panel's `isSessionBusy`, and `SubAgentStatusBanner`'s retry countdown for
-   * CHILD sessions, which have no Kortix session row at all and therefore can
-   * never be covered by `GET .../turn`.
+   * laptop sleeping mid-turn, a stream reconnect. Every remaining direct
+   * reader of that slot is a CHILD-session surface — sub-sessions have no
+   * Kortix session row, so `GET .../turn` can never answer for them: the
+   * session panel's and turn card's child fallbacks (`session-layout.tsx`,
+   * `resolveLastTurnWorking`), and `SubAgentStatusBanner`'s retry countdown.
+   * Kortix-session surfaces read the working projection, whose `stream` input
+   * this slot feeds — the repair still reaches them, one hop later, with
+   * provenance.
    */
   const reconcileMissingBusySessions = useRef((nextStatuses: Record<string, SessionStatus>) => {
     const previousStatuses = useSyncStore.getState().sessionStatus;

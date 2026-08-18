@@ -23,6 +23,7 @@ import {
   turnDeliveryGraceMs,
   turnGrantMs,
 } from './sandbox-deadline-policy';
+import { confirmInboxPromptConsumed } from './session-lifecycle/consumption';
 
 export interface SandboxTurnIdentity {
   opencodeSessionId: string;
@@ -611,7 +612,9 @@ export async function acceptSandboxTurn(
            AND s.metadata->'activeTurns'->${token}->>'state' IN ('delivering', 'active'))
          OR (s.metadata->'activeTurn'->>'token' = ${token}
            AND s.metadata->'activeTurn'->>'state' IN ('delivering', 'active')))
-    RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted`);
+    RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
+              coalesce(s.metadata->'activeTurns'->${token}->>'messageId',
+                       s.metadata->'activeTurn'->>'messageId') AS turn_message_id`);
   const rows = normalizeRows(result);
   const accepted = (rows?.length ?? 0) > 0;
   if (!accepted) return false;
@@ -640,6 +643,26 @@ export async function acceptSandboxTurn(
                 updated_at = now()
           WHERE kortix.session_turns.state <> 'ended'`,
       `accept ${token}`,
+    );
+    // ACCEPTANCE IS THE INBOX'S ANSWER. The upstream took the prompt and the
+    // ledger now holds an `active` turn keyed to this exact wire id, so the
+    // message belongs to the transcript rather than to the queue — whether or
+    // not OpenCode has started running it yet.
+    //
+    // THE ID COMES FROM THE ROW, not only from the argument. The one caller
+    // that carries an inbox prompt is the proxy (`preview.ts`'s
+    // `acceptTurnLifecycle`), and it passes NO identity — the identity was
+    // written durably by `beginSandboxTurn` before the POST, so re-sending it
+    // would be re-sending what the record already holds. Reading only the
+    // argument made this confirmation dead on every composer prompt, and the
+    // row stayed `delivering` until the whole turn ended.
+    //
+    // Same swallow-and-log shape as the ledger write above, and for the same
+    // reason: this is bookkeeping, and a failed confirmation must never fail a
+    // turn acceptance.
+    await confirmInboxPromptConsumed(
+      owner.sessionId,
+      identity?.messageId ?? ledgerText(rows?.[0]?.turn_message_id),
     );
   }
   return true;
@@ -956,6 +979,14 @@ export async function completeSandboxTurn(
       endedTurnLedger(owner, turns, endReason),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
+    // The backstop for an acceptance that never landed: `completed`/`failed`
+    // both mean the turn RAN, so the prompt it carried is consumed either way.
+    // The never-ran reasons (`abandoned`, `runtime_gone`, `unknown`) cannot
+    // reach here — this path only ever writes the two — which is what keeps
+    // this from racing `requeueAbandonedPrompt`, the owner of exactly those.
+    for (const turn of turns) {
+      await confirmInboxPromptConsumed(owner.sessionId, turn.messageId);
+    }
   }
   return true;
 }

@@ -8,7 +8,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
-import { ascendingId, Binary, useSyncStore } from "./sync-store";
+import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -2406,5 +2406,114 @@ describe("useSyncStore — sessionRevert is released with the session (clearSess
 		store.reset();
 
 		expect(useSyncStore.getState().sessionRevert).toEqual({});
+	});
+});
+
+// ============================================================================
+// setStatus — an OBSERVATION, never a heartbeat
+// ============================================================================
+
+/**
+ * Object identity is what `useSessionWorking` stamps a stream observation
+ * FROM: its effect re-runs on `[status, streamKey]`, and re-stamping restarts
+ * `STREAM_OBSERVATION_MAX_MS` from zero. So a writer that re-parses an
+ * equal-valued status every tick keeps the newest-observation clock pinned at
+ * "just now" forever, and the bound that is supposed to stop a dead stream
+ * from deciding is never reached — the latch, wearing a fresh timestamp.
+ *
+ * A value that did not change is not news. The store now says so.
+ */
+describe("useSyncStore — setStatus writes an observation, never a heartbeat", () => {
+	test("an equal value keeps the SAME object identity", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "busy" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+	});
+
+	test("a changed type mints a new object", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "idle" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).not.toBe(first);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+	});
+
+	test("a changed retry field mints a new object", () => {
+		// `getRetryInfo`/`getRetryMessage` read `attempt`, `message` and `next`.
+		// A second attempt of the same retry is genuinely new news — the banner
+		// counts it down — so identity has to move even though `type` did not.
+		const store = useSyncStore.getState();
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		store.setStatus("ses_1", retry);
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { ...retry, attempt: 2 });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).not.toBe(first);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toMatchObject({ attempt: 2 });
+	});
+
+	test("an equal retry value is still not news", () => {
+		const store = useSyncStore.getState();
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		store.setStatus("ses_1", retry);
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { ...retry });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+	});
+
+	test("a first status for a session is always news", () => {
+		useSyncStore.getState().setStatus("ses_fresh", { type: "idle" });
+		expect(useSyncStore.getState().sessionStatus.ses_fresh).toEqual({ type: "idle" });
+	});
+
+	test("one session's rewrite never disturbs another's identity", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		store.setStatus("ses_2", { type: "busy" });
+		const other = useSyncStore.getState().sessionStatus.ses_2;
+
+		store.setStatus("ses_1", { type: "idle" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_2).toBe(other);
+	});
+});
+
+describe("sameSessionStatus", () => {
+	test("compares exactly the fields the retry readers read", () => {
+		expect(sameSessionStatus({ type: "busy" }, { type: "busy" })).toBe(true);
+		expect(sameSessionStatus({ type: "busy" }, { type: "idle" })).toBe(false);
+		expect(sameSessionStatus(undefined, { type: "idle" })).toBe(false);
+		expect(sameSessionStatus(undefined, undefined)).toBe(true);
+
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		expect(sameSessionStatus(retry, { ...retry })).toBe(true);
+		expect(sameSessionStatus(retry, { ...retry, attempt: 2 })).toBe(false);
+		expect(sameSessionStatus(retry, { ...retry, message: "gateway 429" })).toBe(false);
+		expect(sameSessionStatus(retry, { ...retry, next: 2000 })).toBe(false);
 	});
 });

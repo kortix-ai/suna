@@ -389,13 +389,17 @@ describe('beginOptimisticPlainTextSend', () => {
     useSyncStore.getState().reset();
   });
 
-  test('adds a user message optimistically and flips the session busy', () => {
+  test('adds the user message and writes NO status — the bubble is not a turn', () => {
+    // The fabricated `{type:'busy'}` is gone: `sessionStatus` is where the
+    // runtime's own SSE frames land, and a write there is indistinguishable
+    // from one the daemon sent — it outranked a real `GET .../turn` read
+    // stamped after it. `sendParts` files a `SendReceipt` instead.
     const { messageId, parts } = beginOptimisticPlainTextSend('sess-plain-1', 'hello there');
 
     const msgs = useSyncStore.getState().messages['sess-plain-1'];
     expect(msgs).toHaveLength(1);
     expect(msgs?.[0]).toMatchObject({ id: messageId, role: 'user' });
-    expect(useSyncStore.getState().sessionStatus['sess-plain-1']).toEqual({ type: 'busy' });
+    expect('sess-plain-1' in useSyncStore.getState().sessionStatus).toBe(false);
     expect(parts).toEqual([{ type: 'text', text: 'hello there', id: expect.any(String) }]);
   });
 

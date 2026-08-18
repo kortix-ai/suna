@@ -4,6 +4,7 @@ import {
   CaretLeftIcon as ChevronLeft,
   FolderOpenIcon as FolderOpen,
   PlusIcon as Plus,
+  ShieldIcon as Shield,
   TrashIcon as Trash2,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
@@ -21,10 +22,12 @@ import {
   sortGroupMembersByOverride,
   type AccountMeta,
 } from '@/components/iam/iam-display-helpers';
+import { CreateAssignmentDialog } from '@/components/iam/policy-assignments';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -53,12 +56,14 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountState } from '@/hooks/billing';
 import {
   addGroupMembers,
   deleteGroup,
   getGroup,
   listGroupMembers,
   listGroupProjectGrants,
+  listRoles,
   removeGroupMember,
   updateGroup,
   type GroupProjectGrant,
@@ -74,6 +79,12 @@ import {
   type ProjectRole,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
+
+// Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
+// sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac and
+// the duplicate in roles-tab.tsx / policy-assignments.tsx.
+const RBAC_UPSELL_MESSAGE =
+  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
 
 // Entity row dialect shared with the customize section views.
 const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
@@ -102,6 +113,9 @@ export default function GroupDetailPage() {
   const accountId = params?.id;
   const groupId = params?.groupId;
   const { user, isLoading: authLoading } = useAuth();
+  // Controlled so the "give a custom role" empty state can jump straight to
+  // the Projects tab (where built-in roles are actually assigned to a group).
+  const [activeGroupTab, setActiveGroupTab] = useState('members');
 
   const accountQuery = useQuery({
     queryKey: ['account', accountId],
@@ -132,6 +146,12 @@ export default function GroupDetailPage() {
     resourceType: 'group',
     resourceId: groupId,
   }).allowed;
+  // Same gate the account Roles tab uses (role.create) — assigning a role to
+  // this group is the same capability, just reached from the group page.
+  const canAssignRoles = usePermission(accountId, 'role.create').allowed;
+
+  const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
+  const rbacEnabled = !!accountStateQuery.data?.tier?.entitlements?.rbac;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -196,7 +216,7 @@ export default function GroupDetailPage() {
       ) : null}
 
       {group && account ? (
-        <Tabs defaultValue="members" className="space-y-6">
+        <Tabs value={activeGroupTab} onValueChange={setActiveGroupTab} className="space-y-6">
           <TabsList type="underline" className="flex w-full items-center justify-start">
             <TabsTrigger value="members" className="w-fit flex-none">
               Members
@@ -213,8 +233,12 @@ export default function GroupDetailPage() {
             <GroupMembersCard
               accountId={account.account_id}
               groupId={group.group_id}
+              groupName={group.name}
               canManage={canManageMembers}
+              canAssignRoles={canAssignRoles}
+              rbacEnabled={rbacEnabled}
               idpManaged={group.source === 'scim'}
+              onOpenBuiltinRolePath={() => setActiveGroupTab('projects')}
             />
           </TabsContent>
 
@@ -249,21 +273,49 @@ export default function GroupDetailPage() {
 function GroupMembersCard({
   accountId,
   groupId,
+  groupName,
   canManage,
+  canAssignRoles,
+  rbacEnabled,
   idpManaged,
+  onOpenBuiltinRolePath,
 }: {
   accountId: string;
   groupId: string;
+  groupName: string;
   canManage: boolean;
+  /** Gates the "Give a custom role" action — the role.create capability,
+   *  same as the account Roles tab. Independent of canManage (membership). */
+  canAssignRoles: boolean;
+  /** Whether the account's tier carries the `rbac` entitlement. */
+  rbacEnabled: boolean;
   /** SCIM-sourced group: membership is owned by the IdP — the API 409s local
    *  edits (they'd be clobbered by the next push), so hide the affordances. */
   idpManaged: boolean;
+  /** Jump to the Projects tab, where a built-in role (Manager/Editor/Member)
+   *  is actually attached to this group — surfaced from the assignment
+   *  dialog's empty state when there are no custom roles to pick from. */
+  onOpenBuiltinRolePath: () => void;
 }) {
   // Local membership edits only make sense for locally-owned groups.
   const canMutate = canManage && !idpManaged;
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [assignRoleOpen, setAssignRoleOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
+
+  // Same query keys PolicyAssignments/RolesTab use — shares the cache instead
+  // of double-fetching when an admin has visited the account Roles tab too.
+  const rolesQuery = useQuery({
+    queryKey: ['iam-roles', accountId],
+    queryFn: () => listRoles(accountId),
+    staleTime: 30_000,
+  });
+  const projectsQuery = useQuery({
+    queryKey: ['account-projects', accountId],
+    queryFn: () => listProjectsForAccount(accountId),
+    staleTime: 30_000,
+  });
 
   const membersQuery = useQuery({
     queryKey: ['group-members', accountId, groupId],
@@ -334,17 +386,44 @@ function GroupMembersCard({
               : 'Members of this group inherit every policy attached to it.'}
           </p>
         </div>
-        {canMutate ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            className="gap-1.5"
-            onClick={() => setAddOpen(true)}
-          >
-            <Plus className="size-4" />
-            Add members
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {canAssignRoles ? (
+            rbacEnabled ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setAssignRoleOpen(true)}
+              >
+                <Shield className="size-4" />
+                Give a custom role
+              </Button>
+            ) : (
+              <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
+                <span className="inline-flex items-center gap-1.5">
+                  <Button size="sm" variant="outline" className="gap-1.5" disabled>
+                    <Shield className="size-4" />
+                    Give a custom role
+                  </Button>
+                  <Badge variant="outline" size="sm">
+                    Enterprise
+                  </Badge>
+                </span>
+              </Hint>
+            )
+          ) : null}
+          {canMutate ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1.5"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="size-4" />
+              Add members
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {membersQuery.isLoading ? (
@@ -436,6 +515,26 @@ function GroupMembersCard({
         groupId={groupId}
         existingUserIds={new Set(members.map((m) => m.user_id))}
         candidates={accountMembersQuery.data ?? []}
+      />
+
+      <CreateAssignmentDialog
+        accountId={accountId}
+        open={assignRoleOpen}
+        onOpenChange={setAssignRoleOpen}
+        roles={rolesQuery.data ?? []}
+        rolesLoading={rolesQuery.isLoading}
+        members={[]}
+        groups={[{ group_id: groupId, name: groupName }]}
+        agents={[]}
+        serviceAccounts={[]}
+        projects={projectsQuery.data ?? []}
+        projectsLoading={projectsQuery.isLoading}
+        presetPrincipal={{ type: 'group', id: groupId, label: groupName }}
+        onOpenBuiltinRolePath={onOpenBuiltinRolePath}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
+          setAssignRoleOpen(false);
+        }}
       />
 
       <ConfirmDialog

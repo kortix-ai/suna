@@ -2127,20 +2127,55 @@ export async function relayTurnEndToApi(
 ): Promise<void> {
   const ctx = sandboxRelayContext()
   if (!ctx) return
-  // Only the root turn closes channel output and shortens the idle deadline. A
-  // subagent can become idle while the root turn still runs. Detect the root by
-  // parentID, not by a session pin that can change after an OpenCode restart.
-  if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
   // Resolve the turn's error + completed signature in one read. session.error
   // already hands us the error; an idle end (e.g. retries exhausted, then idle)
-  // carries none, so read the root turn's last assistant message — exactly what
+  // carries none, so read the session's last assistant message — exactly what
   // the web UI shows — and upgrade idle→error when it failed. This is what turns
   // a blank "ended without a reply" in Slack into "out of credits" / rate-limit /
   // the real error. The completed timestamp doubles as the per-turn dedup key.
+  //
+  // Read BEFORE the root filter, because the runaway guard below must see EVERY
+  // session's completions: the 2026-08-18 Essentia incident was a CHILD session
+  // re-answering the same standing prompt indefinitely, and with the guard
+  // placed after the root filter it never saw a single one of those repeats.
   const turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
   const error = eventError ?? turn.error
   const effectiveStatus = error ? 'error' : status
+  const isRoot = await isRootOpencodeSession(opencodeSessionId, opencode, cfg)
+
+  // A genuinely new, non-duplicate `idle` completion — check it isn't the SAME
+  // standing prompt answering itself again with no new user message in between
+  // (see `runaway-turn-guard.ts`). Per opencode session id, ROOT AND CHILDREN:
+  // the abort targets the session that is looping. Scoped to `idle` only: an
+  // `error` completion repeating is `turn-auto-resume.ts`'s concern.
+  const runawayCheck = (): void => {
+    if (effectiveStatus !== 'idle') return
+    void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
+      try {
+        await fetch(
+          `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(cfg.workspace)}`,
+          { method: 'POST', signal: AbortSignal.timeout(10_000) },
+        )
+      } catch (err) {
+        logger.warn('[runaway-turn-guard] abort call failed', { opencodeSessionId, err: (err as Error).message })
+      }
+    })
+  }
+
+  // Only the root turn closes channel output and shortens the idle deadline. A
+  // subagent can become idle while the root turn still runs. Detect the root by
+  // parentID, not by a session pin that can change after an OpenCode restart.
+  // A child's completion is still guarded above — but a child has no per-turn
+  // relay dedup signature of its own, so it steps the guard on every idle it
+  // reports. Under a real loop those are distinct completions; a duplicate
+  // observation of one child completion costs at most one extra tolerated
+  // repeat (MAX_CONSECUTIVE_REPEATS absorbs it), never a false abort of a
+  // healthy child.
+  if (!isRoot) {
+    runawayCheck()
+    return
+  }
 
   // Exactly-once per completed turn: an idle turn (natural OR reconciled on
   // subscribe) relays a single time. The signature is only RECORDED after a
@@ -2157,22 +2192,9 @@ export async function relayTurnEndToApi(
     return
   }
 
-  // A genuinely new, non-duplicate `idle` completion — check it isn't the
-  // SAME standing prompt answering itself again with no new user message in
-  // between (see `runaway-turn-guard.ts`). Scoped to `idle` only: an `error`
-  // completion repeating is `turn-auto-resume.ts`'s concern, not this one's.
-  if (effectiveStatus === 'idle') {
-    void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
-      try {
-        await fetch(
-          `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(cfg.workspace)}`,
-          { method: 'POST', signal: AbortSignal.timeout(10_000) },
-        )
-      } catch (err) {
-        logger.warn('[runaway-turn-guard] abort call failed', { opencodeSessionId, err: (err as Error).message })
-      }
-    })
-  }
+  // Root: past the turn-end dedup, so a duplicate observation of one real
+  // reply never reads as a repeat.
+  runawayCheck()
 
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`

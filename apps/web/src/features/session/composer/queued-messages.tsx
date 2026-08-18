@@ -98,11 +98,13 @@ export interface QueuedMessagesProps {
   messages: QueuedMessageView[];
   failed?: QueuedMessageView[];
   /**
-   * The messages currently on the wire, oldest first.
+   * Which of `messages` are on the wire, oldest first.
    *
-   * Plural because the queue drains as a batch: one prompt carries every
-   * message that was waiting. A row on the wire is not rendered — it has left
-   * the queue in every way a user can act on.
+   * They RENDER, and they render inert: no edit, no remove, no send-now, no
+   * drag handle. A forwarded prompt sits at OpenCode behind the turn in front
+   * of it — minutes, sometimes an hour — with nothing else on screen holding
+   * it, so hiding it is the message disappearing; and every action the strip
+   * offers is refused by the server for a row it has already forwarded.
    */
   inFlightIds?: string[];
   onRemove?: (id: string) => void;
@@ -178,6 +180,7 @@ function RowAction({
 
 function QueuedRow({
   message,
+  inFlight = false,
   onRemove,
   onEdit,
   draggable,
@@ -188,6 +191,8 @@ function QueuedRow({
   onFocusSibling,
 }: {
   message: QueuedMessageView;
+  /** On the wire at OpenCode: rendered, dimmed, and out of the user's hands. */
+  inFlight?: boolean;
   onRemove?: (id: string) => void;
   onEdit?: (id: string, text: string) => void;
   /** False when the list has one row — one row has no order to change. */
@@ -242,6 +247,7 @@ function QueuedRow({
       }}
       tabIndex={-1}
       data-queued-id={message.id}
+      aria-busy={inFlight || undefined}
       className={cn(
         'group flex items-center gap-2 rounded-md px-1.5 py-1',
         'hover:bg-muted-foreground/[0.06]',
@@ -280,7 +286,15 @@ function QueuedRow({
           <DotsSixVerticalIcon className="size-3.5" />
         </button>
       ) : (
-        <QueueIcon aria-hidden className="text-muted-foreground/60 size-3.5 shrink-0" />
+        <QueueIcon
+          aria-hidden
+          className={cn(
+            'text-muted-foreground/60 size-3.5 shrink-0',
+            // The only motion on the row, and it is the only thing that says
+            // this one is already gone to the agent rather than waiting here.
+            inFlight && !reduceMotion && 'animate-pulse',
+          )}
+        />
       )}
 
       {editing ? (
@@ -307,7 +321,10 @@ function QueuedRow({
           type="button"
           disabled={!onEdit}
           onClick={() => setEditing(true)}
-          className="text-foreground/90 min-w-0 flex-1 cursor-text truncate text-left text-xs disabled:cursor-default"
+          className={cn(
+            'min-w-0 flex-1 cursor-text truncate text-left text-xs disabled:cursor-default',
+            inFlight ? 'text-muted-foreground' : 'text-foreground/90',
+          )}
         >
           {message.text}
         </button>
@@ -367,14 +384,19 @@ export function QueuedMessages({
   const dragOrderRef = useRef<string[] | null>(null);
 
   /**
-   * In-flight rows are filtered HERE, before any render decision — not hidden
-   * row-by-row. A message on the wire is no longer queued in any way the user
-   * can act on, and a component that renders its shell around zero visible
-   * rows defeats the `:empty` check the composer's strip relies on to
-   * disappear: the shell itself was the "phantom sliver above the composer".
+   * In-flight rows used to be filtered HERE, before any render decision. That
+   * was right while "on the wire" meant milliseconds — the row left the queue
+   * and arrived in the transcript. It no longer does: a prompt typed mid-turn
+   * is forwarded at once and stays `delivering` until the turn in front of it
+   * ends, with no transcript bubble in the meantime. Filtering it out is the
+   * user's message disappearing for the length of a turn.
+   *
+   * So every row renders, and the set below decides which ones render inert.
+   * The `:empty` check the composer's strip relies on to disappear still holds:
+   * with no rows at all, nothing here renders.
    */
   const inFlightIdSet = new Set(inFlightIds);
-  const visibleMessages = messages.filter((m) => !inFlightIdSet.has(m.id));
+  const visibleMessages = messages;
 
   /**
    * What actually renders: the drag's local order while one is live, the
@@ -512,20 +534,28 @@ export function QueuedMessages({
           ref={listRef}
           className={cn('w-full', paused && 'opacity-60')}
         >
-          {orderedMessages.map((message) => (
-            <QueuedRow
-              key={message.id}
-              message={message}
-              onRemove={onRemove}
-              onEdit={onEdit}
-              draggable={Boolean(onReorder) && visibleMessages.length > 1}
-              onMoveStep={moveStep}
-              onDragCommit={handleDragCommit}
-              onSendNow={paused ? onSendNow : undefined}
-              sendNowLabel={isRunning ? 'Send now — stops the current turn' : 'Send now'}
-              onFocusSibling={(id) => id && focusAfterRemove(id)}
-            />
-          ))}
+          {orderedMessages.map((message) => {
+            // A row on the wire keeps its text and loses every control: the
+            // server refuses remove (409), retry (404) and reorder on a prompt
+            // OpenCode already holds, and a control that always fails is worse
+            // than no control.
+            const inFlight = inFlightIdSet.has(message.id);
+            return (
+              <QueuedRow
+                key={message.id}
+                message={message}
+                inFlight={inFlight}
+                onRemove={inFlight ? undefined : onRemove}
+                onEdit={inFlight ? undefined : onEdit}
+                draggable={Boolean(onReorder) && visibleMessages.length > 1 && !inFlight}
+                onMoveStep={moveStep}
+                onDragCommit={handleDragCommit}
+                onSendNow={paused && !inFlight ? onSendNow : undefined}
+                sendNowLabel={isRunning ? 'Send now — stops the current turn' : 'Send now'}
+                onFocusSibling={(id) => id && focusAfterRemove(id)}
+              />
+            );
+          })}
 
           {failed.map((message) => (
             <li key={message.id} className="group flex items-center gap-2 rounded-md px-1.5 py-1">

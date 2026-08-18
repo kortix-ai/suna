@@ -112,7 +112,6 @@ export { useOpenCodePendingStore as useRuntimePendingStore } from '../browser/st
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
-  type SandboxRecoveryPhase,
 } from '../browser/stores/sandbox-connection-store';
 export {
   requestRuntimeReconnect,
@@ -167,8 +166,10 @@ export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,
   sessionPromptsPollMs,
+  startSessionWithPrompt,
   SESSION_PROMPTS_POLL_MS,
   SESSION_PROMPTS_IDLE_POLL_MS,
+  type StartSessionWithPromptAdapters,
   type UseSessionPromptsResult,
 } from './use-session-prompts';
 export { useSessionWorkingStore } from '../browser/stores/session-working-store';

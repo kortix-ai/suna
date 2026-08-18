@@ -9,24 +9,21 @@
  * here is subordinate to that, including the two default scopes, which are
  * settings ABOUT a model that is already on.
  *
- * ## Why the numbers are gone
+ * ## The row shows real numbers, not a paraphrase
  *
- * Every row used to carry four lines: the model name, capability glyphs with
- * no legend, its wire id (`anthropic/claude-sonnet-4-5`) with a copy button,
- * and `200K ctx · $3.00 / $15.00 per 1M`. All of it true; almost none of it
- * readable to someone who has never priced a token, which is most people
- * opening a settings tab to choose a model.
- *
- * A row is now the model's name, its default tags, and ONE plain sentence
- * that restates the same facts in words — `Mid cost · reads images · holds
- * about 150,000 words` (`modelPlainSummary` in `utils.ts`). The wire id kept
- * its one real use, pasting it into a config, and moved to a "Copy model ID"
- * item in the row's own menu: one click for the few who need it, no line for
- * everyone who does not.
+ * A row is the model's name, its capability icons (reasoning / tool calling /
+ * vision), its default tags, and the catalog's own figures — context window
+ * and price per 1M tokens — the same `ModelCapabilityIcons` /
+ * `formatTokenCount` / `formatPricePerMillion` `provider-detail.tsx` uses for
+ * the "Add provider" catalog. One catalog, one set of facts, everywhere it's
+ * shown. The wire id kept its one real use, pasting it into a config, and
+ * lives in a "Copy model ID" item in the row's own menu: one click for the
+ * few who need it, no line for everyone who does not.
  */
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
 import { ProviderLogo } from '@/features/providers/provider-branding';
@@ -62,7 +59,8 @@ import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 
 import { Copy } from '@/features/icon/icons/copy';
 import { buildModelGroups } from './model-rows';
-import { modelPlainSummary } from './utils';
+import { ModelCapabilityIcons } from './model-capability-icons';
+import { formatPricePerMillion, formatTokenCount } from './utils';
 
 /**
  * `search` used to be driven by the provider modal's always-on search bar,
@@ -203,12 +201,9 @@ export function ModelsTab({
                 // the same comparison `isProjectDefault` makes one line up, not
                 // a lucky string match.
                 const isAccountDefault = defaults.accountDefault?.modelID === wireId;
-                const summary = modelPlainSummary({
-                  reasoning: model.capabilities?.reasoning,
-                  vision: model.capabilities?.vision,
-                  outputUsdPerMillion: model.cost?.output,
-                  contextTokens: model.contextWindow,
-                });
+                const ctx = formatTokenCount(model.contextWindow);
+                const priceIn = formatPricePerMillion(model.cost?.input);
+                const priceOut = formatPricePerMillion(model.cost?.output);
                 return (
                   // A plain row, NOT a <label>: it holds three controls (copy
                   // id, set-as-default, the switch) and a label binds to the
@@ -226,10 +221,11 @@ export function ModelsTab({
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-foreground truncate text-sm">{model.modelName}</span>
-                        {/* No capability glyphs. `summary` below already says
-                            "reads images" in words; saying it twice — once as
-                            a word, once as an icon with no legend anywhere on
-                            the screen — is how a row gets noisy. */}
+                        <ModelCapabilityIcons
+                          reasoning={model.capabilities?.reasoning}
+                          toolCall={model.capabilities?.toolcall}
+                          vision={model.capabilities?.vision}
+                        />
                         {/* Same display name as its pinned snapshots — say which
                             row is the one that rolls forward. "latest" named
                             the alias; "auto-updates" names what it DOES. */}
@@ -253,7 +249,16 @@ export function ModelsTab({
                         )}
                       </div>
 
-                      {summary && <p className="text-muted-foreground text-xs">{summary}</p>}
+                      {(ctx || (priceIn && priceOut)) && (
+                        <InlineMeta>
+                          {ctx && <span className="tabular-nums">{ctx} ctx</span>}
+                          {priceIn && priceOut && (
+                            <span className="tabular-nums">
+                              {priceIn} / {priceOut} per 1M
+                            </span>
+                          )}
+                        </InlineMeta>
+                      )}
                     </div>
                     {/*
                       Both default scopes, on the row they apply to.

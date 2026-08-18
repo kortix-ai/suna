@@ -15,11 +15,18 @@ import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { type StartStash, writeStartStash } from '@kortix/sdk/react';
+import type { PendingSessionPrompt } from '@kortix/sdk';
+import { type StartStash } from '@kortix/sdk/react';
 
 /** Pure — the exact stash payload an upgrade session is seeded with. */
 export function buildUpgradeStash(prompt: string): StartStash {
   return { prompt, agent: null, model: null, variant: null };
+}
+
+/** The create-time hand-off: the API converts this into a durable inbox row
+ *  inside the session-create transaction. */
+export function pendingUpgradePrompt(prompt: string): PendingSessionPrompt {
+  return { text: prompt, agent: null, model: null, variant: null };
 }
 
 export interface RunUpgrade {
@@ -39,8 +46,9 @@ export function useRunUpgrade(projectId: string): RunUpgrade {
       if (pending || !prompt.trim()) return;
       setPending(true);
       newSession({
-        onNavigate: (sessionId) => {
-          writeStartStash(sessionId, buildUpgradeStash(prompt));
+        // Durable from the create — see use-configure-thread.ts for the trace.
+        create: { pending_prompt: pendingUpgradePrompt(prompt) },
+        onNavigate: () => {
           closeCustomize();
         },
       });

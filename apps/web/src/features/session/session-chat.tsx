@@ -23,7 +23,7 @@ import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { hasRetryingAssistantTurn } from './assistant-turn-open';
+import { hasRetryingAssistantTurn } from '@kortix/sdk';
 import {
   COMPOSER_EDITOR_SELECTOR,
   SUGGESTION_MENU_SELECTOR,
@@ -79,7 +79,6 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/u
 import Loading from '@/components/ui/loading';
 import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
 import { uploadFile } from '@/features/files/api/runtime-files';
-import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
@@ -113,11 +112,6 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import {
-  useCarriedDraft,
-  useCarriedDraftStore,
-  usePendingFilesStore,
-} from '@/stores/session-composer-handoff-store';
 import {
   useAttachRequest,
   useSessionComposerPrefillStore,
@@ -177,7 +171,7 @@ import {
   readStartStash,
   recoverFromSendFailure,
   rejectQuestion,
-  replayStartStash,
+  startSessionWithPrompt,
   replyToPermission,
   replyToQuestion,
   requestRuntimeReconnect,
@@ -206,7 +200,11 @@ import {
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
 import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
-import { serverHoldsOpenTurn, sessionComposerReadiness } from './session-composer-readiness';
+import {
+  resolveLastTurnWorking,
+  serverHoldsOpenTurn,
+  sessionComposerReadiness,
+} from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
 import { shouldLoadOlderHistory } from './session-older-autoload';
@@ -426,50 +424,12 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
 // Message parsing exported to message-parsing.tsx
 // ============================================================================
 
-/** How long "Stop & send" will wait for the server to confirm the abort before
- *  sending anyway. Long enough for a normal round-trip, short enough that a
- *  wedged status never strands the user's click. */
-const ABORT_SETTLE_TIMEOUT_MS = 5000;
-
-/**
- * Resolve once the server stops reporting this session as running.
- *
- * "Stop & send" issues an abort and then a prompt. Sending on a fixed delay
- * races the abort — the prompt can arrive while the old turn is still winding
- * down. Subscribing to the status the server actually reports is the only
- * version of this that is not a guess.
- *
- * T10: no longer the primary gate for "Stop & send" — see
- * `stopThenSendNow` below. `applyOptimisticAbort` (run by `handleStop`) flips
- * the very store this function polls to idle SYNCHRONOUSLY, before the abort
- * request round-trips to the server, so gating a send on it lets the send
- * race the still-in-flight abort. `stopThenSendNow` now awaits the abort's
- * own `AbortSettlement` instead. This function survives as its defensive
- * fallback for the (should-not-happen) case where a stop produced no
- * trackable settlement to await.
- */
-function waitForSessionIdle(sessionId: string): Promise<void> {
-  const isIdle = () => {
-    const status = useSessionStateStore.getState().sessionStatus[sessionId];
-    return !status || (status.type !== 'busy' && status.type !== 'retry');
-  };
-  if (isIdle()) return Promise.resolve();
-
-  return new Promise<void>((resolve) => {
-    let unsubscribe: (() => void) | undefined;
-    const finish = () => {
-      clearTimeout(timer);
-      unsubscribe?.();
-      resolve();
-    };
-    const timer = setTimeout(finish, ABORT_SETTLE_TIMEOUT_MS);
-    unsubscribe = useSessionStateStore.subscribe(() => {
-      if (isIdle()) finish();
-    });
-    // The status may have settled between the check above and the subscribe.
-    if (isIdle()) finish();
-  });
-}
+/** How long Stop will wait for the inbox hold before it issues the cancel
+ *  anyway. The hold going first is a preference — it saves a stopped prompt
+ *  from coming back a reaper pass later — while the abort is the thing the user
+ *  pressed the button for, and a stalled request must never hold it hostage
+ *  with the agent still running. One round-trip's worth, no more. */
+const STOP_HOLD_DEADLINE_MS = 1500;
 
 /** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
  *  directly testable without React or a DOM. */
@@ -478,21 +438,20 @@ export interface StopThenSendNowDeps {
   isRunning: () => boolean;
   /** The still-pending `AbortSettlement` for a stop already issued by someone
    *  else (e.g. a direct click on the Stop button), if one exists. Checked
-   *  BEFORE `isRunning()`: `applyOptimisticAbort` flips the store `isRunning`
-   *  reads to idle SYNCHRONOUSLY, before that earlier stop's settlement
-   *  arrives, so `isRunning()` alone cannot see an in-flight stop issued
-   *  outside this call. Returns `undefined` when no stop is currently
-   *  pending for this session. */
+   *  BEFORE `isRunning()`: the abort receipt makes the projection `isRunning`
+   *  reads answer idle before that earlier stop's settlement arrives, so
+   *  `isRunning()` alone cannot see an in-flight stop issued outside this
+   *  call. Returns `undefined` when no stop is currently pending for this
+   *  session. */
   pendingSettlement: () => Promise<AbortSettlement> | undefined;
   /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
-   *  stop produced no trackable settlement (defensive fallback only — see
-   *  `waitIdle`). Called only when `pendingSettlement()` is `undefined` and
-   *  `isRunning()` is true. Never expected to reject —
-   *  `AbortSettlement`-producing paths (`sessionState.cancel()`,
-   *  `awaitAbortSettlement`) never do. */
+   *  stop produced no trackable settlement. Called only when
+   *  `pendingSettlement()` is `undefined` and `isRunning()` is true. Never
+   *  expected to reject — `AbortSettlement`-producing paths
+   *  (`sessionState.cancel()`, `awaitAbortSettlement`) never do. A `null`
+   *  settlement means there is nothing to wait for, so the dispatch follows
+   *  at once. */
   stop: () => Promise<AbortSettlement | null>;
-  /** Fallback wait, used only when `stop()` resolves `null`. */
-  waitIdle: () => Promise<void>;
   /** The actual send-now dispatch: `POST .../prompts/:id/retry`, which
    *  promotes the row the user pointed at and releases the session's inbox
    *  hold ITSELF, in that order. Nothing here may release the hold first —
@@ -505,19 +464,21 @@ export interface StopThenSendNowDeps {
  * for that to actually settle, then dispatch.
  *
  * T10: waits for the SERVER-confirmed `AbortSettlement` `stop()`
- * returns — never the optimistic sync-store idle flip `waitForSessionIdle`
- * polls, because `applyOptimisticAbort` sets that store to idle synchronously,
- * before the abort request round-trips, so gating the send on it races the
- * abort still in flight. `stop()`'s settlement is already bounded (~5s, see
- * `awaitAbortSettlement`/`ABORT_SETTLE_TIMEOUT_MS`), never rejects, and a
+ * returns — never a raw status slot. (There used to be a `waitForSessionIdle`
+ * fallback that polled the sync-store slot; the abort's own optimistic idle
+ * frame flipped that slot synchronously, so the poll resolved on its first
+ * check at every reachable call site and its 5s timer was unreachable. C4
+ * deleted the frame, which made the predicate constant the other way. Gone.)
+ * `stop()`'s settlement is already bounded (~5s, see
+ * `awaitAbortSettlement`), never rejects, and a
  * `{status:'failed'}` or `{status:'timed-out'}` result still lets `dispatch()`
  * proceed once that bound elapses: whichever cancel path produced the
  * settlement already cancelled any local in-flight delivery
  * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
  * the client to race even without a server acknowledgement.
  *
- * When nothing is running and no stop is pending, `stop()`/`waitIdle()` are
- * never called and the send is not delayed at all.
+ * When nothing is running and no stop is pending, `stop()` is never called
+ * and the send is not delayed at all.
  *
  * IT DOES NOT LIFT THE INBOX HOLD. Stop holds every queued row
  * (`available_at = now + 24h`); "send now" is `POST .../prompts/:id/retry`,
@@ -528,11 +489,11 @@ export interface StopThenSendNowDeps {
  * whole ordering.
  *
  * T10 (settlement race): a stop can already be in flight when this runs —
- * e.g. the user clicked Stop directly, which ran `applyOptimisticAbort` and
- * flipped the store `isRunning()` reads to idle SYNCHRONOUSLY, well before
- * that stop's `AbortSettlement` arrives from the server. Gating on
- * `isRunning()` alone would then see "idle" and dispatch immediately,
- * racing the still-in-flight abort. `pendingSettlement()` is consulted
+ * e.g. the user clicked Stop directly, whose `noteAbortReceipt` makes the
+ * projection `isRunning()` reads answer idle well before that stop's
+ * `AbortSettlement` arrives from the server. Gating on `isRunning()` alone
+ * would then see "idle" and dispatch immediately, racing the still-in-flight
+ * abort. `pendingSettlement()` is consulted
  * FIRST for exactly this reason: if a settlement is already pending for this
  * session, it is awaited (and `stop()` is NOT called again — a stop was
  * already issued) before resuming/dispatching, regardless of what
@@ -543,8 +504,7 @@ export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> 
   if (pending) {
     await pending;
   } else if (deps.isRunning()) {
-    const settlement = await deps.stop();
-    if (settlement === null) await deps.waitIdle();
+    await deps.stop();
   }
   await deps.dispatch();
 }
@@ -649,8 +609,13 @@ interface SessionTurnProps {
   agentNames?: string[];
   /** Whether this is the first turn in the session */
   isFirstTurn: boolean;
-  /** Whether the session is busy */
-  isBusy: boolean;
+  /**
+   * The session's working state, resolved ONCE by the parent
+   * (`resolveLastTurnWorking`): the projection for a Kortix session, the raw
+   * SSE slot only for a child session that has no `/turn` row. Only the last
+   * turn ever renders it — a non-last turn is settled by definition.
+   */
+  lastTurnWorking: boolean;
   /** Whether this turn contains a compaction */
   isCompaction?: boolean;
   /** Providers data for the Connect Provider dialog */
@@ -741,7 +706,7 @@ function SessionTurnImpl({
   questions,
   agentNames,
   isFirstTurn,
-  isBusy,
+  lastTurnWorking,
   isCompaction,
   providers,
   commandMessages,
@@ -782,15 +747,14 @@ function SessionTurnImpl({
     () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
   );
-  // A turn is "working" when:
-  // 1. The session status says busy/retry (via getWorkingState), OR
-  // 2. This is the last turn AND the parent component says isBusy (e.g. we
-  //    just sent a message but sessionStatus hasn't updated to busy yet).
-  //    This covers the race between sending and the server acknowledging.
-  const working = useMemo(
-    () => getWorkingState(sessionStatus, isLast) || (isLast && isBusy),
-    [sessionStatus, isLast, isBusy],
-  );
+  // The LAST turn's working state is the session's, and the parent resolved
+  // that answer once (`resolveLastTurnWorking`): the projection
+  // (`useSessionWorking` → `GET .../turn`) for a Kortix session, the raw SSE
+  // slot only for a child session with no `/turn` row. A non-last turn is
+  // NEVER working — that is a fact about the transcript, not an observation,
+  // and it is what removes the "last turn shimmers for ever" symptom the raw
+  // slot's dropped end-of-turn frames caused here.
+  const working = isLast && lastTurnWorking;
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
     for (let i = turn.assistantMessages.length - 1; i >= 0; i--) {
@@ -838,7 +802,11 @@ function SessionTurnImpl({
     : !hasSteps && completedTextParts.length > 0
       ? completedTextParts.join('\n\n')
       : responseRaw.trim() || abortedTextFallback;
-  // Retry info (only on last turn)
+  // Retry info (only on last turn). These KEEP reading the raw `sessionStatus`
+  // frame on purpose: they render the retry *reason* carried on the frame
+  // (attempt count, provider message, next-retry time), which the working
+  // projection does not carry. Do not "finish the job" by moving them to the
+  // projection — the shimmer decision above is the only thing that moved.
   const retryInfo = useMemo(
     () => (isLast ? getRetryInfo(sessionStatus) : undefined),
     [sessionStatus, isLast],
@@ -1848,15 +1816,6 @@ export function SessionChat({
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.
   const runtimeUnreachable = useRuntimeConnectionStore((s) => s.status === 'unreachable');
-  // Mirror it into a ref for `checkReadiness` below. That callback is invoked by
-  // `replayStartStash`'s own poll loop, so reading `runtimeReady` from the
-  // closure would pin the value captured when the effect first ran and never
-  // observe the runtime binding. Written in an effect, never during render —
-  // a render-phase ref write is what deadlocked the session shell before.
-  const runtimeReadyRef = useRef(runtimeReady);
-  useEffect(() => {
-    runtimeReadyRef.current = runtimeReady;
-  }, [runtimeReady]);
   const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
@@ -2014,32 +1973,12 @@ export function SessionChat({
 
   const pendingPromptHandled = useRef(false);
 
-  // ---- Polling fallback & optimistic send ----
-  const [pollingActive, setPollingActive] = useState(false);
-  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
-  const [pendingUserMessageId, setPendingUserMessageId] = useState<string | null>(null);
-  const [pendingCommand, setPendingCommand] = useState<{
-    name: string;
-    description?: string;
-  } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
   // The last prompt handed to the runtime, verbatim. Only read by the
   // connector-refusal card, to re-send exactly what was refused.
   const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
     null,
   );
-  const [failedStartDraft, setFailedStartDraft] = useState<{
-    text: string;
-    files: AttachedFile[];
-    id: number;
-  } | null>(null);
-  // A message typed in the instant boot shell after the first send. The shell
-  // refuses it (a row POSTed then would be admitted before the first message,
-  // which is still in the start stash) and hands it here rather than leaving it
-  // in an editor the crossfade is about to unmount. See `useCarriedDraftStore`.
-  //
-  // Cleared by `handlePrefillApplied` below — never on mount. See there.
-  const carriedDraft = useCarriedDraft(projectSessionId ?? '');
   const [rewindTarget, setRewindTarget] = useState<{
     messageId: string;
     text: string;
@@ -2074,26 +2013,6 @@ export function SessionChat({
         mode: 'replace' as const,
       };
     }
-    if (failedStartDraft) {
-      return {
-        source: 'failed-start' as const,
-        text: failedStartDraft.text,
-        files: failedStartDraft.files,
-        id: failedStartDraft.id,
-        mode: 'merge' as const,
-      };
-    }
-    // The follow-up typed in the boot shell, which refused to send it and
-    // handed it over rather than let the crossfade unmount it with its editor.
-    if (carriedDraft) {
-      return {
-        source: 'carried' as const,
-        text: carriedDraft.text,
-        files: carriedDraft.files,
-        id: carriedDraft.id,
-        mode: 'merge' as const,
-      };
-    }
     if (sessionPrefill) {
       return {
         source: 'session' as const,
@@ -2103,28 +2022,7 @@ export function SessionChat({
       };
     }
     return null;
-  }, [rewindDraft, failedStartDraft, carriedDraft, sessionPrefill]);
-  // CONSUME ON APPLY, not clear on mount.
-  //
-  // The carried draft is written BEFORE this component exists — the boot shell
-  // hands it over as it is being replaced — so it is already present on the
-  // FIRST commit, when the lazily-mounted composer editor is still null and
-  // `shouldApplyPrefill` refuses (composer-logic.ts). Clearing it from this
-  // component's own mount effect therefore deleted it one commit before the
-  // composer could take it: the message the shell's toast promised to keep
-  // vanished at the crossfade, which is the whole bug the carry exists to fix.
-  // So the composer reports the id it actually applied and we clear on that.
-  //
-  // `sessionPrefill` above keeps its mount effect on purpose: it is only ever
-  // written from inside this page (`session-panel-provider.tsx`), by which time
-  // this composer is mounted and its editor is ready.
-  const handlePrefillApplied = useCallback(
-    (appliedId: number) => {
-      if (composerPrefill?.source !== 'carried' || composerPrefill.id !== appliedId) return;
-      useCarriedDraftStore.getState().clearCarriedDraft(projectSessionId ?? '');
-    },
-    [composerPrefill, projectSessionId],
-  );
+  }, [rewindDraft, sessionPrefill]);
   // "Add context" (Task 5) — the empty Context card's button asks the
   // composer to open its attach flow. Same held/id-keyed handoff as the
   // prefill above, cleared the same way once the composer's own id-keyed
@@ -2192,216 +2090,54 @@ export function SessionChat({
       useSessionWorkingStore.getState().clearSendReceipt(receiptSessionId, messageId),
     [receiptSessionId],
   );
-  // ---- Optimistic prompt (from dashboard/project page) ----
-  // Backed by the SDK's start-stash (`readStartStash`/`clearStartStash`), which
-  // understands both the modern `kortix:start:<id>` shape and every legacy
-  // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
-  // pair — so pushState navigation still works with no `?new=true` dependency,
-  // and no web code needs to know the storage key names directly.
-  // Starts null on the server AND the hydration render (identical trees), then
-  // seeds from the stash in a layout effect — before first paint, so the
-  // optimistic prompt still shows in the same frame the session mounts.
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
-  useLayoutEffect(() => {
-    const stashed = readStartStash(sessionId)?.prompt;
-    if (stashed) setOptimisticPrompt(stashed);
-  }, [sessionId]);
 
-  // Hydrate options from the SDK's start-stash and send the pending prompt for
-  // new sessions. The dashboard/project page (or the instant session shell)
-  // stashes the prompt and navigates here. We send the message from here (not
-  // the producer) so that SSE listeners and polling are already active when the
-  // response starts streaming back.
+  // ---- Start-stash PICKS seeding (model/agent/variant) ----
   //
-  // The write-race retry (stash read), readiness poll (agent/model), and
-  // failure-recovery (stash restore + classify + idle + rehydrate-or-remove)
-  // mechanics are all owned by the SDK's `replayStartStash` — this effect only
-  // supplies the web-specific pieces: resolving agent/model/variant readiness
-  // against this session's own local model/agent stores, building the
-  // optimistic text + outgoing parts (file uploads), and restoring pending
-  // files on failure.
+  // The stash no longer carries the first prompt for this host: the prompt is
+  // a durable inbox row before this component ever mounts (created server-side
+  // from `create.pending_prompt`, or POSTed by `startSessionWithPrompt`), and
+  // it renders in the queue strip like every other pending prompt. What still
+  // travels here are the producer's PICKS, seeded once into this session's
+  // local stores. The old replay effect — a 30s readiness poll, an optimistic
+  // bubble that its own timeout path never cleared, and per-send receipt
+  // bookkeeping — is gone with the hand-off it served.
+  //
+  // A NON-empty prompt in the stash is a legacy hand-off (a pre-deploy tab, or
+  // an unconverted producer): POST it to the inbox rather than dropping it.
   useEffect(() => {
     if (pendingPromptHandled.current) return;
-
-    // Set by `prepare` below (once, before any failure can occur) so
-    // `onFailure` can restore the same files it consumed.
-    let filesToRestoreOnFailure: AttachedFile[] = [];
-    // The id `prepare` took the receipt under, so `onSuccess` can ACCEPT that
-    // receipt and `onFailure` can drop that one and no other. Without the
-    // acceptance the server floor stayed infinite for the receipt's whole 60s
-    // life, and `GET .../turn` — the control plane's own authority — was
-    // barred from ever answering idle for this session's first prompt.
-    let sentMessageId = '';
-
-    const handle = replayStartStash<{ options: Record<string, unknown> }>({
-      sessionId,
-      classify: classifySessionError,
-      checkReadiness: (stash) => {
-        // Restore agent/model/variant selections from the producer.
-        const options: Record<string, unknown> = {};
-        let selectedModelForSend: ModelKey | undefined;
-        const isSelectableModel = (model: ModelKey): boolean =>
-          localModelList.some(
-            (m) => m.providerID === model.providerID && m.modelID === model.modelID,
-          ) && localModelVisible(model);
-        if (stash.agent) {
-          options.agent = stash.agent;
-          localAgentSet(stash.agent);
-        }
-        if (stash.model && isSelectableModel(stash.model as ModelKey)) {
-          options.model = stash.model;
-          selectedModelForSend = stash.model as ModelKey;
-          localModelSet(stash.model as ModelKey);
-        }
-        if (stash.variant) {
-          options.variant = stash.variant;
-          localVariantSet(stash.variant);
-        }
-        if (!selectedModelForSend && localModelSendKey) {
-          options.model = localModelSendKey;
-          selectedModelForSend = localModelSendKey;
-        }
-        if (!selectedModelForSend) return null;
-
-        // A first send that carries LOCAL files must also wait for this
-        // session's runtime to bind. `buildParts` below uploads them, and the
-        // upload resolves its base from the current-runtime store, which is
-        // empty until `useSession` binds it (startReady + sandbox.external_id).
-        // Model readiness can resolve from cached account defaults well before
-        // that, so without this an ordinary "type a prompt, attach a file, hit
-        // send on a brand-new session" raced the binding and the upload went
-        // out against an unresolved base. The SDK now refuses that outright
-        // (RuntimeNotReadyError) instead of issuing a relative-URL fetch to the
-        // WEB origin, so the failure is safe — but failing is still the wrong
-        // answer when waiting is available. Returning null keeps
-        // `replayStartStash` polling, exactly like an unresolved model.
-        //
-        // `useRuntimeReady` is the right gate rather than a bare url check: it
-        // already requires BOTH a healthy connection and a resolved url, and it
-        // falls back to `getActiveOpenCodeUrl()` so the self-hosted
-        // default-sandbox case (where the store url stays null) is not stalled
-        // forever.
-        //
-        // Only gated on LOCAL files: a text-only prompt, or one carrying
-        // already-remote parts, needs no upload and must not be delayed.
-        const hasLocalUpload = usePendingFilesStore
-          .getState()
-          .files.some((file) => file.kind === 'local');
-        if (hasLocalUpload && !runtimeReadyRef.current) return null;
-
-        return { options };
-      },
-      onReadinessTimeout: () => {
-        // Report the blocker that actually held the send. Readiness now has two
-        // conditions — a selectable model, and a bound runtime when there are
-        // local files to upload — so always saying "no model available" would
-        // send someone to the model picker for a sandbox that never started.
-        const stalledOnRuntime =
-          !runtimeReadyRef.current &&
-          usePendingFilesStore.getState().files.some((file) => file.kind === 'local');
-        setCommandError({
-          kind: 'runtime-error',
-          message: stalledOnRuntime
-            ? 'The sandbox did not finish starting, so the attached files could not be uploaded. Try sending again.'
-            : NO_MODEL_AVAILABLE_MESSAGE,
-          cause: null,
-        });
-      },
-      prepare: (stash, ready) => {
-        pendingPromptHandled.current = true;
-        setPollingActive(true);
-        clearStartStash(sessionId);
-
-        const sendOpts = ready.options as {
-          agent?: string;
-          model?: ModelKey;
-          variant?: string;
-        };
-        const messageID = ascendingId('msg');
-        const textPartId = ascendingId('prt');
-        // Consume pending files before rendering the optimistic message so
-        // uploaded file cards are visible while the sandbox is still starting.
-        const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-        filesToRestoreOnFailure = pendingFiles;
-        const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
-          stash.prompt,
-          pendingFiles,
-        );
-        setOptimisticPrompt(optimisticPendingPrompt);
-        sentMessageId = messageID;
-        noteSendReceipt(messageID);
-
-        return {
-          messageId: messageID,
-          optimisticText: optimisticPendingPrompt,
-          partIds: [textPartId],
-          sendOptions: {
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent && { agent: sendOpts.agent }),
-            ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model) }),
-            ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          },
-          // Upload local files and build the parts array (text + file refs).
-          buildParts: async () => {
-            const built = await buildPromptPartsWithUploads(stash.prompt, pendingFiles, uploadFile);
-            return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
-          },
-        };
-      },
-      onFailure: (stash, _err, classified) => {
-        clearSendReceipt(sentMessageId);
-        setOptimisticPrompt(null);
-        setPollingActive(false);
-        setCommandError(classified);
-        usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
-        // replayStartStash restores durable sessionStorage itself. Rehydrate the
-        // visible composer too, so the user can retry immediately without a
-        // reload and without losing either the prompt or local File objects.
-        setFailedStartDraft({
-          text: stash.prompt,
-          files: filesToRestoreOnFailure,
-          id: Date.now(),
-        });
-      },
-      onSuccess: () => {
-        // The runtime acknowledged the prompt, so from here — and not before —
-        // a `/turn` read can see it and is allowed to answer for it. This path
-        // sends straight at OpenCode rather than through the inbox, so the
-        // acknowledgement IS the acceptance.
-        acceptSendReceipt(sentMessageId);
-        if (!projectId || !projectSessionId) return;
-        void updateProjectSession(projectId, projectSessionId, {
-          metadata: { pending_prompt: null },
-        }).catch((error) => {
-          console.warn('[session-chat] failed to clear the acknowledged pending prompt', error);
-        });
-      },
-    });
-
-    return () => handle.cancel();
-  }, [
-    sessionId,
-    localAgentSet,
-    localModelCurrentKey,
-    localModelSendKey,
-    localModelList,
-    localModelSet,
-    localModelVisible,
-    localVariantSet,
-    projectId,
-    projectSessionId,
-    session?.directory,
-    noteSendReceipt,
-    acceptSendReceipt,
-    clearSendReceipt,
-  ]);
-
-  // Clear optimistic prompt once real messages arrive
-  useEffect(() => {
-    if (optimisticPrompt && messages && messages.length > 0) {
-      setOptimisticPrompt(null);
+    const stash = readStartStash(sessionId);
+    if (!stash) return;
+    pendingPromptHandled.current = true;
+    clearStartStash(sessionId);
+    if (stash.agent) localAgentSet(stash.agent);
+    if (
+      stash.model &&
+      localModelList.some(
+        (m) => m.providerID === stash.model!.providerID && m.modelID === stash.model!.modelID,
+      ) &&
+      localModelVisible(stash.model as ModelKey)
+    ) {
+      localModelSet(stash.model as ModelKey, { autoSeed: true });
     }
-  }, [optimisticPrompt, messages]);
+    if (stash.variant) localVariantSet(stash.variant);
+    const legacyPrompt = stash.prompt.trim();
+    if (legacyPrompt && projectId && projectSessionId) {
+      void startSessionWithPrompt(projectId, projectSessionId, {
+        parts: [{ type: 'text', text: legacyPrompt }],
+        overrides: {
+          ...(stash.agent ? { agent: stash.agent } : {}),
+          ...(stash.model ? { model: stash.model } : {}),
+          ...(stash.variant ? { variant: stash.variant } : {}),
+        },
+      }).catch((error) => {
+        console.error('[session-chat] failed to queue the stashed legacy prompt', error);
+        setCommandError(classifySessionError(error));
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, projectId, projectSessionId]);
+
 
   const agentNames = useMemo(() => local.agent.list.map((a) => a.name), [local.agent.list]);
 
@@ -2450,8 +2186,13 @@ export function SessionChat({
    * turn authority first (`GET .../turn`), the stream second, and this tab's
    * own send receipt only until either of them answers.
    */
+  // A child-session mount (`sub-session-modal.tsx` passes no project ids) has
+  // no Kortix session row for `/turn` to answer about, so the projection below
+  // is disabled and every working read falls back to the raw stream slot —
+  // the same split `session-layout.tsx` makes for its busy indicator.
+  const isChildSession = !projectId || !projectSessionId;
   const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
-    enabled: !!projectId && !!projectSessionId,
+    enabled: !isChildSession,
     runtimeSessionId: sessionId,
   });
   const isServerBusy = working.state === 'working';
@@ -2497,8 +2238,16 @@ export function SessionChat({
     return true;
   }, [messages]);
 
-  // The projection, plus the one local overlay it deliberately knows nothing
-  // about: compaction is not a turn, so it is not in `working`.
+  // The working projection, plus compaction — which `projectWorking`
+  // deliberately knows nothing about, because a compaction is not a turn and
+  // `GET .../turn` reports none for it.
+  //
+  // It is no longer a client-only latch either. `sessionState.isCompacting` is
+  // its own projection (`core/session/compaction.ts`) over the runtime's
+  // `Session.time.compacting` row plus this tab's own bounded `/compact` stamp,
+  // so a lost `session.compacted` frame stops pinning the composer at
+  // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
+  // a compaction started by a second device is visible here at all.
   const effectiveBusy = isServerBusy || isOptimisticCompacting;
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
@@ -2515,6 +2264,17 @@ export function SessionChat({
     }
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
+
+  // The one working answer the LAST turn card renders (its shimmer). Resolved
+  // here, once, so the card never reads the raw slot for a Kortix session —
+  // see `resolveLastTurnWorking` for the split and the defect it removes.
+  const lastTurnWorking = resolveLastTurnWorking({
+    isChildSession,
+    // The delay-hidden projection, so the card and the composer settle on the
+    // same frame instead of the card flickering 300ms earlier.
+    projectionBusy: isBusy,
+    rawSlotBusy: getWorkingState(sessionStatus, true),
+  });
 
   // Read by `handleSend` for its RENDERING decision only (see
   // `willWaitInInbox`). Refs, not the values: `handleSend` is a stable callback
@@ -2630,15 +2390,34 @@ export function SessionChat({
   // ordered and admitted by the control plane. There is no browser lane beside
   // it any more, so there is no second list to keep in sync, no per-row origin
   // to route actions by, and nothing left that a closed tab can lose.
+  //
+  // The transcript is passed in because a row whose message is ALREADY on
+  // screen is not a queue row: the optimistic bubble of an idle send is painted
+  // before the POST returns, and a mid-turn prompt's real user message arrives
+  // over SSE seconds later. Without this cross-check the same text renders
+  // twice — once as the answer being streamed, once as a pending row.
+  const transcriptUserMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages ?? []) {
+      if (message.info.role === 'user') ids.add(message.info.id);
+    }
+    return ids;
+  }, [messages]);
   const queueRows = useMemo(
-    () => projectQueueRows({ prompts: promptInbox.prompts }),
-    [promptInbox.prompts],
+    () =>
+      projectQueueRows({
+        prompts: promptInbox.prompts,
+        transcriptMessageIds: transcriptUserMessageIds,
+      }),
+    [promptInbox.prompts, transcriptUserMessageIds],
   );
   const queuedMessages = queueRows.queued;
   const failedQueuedMessages = queueRows.failed;
   useEffect(() => {
-    queuedMessagesRef.current = queueRows.queued.length + queueRows.inFlightIds.length;
-  }, [queueRows.queued.length, queueRows.inFlightIds.length]);
+    // `queued` already carries the rows on the wire — see `projectQueueRows` —
+    // so adding `inFlightIds` here would count each of them twice.
+    queuedMessagesRef.current = queueRows.queued.length;
+  }, [queueRows.queued.length]);
   // A row the server has CLAIMED is on the wire; locking it against
   // edit/remove/reorder is the same rule as before.
   const queueInFlightIds = queueRows.inFlightIds;
@@ -2714,46 +2493,10 @@ export function SessionChat({
     [promptInbox.retry],
   );
 
-  // Stop the transcript polling fallback once the session stops working.
-  //
-  // This used to hold a 5s grace window keyed off the last send, because an
-  // idle status arriving right after a send might be a STALE frame from before
-  // it. That is precisely what the receipt's freshness rule answers now: an
-  // observation issued before the send cannot end it, so by the time `working`
-  // reads idle, something that saw the send said so.
-  useEffect(() => {
-    if (pollingActive && !isServerBusy) setPollingActive(false);
-  }, [pollingActive, isServerBusy]);
-
-  // SSE + heartbeat timeout is the source of truth for streaming state.
-  // No watchdogs, no polling, no reconcilers — matching the reference.
-
-  // Clear pending user message when we can confirm the message is in cache
-  // (by ID), or when new messages arrive (fallback for command sends).
-  // When a command was pending, associate the newest user message with the
-  // command info so UserMessage can render a nice pill instead of raw template text.
+  // Associate stashed command info with the newest user message when messages
+  // arrive, so `UserMessage` renders the command pill instead of raw template
+  // text. `prevMsgLenRef` exists for this one observation.
   const prevMsgLenRef = useRef(messages?.length || 0);
-  useEffect(() => {
-    if (!pendingUserMessage) return;
-    const hasPendingMessage = pendingUserMessageId
-      ? !!messages?.some((m) => m.info.id === pendingUserMessageId)
-      : false;
-    if (hasPendingMessage) {
-      setPendingUserMessage(null);
-      setPendingUserMessageId(null);
-      setPendingCommand(null);
-      return;
-    }
-    const len = messages?.length || 0;
-    if (len > prevMsgLenRef.current) {
-      setPendingUserMessage(null);
-      setPendingUserMessageId(null);
-      setPendingCommand(null);
-    }
-  }, [messages, messages?.length, pendingUserMessage, pendingUserMessageId]);
-
-  // Associate stashed command info with the newest user message when messages arrive.
-  // Runs separately so it captures the mapping even if busy fires before messages update.
   useEffect(() => {
     const stash = pendingCommandStashRef.current;
     if (!stash || !messages) return;
@@ -2993,7 +2736,9 @@ export function SessionChat({
     [],
   );
   const hasAnyMessages = turns.length > 0;
-  const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
+  // A pending inbox row counts as content: the session HAS the user's message
+  // (durably), so the welcome overlay must not paint over the queue strip.
+  const hasChatContent = hasAnyMessages || promptInbox.prompts.length > 0;
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
   // standalone). When present, the welcome wallpaper is portaled into it so it
   // spans the entire session width instead of shrinking with the chat panel.
@@ -3163,10 +2908,6 @@ export function SessionChat({
 
   // Reset on session change
   useEffect(() => {
-    setPollingActive(false);
-    setPendingUserMessage(null);
-    setPendingUserMessageId(null);
-    setPendingCommand(null);
     clearSendReceipt();
     setRewindTarget(null);
     setRewindDraft(null);
@@ -3552,7 +3293,7 @@ export function SessionChat({
           if (!projectId || !projectSessionId) {
             throw new Error('This session has no project — cannot queue a prompt');
           }
-          await promptInbox.enqueue({
+          const created = await promptInbox.enqueue({
             clientMessageId,
             messageId: mintSessionWireMessageId(sessionId, clientMessageId),
             parts: mappedParts,
@@ -3566,12 +3307,42 @@ export function SessionChat({
               ...(selectedVariant ? { variant: selectedVariant } : {}),
             },
           });
+          // The server's admission verdict, not a guess. A `failed` row is a
+          // real refusal wearing a 200: a re-POST of a `clientMessageId` whose
+          // row already dead-lettered dedupes into that row, and discarding
+          // the result used to accept the receipt, clear the draft, and tell
+          // the user nothing. Thrown here so the ordinary failure path below
+          // clears the named receipt and surfaces the error.
+          if (created.state === 'failed') {
+            throw new Error(
+              'This prompt was refused — its earlier delivery already failed. Edit it and send again.',
+            );
+          }
           // The server has the prompt. From here — and NOT before — a
           // `GET .../turn` read is able to see it, so one is allowed to answer
           // for it. `useSessionPrompts` raises the inbox floor at the same
           // moment, which is what covers the window before the row is
           // delivered and becomes a turn.
           acceptSendReceipt(clientMessageId);
+          // Correct the rendering guess with the server's answer: the guess
+          // said "will wait" (so no optimistic bubble was painted), but the
+          // server admitted it to run now. Paint the bubble after the fact so
+          // the user's message is not stranded in the queue strip while the
+          // turn it started streams above an empty transcript slot. Under the
+          // in-turn forwarding gate this fires often: an awake session answers
+          // `queued`/`delivering` for a prompt the old gate made `waiting`.
+          // Only when nothing else is in line: a row behind other queued rows
+          // genuinely waits its turn even when admissible, and painting it now
+          // would fake an order the queue has not produced yet.
+          const correctedWillWait =
+            willWaitInInbox &&
+            queuedMessagesRef.current === 0 &&
+            (created.state === 'queued' || created.state === 'delivering');
+          if (correctedWillWait) {
+            beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+            markOptimisticSendDispatched(sessionId, messageID);
+            anchorTurn(messageID);
+          }
           return { ok: true } as const;
         } catch (cause) {
           // Unchanged recovery: clear busy, then either rehydrate the real
@@ -3649,7 +3420,7 @@ export function SessionChat({
   // (server-side continueSession delivery in r7.ts), so it works with zero
   // browsers open. A web-side nudge would just double-send.
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
       console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
@@ -3671,18 +3442,33 @@ export function SessionChat({
     // user was trying to get ahead of.
     //
     // ONE hold, on the server, because the queue is not in this tab any more.
-    // Pausing a browser drain never reached the admission gate, which would
-    // deliver the queued prompt about one scheduler tick after the abort
-    // cleared turn authority — the precise outcome the stop exists to prevent
-    // — and it left every OTHER tab's view of the queue running. The hold is
-    // released by an action, never a timer: any new send, or "send now" on a
-    // row (see `holdSessionPrompts`).
-    void promptInbox.hold(true).catch((error) => {
-      // Swallowing this hid a real outcome: the rows stay `waiting` and due, so
-      // the admission gate can still deliver one a moment after the abort
-      // clears turn authority — the exact thing the hold prevents.
-      console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
-    });
+    // Pausing a browser drain left every OTHER tab's view of the queue running
+    // and never reached the server at all.
+    //
+    // AWAITED, and BEFORE the abort. A prompt is now forwarded to OpenCode the
+    // moment it is admitted, so at stop time the session's queue can hold rows
+    // that OpenCode already has. The abort drops OpenCode's in-memory queue,
+    // and the reaper then sees those messages unanswered and hands them back —
+    // due now — unless the hold has already marked them stop-paused. Ordering
+    // the two calls makes "the hold precedes the abort" a fact instead of an
+    // argument about reaper cadence. The user sees no delay: the optimistic
+    // paint above already ran, so only the network abort moves one hop later.
+    //
+    // BOUNDED, because the abort is now sequenced behind a network call and
+    // `holdSessionPrompts` carries no client timeout of its own. A stalled
+    // socket can hang for minutes, and every one of those is the agent still
+    // running, still calling tools and still spending tokens under a UI that
+    // says it stopped. Past the bound the abort goes out anyway and the hold
+    // finishes on its own — the ordering is a preference, the abort is not.
+    await Promise.race([
+      promptInbox.hold(true).catch((error) => {
+        // Caught, never rethrown: a failed hold must not also cost the user
+        // their abort. The cost of that path is the one this ordering removes —
+        // a stopped prompt can still come back a reaper pass later.
+        console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
+      }),
+      new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
+    ]);
 
     // Routed through `issueSessionCancel` (T10) so this stop's
     // `AbortSettlement` is tracked for `handleQueueSendNow`'s
@@ -3704,16 +3490,21 @@ export function SessionChat({
   const handleQueueSendNow = useCallback(
     async (id: string) => {
       await stopThenSendNow({
-        isRunning: () => {
-          const status = useSessionStateStore.getState().sessionStatus[sessionId];
-          return status?.type === 'busy' || status?.type === 'retry';
-        },
+        // The control plane's turn authority (`serverOpenTurnToken`), not the
+        // raw SSE slot. Both stale directions of the slot were real failures
+        // here: stale-idle dispatched into a live turn (OpenCode answers that
+        // by aborting it — the "Interrupted" symptom), and stale-busy issued a
+        // spurious Stop that held the whole inbox.
+        isRunning: () => serverHoldsOpenTurn(working),
         pendingSettlement: () => pendingAbortSettlementRef.current.get(sessionId),
-        stop: () => {
-          handleStop();
-          return pendingAbortSettlementRef.current.get(sessionId) ?? Promise.resolve(null);
+        stop: async () => {
+          // AWAITED: `handleStop` holds the inbox before it issues the cancel,
+          // so the settlement this reads only exists once that has happened.
+          // Reading the ref synchronously would find nothing, and a null
+          // settlement dispatches at once — racing the abort still in flight.
+          await handleStop();
+          return pendingAbortSettlementRef.current.get(sessionId) ?? null;
         },
-        waitIdle: () => waitForSessionIdle(sessionId),
         // `retry` is the inbox's own "run this one next", and it is the WHOLE
         // dispatch: it promotes the row past the ordering gate and only THEN
         // releases the session's hold, so the prompt the user pointed at is
@@ -3725,7 +3516,7 @@ export function SessionChat({
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, handleStop, promptInbox.retry],
+    [sessionId, handleStop, promptInbox.retry, working],
   );
 
   // ---- Triple-ESC to stop ----
@@ -3815,9 +3606,10 @@ export function SessionChat({
       if (withinWindow) {
         const currentCount = escDeadlineRef.current ? Math.max(1, escCount) : 0;
         if (currentCount >= 2) {
-          // Third ESC → stop
+          // Third ESC → stop. Not awaited: the keyboard path has nothing to
+          // sequence after it, and `handleStop` never rejects.
           clearEscHint();
-          handleStop();
+          void handleStop();
         } else {
           // Second ESC → advance count, refresh cooloff
           setEscCount(2);
@@ -3897,30 +3689,20 @@ export function SessionChat({
         // retry that aborts the live turn and stamps it "Interrupted".
         // See `delivered-but-disconnected.ts`.
         if (isDeliveredButDisconnected(errorMessageOf(err))) {
-          setPendingCommand(null);
-          setPendingUserMessage(null);
-          setPendingUserMessageId(null);
           pendingCommandStashRef.current = null;
-          // `pollingActive` and the session status stay put on purpose: the
-          // turn is live and SSE owns it from here.
+          // The session status stays put on purpose: the turn is live and SSE
+          // owns it from here.
           return;
         }
-        setPendingCommand(null);
-        setPendingUserMessage(null);
-        setPendingUserMessageId(null);
-        setPollingActive(false);
-        // Release the drain gate taken at dispatch — otherwise the whole
-        // queue stays frozen behind a command that already failed.
+        // Release the receipt taken at dispatch — it is what held the composer
+        // on "working" for a command that has now failed. No fabricated idle
+        // frame beside it: dropping the receipt IS the honest signal, and a
+        // written frame outranked the control plane's `/turn` answer.
         clearSendReceipt(label);
         pendingCommandStashRef.current = null;
-        useSessionStateStore.getState().setStatus(sessionId, { type: 'idle' });
         setCommandError(classifySessionError(err));
       };
 
-      setPendingCommand({
-        name: cmd.name,
-        description: args || cmd.description,
-      });
       pendingCommandStashRef.current = {
         name: cmd.name,
         args: args || cmd.description,
@@ -3928,9 +3710,6 @@ export function SessionChat({
         // draws the chip where it was typed. Display only.
         split,
       };
-      setPendingUserMessage(label);
-      setPendingUserMessageId(null);
-      setPollingActive(true);
       // Closes the queue drain's working gate SYNCHRONOUSLY. Without it a
       // command dispatched from the queue left every gate clear: the drain's
       // 700ms settle window would elapse before the server reported busy, the
@@ -4030,30 +3809,6 @@ export function SessionChat({
   // prop below must keep referential identity across renders that don't
   // actually change it — otherwise the memo is defeated on every streaming
   // token). Bodies are verbatim copies of what used to be inlined in the JSX. ----
-  const handleSendWithDraftClear = useCallback(
-    async (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      await handleSend(text, files, mentions);
-      if (failedStartDraft) {
-        clearStartStash(sessionId);
-        usePendingFilesStore.getState().consumePendingFiles();
-        setFailedStartDraft(null);
-      }
-    },
-    [handleSend, failedStartDraft, sessionId],
-  );
-
-  const chatPrefill = useMemo(
-    () =>
-      failedStartDraft
-        ? {
-            text: failedStartDraft.text,
-            files: failedStartDraft.files,
-            id: failedStartDraft.id,
-            mode: 'merge' as const,
-          }
-        : null,
-    [failedStartDraft],
-  );
 
   const handleAgentChange = useCallback(
     (name: string | null | undefined) => local.agent.set(name ?? undefined),
@@ -4222,12 +3977,11 @@ export function SessionChat({
     sessionFetched,
     hasRuntimeSession: Boolean(session),
     hasMessages,
-    hasOptimisticPrompt: Boolean(optimisticPrompt),
+    hasOptimisticPrompt: promptInbox.prompts.length > 0,
   });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
   // The loading/connecting phase never reaches here (it early-returns the loader
@@ -4361,18 +4115,6 @@ export function SessionChat({
                   className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32 md:pr-1"
                 >
                   <div className="flex min-w-0 flex-col">
-                    {/* Optimistic turn — the user's message plus the waiting row,
-                        shared verbatim with InstantSessionShell so the shell → chat
-                        crossfade has nothing to drift on (see OptimisticTurn). */}
-                    {showOptimistic && (
-                      <OptimisticTurn
-                        text={optimisticPrompt || ''}
-                        agentNames={agentNames}
-                        onFileClick={openFileInComputer}
-                        sessionId={sessionId}
-                      />
-                    )}
-
                     {isOptimisticCompacting && !hasCompactionTurn && (
                       <div className="mt-12 space-y-3">
                         <div className="my-3 flex items-center gap-3 py-4">
@@ -4473,7 +4215,7 @@ export function SessionChat({
                               questions={pendingQuestions}
                               agentNames={agentNames}
                               isFirstTurn={turnIndex === 0}
-                              isBusy={isBusy}
+                              lastTurnWorking={lastTurnWorking}
                               isCompaction={hasCompaction}
                               providers={providers}
                               commandMessages={commandMessagesRef.current}
@@ -4541,7 +4283,7 @@ export function SessionChat({
                     {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                    {!showOptimistic && isBusy && turns.length === 0 && (
+                    {isBusy && turns.length === 0 && (
                       <SessionBusyIndicator sessionId={sessionId} />
                     )}
                   </div>
@@ -4614,14 +4356,8 @@ export function SessionChat({
               <SessionChatInput
                 onSend={async (text, files, mentions) => {
                   await handleSend(text, files, mentions);
-                  if (failedStartDraft) {
-                    clearStartStash(sessionId);
-                    usePendingFilesStore.getState().consumePendingFiles();
-                    setFailedStartDraft(null);
-                  }
                 }}
                 prefill={composerPrefill}
-                onPrefillApplied={handlePrefillApplied}
                 attachRequestId={attachRequestId}
                 isBusy={isBusy}
                 // The ONE projection, not the 300 ms busy fade: it is what

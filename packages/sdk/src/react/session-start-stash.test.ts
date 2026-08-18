@@ -320,3 +320,24 @@ describe('start-stash age bound', () => {
     expect(readStartStash('ses_ttl5')?.prompt).toBe('legacy prompt');
   });
 });
+
+describe('picks-only stashes (empty prompt)', () => {
+  // apps/web's producers deliver the first prompt as a durable inbox row and
+  // hand off ONLY the picks through the stash. An empty prompt must therefore
+  // round-trip — a null here would drop the model/agent hand-off with it.
+  test('an empty-prompt stash round-trips its picks', () => {
+    writeStartStash('ses-picks', {
+      prompt: '',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      agent: 'default',
+      variant: 'high',
+    });
+
+    expect(readStartStash('ses-picks')).toEqual({
+      prompt: '',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      agent: 'default',
+      variant: 'high',
+    });
+  });
+});

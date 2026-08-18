@@ -58,6 +58,18 @@ mock.module('../../platform/ui', () => ({
   },
 }));
 
+// `session.compacted` calls the REAL runtime-client singleton
+// (`core/runtime/client`'s `getClient()`) directly — not the `client` this
+// harness injects via `createEventHandler` (that one only backs the default
+// `reconcileSessionTail` closure). Mock the singleton so `getImpl` overrides
+// below can actually reach it, and so the unmocked default (a real sandbox
+// URL never being configured in this test process) doesn't throw
+// `RuntimeNotReadyError` before the code under test even runs.
+let singletonSessionGetImpl: () => Promise<{ data?: unknown }> = async () => ({ data: undefined });
+mock.module('../../core/runtime/client', () => ({
+  getClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
+}));
+
 const { createEventHandler } = await import('./handle-event');
 const { qk } = await import('../query-keys');
 const { useSyncStore } = await import('../../browser/stores/sync-store');
@@ -106,6 +118,10 @@ function buildHandler(
   // the very same event (`applySyncEvent` runs BEFORE the switch statement).
   const applySyncEvent = makeCalls<[unknown]>();
 
+  // `session.compacted`'s targeted refetch reads the RUNTIME-CLIENT SINGLETON
+  // (mocked at module scope above), not this injected `client` — set both so
+  // a test only has to pass `getImpl` once.
+  singletonSessionGetImpl = overrides.getImpl ?? (async () => ({ data: undefined }));
   const client = {
     session: {
       messages: overrides.messagesImpl ?? (async () => ({ data: [] })),
@@ -189,6 +205,7 @@ beforeEach(() => {
   useDiagnosticsStore.getState().clearAll();
   toasts = [];
   notifications = [];
+  singletonSessionGetImpl = async () => ({ data: undefined });
 });
 
 afterEach(() => {
@@ -390,6 +407,102 @@ describe('session lifecycle cache mutations', () => {
       'ses_b',
     ]);
     expect(queryClient.getQueryData(opencodeKeys.runtimeSession('ses_a'))).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// session.compacted — the targeted refetch that is supposed to clear
+// `time.compacting` off `opencodeKeys.runtimeSession`. This ad hoc
+// `client.session.get()` call used to have NO retry and a `.catch(() => {})`
+// that swallowed any failure, leaving `time.compacting` stale forever
+// (`useOpenCodeSession` reads it with `staleTime: Infinity`, so nothing else
+// ever refetches it). On failure it must now route through
+// `queryClient.invalidateQueries` — the SAME query `useOpenCodeSession`
+// registers, with its own retry/backoff — instead of failing silently once.
+// ============================================================================
+
+describe('session.compacted', () => {
+  test('success: patches the runtime-session cache AND the session-list mirror directly', async () => {
+    const { handleEvent, queryClient, stopCompaction } = buildHandler({
+      getImpl: async () => ({ data: session('ses_a', { time: { created: 1, updated: 9 } }) }),
+    });
+    queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_a', { title: 'Old' })]);
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    expect(stopCompaction.calls.map((c) => c[0])).toEqual(['ses_a']);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      queryClient.getQueryData<Session>(opencodeKeys.runtimeSession('ses_a'))?.time.compacting,
+    ).toBeUndefined();
+    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].time.compacting).toBeUndefined();
+  });
+
+  test('failure: a rejected refetch invalidates the runtime-session query instead of leaving it stale forever', async () => {
+    const { handleEvent, queryClient } = buildHandler({
+      getImpl: async () => {
+        throw new Error('sandbox proxy 502');
+      },
+    });
+    // Seed a cache entry so `invalidateQueries` has something to mark.
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+    let invalidatedRuntimeSession = 0;
+    const orig = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+        invalidatedRuntimeSession++;
+      return orig(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invalidatedRuntimeSession).toBe(1);
+  });
+
+  test('no data returned (not a throw either): still invalidates rather than leaving the row untouched', async () => {
+    const { handleEvent, queryClient } = buildHandler({
+      getImpl: async () => ({ data: undefined }),
+    });
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+    let invalidatedRuntimeSession = 0;
+    const orig = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+        invalidatedRuntimeSession++;
+      return orig(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invalidatedRuntimeSession).toBe(1);
   });
 });
 

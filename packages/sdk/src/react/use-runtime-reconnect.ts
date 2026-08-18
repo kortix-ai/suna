@@ -15,7 +15,6 @@ import {
   resetSandboxFail,
   setOpenCodeHealth,
   setSandboxStatus,
-  setSandboxVersion,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
 } from '../browser/stores/sandbox-connection-store';
@@ -335,9 +334,6 @@ export function useRuntimeReconnect() {
               outcome.health?.version,
               outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
             );
-            if (outcome.health?.version) {
-              setSandboxVersion(outcome.health.version);
-            }
             break;
           }
           case 'failure': {
@@ -354,9 +350,6 @@ export function useRuntimeReconnect() {
               outcome.health?.version,
               outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
             );
-            if (outcome.health?.version) {
-              setSandboxVersion(outcome.health.version);
-            }
             break;
           }
         }

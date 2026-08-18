@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  QUEUE_MIGRATION_REMOVE_AFTER,
   LEGACY_QUEUE_KEY,
   MAX_MIGRATION_ATTEMPTS,
   MIGRATION_ATTEMPTS_KEY,
@@ -457,5 +458,16 @@ describe('migrateLegacyQueueToInbox', () => {
       // it above what is already on record.
       remintOnDelivery: true,
     });
+  });
+});
+
+describe('the migration has a removal date, not a permanent home', () => {
+  test('fails once QUEUE_MIGRATION_REMOVE_AFTER has passed — delete the four files it names', () => {
+    // A one-deploy migration that stays becomes the last browser-local queue
+    // reader in the codebase, forever. This assertion turns red on the date
+    // so the deletion is enforced, not remembered.
+    const removeAfter = new Date(`${QUEUE_MIGRATION_REMOVE_AFTER}T00:00:00Z`).getTime();
+    expect(Number.isFinite(removeAfter)).toBe(true);
+    expect(Date.now()).toBeLessThan(removeAfter);
   });
 });

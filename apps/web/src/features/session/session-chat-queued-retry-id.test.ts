@@ -37,7 +37,7 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // wire id server-side, so the key cannot be re-derived wrongly by a client.
     const retry = between(
       'const handleRetryQueuedMessage = useCallback(',
-      '// Stop the transcript polling fallback',
+      '// Associate stashed command info',
     );
 
     expect(retry).toContain('promptInbox.retry(id)');
@@ -73,12 +73,8 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // The opposite failure: keying every send off one value would resurrect the
     // silent-drop bug this branch exists to fix. Only the queue names a
     // submission, and each enqueue mints its own key.
-    const composer = between(
-      'const handleSendWithDraftClear = useCallback(',
-      '[handleSend, failedStartDraft, sessionId]',
-    );
+    const composer = between('await handleSend(text, files, mentions);', 'prefill={composerPrefill}');
 
-    expect(composer).toContain('handleSend(text, files, mentions)');
     expect(composer).not.toContain('clientMessageId');
   });
 });

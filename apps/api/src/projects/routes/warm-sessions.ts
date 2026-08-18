@@ -9,7 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
@@ -18,6 +18,8 @@ import { createProjectSession } from '../lib/sessions';
 import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
+import { drainSessionLifecycleQueue } from '../session-lifecycle';
+import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -335,22 +337,54 @@ projectsApp.openapi(
       );
     }
 
-    const pendingPrompt =
-      body.pending_prompt && typeof body.pending_prompt === 'object'
-        ? { pending_prompt: body.pending_prompt as Record<string, unknown> }
-        : {};
-    const [claimed] = await db
-      .update(projectSessions)
-      .set({
-        metadata: sql`(${projectSessionMetadataMerge(
-          pendingPrompt,
-        )}) - ${WARM_SESSION_METADATA_KEY}::text`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER),
-      )
-      .returning();
+    // Same conversion as session create: the prompt becomes a durable inbox
+    // row in the SAME transaction as the claim, and the merged metadata keeps
+    // only the picks — a pre-deploy web bundle replays `pending_prompt.text`
+    // client-side, and stripping the text is what prevents a double send.
+    const rawPendingPrompt =
+      body.pending_prompt &&
+      typeof body.pending_prompt === 'object' &&
+      !Array.isArray(body.pending_prompt) &&
+      typeof (body.pending_prompt as Record<string, unknown>).text === 'string'
+        ? (body.pending_prompt as Record<string, unknown>)
+        : null;
+    const conversion = rawPendingPrompt
+      ? convertPendingPromptToInboxRow({
+          pendingPrompt: rawPendingPrompt,
+          projectId,
+          accountId: loaded.row.accountId,
+          sessionId,
+          actorUserId: loaded.userId,
+        })
+      : null;
+    if (conversion?.error) {
+      return c.json({ error: `pending_prompt: ${conversion.error}` }, 400);
+    }
+    const pendingPrompt = conversion ? { pending_prompt: conversion.metadataPicks } : {};
+    const claimed = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(projectSessions)
+        .set({
+          metadata: sql`(${projectSessionMetadataMerge(
+            pendingPrompt,
+          )}) - ${WARM_SESSION_METADATA_KEY}::text`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER))
+        .returning();
+      if (row && conversion?.rowValues) {
+        // A re-claim after a failed response cannot double-insert: the claim
+        // CAS above already refused (marker gone), so this insert runs at most
+        // once per session. The idempotency key still guards the create path's
+        // row for a session that somehow saw both.
+        await tx
+          .insert(sessionLifecycleCommands)
+          .values(conversion.rowValues)
+          .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+          .returning({ commandId: sessionLifecycleCommands.commandId });
+      }
+      return row;
+    });
     if (!claimed) {
       return c.json(
         {
@@ -359,6 +393,13 @@ projectsApp.openapi(
         },
         409,
       );
+    }
+    // The box is warm and running — nudge the drain so the first prompt goes
+    // out now instead of on the next scheduler tick.
+    if (conversion?.rowValues?.idempotencyKey) {
+      void drainSessionLifecycleQueue({
+        idempotencyKey: conversion.rowValues.idempotencyKey,
+      }).catch(() => undefined);
     }
     return c.json(
       serializeSession(claimed, {

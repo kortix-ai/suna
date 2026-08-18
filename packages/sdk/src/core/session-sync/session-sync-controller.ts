@@ -64,9 +64,23 @@ export interface SessionSyncTelemetryEvent {
 export interface SessionSyncControllerOptions {
   sessionId: string;
   loadPage: (request: { limit: number; before?: string }) => Promise<SessionSyncPage>;
+  /**
+   * @deprecated Never called. The liveness poll no longer reads status: `GET
+   * .../turn` is the status authority, and this controller's own `setBusy` is
+   * already driven FROM that projection, so a status read here could only
+   * confirm or latch — never correct. Retained (ignored) because 0.12.8
+   * published it on this options type; removed in the next major.
+   */
   loadStatus?: () => Promise<SessionStatus>;
   hydrate: (messages: SessionSyncMessage[]) => void;
   markLoaded: () => void;
+  /**
+   * @deprecated Never called. Writing a REST poll's answer into the slot SSE
+   * status frames land in made a poll indistinguishable from the runtime's own
+   * voice, and re-stamped the stream observation on every tick so its age
+   * bound was never reached. Retained (ignored) because 0.12.8 published it;
+   * removed in the next major.
+   */
   setStatus?: (status: SessionStatus) => void;
   onTelemetry?: (event: SessionSyncTelemetryEvent) => void;
   scheduler?: SessionSyncScheduler;
@@ -127,28 +141,12 @@ export function loadHttpSessionHistory(
 export function createHttpSessionSyncController(
   options: HttpSessionSyncControllerOptions,
 ): SessionSyncController {
-  const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
-  const baseUrl = options.baseUrl.replace(/\/$/, '');
-  const loadPage = createHttpSessionSyncPageLoader(options);
-  const request = async (path: string): Promise<Response> => {
-    const token = await options.getToken?.();
-    const response = await fetchImpl(`${baseUrl}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-    if (!response.ok) {
-      throw new Error(`Session synchronization failed: ${response.status}`);
-    }
-    return response;
-  };
-
+  // No `loadStatus` any more: the controller never reads status, so the
+  // `/session/status` request this used to build was dead weight on every
+  // liveness tick. The transcript tail is the whole of this controller's job.
   return new SessionSyncController({
     ...options,
-    loadPage,
-    loadStatus: async () => {
-      const response = await request('/session/status');
-      const statuses = (await response.json()) as Record<string, SessionStatus>;
-      return statuses[options.sessionId] ?? ({ type: 'idle' } as SessionStatus);
-    },
+    loadPage: createHttpSessionSyncPageLoader(options),
   });
 }
 
@@ -403,18 +401,21 @@ export class SessionSyncController {
     if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
       return;
     }
-    // Load the transcript before status. A completed async prompt can transition
-    // back to idle before the first poll, so the tail is what proves work
-    // occurred; the status read that follows is then read against a current
-    // transcript rather than ahead of it.
+    // Reconcile the TAIL, and nothing else. This is the repair for a dropped
+    // SSE stream: the transcript catches up on messages the stream never
+    // delivered.
     //
-    // The wait is bounded: a read proxied to the sandbox can park indefinitely
-    // (a wedged opencode never answers and never errors), and status recovery —
-    // the one thing that can unstick a session the UI believes is still working
-    // — must not be held hostage to it. On timeout the tail keeps running; only
-    // this poll's ordering guarantee is given up.
+    // A status half used to follow it, reading the runtime over REST and
+    // writing the answer into the same slot SSE frames land in. It is gone:
+    // `GET .../turn` is the status authority now, and `setBusy` — the switch
+    // that decides whether this poll runs at all — is already driven FROM that
+    // projection, so a fourth stamped input here could only confirm or latch,
+    // never correct.
+    //
+    // The wait stays bounded: a read proxied to the sandbox can park
+    // indefinitely (a wedged opencode never answers and never errors), and the
+    // poll must keep its cadence rather than stall on one request.
     await this.raceDeadline(this.reconcile('poll'), this.livenessIntervalMs);
-    await this.reconcileStatus();
     this.lastActivityAt = this.scheduler.now();
   }
 
@@ -432,15 +433,6 @@ export class SessionSyncController {
       handle = this.startTimer(finish, timeoutMs);
       void work.then(finish, finish);
     });
-  }
-
-  private async reconcileStatus(): Promise<void> {
-    if (!this.options.loadStatus || !this.options.setStatus) return;
-    try {
-      this.options.setStatus(await this.options.loadStatus());
-    } catch {
-      // The next liveness interval retries both bounded reads.
-    }
   }
 
   private setCursor(cursor: string | undefined): void {

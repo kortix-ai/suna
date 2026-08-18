@@ -8,6 +8,7 @@ import {
   projectSessionRuntimeContexts,
   projectSessions,
   projects,
+  sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
@@ -61,6 +62,7 @@ let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' =
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
+const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
 let lastSessionListWhere: unknown = null;
 // `active_since` / `deadline_at` are assigned by a DB trigger, never by
 // application code, so these HTTP-contract fixtures deliberately omit them —
@@ -130,6 +132,7 @@ function resetState() {
   opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
   lastSessionInsertValues = null;
+  lifecycleCommandInserts.length = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -716,6 +719,17 @@ mock.module('../shared/db', () => ({
             runtimeContextRows = [row];
             return [row];
           }
+          if (table === sessionLifecycleCommands) {
+            lifecycleCommandInserts.push(values);
+            return [
+              {
+                ...values,
+                commandId: `cmd-${lifecycleCommandInserts.length}`,
+                attempts: 0,
+                createdAt: new Date('2026-01-02T00:00:00Z'),
+              },
+            ];
+          }
           if (table !== projectSessions) return [];
           lastSessionInsertValues = values;
           sessionRow = {
@@ -1127,6 +1141,47 @@ describe('project session API contract', () => {
 
     expect(response.status).toBe(201);
     expect((await response.json()).agent_name).toBe('meta');
+  });
+
+  test('a session-bound spawn inherits the SPAWNING session sharing, not the private default', async () => {
+    // The caller's own session (sessionRow / SESSION_ID) is shared project-wide.
+    // A worker it spawns must be reachable by the same grantees, not fall back
+    // to the private default — otherwise sharing the coordinator would not
+    // actually share anything it spawns. See resolveInheritedSessionSharing.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.visibility).toBe('project');
+  });
+
+  test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
+    // Same shared-project-wide parent state as above, but with the Supabase
+    // browser auth path (no Authorization header) instead of a session-bound
+    // PAT — proves inheritance is gated on an actual spawning session, not
+    // just on the existence of an unrelated session row in the fixture.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.visibility).toBe('private');
   });
 
   test('GET project session inventory rejects callers without project.session.read', async () => {
@@ -3613,7 +3668,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
 
-  test('session create persists a pending prompt without injecting it into the sandbox', async () => {
+  test('session create turns a pending prompt into a durable inbox row, not a client hand-off', async () => {
     const app = createApp();
     const pendingPrompt = {
       text: 'Map this parcel.',
@@ -3628,16 +3683,88 @@ describe('project session API contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         provider: 'daytona',
+        session_id: SESSION_ID,
         pending_prompt: pendingPrompt,
       }),
     });
 
     expect(response.status).toBe(201);
-    expect(await response.json()).toMatchObject({
-      metadata: { pending_prompt: pendingPrompt },
+    // The prompt is a durable row the moment the create returns — the
+    // wake-then-deliver machinery runs it even if the tab closes before the
+    // page ever mounts. The stored metadata keeps ONLY the picks: `text` is
+    // deliberately stripped, because a pre-deploy web bundle replays
+    // `pending_prompt.text` client-side and would double-send it.
+    const body = await response.json();
+    expect(body.metadata.pending_prompt).toEqual({
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      attachment_names: ['parcel.geojson'],
+    });
+    expect(lifecycleCommandInserts.length).toBe(1);
+    const row = lifecycleCommandInserts[0] as any;
+    expect(row.commandType).toBe('continue_session');
+    expect(row.sessionId).toBe(SESSION_ID);
+    expect(row.idempotencyKey).toBe(`prompt:${SESSION_ID}:pending-first`);
+    expect(row.payload.text).toBe('Map this parcel.');
+    expect(row.payload.clientMessageId).toBe(`pending:${SESSION_ID}`);
+    // Minted with no transcript to place against, so the drain re-mints it
+    // against the live root before delivering.
+    expect(row.payload.wireMessageId).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
+    expect(row.payload.remintOnDelivery).toBe(true);
+    expect(row.payload.parts).toEqual([{ type: 'text', text: 'Map this parcel.' }]);
+    expect(row.payload.overrides).toEqual({
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      directory: null,
     });
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+  });
+
+  test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {
+    const app = createApp();
+    const withParts = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: {
+          text: 'Look at this screenshot.',
+          parts: [
+            { type: 'text', text: 'Look at this screenshot.' },
+            {
+              type: 'file',
+              mime: 'image/png',
+              url: 'data:image/png;base64,AAAA',
+              filename: 'shot.png',
+            },
+          ],
+        },
+      }),
+    });
+    expect(withParts.status).toBe(201);
+    expect(lifecycleCommandInserts.length).toBe(1);
+    expect((lifecycleCommandInserts[0] as any).payload.parts).toEqual([
+      { type: 'text', text: 'Look at this screenshot.' },
+      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+    ]);
+
+    lifecycleCommandInserts.length = 0;
+    // Whitespace text with only attachment NAMES (no parts) is a hand-off with
+    // nothing deliverable in it: picks are stored, no row is made. (Bare
+    // whitespace text alone is already a 400 from the contract schema.)
+    const blank = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: { text: '   ', attachment_names: ['late.png'] },
+      }),
+    });
+    expect(blank.status).toBe(201);
+    expect(lifecycleCommandInserts.length).toBe(0);
   });
 
   test('allows only user-owned PATCH fields', async () => {

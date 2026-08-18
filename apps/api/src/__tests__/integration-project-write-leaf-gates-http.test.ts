@@ -229,7 +229,7 @@ const CASES: WCase[] = [
     name: 'channel bindings list (connector.read)',
     leaf: A.PROJECT_CONNECTOR_READ, method: 'GET',
     path: () => `/v1/projects/${PROJECT}/channels/bindings`,
-    tier: 'member', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
   },
   // ── Customize (write) ────────────────────────────────────────────────────
   {

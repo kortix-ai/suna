@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { useSyncStore } from '../browser/stores/sync-store';
 import {
   SERVER_OBSERVATION_MAX_MS,
+  STREAM_OBSERVATION_MAX_MS,
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
@@ -212,5 +215,59 @@ describe('buildWorkingInputs', () => {
         nowMs: T0 + 10,
       }).optimistic,
     ).toEqual(receipt);
+  });
+});
+
+/**
+ * The latch, reproduced end to end across the two modules that make it.
+ *
+ * `useSessionWorking` stamps a stream observation in an effect keyed on the
+ * status object's IDENTITY (`[status, streamKey]`), so a writer that re-parses
+ * an equal-valued status every tick re-stamps `atMs` every tick, and
+ * `STREAM_OBSERVATION_MAX_MS` — the bound that stops a dead stream from
+ * deciding — is never reached. The liveness poll did exactly that: it read the
+ * runtime's status over REST and wrote the result into the same slot SSE frames
+ * land in, minting a fresh object each time.
+ *
+ * `stampObservation` below is the hook's effect, in one line: it re-stamps only
+ * when identity moves.
+ */
+describe('an equal-valued status rewrite is not a new observation', () => {
+  function stampObservation(
+    previous: { status: SessionStatus; atMs: number } | null,
+    status: SessionStatus | undefined,
+    nowMs: number,
+  ): { status: SessionStatus; atMs: number } | null {
+    if (!status) return null;
+    if (previous && previous.status === status) return previous;
+    return { status, atMs: nowMs };
+  }
+
+  test('20 equal writes are ONE observation, and the projection ages out of it', () => {
+    useSyncStore.getState().reset();
+    let observed: { status: SessionStatus; atMs: number } | null = null;
+    for (let tick = 0; tick < 20; tick++) {
+      // The poll's cadence — each write re-parses a fresh, equal-valued object.
+      useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
+      const status = useSyncStore.getState().sessionStatus.ses_1 as SessionStatus | undefined;
+      observed = stampObservation(observed, status, T0 + tick * 10_000);
+    }
+
+    // ONE stamp, taken at the first write — 190s of polling did not move it.
+    expect(observed?.atMs).toBe(T0);
+
+    const inputsAt = (nowMs: number) =>
+      buildWorkingInputs({
+        turn: undefined, // `getSessionTurn` is failing — the outage this bound is for.
+        inbox: undefined,
+        status: observed?.status,
+        statusAtMs: observed?.atMs ?? 0,
+        optimistic: null,
+        nowMs,
+      });
+
+    expect(projectWorking(inputsAt(T0 + 1_000)).state).toBe('working');
+    expect(projectWorking(inputsAt(T0 + STREAM_OBSERVATION_MAX_MS + 1)).state).toBe('idle');
+    expect(workingExpiryAtMs(inputsAt(T0 + 1_000))).toBe(T0 + STREAM_OBSERVATION_MAX_MS);
   });
 });

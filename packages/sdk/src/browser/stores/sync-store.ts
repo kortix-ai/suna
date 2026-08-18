@@ -32,6 +32,30 @@ import type {
 export { ascendingId, Binary };
 export type { MessageError, MessageWithParts, SessionRewindState };
 
+/**
+ * Do two `SessionStatus` values say the same thing?
+ *
+ * NOT a deep equality: it compares `type` plus exactly the fields the retry
+ * readers actually read — `getRetryInfo` / `getRetryMessage` in
+ * `core/turns/state.ts` take `attempt`, `message` and `next`. A blanket
+ * deep-equal would also compare `action`, which nothing reads, and would then
+ * mint a new observation for a change no surface can render.
+ *
+ * The point of the comparison is object identity, not the boolean: a status
+ * frame is an OBSERVATION, and `useSessionWorking` dates it by the identity of
+ * the object in the store. Two equal values are one observation.
+ */
+export function sameSessionStatus(
+	a: SessionStatus | undefined,
+	b: SessionStatus | undefined,
+): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	if (a.type !== b.type) return false;
+	if (a.type !== "retry" || b.type !== "retry") return true;
+	return a.attempt === b.attempt && a.message === b.message && a.next === b.next;
+}
+
 /** The two `Part` variants that carry streaming `.text` (vs. tool/file/etc.
  *  parts, which don't). Narrows a `Part` down so `.text` is safe to read
  *  without a cast — every `Part` member shares `id`/`sessionID`/`messageID`/
@@ -894,9 +918,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	setStatus: (sessionID, status) =>
-		set((s) => ({
-			sessionStatus: { ...s.sessionStatus, [sessionID]: status },
-		})),
+		set((s) => {
+			// A value that did not change is not news. `useSessionWorking` stamps
+			// its stream observation from this object's IDENTITY, so an
+			// equal-valued rewrite that minted a new object re-started
+			// `STREAM_OBSERVATION_MAX_MS` from zero on every write — the bound
+			// that stops a dead stream from deciding was never reached. See
+			// `sameSessionStatus`.
+			if (sameSessionStatus(s.sessionStatus[sessionID], status)) return s;
+			return { sessionStatus: { ...s.sessionStatus, [sessionID]: status } };
+		}),
 
 	setDiff: (sessionID, diffs) =>
 		set((s) => ({

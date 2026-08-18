@@ -397,7 +397,10 @@ function PayloadBlock({ title, value }: { title: string; value: unknown }) {
       <DisclosureContent variant="outline">
         <div className="relative">
           <pre className="border-border/50 bg-muted/20 text-foreground max-h-96 overflow-auto border-t p-4 pr-12 font-mono text-xs leading-relaxed [&_code]:text-xs">
-            <HighlightedCode code={text} language={language} />
+            {/* This viewer exists to show exactly what was sent/received —
+                the highlighter's length clamp (a perf guard for chat code
+                blocks re-rendered per streamed token) must not apply here. */}
+            <HighlightedCode code={text} language={language} unbounded />
           </pre>
           <div className="absolute top-2 right-2">
             <CopyButton text={text} />

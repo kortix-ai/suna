@@ -52,6 +52,11 @@ import {
   startSession,
   stopSession,
 } from '../session-lifecycle';
+import {
+  PROMPT_TEXT_PREVIEW_CHARS,
+  flattenPromptText,
+  sanitizeInboxPromptParts,
+} from '../session-lifecycle/prompt-parts';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
@@ -491,13 +496,11 @@ projectsApp.openapi(
 // transcript first).
 //
 // Admission — "may this prompt be delivered NOW?" — is not decided here. It is
-// decided at drain time by `admitInboxPrompt`, against the same turn authority
-// `GET .../turn` serves from, because the answer changes between the POST and
-// the delivery.
+// decided at drain time by `admitInboxPrompt`, on the ORDER of this session's
+// own rows, because that answer changes between the POST and the delivery. A
+// live turn does not hold a prompt back: OpenCode queues it by arrival.
 
 const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
-const PROMPT_MAX_PARTS = 64;
-const PROMPT_TEXT_PREVIEW_CHARS = 2000;
 const PROMPT_LIST_LIMIT = 200;
 
 const SessionPromptSchema = z.object({
@@ -527,22 +530,41 @@ const RemovedSessionPromptSchema = z.object({
 
 type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
 
-/** Map a durable command row onto the inbox's four user-visible states.
- *  `succeeded` never appears: a delivered prompt IS the transcript now. */
+/**
+ * Map a durable command row onto the inbox's four user-visible states.
+ *
+ * `succeeded` no longer means "never appears". A FORWARDED row is `succeeded`
+ * so the drain can never re-claim it, and still unanswered: OpenCode has
+ * persisted the message and queued it behind the turn in flight. It reads
+ * `delivering` until the `session_turns` ledger confirms a turn consumed it —
+ * which is what keeps the composer working across that interval instead of
+ * showing the user nothing. Only a `delivered` row disappears; it IS the
+ * transcript by then.
+ */
 function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   state: 'queued' | 'delivering' | 'waiting' | 'failed';
   reason: string | null;
 } {
-  if (row.status === 'running') return { state: 'delivering', reason: null };
+  const result = (row.result ?? {}) as Record<string, unknown>;
+  // TERMINAL FIRST, above every marker on the row. A row can be given up on
+  // while it still carries `forwarded` — `deadLetter` (redelivery.ts) is
+  // exactly that — and reading the marker first made it `delivering` for ever:
+  // the strip filters in-flight rows out, `countLiveInboxPrompts` counts them
+  // as live work, and the sweep scans `succeeded` only. Nothing could close it.
+  // `failed` is the state that carries the retry, which is the way out.
   if (row.status === 'failed' || row.status === 'dead_lettered') {
     return { state: 'failed', reason: null };
   }
-  const result = (row.result ?? {}) as Record<string, unknown>;
-  // A HELD row is waiting on the USER, not on the session — the stop button put
-  // it there, and only an explicit send or "send now" takes it out. It is read
-  // before `admission_reason` because it outranks it: a held row is not in line
-  // at all.
+  // Then HELD: a held row is waiting on the USER, not on the session — the stop
+  // button put it there, and only an explicit send or "send now" takes it out.
+  // It outranks the markers below: a held row is not in line at all, and that
+  // is true of a forwarded row Stop paused just as much as of a queued one.
   if (result.held === true) return { state: 'waiting', reason: 'held' };
+  // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
+  // below would otherwise fall through to `queued` and show a prompt that is
+  // already at OpenCode as if it had never been sent.
+  if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
+  if (row.status === 'running') return { state: 'delivering', reason: null };
   const admission = result.admission_reason;
   if (typeof admission === 'string') return { state: 'waiting', reason: admission };
   return { state: 'queued', reason: null };
@@ -590,15 +612,6 @@ function serializeRemovedPrompt(row: PromptRow) {
   };
 }
 
-/** Flatten a prompt body to the plain text every pre-inbox reader still wants
- *  (the title generator, the dead-letter alert, `GET /prompts`'s preview). */
-function flattenPromptText(parts: Array<{ type: string; text?: string }>): string {
-  return parts
-    .filter((part) => part.type === 'text' && typeof part.text === 'string')
-    .map((part) => part.text as string)
-    .join('\n')
-    .trim();
-}
 
 projectsApp.openapi(
   createRoute({
@@ -657,22 +670,10 @@ projectsApp.openapi(
       // dropped turn is worse than a refused request.
       return c.json({ error: 'message_id must be an OpenCode wire message id' }, 400);
     }
-    if (rawParts.length < 1 || rawParts.length > PROMPT_MAX_PARTS) {
-      return c.json({ error: `parts must hold 1..${PROMPT_MAX_PARTS} entries` }, 400);
-    }
-    const parts = rawParts.map((part: any) => ({
-      type: part?.type === 'file' || part?.type === 'agent' ? part.type : 'text',
-      ...(typeof part?.text === 'string' ? { text: part.text } : {}),
-      ...(typeof part?.mime === 'string' ? { mime: part.mime } : {}),
-      ...(typeof part?.url === 'string' ? { url: part.url } : {}),
-      ...(typeof part?.filename === 'string' ? { filename: part.filename } : {}),
-      ...(typeof part?.name === 'string' ? { name: part.name } : {}),
-      ...(part?.source === undefined ? {} : { source: part.source }),
-    }));
+    const sanitized = sanitizeInboxPromptParts(rawParts);
+    if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
+    const parts = sanitized.parts;
     const text = flattenPromptText(parts);
-    if (!text && !parts.some((part: any) => part.type !== 'text')) {
-      return c.json({ error: 'parts must carry text' }, 400);
-    }
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
     const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;

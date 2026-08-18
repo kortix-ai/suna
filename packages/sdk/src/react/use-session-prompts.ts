@@ -7,6 +7,8 @@ import {
   type CreateSessionPromptResult,
   type RemovedSessionPrompt,
   type SessionPrompt,
+  type SessionPromptOverrides,
+  type SessionPromptPart,
   createSessionPrompt,
   deleteSessionPrompt,
   holdSessionPrompts,
@@ -16,6 +18,7 @@ import {
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts } from '../core/session/working';
 import { qk } from './query-keys';
+import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
 
 /**
  * The session's SERVER-SIDE prompt inbox.
@@ -152,4 +155,75 @@ export function useSessionPrompts(
     hold: holdMutation.mutateAsync,
     refetch: query.refetch,
   };
+}
+
+// ============================================================================
+// The first prompt of a brand-new session
+// ============================================================================
+
+/** Injectable seams for {@link startSessionWithPrompt}'s tests. */
+export interface StartSessionWithPromptAdapters {
+  create?: typeof createSessionPrompt;
+  nowMs?: () => number;
+}
+
+/**
+ * POST the first prompt of a session straight to the durable inbox.
+ *
+ * A plain async function, not a hook — two of its producers are plain click
+ * handlers on pages that never mount a session. The admission gate holds the
+ * row until the box answers; `session-composer-readiness.ts` states the
+ * contract: "A submit against a sleeping box is POSTed to `.../prompts` and
+ * becomes a durable row."
+ *
+ * This replaces the sessionStorage start-stash as the delivery channel (the
+ * stash still hands off the model/agent PICKS): the stash needed a mounted
+ * workbench to replay it 19-25s later (measured boot), and a closed tab in
+ * that window lost the message silently. The wire id is minted here but
+ * flagged `remintOnDelivery` — this producer runs before any transcript
+ * exists to place an id against, which is the exact criterion that flag
+ * documents.
+ *
+ * Files the same receipts `handleSend` does, so the composer's working
+ * projection covers the send from the click, and drops them on every path
+ * where nothing is coming — including a `failed` verdict, which arrives as a
+ * 200 (a dead-lettered dedupe) and is thrown here as the refusal it is.
+ */
+export async function startSessionWithPrompt(
+  projectId: string,
+  sessionId: string,
+  input: {
+    parts: SessionPromptPart[];
+    overrides?: SessionPromptOverrides;
+  },
+  adapters?: StartSessionWithPromptAdapters,
+): Promise<CreateSessionPromptResult> {
+  const create = adapters?.create ?? createSessionPrompt;
+  const now = adapters?.nowMs ?? Date.now;
+  const clientMessageId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? `start_${crypto.randomUUID()}`
+      : `start_${now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const store = useSessionWorkingStore.getState();
+  store.noteSendReceipt(sessionId, { messageId: clientMessageId, atMs: now() });
+  try {
+    const result = await create(projectId, sessionId, {
+      clientMessageId,
+      messageId: mintSessionWireMessageId(sessionId, clientMessageId),
+      parts: input.parts,
+      ...(input.overrides ? { overrides: input.overrides } : {}),
+      remintOnDelivery: true,
+    });
+    if (result.state === 'failed') {
+      throw new Error('This prompt was refused — its earlier delivery already failed.');
+    }
+    const acceptedAt = now();
+    useSessionWorkingStore.getState().acceptSendReceipt(sessionId, clientMessageId, acceptedAt);
+    useSessionWorkingStore.getState().notePromptAccepted(sessionId, acceptedAt);
+    return result;
+  } catch (error) {
+    // Named, so a slow refusal cannot drop a receipt a later send now owns.
+    useSessionWorkingStore.getState().clearSendReceipt(sessionId, clientMessageId);
+    throw error;
+  }
 }

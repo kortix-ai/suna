@@ -9,6 +9,7 @@ import {
   isSessionTargetVisibleToCaller,
   isSessionVisibleTo,
   parseSharingIntent,
+  resolveInheritedSessionSharing,
   scopeToIntent,
   sessionIntentToVisibility,
   visibilityToIntent,
@@ -215,6 +216,49 @@ describe('session sharing — default private; team-wide or select-members', () 
     expect(visibilityToIntent('project', [])).toEqual({ mode: 'project' });
     expect(visibilityToIntent('private', [])).toEqual({ mode: 'private', ownerId: '' });
     expect(visibilityToIntent('restricted', members.grants)).toEqual({ mode: 'members', memberIds: [BOB], groupIds: [SALES] });
+  });
+});
+
+describe('resolveInheritedSessionSharing — a spawned worker inherits its parent', () => {
+  test('no parent (no spawning session) → default private, no grants', () => {
+    expect(resolveInheritedSessionSharing(undefined, null)).toEqual({
+      visibility: 'private',
+      grants: [],
+    });
+  });
+
+  test('parent shared project-wide → worker is project-wide too', () => {
+    expect(resolveInheritedSessionSharing(undefined, { visibility: 'project', grants: [] })).toEqual({
+      visibility: 'project',
+      grants: [],
+    });
+  });
+
+  test('parent shared with select members → worker copies the same grants', () => {
+    const grants: SecretGrant[] = [{ principalType: 'member', principalId: BOB }];
+    expect(resolveInheritedSessionSharing(undefined, { visibility: 'restricted', grants })).toEqual({
+      visibility: 'restricted',
+      grants,
+    });
+  });
+
+  test('parent private → worker stays private (unchanged default)', () => {
+    expect(resolveInheritedSessionSharing(undefined, { visibility: 'private', grants: [] })).toEqual({
+      visibility: 'private',
+      grants: [],
+    });
+  });
+
+  test('an explicit requested visibility always wins, even with a parent present', () => {
+    // Automation callers (triggers, channels) pin their own visibility and
+    // must never inherit — this is what stops that regressing.
+    expect(
+      resolveInheritedSessionSharing('project', { visibility: 'restricted', grants: [{ principalType: 'member', principalId: BOB }] }),
+    ).toEqual({ visibility: 'project', grants: [] });
+    expect(resolveInheritedSessionSharing('private', { visibility: 'project', grants: [] })).toEqual({
+      visibility: 'private',
+      grants: [],
+    });
   });
 });
 

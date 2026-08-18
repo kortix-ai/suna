@@ -3,8 +3,12 @@ import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type { SessionTurnEndReason } from '../sandbox-turn-lifecycle';
-import { INBOX_HOLD_MS } from './inbox-rows';
-import type { QueuedContinueSessionPayload, SessionLifecycleCommandRow } from './store';
+import { INBOX_HOLD_MS, isStopPausedInboxRow } from './inbox-rows';
+import {
+  type QueuedContinueSessionPayload,
+  type SessionLifecycleCommandRow,
+  withNextDeliveryAttempt,
+} from './store';
 
 /**
  * How many times one prompt may be given back to the inbox.
@@ -105,7 +109,12 @@ const liveDeps: RedeliveryDeps = {
         lockedBy: null,
         lockedUntil: null,
         lastError,
-        payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveries })}::jsonb`,
+        // The row already went out once, so the next POST needs a key the
+        // proxy's 10-minute dedupe claim cannot swallow — see
+        // `withNextDeliveryAttempt`.
+        payload: withNextDeliveryAttempt(
+          sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveries })}::jsonb`,
+        ),
         result: held
           ? { redelivered_from: turnToken, held: true }
           : { redelivered_from: turnToken },
@@ -126,6 +135,15 @@ const liveDeps: RedeliveryDeps = {
       .update(sessionLifecycleCommands)
       .set({
         status: 'dead_lettered',
+        // AND IT IS NO LONGER ON THE WIRE. Every reader of "is this row at
+        // OpenCode" keys on `result.status`, so a dead-lettered row that kept
+        // `forwarded` read `delivering` for ever: filtered out of the composer's
+        // queue strip, counted as live work by `countLiveInboxPrompts`, and
+        // outside `reconcileForwardedPrompts`' scan — no retry, no remove, and
+        // nothing that could ever close it. `- 'status'` rather than a replaced
+        // result, because `forwarded_at`/`forwarded_message_id` are still the
+        // only record of what this row did.
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'status'`,
         lockedBy: null,
         lockedUntil: null,
         lastError,
@@ -185,6 +203,15 @@ export async function requeueAbandonedPrompt(
   const redeliveries = Number(payload.redeliveries ?? 0) + 1;
   const lastError = `redelivered after ${input.endReason}`;
 
+  // A STOP-PAUSED row is the prompt the user pressed Stop to get ahead of.
+  // Stop aborts the running turn, OpenCode drops the in-memory queue with it,
+  // and the reaper then sees a persisted message nothing will ever answer —
+  // which is a genuine abandonment, so this function is right to act. What it
+  // must not do is deliver it: coming back DUE would put the stopped prompt
+  // back on the wire one reaper pass after the abort. It comes back HELD
+  // instead — visible, and released by the user's next send or "send now".
+  const stopPaused = isStopPausedInboxRow(row.result);
+
   if (redeliveries > MAX_PROMPT_REDELIVERIES) {
     await deps.deadLetter({
       commandId: row.commandId,
@@ -210,7 +237,7 @@ export async function requeueAbandonedPrompt(
     redeliveries,
     lastError,
     turnToken: input.turnToken,
-    ...(input.hold ? { held: true } : {}),
+    ...(input.hold || stopPaused ? { held: true } : {}),
   });
   return 'requeued';
 }

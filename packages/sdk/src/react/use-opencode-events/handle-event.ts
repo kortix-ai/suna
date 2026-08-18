@@ -232,7 +232,21 @@ export function createEventHandler(deps: {
           const client = getClient();
           void reconcileTail(sessionID, 'compaction');
           // Refetch the individual session to clear time.compacting
-          // (targeted refetch, not full session list invalidation)
+          // (targeted refetch, not full session list invalidation). This is
+          // the FAST path — it fires the instant the frame arrives, and on
+          // success also patches the session list mirror.
+          //
+          // It is not the ONLY path any more: a failure here (this fetch has
+          // no retry of its own) used to leave `time.compacting` stale in the
+          // `opencodeKeys.runtimeSession` cache FOREVER — `useOpenCodeSession`
+          // reads it with `staleTime: Infinity` and nothing else refetches it,
+          // so `projectCompacting`'s server-observed rule (`core/session/
+          // compaction.ts`) stayed pinned `true` for the rest of the tab's
+          // life. On failure, route the retry through the SAME query
+          // `useOpenCodeSession` registers (3 attempts, exponential backoff)
+          // instead of swallowing it silently. `use-session.ts` also arms a
+          // `serverCompactionRevalidateAtMs` timer as a second, frame-
+          // independent backstop — see that function's doc comment.
           client.session
             .get({ sessionID })
             .then((res) => {
@@ -248,9 +262,17 @@ export function createEventHandler(deps: {
                   next[idx] = session;
                   return next;
                 });
+              } else {
+                void queryClient.invalidateQueries({
+                  queryKey: opencodeKeys.runtimeSession(sessionID),
+                });
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              void queryClient.invalidateQueries({
+                queryKey: opencodeKeys.runtimeSession(sessionID),
+              });
+            });
         }
         break;
       }

@@ -212,6 +212,54 @@ describe('requeueAbandonedPrompt', () => {
     expect(requeued[0].held).toBe(true);
   });
 
+  test('a STOP-PAUSED prompt comes back HELD, never onto the wire', async () => {
+    // The row the user pressed Stop to get ahead of. Stop aborts the turn,
+    // OpenCode drops its in-memory queue, and the reaper correctly reads the
+    // persisted-but-unanswered message as abandoned — so this function fires.
+    // Requeueing it DUE would deliver the stopped prompt one reaper pass after
+    // the abort, which is the exact outcome Stop exists to prevent.
+    const { deps, requeued } = harness(
+      succeededRow(
+        { text: 'hi', wireMessageId: 'msg_a' },
+        {
+          result: {
+            status: 'forwarded',
+            stop_paused: true,
+            held: true,
+            forwarded_message_id: 'msg_a',
+          },
+        },
+      ),
+    );
+
+    const outcome = await requeueAbandonedPrompt(
+      { sessionId: 'sess-1', wireMessageId: 'msg_a', turnToken: 't', endReason: 'abandoned' },
+      deps,
+    );
+
+    expect(outcome).toBe('requeued');
+    expect(requeued[0].held).toBe(true);
+  });
+
+  test('a plain FORWARDED prompt comes back DUE — nothing asked for it to wait', async () => {
+    // Same shape, no stop: the delivery was abandoned by the runtime rather
+    // than by the user, so the repair is a normal redelivery.
+    const { deps, requeued } = harness(
+      succeededRow(
+        { text: 'hi', wireMessageId: 'msg_a' },
+        { result: { status: 'forwarded', forwarded_message_id: 'msg_a' } },
+      ),
+    );
+
+    expect(
+      await requeueAbandonedPrompt(
+        { sessionId: 'sess-1', wireMessageId: 'msg_a', turnToken: 't', endReason: 'abandoned' },
+        deps,
+      ),
+    ).toBe('requeued');
+    expect(requeued[0].held).toBeUndefined();
+  });
+
   test('the cap is 3 — the 3rd redelivery still goes out', async () => {
     expect(MAX_PROMPT_REDELIVERIES).toBe(3);
     const { deps, requeued } = harness(

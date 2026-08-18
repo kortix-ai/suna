@@ -49,6 +49,15 @@ import {
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
 import {
+  EFFECTIVE_MESSAGE_ID_HEADER,
+  PROMPT_TRANSCRIPT_READ_LIMIT,
+  isPromptWireIdRepairPath,
+  promptBodyMessageId,
+  promptTranscriptReadPath,
+  readNewestWireIdTime,
+  repairPromptWireId,
+} from '../prompt-wire-id-repair';
+import {
   PROXY_RETRY_BUDGET_MS,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -957,6 +966,11 @@ export async function forwardToSandbox(
     !sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)
       ? extractTurnIdentity(remainingPath, requestBody)
       : null;
+  // The wire id OpenCode will actually see, once the placement check below has
+  // run — the client's, or the proxy's re-mint. Echoed on the response so the
+  // sender can correlate, and written into `turnIdentity` so the ledger and the
+  // daemon's exact-message probe match the message that exists.
+  let effectiveMessageId: string | null = null;
   const turnToken = turnIdentity ? crypto.randomUUID() : null;
   let turnLifecycleBegun = false;
   let turnLifecycleAccepted = false;
@@ -1127,6 +1141,52 @@ export async function forwardToSandbox(
       // identity encoding, regenerate trace headers, then apply the sandbox
       // auth/identity headers (service key, preview token, signed user-context)
       // last so they always win.
+      const authHeaders = await buildSandboxUpstreamHeaders({
+        sandboxId,
+        userId,
+        serviceKey,
+        providerHeaders: ingress.headers,
+      });
+
+      // PLACE THE WIRE ID against the target session's actual tip — for ANY
+      // target, child sessions included. See `prompt-wire-id-repair.ts` for the
+      // incident this closes. One bounded newest-N read; fail-open (a failed
+      // read keeps the client's id); runs after every refusal point and before
+      // the ledger begins, so the identity recorded is the one delivered. Once
+      // per request: a retry attempt keeps the placement the first computed.
+      if (
+        promptDelivery &&
+        !sandboxAuthored &&
+        effectiveMessageId === null &&
+        isPromptWireIdRepairPath(remainingPath) &&
+        // No client id, nothing to place — OpenCode mints, and the read is
+        // skipped entirely so a plain body pays nothing.
+        promptBodyMessageId(requestBody) !== null
+      ) {
+        const readUrl =
+          previewUrl.replace(/\/$/, '') +
+          promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
+        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        const placed = repairPromptWireId({
+          body: requestBody,
+          newestKnownTime,
+          nowMs: Date.now(),
+        });
+        if (placed.outcome === 'reminted') {
+          console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
+            sandboxId,
+            sessionId: record.sessionId,
+            path: remainingPath,
+            effectiveMessageId: placed.effectiveMessageId,
+          });
+          requestBody = placed.body;
+        }
+        effectiveMessageId = placed.effectiveMessageId ?? '';
+        if (turnIdentity && placed.effectiveMessageId) {
+          turnIdentity.messageId = placed.effectiveMessageId;
+        }
+      }
+
       const headers = new Headers();
       for (const [key, value] of incomingHeaders.entries()) {
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
@@ -1136,12 +1196,6 @@ export async function forwardToSandbox(
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
-      const authHeaders = await buildSandboxUpstreamHeaders({
-        sandboxId,
-        userId,
-        serviceKey,
-        providerHeaders: ingress.headers,
-      });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
@@ -1414,6 +1468,14 @@ export async function forwardToSandbox(
         );
       }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
+      if (effectiveMessageId) {
+        respHeaders.set(EFFECTIVE_MESSAGE_ID_HEADER, effectiveMessageId);
+        const exposed = respHeaders.get('Access-Control-Expose-Headers');
+        respHeaders.set(
+          'Access-Control-Expose-Headers',
+          exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
+        );
+      }
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,

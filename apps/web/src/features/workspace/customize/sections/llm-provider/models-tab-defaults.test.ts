@@ -105,15 +105,16 @@ describe('ModelsTab offers both default scopes', () => {
   });
 
   /**
-   * `modelPlainSummary` is the row's ONLY subtitle. The raw catalog figures it
-   * replaced must not creep back onto the row beside it.
+   * The row shows the same real numbers as the "Add provider" catalog
+   * (`provider-detail.tsx`) — context window, price per 1M, capability icons
+   * — instead of a prose paraphrase. One catalog, one set of facts.
    */
-  test('the row shows no raw catalog figures', () => {
-    expect(tabSource).toContain('modelPlainSummary({');
-    expect(tabSource).not.toContain('per 1M');
-    expect(tabSource).not.toContain('formatPricePerMillion');
-    expect(tabSource).not.toContain('formatTokenCount');
-    expect(tabSource).not.toContain('<ModelCapabilityIcons');
+  test('the row shows real catalog figures, not a paraphrase', () => {
+    expect(tabSource).toContain('formatPricePerMillion');
+    expect(tabSource).toContain('formatTokenCount');
+    expect(tabSource).toContain('<ModelCapabilityIcons');
+    expect(tabSource).toContain('per 1M');
+    expect(tabSource).not.toContain('modelPlainSummary');
   });
 
   test('the menu is gated on the model being offered, not on it lacking a scope', () => {

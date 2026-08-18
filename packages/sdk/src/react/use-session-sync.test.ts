@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { livenessBusy } from './use-session-sync';
+import { livenessBusy, sessionSyncBusy } from './use-session-sync';
 
 /**
  * WHICH signal switches the transcript liveness poll.
@@ -43,5 +43,37 @@ describe('livenessBusy', () => {
     expect(
       livenessBusy({ networkEnabled: true, runtimeHealthy: false, working: true, streamBusy: true }),
     ).toBe(false);
+  });
+});
+
+/**
+ * The hook's PUBLIC `isBusy`, which is a different reader of the same rule.
+ *
+ * `useSessionSync` is published, so neither `status` nor `isBusy` can be
+ * removed — but `isBusy` derived from the raw stream slot while `livenessBusy`
+ * (the poll's switch, three lines away) already preferred the caller's
+ * projection. Two answers to one question, and the one the hook handed out was
+ * the weaker of the two: a dropped busy frame made a session the server's own
+ * turn authority reported as working answer `isBusy: false`.
+ */
+describe('sessionSyncBusy', () => {
+  test('the caller\'s projection is the answer when it has one', () => {
+    expect(sessionSyncBusy({ working: true, streamBusy: false })).toBe(true);
+    expect(sessionSyncBusy({ working: false, streamBusy: true })).toBe(false);
+  });
+
+  test('with no projection the stream slot still decides (apps/mobile)', () => {
+    expect(sessionSyncBusy({ working: undefined, streamBusy: true })).toBe(true);
+    expect(sessionSyncBusy({ working: undefined, streamBusy: false })).toBe(false);
+  });
+
+  test('livenessBusy and the public answer are ONE rule, plus the poll\'s reachability gate', () => {
+    for (const working of [true, false, undefined] as const) {
+      for (const streamBusy of [true, false]) {
+        expect(livenessBusy({ networkEnabled: true, runtimeHealthy: true, working, streamBusy })).toBe(
+          sessionSyncBusy({ working, streamBusy }),
+        );
+      }
+    }
   });
 });

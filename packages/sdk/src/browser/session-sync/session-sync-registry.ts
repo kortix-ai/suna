@@ -99,23 +99,18 @@ function createController(sessionId: string, key: string): SessionSyncController
   return new SessionSyncController({
     sessionId,
     loadPage: (request) => readSessionMessagePage(resolveClient(key), sessionId, request),
-    loadStatus: async () => {
-      // Bound call — see loadSessionRuntimeStatus. The previous detached call
-      // (`const f = client.session.status; await f()`) threw a TypeError on
-      // the real SDK client, so the controller's status reconciliation had
-      // never actually worked outside plain-object test fakes.
-      const status = await loadSessionRuntimeStatus(sessionId, resolveClient(key));
-      return status ?? ({ type: 'idle' } as SessionStatus);
-    },
+    // No `loadStatus` / `setStatus`. The liveness poll reconciles the
+    // transcript tail and claims nothing about whether the session is working:
+    // `GET .../turn` answers that, and `setBusy` is already driven from that
+    // projection (`livenessBusy`). `loadSessionRuntimeStatus` stays — it is a
+    // published export of `@kortix/sdk/react` — but this controller no longer
+    // calls it.
     hydrate: (messages) => {
       useSyncStore.getState().hydrate(sessionId, messages);
     },
     markLoaded: () => {
       const state = useSyncStore.getState();
       if (!(sessionId in state.messages)) state.hydrate(sessionId, []);
-    },
-    setStatus: (status) => {
-      useSyncStore.getState().setStatus(sessionId, status);
     },
     onTelemetry: (event) => reportTelemetry(sessionId, event),
   });

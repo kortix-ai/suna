@@ -6,6 +6,7 @@ import {
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
   sessionPromptsPollMs,
+  startSessionWithPrompt,
 } from './use-session-prompts';
 
 /**
@@ -73,5 +74,84 @@ describe('noteInboxObservation', () => {
     noteInboxObservation('sess_1', [prompt({ state: 'waiting', reason: 'held' })], 500);
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
+  });
+});
+
+/**
+ * The first prompt of a brand-new session, as ONE durable POST — the SDK
+ * function every "new session" producer calls instead of stashing the text in
+ * sessionStorage for a replay effect to send 19-25s later (the measured boot),
+ * during which a closed tab lost the message silently.
+ */
+describe('startSessionWithPrompt', () => {
+  test('POSTs the prompt with a minted wire id and files the receipt around the round-trip', async () => {
+    useSessionWorkingStore.getState().reset();
+    const calls: any[] = [];
+    const result = await startSessionWithPrompt(
+      'proj-1',
+      'sess-1',
+      { parts: [{ type: 'text', text: 'go' }], overrides: { agent: 'default' } },
+      {
+        create: async (projectId, sessionId, input) => {
+          // The receipt is taken BEFORE the POST: from here a `/turn` read is
+          // barred from answering idle until the row is durable or refused.
+          expect(useSessionWorkingStore.getState().receipts['sess-1']).not.toBeNull();
+          calls.push([projectId, sessionId, input]);
+          return { prompt_id: 'p1', state: 'queued', message_id: input.messageId, deduped: false };
+        },
+      },
+    );
+
+    expect(result.state).toBe('queued');
+    expect(calls).toHaveLength(1);
+    const [projectId, sessionId, input] = calls[0];
+    expect(projectId).toBe('proj-1');
+    expect(sessionId).toBe('sess-1');
+    expect(input.messageId).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
+    expect(input.clientMessageId.length).toBeGreaterThan(8);
+    // This producer can never read a transcript, so it must say so.
+    expect(input.remintOnDelivery).toBe(true);
+    expect(input.parts).toEqual([{ type: 'text', text: 'go' }]);
+    expect(input.overrides).toEqual({ agent: 'default' });
+    // Accepted: the server has the row, and the projection may answer for it.
+    const receipt = useSessionWorkingStore.getState().receipts['sess-1'];
+    expect(receipt?.acceptedAtMs ?? null).not.toBeNull();
+  });
+
+  test('a refused row drops the receipt and throws instead of posing as sent', async () => {
+    useSessionWorkingStore.getState().reset();
+    await expect(
+      startSessionWithPrompt(
+        'proj-1',
+        'sess-2',
+        { parts: [{ type: 'text', text: 'go' }] },
+        {
+          create: async (_p, _s, input) => ({
+            prompt_id: 'p1',
+            state: 'failed',
+            message_id: input.messageId,
+            deduped: true,
+          }),
+        },
+      ),
+    ).rejects.toThrow(/refused/i);
+    expect(useSessionWorkingStore.getState().receipts['sess-2']).toBeFalsy();
+  });
+
+  test('a network failure also drops the receipt', async () => {
+    useSessionWorkingStore.getState().reset();
+    await expect(
+      startSessionWithPrompt(
+        'proj-1',
+        'sess-3',
+        { parts: [{ type: 'text', text: 'go' }] },
+        {
+          create: async () => {
+            throw new Error('boom');
+          },
+        },
+      ),
+    ).rejects.toThrow('boom');
+    expect(useSessionWorkingStore.getState().receipts['sess-3']).toBeFalsy();
   });
 });

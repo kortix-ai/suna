@@ -182,3 +182,30 @@ describe('an accepted prompt', () => {
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
   });
 });
+
+describe('clearSession', () => {
+  test('drops every input for ONE session and leaves the rest', () => {
+    const store = useSessionWorkingStore.getState();
+    store.reset();
+    store.noteSendReceipt('a', { messageId: 'm1', atMs: 1 });
+    store.noteAbortReceipt('a', 2);
+    store.noteInboxPending('a', 1, 3);
+    store.noteSendReceipt('b', { messageId: 'm2', atMs: 4 });
+
+    useSessionWorkingStore.getState().clearSession('a');
+
+    const after = useSessionWorkingStore.getState();
+    expect(after.receipts['a']).toBeUndefined();
+    expect(after.aborts['a']).toBeUndefined();
+    expect(after.inbox['a']).toBeUndefined();
+    expect(after.receipts['b']?.messageId).toBe('m2');
+  });
+
+  test('a session with nothing stored is a no-op, not a state churn', () => {
+    const store = useSessionWorkingStore.getState();
+    store.reset();
+    const before = useSessionWorkingStore.getState().receipts;
+    useSessionWorkingStore.getState().clearSession('ghost');
+    expect(useSessionWorkingStore.getState().receipts).toBe(before);
+  });
+});

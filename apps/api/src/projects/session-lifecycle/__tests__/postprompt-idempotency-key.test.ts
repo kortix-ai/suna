@@ -121,9 +121,20 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
+  // Every row in this file is an AUTOMATION continue (an approval resume): no
+  // client-minted wire id, so the ledger has nothing to key a consumption
+  // confirmation on and the row closes through `markCommandSucceeded` exactly
+  // as it always did. Reaching the forwarded path here would be the bug.
+  markCommandForwarded: async () => {
+    throw new Error('not expected: a prompt with no wire id must not stay open');
+  },
   markCommandSucceeded: async (commandId: string, result: unknown) => {
     succeededCalls.push({ commandId, result });
   },
+  // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
+  // the engine import fails outright. Nothing in this file drives a row through
+  // it, so an identity pass-through is the whole of it.
+  withNextDeliveryAttempt: (payload: unknown) => payload,
   resultFromExistingCommand: () => {
     throw new Error('not expected');
   },

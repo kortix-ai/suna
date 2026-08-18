@@ -742,6 +742,29 @@ export const PendingSessionPromptSchema = z
       .optional(),
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
+    /**
+     * Full prompt parts, in OpenCode's own wire shape. Lets the first prompt
+     * carry attachments as `data:` URLs — the session's sandbox does not exist
+     * yet, so there is nowhere to upload into. The API converts the whole
+     * pending prompt into a durable inbox row at create; the inbox's own
+     * sanitizer re-checks these and enforces the serialized byte cap.
+     */
+    parts: z
+      .array(
+        z
+          .object({
+            type: z.enum(['text', 'file', 'agent']),
+            text: z.string().optional(),
+            mime: z.string().max(255).optional(),
+            url: z.string().max(17_000_000).optional(),
+            filename: z.string().max(512).optional(),
+            name: z.string().max(512).optional(),
+            source: z.unknown().optional(),
+          })
+          .strict(),
+      )
+      .max(64)
+      .optional(),
   })
   .strict()
   .superRefine((value, context) => {

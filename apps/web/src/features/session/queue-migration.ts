@@ -45,6 +45,24 @@ import type {
   SessionPromptPart,
 } from '@kortix/sdk';
 
+/**
+ * Remove after this date: by then every active tab has run its single pass
+ * (`MAX_MIGRATION_ATTEMPTS` per row, one pass per tab) and
+ * `kortix_message_queue_v3` is unreadable by anything. Deleting earlier
+ * strands a queue a user had when they last closed the tab before the inbox
+ * deploy; leaving it makes permanent furniture of a one-deploy migration.
+ * `queue-migration.test.ts` fails once the date passes, so the removal is
+ * enforced by the suite rather than remembered.
+ *
+ * Files to delete then:
+ *   - apps/web/src/features/session/queue-migration.ts (this file)
+ *   - apps/web/src/features/session/queue-migration.test.ts
+ *   - apps/web/src/features/session/queue-migration-runner.ts
+ *   - apps/web/src/features/session/queue-migration-runner.test.ts
+ *   plus the `runQueueMigration` effect in `session-chat.tsx`.
+ */
+export const QUEUE_MIGRATION_REMOVE_AFTER = '2026-11-01';
+
 export const LEGACY_QUEUE_KEY = 'kortix_message_queue_v3';
 export const MIGRATION_ATTEMPTS_KEY = 'kortix_message_queue_v3_migration_attempts';
 export const MAX_MIGRATION_ATTEMPTS = 3;

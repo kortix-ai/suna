@@ -13,23 +13,29 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { sql } from 'drizzle-orm';
 import {
   INBOX_ORDER_BACKOFF_MS,
-  INBOX_TURN_ACTIVE_BACKOFF_MS,
   admitInboxPrompt,
   sessionHoldsTurnAuthority,
 } from '../projects/session-lifecycle/inbox-admission';
 import {
+  confirmInboxPromptConsumed,
+  reconcileForwardedPrompts,
+} from '../projects/session-lifecycle/consumption';
+import {
   deleteInboxPrompt,
   holdInboxPrompts,
   listInboxPrompts,
+  releaseInboxHold,
   retryInboxPrompt,
 } from '../projects/session-lifecycle/inbox-rows';
 import { requeueAbandonedPrompt } from '../projects/session-lifecycle/redelivery';
+import { acceptSandboxTurn } from '../projects/sandbox-turn-lifecycle';
 import {
   LIFECYCLE_RUNNING_RECLAIM_GRACE_MS,
   type SessionLifecycleCommandRow,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  markCommandForwarded,
   requeueForAdmission,
 } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
@@ -164,13 +170,13 @@ describe('requeueForAdmission against real Postgres', () => {
          SET status = 'running', attempts = 3, locked_by = 'worker-1'
        WHERE command_id = ${row.commandId}::uuid`);
 
-    await requeueForAdmission(row.commandId, 'turn_active', new Date(Date.now() + 2_000));
+    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date(Date.now() + 2_000));
 
     const after = await readRow(row.commandId);
     expect(after.status).toBe('queued');
     expect(after.attempts).toBe(2);
     expect(after.locked_by).toBeNull();
-    expect(after.result).toEqual({ admission_reason: 'turn_active', admission_refusals: 1 });
+    expect(after.result).toEqual({ admission_reason: 'older_prompt_pending', admission_refusals: 1 });
     // The refusal must not touch the prompt itself.
     expect((after.payload as Record<string, unknown>).wireMessageId).toBe(WIRE_ID);
     // But it DOES record that the row did not go out on its first claim. This
@@ -184,11 +190,11 @@ describe('requeueForAdmission against real Postgres', () => {
     // on every refusal. `admissionBackoffMs` reads this counter to widen the
     // gap so a long turn costs a handful of claims instead of one per second.
     const row = await enqueue('q_refusals');
-    await requeueForAdmission(row.commandId, 'turn_active', new Date());
-    await requeueForAdmission(row.commandId, 'turn_active', new Date());
-    await requeueForAdmission(row.commandId, 'turn_active', new Date());
+    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
+    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).result).toEqual({
-      admission_reason: 'turn_active',
+      admission_reason: 'older_prompt_pending',
       admission_refusals: 3,
     });
   });
@@ -200,7 +206,7 @@ describe('requeueForAdmission against real Postgres', () => {
     // OpenCode reads as already answered — the prompt is accepted and silently
     // never runs.
     const row = await enqueue('q_promote_marker');
-    await requeueForAdmission(row.commandId, 'turn_active', new Date());
+    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
     const promoted = await retryInboxPrompt(SESSION_ID, row.commandId);
     expect(promoted).not.toBeNull();
 
@@ -224,10 +230,10 @@ describe('requeueForAdmission against real Postgres', () => {
       UPDATE kortix.session_lifecycle_commands
          SET result = '{"kept": true}'::jsonb
        WHERE command_id = ${row.commandId}::uuid`);
-    await requeueForAdmission(row.commandId, 'turn_active', new Date());
+    await requeueForAdmission(row.commandId, 'older_prompt_pending', new Date());
     expect((await readRow(row.commandId)).result).toEqual({
       kept: true,
-      admission_reason: 'turn_active',
+      admission_reason: 'older_prompt_pending',
       admission_refusals: 1,
     });
   });
@@ -244,14 +250,30 @@ describe('admitInboxPrompt against real rows', () => {
     },
   };
 
-  test('a live turn on a RUNNING box refuses admission', async () => {
+  test('a live turn on a RUNNING box no longer holds a prompt back', async () => {
+    // The turn-active refusal is deleted. OpenCode persists a mid-turn prompt
+    // and runs it in arrival order after the turn in flight ends
+    // (`integration-inbox-midturn-forward.test.ts`), so the row goes straight
+    // out instead of costing the user up to 10s of dead air.
     const row = await enqueue('q_admit');
     await setBox('active', turn);
-    expect(await admitInboxPrompt(row)).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_TURN_ACTIVE_BACKOFF_MS,
-    });
+    expect(await admitInboxPrompt(row)).toEqual({ admit: true });
+
+    // The authority itself is unchanged — this is a change to ADMISSION only.
+    // `GET .../turn` and `settleOrphanedSandboxTurns` read the same predicate
+    // and still see a busy session.
+    const box = await db.execute(sql`
+      SELECT status, metadata FROM kortix.session_sandboxes
+       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+    const boxRows = ((box as { rows?: Array<Record<string, unknown>> }).rows ?? box) as Array<
+      Record<string, unknown>
+    >;
+    expect(
+      sessionHoldsTurnAuthority({
+        status: boxRows[0].status as string,
+        metadata: boxRows[0].metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
   });
 
   test('the SAME metadata on a STOPPED box admits — authority dies with the runtime', async () => {
@@ -434,6 +456,37 @@ describe('requeueAbandonedPrompt against real rows', () => {
     ).toBe('exhausted');
     expect((await readRow(row.commandId)).status).toBe('dead_lettered');
   });
+
+  test('giving up on a FORWARDED row stops it claiming to be on the wire', async () => {
+    // Every reader of "is this row at OpenCode" keys on `result.status`.
+    // Leaving `forwarded` on a dead-lettered row made it read `delivering` for
+    // ever: filtered out of the queue strip, counted as live work by the
+    // composer, and invisible to the sweep — no retry, no remove, nothing that
+    // could ever close it.
+    const row = await enqueue('q_exhausted_forwarded');
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = payload || '{"redeliveries":3}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: WIRE_ID,
+        turnToken: 'turn-10',
+        endReason: 'abandoned',
+      }),
+    ).toBe('exhausted');
+
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('dead_lettered');
+    expect((after.result as Record<string, unknown>).status).toBeUndefined();
+    // Still the user's row: a dead-lettered prompt is listed, with a retry.
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toContain(
+      row.commandId,
+    );
+  });
 });
 
 /** A `continue_session` row written by an AUTOMATION: a schedule trigger fire,
@@ -540,6 +593,435 @@ describe('holding the queue — what the Stop button now writes', () => {
     expect(await admitInboxPrompt(promoted!)).toEqual({ admit: true });
     // And the rest of the queue is released, to drain at the next boundary.
     expect((await readRow(first.commandId)).result).toEqual({});
+  });
+});
+
+describe('a FORWARDED prompt stays open until the ledger confirms it', () => {
+  async function forward(clientMessageId: string, wireMessageId = WIRE_ID) {
+    const row = await enqueue(clientMessageId, { wireMessageId });
+    await markCommandForwarded(row.commandId, SESSION_ID, wireMessageId);
+    return row;
+  }
+
+  async function openTurn(token: string, messageId: string, state: 'active' | 'ended', endReason?: string) {
+    await db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, message_id, state, end_reason,
+         started_at, created_at, updated_at)
+      VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid,
+              ${messageId}, ${state}, ${endReason ?? null},
+              now(), now(), now())
+      ON CONFLICT (turn_token) DO UPDATE
+         SET state = EXCLUDED.state, end_reason = EXCLUDED.end_reason`);
+  }
+
+  async function ageRow(commandId: string, ms: number) {
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET updated_at = now() - make_interval(secs => ${ms / 1000})
+       WHERE command_id = ${commandId}::uuid`);
+  }
+
+  test('the row is `succeeded` for the drain and STILL LISTED for the user', async () => {
+    // Both halves matter. `claimDueLifecycleCommands` must never re-claim it —
+    // that would be a second delivery — and `listInboxPrompts` must keep it, or
+    // the composer has nothing to show between the send and the turn.
+    const row = await forward('q_forwarded');
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('succeeded');
+    expect(after.result).toMatchObject({ status: 'forwarded', forwarded_message_id: WIRE_ID });
+    expect(after.locked_by).toBeNull();
+
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((r) => r.commandId)).toEqual([
+      row.commandId,
+    ]);
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-forwarded', limit: 10 });
+    expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
+  });
+
+  test('a forwarded prompt cannot be removed or re-sent — OpenCode has the message', async () => {
+    const row = await forward('q_forwarded_actions');
+    expect(await deleteInboxPrompt(SESSION_ID, row.commandId)).toEqual({ outcome: 'delivering' });
+    expect(await retryInboxPrompt(SESSION_ID, row.commandId)).toBeNull();
+    expect((await readRow(row.commandId)).status).toBe('succeeded');
+  });
+
+  test('the ledger confirming the wire id closes it, and it leaves the list', async () => {
+    const row = await forward('q_confirm');
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('confirmed');
+
+    const after = await readRow(row.commandId);
+    // MERGED: the forwarding record survives the confirmation, so the row still
+    // says which id it went out under.
+    expect(after.result).toMatchObject({ status: 'delivered', forwarded_message_id: WIRE_ID });
+    expect(await listInboxPrompts(SESSION_ID, 200)).toEqual([]);
+    // Idempotent: both witnesses (acceptance, then completion) can fire.
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('no_prompt');
+  });
+
+  test('the RE-MINTED id of a redelivery confirms the same row', async () => {
+    const row = await forward('q_confirm_reminted');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET payload = payload || '{"redeliveredMessageId":"msg_0198f3a1b2c5ZzYyXxWwVvUu"}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, 'msg_0198f3a1b2c5ZzYyXxWwVvUu')).toBe(
+      'confirmed',
+    );
+    expect((await readRow(row.commandId)).result).toMatchObject({ status: 'delivered' });
+  });
+
+  test('the sweep closes a row whose turn RAN but whose confirmation never landed', async () => {
+    const row = await forward('q_sweep_ran');
+    await ageRow(row.commandId, 60_000);
+    await openTurn(`sweep-ran-${SANDBOX_ID}`, WIRE_ID, 'ended', 'completed');
+
+    const result = await reconcileForwardedPrompts();
+    expect(result.confirmed).toBeGreaterThanOrEqual(1);
+    expect((await readRow(row.commandId)).result).toMatchObject({ status: 'delivered' });
+  });
+
+  test('the sweep leaves a never-ran ending inside the ceiling to the redelivery', async () => {
+    const row = await forward('q_sweep_abandoned');
+    await ageRow(row.commandId, 60_000);
+    await openTurn(`sweep-abandoned-${SANDBOX_ID}`, WIRE_ID, 'ended', 'runtime_gone');
+
+    await reconcileForwardedPrompts();
+    expect((await readRow(row.commandId)).result).toMatchObject({ status: 'forwarded' });
+  });
+
+  test('a STOP-PAUSED row is never swept — the user is holding it, not a lost witness', async () => {
+    const row = await forward('q_sweep_stopped');
+    expect(await holdInboxPrompts(SESSION_ID, true)).toBe(1);
+    expect((await readRow(row.commandId)).result).toMatchObject({
+      status: 'forwarded',
+      stop_paused: true,
+      held: true,
+    });
+    await ageRow(row.commandId, 3 * 60 * 60_000);
+
+    await reconcileForwardedPrompts();
+    expect((await readRow(row.commandId)).result).toMatchObject({ stop_paused: true });
+  });
+
+  test('releasing the hold puts a stop-paused row back ON THE QUEUE, due now', async () => {
+    // Not back to `forwarded`: the reaper does not reliably hand a stopped
+    // prompt back (measured — an aborted turn leaves an assistant husk, so the
+    // daemon never calls it orphaned), and a released row left `forwarded`
+    // would sit in `delivering` until the sweep force-closed it, never run.
+    // The drain's already-answered guard is what makes re-queueing safe.
+    const row = await forward('q_release_stopped');
+    await holdInboxPrompts(SESSION_ID, true);
+    expect(await holdInboxPrompts(SESSION_ID, false)).toBe(1);
+
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('queued');
+    expect(after.result).toEqual({});
+    expect(after.attempts).toBe(0);
+    // And it goes out under a re-minted id: the hold stamped the durable
+    // marker, so the drain re-reads the transcript before delivering.
+    expect((after.payload as Record<string, unknown>).remintOnDelivery).toBe(true);
+
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-released', limit: 10 });
+    expect(claimed.map((r) => r.commandId)).toContain(row.commandId);
+  });
+
+  test('a released row runs BEFORE a prompt sent after it', async () => {
+    // The ordering the user sees: Stop, then type something new. The stopped
+    // prompt was submitted first, so it goes first — `POST .../prompts`
+    // releases the hold, and the admission gate then orders by `created_at`.
+    const stopped = await forward('q_release_order_first');
+    await holdInboxPrompts(SESSION_ID, true);
+    const newer = await enqueue('q_release_order_second', {
+      wireMessageId: 'msg_0198f3a1b2c5ZzYyXxWwVvUu',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    });
+    await releaseInboxHold(SESSION_ID);
+
+    expect(await admitInboxPrompt({ ...newer } as SessionLifecycleCommandRow)).toEqual({
+      admit: false,
+      reason: 'older_prompt_pending',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+    const refreshed = await readRow(stopped.commandId);
+    expect(refreshed.status).toBe('queued');
+  });
+
+  test('a stop-paused row is REMOVABLE — the user stopped it, so it is theirs to drop', async () => {
+    // The strip renders it as a held queue row with a remove button. A 409 there
+    // is a control that cannot work: the row is out of the drain's way, nothing
+    // is going to deliver it, and only removing it takes it off the screen.
+    const row = await forward('q_stopped_remove');
+    await holdInboxPrompts(SESSION_ID, true);
+
+    const removed = await deleteInboxPrompt(SESSION_ID, row.commandId);
+    expect(removed.outcome).toBe('deleted');
+    expect(await listInboxPrompts(SESSION_ID, 200)).toEqual([]);
+  });
+
+  test('a stop-paused row can be SENT NOW — the same row, promoted and re-minted', async () => {
+    // The other control the strip offers on a held row. `retryInboxPrompt` is
+    // "send now"; refusing the row it is rendered on left the user with two
+    // buttons and no way out of the hold but typing something else.
+    const row = await forward('q_stopped_sendnow');
+    await holdInboxPrompts(SESSION_ID, true);
+
+    const promoted = await retryInboxPrompt(SESSION_ID, row.commandId);
+    expect(promoted?.commandId).toBe(row.commandId);
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('queued');
+    expect(after.result).toEqual({ promoted: true });
+    // It went out once already, so it must not go out under the same id again.
+    expect((after.payload as Record<string, unknown>).remintOnDelivery).toBe(true);
+  });
+
+  test('a CONSUMED stop-paused row is never re-queued by the release', async () => {
+    // The race the release predicate has to survive: Stop marks the row, and
+    // the turn in front of it ends before the abort lands, so OpenCode runs the
+    // prompt anyway and the ledger confirms it. Re-queueing there spends a
+    // SECOND real LLM turn on a message that was already answered.
+    const row = await forward('q_stopped_consumed');
+    await holdInboxPrompts(SESSION_ID, true);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('confirmed');
+
+    // The confirmation closes the row, and a closed row carries no user hold.
+    const confirmed = await readRow(row.commandId);
+    expect(confirmed.result).toMatchObject({ status: 'delivered' });
+    expect((confirmed.result as Record<string, unknown>).stop_paused).toBeUndefined();
+    expect((confirmed.result as Record<string, unknown>).held).toBeUndefined();
+
+    expect(await releaseInboxHold(SESSION_ID)).toBe(0);
+    expect((await readRow(row.commandId)).status).toBe('succeeded');
+  });
+
+  test('the release requeue reads FORWARDED, not the stop marker alone', async () => {
+    // Belt and braces for the case above: even a row that somehow kept the
+    // marker after being delivered must not go back on the queue. `forwarded`
+    // is what "OpenCode is still holding this, unanswered" means.
+    const row = await forward('q_stopped_marker_only');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET result = '{"status":"delivered","stop_paused":true,"held":true}'::jsonb
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    expect(await releaseInboxHold(SESSION_ID)).toBe(0);
+    expect((await readRow(row.commandId)).status).toBe('succeeded');
+  });
+
+  test('a prompt the drain has ALREADY CLAIMED is stop-paused too', async () => {
+    // A `running` row is inside `continueSession`, which can sit there for a
+    // whole cold boot. It is neither `queued` nor forwarded yet, so the two
+    // hold arms miss it — and the delivery that follows would put the very
+    // prompt the user pressed Stop to get ahead of onto the wire, unheld.
+    const row = await enqueue('q_stopped_running');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    expect(await holdInboxPrompts(SESSION_ID, true)).toBe(1);
+    expect((await readRow(row.commandId)).payload).toMatchObject({
+      stopPausedOnDelivery: true,
+      remintOnDelivery: true,
+    });
+
+    // The delivery lands anyway — nothing can recall a POST — and it comes back
+    // held rather than as an ordinary forwarded row.
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    expect((await readRow(row.commandId)).result).toMatchObject({
+      status: 'forwarded',
+      stop_paused: true,
+      held: true,
+    });
+
+    // And the user's next send puts it back on the queue, exactly like a row
+    // that was already forwarded when Stop was pressed.
+    expect(await releaseInboxHold(SESSION_ID)).toBe(1);
+    expect((await readRow(row.commandId)).status).toBe('queued');
+  });
+
+  test('releasing clears the pending stop mark on a row still on the wire', async () => {
+    // Otherwise the mark outlives the hold it belongs to: the next delivery of
+    // that row would come back stop-paused with nothing having stopped it.
+    const row = await enqueue('q_stopped_running_released');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    await holdInboxPrompts(SESSION_ID, true);
+    await releaseInboxHold(SESSION_ID);
+
+    expect(
+      (await readRow(row.commandId)).payload as Record<string, unknown>,
+    ).not.toHaveProperty('stopPausedOnDelivery');
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    const after = (await readRow(row.commandId)).result as Record<string, unknown>;
+    expect(after.status).toBe('forwarded');
+    expect(after.stop_paused).toBeUndefined();
+  });
+
+  test('a stop-paused prompt the reaper hands back comes back HELD, not due', async () => {
+    // The whole point of the marker: Stop aborted the turn, so the reaper reads
+    // the persisted-but-unanswered message as abandoned and requeues it. Due-now
+    // would deliver the prompt the user just stopped, one reaper pass later.
+    const row = await forward('q_stopped_requeue');
+    await holdInboxPrompts(SESSION_ID, true);
+
+    expect(
+      await requeueAbandonedPrompt({
+        sessionId: SESSION_ID,
+        wireMessageId: WIRE_ID,
+        turnToken: 'turn-stopped',
+        endReason: 'abandoned',
+      }),
+    ).toBe('requeued');
+
+    const after = await readRow(row.commandId);
+    expect(after.status).toBe('queued');
+    expect(after.result).toMatchObject({ held: true });
+    // Visible, but not due: nothing claims it until the user releases the hold.
+    const claimed = await claimDueLifecycleCommands({ workerId: 'w-stopped', limit: 10 });
+    expect(claimed.map((r) => r.commandId)).not.toContain(row.commandId);
+  });
+
+  test('ACCEPTANCE closes the row through the delivery that is still in flight', async () => {
+    // The order the real code runs in: `forwardToSandbox` awaits
+    // `acceptSandboxTurn` INSIDE the POST, so the acceptance witness arrives
+    // while the row is still `running` and `markCommandForwarded` has not run.
+    // The confirmation cannot close a row the drain still owns, so it marks the
+    // payload and the drain's own write lands it.
+    const row = await enqueue('q_accept_inflight');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('pending_delivery');
+    expect((await readRow(row.commandId)).payload).toMatchObject({ consumedOnDelivery: true });
+
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    const after = await readRow(row.commandId);
+    // DELIVERED, not `forwarded`: a turn has the message, so the composer must
+    // not keep showing it as a pending queue row for the length of that turn.
+    expect(after.result).toMatchObject({ status: 'delivered', forwarded_message_id: WIRE_ID });
+    expect(await listInboxPrompts(SESSION_ID, 200)).toEqual([]);
+    // The marker is CONSUMED, so a later delivery of this row cannot re-read it.
+    expect(after.payload as Record<string, unknown>).not.toHaveProperty('consumedOnDelivery');
+  });
+
+  test('a delivery a turn ACCEPTED is not mislabelled as stop-paused', async () => {
+    // Stop marks a `running` row it cannot recall, and the POST lands anyway.
+    // If OpenCode ACCEPTED it, the message is running in the transcript — the
+    // strip must not show it as a parked queue row with a "send now" button,
+    // and the next release must not deliver it a second time.
+    const row = await enqueue('q_accept_beats_stop');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    await holdInboxPrompts(SESSION_ID, true);
+    expect(await confirmInboxPromptConsumed(SESSION_ID, WIRE_ID)).toBe('pending_delivery');
+
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    const after = await readRow(row.commandId);
+    expect(after.result).toMatchObject({ status: 'delivered' });
+    expect((after.result as Record<string, unknown>).stop_paused).toBeUndefined();
+    expect((after.result as Record<string, unknown>).held).toBeUndefined();
+    expect(after.payload as Record<string, unknown>).not.toHaveProperty('stopPausedOnDelivery');
+
+    // And the release finds nothing to put back on the queue.
+    expect(await releaseInboxHold(SESSION_ID)).toBe(0);
+    expect((await readRow(row.commandId)).status).toBe('succeeded');
+  });
+
+  test('the stop mark is CONSUMED by the delivery it lands on, not left on the row', async () => {
+    // Otherwise every LATER delivery of that row re-lands stop-paused + held:
+    // the release strips the mark only from `running` rows, and a re-queued row
+    // is `queued` by then. The prompt the user explicitly re-sent would come
+    // back parked, invisible to the sweep, and strandable for ever.
+    const row = await enqueue('q_stop_mark_consumed');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    await holdInboxPrompts(SESSION_ID, true);
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    expect((await readRow(row.commandId)).payload as Record<string, unknown>).not.toHaveProperty(
+      'stopPausedOnDelivery',
+    );
+
+    // The user sends the row again; the second delivery is an ordinary one.
+    await releaseInboxHold(SESSION_ID);
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    const after = (await readRow(row.commandId)).result as Record<string, unknown>;
+    expect(after.status).toBe('forwarded');
+    expect(after.stop_paused).toBeUndefined();
+    expect(after.held).toBeUndefined();
+  });
+
+  test('a re-queued row goes out under a NEW idempotency key, not the swallowed one', async () => {
+    // `forwardToSandbox` claims `idem:<sandbox>\0<session>\0<key>` for
+    // DEDUPE_TTL_MS (10 min). Re-POSTing a stopped-then-released prompt under
+    // the SAME key inside that window is answered `200 {"deduplicated":true}`,
+    // which `postPrompt` reads as delivered: OpenCode never receives the
+    // message and the row is force-closed 10 minutes later with no error.
+    // `payload.deliveryAttempt` is what suffixes the key — see
+    // `executeQueuedContinue`.
+    const row = await forward('q_release_new_key');
+    expect((await readRow(row.commandId)).payload as Record<string, unknown>).not.toHaveProperty(
+      'deliveryAttempt',
+    );
+
+    await holdInboxPrompts(SESSION_ID, true);
+    await releaseInboxHold(SESSION_ID);
+    expect((await readRow(row.commandId)).payload).toMatchObject({ deliveryAttempt: 1 });
+
+    // And "send now" on a stop-paused row is the other advertised way out of a
+    // Stop, so it needs the same fresh key.
+    await markCommandForwarded(row.commandId, SESSION_ID, WIRE_ID);
+    await holdInboxPrompts(SESSION_ID, true);
+    await retryInboxPrompt(SESSION_ID, row.commandId);
+    expect((await readRow(row.commandId)).payload).toMatchObject({ deliveryAttempt: 2 });
+  });
+
+  test('acceptSandboxTurn confirms from the STORED identity, with no argument', async () => {
+    // The only caller that carries an inbox prompt is the proxy, and it calls
+    // `acceptSandboxTurn({ externalId }, token)` with no third argument — the
+    // identity was written durably by `beginSandboxTurn` before the POST.
+    // Reading only the argument made this confirmation dead for every composer
+    // prompt: `messageId` was null, and the confirm returned before touching a
+    // row.
+    const row = await enqueue('q_accept_stored_identity');
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET status = 'running'
+       WHERE command_id = ${row.commandId}::uuid`);
+    const token = `accept-stored-${SANDBOX_ID}`;
+    await setBox('active', {
+      [token]: {
+        token,
+        state: 'delivering',
+        opencodeSessionId: 'ses_root',
+        messageId: WIRE_ID,
+        startedAtMs: Date.now(),
+      },
+    });
+
+    expect(await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, token)).toBe(true);
+    expect((await readRow(row.commandId)).payload).toMatchObject({ consumedOnDelivery: true });
+  });
+
+  test('the release does NOT spend the reaper redelivery budget', async () => {
+    // `deliveryAttempt` is a separate counter from `redeliveries` on purpose:
+    // `requeueAbandonedPrompt` dead-letters past MAX_PROMPT_REDELIVERIES, and a
+    // user who stops and re-sends three times must not lose the automatic
+    // repair that exists for a prompt a turn really did drop.
+    const row = await forward('q_release_budget');
+    await holdInboxPrompts(SESSION_ID, true);
+    await releaseInboxHold(SESSION_ID);
+    expect((await readRow(row.commandId)).payload as Record<string, unknown>).not.toHaveProperty(
+      'redeliveries',
+    );
   });
 });
 

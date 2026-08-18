@@ -119,7 +119,14 @@ mock.module('../store', () => ({
   enqueueContinueSessionCommand: async () => {},
   markCommandFailed: async () => {},
   markCommandQueued: async () => {},
+  // Delivery of a row that carries a wire id closes through this now — see
+  // `markCommandForwarded`. Present so the module mock stays complete.
+  markCommandForwarded: async () => {},
   markCommandSucceeded: async () => {},
+  // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
+  // the engine import fails outright. Nothing in this file drives a row through
+  // it, so an identity pass-through is the whole of it.
+  withNextDeliveryAttempt: (payload: unknown) => payload,
   resultFromExistingCommand: () => {
     throw new Error('not expected');
   },

@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
@@ -126,25 +126,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtimeDown]);
 
-  // Stall watchdog: if the agent is "working" but nothing has streamed for a
-  // while, the run likely lost its runtime — surface it instead of an endless
-  // spinner. Any new message/part or a busy-state change resets the timer.
-  const [stalled, setStalled] = useState(false);
-  const lastActivityRef = useRef(Date.now());
-  useEffect(() => {
-    lastActivityRef.current = Date.now();
-    setStalled(false);
-  }, [c.messages, c.isBusy, c.hasPending]);
-  useEffect(() => {
-    if (!c.isBusy) {
-      setStalled(false);
-      return;
-    }
-    const id = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > 60_000) setStalled(true);
-    }, 5_000);
-    return () => clearInterval(id);
-  }, [c.isBusy]);
+  // No stall watchdog here any more. `c.isBusy` is the working projection
+  // (bounded, fed by GET .../turn), and the server closes wedged turns itself
+  // (the husk finalizer) — a 60s client clock could only contradict that
+  // authority, and it fired on any long tool call, a slow model, or a
+  // backgrounded tab.
 
   return (
     <>
@@ -234,16 +220,6 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             <p className="mb-2 text-center text-xs text-muted-foreground">
               Connecting to the runtime…
             </p>
-          ) : stalled && c.isBusy ? (
-            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <AlertTriangle className="size-3.5 shrink-0" />
-                The agent has gone quiet — it may have lost its runtime.
-              </div>
-              <Button size="sm" variant="secondary" className="h-7 gap-1.5" onClick={c.cancel}>
-                Stop
-              </Button>
-            </div>
           ) : null}
           {/* A rejected send used to be SILENT: the optimistic bubble vanished,
               the typed text was gone, and nothing said why. useSession surfaces

@@ -67,6 +67,21 @@ interface UseSessionSyncOptions {
 }
 
 /**
+ * Is this session working, as far as THIS hook can answer?
+ *
+ * One rule with two readers: the poll's switch below, and the hook's public
+ * `isBusy`. They disagreed — `isBusy` derived from the raw stream slot while
+ * `livenessBusy` already preferred the caller's projection — so the hook handed
+ * out the weaker of two answers it computed side by side.
+ */
+export function sessionSyncBusy(input: {
+  working: boolean | undefined;
+  streamBusy: boolean;
+}): boolean {
+  return input.working ?? input.streamBusy;
+}
+
+/**
  * Whether the transcript liveness poll should be running. Pure, so "the
  * projection outranks the stream slot" is a test rather than a convention.
  */
@@ -77,7 +92,7 @@ export function livenessBusy(input: {
   streamBusy: boolean;
 }): boolean {
   if (!input.networkEnabled || !input.runtimeHealthy) return false;
-  return input.working ?? input.streamBusy;
+  return sessionSyncBusy(input);
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
@@ -204,18 +219,29 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // rendering as working until the user reloaded. "Is this session working?"
   // is now answered once, by `useSessionWorking` over the server's turn
   // authority; this hook reports what the stream said and nothing more.
+  //
+  // The `?? IDLE_STATUS` default is a DISPLAY convenience and deliberately not
+  // what the projection reads: `useSessionWorking` reads the raw slot, where
+  // absence means "no frame has ever been observed" — silence, not idle —
+  // because reading silence as idle is what unmasked live turns. Widening this
+  // to `SessionStatus | undefined` would be a breaking change to a published
+  // return type and buys nothing now that `isBusy` no longer derives from it.
   const status = useSyncStore(
     (state) => state.sessionStatus[readableSessionId] ?? IDLE_STATUS,
   ) as SessionStatus;
   const diffs = useSyncStore((state) => state.diffs[readableSessionId]) as FileDiff[] | undefined;
   const todos = useSyncStore((state) => state.todos[readableSessionId]) as Todo[] | undefined;
 
-  const isBusy = status.type === 'busy' || status.type === 'retry';
+  const streamBusy = status.type === 'busy' || status.type === 'retry';
+  // Published, so it cannot be removed — but it is now an ALIAS of the
+  // projection when the caller passed one, so the hook's public answer and the
+  // poll's switch are the same rule instead of two.
+  const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
   useEffect(() => {
-    controller.setBusy(livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy: isBusy }));
-  }, [controller, isBusy, networkEnabled, runtimeHealthy, working]);
+    controller.setBusy(livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy }));
+  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working]);
 
   return {
     messages,

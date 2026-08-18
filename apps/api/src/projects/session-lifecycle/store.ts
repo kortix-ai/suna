@@ -1,5 +1,5 @@
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type {
@@ -10,6 +10,33 @@ import type {
 } from './types';
 
 export type SessionLifecycleCommandRow = typeof sessionLifecycleCommands.$inferSelect;
+
+/**
+ * `payload.deliveryAttempt + 1`, merged into the payload expression given.
+ *
+ * WHY A COUNTER AT ALL: the proxy claims `idem:<sandbox>\0<session>\0<key>` for
+ * `DEDUPE_TTL_MS` (10 min) on every prompt delivery, and `executeQueuedContinue`
+ * derives that key from the command id. A row that goes back on the queue after
+ * it has ALREADY BEEN POSTED — a redelivery, a released Stop, "send now" on a
+ * stop-paused row — would re-POST under the same key and be answered
+ * `200 {"deduplicated": true}`, which `postPrompt` reads as delivered. OpenCode
+ * never receives the message and the row is force-closed ten minutes later with
+ * nothing logged but "no proof it was consumed".
+ *
+ * WHY NOT `redeliveries`: that counter is the reaper's BUDGET
+ * (`MAX_PROMPT_REDELIVERIES` dead-letters past it). Spending it on a user
+ * pressing Stop and re-sending would take away the automatic repair that exists
+ * for a prompt a turn really did drop.
+ *
+ * Every writer that puts a POSTed row back on the queue must call this. It is
+ * the only reason `executeQueuedContinue`'s idempotency key ever changes.
+ */
+export function withNextDeliveryAttempt(payload: SQL): SQL {
+  return sql`jsonb_set(
+    ${payload},
+    '{deliveryAttempt}',
+    to_jsonb(COALESCE((${sessionLifecycleCommands.payload}->>'deliveryAttempt')::int, 0) + 1))`;
+}
 
 export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
@@ -91,6 +118,9 @@ export interface QueuedContinueSessionPayload {
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;
+  /** How many times this row has already been POSTed to OpenCode. Suffixes the
+   *  delivery's idempotency key — see `withNextDeliveryAttempt`. */
+  deliveryAttempt?: number;
   /**
    * This row did NOT go out on its first claim, so the client's wire id can no
    * longer be trusted to sort above the transcript.
@@ -233,7 +263,7 @@ export async function enqueueContinueSessionCommand(
  */
 export async function requeueForAdmission(
   commandId: string,
-  reason: 'turn_active' | 'older_prompt_pending',
+  reason: 'older_prompt_pending',
   availableAt: Date,
 ): Promise<void> {
   await db
@@ -378,6 +408,78 @@ export async function markCommandSucceeded(
       status: 'succeeded',
       sessionId: sessionId ?? null,
       result,
+      lockedBy: null,
+      lockedUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
+}
+
+/**
+ * The row went to OpenCode. It is NOT finished.
+ *
+ * `markCommandSucceeded` used to run here, and "succeeded" was a lie in the one
+ * way that matters to the person watching: OpenCode PERSISTS a prompt and
+ * queues its execution behind the turn in flight, so between the POST and the
+ * turn there is a real interval in which the message exists, belongs to the
+ * transcript, and has not run. Closing the row there left the composer with
+ * nothing to show for it.
+ *
+ * So the row stays OPEN — `succeeded` for the drain, which must never re-claim
+ * it, and `result.status = 'forwarded'` for every reader that answers the user:
+ * `listInboxPrompts` keeps it, `promptState` calls it `delivering`, and only
+ * `confirmInboxPromptConsumed` — the `session_turns` ledger naming this exact
+ * wire id — closes it.
+ *
+ * IT ALSO LANDS THE TWO THINGS THAT HAPPENED WHILE THE ROW WAS CLAIMED, both
+ * written into the PAYLOAD because this statement replaces `result` wholesale:
+ *
+ *  - `consumedOnDelivery` — a turn ACCEPTED the message. Acceptance happens
+ *    inside the POST (`forwardToSandbox` awaits `acceptSandboxTurn` before it
+ *    returns), so `confirmInboxPromptConsumed` reaches this row while the drain
+ *    still owns it and cannot close it there. Landing it here is what closes
+ *    the row at acceptance instead of at the end of the whole turn.
+ *  - `stopPausedOnDelivery` — the user pressed Stop while the row was inside
+ *    `continueSession`, which nothing can recall. The delivery comes back
+ *    stop-paused instead of unheld. Otherwise the one prompt the user pressed
+ *    Stop to get ahead of is the one the hold misses.
+ *
+ * ACCEPTANCE WINS over the stop mark. A message a turn took is running in the
+ * transcript; calling it stop-paused would render it as a parked queue row with
+ * a "send now" button, keep it out of the sweep, and let the next release
+ * deliver it a SECOND time. Stop cannot unsend a POST — it can only stop what
+ * the POST started, and that is the abort's job, not this row's.
+ *
+ * Both markers are CONSUMED here. Leaving one behind re-lands it on every later
+ * delivery of the same row — a freshly re-sent prompt coming back held, with no
+ * hold in force.
+ */
+export async function markCommandForwarded(
+  commandId: string,
+  sessionId: string,
+  wireMessageId: string,
+): Promise<void> {
+  const forwarded = {
+    status: 'forwarded',
+    forwarded_at: new Date().toISOString(),
+    // The id the ledger will key the confirmation on — readable from the
+    // row alone, without re-deriving which of the payload's two ids this
+    // attempt actually used.
+    forwarded_message_id: wireMessageId,
+  };
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'succeeded',
+      sessionId,
+      result: sql`${JSON.stringify(forwarded)}::jsonb || CASE
+        WHEN COALESCE(${sessionLifecycleCommands.payload}->>'consumedOnDelivery', '') = 'true'
+        THEN '{"status": "delivered"}'::jsonb
+        WHEN COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+        THEN '{"stop_paused": true, "held": true}'::jsonb
+        ELSE '{}'::jsonb
+      END`,
+      payload: sql`${sessionLifecycleCommands.payload} - 'consumedOnDelivery' - 'stopPausedOnDelivery'`,
       lockedBy: null,
       lockedUntil: null,
       updatedAt: new Date(),

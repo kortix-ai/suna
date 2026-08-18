@@ -4,8 +4,6 @@ import {
   INBOX_BACKOFF_FREE_REFUSALS,
   INBOX_ORDER_BACKOFF_MS,
   INBOX_ORDER_MAX_BACKOFF_MS,
-  INBOX_TURN_ACTIVE_BACKOFF_MS,
-  INBOX_TURN_ACTIVE_MAX_BACKOFF_MS,
   admissionBackoffMs,
   admitInboxPrompt,
   sessionHoldsTurnAuthority,
@@ -23,8 +21,9 @@ describe('sessionHoldsTurnAuthority', () => {
   });
 
   test('a running box with the LEGACY single-turn record holds authority too', () => {
-    // Rolling deploys still write `activeTurn`; missing it would admit a prompt
-    // straight into a live turn.
+    // Rolling deploys still write `activeTurn`; `GET .../turn` and
+    // `settleOrphanedSandboxTurns` both read this predicate, so it has to see
+    // both shapes.
     expect(
       sessionHoldsTurnAuthority({
         status: 'provisioning',
@@ -34,8 +33,8 @@ describe('sessionHoldsTurnAuthority', () => {
   });
 
   test('a STOPPED box holds no authority whatever its metadata still says', () => {
-    // The same predicate GET /turn uses: metadata outlives the runtime, so a
-    // stale record on a stopped box must never park a prompt for ever.
+    // Metadata outlives the runtime. `settleOrphanedSandboxTurns` closes every
+    // ledger row left open on a stopped box off exactly this predicate.
     expect(
       sessionHoldsTurnAuthority({ status: 'stopped', metadata: { activeTurns: activeTurn('t1') } }),
     ).toBe(false);
@@ -59,25 +58,41 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
-  test('refuses while the session holds live turn authority', async () => {
+  test('a session in the middle of a turn is ADMITTED — the prompt goes to OpenCode now', async () => {
+    // The turn-active refusal is gone. OpenCode persists a mid-turn prompt and
+    // runs it in ARRIVAL order once the turn in flight ends — proven against a
+    // real sandbox in `src/__tests__/integration-inbox-midturn-forward.test.ts`
+    // (P2's assistant message opened 5ms after P1's completed). Holding the row
+    // back bought nothing and cost up to 10s of dead air per send.
+    const box = { status: 'active', metadata: { activeTurns: { ...activeTurn('t1'), ...activeTurn('t2') } } };
+    // The predicate still answers "busy" — this is a change to ADMISSION, not
+    // to what turn authority means. `GET .../turn` reads the same function.
+    expect(sessionHoldsTurnAuthority(box)).toBe(true);
+
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
-    expect(admission).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_TURN_ACTIVE_BACKOFF_MS,
+    expect(admission).toEqual({ admit: true });
+  });
+
+  test('a STOPPED box is admitted too — wake-then-deliver, unchanged', async () => {
+    // Admission never woke the box; `continueSession` does, and waits up to
+    // READY_DEADLINE_MS for it. A stale `activeTurns` record on a parked box
+    // never gated anything either.
+    const admission = await admitInboxPrompt(row(), {
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
     });
+    expect(admission).toEqual({ admit: true });
   });
 
   test('refuses when an OLDER prompt for the same session is still pending', async () => {
-    // This is what makes ordering real without touching the global claim order:
-    // a younger row that wins the claim puts itself back.
+    // ORDER is the one thing admission still enforces: OpenCode queues by
+    // ARRIVAL, so two concurrent forwards of one session would put the user's
+    // own messages on the wire out of the order they typed them.
     const seen: Array<{ sessionId: string; before: Date; exceptCommandId: string }> = [];
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => ({ status: 'stopped', metadata: null }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async (sessionId, before, exceptCommandId) => {
         seen.push({ sessionId, before, exceptCommandId });
@@ -100,54 +115,12 @@ describe('admitInboxPrompt', () => {
     ]);
   });
 
-  test('admits an idle session whose prompt is the oldest pending one', async () => {
+  test('refuses when a sibling prompt is already ON THE WIRE', async () => {
+    // A claimed row spends up to READY_DEADLINE_MS (5 min) inside
+    // `continueSession` waiting for a cold box, with no turn and no message
+    // written for any of it. Admitting a second prompt into that window puts
+    // two deliveries of one session on the wire at once.
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => null,
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-    });
-    expect(admission).toEqual({ admit: true });
-  });
-
-  test('the HEAD of a queue always comes due before the rows waiting behind it', async () => {
-    // Both backoffs land in the SAME globally-ordered claim batch
-    // (`available_at ASC` with a shared per-tick limit). If a row blocked by
-    // the live turn — always the OLDEST row, and the only one that can ever be
-    // admitted — came due AFTER the rows blocked behind it, every batch would
-    // fill with followers and the head would never be claimed at all. Nothing
-    // would ever be delivered.
-    expect(INBOX_TURN_ACTIVE_BACKOFF_MS).toBeLessThan(INBOX_ORDER_BACKOFF_MS);
-  });
-
-  test('a row the user asked for BY NAME jumps the order gate', async () => {
-    // "Send now" on one queued row: the user pointed at it, interrupted the
-    // turn for it, and must get THAT message — not the oldest one. Turn
-    // authority still gates it; only the ordering rule yields to the click.
-    const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
-      readSandbox: async () => null,
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => true,
-    });
-    expect(admission).toEqual({ admit: true });
-  });
-
-  test('a promoted row still waits for a live turn', async () => {
-    const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
-      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-    });
-    expect(admission.admit).toBe(false);
-  });
-
-  test('a promoted row still waits for a sibling prompt already ON THE WIRE', async () => {
-    // "Send now" yields the ORDERING rule, not the one-prompt-at-a-time rule.
-    // A sibling in `running` is inside `continueSession` — which waits up to
-    // READY_DEADLINE_MS for a cold box, all of it before any turn authority
-    // exists — so turn authority above cannot see it. Admitting here puts two
-    // prompts of one session on the wire, and the second aborts the first.
-    const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
-      readSandbox: async () => null,
       hasInFlightPrompt: async () => true,
       hasOlderPendingPrompt: async () => false,
     });
@@ -158,59 +131,81 @@ describe('admitInboxPrompt', () => {
     });
   });
 
-  test('a refusal backs off further each time, bounded, head before followers', async () => {
-    // Every waiting prompt re-claims a slot from the SHARED lifecycle drain
-    // budget (10 rows/tick at a 1s tick), and that budget also carries
-    // create_session, trigger callbacks and approval-resume. At a flat 1s
-    // backoff, ~10 prompts waiting anywhere in the fleet saturate it and the
-    // rest of the lane queues behind refusals that can only refuse again.
-    // The first refusals do NOT grow: the head's backoff is the dead air
-    // between a turn ending and the next prompt going out, so an ordinary short
-    // turn is still picked up within a second.
-    expect(admissionBackoffMs(1_000, 5_000, 0)).toBe(1_000);
-    expect(admissionBackoffMs(1_000, 5_000, INBOX_BACKOFF_FREE_REFUSALS)).toBe(1_000);
-    expect(admissionBackoffMs(1_000, 5_000, INBOX_BACKOFF_FREE_REFUSALS + 2)).toBe(4_000);
-    expect(admissionBackoffMs(1_000, 5_000, 99)).toBe(5_000);
+  test('admits a session whose prompt is the oldest pending one', async () => {
+    const admission = await admitInboxPrompt(row(), {
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(admission).toEqual({ admit: true });
+  });
 
+  test('a row the user asked for BY NAME jumps the order gate', async () => {
+    // "Send now" on one queued row: the user pointed at it and must get THAT
+    // message, not the oldest one.
+    const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => true,
+    });
+    expect(admission).toEqual({ admit: true });
+  });
+
+  test('a promoted row still waits for a sibling prompt already ON THE WIRE', async () => {
+    // "Send now" yields the ORDERING rule, not the one-prompt-at-a-time rule.
+    const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
+      hasInFlightPrompt: async () => true,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(admission).toEqual({
+      admit: false,
+      reason: 'older_prompt_pending',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+  });
+
+  test('the ordering backoff starts at 500ms and grows to a 30s ceiling', async () => {
+    // With the turn-active refusal gone this is the ONLY dead air left in a
+    // send, so the first refusals are cheap: on an awake box the sibling this
+    // row waits for is a `running` row that finishes in milliseconds, and four
+    // free refusals at 500ms cover it. The exponential still reaches 30s, which
+    // is what keeps a genuine READY_DEADLINE_MS cold boot from spending the
+    // shared 10-slot drain budget one claim per half-second for five minutes.
+    expect(INBOX_ORDER_BACKOFF_MS).toBe(500);
+    expect(INBOX_ORDER_MAX_BACKOFF_MS).toBe(30_000);
+    expect(INBOX_BACKOFF_FREE_REFUSALS).toBe(4);
+
+    const curve = (refusals: number) =>
+      admissionBackoffMs(INBOX_ORDER_BACKOFF_MS, INBOX_ORDER_MAX_BACKOFF_MS, refusals);
+    expect(curve(0)).toBe(500);
+    expect(curve(INBOX_BACKOFF_FREE_REFUSALS)).toBe(500);
+    expect(curve(INBOX_BACKOFF_FREE_REFUSALS + 1)).toBe(1_000);
+    expect(curve(9)).toBe(16_000);
+    // Six doublings is already past the ceiling: a row still refusing after
+    // ~35s of a cold boot has stopped costing the drain anything.
+    expect(curve(10)).toBe(30_000);
+    // Clamped BEFORE the shift: `2 ** 1e9` is Infinity, and a `Math.min` over
+    // it would hand Infinity straight to a Date constructor.
+    expect(curve(1e9)).toBe(30_000);
+  });
+
+  test('the refusal counter is what makes a waiting row back off further', async () => {
     const admission = await admitInboxPrompt(
-      row({ result: { admission_reason: 'turn_active', admission_refusals: 99 } }),
+      row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 99 } }),
       {
-        readSandbox: async () => ({
-          status: 'active',
-          metadata: { activeTurns: activeTurn('t1') },
-        }),
         hasInFlightPrompt: async () => false,
-        hasOlderPendingPrompt: async () => false,
+        hasOlderPendingPrompt: async () => true,
       },
     );
     expect(admission).toEqual({
       admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_TURN_ACTIVE_MAX_BACKOFF_MS,
+      reason: 'older_prompt_pending',
+      retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS,
     });
-    // Both curves share one exponent, so the head comes due before its
-    // followers at EVERY refusal count — the rows of one session refuse in
-    // lockstep, which is the case the ordering invariant is about.
-    for (const refusals of [0, 1, 4, 5, 8, 20]) {
-      expect(
-        admissionBackoffMs(
-          INBOX_TURN_ACTIVE_BACKOFF_MS,
-          INBOX_TURN_ACTIVE_MAX_BACKOFF_MS,
-          refusals,
-        ),
-      ).toBeLessThan(
-        admissionBackoffMs(INBOX_ORDER_BACKOFF_MS, INBOX_ORDER_MAX_BACKOFF_MS, refusals),
-      );
-    }
   });
 
   test('a command with no session id is admitted — the drain fails it honestly', async () => {
     // Refusing here would requeue it for ever; `executeQueuedContinue` already
     // dead-letters a row with no session.
     const admission = await admitInboxPrompt(row({ sessionId: null }), {
-      readSandbox: async () => {
-        throw new Error('must not read');
-      },
       hasInFlightPrompt: async () => {
         throw new Error('must not read');
       },
