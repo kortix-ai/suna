@@ -101,11 +101,6 @@ export function CodePanel({
   return (
     <div className={cn('border-border bg-card flex h-full flex-col rounded-sm border', className)}>
       <div className="border-border flex items-center gap-3 border-b px-4 py-3">
-        <span className="flex gap-1.5" aria-hidden>
-          <span className="bg-muted-foreground/25 size-2.5 rounded-full" />
-          <span className="bg-muted-foreground/25 size-2.5 rounded-full" />
-          <span className="bg-muted-foreground/25 size-2.5 rounded-full" />
-        </span>
         <span className="text-muted-foreground truncate font-mono text-xs">{title}</span>
       </div>
 

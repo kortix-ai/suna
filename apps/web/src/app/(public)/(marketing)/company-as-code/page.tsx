@@ -1,12 +1,9 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { ChangeRequest } from '@/features/marketing/company-as-code/change-request';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
 import {
   change,
-  closing,
   definition,
   grep,
   hero,
@@ -14,23 +11,12 @@ import {
   repo,
   selfImprove,
 } from '@/features/marketing/company-as-code/content';
+import { CompanyAsCodeHeroVisual } from '@/features/marketing/company-as-code/hero-visual';
 import { RepoTree } from '@/features/marketing/company-as-code/repo-tree';
-import { SectionHeading } from '@/features/marketing/company-as-code/section-heading';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
-
-/**
- * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns. Written per index
- * because the divider a cell needs changes with the breakpoint: cell 3 is a new
- * row at `sm` (top rule) and a new column at `lg` (left rule).
- */
-const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
 
 function SectionDivider(): ReactNode {
   return (
@@ -55,59 +41,23 @@ function SectionDivider(): ReactNode {
 export default function CompanyAsCodePage(): ReactNode {
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className="relative px-6 pt-32 pb-12 sm:pt-36">
-        <div className="mx-auto max-w-7xl">
-          <Reveal>
-            <Badge variant="kortix" className="rounded">
-              {hero.eyebrow}
-            </Badge>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              {hero.title}
-            </h1>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              {hero.sub}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
-              </Button>
-            </div>
-            <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-              {hero.microline}
-            </p>
-          </Reveal>
-
-          {/* the four facts the rest of the page proves */}
-          <Reveal delay={0.1}>
-            <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-              {hero.specs.map((spec, i) => (
-                <div
-                  key={spec.k}
-                  className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}
-                >
-                  <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                    {spec.k}
-                  </dt>
-                  <dd className="text-foreground mt-2.5 text-sm leading-snug">{spec.v}</dd>
-                </div>
-              ))}
-            </dl>
-          </Reveal>
-        </div>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.sub}
+        ctaPrimary={hero.ctaPrimary}
+        ctaPrimaryHref={hero.ctaPrimaryHref}
+        ctaSecondary={hero.ctaSecondary}
+        ctaSecondaryHref={hero.ctaSecondaryHref}
+        visual={<CompanyAsCodeHeroVisual />}
+      />
 
       {/* ── 1 · the two files that define the company ───────────────────── */}
       <section id="definition" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading
+        <SectionHeader
           eyebrow={definition.eyebrow}
           title={definition.title}
-          sub={definition.sub}
+          description={definition.sub}
         />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -141,7 +91,10 @@ export default function CompanyAsCodePage(): ReactNode {
                   never sit above a void. */}
               <ul className="border-border bg-card flex flex-1 flex-col justify-center gap-6 rounded-sm border p-6 sm:p-7">
                 {definition.notes.map((note) => (
-                  <li key={note.id} className="border-border border-t pt-5 first:border-t-0 first:pt-0">
+                  <li
+                    key={note.id}
+                    className="border-border border-t pt-5 first:border-t-0 first:pt-0"
+                  >
                     <h3 className="text-foreground text-sm font-medium">{note.title}</h3>
                     <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
                       {note.body}
@@ -158,7 +111,7 @@ export default function CompanyAsCodePage(): ReactNode {
 
       {/* ── 2 · what is in the repo, and what deliberately is not ───────── */}
       <section id="repo" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={repo.eyebrow} title={repo.title} sub={repo.sub} />
+        <SectionHeader eyebrow={repo.eyebrow} title={repo.title} description={repo.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="min-w-0 lg:col-span-7">
@@ -172,7 +125,10 @@ export default function CompanyAsCodePage(): ReactNode {
               </h3>
               <dl className="mt-6 grid gap-6">
                 {repo.outside.map((item) => (
-                  <div key={item.id} className="border-border border-t pt-5 first:border-t-0 first:pt-0">
+                  <div
+                    key={item.id}
+                    className="border-border border-t pt-5 first:border-t-0 first:pt-0"
+                  >
                     <dt className="text-foreground font-mono text-[11px] tracking-widest uppercase">
                       {item.k}
                     </dt>
@@ -191,7 +147,7 @@ export default function CompanyAsCodePage(): ReactNode {
 
       {/* ── 3 · grep your whole company ─────────────────────────────────── */}
       <section id="grep" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={grep.eyebrow} title={grep.title} sub={grep.sub} />
+        <SectionHeader eyebrow={grep.eyebrow} title={grep.title} description={grep.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="min-w-0 lg:col-span-7">
@@ -222,7 +178,7 @@ export default function CompanyAsCodePage(): ReactNode {
 
       {/* ── 4 · a skill change lands as a reviewed commit ───────────────── */}
       <section id="change" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={change.eyebrow} title={change.title} sub={change.sub} />
+        <SectionHeader eyebrow={change.eyebrow} title={change.title} description={change.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="min-w-0 lg:col-span-8">
@@ -251,10 +207,10 @@ export default function CompanyAsCodePage(): ReactNode {
 
       {/* ── 5 · the company patches itself, on a schedule ───────────────── */}
       <section id="self-improve" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading
+        <SectionHeader
           eyebrow={selfImprove.eyebrow}
           title={selfImprove.title}
-          sub={selfImprove.sub}
+          description={selfImprove.sub}
         />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -297,7 +253,11 @@ export default function CompanyAsCodePage(): ReactNode {
 
       {/* ── 6 · it is a git repo, so it walks out the door with you ─────── */}
       <section id="portable" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={portable.eyebrow} title={portable.title} sub={portable.sub} />
+        <SectionHeader
+          eyebrow={portable.eyebrow}
+          title={portable.title}
+          description={portable.sub}
+        />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="min-w-0 lg:col-span-5">
@@ -326,33 +286,6 @@ export default function CompanyAsCodePage(): ReactNode {
           </Reveal>
         </div>
       </section>
-
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              {closing.eyebrow}
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              {closing.title}
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
-              {closing.sub}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={closing.ctaSecondaryHref}>{closing.ctaSecondary}</Link>
-              </Button>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }
