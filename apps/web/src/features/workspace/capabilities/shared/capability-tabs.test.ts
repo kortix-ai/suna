@@ -98,9 +98,39 @@ describe('CapabilityTabs right-aligns Members and Settings', () => {
 
   test('ml-auto lands on the first trailing tab, inside the one shared TabsList', () => {
     const body = code(source);
-    expect(body).toContain("tab.key === TRAILING_TABS[0] && 'ml-auto'");
+    // Anchored on the first trailing tab STILL RENDERED, not hardcoded to
+    // TRAILING_TABS[0]: tabs are permission-filtered now, and pinning the
+    // spacer to 'members' loses it whenever members is the denied one, leaving
+    // Settings flush against the build-the-agent tabs.
+    expect(body).toContain(
+      'const trailingAnchor = TRAILING_TABS.find((key) => tabs.some((t) => t.key === key))',
+    );
+    expect(body).toContain("tab.key === trailingAnchor && 'ml-auto'");
     // One list, not two — this is a visual push, not a second `role="tablist"`.
     expect((body.match(/<TabsList\b/g) ?? []).length).toBe(1);
+  });
+});
+
+/**
+ * The bar links into pages that assert per-capability read leaves. Four of the
+ * eight — Connectors, Agents, Skills, Secrets — sit outside
+ * PROJECT_MEMBER_BASELINE, and their pages gate only WRITE controls, so an
+ * unfiltered bar handed a plain member four tabs that 403 on arrival.
+ */
+describe('CapabilityTabs hides tabs the caller is denied', () => {
+  test('probes the shared TAB_PREFERENCE table in one batch', () => {
+    const body = code(source);
+    expect(body).toContain('TAB_PREFERENCE');
+    expect(body).toContain('useProjectCans(projectId, TAB_ACTIONS)');
+  });
+
+  test('filters on an explicit deny only, never on !allowed', () => {
+    const body = code(source);
+    expect(body).toContain("caps[pref.action]?.allowed !== false");
+    expect(body).not.toContain("caps[pref.action]?.allowed === true");
+    // The rendered list is the filtered one.
+    expect(body).toContain('{tabs.map((tab) => (');
+    expect(body).not.toContain('{CAPABILITY_TABS.map((tab) => (');
   });
 });
 

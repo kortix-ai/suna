@@ -12,6 +12,8 @@ import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
+import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
 import {
@@ -86,9 +88,34 @@ function CapabilitySidebarToggle() {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['members', 'config'];
 
+/** Stable across renders — `useProjectCans` keys its query on this list. */
+const TAB_ACTIONS: readonly string[] = TAB_PREFERENCE.map((t) => t.action);
+
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
+  // A tab whose destination the caller is denied is not rendered. Four of the
+  // eight — Connectors, Agents, Skills, Secrets — assert leaves that are NOT in
+  // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), and their pages
+  // gate only their WRITE controls, so the list GET still fired and 403'd into
+  // an error state. This bar was the last of four surfaces built on the same
+  // TAB_PREFERENCE table still rendering it unfiltered — the Customize rail
+  // (`project-settings-nav`), the Customize index (`customize-index-page`) and
+  // the project-home setup pills all already drop denied entries.
+  //
+  // Explicit deny only (`allowed === false`), never `!allowed`: an in-flight
+  // probe reports allowed:false, and a bar that empties on every cold load and
+  // refills is worse than one that briefly offers a tab.
+  const caps = useProjectCans(projectId, TAB_ACTIONS);
+  const tabs = CAPABILITY_TABS.filter((tab) => {
+    const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
+    return pref ? caps[pref.action]?.allowed !== false : true;
+  });
+  // `ml-auto` pushes the trailing pair to the right. Anchor it on the first
+  // trailing tab STILL PRESENT: hardcoding 'members' loses the spacer whenever
+  // members is the denied one, and Settings would then sit flush against the
+  // build-the-agent tabs instead of across the gap.
+  const trailingAnchor = TRAILING_TABS.find((key) => tabs.some((t) => t.key === key));
   // This bar is the first in-flow child of the capabilities layout, which the
   // layout's own doc confirms adds no vertical offset — so on the desktop
   // shell it starts at y=0 and shares the band with the OS window controls.
@@ -108,15 +135,12 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           size="lg"
           className="h-auto w-full justify-start gap-5 border-b-0 px-2"
         >
-          {CAPABILITY_TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TabsTrigger
               key={tab.key}
               value={tab.key}
               asChild
-              className={cn(
-                'w-fit flex-none px-1 py-3',
-                tab.key === TRAILING_TABS[0] && 'ml-auto',
-              )}
+              className={cn('w-fit flex-none px-1 py-3', tab.key === trailingAnchor && 'ml-auto')}
             >
               <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
                 {tab.label}
