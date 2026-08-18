@@ -177,6 +177,45 @@ describe('sandbox-connection-store recovery resets counters', () => {
   });
 });
 
+// `bootingSinceAt` bounds the one case `failCount`/`unreachable` structurally
+// cannot: a sandbox proxy that keeps answering 503 ("booting") resets
+// `failCount` to 0 on every tick (see `classifyProbeResult`), so `unreachable`
+// never fires no matter how long OpenCode stays wedged mid-boot. This clock —
+// set while not healthy, cleared the instant it is — is what
+// `useRuntimeBootStalled()` reads to give that case a time bound anyway.
+describe('bootingSinceAt tracks the not-yet-healthy stretch', () => {
+  test('setOpenCodeHealth(false) arms the clock once, not on every call', () => {
+    useSandboxConnectionStore.setState({ bootingSinceAt: null });
+    setOpenCodeHealth(false);
+    const first = useSandboxConnectionStore.getState().bootingSinceAt;
+    expect(first).not.toBeNull();
+
+    setOpenCodeHealth(false);
+    expect(useSandboxConnectionStore.getState().bootingSinceAt).toBe(first);
+  });
+
+  test('setOpenCodeHealth(true) clears it', () => {
+    useSandboxConnectionStore.setState({ bootingSinceAt: Date.now() - 60_000 });
+    setOpenCodeHealth(true);
+    expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
+  });
+
+  test('requestRuntimeReconnect gives the clock a fresh start', () => {
+    const stale = Date.now() - 120_000;
+    useSandboxConnectionStore.setState({ bootingSinceAt: stale });
+    requestRuntimeReconnect();
+    const next = useSandboxConnectionStore.getState().bootingSinceAt;
+    expect(next).not.toBeNull();
+    expect(next).not.toBe(stale);
+  });
+
+  test('resetForServerSwitch (plain path) arms the clock for the new mount', () => {
+    useSandboxConnectionStore.setState({ bootingSinceAt: null });
+    resetForServerSwitch();
+    expect(useSandboxConnectionStore.getState().bootingSinceAt).not.toBeNull();
+  });
+});
+
 describe('live SSE evidence vetoes probe failures', () => {
   test('a probe failure is ignored while runtime events are provably flowing', () => {
     // An SSE frame that arrived 2s ago is proof the runtime is reachable —

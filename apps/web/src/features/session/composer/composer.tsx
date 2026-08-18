@@ -177,10 +177,12 @@ export interface SessionChatInputProps {
   notice?: string | null;
   /**
    * Renders a "Retry" action inline in the notice bar when set. Wired to
-   * `requestRuntimeReconnect()` for a confirmed-unreachable runtime — see
-   * `SessionComposerReadiness.retryable`. Omitted (no button) for the
-   * ordinary booting/waking notice, where the background poller is expected
-   * to resolve things on its own shortly.
+   * `requestRuntimeReconnect()` for a confirmed-unreachable runtime, or a
+   * runtime that has been booting/connecting past a sane ceiling with no
+   * ready flip either — see `SessionComposerReadiness.retryable`. Omitted (no
+   * button) for the ordinary, still-within-budget booting/waking notice,
+   * where the background poller is expected to resolve things on its own
+   * shortly.
    */
   onNoticeRetry?: () => void;
   clearOnSend?: boolean;

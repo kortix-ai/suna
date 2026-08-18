@@ -190,6 +190,7 @@ import {
   useProjectConfig,
   useQuestionSelfHeal,
   useRuntimeAgents,
+  useRuntimeBootStalled,
   useRuntimeCommands,
   useRuntimeConfig,
   useRuntimePendingStore,
@@ -4107,9 +4108,15 @@ export function SessionChat({
   // booting: no visible change, nothing to do. See `retryable` on
   // `SessionComposerReadiness`.
   const runtimePhase = useRuntimePhase();
+  // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
+  // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
+  // failure counter every tick, so `unreachable` never fires no matter how
+  // long it stays wedged. See `useRuntimeBootStalled`.
+  const runtimeStalled = useRuntimeBootStalled();
   const composerReadiness = sessionComposerReadiness({
     runtimeReady,
     unreachable: runtimePhase === 'unreachable',
+    stalled: runtimeStalled,
   });
   const { isNotFound, isDataLoading } = resolveSessionContentState({
     runtimeReady,

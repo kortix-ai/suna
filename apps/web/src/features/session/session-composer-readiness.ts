@@ -52,8 +52,13 @@ export interface SessionComposerReadiness {
    * even when the retry loop underneath is perfectly healthy. The only escape
    * hatch anyone found was a hard refresh (which works purely by accident: it
    * remounts the poller and resets its failure count, same as pressing retry
-   * would). Surfacing the real phase and a `requestRuntimeReconnect()` button
-   * gives the user that same reset without the reload.
+   * would — and does NOT help a wedged box, since a fresh mount reconnects to
+   * the exact same stuck sandbox and reproduces the same "booting" loop). A
+   * third case — `stalled` — covers exactly that: reachable-but-never-healthy
+   * long enough that `FAIL_THRESHOLD_*` was never going to fire on its own
+   * (see `useRuntimeBootStalled`). Surfacing the real phase and a
+   * `requestRuntimeReconnect()` button gives the user that same reset without
+   * the reload, and gives it even when no reload would have worked either.
    */
   retryable: boolean;
 }
@@ -63,6 +68,16 @@ export function sessionComposerReadiness(input: {
   /** `useRuntimePhase() === 'unreachable'` — confirmed unreachable, not
    *  merely still connecting/booting. See `retryable` above. */
   unreachable?: boolean;
+  /**
+   * `useRuntimeBootStalled()` — reachable-but-not-healthy for longer than
+   * `RUNTIME_BOOT_STALL_MS` with no ready flip, even though the probe layer
+   * never declared `unreachable`. A sandbox proxy that keeps answering with a
+   * 503 (OpenCode wedged mid-boot) resets the failure counter every tick, so
+   * `unreachable` can never fire through that path alone — without this flag
+   * that case shows "Waking…" forever with no escape hatch, the exact
+   * "indistinguishable from stuck" failure this module exists to prevent.
+   */
+  stalled?: boolean;
 }): SessionComposerReadiness {
   if (input.runtimeReady) return { ready: true, notice: null, retryable: false };
   if (input.unreachable) {
@@ -70,6 +85,14 @@ export function sessionComposerReadiness(input: {
       ready: false,
       notice:
         "Lost contact with this session's sandbox. Messages you send will be queued until it reconnects.",
+      retryable: true,
+    };
+  }
+  if (input.stalled) {
+    return {
+      ready: false,
+      notice:
+        'Still waking this session up — taking longer than usual. Messages you send will be queued.',
       retryable: true,
     };
   }
