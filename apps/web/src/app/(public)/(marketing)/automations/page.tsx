@@ -1,9 +1,9 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import { SectionHeading } from '@/features/marketing/agent-computer/section-heading';
+import { AutomationsHeroVisual } from '@/features/marketing/automations/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import {
   closing,
   declared,
@@ -16,7 +16,6 @@ import {
 } from '@/features/marketing/automations/content';
 import { ScheduleTable } from '@/features/marketing/automations/schedule-table';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -51,55 +50,20 @@ function SectionDivider(): ReactNode {
 export default function AutomationsPage(): ReactNode {
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className="relative px-6 pt-32 pb-12 sm:pt-36">
-        <div className="mx-auto max-w-7xl">
-          <Reveal>
-            <Badge variant="kortix" className="rounded">
-              {hero.eyebrow}
-            </Badge>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              {hero.title}
-            </h1>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              {hero.sub}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
-              </Button>
-            </div>
-            <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-              {hero.microline}
-            </p>
-          </Reveal>
-
-          <Reveal delay={0.1}>
-            <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-              {hero.specs.map((spec, i) => (
-                <div
-                  key={spec.k}
-                  className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}
-                >
-                  <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                    {spec.k}
-                  </dt>
-                  <dd className="text-foreground mt-2.5 text-sm leading-snug">{spec.v}</dd>
-                </div>
-              ))}
-            </dl>
-          </Reveal>
-        </div>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.sub}
+        ctaPrimary={hero.ctaPrimary}
+        ctaPrimaryHref={hero.ctaPrimaryHref}
+        ctaSecondary={hero.ctaSecondary}
+        ctaSecondaryHref={hero.ctaSecondaryHref}
+        visual={<AutomationsHeroVisual />}
+      />
 
       {/* ── 1 · cron or webhook, and nothing else ───────────────────────── */}
       <section id="types" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={types.eyebrow} title={types.title} sub={types.sub} />
+        <SectionHeader eyebrow={types.eyebrow} title={types.title} description={types.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -138,7 +102,7 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 2 · the schedule, as a table ────────────────────────────────── */}
       <section id="schedule" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={schedule.eyebrow} title={schedule.title} sub={schedule.sub} />
+        <SectionHeader eyebrow={schedule.eyebrow} title={schedule.title} description={schedule.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -162,7 +126,7 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 3 · the automation is a file ────────────────────────────────── */}
       <section id="declared" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={declared.eyebrow} title={declared.title} sub={declared.sub} />
+        <SectionHeader eyebrow={declared.eyebrow} title={declared.title} description={declared.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -185,7 +149,7 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 4 · webhooks are signed or they are nothing ─────────────────── */}
       <section id="webhooks" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={webhook.eyebrow} title={webhook.title} sub={webhook.sub} />
+        <SectionHeader eyebrow={webhook.eyebrow} title={webhook.title} description={webhook.sub} />
 
         <Reveal delay={0.06}>
           <div className="border-border bg-card mt-10 rounded-sm border">
@@ -233,7 +197,7 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 5 · which session a fire lands in ───────────────────────────── */}
       <section id="session" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={session.eyebrow} title={session.title} sub={session.sub} />
+        <SectionHeader eyebrow={session.eyebrow} title={session.title} description={session.sub} />
 
         <Reveal delay={0.06}>
           <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
@@ -268,7 +232,7 @@ export default function AutomationsPage(): ReactNode {
 
       {/* ── 6 · the 3am fire still faces a person ───────────────────────── */}
       <section id="review" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={review.eyebrow} title={review.title} sub={review.sub} />
+        <SectionHeader eyebrow={review.eyebrow} title={review.title} description={review.sub} />
 
         <Reveal delay={0.06}>
           <dl className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
@@ -292,32 +256,6 @@ export default function AutomationsPage(): ReactNode {
         </Reveal>
       </section>
 
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              {closing.eyebrow}
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              {closing.title}
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
-              {closing.sub}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={closing.ctaSecondaryHref}>{closing.ctaSecondary}</Link>
-              </Button>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }
