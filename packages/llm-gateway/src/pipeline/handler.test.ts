@@ -283,6 +283,41 @@ describe("gateway.chatCompletions", () => {
     expect(t.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
+  // Regression coverage for the removed 256 KiB "preview" cap: a request or
+  // response log must show exactly what was sent/received, in full, no matter
+  // how large — never a `{truncated, bytes, preview}` stand-in for it.
+  test("200 success records the FULL request and response body, well past the old 256 KiB cap", async () => {
+    const bigContent = "x".repeat(400 * 1024); // 400 KiB — over the removed cap
+    const { hooks, traces } = makeHooks();
+    const fetchImpl = okFetch({
+      model: "kortix/x",
+      choices: [{ message: { content: bigContent } }],
+      usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.01 },
+    });
+    const rawBody = JSON.stringify({
+      model: "kortix/x",
+      messages: [{ role: "user", content: bigContent }],
+    });
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl },
+    ).chatCompletions({ authorization: "Bearer good", rawBody });
+    expect(res.status).toBe(200);
+    await flush();
+
+    expect(traces).toHaveLength(1);
+    const t = traces[0];
+    const request = t.request as { messages: Array<{ content: string }> };
+    const response = t.response as { choices: Array<{ message: { content: string } }> };
+    // Not the old truncation wrapper.
+    expect(request).not.toHaveProperty("truncated");
+    expect(request).not.toHaveProperty("preview");
+    expect(request.messages[0].content).toBe(bigContent);
+    expect(request.messages[0].content.length).toBe(bigContent.length);
+    expect(response.choices[0].message.content).toBe(bigContent);
+  });
+
   test('BYOK billingMode "none" records zero final cost', async () => {
     const byok: UpstreamDescriptor = {
       ...managed,

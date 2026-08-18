@@ -14,7 +14,6 @@ export interface GatewayConfig {
   retry?: RetryOptions;
   breaker?: CircuitBreakerOptions;
   captureBodies?: boolean;
-  maxCapturedBodyBytes?: number;
   // Hard ceiling on the raw request body size (bytes). Unset/0 disables the check.
   // Hosts should use DEFAULT_MAX_REQUEST_BYTES unless they have a measured reason
   // to choose another ceiling. When set, over-limit requests are rejected with a 413

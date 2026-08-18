@@ -56,13 +56,6 @@ export interface StreamRelayOptions {
    * the heartbeat is for). Overridable for tests.
    */
   inactivityTimeoutMs?: number;
-  /**
-   * Cap (bytes, pre-JSON-escaping) on the response preview retained for the
-   * trace when `captureBodies` is on. Independent of the stream's actual
-   * duration/size — the preview stops growing once it hits this cap instead
-   * of retaining the full stream text for the whole completion.
-   */
-  maxCapturedBodyBytes?: number;
 }
 
 // How long upstream may go silent before we emit a keep-alive. A reasoning model
@@ -89,9 +82,6 @@ const HEARTBEAT_FRAME = new TextEncoder().encode(': keep-alive\n\n');
 // case is already bounded from both ends: the client can abort at any time, and
 // heartbeats keep every intermediate hop's socket alive meanwhile.
 const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000;
-// Default cap on the retained response preview when `captureBodies` is on —
-// matches the gateway's default `maxCapturedBodyBytes`.
-const DEFAULT_PREVIEW_CAP_BYTES = 256 * 1024;
 
 class StreamInactivityTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -315,7 +305,6 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
   const { captureBodies, requestId, logger, settle } = opts;
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   const inactivityTimeoutMs = opts.inactivityTimeoutMs ?? INACTIVITY_TIMEOUT_MS;
-  const previewCapBytes = opts.maxCapturedBodyBytes ?? DEFAULT_PREVIEW_CAP_BYTES;
   const transform = new TransformStream<Uint8Array, Uint8Array>();
   const writer = transform.writable.getWriter();
   const decoder = new TextDecoder();
@@ -323,11 +312,10 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
   // done incrementally per-chunk (memory ~O(1) per stream, not O(total tokens)
   // streamed) instead of re-scanning one ever-growing string at the end.
   const scanner = new IncrementalSseScanner();
-  // Separate, small, capped preview retained ONLY for the trace (when
-  // `captureBodies` is on) — independent of the scanner above, and stops
-  // growing once it hits the cap rather than retaining the full stream text.
+  // Full response text retained for the trace (when `captureBodies` is on) —
+  // independent of the scanner above. Not capped: a log that shows less than
+  // what the gateway actually relayed to the client is a log that lies.
   let preview = '';
-  let previewBytes = 0;
   // Smallest possible state to reproduce the old "are we at an SSE event
   // boundary" check (`sseBuffer === '' || sseBuffer.endsWith('\n\n')`) without
   // keeping the whole buffer around — only the last couple of characters ever
@@ -364,11 +352,8 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         anyBytesWritten = true;
         tailChars = (tailChars + decoded).slice(-2);
       }
-      if (captureBodies && previewBytes < previewCapBytes) {
-        const remaining = previewCapBytes - previewBytes;
-        const slice = decoded.length <= remaining ? decoded : decoded.slice(0, remaining);
-        preview += slice;
-        previewBytes += slice.length;
+      if (captureBodies) {
+        preview += decoded;
       }
       if (downstreamAlive) {
         try {
