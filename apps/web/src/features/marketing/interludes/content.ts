@@ -85,8 +85,7 @@ export const asking = {
   panel: {
     title: 'Ask',
     label: 'Input',
-    footer:
-      'You set allow, ask or block per action. Merge stays default-deny for agents.',
+    footer: 'You set allow, ask or block per action. Merge stays default-deny for agents.',
   },
   modes: [
     {

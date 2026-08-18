@@ -11,9 +11,9 @@ import { LocalTime } from '@/components/ui/local-time';
 import { Separator } from '@/components/ui/separator';
 
 import { Button } from '@/components/ui/marketing/button';
+import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import Link from 'next/link';
 import { CopyLinkButton } from './copy-link-button';
-import { ArrowRightIcon } from '@/features/icon/arrow-right';
 
 const RELEASE_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -219,12 +219,12 @@ export default async function ChangelogPage() {
                             {release.tag_name}
                           </span>
                           {isLatest && (
-                            <Badge size="sm" variant="kortix" className='rounded'>
+                            <Badge size="sm" variant="kortix" className="rounded">
                               Latest
                             </Badge>
                           )}
                           {release.prerelease && (
-                            <Badge size="sm" variant="kortix" className='rounded'>
+                            <Badge size="sm" variant="kortix" className="rounded">
                               Pre-release
                             </Badge>
                           )}
@@ -253,12 +253,11 @@ export default async function ChangelogPage() {
                           </p>
                         )}
 
-                        <Button asChild variant="ghost" className='group/arrow-right'>
+                        <Button asChild variant="ghost" className="group/arrow-right">
                           <Link href={release.html_url} target="_blank" rel="noopener noreferrer">
                             {isLong ? 'Read the full release on GitHub' : 'Release on GitHub'}
 
-<ArrowRightIcon  />
-
+                            <ArrowRightIcon />
                           </Link>
                         </Button>
                       </div>
