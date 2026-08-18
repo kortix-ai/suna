@@ -108,7 +108,14 @@ describe('MembersTabView', () => {
     expect(out).toContain('help-marker');
   });
 
-  test('renders one row per member, with an Account role and a Workspace access column', () => {
+  test('renders one row per member, with an Account column and a This-project column, scope-labelled', () => {
+    // Was "Account role" / "Project role" — two labels for "the same kind of
+    // thing" that read as equally scoped on a page that lives entirely
+    // inside ONE project. Scope leads now ("Account" / "This project"), with
+    // a muted second line spelling out what changing it actually reaches —
+    // the confusion a live screenshot called out directly: "nobody will know
+    // what is an account role, what is a project role... this is in the
+    // project settings."
     const out = renderToStaticMarkup(
       <MembersTabView
         members={[
@@ -117,8 +124,10 @@ describe('MembersTabView', () => {
         ]}
       />,
     );
-    expect(out).toContain('Account role');
-    expect(out).toContain('Workspace access');
+    expect(out).toContain('Account');
+    expect(out).toContain('every workspace');
+    expect(out).toContain('This project');
+    expect(out).toContain('only here');
     expect(out).toContain('owner@kortix.com');
     expect(out).toContain('viewer@kortix.com');
     expect(out.match(/<tr/g)?.length).toBe(3); // 1 header row + 2 member rows
@@ -225,7 +234,7 @@ describe('MembersTabView', () => {
   test('People is the default tab — the table is what you land on', () => {
     const out = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
     expect(out).toContain('<table');
-    expect(out).toContain('Workspace access');
+    expect(out).toContain('This project');
   });
 
   test('the pane heading stays above the tab bar, outside every panel', () => {
@@ -295,7 +304,7 @@ describe('MembersTabView', () => {
         canManageMembers
       />,
     );
-    // Four columns: Member, Account role, Workspace access, Joined. The
+    // Four columns: Member, Account, This project, Joined. The
     // character class keeps `<thead` out of the count.
     expect(out.match(/<th[ >]/g)?.length).toBe(4);
     expect(out).toContain('role="combobox"');

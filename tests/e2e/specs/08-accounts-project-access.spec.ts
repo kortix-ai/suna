@@ -635,7 +635,7 @@ test.describe("08 — Accounts, invites, and project access", () => {
       .filter({ hasText: memberEmail })
       .first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
-    // Third column = "Workspace access" (`members-tab.tsx:930-934`). Pinned by
+    // Third column = "Project role" (`members-tab.tsx:930-934`). Pinned by
     // column because that select carries no accessible name of its own, and
     // the row's other combobox is the account-role one beside it.
     await expect(

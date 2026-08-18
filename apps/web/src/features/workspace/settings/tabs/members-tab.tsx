@@ -14,8 +14,11 @@
  * and `effective_source`. This tab renders that one response as one table:
  * an "Account role" column (`member.account_role`, read-only — account
  * roles are an account-settings concern, not a project one) and a
- * "Workspace access" column (`memberAccessLabel(member)`, see
- * `member-access-label.ts`). Unlike the old `ProjectAccessCard`
+ * "Project role" column (`memberAccessLabel(member)`, see
+ * `member-access-label.ts` — was "Workspace access", which named a
+ * different concept, "access", than the value it showed, a role name or
+ * "No access"; both columns now read as the same kind of thing at two
+ * scopes). Unlike the old `ProjectAccessCard`
  * (`members-view.tsx`), which filtered to
  * `has_implicit_access || effective_project_role != null` and hid every
  * account member with zero project access, this table renders every row
@@ -28,7 +31,7 @@
  * `member.invite`/`member.update`/`member.remove` and workspace writes on
  * `project.member.write`". Checked directly against
  * `apps/api/src/projects/routes/r6.ts`: EVERY mutation this table's
- * **workspace-access column** (or the project-scoped sections below it) can
+ * **project-role column** (or the project-scoped sections below it) can
  * trigger — invite (`:673`), list/revoke/resend a pending invite (`:851`,
  * `:941`, `:1012`), list/approve/reject an access request (`:491`, `:533`),
  * and update/revoke a member's own access (`:1096`, `:1169`) — asserts the
@@ -201,7 +204,7 @@
  * task adds the first other caller.
  *
  * These three are a THIRD axis, distinct from both `project.members.manage`
- * (workspace-access column above) and `member.invite`-for-invites
+ * (project-role column above) and `member.invite`-for-invites
  * (`canManageAccountInvites`, JAY-548): they mutate the ACCOUNT roster
  * itself — who is a member of this account at all, and at what account
  * role. Gates are copied byte-for-byte from `page.tsx`'s
@@ -324,7 +327,7 @@
  *    absent `joined_at` reads as an em dash rather than `formatDate`'s
  *    "Never", which is nonsense for a join date.
  * 3. The trailing actions column is gone: the workspace-access `Select` now
- *    sits in the workspace-access column it edits. Nothing is lost —
+ *    sits in the project-role column it edits. Nothing is lost —
  *    `memberAccessLabel` only returns a `via` annotation for implicit or
  *    group-sourced access, and `editable` excludes both.
  * 4. The read-only account role is tonal text, not a filled `Badge` — an
@@ -698,7 +701,7 @@ export interface MembersTabViewProps {
   canRemoveFromAccount?: boolean;
   /** user_id set — rows currently mid account-role-change or
    *  account-removal. Separate from `pendingUserIds` above (that Set is for
-   *  the workspace-access column's own mutations) so an account-scope
+   *  the project-role column's own mutations) so an account-scope
    *  mutation never shows a misleading "workspace access is changing"
    *  spinner. */
   accountPendingUserIds?: Set<string>;
@@ -941,8 +944,28 @@ export function MembersTabView({
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Member</TableHead>
-                  <TableHead>Account role</TableHead>
-                  <TableHead>Workspace access</TableHead>
+                  {/* SCOPE is the word that answers the actual question here
+                      — "does changing this reach every workspace, or just
+                      the one I'm looking at?" — so scope leads, "role" is
+                      the secondary line. "Account role" / "Project role"
+                      read as two labels for the same kind of thing; on a
+                      PROJECT-scoped page (this whole pane lives under one
+                      project's Customize bar) that reads as two flavors of
+                      "this project's roles" when one of them is actually
+                      account-wide and edits the person everywhere, not just
+                      here. See this file's header comment. */}
+                  <TableHead>
+                    <span className="text-foreground block">Account</span>
+                    <span className="text-muted-foreground/70 block text-[11px] font-normal">
+                      every workspace
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="text-foreground block">This project</span>
+                    <span className="text-muted-foreground/70 block text-[11px] font-normal">
+                      only here
+                    </span>
+                  </TableHead>
                   <TableHead className="text-right">Joined</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1038,7 +1061,7 @@ export function MembersTabView({
                         </div>
                       </TableCell>
                       {/* One column, one fact: the workspace-access control
-                            lives in the workspace-access column it edits. No
+                            lives in the project-role column it edits. No
                             annotation is lost — `memberAccessLabel` only
                             returns a `via` for implicit or group-sourced
                             access, and `editable` excludes both. */}
@@ -1055,7 +1078,7 @@ export function MembersTabView({
                             >
                               <SelectTrigger
                                 className="h-7 w-32 text-xs"
-                                aria-label={`Workspace access for ${userLabel(member)}`}
+                                aria-label={`Project role for ${userLabel(member)}`}
                               >
                                 <SelectValue />
                               </SelectTrigger>
@@ -1949,7 +1972,7 @@ function MembersTabInner({
   const { allowed: canRemoveFromAccount } = usePermission(accountId, 'member.remove');
 
   // Separate busy-set from `pendingUserIds` above — that one belongs to the
-  // workspace-access column's own mutations. Sharing it would show a
+  // project-role column's own mutations. Sharing it would show a
   // misleading "workspace access is changing" spinner during an
   // account-scope mutation.
   const [accountPendingUserIds, setAccountPendingUserIds] = useState<Set<string>>(() => new Set());
