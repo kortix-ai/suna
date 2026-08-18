@@ -36,17 +36,20 @@ import { SessionWelcome } from '@/features/session/session-welcome';
 import {
   CAPABILITY_TABS,
   capabilityTabHref,
+  channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
-import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
+import {
+  projectSettingsSectionHref,
+  type ProjectSettingsSectionKey,
+} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import {
   type SandboxTemplate,
   listProjectAccessRequests,
@@ -106,7 +109,7 @@ export function ProjectHome({
   }, [metaSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
-  const openSettings = useSettingsPanelStore((s) => s.openSettings);
+  const router = useRouter();
   const accessRequests = useQuery({
     queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
@@ -181,7 +184,7 @@ export function ProjectHome({
               variant="ghost"
               size="icon"
               className="bg-background/80 relative backdrop-blur-sm"
-              onClick={() => openSettings('members')}
+              onClick={() => router.push(capabilityTabHref(projectId, 'members'))}
               aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
             >
               <Bell className="size-4" />
@@ -217,6 +220,14 @@ export function ProjectHome({
             clearOnSend={false}
             autoFocus
             cardClassName="rounded-xl"
+            // A hero composer floating mid-page has no column for a second
+            // rail to align to, so the attach/agent/context controls ride on
+            // the toolbar itself, ahead of the model selector. The session
+            // page keeps the default row beneath the card.
+            underbarPlacement="inline"
+            // Hero composer mid-page: the `/` menu opens BELOW the card, into
+            // the empty lower half, instead of shoving the heading up.
+            slashMenuPlacement="below"
             placeholder={tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
             )}
@@ -299,7 +310,7 @@ export function ProjectHomeWelcomeBody({
           </h1>
 
           {composer || onPickSuggestion ? (
-            <div className="flex w-full flex-col items-center">
+            <div className="flex w-full flex-col items-center space-y-4">
               {composer}
               {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
             </div>
@@ -465,11 +476,24 @@ type SetupTile = {
   icon: ComponentType<{ className?: string }>;
   title: string;
   desc: string;
-  // Agents, Connectors and Skills graduated out of Settings into their own
-  // routed pages (see capabilities/capability-tab-routes.ts) — those tiles
-  // carry a capability tab key instead of a SettingsTab and navigate
-  // there directly.
-  section: SettingsTab | CapabilityTab['key'];
+  // Every tile is a route now. Agents, Connectors, Skills and Triggers are
+  // capability tabs of their own (`capabilities/capability-tab-routes.ts`);
+  // Your team is a section of the Customize bar's Settings tab
+  // (`capabilities/project-settings/project-settings-sections.ts`).
+  //
+  // A tile is routed by `href` if it has one, then by `isCapabilityTabKey`,
+  // then by section key — so a key must be spelled exactly as its URL segment.
+  // A near-miss lands on the Settings tab's default section instead of the
+  // tile's own destination.
+  section: ProjectSettingsSectionKey | CapabilityTab['key'];
+  /**
+   * The exact destination, for a tile whose target is not a bare route. Only
+   * Slack needs it: Channels is a SCOPE of the Connectors page now
+   * (`?scope=channels`), and neither route builder emits a query. Without it
+   * the tile would open the connector catalogue — the right page, the wrong
+   * half of it.
+   */
+  href?: (projectId: string) => string;
 };
 
 const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
@@ -485,9 +509,9 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
   },
   {
     icon: CalendarClock,
-    title: 'Scheduled tasks',
-    desc: 'Run work on a schedule or from an event.',
-    section: 'schedules',
+    title: 'Triggers',
+    desc: 'Run work on a repeating schedule, or when another app sends a signal.',
+    section: 'triggers',
   },
   {
     icon: SparklesSolid,
@@ -499,7 +523,8 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     icon: Slack,
     title: 'Slack',
     desc: 'Run this project right from chat.',
-    section: 'channels',
+    section: 'connectors',
+    href: channelsHref,
   },
   {
     icon: UsersGroupSolid,
@@ -513,30 +538,37 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     desc: 'Shape how your agent thinks and acts.',
     // 'agent' (the route segment), not the old 'agents' overlay section —
     // `isCapabilityTabKey` matches on the key, so the wrong spelling would
-    // silently fall through to `openSettings('agents')` and open nothing.
+    // silently fall through to the Settings tab and land on its default
+    // section instead of Agents.
     section: 'agent',
   },
 ];
 
 function ProjectHomeSections({ projectId }: { projectId: string }) {
-  const openSettings = useSettingsPanelStore((s) => s.openSettings);
   const router = useRouter();
   const tiles = PROJECT_SETUP_TILES;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
-        const { icon: TileIcon, title, desc, section } = tile;
+        const { icon: TileIcon, title, desc, section, href } = tile;
 
         return (
-          <Hint key={section} label={desc} side="top">
+          // Keyed by title, not by section: two tiles land on the Connectors
+          // route now (the catalogue, and Slack's Channels scope), so the
+          // section key is no longer unique across this list.
+          <Hint key={title} label={desc} side="top">
             <Button
               variant="outline"
               size="sm"
               onClick={() =>
-                isCapabilityTabKey(section)
-                  ? router.push(capabilityTabHref(projectId, section))
-                  : openSettings(section)
+                router.push(
+                  href
+                    ? href(projectId)
+                    : isCapabilityTabKey(section)
+                      ? capabilityTabHref(projectId, section)
+                      : projectSettingsSectionHref(projectId, section),
+                )
               }
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >

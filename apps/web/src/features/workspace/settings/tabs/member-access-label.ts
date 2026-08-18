@@ -40,8 +40,17 @@ export function memberAccessLabel(member: ProjectAccessMember): MemberAccessLabe
   if (member.effective_source === 'group') {
     // Server sorts `group_sources` by role desc (access.ts:24) — the first
     // entry is the group that actually produced `effective_project_role`.
+    // Additional entries are lower-role groups this member also belongs to
+    // on this project — real access, just not the one that won. Naming only
+    // the winner used to make every other membership invisible without
+    // leaving the project (an audited gap); "+N more" keeps the row one
+    // line while saying that access exists instead of silently dropping it.
     const groupName = member.group_sources?.[0]?.group_name;
-    return { role, via: groupName ? `via ${groupName}` : null };
+    const extra = (member.group_sources?.length ?? 0) - 1;
+    return {
+      role,
+      via: groupName ? `via ${groupName}${extra > 0 ? ` +${extra} more` : ''}` : null,
+    };
   }
 
   // 'direct', or an unrecognized/undefined source with a resolved role —

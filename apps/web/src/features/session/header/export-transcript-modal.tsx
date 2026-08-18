@@ -66,7 +66,9 @@ export function ExportTranscriptModal({
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const visibleMessagesRef = useRef(visibleMessages);
-  visibleMessagesRef.current = visibleMessages;
+  useEffect(() => {
+    visibleMessagesRef.current = visibleMessages;
+  }, [visibleMessages]);
 
   useEffect(() => {
     if (!open) return;

@@ -110,6 +110,27 @@ describe('event-loop boot race — the SSE subscribe must not sleep through open
     expect(connectedCalls).toBeGreaterThanOrEqual(1)
   }, 20_000)
 
+  test('reconciles periodically when a terminal SSE frame is lost', async () => {
+    const { port } = flakyEventServer(0)
+    let reconciliations = 0
+    const loop = startOpencodeEventLoop(
+      fakeOpencode(port),
+      cfg,
+      {
+        onReconcile: () => {
+          reconciliations++
+        },
+      },
+      { reconcileIntervalMs: 10 },
+    )
+    loops.push(loop)
+
+    await loop.connected
+    const deadline = Date.now() + 1_000
+    while (reconciliations < 2 && Date.now() < deadline) await Bun.sleep(10)
+    expect(reconciliations).toBeGreaterThanOrEqual(2)
+  }, 20_000)
+
   test('dispatches an event framed with CRLF line endings', async () => {
     const event = {
       type: 'session.updated',

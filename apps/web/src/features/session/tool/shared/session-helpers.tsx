@@ -26,19 +26,18 @@ export function formatBashOutput(rawOutput: string): {
     const sections = trimmed.split(/^(={2,}\s.*)/m);
     let hasJson = false;
     const formatted = sections
-      .map((section) => {
+      .flatMap((section) => {
         const st = section.trim();
-        if (!st) return '';
-        if (/^={2,}\s/.test(st)) return st;
+        if (!st) return [];
+        if (/^={2,}\s/.test(st)) return [st];
         try {
           const parsed = JSON.parse(st);
           hasJson = true;
-          return JSON.stringify(parsed, null, 2);
+          return [JSON.stringify(parsed, null, 2)];
         } catch {
-          return st;
+          return [st];
         }
       })
-      .filter(Boolean)
       .join('\n\n');
     if (hasJson) return { content: formatted, lang: 'json' };
   }
@@ -102,12 +101,14 @@ export function formatSessionTime(timestamp: number): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+const sessionTimeFallbackFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
 export function formatSessionTimeFallback(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(timestamp));
+  return sessionTimeFallbackFormat.format(new Date(timestamp));
 }
 
 export function SessionTimeLabel({ timestamp }: { timestamp: number }) {
@@ -226,7 +227,11 @@ export function InlineSessionMessagesList({ messages }: { messages: ParsedSessio
         <div
           key={msg.index}
           className={cn(
-            'overflow-hidden rounded-2xl border',
+            // `rounded-md`, not `rounded-2xl`: this card nests inside the bash
+            // tool's own `rounded-md` command card, and a 16px radius inside an
+            // 8px one reads as a pill dropped into a panel. The conformance
+            // sweep only scans `tool/tools/`, so this file never caught it.
+            'overflow-hidden rounded-md border',
             msg.role === 'user' ? 'border-border/60' : 'border-border/40',
           )}
         >

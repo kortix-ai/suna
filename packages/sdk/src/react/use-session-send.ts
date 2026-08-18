@@ -42,8 +42,11 @@ import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import type { MessageError } from '../browser/stores/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
 import {
+  abortInFlightDeliveries,
+  awaitAbortSettlement,
   promptOpenCodeMessage,
   useAbortOpenCodeSession,
+  type AbortSettlement,
   type PromptPart,
   type SendMessageOptions,
 } from './use-opencode-sessions';
@@ -215,6 +218,13 @@ export interface SendAndRecoverArgs {
   messageId: string;
   parts: PromptPart[];
   options?: SendMessageOptions;
+  /**
+   * Stable name for the submission, so re-dispatching a failed send keeps one
+   * wire `messageID` and the proxy's duplicate protection still absorbs it.
+   * Distinct from `messageId` above, which is the LOCAL optimistic message and
+   * never goes on the wire. See `SendOpenCodeMessageArgs.clientMessageId`.
+   */
+  clientMessageId?: string;
   getClient?: () => OpenCodeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
 }
@@ -241,6 +251,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
       sessionId: args.sessionId,
       parts: args.parts,
       options: args.options,
+      ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
     });
     return { ok: true };
   } catch (cause) {
@@ -279,9 +290,13 @@ export function applyOptimisticAbort(sessionId: string): void {
       // Typed as the wider `MessageError` (not just the literal shape below)
       // so the assertion further down overlaps with `AssistantMessage.error`'s
       // real union — see `MessageError` in the sync store.
+      // `reason: 'user'` — a REAL user stop, as opposed to
+      // `markSessionAbortedLocally`'s `'runtime-disposed'`. Read via the
+      // SDK's `abortErrorReason` (`core/http/abort-error.ts`); apps/web
+      // renders this reason as the "Interrupted" checkpoint row.
       const error: MessageError = {
         name: 'AbortError',
-        data: { message: 'The operation was aborted.' },
+        data: { message: 'The operation was aborted.', reason: 'user' },
       };
       // `error`'s shape (`SyntheticAbortError`) isn't part of the SDK's
       // `AssistantMessage.error` union — see `MessageError` in the sync
@@ -516,9 +531,14 @@ export interface UseSessionSendResult {
     callOptions?: SendCallOptions,
   ) => Promise<SendAndRecoverResult>;
   /** Abort the run and optimistically patch the last assistant message +
-   * session status (see `applyOptimisticAbort`). No-ops while a previous
-   * abort is still in flight. */
-  stop: () => void;
+   * session status (see `applyOptimisticAbort`), and stop any delivery still
+   * retrying its own boot/wake backoff (T9 — `abortInFlightDeliveries`)
+   * so a prompt in flight when Stop is hit can never land afterward. No-ops
+   * (resolves `{ status: 'skipped' }`) while a previous abort is still in
+   * flight, or when there is no session. Returns a promise that settles once
+   * the abort is acknowledged — see `AbortSettlement`; a caller that never
+   * awaits it sees exactly the same synchronous effects as before. */
+  stop: () => Promise<AbortSettlement>;
   isSending: boolean;
   isStopping: boolean;
   /** Last `send` failure, or null. Reset on every new `send` call. */
@@ -561,10 +581,13 @@ export function useSessionSend(
     [sessionId, getClientOpt, classify],
   );
 
-  const stop = useCallback(() => {
-    if (!sessionId || abortMutation.isPending) return;
+  const stop = useCallback((): Promise<AbortSettlement> => {
+    if (!sessionId || abortMutation.isPending) return Promise.resolve({ status: 'skipped' });
     applyOptimisticAbort(sessionId);
-    abortMutation.mutate(sessionId);
+    // T9: stop a delivery still retrying its boot/wake backoff BEFORE
+    // the abort request goes out, so it can never land after this point.
+    abortInFlightDeliveries(sessionId);
+    return awaitAbortSettlement(() => abortMutation.mutateAsync(sessionId));
   }, [sessionId, abortMutation]);
 
   return { send, stop, isSending, isStopping: abortMutation.isPending, sendError };

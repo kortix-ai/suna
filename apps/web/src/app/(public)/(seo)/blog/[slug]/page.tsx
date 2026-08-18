@@ -10,6 +10,7 @@ import { PostByline } from '@/components/blog/post-byline';
 import { PostCard } from '@/components/blog/post-card';
 import { getAllPosts, getPostEntry, resolveAuthor } from '@/lib/blog';
 import type { BlogPostEntry } from '@/lib/blog-posts';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
 
@@ -153,7 +154,7 @@ export default async function BlogPostPage(props: PageProps) {
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD structured data we generate, not user content
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
       <article className="mx-auto max-w-3xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">

@@ -251,7 +251,29 @@ A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `
 3. **`reuse`** — re-prompt the most recent non-failed session this trigger previously created. A pinned trigger falls back here too, before falling further.
 4. **`fresh`** — create a new sandbox and branch. This is the default, and the final fallback for every mode. The new session becomes the trigger's session for future `reuse` and `keyed` fires.
 
-Every trigger-fired session is created with project visibility (any project member can see it), not private to whoever configured or fired the trigger.
+## Session access
+
+Sessions a trigger creates use the private policy by default. The trigger
+agent's service account owns them. Project managers can always open them.
+Account owners and account admins receive the effective project-manager role.
+The person who configured or manually fired the trigger does not gain access
+through that action unless they have one of those roles.
+
+Trigger settings offer three policies:
+
+- **Trigger agent and project managers** — no ordinary project member can open the session.
+- **Selected teammates** — the trigger agent, project managers, and selected project members or account groups.
+- **Whole project** — every project member.
+
+The access policy is account-local runtime state. It does not enter the
+portable `kortix.yaml` manifest because member and group ids belong to one
+account. Use the dashboard or SDK `session_access` field to configure it.
+Updating only this policy creates no Git commit. Saving a policy also updates
+prior sessions created by that trigger.
+
+A pinned session keeps its own sharing settings because the trigger did not
+create it. If a pinned session is unavailable and the trigger creates a
+fallback session, the trigger policy applies to that new session.
 
 ## Payload templating
 

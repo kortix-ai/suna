@@ -34,7 +34,8 @@ export type FeatureFlagKey =
   | 'meta_agent'
   | 'apps'
   | 'monitors'
-  | 'network_boundary_shim';
+  | 'network_boundary_shim'
+  | 'warm_sessions';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -54,6 +55,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'apps',
   'monitors',
   'network_boundary_shim',
+  'warm_sessions',
 ] as const;
 
 /**

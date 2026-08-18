@@ -2,7 +2,7 @@
 
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -56,7 +56,7 @@ function AnimatedStep({
   const frameRef = useRef<HTMLDivElement>(null);
 
   return (
-    <motion.div
+    <m.div
       ref={(node) => {
         frameRef.current = node;
         if (typeof ref === 'function') ref(node);
@@ -73,7 +73,7 @@ function AnimatedStep({
       }}
     >
       <StepIdentityProvider idPrefix={idPrefix}>{children}</StepIdentityProvider>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -166,13 +166,14 @@ export function ProjectOnboardingWizard({
   // Direction drives the slide. Without it, Back and Continue animate
   // identically and the motion lies about which way the user moved.
   const [direction, setDirection] = useState(1);
-  const goTo = useCallback((resolve: (i: number) => number) => {
-    setIndex((i) => {
-      const target = resolve(i);
-      setDirection(target >= i ? 1 : -1);
-      return target;
-    });
-  }, []);
+  const goTo = useCallback(
+    (resolve: (i: number) => number) => {
+      const target = resolve(index);
+      setDirection(target >= index ? 1 : -1);
+      setIndex(target);
+    },
+    [index],
+  );
 
   const next = useCallback(
     () => goTo((i) => Math.min(i + 1, steps.length - 1)),

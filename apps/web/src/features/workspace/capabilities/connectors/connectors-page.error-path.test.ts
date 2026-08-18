@@ -71,7 +71,10 @@ describe('connectors page error path', () => {
     // not. `DiscoverAddFlow` used to pass it anyway, so one partial failure
     // opened the detail modal from the catalogue and not from the custom form.
     // Both handlers now guard: `onCatalogAdded` and the custom form's own.
-    expect(source.match(/if \(slug\) \{/g)).toHaveLength(2);
+    // Matched without the brace: `onCatalogAdded`'s guard is a single
+    // statement (`if (slug) showConnected(slug);`), the custom form's is a
+    // block. What must hold is that BOTH guard, not how each is punctuated.
+    expect(source.match(/if \(slug\)/g)).toHaveLength(2);
   });
 
   test('the plus button opens the custom form only', () => {

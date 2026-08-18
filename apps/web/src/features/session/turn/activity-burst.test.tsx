@@ -17,8 +17,10 @@ import {
   ActivityGroupStep,
   burstFailureCount,
   burstIsRunning,
+  sameActivityGroupStepProps,
 } from './activity-burst';
 import { ActivityStep, iconFor } from './activity-step';
+import { isAnsweredQuestionPart } from './answered-question-step';
 import { mergeBurstSteps } from './merge-steps';
 import { stepLabel } from './step-label';
 
@@ -155,14 +157,14 @@ describe('ActivityGroupStep', () => {
     expect(step.label).not.toContain('Read 2 files');
   });
 
-  test('a failed group carries the destructive mark, not just the wording', () => {
-    // The gap this closes: the row used to render the same muted family glyph
-    // whatever `step.status` said, so a failed group and a clean one were
-    // indistinguishable until the reader clicked one level deeper.
+  test('a failed group wears the wording alone — no destructive mark', () => {
+    // The label already states the failure ("Couldn't read your files"), so
+    // the row keeps its muted family glyph: a red warning beside words that
+    // already say "failed" states the verdict twice.
     const markup = render(false, mixed);
     expect(markup).toContain('data-status="error"');
-    expect(markup).toContain('aria-label="This step failed"');
-    expect(markup).toContain('text-destructive');
+    expect(markup).not.toContain('aria-label="This step failed"');
+    expect(markup).not.toContain('text-destructive');
     expect(markup).not.toContain('Read 2 files');
   });
 
@@ -187,6 +189,82 @@ describe('ActivityGroupStep', () => {
     // `bg-clip-text` is `TextShimmer`'s signature — the same "still going"
     // treatment the tool rows one level down already use.
     expect(markup).toContain('bg-clip-text');
+  });
+});
+
+describe('sameActivityGroupStepProps', () => {
+  // ONE shared `parts` array/elements — re-running `mergeBurstSteps` on it is
+  // exactly what a re-render does while an UNRELATED part streams elsewhere
+  // in the burst: `parts` (the burst's own prop) keeps its element identities,
+  // `mergeBurstSteps`'s `useMemo` still re-runs because the ARRAY reference
+  // changed (see `same-parts.ts`), and `finalize` mints a new `Step` + a new
+  // `parts` array around these same two elements every time.
+  const sharedParts: Part[] = [
+    tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+    tool('2', 'read', { status: 'completed', input: { filePath: '/workspace/beta.ts' } }),
+  ];
+
+  const freshGroup = (parts: Part[] = sharedParts) => {
+    const steps = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    return steps[0].step;
+  };
+
+  const props = (step: ReturnType<typeof freshGroup>) => ({
+    step,
+    sessionId: 'session-1',
+    running: false,
+    disableNavigation: true,
+  });
+
+  test('two independently-built Step objects for the same content compare equal', () => {
+    // The regression: `mergeBurstSteps` -> `groupSteps` -> `finalize` mints a
+    // NEW `step` object (and a NEW `parts` array around the SAME `ToolPart`
+    // elements) on every call, so object identity always fails here — that is
+    // exactly why a shallow-compare `memo` never held for this row.
+    const a = freshGroup();
+    const b = freshGroup();
+    expect(a).not.toBe(b);
+    expect(a.parts).not.toBe(b.parts);
+    expect(sameActivityGroupStepProps(props(a), props(b))).toBe(true);
+  });
+
+  test('a status change (a member starts running) is caught', () => {
+    const a = freshGroup();
+    const running: Part[] = [
+      tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+      tool('2', 'read', { status: 'running', input: { filePath: '/workspace/beta.ts' } }),
+    ];
+    const steps = mergeBurstSteps(running, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    expect(sameActivityGroupStepProps(props(a), props(steps[0].step))).toBe(false);
+  });
+
+  test('a member swapped for a different file is caught even though status/label hold', () => {
+    const a = freshGroup();
+    const swapped: Part[] = [
+      tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
+      tool('3', 'read', { status: 'completed', input: { filePath: '/workspace/gamma.ts' } }),
+    ];
+    const steps = mergeBurstSteps(swapped, (p) => stepLabel(p).tier);
+    if (steps[0].kind !== 'group') throw new Error('expected a group row');
+    const b = steps[0].step;
+    // Same status and label ("Read 2 files"), different membership.
+    expect(b.status).toBe(a.status);
+    expect(b.label).toBe(a.label);
+    expect(sameActivityGroupStepProps(props(a), props(b))).toBe(false);
+  });
+
+  test('sessionId, running, and disableNavigation are each load-bearing', () => {
+    const a = freshGroup();
+    const b = freshGroup();
+    expect(sameActivityGroupStepProps({ ...props(a), sessionId: 'session-2' }, props(b))).toBe(
+      false,
+    );
+    expect(sameActivityGroupStepProps({ ...props(a), running: true }, props(b))).toBe(false);
+    expect(
+      sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b)),
+    ).toBe(false);
   });
 });
 
@@ -705,7 +783,7 @@ describe('ActivityBurst', () => {
     expect(markup).toContain('ls');
   });
 
-  test('a burst with a failure says so in words, and still carries the glyph', () => {
+  test('a burst with a failure says so in words alone — no warning glyph', () => {
     const parts: Part[] = [
       ...Array.from({ length: 10 }, (_, i) => done(`ok${i}`, 'bash')),
       tool('bad', 'bash', { status: 'error', error: 'Error: boom' }),
@@ -713,8 +791,9 @@ describe('ActivityBurst', () => {
     const markup = renderBurst(parts);
     // The clause is what removes the subtraction from `10 of 11`.
     expect(markup).toContain('Completed 10 of 11 steps · 1 failed');
-    // Shape as well as words, for a reader who cannot see the destructive tint.
-    expect(markup).toContain('aria-label="1 step failed"');
+    // The words are the whole signal — the summary line never carries a
+    // destructive mark beside a title that already says "failed".
+    expect(markup).not.toContain('aria-label="1 step failed"');
   });
 
   test('a burst where everything failed never claims a completion', () => {
@@ -1062,5 +1141,72 @@ describe('chain alignment', () => {
     expect(markup).toContain('ml-[var(--tool-indent,1.375rem)]');
     // The old constant must not survive anywhere, or the two drift again.
     expect(markup).not.toContain('ml-5.5');
+  });
+});
+
+describe('answered question step', () => {
+  const done = (id: string, name: string, input: Record<string, unknown> = {}) =>
+    tool(id, name, { status: 'completed', output: 'ok', input, time: { start: 1, end: 2 } });
+
+  /** A `question` call the user already answered — questions in `input`,
+   *  answers in `metadata`, exactly as the session store settles them. */
+  const answered = (id: string) =>
+    tool(id, 'question', {
+      status: 'completed',
+      input: {
+        questions: [
+          { question: 'What should the presentation cover?' },
+          { question: 'Who is the presentation for?' },
+        ],
+      },
+      metadata: { answers: [['Serbia and Mumbai'], ['General audience']] },
+      time: { start: 1, end: 2 },
+    });
+
+  const renderBurst = (parts: Part[], { working = false, isTrailing = false } = {}) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <ActivityBurst
+            parts={parts}
+            sessionId="session-1"
+            working={working}
+            isTrailing={isTrailing}
+            disableNavigation
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('an answered question is a chain row, not the generic tool card', () => {
+    // The regression this pins: answered questions used to be forced standalone,
+    // which split the burst in two and dropped an outlined card between the
+    // halves. Inside the burst the row reads "Questions · N answered".
+    const markup = renderBurst([answered('q'), done('1', 'bash'), done('2', 'bash')], {
+      working: true,
+      isTrailing: true,
+    });
+    expect(markup).toContain('Questions');
+    expect(markup).toContain('2 answered');
+    // It is counted as a step of the burst like any other call.
+    expect(markup).toContain('Working · 3 steps');
+    // The QuestionTool card's own label must not leak in beside the row.
+    expect(markup).not.toContain('data-component="tool-trigger"');
+  });
+
+  test('a lone answered question is a bare row without the summary line', () => {
+    const markup = renderBurst([answered('q')]);
+    expect(markup).not.toContain('Completed 1 step');
+    expect(markup).toContain('Questions');
+    expect(markup).toContain('2 answered');
+  });
+
+  test('a question without answers stays off the answered-question row', () => {
+    expect(
+      isAnsweredQuestionPart(
+        tool('q', 'question', { status: 'running', input: { questions: [{ question: 'x' }] } }),
+      ),
+    ).toBe(false);
+    expect(isAnsweredQuestionPart(answered('q'))).toBe(true);
   });
 });

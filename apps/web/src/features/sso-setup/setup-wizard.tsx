@@ -27,7 +27,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
@@ -174,24 +181,27 @@ async function copyValue(value: string, msg: string) {
  */
 function InstructionText({ text }: { text: string }) {
   const parts = text.split(/"([^"]+)"/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 === 1 ? (
-          <code
-            // biome-ignore lint/suspicious/noArrayIndexKey: static text, stable order
-            key={i}
-            className="bg-muted/60 text-foreground rounded px-1 py-0.5 font-mono text-xs"
-          >
-            {part}
-          </code>
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static text, stable order
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
+  // Key each segment by its character offset in the source text — stable and
+  // unique even when the same fragment appears twice.
+  const nodes: ReactNode[] = [];
+  let offset = 0;
+  parts.forEach((part, i) => {
+    const quoted = i % 2 === 1;
+    nodes.push(
+      quoted ? (
+        <code
+          key={`q${offset}`}
+          className="bg-muted/60 text-foreground rounded px-1 py-0.5 font-mono text-xs"
+        >
+          {part}
+        </code>
+      ) : (
+        <span key={`t${offset}`}>{part}</span>
+      ),
+    );
+    offset += part.length + (quoted ? 2 : 0);
+  });
+  return <>{nodes}</>;
 }
 
 /**
@@ -356,6 +366,12 @@ function ClaimsTable({
   );
 }
 
+// window.location.origin never changes for a loaded document, so the
+// subscription is a no-op; the server snapshot is empty.
+const subscribeToOrigin = () => () => {};
+const getBrowserOrigin = () => window.location.origin;
+const getServerOrigin = () => '';
+
 function SpValueRows({
   urls,
   entityIdLabel = 'Identifier (Entity ID)',
@@ -371,11 +387,11 @@ function SpValueRows({
   includeSignOnUrl?: boolean;
 }) {
   // The SP-initiated sign-in page is this app's own origin — the exact value
-  // we set live ({origin}/auth), computed instead of described.
-  const signOnUrl = useMemo(
-    () => (typeof window === 'undefined' ? null : `${window.location.origin}/auth`),
-    [],
-  );
+  // we set live ({origin}/auth), computed instead of described. Read through
+  // useSyncExternalStore (same pattern as use-deployment-cli-install-command)
+  // so the browser value settles during hydration instead of after paint.
+  const origin = useSyncExternalStore(subscribeToOrigin, getBrowserOrigin, getServerOrigin);
+  const signOnUrl = origin ? `${origin}/auth` : null;
   if (!urls) return null;
   const entityRow = <CopyRow label={entityIdLabel} value={urls.entityId} />;
   const acsRow = <CopyRow label={acsLabel} value={urls.acsUrl} />;
@@ -546,11 +562,12 @@ function MetadataInputStep({
       </div>
 
       <div className="border-border/60 bg-popover space-y-1.5 rounded-md border p-4">
-        <Label>
+        <Label htmlFor="sso-idp-metadata">
           {mode === 'url' ? 'Identity provider metadata URL' : 'Identity provider metadata XML'}
         </Label>
         {mode === 'url' ? (
           <Input
+            id="sso-idp-metadata"
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
@@ -561,6 +578,7 @@ function MetadataInputStep({
           />
         ) : (
           <textarea
+            id="sso-idp-metadata"
             value={xml}
             onChange={(e) => {
               setXml(e.target.value);
@@ -738,7 +756,7 @@ function ImportForm({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label>Federation metadata</Label>
+          <Label htmlFor="entra-federation-metadata">Federation metadata</Label>
           <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
             {(
               [
@@ -764,6 +782,7 @@ function ImportForm({
         </div>
         {metaKind === 'url' ? (
           <Input
+            id="entra-federation-metadata"
             value={metaUrl}
             onChange={(e) => setMetaUrl(e.target.value)}
             placeholder={config.metadataUrlPlaceholder ?? 'https://…/saml/metadata.xml'}
@@ -772,6 +791,7 @@ function ImportForm({
           />
         ) : (
           <textarea
+            id="entra-federation-metadata"
             value={metaXml}
             onChange={(e) => setMetaXml(e.target.value)}
             placeholder="<EntityDescriptor …>…</EntityDescriptor>"
@@ -832,19 +852,43 @@ function ImportForm({
 // (ScimValuesPanel below) then keeps both visible on every remaining Entra
 // step, instead of vanishing the moment you click Continue.
 
+/** Content-derived key for a static guide block (kind + its distinguishing
+ *  field), so keys survive without leaning on the iteration index. */
+function stepBlockKey(block: StepBlock): string {
+  switch (block.kind) {
+    case 'text':
+      return `text:${block.text}`;
+    case 'sp-values':
+      return `sp-values:${block.entityIdLabel ?? ''}:${block.acsLabel ?? ''}`;
+    case 'claims-table':
+      return `claims-table:${block.rows.map((r) => r.name).join(',')}`;
+    case 'schematic':
+      return `schematic:${block.schematic.title}`;
+    default:
+      return `image:${block.src}`;
+  }
+}
+
 function StepBlocks({ blocks, spUrls }: { blocks: StepBlock[]; spUrls: SamlSpUrls | null }) {
+  // Static guide data — keys come from block content, with a per-render
+  // occurrence counter to disambiguate a repeated identical block.
+  const seen = new Map<string, number>();
+  const keyed = blocks.map((block) => {
+    const base = stepBlockKey(block);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return { block, key: n === 0 ? base : `${base}#${n}` };
+  });
   return (
     <>
-      {blocks.map((block, i) =>
+      {keyed.map(({ block, key }) =>
         block.kind === 'text' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <p key={i} className="text-foreground text-sm leading-relaxed">
+          <p key={key} className="text-foreground text-sm leading-relaxed">
             <InstructionText text={block.text} />
           </p>
         ) : block.kind === 'sp-values' ? (
           <SpValueRows
-            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-            key={i}
+            key={key}
             urls={spUrls}
             entityIdLabel={block.entityIdLabel}
             acsLabel={block.acsLabel}
@@ -852,15 +896,12 @@ function StepBlocks({ blocks, spUrls }: { blocks: StepBlock[]; spUrls: SamlSpUrl
             includeSignOnUrl={block.includeSignOnUrl}
           />
         ) : block.kind === 'claims-table' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <ClaimsTable key={i} rows={block.rows} />
+          <ClaimsTable key={key} rows={block.rows} />
         ) : block.kind === 'schematic' ? (
           // Standalone schematic — no backing screenshot (SCIM provider guides).
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <SchematicPanel key={i} schematic={block.schematic} />
+          <SchematicPanel key={key} schematic={block.schematic} />
         ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <StepFigure key={i} src={block.src} alt={block.alt} schematic={block.schematic} />
+          <StepFigure key={key} src={block.src} alt={block.alt} schematic={block.schematic} />
         ),
       )}
     </>
@@ -1499,7 +1540,8 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     if (!guide) return;
     const done = loadCompleted(flow, accountId, guide.id);
     setCompleted(done);
-    const firstOpen = guide.steps.findIndex((s) => !done.includes(s.id));
+    const doneSet = new Set(done);
+    const firstOpen = guide.steps.findIndex((s) => !doneSet.has(s.id));
     setActiveStep(firstOpen === -1 ? guide.steps.length - 1 : firstOpen);
   }, [accountId, flow, guide]);
 
@@ -1576,6 +1618,9 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   // biome-ignore lint/style/noNonNullAssertion: guide.steps is always non-empty (guide is checked above) and the index is clamped into range.
   const step = guide.steps[Math.min(activeStep, guide.steps.length - 1)]!;
 
+  // One Set for the per-step done lookups in the rail below.
+  const completedSet = new Set(completed);
+
   return (
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-8 flex items-center justify-between gap-3">
@@ -1613,7 +1658,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
             solid active circle, muted upcoming. Whole row is the target. */}
         <nav aria-label="Setup steps" className="space-y-1 self-start">
           {guide.steps.map((s, i) => {
-            const isDone = completed.includes(s.id);
+            const isDone = completedSet.has(s.id);
             const isActive = i === activeStep;
             return (
               <button

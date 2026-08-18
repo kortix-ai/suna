@@ -78,7 +78,7 @@ export function DotmHex8({
   const ob = clamp01(opacityBase);
   const om = clamp01(opacityMid);
   const op = clamp01(opacityPeak);
-  const activePatternIndexes = getPatternIndexes(pattern);
+  const activePatternIndexes = new Set(getPatternIndexes(pattern));
   const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset);
   const matrixStyle = { width: stylePx(matrixWidth), height: stylePx(matrixHeight), ["--dmx-dot-fill" as const]: dotFill, color: resolvedColor, ["--dmx-dot-size" as const]: `${dotSize}px`,
       ["--dmx-halo-level" as const]: halo, ...(ob !== undefined && { ["--dmx-opacity-base" as const]: ob }), ...(om !== undefined && { ["--dmx-opacity-mid" as const]: om }), ...(op !== undefined && { ["--dmx-opacity-peak" as const]: op }), ...(useWrapper ? { transform: `scale(${boxScale})`, transformOrigin: "center center" as const } : { minWidth: minSize, minHeight: minSize }) } as unknown as CSSProperties;
@@ -90,7 +90,7 @@ export function DotmHex8({
           <div key={row} style={{ display: "flex", justifyContent: "center", gap: stylePx(gap) }}>
             {Array.from({ length: count }).map((_, col) => {
               const tone = frame[`${row},${col}`];
-              const isActive = activePatternIndexes.includes(hexPatternIndex(row, count, col));
+              const isActive = activePatternIndexes.has(hexPatternIndex(row, count, col));
               const opacity = isActive ? tone === "x" ? HIGH_OPACITY : tone === "o" ? MID_OPACITY : BASE_OPACITY : 0;
               const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);
               return <span key={`${row},${col}`} aria-hidden="true" className={cx("dmx-dot", !isActive && "dmx-inactive", dmxBloom.bloomDot && "dmx-bloom-dot", dotClassName)} style={{ width: stylePx(dotSize), height: stylePx(dotSize), opacity: styleOpacity(remapOpacityToTriplet(opacity, ob, om, op)),

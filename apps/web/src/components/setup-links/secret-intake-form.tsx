@@ -78,11 +78,11 @@ export function SecretIntakeForm({
 
   async function submit() {
     if (!info) return;
-    const filled = Object.fromEntries(
-      info.fields
-        .map((f) => [f.name, (values[f.name] ?? '').trim()] as const)
-        .filter(([, v]) => v.length > 0),
-    );
+    const filled: Record<string, string> = {};
+    for (const f of info.fields) {
+      const v = (values[f.name] ?? '').trim();
+      if (v.length > 0) filled[f.name] = v;
+    }
     if (Object.keys(filled).length === 0) {
       setError('Enter a value before saving.');
       return;

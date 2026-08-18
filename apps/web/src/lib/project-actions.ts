@@ -81,6 +81,10 @@ export const PROJECT_ACTIONS = {
   PROJECT_CONNECTOR_WRITE: 'project.connector.write',
   PROJECT_CONNECTOR_CONNECTIONS_MANAGE: 'project.connector.connections.manage',
 
+  PROJECT_APP_READ: 'project.app.read',
+  PROJECT_APP_WRITE: 'project.app.write',
+  PROJECT_APP_DEPLOY: 'project.app.deploy',
+
   PROJECT_REVIEW_READ: 'project.review.read',
   PROJECT_REVIEW_SUBMIT: 'project.review.submit',
   PROJECT_REVIEW_ACT: 'project.review.act',

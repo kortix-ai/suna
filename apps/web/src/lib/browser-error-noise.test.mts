@@ -47,6 +47,7 @@ import {
   isSupabaseTokenExpiredNoise,
   isThirdPartyReactUpdateDepthNoise,
   isTronLinkProxyNoise,
+  isUndefinedVariableThirdPartyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
   shouldIgnoreBrowserRuntimeNoise,
@@ -10142,5 +10143,499 @@ test('both new matchers classify the production wrappers with a non-default mech
       },
     }),
     true,
+  )
+})
+
+
+// ---------------------------------------------------------------------------
+// Safari third-party-script "undefined variable" ReferenceError noise (Better
+// Stack pattern 304f7345eea41d488225ebf2dd238fa05ca073187fd0e2ffc61071ac99f40408,
+// Kortix Frontend prod, application_id 2346967). `Can't find variable: <Name>`
+// is Safari/JavaScriptCore's canonical `ReferenceError` wording for an
+// undeclared variable reference (Chrome/V8 says `<Name> is not defined`). A
+// THIRD-PARTY script loaded on the marketing homepage (a charting/finance
+// library such as TradingView / lightweight-charts, or any vendor script
+// that defines a top-level constant like `EmptyRanges`) failed to load or
+// initialize on iOS Safari — a network abort, a parse failure, a CSP block, a
+// script-load race — so the referencing code dereferenced the now-undefined
+// global and Safari's `window.onerror` captured a FRAMELESS `ReferenceError`
+// (the engine could not produce a stack because the throw originated in script
+// text that never evaluated, so `call_site_file` is the literal `"undefined"`
+// placeholder and there are NO stack frames). 5 occurrences / 0 identified
+// users, first 2026-08-13 06:24:03 UTC, release
+// `1f8409e2bedf441343eb12086a2131ff69397c37` (v0.12.8 prod),
+// call_site_function `?`, call_site_file `undefined` (the literal
+// placeholder — NO resolvable source location), request URL
+// `https://kortix.com/` (marketing homepage), browser iPhone iOS 18.7 Safari
+// (Safari 26), mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT
+// global `onerror`, `handled:false` — never reached a React error boundary).
+// Frames: `undefined` — no stack frames at all. The variable `EmptyRanges` is
+// NOT in the Kortix codebase (grep-confirmed) — it belongs to the third-party
+// script.
+//
+// Same family as the prior frameless Safari / browser-internal noise matchers
+// — `isUnresolvableStackOverflowNoise` (Safari frameless `onerror` stack
+// overflow), `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), and `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`) — a frameless global-handler capture dropped by a precise
+// message matcher with two negative guards preserving any first-party or
+// resolvable frame.
+//
+// `Can't find variable: <Name>` is Safari's GENERIC ReferenceError wording — a
+// REAL first-party `ReferenceError` (e.g. a typo referencing an undeclared
+// variable in our own code) would surface with the SAME wording, so the
+// matcher requires BOTH the Safari ReferenceError PREFIX
+// `/^Can't find variable: /` (the variable name varies per third-party
+// script, so a prefix — not exact — match is required; Chrome/V8's
+// `<Name> is not defined` wording is a DIFFERENT surface and is deliberately
+// NOT matched) AND the frameless shape (positive guard), plus two negative
+// guards: any resolved first-party `apps/web/src/…` frame → keep reporting;
+// any resolvable frame location → keep reporting. Only the frameless capture
+// (the production noise pattern) is dropped.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const EMPTY_RANGES_REFERENCE_ERROR = "Can't find variable: EmptyRanges"
+
+// The single synthetic frame shape Safari's global `onerror` produces when
+// the engine cannot build a stack: `{ filename: 'undefined' }` (the literal
+// placeholder string, NOT a missing key). The matcher treats this as NOT
+// resolvable (so the frameless positive guard fires), and the first-party
+// negative guard does not fire (it is not an `apps/web/src/…` path).
+const EMPTY_RANGES_PROD_FRAMES = [{ filename: 'undefined', function: '?' }]
+
+test('classifies the frameless Safari undefined-variable ReferenceError noise', () => {
+  // Exact production shape: the Safari `Can't find variable: EmptyRanges`
+  // message, the synthetic `{ filename: 'undefined' }` placeholder frame
+  // (NO resolvable source location).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: EMPTY_RANGES_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('classifies the frameless Safari undefined-variable noise with NO frames at all', () => {
+  // A frameless `onerror` capture may also arrive with an empty frames array
+  // (Sentry omits the stacktrace key when there is nothing to serialize).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('classifies the frameless Safari undefined-variable noise via the window.onerror filename', () => {
+  // The runtime gate receives the `window.onerror` filename (Safari sets it
+  // to the literal `"undefined"` placeholder). The matcher must treat it as
+  // NOT resolvable so the frameless positive guard fires.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'undefined',
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned Safari undefined-variable ReferenceError Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `ReferenceError`, mechanism
+  // `auto.browser.global_handlers.onerror` (uncaught global `onerror` —
+  // never reached a React error boundary, `handled:false`), the synthetic
+  // `{ filename: 'undefined' }` placeholder frame (NO resolvable source
+  // location), request URL `https://kortix.com/` (marketing homepage).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: EMPTY_RANGES_REFERENCE_ERROR,
+            stacktrace: { frames: EMPTY_RANGES_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Safari undefined-variable noise when frames are absent entirely (no stacktrace key)', () => {
+  // The production event may omit the stacktrace key entirely when there is
+  // nothing to serialize. The gate must still drop it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: EMPTY_RANGES_REFERENCE_ERROR }],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Safari undefined-variable noise via the runtime onerror gate', () => {
+  // The runtime `window.onerror` gate sees the `message` + the `window.onerror`
+  // `filename` (Safari sets the latter to the literal `"undefined"` placeholder
+  // — NOT a resolvable source location).
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'undefined',
+    }),
+    true,
+  )
+})
+
+test('suppresses the Safari undefined-variable noise via the runtime gate when the filename is absent', () => {
+  // A frameless `onerror` capture may also arrive with no filename at all.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Safari undefined-variable ReferenceError when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our OWN code referenced an
+  // undeclared variable (a real first-party Safari `ReferenceError`, e.g. a
+  // typo) → actionable; the negative guard MUST preserve it so the call site
+  // can be found + fixed. This is the whole reason the matcher is frame-aware
+  // (the `Can't find variable:` prefix is generic).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/workspace/index.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message: EMPTY_RANGES_REFERENCE_ERROR,
+        frames,
+      }),
+      false,
+      `expected first-party undefined-variable ReferenceError from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: EMPTY_RANGES_REFERENCE_ERROR, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party undefined-variable ReferenceError from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the Safari undefined-variable ReferenceError when a first-party window.onerror filename is present', () => {
+  // The runtime gate receives the `window.onerror` `filename`. A de-minified
+  // first-party `apps/web/src/…` filename means our own code is the culprit →
+  // actionable; keep reporting.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'apps/web/src/features/marketing/hero.tsx',
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'apps/web/src/features/marketing/hero.tsx',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the Safari undefined-variable ReferenceError when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // ReferenceError is attributable — a real first-party OR a third-party
+  // script that DID load and threw a resolvable `ReferenceError` with a stack
+  // we can trace. Keep reporting; only the frameless capture (the production
+  // noise pattern: a third-party script that failed to load entirely) is
+  // dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/chart-lib.js', function: 'init' }],
+    [{ filename: 'app:///inpage.js', function: 'emit' }],
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message: EMPTY_RANGES_REFERENCE_ERROR,
+        frames,
+      }),
+      false,
+      `expected attributable undefined-variable ReferenceError from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the Chrome/V8 "is not defined" wording (over-match guard)', () => {
+  // Chrome/V8 says `<Name> is not defined` for the SAME undeclared-variable
+  // ReferenceError — a DIFFERENT surface that is deliberately NOT matched, so
+  // a Chromium first-party `ReferenceError` keeps reporting. Frameless here on
+  // purpose (to prove the wording alone — not the frameless shape — is what
+  // keeps it reporting).
+  const message = 'EmptyRanges is not defined'
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message,
+      frames: [],
+    }),
+    false,
+    `expected Chrome/V8 wording "${message}" to keep reporting`,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+    }),
+    false,
+    `expected Sentry event for Chrome/V8 wording "${message}" to keep reporting`,
+  )
+})
+
+test('does NOT suppress a near-worded message (over-match guard)', () => {
+  // Only messages starting with the EXACT `Can't find variable: ` prefix are
+  // noise. A near-worded message (different prefix, or the prefix embedded in
+  // a longer first-party throw) keeps reporting so the matcher does not
+  // over-match a real first-party ReferenceError.
+  for (const message of [
+    "Can't find variable EmptyRanges", // missing the `: `
+    "Can't find variables: EmptyRanges", // plural + colon
+    "Can not find variable: EmptyRanges", // different modal wording
+    "Could not find variable: EmptyRanges",
+    "Error: Can't find variable: EmptyRanges (extra context)",
+    "Can't find variable", // bare prefix with no name — too short to be a real throw
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless rejection with a different message', () => {
+  // A frameless rejection carrying a DIFFERENT message is a different class —
+  // the matcher must not over-match it. This test pins the DIRECT matcher
+  // (other noise classes — the bare-`undefined` non-Error rejection and the
+  // `OperationError` class — have their own dedicated matchers + tests that
+  // legitimately drop their messages through the full Sentry gate, so they
+  // are not routed through `shouldIgnoreSentryBrowserNoise` here).
+  for (const message of [
+    'Something else entirely',
+    'ReferenceError: a different reference error',
+    'Non-Error promise rejection captured with value: undefined',
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected frameless "${message}" to keep reporting under the undefined-variable matcher`,
+    )
+  }
+  // A genuinely-non-noise message (no other matcher drops it) must keep
+  // reporting through the full Sentry gate too.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: 'Something else entirely', stacktrace: { frames: [] } },
+        ],
+      },
+    }),
+    false,
+    'expected Sentry event for a non-noise frameless message to keep reporting',
+  )
+})
+
+test('matches other third-party undefined-variable names (the prefix, not the specific name, is the anchor)', () => {
+  // The variable name belongs to the third-party script and varies per vendor
+  // (e.g. `EmptyRanges` from a charting lib, `WebAssembly` from a runtime
+  // detector). The matcher anchors on the Safari `Can't find variable: `
+  // PREFIX, so any third-party variable name classifies as noise when the
+  // frameless shape holds. The `WebAssembly` case is a documented real-world
+  // Safari throw from a feature-detect script (see
+  // `apps/web/src/components/markdown/unified-markdown-utils.ts`).
+  for (const message of [
+    "Can't find variable: WebAssembly",
+    "Can't find variable: SomeChartingConstant",
+    "Can't find variable: __third_party_init__",
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: EMPTY_RANGES_PROD_FRAMES,
+      }),
+      true,
+      `expected frameless "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [{ value: message, stacktrace: { frames: EMPTY_RANGES_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry gate to drop frameless "${message}"`,
+    )
+  }
+})
+
+test('strips the ReferenceError wrapper before matching (capture-path consistency)', () => {
+  // `stripErrorWrappers` strips `ReferenceError: ` and
+  // `Unhandled promise rejection: ` (and stacked) prefixes before the
+  // anchored prefix is matched, so all capture paths (window.onerror,
+  // onunhandledrejection, Sentry exception) classify consistently.
+  for (const message of [
+    `ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+    `Unhandled promise rejection: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+    `Unhandled promise rejection: ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: EMPTY_RANGES_PROD_FRAMES,
+      }),
+      true,
+      `expected wrapped "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the noise when the only frame is a non-resolvable placeholder', () => {
+  // Safari's global `onerror` can produce a few non-resolvable placeholder
+  // shapes when the engine cannot build a stack. The matcher treats an empty
+  // string OR the literal `"undefined"` placeholder as NOT resolvable, so the
+  // frameless positive guard fires for any of them. (A resolvable chunk /
+  // URL / `apps/web/src/…` filename would trip a negative guard instead.)
+  for (const frames of [
+    [{ filename: 'undefined', function: '?' }],
+    [{ filename: '', function: '?' }],
+    [{ filename: 'undefined' }],
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message: EMPTY_RANGES_REFERENCE_ERROR,
+        frames,
+      }),
+      true,
+      `expected non-resolvable placeholder frame ${JSON.stringify(frames)} to classify as noise`,
+    )
+  }
+})
+
+test('does NOT suppress when the resolvable frame is an empty-but-present array (negative-guard sanity)', () => {
+  // Sanity: a frame array containing a resolvable chunk filename must keep
+  // reporting even when the message matches — the resolvable-frame negative
+  // guard #2 fires. (Distinct from the empty-`filename` placeholder above,
+  // which is NOT resolvable.)
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: [{ filename: 'app:///_next/static/chunks/main.js', function: 'f' }],
+    }),
+    false,
+  )
+})
+
+test('the empty `undefined` placeholder filename does NOT shadow the first-party negative guard', () => {
+  // When BOTH a non-resolvable placeholder frame AND a resolved first-party
+  // `apps/web/src/…` frame are present, the first-party negative guard #1
+  // fires (our own code is the culprit) → keep reporting. The placeholder
+  // frame does NOT change that.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: [
+        { filename: 'undefined', function: '?' },
+        { filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' },
+      ],
+    }),
+    false,
+  )
+})
+
+test('suppresses the wrapped undefined-variable noise via the runtime onunhandledrejection gate', () => {
+  // An `onunhandledrejection` of an `Error` serializes to
+  // `Unhandled promise rejection: <message>`. The runtime gate extracts the
+  // message from `reason`/`error` too, and `stripErrorWrappers` strips the
+  // wrapper, so the wrapped form still classifies as noise.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: `Unhandled promise rejection: ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+      filename: 'undefined',
+    }),
+    true,
+  )
+})
+
+test('suppresses the wrapped undefined-variable noise via the runtime gate when the reason carries it', () => {
+  // The runtime `onunhandledrejection` gate also reads `reason.message`. A
+  // real `Error` reason carrying the Safari ReferenceError wording (frameless)
+  // classifies as noise.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      filename: 'undefined',
+      reason: { message: `ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}` },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress when a non-first-party resolvable filename is the window.onerror source', () => {
+  // The runtime gate's window.onerror `filename` can be a real third-party
+  // script URL (the charting lib that DID load but threw a resolvable
+  // ReferenceError). That is attributable → keep reporting; only the
+  // frameless `undefined` placeholder filename drops.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'https://cdn.example.com/chart-lib.js',
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'https://cdn.example.com/chart-lib.js',
+    }),
+    false,
+  )
+})
+
+test('a bare prefix with no variable name is NOT matched (over-match guard)', () => {
+  // The matcher anchors on the PREFIX `/^Can't find variable: ` (note the
+  // trailing space after the colon). `stripErrorWrappers` trims the message
+  // first, so a bare `"Can't find variable: "` (no variable name) loses its
+  // trailing space → `"Can't find variable:"`, which does NOT match the
+  // anchored prefix. This is the correct over-match guard: Safari always
+  // appends the variable name, so a bare prefix is never a real throw, and
+  // keeping it reporting means a degenerate / adversarial message is not
+  // silently swallowed. A real first-party throw WITH a stack keeps reporting
+  // regardless (covered by the negative-guard tests above).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: "Can't find variable: ",
+      frames: EMPTY_RANGES_PROD_FRAMES,
+    }),
+    false,
+    'expected the bare prefix (no variable name) to keep reporting',
   )
 })

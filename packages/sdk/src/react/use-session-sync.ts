@@ -10,6 +10,7 @@ import {
 } from '../browser/session-sync/session-cache-ownership';
 import {
   getSessionSyncController,
+  loadSessionRuntimeStatus,
   loadSessionTranscriptMessages,
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
@@ -25,7 +26,7 @@ import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
-export { loadSessionTranscriptMessages };
+export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
 type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
   patch?: string;
@@ -36,7 +37,6 @@ type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'pat
 const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_TODOS: Todo[] = [];
 const IDLE_STATUS = { type: 'idle' } as SessionStatus;
-const BUSY_STATUS = { type: 'busy' } as SessionStatus;
 
 /**
  * Returns the current session tail and explicit history-loading state.
@@ -53,10 +53,35 @@ interface UseSessionSyncOptions {
    * Set false while `/start` has not switched this Kortix session's sandbox.
    */
   networkEnabled?: boolean;
+  /**
+   * The caller's working projection (`useSessionWorking`), when it has one.
+   *
+   * It is the transcript liveness poll's switch. Reading the raw `session.status`
+   * slot instead means a dropped busy frame — a backgrounded tab, a proxy
+   * reconnect across the start of a turn — leaves the poll off for a turn the
+   * server's own authority says is running, and the transcript then never
+   * refreshes behind the missing stream. Omit it (apps/mobile) and the stream
+   * slot decides, as before.
+   */
+  working?: boolean;
+}
+
+/**
+ * Whether the transcript liveness poll should be running. Pure, so "the
+ * projection outranks the stream slot" is a test rather than a convention.
+ */
+export function livenessBusy(input: {
+  networkEnabled: boolean;
+  runtimeHealthy: boolean;
+  working: boolean | undefined;
+  streamBusy: boolean;
+}): boolean {
+  if (!input.networkEnabled || !input.runtimeHealthy) return false;
+  return input.working ?? input.streamBusy;
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
-  const { kortixSessionScope, networkEnabled = true } = options;
+  const { kortixSessionScope, networkEnabled = true, working } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -171,11 +196,17 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     ),
   );
 
-  const runtimeStatus = useSyncStore(
+  // The runtime's own status, unmodified.
+  //
+  // A busy OVERRIDE used to sit here: while a prompt was "observed", an idle
+  // runtime status was rewritten to busy. It was a guess with a latch — every
+  // signal that could release it can be lost — and it is what left sessions
+  // rendering as working until the user reloaded. "Is this session working?"
+  // is now answered once, by `useSessionWorking` over the server's turn
+  // authority; this hook reports what the stream said and nothing more.
+  const status = useSyncStore(
     (state) => state.sessionStatus[readableSessionId] ?? IDLE_STATUS,
   ) as SessionStatus;
-  const status =
-    sync.isPromptObservedBusy && runtimeStatus.type === 'idle' ? BUSY_STATUS : runtimeStatus;
   const diffs = useSyncStore((state) => state.diffs[readableSessionId]) as FileDiff[] | undefined;
   const todos = useSyncStore((state) => state.todos[readableSessionId]) as Todo[] | undefined;
 
@@ -183,8 +214,8 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
   useEffect(() => {
-    controller.setBusy(networkEnabled && runtimeHealthy && isBusy);
-  }, [controller, isBusy, networkEnabled, runtimeHealthy]);
+    controller.setBusy(livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy: isBusy }));
+  }, [controller, isBusy, networkEnabled, runtimeHealthy, working]);
 
   return {
     messages,

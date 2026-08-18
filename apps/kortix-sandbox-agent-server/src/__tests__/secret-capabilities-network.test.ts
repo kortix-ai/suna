@@ -80,3 +80,60 @@ describe('network-boundary capabilities in the agent instructions', () => {
     expect(md).toContain('`authorization`')
   })
 })
+
+/**
+ * The echo guidance is authored by the API (mode-aware since the in-guest shim
+ * shipped) and rendered here verbatim. This asserts the passthrough, because
+ * the two mechanisms give OPPOSITE advice for the same symptom: the provider
+ * edge cuts an echoing response (empty reply = success) while the shim redacts
+ * it (200 with `[REDACTED]` = success). A renderer that dropped or rewrote
+ * these lines would leave the agent reading a dead host as a working boundary.
+ */
+describe('boundary echo notes reach the agent unchanged', () => {
+  const catalog = (network: string[]) =>
+    JSON.stringify({
+      version: 1,
+      capabilities: [
+        {
+          identifier: 'BOUNDARY_ONE',
+          delivery: 'network',
+          hosts: ['api.example.com'],
+          header: 'x-demo',
+        },
+      ],
+      notes: { network },
+    })
+
+  test('the shim wording survives rendering', () => {
+    const out = renderSecretCapabilitiesInstruction(
+      catalog([
+        'A response that would echo the value back into the sandbox comes back with `[REDACTED]` in its place.',
+        'An empty reply or a connection error on a listed host is a REAL failure here. Do not read it as the boundary working.',
+      ]),
+    )
+    expect(out).toContain('[REDACTED]')
+    expect(out).toContain('is a REAL failure here')
+  })
+
+  test('the provider-edge wording survives rendering', () => {
+    const out = renderSecretCapabilitiesInstruction(
+      catalog(['So `curl: (52) Empty reply from server` on a listed host means the boundary worked.']),
+    )
+    expect(out).toContain('Empty reply from server')
+  })
+
+  test('the renderer does not invent echo guidance when the API sent none', () => {
+    // The API withholds the notes when it cannot tell which mechanism serves
+    // the session. The guest must not fill that in.
+    const out = renderSecretCapabilitiesInstruction(
+      JSON.stringify({
+        version: 1,
+        capabilities: [
+          { identifier: 'B', delivery: 'network', hosts: ['api.example.com'], header: 'x' },
+        ],
+      }),
+    )
+    expect(out).not.toContain('[REDACTED]')
+    expect(out).not.toContain('Empty reply from server')
+  })
+})

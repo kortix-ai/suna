@@ -68,21 +68,24 @@ export function CodeBlock({
   return (
     <div
       className={cn(
-        'group not-prose bg-popover relative my-5 overflow-hidden rounded-md border',
+        'group not-prose bg-card dark:bg-muted relative my-5 overflow-hidden rounded-md border',
         className,
       )}
     >
-      <div className="border-border/70 bg-card dark:bg-muted flex items-center justify-between gap-2 border-b border-dashed px-3 py-1 pr-2">
-        <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase select-none">
+      <figcaption className="flex min-h-[29.5px] items-center justify-between gap-2 px-2 py-0.5 text-[12px]">
+        <span
+          data-testid="code-block-language"
+          className="text-muted-foreground font-mono font-medium tracking-wide lowercase select-none"
+        >
           {languageLabel(language)}
         </span>
         {code && !isStreaming && <CopyButton code={code} />}
-      </div>
+      </figcaption>
       <pre
         className={cn(
-          'max-h-[520px] overflow-auto py-4',
-          'text-foreground font-mono text-sm leading-[1.65]',
-          '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit',
+          'bg-popover max-h-[520px] overflow-auto py-2.5',
+          'text-foreground rounded-t-sm font-mono text-xs leading-[1.65]',
+          '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs',
           '[&_.shiki]:!bg-transparent [&_span]:border-none [&_span]:!bg-transparent [&_span]:outline-none',
         )}
       >

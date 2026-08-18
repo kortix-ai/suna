@@ -43,6 +43,8 @@ let secretItems: Array<{
 let manifestRequired: string[];
 let manifestOptional: string[];
 let syncResponse: Record<string, unknown>;
+/** What the strategy PUT reports for the project's network boundary. */
+let boundaryAvailable: boolean | undefined;
 
 function secret(
   identifier: string,
@@ -54,6 +56,7 @@ function secret(
     consumer?:
       'sandbox' | 'llm_gateway' | 'connector' | 'git_proxy' | 'http_broker' | 'network' | null;
     delivery_status?: 'available' | 'unavailable' | 'disabled';
+    network_boundary_available?: boolean;
     requires_rotation?: boolean;
   } = {},
 ) {
@@ -72,6 +75,8 @@ function secret(
     strategy: state.strategy ?? 'runtime',
     consumer: state.consumer ?? 'sandbox',
     delivery_status: state.delivery_status ?? 'available',
+    // Left off the JSON entirely when undefined — an older server omits it.
+    network_boundary_available: state.network_boundary_available,
     requires_rotation: state.requires_rotation ?? false,
   };
 }
@@ -172,6 +177,7 @@ function mockApi() {
           strategy: input.strategy as 'runtime' | 'egress' | 'broker' | 'denied',
           consumer: input.strategy === 'runtime' ? 'sandbox' : null,
           delivery_status: input.strategy === 'denied' ? 'disabled' : 'available',
+          network_boundary_available: boundaryAvailable,
           requires_rotation: input.strategy !== 'runtime',
         }),
       );
@@ -200,6 +206,7 @@ beforeEach(() => {
   secretItems = [];
   manifestRequired = [];
   manifestOptional = [];
+  boundaryAvailable = undefined;
   syncResponse = {
     ok: true,
     active_sandboxes: 1,
@@ -483,6 +490,83 @@ describe('kortix secrets ls — identifier-first', () => {
     expect(out).toContain('rotate');
   });
 
+  test('flags a stored secret whose delivery path this deployment cannot run', async () => {
+    // The value is set and shared, so every other signal on the row reads
+    // healthy; `delivery_status` is the only thing that says it arrives nowhere.
+    secretItems = [
+      {
+        identifier: 'ANTHROPIC_API_KEY',
+        name: 'ANTHROPIC_API_KEY',
+        strategy: 'egress',
+        consumer: 'network',
+        delivery_status: 'unavailable',
+      },
+    ];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('approved hosts · unavailable');
+    expect(out).toContain('1 secret cannot be delivered');
+  });
+
+  test('a deliverable secret carries no undeliverable marker or warning', async () => {
+    secretItems = [
+      {
+        identifier: 'ANTHROPIC_API_KEY',
+        name: 'ANTHROPIC_API_KEY',
+        strategy: 'egress',
+        consumer: 'network',
+        delivery_status: 'available',
+      },
+    ];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('approved hosts');
+    expect(out).not.toContain('unavailable');
+    expect(out).not.toContain('cannot be delivered');
+  });
+
+  test('a disabled secret is a choice, not a fault, and is never flagged', async () => {
+    secretItems = [
+      {
+        identifier: 'RETIRED_KEY',
+        name: 'RETIRED_KEY',
+        strategy: 'denied',
+        consumer: null,
+        delivery_status: 'disabled',
+      },
+    ];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('disabled');
+    expect(out).not.toContain('unavailable');
+    expect(out).not.toContain('cannot be delivered');
+  });
+
+  test('the table stays aligned when one row carries the undeliverable marker', async () => {
+    secretItems = [
+      { identifier: 'LOCAL_KEY', name: 'LOCAL_KEY', strategy: 'runtime' },
+      {
+        identifier: 'BOUNDARY_KEY',
+        name: 'BOUNDARY_KEY',
+        strategy: 'egress',
+        consumer: 'network',
+        delivery_status: 'unavailable',
+      },
+    ];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const lines = stripAnsi(stdout).split('\n');
+    const [header = ''] = lines.filter((line) => line.includes('IDENTIFIER'));
+    const rows = lines.filter((line) => line.startsWith('●'));
+    expect(header).toContain('SPEC');
+    expect(rows).toHaveLength(2);
+    const specColumn = header.indexOf('SPEC');
+    expect(rows.map((line) => line.indexOf('undeclared'))).toEqual([specColumn, specColumn]);
+  });
+
   test('does not report a value-less API row as set merely because the row exists', async () => {
     secretItems = [
       {
@@ -606,10 +690,61 @@ describe('kortix secrets delivery', () => {
         tls: 'terminate',
       },
     });
-    expect(stripAnsi(stdout)).toContain('outside the sandbox');
+    // The provider edge and the in-guest shim both satisfy `egress` and the CLI
+    // cannot tell which one a project runs, so the confirmation states the
+    // promise the two share and names neither.
+    const confirmation = stripAnsi(stdout);
+    expect(confirmation).toContain('injected outside the sandbox');
+    expect(confirmation).toContain('agent code never sees it');
+    expect(confirmation).not.toMatch(/platinum|daytona|e2b/i);
   });
 
-  test('rejects boundary controls that Platinum cannot enforce', async () => {
+  test('warns when the project has no network boundary to inject at', async () => {
+    boundaryAvailable = false;
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+    ]);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain('No network boundary is enabled on this project');
+  });
+
+  test('stays quiet about the boundary when the server reports one, or reports nothing', async () => {
+    boundaryAvailable = true;
+    const enabled = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+    ]);
+    expect(enabled).toBe(0);
+    expect(stripAnsi(stdout)).not.toContain('No network boundary');
+
+    // An older server omits the field; absence is not evidence of absence.
+    boundaryAvailable = undefined;
+    const legacy = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'egress',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+    ]);
+    expect(legacy).toBe(0);
+    expect(stripAnsi(stdout)).not.toContain('No network boundary');
+  });
+
+  test('rejects boundary controls no injection point can enforce', async () => {
     const code = await runSecrets([
       'delivery',
       'ANTHROPIC_API_KEY',

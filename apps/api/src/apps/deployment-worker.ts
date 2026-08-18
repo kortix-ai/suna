@@ -19,7 +19,8 @@ import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
-import { assertAppBudgetAvailable } from './budget';
+import { AppBudgetExceededError } from './budget';
+import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
 
@@ -382,7 +383,24 @@ export async function driveAppDeployment(
       );
     }
 
-    await assertAppBudgetAvailable(context.app.appId, Number(context.app.monthlyBudgetUsd));
+    // Entitlement, concurrency and budget, before a build burns provider time.
+    // A refusal here is permanent: the operator must fund the account, stop an
+    // App, or raise the budget and then deploy again. Retrying three times on a
+    // 30s backoff would only restate the same answer.
+    try {
+      await assertAppComputeAllowed(context.app);
+    } catch (error) {
+      if (error instanceof AppBudgetExceededError) {
+        throw new PermanentAppDeploymentError(error.message, 'app_budget_exceeded');
+      }
+      if (error instanceof AppAccountUnfundedError) {
+        throw new PermanentAppDeploymentError(error.message, 'account_unfunded');
+      }
+      if (error instanceof AppLimitError) {
+        throw new PermanentAppDeploymentError(error.message, error.code);
+      }
+      throw error;
+    }
 
     const snapshotName = `kortix-app-${claimed.deploymentId.replaceAll('-', '')}`;
     await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
@@ -394,6 +412,11 @@ export async function driveAppDeployment(
     await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
       data: { provider },
     });
+    const requestedMachine = {
+      cpuCores: context.app.cpuCores,
+      memoryGb: context.app.memoryGb,
+      diskGb: context.app.diskGb,
+    };
     await hosting.buildImage({
       provider,
       snapshotName,
@@ -401,11 +424,7 @@ export async function driveAppDeployment(
       sourceDir: normalized.sourceDir,
       dockerfile: normalized.dockerfile,
       runtimeSpec: normalized.runtimeSpec,
-      machine: {
-        cpuCores: context.app.cpuCores,
-        memoryGb: context.app.memoryGb,
-        diskGb: context.app.diskGb,
-      },
+      machine: requestedMachine,
       logTap: {
         onLine: (line) => {
           void event(claimed.deploymentId, 'build_log', line.slice(0, 4_000), { level: 'debug' });
@@ -439,11 +458,7 @@ export async function driveAppDeployment(
         userId: context.deployment.createdBy,
         name: `app-${context.app.routeKey}-v${context.deployment.version}`,
         snapshotName,
-        machine: {
-          cpuCores: context.app.cpuCores,
-          memoryGb: context.app.memoryGb,
-          diskGb: context.app.diskGb,
-        },
+        machine: requestedMachine,
         envVars: runtimeEnvironment.env,
       });
       runtimeExternalId = handle.externalId;
@@ -464,17 +479,33 @@ export async function driveAppDeployment(
           environmentKeys: Object.keys(runtimeEnvironment.env).sort(),
         },
       });
+      // Meter what the provider actually allocates. E2B has no disk parameter,
+      // so charging this App's disk_gb there would bill storage nobody
+      // provisioned. Tell the operator when the two differ instead of silently
+      // accepting a specification the provider ignored.
+      const effectiveMachine = hosting.effectiveMachine(provider, requestedMachine);
+      if (
+        effectiveMachine.cpuCores !== requestedMachine.cpuCores
+        || effectiveMachine.memoryGb !== requestedMachine.memoryGb
+        || effectiveMachine.diskGb !== requestedMachine.diskGb
+      ) {
+        await event(
+          claimed.deploymentId,
+          'machine_provider_adjusted',
+          `${provider} does not enforce the full machine specification; billing meters what it allocates`,
+          {
+            runtimeId,
+            level: 'warn',
+            data: { requested: requestedMachine, effective: effectiveMachine },
+          },
+        );
+      }
       await startComputeSession({
         sandboxId: runtimeId,
         accountId: context.app.accountId,
         actorUserId: context.deployment.createdBy,
         provider,
-        spec: {
-          cpuCores: context.app.cpuCores,
-          memoryGb: context.app.memoryGb,
-          diskGb: context.app.diskGb,
-          gpuCount: 0,
-        },
+        spec: { ...effectiveMachine, gpuCount: 0 },
         workloadType: 'app',
         appRuntimeId: runtimeId,
         metadata: { deploymentId: claimed.deploymentId, appId: context.app.appId },

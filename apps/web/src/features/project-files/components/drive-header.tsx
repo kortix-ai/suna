@@ -4,24 +4,28 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
-import { useSidebar } from '@/components/ui/sidebar';
+import { useOptionalSidebar, useSidebar } from '@/components/ui/sidebar';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import { cn } from '@/lib/utils';
 import {
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
   SquaresFourIcon as LayoutGrid,
   ListIcon as ListSolid,
+  SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 
 interface DriveHeaderProps {
   historyToggle: { open: boolean; onToggle: () => void };
   reviewsToggle: { open: boolean; onToggle: () => void; openCount?: number };
   /**
-   * Reserve room for the floating "open sidebar" toggle that the project shell
-   * renders over the top-left corner when the sidebar is collapsed (desktop) or
-   * on mobile (always). Only the standalone Files page sits directly under it;
-   * the embedded session view has its own header above, so it opts out.
+   * Draw the page-level sidebar opener. Only the standalone Files page needs
+   * it: ProjectShell does not render a web opener, and the embedded session
+   * view already has the session header above.
    */
   offsetForSidebarToggle?: boolean;
 }
@@ -35,15 +39,39 @@ interface DriveHeaderProps {
  */
 export const FILES_HEADER_DESKTOP_CLASS = 'kx-files-header';
 
-export function driveHeaderClass(offsetForSidebarToggle: boolean, sidebarCollapsed: boolean) {
+export function driveHeaderClass(offsetForSidebarToggle: boolean, _sidebarCollapsed: boolean) {
   return cn(
-    'flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 pb-4',
-    // Mobile: the shell's open-sidebar trigger always sits top-left, so drop
-    // the title below it. Desktop: only the collapsed-sidebar toggle overlaps,
-    // so inset the title left only then (keeps it aligned when expanded).
-    offsetForSidebarToggle ? 'pt-14 md:pt-3' : 'pt-5',
-    offsetForSidebarToggle && sidebarCollapsed && 'md:pl-14',
+    'flex flex-wrap gap-1 border-b px-2 items-center justify-between gap-x-4 gap-y-3 py-2 pr-4',
     offsetForSidebarToggle && FILES_HEADER_DESKTOP_CLASS,
+  );
+}
+
+/**
+ * Same rules as capability tabs / project-home / session header. In flow
+ * with the Files title — do not absolute-position it over the header.
+ */
+function FilesSidebarToggle() {
+  const sidebar = useOptionalSidebar();
+  const show = useShowPageSidebarOpener();
+  if (!sidebar || !show) return null;
+
+  const label = sidebarOpenerLabel(sidebar);
+
+  return (
+    <Hint label={label} side="bottom">
+      <Button
+        type="button"
+        aria-label={label}
+        variant="ghost"
+        size="icon"
+        onClick={sidebar.toggleSidebar}
+        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
+        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
+        className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer active:scale-[0.96]"
+      >
+        <PanelLeft className="cn-rtl-flip size-4" />
+      </Button>
+    </Hint>
   );
 }
 
@@ -71,11 +99,11 @@ export function DriveHeader({
       // sidebar is collapsed, since an expanded sidebar covers the lights.
       data-sidebar-collapsed={sidebarCollapsed || undefined}
     >
-      <div className="min-w-0 space-y-1">
-        <h2 className="text-foreground text-xl font-medium">Files</h2>
-        <p className="text-muted-foreground text-sm text-pretty">
-          Every document, asset, and piece of work in this project lives here.
-        </p>
+      <div className="flex min-w-0 items-center gap-1">
+        {offsetForSidebarToggle ? <FilesSidebarToggle /> : null}
+        <div className="min-w-0 space-y-1">
+          <h2 className="text-foreground text-xl font-medium">Files</h2>
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">

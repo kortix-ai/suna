@@ -5,7 +5,6 @@ import {
   isSettingsTabAllowed,
 } from '@/features/workspace/settings/settings-panel';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
-import type { RailFlags } from '@/features/workspace/settings/rail';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,
@@ -22,24 +21,10 @@ import {
   type SettingsPaletteParams,
 } from './settings-palette-items';
 
-const ALL_FLAGS_ON: RailFlags = {
-  marketplaceEnabled: true,
-  llmGatewayAvailable: true,
-  voiceEnabled: true,
-  reviewEnabled: true,
-};
-const ALL_FLAGS_OFF: RailFlags = {
-  marketplaceEnabled: false,
-  llmGatewayAvailable: false,
-  voiceEnabled: false,
-  reviewEnabled: false,
-};
-
-const IN_A_PROJECT: SettingsPaletteParams = {
-  hasProject: true,
-  flags: ALL_FLAGS_ON,
-  billingEnabled: true,
-};
+// No `flags` any more: the three flag-gated rail rows (Marketplace, Review,
+// Voice) moved to `/projects/<id>/config` with the rest of project
+// configuration, so nothing left in the derived list varies by flag.
+const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true };
 
 function tabsFor(params: SettingsPaletteParams): SettingsTab[] {
   return settingsPaletteGroups(params).flatMap((group) => group.items.map((item) => item.tab));
@@ -89,11 +74,13 @@ describe('settings tab coverage', () => {
     expect(reachable.length).toBe(SETTINGS_TABS.length);
   });
 
-  test('the pinned Upgrades item is included even though it is in no rail group', () => {
-    // `rail.ts` exports UPGRADE_ITEM separately from `railGroups()` — it is
-    // pinned to the rail's footer. A derivation that walked only the groups
-    // would silently drop it.
-    expect(tabsFor(IN_A_PROJECT)).toContain('upgrades');
+  test('the derivation walks every rail group and invents nothing', () => {
+    // `rail.ts` used to export a pinned `UPGRADE_ITEM` alongside
+    // `railGroups()`, and a derivation that walked only the groups silently
+    // dropped it. Upgrades is a section of `/projects/<id>/config` now and the
+    // rail has no pinned row left, so the invariant is simply that the derived
+    // list and the rail agree exactly.
+    expect([...tabsFor(IN_A_PROJECT)].sort()).toEqual([...SETTINGS_TABS].sort());
   });
 
   test('every offered row carries an icon, a group and searchable keywords', () => {
@@ -123,9 +110,11 @@ describe('mirrored settings-panel constants', () => {
 
   test('PALETTE_NO_PROJECT_DEFAULT_TAB equals STANDALONE_DEFAULT_SETTINGS_TAB', () => {
     expect(PALETTE_NO_PROJECT_DEFAULT_TAB).toBe(STANDALONE_DEFAULT_SETTINGS_TAB);
-    // And it must not be the project-scoped default, which is the bug the
-    // standalone route already had to fix.
-    expect(PALETTE_NO_PROJECT_DEFAULT_TAB).not.toBe(DEFAULT_SETTINGS_TAB);
+    // The two defaults converged when project configuration left the overlay:
+    // `DEFAULT_SETTINGS_TAB` was `general`, a project tab, and is `profile`
+    // now. What still has to hold is that this one renders with no project.
+    expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(PALETTE_NO_PROJECT_DEFAULT_TAB);
+    expect(isSettingsTabAllowed(DEFAULT_SETTINGS_TAB, { hasProject: false })).toBe(true);
   });
 });
 
@@ -136,59 +125,46 @@ describe('mirrored settings-panel constants', () => {
  * offered-but-unreachable tab is a test failure rather than a dead click.
  */
 describe('offered tabs survive the panel filter', () => {
-  const allowedParams = (hasProject: boolean, billingEnabled: boolean) => ({
-    hasProject,
-    // Unresolved probes: `isSettingsTabAllowed` fail-opens on both, exactly
-    // as it does on a real first paint.
-    projectCapsResolved: false,
-    projectCan: () => true,
-    accountPermsResolved: false,
-    accountCan: () => true,
-    billingEnabled,
-  });
+  const allowedParams = (hasProject: boolean) => ({ hasProject });
 
   test('with a project, every offered tab is allowed', () => {
     for (const tab of tabsFor(IN_A_PROJECT)) {
-      expect(isSettingsTabAllowed(tab, allowedParams(true, true))).toBe(true);
+      expect(isSettingsTabAllowed(tab, allowedParams(true))).toBe(true);
     }
   });
 
   test('with NO project, every offered tab is allowed', () => {
-    const params: SettingsPaletteParams = {
-      hasProject: false,
-      flags: ALL_FLAGS_ON,
-      billingEnabled: true,
-    };
+    const params: SettingsPaletteParams = { hasProject: false };
     const offered = tabsFor(params);
     expect(offered.length).toBeGreaterThan(0);
     for (const tab of offered) {
-      expect(isSettingsTabAllowed(tab, allowedParams(false, true))).toBe(true);
+      expect(isSettingsTabAllowed(tab, allowedParams(false))).toBe(true);
     }
   });
 
   test('with NO project, only account-scoped tabs are offered', () => {
-    const offered = tabsFor({ hasProject: false, flags: ALL_FLAGS_ON, billingEnabled: true });
+    const offered: string[] = tabsFor({ hasProject: false });
     expect([...offered].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
-    // The project workspace tabs specifically — these were the ones the old
-    // `Customize · X` entries offered from `/accounts/**`.
-    for (const tab of ['general', 'secrets', 'repositories', 'sandbox', 'models'] as const) {
+    // The project configuration tabs specifically — these were the ones the
+    // old `Customize · X` entries offered from `/accounts/**`. They are not
+    // offered from anywhere in this list now: they are `?section=` values on
+    // `/projects/<id>/config`, reached through the `proj-customize` row.
+    for (const tab of ['general', 'secrets', 'repositories', 'sandbox', 'models']) {
       expect(offered).not.toContain(tab);
     }
   });
 
-  test('Billing disappears when billing is off', () => {
-    expect(tabsFor({ ...IN_A_PROJECT, billingEnabled: false })).not.toContain('billing');
-    expect(tabsFor(IN_A_PROJECT)).toContain('billing');
-  });
+  // The "Billing disappears when billing is off" case is gone with the tab.
+  // Billing is not a settings tab any more — it is a section of
+  // `/accounts/[id]`, reached from the `account-billing` registry row, and
+  // that row carries `requiresBilling: true` so the palette still hides it
+  // when billing is off (asserted in `menu-registry.flags.test.ts`).
 
-  test('flag-gated tabs disappear with their flag', () => {
-    const off = tabsFor({ ...IN_A_PROJECT, flags: ALL_FLAGS_OFF });
-    expect(off).not.toContain('marketplace');
-    expect(off).not.toContain('review');
-    expect(off).not.toContain('voice');
-    // ...but the rail's ungated rows survive every flag.
-    expect(off).toContain('models');
-    expect(off).toContain('snapshots');
+  test('the derived list is exactly the rail, with or without a project', () => {
+    // It used to vary by three feature flags. Those rows are sections of
+    // `/projects/<id>/config` now and the flag composition moved there with
+    // them (`project-settings-sections.ts`), so this list has one shape.
+    expect([...tabsFor(IN_A_PROJECT)].sort()).toEqual([...SETTINGS_TABS].sort());
   });
 });
 
@@ -199,31 +175,19 @@ describe('offered tabs survive the panel filter', () => {
  */
 describe('search terms carried across from the removed registry entries', () => {
   const CARRIED: ReadonlyArray<[string, SettingsTab]> = [
-    ['secrets', 'secrets'],
-    ['env', 'secrets'],
-    ['git', 'repositories'],
-    ['github', 'repositories'],
-    ['members', 'members'],
-    ['collaborators', 'members'],
-    ['cron', 'schedules'],
-    ['webhooks', 'webhooks'],
-    ['slack', 'channels'],
-    ['agentmail', 'channels'],
-    ['llm', 'models'],
-    ['openrouter', 'models'],
-    ['marketplace', 'marketplace'],
-    ['approvals', 'review'],
-    ['livekit', 'voice'],
-    ['templates', 'sandbox'],
     ['theme', 'preferences'],
     ['wallpaper', 'preferences'],
     ['hotkeys', 'preferences'],
     ['mute', 'preferences'],
-    ['subscription', 'billing'],
-    ['ledger', 'usage'],
-    ['pat', 'api-keys'],
-    ['danger zone', 'general'],
-    ['customize', 'general'],
+    ['oauth', 'connected'],
+    ['avatar', 'profile'],
+    // Everything else that used to be listed here named a tab that has left
+    // this rail. The thirteen project-configuration words (secrets, env, git,
+    // github, members, collaborators, slack, agentmail, llm, openrouter,
+    // marketplace, approvals, livekit, templates, danger zone, customize) are
+    // answered by the `proj-customize` registry row now — pinned in the case
+    // below — and the eight account words (subscription, ledger, pat, sso, …)
+    // by the `account-*` rows, pinned in the case after that.
   ];
 
   for (const [query, tab] of CARRIED) {
@@ -232,43 +196,107 @@ describe('search terms carried across from the removed registry entries', () => 
     });
   }
 
-  test('typing "profile name email" reaches Profile, not the workspace General tab', () => {
+  /**
+   * The eight account sections left the derived settings list, so every query
+   * that used to reach them through a settings row has to reach the
+   * `account-*` registry row instead. A registry row is searched by
+   * `label + keywords` (`buildPaletteSearchText` in command-palette.tsx), so
+   * this asserts against exactly that text.
+   */
+  test('the account sections still answer the queries their settings rows did', () => {
+    const ACCOUNT_QUERIES: ReadonlyArray<[string, string]> = [
+      ['subscription', 'account-billing'],
+      ['wallet', 'account-billing'],
+      ['ledger', 'account-usage'],
+      ['credits', 'account-usage'],
+      ['pat', 'account-tokens'],
+      ['cli', 'account-tokens'],
+      ['sso', 'account-identity'],
+      ['saml', 'account-identity'],
+      ['scim', 'account-identity'],
+      ['rbac', 'account-roles'],
+      ['compliance', 'account-audit'],
+      ['sign in rules', 'account-general'],
+    ];
+    for (const [query, id] of ACCOUNT_QUERIES) {
+      const item = paletteItems.find((entry) => entry.id === id);
+      expect(item).toBeDefined();
+      const haystack = `${item!.label} ${item!.keywords ?? ''}`.toLowerCase();
+      for (const word of query.split(' ')) {
+        expect(haystack).toContain(word);
+      }
+    }
+  });
+
+  /**
+   * The thirteen project-configuration sections left the derived settings
+   * list for `/projects/<id>/config`. That page has ONE routable URL per
+   * section but only one registry row (`proj-customize`) — a section is a
+   * query param, not a page, so thirteen rows would be thirteen links to one
+   * destination. Its keyword bag therefore has to answer every word those
+   * thirteen rows used to answer, the same way `proj-triggers` absorbed
+   * Schedules' and Webhooks' bags.
+   */
+  test('the project settings row answers the queries its thirteen settings rows did', () => {
+    const item = paletteItems.find((entry) => entry.id === 'proj-customize');
+    expect(item).toBeDefined();
+    const haystack = `${item!.label} ${item!.keywords ?? ''}`.toLowerCase();
+    for (const word of [
+      'secrets',
+      'env',
+      'git',
+      'github',
+      'members',
+      'collaborators',
+      'slack',
+      'agentmail',
+      'llm',
+      'openrouter',
+      'marketplace',
+      'approvals',
+      'livekit',
+      'templates',
+      'snapshots',
+      'feature flags',
+      'upgrades',
+      'danger zone',
+      'customize',
+    ]) {
+      expect(haystack).toContain(word);
+    }
+  });
+
+  test('typing "profile name email" reaches Profile', () => {
     // `pref-general` carried exactly these keywords and opened `general` —
     // the PROJECT workspace tab. The user's own tab is `profile`.
     const hits = tabsMatching('profile');
     expect(hits).toContain('profile');
-    expect(hits).not.toContain('general');
     expect(tabsMatching('email')).toContain('profile');
     expect(tabsMatching('name email')).toContain('profile');
   });
 
-  test('typing "snapshot" reaches the Snapshots tab', () => {
-    // It used to reach Sandbox templates only (`proj-sandbox`'s keyword) and
-    // could not reach Snapshots at all.
-    expect(tabsMatching('snapshot')).toContain('snapshots');
-    expect(tabsMatching('snapshots')).toContain('snapshots');
-  });
-
-  test('typing "audit" reaches the Audit log tab', () => {
+  test('typing "audit" reaches the Audit log section, not only the session action', () => {
     // It used to reach only the SESSION action `open-session-audit`, which is
-    // a different surface entirely and stays where it is.
-    expect(tabsMatching('audit')).toContain('audit');
+    // a different surface entirely and stays where it is. The Audit log moved
+    // from a settings tab to `/accounts/[id]?tab=audit`, so the row that
+    // answers now is a registry row.
+    const audit = paletteItems.find((entry) => entry.id === 'account-audit');
+    expect(`${audit?.label} ${audit?.keywords ?? ''}`.toLowerCase()).toContain('audit');
     expect(paletteItems.find((item) => item.id === 'open-session-audit')).toBeDefined();
   });
 
-  test('a rail group name is itself a query, as it is in the rail', () => {
-    expect(tabsMatching('organization')).toContain('audit');
-    expect(tabsMatching('organization')).toContain('roles');
-    expect(tabsMatching('organization')).not.toContain('secrets');
-  });
+  // Two cases retired here, both because their subject left the settings rail:
+  //
+  //   - "a rail group name is itself a query" used the Organization group,
+  //     which is gone — its eight rows are `/accounts/[id]` sections now, and
+  //     "account" reaching all of them is pinned in
+  //     `command-palette-search.test.ts` instead.
+  //   - "the two tabs both labelled General are told apart by their group"
+  //     needed both Generals: Organization > General (now the account page's
+  //     Settings section) and Workspace > General (now a project config
+  //     section). Neither is a settings tab, so there is no longer a pair to
+  //     tell apart in this rail.
 
-  test('the two tabs both labelled "General" are told apart by their group', () => {
-    const groups = filterSettingsPaletteGroups(settingsPaletteGroups(IN_A_PROJECT), 'general');
-    const generals = groups.flatMap((group) =>
-      group.items.filter((item) => item.label === 'General').map((item) => item.groupLabel),
-    );
-    expect([...generals].sort()).toEqual(['Organization', 'Workspace']);
-  });
 });
 
 /**
@@ -285,26 +313,27 @@ describe('the registry no longer carries palette settings destinations', () => {
       .map((item) => ({ id: item.id, match: resolveSettingsOverlayHref(item.href ?? '') }))
       .filter((entry) => entry.match.opensOverlay);
 
-    expect(resolved.map((entry) => entry.id).sort()).toEqual(['nav-accounts', 'proj-customize']);
-
-    // `nav-accounts` opens the in-palette account switcher; this href is the
-    // routed fallback for surfaces without that picker.
-    // `proj-customize` is the generic "Customize" door.
-    const byId = new Map(resolved.map((entry) => [entry.id, entry.match]));
-    expect(byId.get('nav-accounts')).toEqual({ opensOverlay: true, tab: 'organization' });
-    expect(byId.get('proj-customize')).toEqual({ opensOverlay: true, tab: 'general' });
+    // Nothing does any more. `nav-accounts` left this list when the account
+    // surfaces moved to `/accounts/[id]`; `proj-customize` left it when
+    // project configuration moved to `/projects/[id]/config`. Every settings
+    // destination in the palette is either a derived row (which opens the
+    // overlay by tab id, not by href) or a plain navigation.
+    expect(resolved.map((entry) => entry.id).sort()).toEqual([]);
   });
 
-  test('proj-customize names a tab instead of resuming the last one', () => {
+  test('proj-customize points at the project settings page, not the overlay', () => {
     // A bare `/projects/{id}/settings` resolved to `{ tab: undefined }`, and
     // `openSettings(undefined)` keeps whatever was last open — so one entry
-    // landed somewhere different on every click.
+    // landed somewhere different on every click. It named `/settings/general`
+    // after that, until General became a section of the config page. A
+    // section-less `/config` opens that same default section.
     const customize = paletteItems.find((item) => item.id === 'proj-customize');
-    expect(customize?.href).toBe('/projects/{projectId}/settings/general');
-    expect(resolveSettingsOverlayHref(customize!.href!)).toEqual({
-      opensOverlay: true,
-      tab: DEFAULT_SETTINGS_TAB,
-    });
+    expect(customize?.href).toBe('/projects/{projectId}/config');
+    expect(customize?.kind).toBe('navigate');
+    expect(customize?.requiresProject).toBe(true);
+    // Must NOT be claimed by the overlay resolver, or the click would open a
+    // tab instead of navigating.
+    expect(resolveSettingsOverlayHref(customize!.href!).opensOverlay).toBe(false);
   });
 
   test('the removed per-tab entries are gone from every surface, not just the palette', () => {
@@ -317,10 +346,7 @@ describe('the registry no longer carries palette settings destinations', () => {
       'proj-review',
       'proj-voice',
       'proj-members',
-      'proj-schedules',
-      'proj-webhooks',
       'proj-channels',
-      'proj-settings',
       'pref-appearance',
       'pref-sounds',
       'pref-shortcuts',
@@ -330,9 +356,54 @@ describe('the registry no longer carries palette settings destinations', () => {
     }
   });
 
+  test('Triggers is a registry row, pointing at its own page', () => {
+    // Schedules and Webhooks were removed from the registry when every
+    // settings destination became derived; Triggers is back as one merged row
+    // because it is no longer a settings destination.
+    // `resolveSettingsOverlayHref` must not claim its href — that is what
+    // would re-open the retired overlay tabs.
+    const href = '/projects/{projectId}/triggers';
+    const item = paletteItems.find((entry) => entry.id === 'proj-triggers');
+    expect(item?.href).toBe(href);
+    expect(item?.kind).toBe('navigate');
+    expect(item?.requiresProject).toBe(true);
+    expect(resolveSettingsOverlayHref(href).opensOverlay).toBe(false);
+  });
+
   test('entries kept for the userMenu no longer render in the palette', () => {
-    for (const id of ['pref-general', 'account-billing', 'account-tokens']) {
+    // `account-billing` and `account-tokens` left this list: they are palette
+    // rows again, because their destinations left the settings overlay for
+    // `/accounts/[id]` and the derived settings list can no longer produce
+    // them. See the `account-*` block in `lib/menu-registry.ts`.
+    for (const id of ['pref-general']) {
       expect(paletteItems.find((item) => item.id === id)).toBeUndefined();
+    }
+  });
+
+  /**
+   * The account sections are hand-written registry rows, not derived settings
+   * rows — the derived list reads `railGroups()`, and none of these is in the
+   * rail any more. Each must point at `/accounts/{accountId}`, never at a
+   * `/settings/<tab>` segment `parseSettingsTab` would reject.
+   */
+  test('every account section is a navigate row on the account page', () => {
+    const ids = [
+      'account-general',
+      'account-members',
+      'account-billing',
+      'account-usage',
+      'account-groups',
+      'account-roles',
+      'account-identity',
+      'account-audit',
+      'account-tokens',
+    ];
+    for (const id of ids) {
+      const item = paletteItems.find((entry) => entry.id === id);
+      expect(item).toBeDefined();
+      expect(item?.kind).toBe('navigate');
+      expect(item?.href?.startsWith('/accounts/{accountId}?tab=')).toBe(true);
+      expect(resolveSettingsOverlayHref(item!.href!).opensOverlay).toBe(false);
     }
   });
 });

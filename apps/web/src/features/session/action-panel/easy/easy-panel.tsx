@@ -10,21 +10,28 @@
  * border, no wrapper of any kind. The cards carry their own borders, so a
  * container around them would only box a box.
  *
- * It owns no state. Everything it reads — the derived outputs, the context
- * groups, the running apps, and the callback that opens any of them — comes
- * from `SessionPanelProvider`, which sits above both this and the detail panel
- * because a row clicked HERE opens a detail THERE. Before the split those were
- * one component in one panel; see the provider's header for why they no longer
- * can be.
+ * It owns no state — everything it reads (the derived outputs, the context
+ * groups, the running apps, the callback that opens any of them) comes from
+ * `SessionPanelProvider`, which sits above both this and the detail panel
+ * because a row clicked HERE opens a detail THERE. Before the split those
+ * were one component in one panel; see the provider's header for why they no
+ * longer can be.
  *
  * The cards expand in place and never navigate away from each other. Opening
  * something is not navigation either — it fills the detail panel on the other
  * side of the screen, and these cards stay exactly as they were.
+ *
+ * This component used to also own `connectAppsOpen` — local toggle state for
+ * the Context card's "Connect apps" affordance. That affordance is gone
+ * (product decision — see `context-card.tsx`'s header comment), and the state
+ * went with it.
  */
 
+import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
 import { useOptionalSessionPanel } from '../session-panel-provider';
 import { AppsCard } from './apps-card';
 import { ContextCard } from './context-card';
+import { pathOutput } from './easy-panel-logic';
 import { OutputsCard } from './outputs-card';
 
 export function EasyPanel() {
@@ -33,8 +40,15 @@ export function EasyPanel() {
   // read-only inside `sub-session-modal.tsx`, which has no panel at all.
   if (!panel) return null;
 
-  const { files, context, apps, outputsDefaultOpen, sessionId, handleOpenOutput, openDetail } =
-    panel;
+  const {
+    files,
+    context,
+    apps,
+    outputsDefaultOpen,
+    sessionId,
+    handleOpenOutput,
+    openDetail,
+  } = panel;
 
   return (
     // A fill-and-scroll column, not a scrolling stack.
@@ -50,7 +64,7 @@ export function EasyPanel() {
     // Preview keep `shrink-0` and stay on screen at their full height, always.
     // `min-h-0` is what lets this shrink at all — a flex container defaults to
     // its content's minimum height and would otherwise refuse.
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <OutputsCard
         outputs={files}
         defaultExpanded={outputsDefaultOpen}
@@ -62,6 +76,10 @@ export function EasyPanel() {
         tools={context.tools}
         sessionId={sessionId}
         onOpenDetail={openDetail}
+        onOpenFile={(path, allPaths) =>
+          handleOpenOutput(pathOutput(path), allPaths.map(pathOutput))
+        }
+        onAddContext={() => useSessionComposerPrefillStore.getState().requestAttach(sessionId)}
       />
       {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
     </div>

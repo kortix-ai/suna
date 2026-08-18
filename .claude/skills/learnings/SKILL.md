@@ -21,6 +21,119 @@ linked, not inlined.
 
 ## Register
 
+### A shared connector catalog needs one canonical credential scope (2026-08-18)
+
+**When:** rematerializing a credential-dependent connector catalog. Only the
+project-default credential may write project-wide `connectorActions`. Never use
+a member-owned or non-default connection credential. Store catalogs per
+connection before supporting credential-specific action sets.
+*Incident:* Strix found that PR #6507 let a member MCP credential overwrite the
+shared project catalog and expose tenant-specific tool metadata before merge.
+*Enforcer:* `sync-mcp.test.ts` rejects member and non-default rematerialization.
+
+### Catalog discovery must use execution credentials and fail on upstream errors (2026-08-18)
+
+**When:** materializing a remote connector catalog, especially MCP
+`tools/list`. Resolve the same effective connection credential and static
+headers used by tool execution, including OAuth refresh. Reject non-2xx,
+protocol-error, and malformed responses; persist a safe error instead of an
+apparently healthy empty catalog. Re-run discovery after credentials change,
+and never include raw or encoded credential material in diagnostics.
+*Incident:* Essentia Dev Sage Intacct authenticated successfully and exposed
+four MCP tools, while Kortix sent no credential, parsed an empty HTTP 401 body,
+and materialized zero actions without an error.
+*Enforcer:* `sync-mcp.test.ts`, `unit-connector-call.test.ts`, and
+`oauth2.test.ts` cover authenticated discovery, refresh/rematerialization,
+HTTP/JSON-RPC failures, and credential redaction.
+
+### A reused speculative resource needs a consumption signal every holder can see (2026-08-17)
+
+**When:** caching a server-side find-or-create resource client-side (the warm
+session ready-store; any pre-provisioned handle). `POST /sessions/warm` reuses
+ONE still-unused session per user+project, so every tab, browser and device of
+that user holds the SAME id — and a per-tab in-memory store then trusts its
+held copy for its whole dwell. The moment ANY holder uses the resource, every
+other copy silently points at a session with a conversation in it; the next
+project-home send navigates there and auto-sends into it. Holding is not
+owning: consult a synchronous cross-holder registry at take time (localStorage
+is the only sync cross-tab channel), record every take AND every navigation
+into a session, and revalidate a held copy on visibility regain (scopes
+localStorage cannot cross). Corollary that let it ship: every session e2e flow
+`requires: ['daytona']`, so NO warm contract runs in local CI — green local
+gates proved nothing about this feature.
+*Incident:* 2026-08-17, dev, night before a customer release — home prompts
+delivered into previous sessions; newest session missing from the list (list
+seed wiped by refetches racing the `/start` marker drop; adoption stamped no
+activity or `updated_at`).
+*Enforcer:* `warm-session-taken-registry.test.ts` +
+`use-warm-project-session.test.ts` (cross-tab takes, navigation consumption,
+revalidation); SESS-18 pins `/start` adoption, list order and
+`exclude_session_id` — but only at staging gates (daytona-gated locally:
+still a gap).
+
+### Active-turn renewal cadence must stay below the shortest provider backstop (2026-08-17)
+
+**When:** changing sandbox maintenance cadence, provider lifecycle timers, or active-turn renewal. Run exact-turn renewal in a separate leader-owned loop capped at 30 seconds. Do not couple it to the five-minute project-maintenance sweep. Scope the fast lane to durable `activeTurn` or `activeTurns` authority only.
+*Incident:* Dev Daytona renewed once, then stopped an exact active OpenCode turn 68 seconds later because the next project-maintenance pass was scheduled five minutes later than the one-minute deterministic provider timeout.
+*Enforcer:* `active-turn-renewal.test.ts` caps the loop at 30 seconds and requires `activeTurnsOnly`; `sandbox-reaper.test.ts` excludes idle rows from the fast lane; the live provider harness uses a one-minute native timer.
+
+### Every sandbox stop must revoke all persisted turn authority (2026-08-17)
+
+**When:** changing provider webhooks, idle reaping, manual stop, or the shared stopped-state writer. Remove `activeTurn`, `activeTurns`, and `lifecycleStopClaim` in the same transaction that sets `status='stopped'`. Do not rely on the reaper to clear tokens first; a provider-native timer or webhook can win that race.
+*Incident:* the one-minute Dev Platinum proof stopped after `deadline_at`, but the provider webhook committed `status='stopped'` with a synthetic unknown `activeTurns` token still present.
+*Enforcer:* `sandbox-state-sync.test.ts` requires `applyStoppedState()` to remove every turn-authority key atomically for all stop paths. The live provider harness verifies the stopped row has zero active turns.
+
+### Presigned uploads must suppress runtime-inferred content types (2026-08-17)
+
+**When:** sending a body to a provider-generated signed upload URL. Send the exact signed headers. Set an explicit empty `Content-Type` when the signature omits it. Do not let Bun infer a MIME type from `Bun.file()`.
+*Incident:* E2B template uploads returned GCS `403 SignatureDoesNotMatch` because Bun added `application/gzip` to a URL signed with an empty content type. Template creation succeeded, but every new immutable image remained unbuildable.
+*Enforcer:* `unit-e2b-bun-upload-patch.test.ts` requires the E2B dependency patch to use `Bun.file()` and an explicit empty `Content-Type` in both bundles. A real E2B template build verifies the signed upload.
+
+### Provider lifecycle renewal must use the provider activity primitive (2026-08-17)
+
+**When:** implementing provider-neutral lifecycle renewal. Use the provider's native activity or deadline API. Do not assume a guest command updates the provider lifecycle clock. Reject renewal unless the provider reports the sandbox as running.
+*Incident:* Daytona accepted repeated `true` guest commands while its one-minute native autostop clock continued unchanged. The sandbox stopped 21 seconds before Kortix `deadline_at` during deterministic lifecycle testing.
+*Enforcer:* `daytona.test.ts` requires `refreshActivity()`, rejects stopped sandboxes, propagates failures, and bounds a hung refresh. The live provider harness forces a one-minute native timer.
+
+### A persisted user message is not proof that its OpenCode turn is active (2026-08-17)
+
+**When:** changing exact-turn lifecycle probes. Treat a user-only or incomplete assistant message as active only when `/session/status` reports that exact session as `busy` or `retry`. Treat an idle session as terminal. Treat an unreadable or unknown status as unknown and non-renewing.
+*Incident:* a native OpenCode prompt persisted its user message but created no assistant message; the exact-message probe returned active for 198 seconds and would have renewed an idle Platinum sandbox indefinitely.
+*Enforcer:* `orphaned-turn-finalize.test.ts` covers busy, retry, idle, and unreadable session status.
+
+### A sandbox lifecycle grant requires exact active-turn evidence (2026-08-17)
+
+**When:** changing session prompt delivery, sandbox reaping, or any sandbox provider lifecycle adapter. Persist token-bound `delivering` authority before upstream delivery. Promote only after OpenCode exposes the exact user `messageID`. Renew both `deadline_at` and the provider-native timer only from a fresh exact-turn probe. Treat unknown evidence as non-renewing. Linearize idle stop against prompt delivery with one database claim, and never let renewal wake a stopped sandbox.
+*Incident:* long OpenCode image analyses outlived E2B's absolute timeout and provider idle timers; Kortix displayed “Your session will be restored” while the agent still worked.
+*Enforcer:* `sandbox-turn-lifecycle.test.ts`, `integration-sandbox-turn-lifecycle.test.ts`, `sandbox-reaper.test.ts`, `initial-turn-lifecycle.test.ts`, and all three provider lifecycle suites.
+
+### A platform-injected principal must never have its authority re-derived from user config (2026-08-13)
+
+**When:** touching code that RE-resolves an already-minted credential —
+`remintGrantForAgentSwitch` / `reconcileStoredSessionAgentGrant`
+(`apps/api/src/projects/lib/session-token-grant.ts`), which run on EVERY prompt
+and every connector call. The `meta` coordinator is injected by
+`addPlatformMetaAgent` and appears in no `kortix.yaml`, so resolving it through
+the manifest returns "unlisted agent": deny-all on a governed project,
+UNRESTRICTED on an ungoverned one. Both are destructive — the deny-all was
+WRITTEN over the coordinator's real grant on its first turn, and the null made
+the re-mint refuse the turn outright. Branch for the platform-owned principal in
+the ONE pure resolver every path shares (`grantFromLoadedAgents`); a special case
+at the mint alone is exactly what the re-mint then erases.
+Two traps cost hours here. A comment asserting a fast path is not evidence the
+fast path exists — `preview.ts:1144` says an ordinary turn "skips the manifest
+read entirely" while the callee has no early return at all; read the callee. And
+`authorizeV2` returns `super_admin` BEFORE the agent-grant fold, while a personal
+account's primary owner has `is_super_admin = true` — so this entire bug class is
+invisible on a laptop until you clear that flag.
+*Incident:* the meta coordinator could not list or spawn sessions for the account
+owner running it; `kortix sessions ls` / `new` 403'd from turn one onward, and
+the 403 blamed their role (that misdiagnosis fixed separately in #6443).
+*Enforcer:* `apps/api/src/__tests__/unit-meta-agent-grant-resolution.test.ts`
+pins resolution for governed / ungoverned / unreadable manifests, the `skip`
+re-mint decision, and the old destructive `write` as a regression guard. Nothing
+enforces the comment-vs-callee or super-admin traps — those are prose only.
+
 ### Anything created per-deploy needs a reaper, and the reaper needs a namespace (2026-08-12)
 
 **When:** adding or reviewing code that creates a named provider-side artifact
@@ -230,3 +343,208 @@ grep -E treats `\t` in single quotes as a literal `t` while macOS grep interpret
 it, so a locally-green pattern can be dead on ubuntu runners. Use ANSI-C
 quoting (`$'\t'`) and test the exact pattern in an ubuntu container.
 *Incident:* staging web verify failed twice on the same one-line assertion.
+
+### A TLS/proxy component is only as correct as the third-party clients that accept it (2026-08-14)
+
+**When:** shipping anything that terminates TLS, mints certificates, or sits in
+front of other people's HTTP clients (the in-guest egress shim, any MITM proxy).
+Unit tests and a `curl` probe are NOT evidence. Three separate bugs in this one
+component passed every in-process test and every curl check, and each was found
+only by running a real heterogeneous client in a real guest:
+
+- `git` sends CONNECT, gets a 407, and retries **on the same socket**. Without
+  `Content-Length: 0` + `Connection: close` on the challenge the retry vanishes
+  and every clone fails, while curl is unaffected because it reconnects.
+- Python's OpenSSL refuses a chain whose leaf carries no **Authority Key
+  Identifier** (`CERTIFICATE_VERIFY_FAILED ... Missing Authority Key
+  Identifier`); curl accepts the identical certificate. An AKI also needs a
+  **Subject Key Identifier** on the issuer to point at, and node-forge's PARSED
+  `subjectKeyIdentifier` is a hex string — feeding it back yields an AKI naming
+  an issuer that does not exist and breaks every handshake. Use
+  `caCert.generateSubjectKeyIdentifier().getBytes()`.
+- `curl` offers `Accept-Encoding: gzip` by default. Any redaction that scans
+  response BYTES is silently defeated by a compressed body, so a credential
+  echoed back returns intact. Force `identity` on the relayed request.
+
+Run the real clients — `curl`, `python3 -m requests`, `git`, `node fetch` — in a
+real sandbox before claiming a proxy works, and assert on what the UPSTREAM
+received, not on the absence of an error.
+*Incident:* the Daytona network-boundary shim shipped to dev broken for every
+Python client; caught by a live probe, not by 27 green tests.
+
+### Bun diverges from Node in three load-bearing ways around raw sockets and TLS (2026-08-14)
+
+**When:** writing socket/TLS code that runs under Bun (the API and the sandbox
+daemon both do). Measured, bun 1.3.14 vs node v22.22.0:
+
+- `http.Server.emit('connection', socket)` is a **no-op** — the request event
+  never fires and the connection hangs with nothing in any log. Use a real
+  loopback listener and pipe into it.
+- `SNICallback` **never fires** — the handshake completes against a default
+  certificate. Bind one static-cert listener per terminated host instead.
+- The `'upgrade'` event fires, but a write from that handler **never reaches the
+  client**; Node delivers the same bytes. Destroy the socket rather than trying
+  to answer.
+
+All three fail SILENTLY (a hang, or the wrong certificate), never an exception.
+*Incident:* each cost a debugging cycle in the egress proxy/shim.
+
+### A path allowlist that gates non-idempotency must list EVERY turn-creating endpoint (2026-08-11)
+
+**When:** touching the sandbox proxy's retry loop, or adding an OpenCode endpoint
+that starts an agent turn.
+`routes/preview.ts` derived "is this safe to retry?" from
+`shouldSyncProjectEnvBeforeProxy`, a predicate named after env sync whose regex
+listed only `/session/:id/{message,prompt_async}`. `POST /session/:id/command` —
+what every `/` slash-command posts to — matched neither that nor
+`isLongTurnCompletionRequest`. One omission silently disabled FOUR independent
+safeguards at once: no dedupe claim, retry-on-5xx allowed, retry-on-ambiguous-
+timeout allowed, and a 15s connect cap applied to an endpoint that blocks for the
+whole turn. `MAX_RETRIES = 3` then re-POSTed the non-idempotent body, so one user
+submit ran the agent four times and billed four turns.
+**Rules:** (1) a predicate that answers "may I send this twice?" gets its OWN
+name and its own list — never reuse one written for a different question, because
+adding an endpoint to one concern silently opts it into or out of the other;
+(2) any new turn-creating path must be added to `isNonIdempotentSessionWrite`
+(`sandbox-proxy/prompt-dedupe.ts`) AND `isLongTurnCompletionRequest`
+(`sandbox-proxy/preview-retry-budget.ts`) in the same commit.
+**Enforcement:** both predicates are unit-tested per endpoint in
+`prompt-dedupe.test.ts` / `preview-retry-budget.test.ts`. Black-box proof: two
+identical `/command` POSTs must yield exactly one new user message.
+*Incident:* session `9f6b0d87`, one `/webapp` submit recorded as 4 identical user
+messages 11.0s / 11.8s / 13.7s apart (attempt timeout + `RETRY_DELAYS_MS`
+[250, 1000, 3000]).
+
+### Two proxy layers must agree on which upstream calls legitimately block (2026-08-11)
+
+**When:** changing a timeout in `kortix-sandbox-agent-server/src/proxy.ts` or
+`apps/api/src/sandbox-proxy/`, or adding an OpenCode endpoint that withholds
+headers until its work completes.
+The daemon bounded EVERY proxied header wait at `UPSTREAM_RESPONSE_TIMEOUT_MS =
+10_000`, reasoning only about SSE (headers arrive fast) and a wedged opencode.
+`POST /session/:id/command` emits nothing until the whole turn finishes, so
+every command over 10s was aborted and answered `502 {"error":"upstream
+unreachable"}` — the banner users saw in chat, on a healthy turn. Its own
+comment said the 502 exists so "apps/api's retry+auto-wake loop can act on it
+immediately" — and that loop assumed idempotency. **A fail-fast designed to
+trigger a retry met a retry loop that assumed it was safe to repeat.** One
+`/webapp` submit ran the agent four times, each retry aborting the turn the
+previous one started, which is where the "Interrupted" labels came from.
+**Rules:** (1) a header-wait timeout is only valid for endpoints that ANSWER
+fast — blocking-turn endpoints need their own generous bound
+(`isBlockingTurnRequest` / `LONG_TURN_RESPONSE_TIMEOUT_MS`); (2) when one layer
+fails fast *expecting* another to retry, the retry decision must be written down
+in both layers, never inferred; (3) a client must not render a
+delivered-then-disconnected prompt as a failed send — the retry it invites is
+what aborts the live turn (`delivered-but-disconnected.ts`).
+**Enforcement:** `blocking-turn-timeout.test.ts` drives BOTH layers' predicates
+with the same inputs and requires identical verdicts (verified falsifiable — it
+goes red when either side drifts).
+**Deployment trap:** the daemon ships inside the sandbox image, so this fix
+reaches only sandboxes created from a NEW snapshot. Existing sessions keep the
+10s bound; the web-side classifier is what covers them.
+*Incident:* session `9f6b0d87`.
+
+### A control split across API and daemon is only live when BOTH halves are (2026-08-14)
+
+**When:** shipping any security control whose two halves live in `apps/api` and
+`apps/kortix-sandbox-agent-server`. The API half goes live the moment Deploy Dev
+finishes. The daemon half does NOT: it is baked into the sandbox image, reaches
+a guest only through a new meta-snapshot build, and the fingerprint that
+triggers that build hashes `apps/kortix-sandbox-agent-server/src`. Until an
+image carrying the new daemon exists, the API half is running against old
+guests and the control does nothing.
+
+The sandbox egress pin hit this exactly: the API mount was verifiably live
+(boot-timeline went 403 → 401 on the same request), but a real exfiltrated-token
+attack still SUCCEEDED because the box's baked daemon still sent the wrong
+token, so nothing wrote a pin. The identical test passed later, unchanged, once
+a sandbox with the new daemon existed.
+
+Two rules:
+
+- **Never conclude "the control does not work" from one post-deploy run.** Prove
+  which half is live first. An API-side before/after on the same request is
+  cheap and decisive (`403 handler-guard` → `401 middleware`).
+- **A control that fails OPEN is the right default while it propagates** — the
+  pin allows `unpinned`, so old guests kept working and nothing regressed
+  during the lag. A fail-closed control shipped this way is an outage.
+
+Do not read a fast `session_start_timeline.totalMs` as proof of a warm-pool box
+either: `KORTIX_WARM_SNAPSHOT_ENABLED` defaults false, and ~2s is also what
+creating a container from an ALREADY-BUILT image costs.
+*Incident:* the token-binding verification failed twice before the image landed.
+
+### A resource-scaled timeout moves the cliff, it never removes it (2026-08-16)
+
+**When:** sizing any timeout whose budget you are tempted to scale by how big
+the work is — prompt bytes, file size, row count, payload length.
+
+The LLM gateway gave a new upstream stream a first-byte budget of
+`30_000 + ceil((requestBytes - 64KiB) / 1MiB) * 15_000`, capped at `120_000`.
+Four size steps land on `90_000` exactly, so every request body between
+3,211,776 and 4,259,840 bytes got a 90-second budget and then died with
+`upstream stream probe timeout exceeded (90000ms with no bytes)` on a
+completely healthy upstream. Users saw a Claude Fable 5 turn fail identically
+on every retry once an analysis step pushed the context past ~3 MiB.
+
+The scaling was the bug, not an insufficient constant. Growing the context
+raises the budget linearly but raises the model's prefill + thinking time by
+more, so the cliff is reachable at every size — it just relocates. **Scale the
+budget and you have chosen which inputs fail, not whether they fail.**
+
+Three rules:
+
+- **A slow dependency is not a broken one.** Reserve timeouts for detecting
+  *death*. Where "slow" and "dead" are locally indistinguishable — which is
+  always, for a model that is prefilling — the deadline must pick a
+  *degradation*, not a failure. Here it became a COMMIT point: the stream is
+  handed to the relay, which sends headers and heartbeats while the model
+  works. Failing over is what silently downgraded users to a fallback model.
+- **A timeout you cannot observe from the outside will fire on healthy work.**
+  The transport emitted nothing for the AI SDK's `start` / `start-step` parts,
+  so a live prefill was byte-identical to a dead socket. One keep-alive byte at
+  stream open is what separates them.
+- **Check the edge before raising any budget.** Nothing is written downstream
+  while a pre-header probe runs, and the live `kortix.com` zone reports
+  `proxy_read_timeout = 125` with `editable: false` (Free plan). Raising the
+  probe past ~125s cannot work — Cloudflare 524s first. Measured, not assumed:
+  `GET /zones/$ZONE/settings/proxy_read_timeout`.
+
+**Enforcement:** `streaming.test.ts` sweeps request sizes 0–16 MiB and asserts
+the resolver returns one constant, so no size can reproduce 90,000 again.
+**Dead-telemetry corollary:** when a failure stops being reachable, delete the
+metric that counted it. `kortix.probe_timeout` was left pinned to false on
+every span — a dashboard built on it looks healthy by construction.
+*Incident:* PR #6473, merged `7e8a56badaef80374a189e0e427a08eb06b44697`.
+
+### A user-visible string is a shared resource; file ownership cuts through it (2026-08-18)
+
+**When:** any change that renames a label, error message, remedy or flag name —
+especially work split across parallel agents by file ownership.
+
+Renaming the network-boundary flag from "Network boundary without Platinum" to
+"Network boundary in-guest shim" touched EIGHT files: the feature-flag registry
+(which is what the Feature-flags screen actually renders), two route error
+bodies, a provisioning-error remedy, its test, two docs pages and the web
+constant. An agent that owned only the web file renamed it there and nowhere
+else. Nothing failed — no typecheck, no test, no lint — and the result would
+have shipped a UI telling users to turn on a flag by a name the screen never
+displays. The one guard that existed was a source-text assertion in a file the
+agent did not own, which is what eventually caught a sibling change.
+
+The rule: before renaming any user-visible string, grep the OLD string across
+the whole repo (`--include='*.ts' --include='*.tsx' --include='*.md'
+--include='*.mdx' --include='*.json'`) and change every hit in ONE commit. Then
+grep it again and expect zero. A partial rename is worse than no rename: the old
+name at least matched the UI.
+
+Corollary for parallel agents: **file ownership is the wrong boundary for a
+shared string.** Assign the whole rename to one agent, or do it yourself after
+the fan-out lands. Two other same-shaped catches in the same batch — a test
+pinning the exact `networkBoundaryEchoNotice(...)` call site, and one pinning
+the exact `sudo -u kortix --` invocation — both lived in files the changing
+agent did not own, and both only surfaced in CI. Reproducing CI's own command
+locally (`pnpm --filter ./packages/** --filter ./apps/** … test`) found them in
+one pass instead of one CI round-trip each.
+*Incident:* PR #6511, caught in review before merge; two CI round-trips spent.

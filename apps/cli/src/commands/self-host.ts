@@ -1761,11 +1761,40 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
   } else if (provider === 'e2b') {
     env.E2B_API_KEY = await promptSecret('E2B API key', env.E2B_API_KEY);
+    // The cluster this instance talks to. E2B Cloud is e2b.dev; a self-hosted
+    // E2B cluster has its own base domain. Both the template builds and the
+    // sandbox creates use this one value (apps/api platform/providers/e2b-domain).
+    env.E2B_DOMAIN = await prompt(
+      'E2B base domain (E2B Cloud: e2b.dev — a self-hosted E2B cluster uses its own)',
+      env.E2B_DOMAIN || 'e2b.dev',
+    );
   } else if (provider === 'platinum') {
     env.PLATINUM_API_KEY = await promptSecret('Platinum API key', env.PLATINUM_API_KEY);
     env.PLATINUM_API_URL = await prompt('Platinum API URL', env.PLATINUM_API_URL || 'https://api.platinum.dev');
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
   }
+  // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
+  // this instance serves. Left unconfigured, the API derives `apps.<your API
+  // domain>` — correct only once DNS and a wildcard certificate exist, so the
+  // operator is asked rather than surprised. Kortix Cloud fronts Apps with a
+  // Cloudflare Worker that signs each request; a self-host has no such Worker,
+  // so its own reverse proxy is the trust boundary and direct edge traffic is
+  // accepted.
+  if (shouldPrompt(flags)) {
+    const appsMode = await selectFrom(
+      'Kortix Apps hosting (optional, serves deployed Apps on their own domain): configure/skip',
+      ['skip', 'configure'] as const,
+      env.KORTIX_APPS_BASE_DOMAIN ? 'configure' : 'skip',
+    );
+    if (appsMode === 'configure') {
+      env.KORTIX_APPS_BASE_DOMAIN = await prompt(
+        'Apps base domain (needs a *.<domain> DNS record and certificate pointing at this instance)',
+        env.KORTIX_APPS_BASE_DOMAIN,
+      );
+      env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'true';
+    }
+  }
+
   // Pipedream (optional, default skip): the ONE other env-only credential
   // that belongs here — the platform-level OAuth app Pipedream issues per
   // operator, not a per-user connection (those live in the DB and are
@@ -2262,6 +2291,8 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // and collects only that provider's key(s).
     DAYTONA_API_KEY: '',
     E2B_API_KEY: '',
+    // E2B Cloud by default; a self-hosted E2B cluster sets its own base domain.
+    E2B_DOMAIN: 'e2b.dev',
     PLATINUM_API_KEY: '',
     PLATINUM_API_URL: '',
     PLATINUM_TEMPLATE: '',
@@ -2279,6 +2310,12 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // self-host (so they can configure the managed GitHub App etc. in-app).
     // Set at init via --admin-email or the guided prompt; the API reads it.
     KORTIX_PLATFORM_ADMIN_EMAILS: flags.adminEmail ?? '',
+    // Kortix Apps. Blank base domain = the API derives `apps.<its own domain>`.
+    // KORTIX_APPS_ALLOW_DIRECT_EDGE tells the API that no Cloudflare Apps
+    // Worker fronts it, so App requests arriving from the operator's own
+    // reverse proxy are served instead of rejected for a missing edge signature.
+    KORTIX_APPS_BASE_DOMAIN: '',
+    KORTIX_APPS_ALLOW_DIRECT_EDGE: '',
     CONNECTOR_AUTH_PROVIDER: 'pipedream',
     KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',

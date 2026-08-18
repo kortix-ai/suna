@@ -18,6 +18,17 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 export type TriggerKind = 'cron' | 'webhook';
 
+/**
+ * `ProjectTrigger['type']` on the wire also carries `'monitor'` — a separate
+ * experimental feature (Monitors) with its own surface, not something this
+ * screen edits. `ScheduleView` filters every list through this before it
+ * reaches the table, the row actions, or the detail sheet, so `trigger.type`
+ * is safe to treat as {@link TriggerKind} anywhere downstream of that filter.
+ */
+export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
+  return type === 'cron' || type === 'webhook';
+}
+
 /* ─── Time of day ───────────────────────────────────────────────────────── */
 
 function pad2(value: number): string {
@@ -287,16 +298,22 @@ export function describeConditions(filter: Record<string, string> | null | undef
 /* ─── Per-kind screen copy ──────────────────────────────────────────────── */
 
 /**
- * Per-kind wording that appears INSIDE the pane.
+ * Per-kind wording for the Schedules and Webhooks screens, heading included.
  *
- * The pane's own title and description are NOT here. They used to be
- * (`title`/`description`), which made this the one screen-copy table in the app
- * that also owned a heading — and meant Schedules and Webhooks were the only
- * two panes whose heading did not come from their rail entry. They live in
- * `features/workspace/settings/rail.ts` now, next to every other pane's, and
- * `schedule-view.tsx` reads them through `SettingsTabHeader`.
+ * The heading lived in `features/workspace/settings/rail.ts` for as long as
+ * these were two tabs of the Settings overlay — every pane in that overlay
+ * takes its title and description from its rail entry, and being the one
+ * exception is what let the copy drift before. They are capability PAGES now
+ * (`/projects/<id>/schedules`, `/projects/<id>/webhooks`), not panes, so they
+ * have no rail entry to read: a rail lookup that finds nothing renders no
+ * heading and throws nothing, which is exactly the silent failure to avoid.
+ * The copy is the wording those rail entries carried, moved verbatim.
  */
 export interface KindCopy {
+  /** Page heading. */
+  title: string;
+  /** One sentence under the heading. */
+  description: string;
   /** Singular noun, lowercase, for inline sentences. */
   noun: string;
   createLabel: string;
@@ -309,6 +326,8 @@ export interface KindCopy {
 
 export const KIND_COPY: Record<TriggerKind, KindCopy> = {
   cron: {
+    title: 'Schedules',
+    description: 'Have an agent do something on a repeating schedule, or once at a set time.',
     noun: 'schedule',
     createLabel: 'New schedule',
     searchPlaceholder: 'Search schedules',
@@ -317,6 +336,9 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     column: 'Runs',
   },
   webhook: {
+    title: 'Webhooks',
+    description:
+      'Give another app a private address that starts an agent when it sends a request.',
     noun: 'webhook',
     createLabel: 'New webhook',
     searchPlaceholder: 'Search webhooks',
@@ -325,6 +347,23 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     column: 'Security',
   },
 };
+
+/**
+ * The unified Triggers screen's own copy — the page that replaced the two
+ * Schedules/Webhooks capability pages. A trigger is one thing with two ways
+ * to start it, so the page speaks about "triggers" in general and leans on
+ * each row's own type (via {@link KIND_COPY}) for anything kind-specific.
+ */
+export const TRIGGERS_COPY = {
+  title: 'Triggers',
+  description: 'Run an agent automatically — on a schedule, or when another app sends a signal.',
+  noun: 'trigger',
+  createLabel: 'New trigger',
+  searchPlaceholder: 'Search triggers',
+  emptyTitle: 'No triggers yet',
+  emptyBody:
+    'Create one to have an agent run automatically — on a schedule, or when another app sends a signal.',
+} as const;
 
 /* ─── Search ────────────────────────────────────────────────────────────── */
 

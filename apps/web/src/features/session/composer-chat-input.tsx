@@ -9,7 +9,6 @@ import {
   type AttachedFile,
   SessionChatInput,
   type SessionChatInputProps,
-  type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { useRuntimeConfig } from '@kortix/sdk/react';
 import { type ModelKey, useSessionModelSelection } from '@kortix/sdk/react';
@@ -44,6 +43,8 @@ export function ComposerChatInput({
   sessionId,
   projectId,
   isBusy,
+  sessionWorking,
+  runtimeReady,
   stopDisabled,
   isSending,
   disabled,
@@ -52,7 +53,10 @@ export function ComposerChatInput({
   prefill,
   inputSlot,
   toolbarSlot,
+  underbarPlacement,
+  slashMenuPlacement,
   cardClassName,
+  parentClassName,
   boundAgentName,
   clearOnSend,
   queuedMessages,
@@ -61,7 +65,6 @@ export function ComposerChatInput({
   queuePaused,
   queueIsRunning,
   onSendQueuedMessageNow,
-  onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
@@ -74,6 +77,11 @@ export function ComposerChatInput({
   sessionId?: string;
   projectId?: string;
   isBusy?: boolean;
+  /** Server turn authority, distinct from the busy fade. See the composer. */
+  sessionWorking?: boolean;
+  /** The sandbox is up and switched. Gates `/` COMMANDS only — see the
+   *  composer. */
+  runtimeReady?: boolean;
   /** Show a disabled stop button while busy (e.g. the computer is still booting). */
   stopDisabled?: boolean;
   /** Send in flight, not yet settled — spinner in the send slot (see SessionChatInput.isSending). */
@@ -92,8 +100,12 @@ export function ComposerChatInput({
   } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  underbarPlacement?: SessionChatInputProps['underbarPlacement'];
+  slashMenuPlacement?: SessionChatInputProps['slashMenuPlacement'];
   /** Extra classes for the input card (e.g. the project-home radius override). */
   cardClassName?: string;
+  /** Extra classes for the composer shell. */
+  parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
   /** Queued-while-busy support, passed straight through to SessionChatInput. */
@@ -103,7 +115,6 @@ export function ComposerChatInput({
   queuePaused?: SessionChatInputProps['queuePaused'];
   queueIsRunning?: SessionChatInputProps['queueIsRunning'];
   onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
-  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
@@ -126,13 +137,9 @@ export function ComposerChatInput({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
-  // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
-  // the new-session picker is switchable; the chosen agent rides through on create.
-  const SESSION_AGENT_LOCK_ENABLED: boolean = false;
-  const lockedAgentName =
-    isMetaAgentName(boundAgentName) || SESSION_AGENT_LOCK_ENABLED
-      ? boundAgentName?.trim() || null
-      : null;
+  // The meta agent is the only thing that pins the picker: a meta session must
+  // keep running its own agent. Every other session is freely switchable.
+  const lockedAgentName = isMetaAgentName(boundAgentName) ? boundAgentName?.trim() || null : null;
   const selectedAgentName = lockedAgentName ?? local.agent.current?.name ?? null;
 
   useEffect(() => {
@@ -149,8 +156,10 @@ export function ComposerChatInput({
     },
     [selectedAgentName],
   );
-  // Every axis a session can override, in one popover — built from the SAME
-  // agent/model/effort controls this toolbar already renders.
+  // The axes a session can override that have no control of their own —
+  // secrets, connectors, sandbox. Agent, model and effort are NOT passed: this
+  // toolbar already renders each of them, and a second live control one click
+  // away is a duplicate, not a convenience. See SessionOverridesComposer.
   const sessionScopeToolbar = useMemo(
     () =>
       projectId ? (
@@ -158,33 +167,11 @@ export function ComposerChatInput({
           projectId={projectId}
           sessionId={sessionId}
           onCommittedDraft={sessionId ? undefined : handleCommittedScope}
-          agents={local.agent.list}
           selectedAgent={selectedAgentName}
-          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
-          agentLocked={!!lockedAgentName}
-          defaultAgentName={projectConfig?.open_code_default_agent}
-          models={local.model.list}
-          modelsLoading={providersLoading}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-          providers={providers}
-          defaultModel={local.model.defaults.resolveDefaultFor(selectedAgentName ?? undefined)}
           sandboxSlot={sandboxSlot}
         />
       ) : null,
-    [
-      handleCommittedScope,
-      local.agent,
-      local.model,
-      lockedAgentName,
-      projectConfig?.open_code_default_agent,
-      projectId,
-      providers,
-      providersLoading,
-      sandboxSlot,
-      selectedAgentName,
-      sessionId,
-    ],
+    [handleCommittedScope, projectId, sandboxSlot, selectedAgentName, sessionId],
   );
 
   const combinedToolbarSlot = useMemo(
@@ -222,12 +209,13 @@ export function ComposerChatInput({
       queuePaused={queuePaused}
       queueIsRunning={queueIsRunning}
       onSendQueuedMessageNow={onSendQueuedMessageNow}
-      onQueueMessage={onQueueMessage}
       onRemoveQueuedMessage={onRemoveQueuedMessage}
       onEditQueuedMessage={onEditQueuedMessage}
       onReorderQueuedMessage={onReorderQueuedMessage}
       onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
+      sessionWorking={sessionWorking}
+      runtimeReady={runtimeReady}
       stopDisabled={stopDisabled}
       isSending={isSending}
       disabled={disabled}
@@ -236,7 +224,10 @@ export function ComposerChatInput({
       prefill={prefill}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
+      underbarPlacement={underbarPlacement}
+      slashMenuPlacement={slashMenuPlacement}
       cardClassName={cardClassName}
+      parentClassName={parentClassName}
       sessionId={sessionId}
       projectId={projectId}
       providers={providers}

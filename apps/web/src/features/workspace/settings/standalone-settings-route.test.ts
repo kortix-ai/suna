@@ -51,20 +51,18 @@ describe('STANDALONE_DEFAULT_SETTINGS_TAB', () => {
     // the panel would bounce off it on the first frame.
     expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(STANDALONE_DEFAULT_SETTINGS_TAB);
     expect(
-      isSettingsTabAllowed(STANDALONE_DEFAULT_SETTINGS_TAB, {
-        hasProject: false,
-        projectCapsResolved: true,
-        projectCan: () => false,
-        accountPermsResolved: true,
-        accountCan: () => false,
-        billingEnabled: false,
-      }),
+      isSettingsTabAllowed(STANDALONE_DEFAULT_SETTINGS_TAB, { hasProject: false }),
     ).toBe(true);
   });
 
-  test('deliberately differs from the project-scoped default', () => {
-    // `DEFAULT_SETTINGS_TAB` is `general`, the project workspace tab. Letting
-    // the two converge is the regression this pins.
-    expect(STANDALONE_DEFAULT_SETTINGS_TAB).not.toBe(DEFAULT_SETTINGS_TAB);
+  test('the project-scoped default is reachable with no project too', () => {
+    // The two constants converged when project configuration left the overlay
+    // for `/projects/[id]/config`: `DEFAULT_SETTINGS_TAB` was `general`, the
+    // project workspace tab, and is `profile` now. They stay separate
+    // constants because they answer different questions — what the panel opens
+    // on, and what the project-less route opens on — and a future
+    // project-scoped default would split them again. What must hold either way
+    // is that the standalone route never lands on a tab it cannot render.
+    expect(isSettingsTabAllowed(DEFAULT_SETTINGS_TAB, { hasProject: false })).toBe(true);
   });
 });

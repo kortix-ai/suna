@@ -1,39 +1,87 @@
 'use client';
 
+/**
+ * The add-a-custom-provider form, as rows on the API-keys list's own axis.
+ *
+ * It used to be a `bg-popover` card of six fields in two `sm:grid-cols-2`
+ * pairs, so the inputs sat at four different x-positions and the screen read
+ * as a different product from the provider list one tab over. Here every field
+ * is one row — label left, input right — on the same
+ * `minmax(0,13rem)_minmax(0,1fr)` grid `provider-connect.tsx` uses, so the
+ * whole tab is scanned by running the eye down one column.
+ *
+ * The submit, the validation, the secret write and the generated snippet are
+ * unchanged; this is the same mutation with different markup. Two real fixes
+ * came along with it:
+ *
+ *  - The API key field was `type="text"` — a pasted key sat legible on screen
+ *    and in every screenshot. It is now masked with a reveal button and the
+ *    three password-manager opt-outs, exactly like a provider key field.
+ *  - `onBack` was destructured and never rendered anywhere, so the prop was a
+ *    promise of a control that did not exist. Removed.
+ */
+
 import { Button } from '@/components/ui/button';
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
-  CaretLeftIcon as ChevronLeft,
   CopyIcon as Copy,
+  EyeIcon as Eye,
+  EyeSlashIcon as EyeSlash,
   InfoIcon as Info,
-  PlusIcon as Plus,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 
 import type { CustomFormState } from './types';
 import { buildCustomProviderSnippet } from './utils';
 
+/** One field, on the provider list's two-column axis. */
+function FormRow({
+  htmlFor,
+  label,
+  hint,
+  children,
+}: {
+  htmlFor: string;
+  label: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
+      <div className="min-w-0">
+        <FieldLabel htmlFor={htmlFor} className="text-foreground text-sm font-normal">
+          {label}
+        </FieldLabel>
+        {hint ? <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{hint}</p> : null}
+      </div>
+      <Field className="min-w-0">{children}</Field>
+    </div>
+  );
+}
+
 export function CustomProviderForm({
   projectId,
-  onBack,
   onDone,
 }: {
   projectId: string;
-  onBack: () => void;
   onDone: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CustomFormState>({
     providerId: '',
@@ -44,6 +92,7 @@ export function CustomProviderForm({
     modelName: '',
   });
   const [error, setError] = useState<string | null>(null);
+  const [revealKey, setRevealKey] = useState(false);
   const [savedSnippet, setSavedSnippet] = useState<{
     snippet: string;
     secretName: string | null;
@@ -129,184 +178,145 @@ export function CustomProviderForm({
   }
 
   return (
-    <div className="space-y-4 px-5 pt-3 pb-5">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
-        onClick={onBack}
-      >
-        <ChevronLeft className="size-3.5 shrink-0" />
-        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}
-      </Button>
-
-      <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-        <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
-          <Plus className="size-4 shrink-0" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line987JsxTextCustomProvider',
-            )}
-          </div>
-          <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey',
-            )}{' '}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
-              .opencode/opencode.jsonc
-            </code>
-            .
-          </p>
-        </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <div className="border-border/60 border-t pt-4">
+        <p className="text-foreground px-0.5 text-sm">Add a custom provider</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
-          <FieldGroup className="gap-5">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="custom-provider-id">
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line1002JsxTextProviderId',
-                  )}
-                </FieldLabel>
-                <Input
-                  id="custom-provider-id"
-                  type="text"
-                  value={form.providerId}
-                  onChange={(e) =>
-                    setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
-                  }
-                  placeholder="my-llm"
-                  className="font-mono text-xs"
-                  autoFocus
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="custom-display-name">
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line1020JsxTextDisplayName',
-                  )}
-                </FieldLabel>
-                <Input
-                  id="custom-display-name"
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setField('name', e.target.value)}
-                  placeholder={tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
-                  )}
-                />
-              </Field>
-            </div>
+      <div className="flex flex-col">
+        <FormRow htmlFor="custom-provider-id" label="Provider ID" hint="Lowercase, no spaces.">
+          <Input
+            id="custom-provider-id"
+            type="text"
+            value={form.providerId}
+            onChange={(e) =>
+              setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+            }
+            placeholder="my-llm"
+            className="font-mono text-xs"
+            autoFocus
+          />
+        </FormRow>
 
-            <Field>
-              <FieldLabel htmlFor="custom-base-url">
-                {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}
-              </FieldLabel>
-              <Input
-                id="custom-base-url"
-                type="text"
-                value={form.baseURL}
-                onChange={(e) => setField('baseURL', e.target.value)}
-                placeholder="https://api.example.com/v1"
-                className="font-mono text-xs"
-              />
-            </Field>
+        <FormRow htmlFor="custom-display-name" label="Display name">
+          <Input
+            id="custom-display-name"
+            type="text"
+            value={form.name}
+            onChange={(e) => setField('name', e.target.value)}
+            placeholder="My LLM"
+          />
+        </FormRow>
 
-            <Field>
-              <FieldLabel htmlFor="custom-api-key">
-                {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
-                <span className="text-muted-foreground/60 font-normal">(optional)</span>
-              </FieldLabel>
-              <Input
-                id="custom-api-key"
-                type="text"
-                value={form.apiKey}
-                onChange={(e) => setField('apiKey', e.target.value)}
-                placeholder={tHardcodedUi.raw(
-                  'componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret',
-                )}
-                className="font-mono text-xs"
-              />
-              {form.apiKey.trim() && (
-                <FieldDescription className="text-xs">
-                  Project-wide — every member of this project can use this provider.
-                </FieldDescription>
-              )}
-            </Field>
+        <FormRow htmlFor="custom-base-url" label="Base URL" hint="OpenAI-compatible endpoint.">
+          <Input
+            id="custom-base-url"
+            type="text"
+            value={form.baseURL}
+            onChange={(e) => setField('baseURL', e.target.value)}
+            placeholder="https://api.example.com/v1"
+            className="font-mono text-xs"
+          />
+        </FormRow>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="custom-model-id">
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line1059JsxTextModelId',
-                  )}
-                </FieldLabel>
-                <Input
-                  id="custom-model-id"
-                  type="text"
-                  value={form.modelId}
-                  onChange={(e) => setField('modelId', e.target.value)}
-                  placeholder="my-llm/foo-7b"
-                  className="font-mono text-xs"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="custom-model-name">
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line1071JsxTextModelName',
-                  )}
-                </FieldLabel>
-                <Input
-                  id="custom-model-name"
-                  type="text"
-                  value={form.modelName}
-                  onChange={(e) => setField('modelName', e.target.value)}
-                  placeholder={tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b',
-                  )}
-                />
-              </Field>
-            </div>
-          </FieldGroup>
+        <FormRow
+          htmlFor="custom-api-key"
+          label={
+            <>
+              API key <span className="text-muted-foreground/60">(optional)</span>
+            </>
+          }
+        >
+          <InputGroup>
+            <InputGroupInput
+              id="custom-api-key"
+              // Masked by default, like every other credential field in this
+              // app — a pasted key used to sit in plaintext on screen.
+              type={revealKey ? 'text' : 'password'}
+              autoComplete="off"
+              spellCheck={false}
+              data-1p-ignore=""
+              data-lpignore="true"
+              data-form-type="other"
+              value={form.apiKey}
+              onChange={(e) => setField('apiKey', e.target.value)}
+              placeholder="sk-… (saved as a project secret)"
+              className="font-mono text-xs"
+            />
+            {form.apiKey ? (
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-xs"
+                  onClick={() => setRevealKey((current) => !current)}
+                  title={revealKey ? 'Hide' : 'Show'}
+                  aria-label={revealKey ? 'Hide the API key' : 'Show the API key'}
+                  aria-pressed={revealKey}
+                  className="text-muted-foreground/60 hover:text-foreground"
+                >
+                  {revealKey ? <EyeSlash className="size-3.5" /> : <Eye className="size-3.5" />}
+                </InputGroupButton>
+              </InputGroupAddon>
+            ) : null}
+          </InputGroup>
+          {form.apiKey.trim() ? (
+            <FieldDescription className="text-xs">
+              Project-wide — every member of this project can use this provider.
+            </FieldDescription>
+          ) : null}
+        </FormRow>
 
-          <Button type="submit" size="sm" className="w-full" disabled={save.isPending}>
-            {save.isPending ? (
-              <>
-                <Loading className="size-3.5 shrink-0" />
-                {tHardcodedUi.raw(
-                  'componentsProjectsProjectProviderModal.line1094JsxTextGenerating',
-                )}
-              </>
-            ) : (
-              'Generate snippet'
-            )}
-          </Button>
-        </div>
+        <FormRow htmlFor="custom-model-id" label="Model ID">
+          <Input
+            id="custom-model-id"
+            type="text"
+            value={form.modelId}
+            onChange={(e) => setField('modelId', e.target.value)}
+            placeholder="my-llm/foo-7b"
+            className="font-mono text-xs"
+          />
+        </FormRow>
 
-        {error && (
-          <InfoBanner tone="destructive" icon={TriangleAlert} title="Check the fields">
-            {error}
-          </InfoBanner>
-        )}
+        <FormRow htmlFor="custom-model-name" label="Model name">
+          <Input
+            id="custom-model-name"
+            type="text"
+            value={form.modelName}
+            onChange={(e) => setField('modelName', e.target.value)}
+            placeholder="Foo 7B"
+          />
+        </FormRow>
+      </div>
 
-        {/* GAP C2 — a custom provider's traffic goes straight to `baseURL`
-            (see buildCustomProviderSnippet's `options.baseURL`), never through
-            the Kortix gateway — so it never appears in gateway logs, never
-            counts against gateway budgets, and never participates in routing
-            policy/fallback. Disclosed here since nothing else in this flow
-            says so. */}
-        <InfoBanner tone="warning" icon={Info}>
-          Requests to a custom provider go straight to its own endpoint — they don&apos;t pass
-          through the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or
-          routing.
+      {error ? (
+        <InfoBanner tone="destructive" icon={TriangleAlert} title="Check the fields">
+          {error}
         </InfoBanner>
-      </form>
-    </div>
+      ) : null}
+
+      {/* GAP C2 — a custom provider's traffic goes straight to `baseURL`
+          (see buildCustomProviderSnippet's `options.baseURL`), never through
+          the Kortix gateway — so it never appears in gateway logs, never
+          counts against gateway budgets, and never participates in routing
+          policy/fallback. Disclosed here since nothing else in this flow
+          says so. */}
+      <InfoBanner tone="warning" icon={Info} title="Note">
+        Requests to a custom provider go straight to its own endpoint — they don&apos;t pass through
+        the Kortix gateway, so they&apos;re not covered by gateway budgets, logs, or routing.
+      </InfoBanner>
+
+      <div className="flex justify-end">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? (
+            <>
+              <Loading className="size-3.5 shrink-0" />
+              Generating…
+            </>
+          ) : (
+            'Generate snippet'
+          )}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -319,7 +329,6 @@ function CustomProviderSnippetView({
   secretName: string | null;
   onDone: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -334,7 +343,7 @@ function CustomProviderSnippetView({
   }
 
   return (
-    <div className="space-y-4 px-5 pt-3 pb-5">
+    <div className="flex flex-col gap-4">
       <InfoBanner
         tone="success"
         icon={Check}
@@ -342,18 +351,12 @@ function CustomProviderSnippetView({
       >
         {secretName ? (
           <>
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs',
-            )}{' '}
+            Your key is stored as{' '}
             <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">{secretName}</code>{' '}
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn',
-            )}
+            and will be injected into sessions as an env var.
           </>
         ) : (
-          tHardcodedUi.raw(
-            'componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow',
-          )
+          'No API key was provided — the snippet below omits the apiKey field.'
         )}
       </InfoBanner>
 
@@ -365,8 +368,7 @@ function CustomProviderSnippetView({
       <div className="bg-popover overflow-hidden rounded-md border">
         <div className="border-border/60 flex items-center justify-between gap-3 border-b px-4 py-2.5">
           <span className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1149JsxTextAddTo')}
-            <code className="font-mono">.opencode/opencode.jsonc</code>
+            Add to <code className="font-mono">.opencode/opencode.jsonc</code>
           </span>
           <button
             type="button"
@@ -399,21 +401,19 @@ function CustomProviderSnippetView({
         </pre>
       </div>
 
-      <p className="text-muted-foreground px-1 text-xs text-pretty">
-        {tHardcodedUi.raw(
-          'componentsProjectsProjectProviderModal.line1168JsxTextPasteThisIntoYourProjectRepoAposS',
-        )}{' '}
+      <p className="text-muted-foreground px-0.5 text-xs text-pretty">
+        Paste this into your project repo's{' '}
         <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">
           .opencode/opencode.jsonc
         </code>{' '}
-        {tHardcodedUi.raw(
-          'componentsProjectsProjectProviderModal.line1170JsxTextAndCommitRestartAnyRunningSessionForThe',
-        )}
+        and commit. Restart any running session for the change to land in the sandbox.
       </p>
 
-      <Button size="sm" onClick={onDone}>
-        Done
-      </Button>
+      <div className="flex justify-end">
+        <Button size="sm" onClick={onDone}>
+          Done
+        </Button>
+      </div>
     </div>
   );
 }

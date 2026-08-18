@@ -1,0 +1,100 @@
+import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { ComposerToolbar } from './composer-toolbar';
+
+/**
+ * `toolbarSlot` must actually RENDER.
+ *
+ * The prop existed, was destructured, and was never placed in the JSX — so the
+ * session-overrides gear the project-home hero composer hands in through this
+ * slot silently vanished on the index page (the hero's `'inline'` underbar
+ * placement skips `ComposerUnderbar`, the slot's only other render site).
+ * Nothing type-checked wrong and nothing failed; the control was just gone.
+ *
+ * Same shell as `composer-underbar.test.tsx`: `renderToStaticMarkup`, real
+ * providers, assertions on the rendered markup — never on source text.
+ */
+
+const noop = () => {};
+
+function render(
+  toolbarSlot?: React.ReactNode,
+  rewind?: { pending?: boolean; onRestore: () => void },
+): string {
+  return renderToStaticMarkup(
+    <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <TooltipProvider>
+          <ComposerToolbar
+            models={[]}
+            selectedModel={null}
+            modelRequired={false}
+            variants={[]}
+            selectedVariant={null}
+            projectId={undefined}
+            toolbarSlot={toolbarSlot}
+            rewind={rewind}
+            onTranscription={noop}
+            voiceDisabled={false}
+            isSending={false}
+            isBusy={false}
+            stopDisabled={false}
+            escCount={0}
+            lockForQuestion={false}
+            questionCanAct={false}
+            hasText={false}
+            canSubmit={false}
+            submitDisabled={false}
+            disabled={false}
+            modelUnavailable={false}
+            onSubmit={noop}
+          />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </NextIntlClientProvider>,
+  );
+}
+
+describe('ComposerToolbar toolbarSlot', () => {
+  test('renders the slot content', () => {
+    const html = render(<span data-testid="slot-sentinel">slot-sentinel-content</span>);
+    expect(html).toContain('slot-sentinel-content');
+  });
+
+  test('renders nothing extra without a slot', () => {
+    const html = render(undefined);
+    expect(html).not.toContain('slot-sentinel-content');
+  });
+});
+
+describe('ComposerToolbar rewound-path control', () => {
+  // The "Session rewound" notice moved off the input strip and onto this bar,
+  // beside send/stop — send is the action that commits the rewound path. These
+  // pin that the control actually renders, since the strip banner it replaced
+  // is gone.
+
+  test('renders a Restore control when the session is rewound', () => {
+    const html = render(undefined, { onRestore: noop });
+    expect(html).toContain('Restore');
+  });
+
+  test('shows the pending spinner while the restore is in flight', () => {
+    const html = render(undefined, { pending: true, onRestore: noop });
+    expect(html).toContain('Restore');
+    // Loading renders a <svg> spinner in place of the rewind icon; the button
+    // is disabled so a second click cannot race the restore.
+    expect(html).toContain('disabled');
+  });
+
+  test('renders no Restore control on a normal path', () => {
+    const html = render(undefined, undefined);
+    expect(html).not.toContain('Restore');
+  });
+});

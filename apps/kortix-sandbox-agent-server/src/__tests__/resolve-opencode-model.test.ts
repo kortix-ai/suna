@@ -7,6 +7,7 @@ const ORIGINAL_LLM_BASE_URL = process.env.KORTIX_LLM_BASE_URL
 const ORIGINAL_LLM_API_KEY = process.env.KORTIX_LLM_API_KEY
 const ORIGINAL_LLM_PROXY_URL = process.env.KORTIX_LLM_PROXY_URL
 const ORIGINAL_AGENT = process.env.KORTIX_AGENT_NAME
+const ORIGINAL_INITIAL_TURN_MESSAGE_ID = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID
 
 afterEach(() => {
   if (ORIGINAL_MODEL === undefined) delete process.env.KORTIX_OPENCODE_MODEL
@@ -19,6 +20,11 @@ afterEach(() => {
   else process.env.KORTIX_LLM_PROXY_URL = ORIGINAL_LLM_PROXY_URL
   if (ORIGINAL_AGENT === undefined) delete process.env.KORTIX_AGENT_NAME
   else process.env.KORTIX_AGENT_NAME = ORIGINAL_AGENT
+  if (ORIGINAL_INITIAL_TURN_MESSAGE_ID === undefined) {
+    delete process.env.KORTIX_INITIAL_TURN_MESSAGE_ID
+  } else {
+    process.env.KORTIX_INITIAL_TURN_MESSAGE_ID = ORIGINAL_INITIAL_TURN_MESSAGE_ID
+  }
 })
 
 describe('resolveOpencodeModel', () => {
@@ -119,6 +125,17 @@ describe('resolveOpencodeModel', () => {
 })
 
 describe('buildInitialPromptBody', () => {
+  test('uses the control-plane message identity for the daemon-delivered turn', () => {
+    delete process.env.KORTIX_OPENCODE_MODEL
+    process.env.KORTIX_AGENT_NAME = 'default'
+    process.env.KORTIX_INITIAL_TURN_MESSAGE_ID = 'msg_initial_turn'
+
+    expect(buildInitialPromptBody('Run for 90 seconds.')).toEqual({
+      messageID: 'msg_initial_turn',
+      parts: [{ type: 'text', text: 'Run for 90 seconds.' }],
+    })
+  })
+
   test('applies the session model and concrete selected agent to an automated first turn', () => {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
     process.env.KORTIX_OPENCODE_MODEL = 'anthropic/claude-sonnet-4-6'

@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   intentToScope,
+  isProjectSessionVisibleTo,
   isSecretUsableBy,
   isSessionTargetVisibleToCaller,
   isSessionVisibleTo,
@@ -214,6 +215,82 @@ describe('session sharing — default private; team-wide or select-members', () 
     expect(visibilityToIntent('project', [])).toEqual({ mode: 'project' });
     expect(visibilityToIntent('private', [])).toEqual({ mode: 'private', ownerId: '' });
     expect(visibilityToIntent('restricted', members.grants)).toEqual({ mode: 'members', memberIds: [BOB], groupIds: [SALES] });
+  });
+});
+
+describe('trigger-created session visibility', () => {
+  const metadata = {
+    source: 'trigger:scheduler',
+    trigger_kind: 'git',
+    trigger_slug: 'daily-review',
+  };
+  const serviceAccount = 'trigger-agent-service-account';
+
+  test('project manager can open a private trigger-created session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('ordinary project member cannot open a private trigger-created session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(false);
+  });
+
+  test('manager still cannot open an ordinary private human session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata: {}, canManageProject: true },
+    )).toBe(false);
+  });
+
+  test('trigger agent service account remains the private-session owner', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: serviceAccount, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('selected grants and project visibility keep their existing behavior', () => {
+    expect(isProjectSessionVisibleTo(
+      'restricted', serviceAccount,
+      [{ principalType: 'member', principalId: ALICE }],
+      { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+    expect(isProjectSessionVisibleTo(
+      'project', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('all server trigger metadata fields are required for manager access', () => {
+    for (const incomplete of [
+      { trigger_kind: 'git', trigger_slug: 'daily-review' },
+      { source: 'ui', trigger_kind: 'git', trigger_slug: 'daily-review' },
+      { source: 'trigger:scheduler', trigger_kind: 'git' },
+      { source: 'trigger:scheduler', trigger_slug: 'daily-review' },
+      { trigger_kind: 'git' },
+      { trigger_slug: 'daily-review' },
+      { trigger_kind: 'git', trigger_slug: '' },
+      null,
+    ]) {
+      expect(isProjectSessionVisibleTo(
+        'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+        { metadata: incomplete, canManageProject: true },
+      )).toBe(false);
+    }
+  });
+
+  test('manager access never bypasses backend sibling-session isolation', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
+      { origin: 'backend', sessionId: 'trigger-session-b', callerSessionId: 'trigger-session-a' },
+      { metadata, canManageProject: true },
+    )).toBe(false);
   });
 });
 

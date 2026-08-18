@@ -1,29 +1,25 @@
 'use client';
 
-import { SidebarSimpleIcon as PanelLeft, ShieldCheckIcon } from '@phosphor-icons/react';
+import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 
-import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
+import { cn } from '@/lib/utils';
 
-import { CAPABILITY_TABS, activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
+import {
+  CAPABILITY_TABS,
+  activeCapabilityTab,
+  capabilityTabHref,
+  type CapabilityTab,
+} from './capability-tab-routes';
 
 /**
  * Sidebar opener — same rules as project-home / session header / sessions
@@ -62,67 +58,34 @@ function CapabilitySidebarToggle() {
 }
 
 /**
- * Project-wide connector rules. Far-right of the shared tab bar so it stays
- * reachable from Connectors, Skills, and Commands.
+ * Shared tab bar for
+ * /projects/[id]/{agent,connectors,skills,schedules,webhooks}. Lives in the
+ * `(capabilities)` route group layout so it does not remount when switching
+ * tabs. Each trigger wraps a real `next/link` via `asChild`.
  *
- * Opens as a Sheet, not a Modal: the panel is a long CRUD list that benefits
- * from a persistent side surface. No Hint — the button already shows its
- * label. No `before:-inset` hit expand — without `relative` that pseudo
- * stretches to the nearest positioned ancestor (this whole bar) and steals
- * clicks from the tab triggers.
- */
-function GlobalRulesControl({ projectId }: { projectId: string }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        aria-label="Global rules"
-        onClick={() => setOpen(true)}
-        className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5 active:scale-[0.96]"
-      >
-        <ShieldCheckIcon className="size-4" />
-        <span className='hidden md:block'>Global rules</span>
-      </Button>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="flex w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl"
-        >
-          {/* `pr-12` clears the sheet's own close button, which is absolutely
-              positioned at `top-4 right-4`. */}
-          <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
-            <SheetTitle className="text-base font-medium">Global rules</SheetTitle>
-            <SheetDescription className="text-xs text-pretty">
-              Approval rules that apply to every connector in this project.
-            </SheetDescription>
-          </SheetHeader>
-          {/* The body is the only scroller, so the panel's save bar can stick
-              to its bottom edge. */}
-          <SheetBody className="min-h-0 gap-0 px-5 py-5">
-            <PoliciesPanel projectId={projectId} />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
-    </>
-  );
-}
-
-/**
- * Shared tab bar for /projects/[id]/{agent,connectors,skills}. Lives in
- * the `(capabilities)` route group layout so it does not remount when
- * switching tabs. Each trigger wraps a real `next/link` via `asChild`.
- *
- * One flex row, everything in flow: [sidebar toggle?] [tabs] [global rules].
+ * One flex row, everything in flow: [sidebar toggle?] [tabs].
  * Absolute overlays and expanded hit areas are forbidden here — they steal
  * pointer events across the row.
+ *
+ * Global rules used to sit at the far right of this bar. It is connector
+ * approval policy, not a project-wide setting, so it now lives at the far
+ * right of the Connectors page's own Discovery/All/Connected row
+ * (`connectors/connectors-page.tsx`). Nothing capability-wide belongs here —
+ * this bar navigates, it does not act.
  *
  * `shrink-0` keeps the bar pinned at full height inside the layout's `h-svh`
  * column; the page body below is the flex-1 scroller.
  */
+/**
+ * Members and Settings trail the row, pushed to the far right with `ml-auto`
+ * on Members (the first of the two) — one `TabsList`, so the underline
+ * indicator, keyboard roving, and `role="tablist"` semantics stay unified;
+ * only the visual position of these two changes. They read as "who's here /
+ * how it's configured", a different register from the seven build-the-agent
+ * tabs to their left, and the gap says so without a second list or a divider.
+ */
+const TRAILING_TABS: readonly CapabilityTab['key'][] = ['members', 'config'];
+
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
@@ -150,7 +113,10 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
               key={tab.key}
               value={tab.key}
               asChild
-              className="w-fit flex-none px-1 py-3"
+              className={cn(
+                'w-fit flex-none px-1 py-3',
+                tab.key === TRAILING_TABS[0] && 'ml-auto',
+              )}
             >
               <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
                 {tab.label}
@@ -159,7 +125,6 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           ))}
         </TabsList>
       </Tabs>
-      <GlobalRulesControl projectId={projectId} />
     </div>
   );
 }

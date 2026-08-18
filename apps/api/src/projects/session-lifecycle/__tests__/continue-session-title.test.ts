@@ -57,11 +57,18 @@ mock.module('../../routes/shared', () => ({
 }));
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => actor,
+  resolveAgentRunAttribution: async () => null,
 }));
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
+  // The prompt inbox's admission refusal — `executeQueuedContinue` calls it
+  // before anything else, so every store mock has to carry it or the engine
+  // import fails outright.
+  requeueForAdmission: async () => {
+    throw new Error('not expected: this test never refuses admission');
+  },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected in this test');
   },

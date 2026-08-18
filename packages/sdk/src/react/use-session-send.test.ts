@@ -239,6 +239,54 @@ describe('sendAndRecover', () => {
     if (!result.ok) expect(result.error.kind).toBe('billing');
     expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'idle' });
   });
+
+  test('re-sending one submission keeps its wire messageID, so the proxy still absorbs it', async () => {
+    // A host retries a failed send by calling this again with the same queue
+    // entry. Without the stable id the second call mints a new `messageID`, the
+    // request body differs, and the proxy's body-hash dedupe delivers a prompt
+    // that already reached opencode a SECOND time.
+    const sent: Array<Record<string, unknown>> = [];
+    promptImpl = async (args) => {
+      sent.push(args as Record<string, unknown>);
+      return { data: {} };
+    };
+    const submission = {
+      sessionId: 'sess-retry',
+      messageId: 'msg-1',
+      parts: [{ type: 'text' as const, text: 'hi' }],
+      clientMessageId: 'cm_42',
+    };
+
+    await sendAndRecover(submission);
+    await sendAndRecover(submission);
+
+    expect(sent).toHaveLength(2);
+    expect(sent[0].messageID).toBeTruthy();
+    expect(sent[1].messageID).toBe(sent[0].messageID);
+  });
+
+  test('a different submission of the same text still gets its own messageID', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    promptImpl = async (args) => {
+      sent.push(args as Record<string, unknown>);
+      return { data: {} };
+    };
+
+    await sendAndRecover({
+      sessionId: 'sess-retry',
+      messageId: 'msg-1',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_1',
+    });
+    await sendAndRecover({
+      sessionId: 'sess-retry',
+      messageId: 'msg-2',
+      parts: [{ type: 'text', text: 'hi' }],
+      clientMessageId: 'cm_2',
+    });
+
+    expect(sent[0].messageID).not.toBe(sent[1].messageID);
+  });
 });
 
 describe('applyOptimisticAbort', () => {
@@ -251,7 +299,23 @@ describe('applyOptimisticAbort', () => {
 
     expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'idle' });
     const msg2 = useSyncStore.getState().messages['sess-1']?.find((m) => m.id === 'm2') as any;
-    expect(msg2.error).toEqual({ name: 'AbortError', data: { message: 'The operation was aborted.' } });
+    expect(msg2.error).toEqual({
+      name: 'AbortError',
+      data: { message: 'The operation was aborted.', reason: 'user' },
+    });
+  });
+
+  // T2: `applyOptimisticAbort` is a REAL user stop, distinct from
+  // `markSessionAbortedLocally`'s `reason: 'runtime-disposed'` — apps/web
+  // renders only `'user'` (and untagged wire aborts) as the "Interrupted"
+  // row, and `reason: 'runtime-disposed'` as nothing.
+  test('tags the patched error with reason: "user"', () => {
+    useSyncStore.getState().upsertMessage('sess-2', { id: 'm1', sessionID: 'sess-2', role: 'assistant' } as any);
+
+    applyOptimisticAbort('sess-2');
+
+    const msg = useSyncStore.getState().messages['sess-2']?.find((m) => m.id === 'm1') as any;
+    expect(msg.error.data.reason).toBe('user');
   });
 
   test('does not overwrite an assistant message that already has an error', () => {

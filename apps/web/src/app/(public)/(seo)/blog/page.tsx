@@ -5,6 +5,7 @@ import { PostCard } from '@/components/blog/post-card';
 import { Reveal } from '@/components/home/reveal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { getAllPosts } from '@/lib/blog';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 
 const TITLE = 'Blog';
@@ -67,7 +68,7 @@ export default function BlogIndexPage() {
     <main className="bg-background min-h-screen">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
       <div className="mx-auto max-w-5xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
         <Reveal>

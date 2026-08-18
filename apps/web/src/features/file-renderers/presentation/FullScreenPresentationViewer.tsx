@@ -455,7 +455,6 @@ export function FullScreenPresentationViewer({
                   position: 'absolute',
                   top: 0,
                   left: `calc((100% - ${1920 * scale}px) / 2)`,
-                  willChange: 'transform',
                   backfaceVisibility: 'hidden',
                   WebkitBackfaceVisibility: 'hidden',
                 }}
@@ -477,14 +476,11 @@ export function FullScreenPresentationViewer({
     return SlideIframeComponent;
   }, [sandboxUrl, refreshTimestamp, showEditor, subdomainOpts]);
 
-  // Render slide iframe with proper scaling
-  const renderSlide = useMemo(() => {
-    if (!currentSlideData || !sandboxUrl) return null;
-
-    return <SlideIframe slide={currentSlideData} />;
-  }, [currentSlideData, sandboxUrl, SlideIframe]);
-
   if (!isOpen) return null;
+
+  // Render slide iframe with proper scaling
+  const renderSlide =
+    !currentSlideData || !sandboxUrl ? null : <SlideIframe slide={currentSlideData} />;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">

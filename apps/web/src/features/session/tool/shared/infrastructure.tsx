@@ -12,7 +12,12 @@ import { openSessionQuickView } from '@/features/session/open-session-quick-view
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
-import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
+import {
+  ToolSurfaceContext,
+  useToolCardFrame,
+  useToolCardPad,
+  useToolIndent,
+} from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -29,6 +34,7 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
   ArrowSquareOutIcon,
+  CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
@@ -708,30 +714,42 @@ export function ToolOutputFallback({
  * looking at, and the other paths quietly keep rendering naked text.
  */
 function ToolOutputCard({ copyText, children }: { copyText?: string; children: React.ReactNode }) {
-  const surface = useContext(ToolSurfaceContext);
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
 
   return (
     <div
       className={cn(
-        'border-border bg-popover relative rounded-md border',
-        // An inline row leads with a 16px icon and a gap-3, so `ml-7` puts the
-        // card on the label's column. The panel surface has no such gutter and
-        // supplies its own padding, so the same indent would only push the
-        // content off-centre.
-        surface === 'inline' && 'ml-7',
+        'relative',
+        // Frame and inset are the panel's business too: on the panel the row
+        // card is already the frame, so drawing a second one around the body
+        // is the triple-nesting the gate filed. See `useToolCardFrame`.
+        frame,
+        // The seam and the indent are ONE inline-surface concern, so they are
+        // gated together. Inline, the card hangs under a trigger row and needs
+        // both: 6px of air and the row's 22px text column (this card used to
+        // hardcode `ml-7`, 28px, against a `gap-3` the row class does not
+        // have). On the panel the card IS the disclosure body, which already
+        // supplies `px-3 py-3` — a top margin there is double-spacing, 18px
+        // over 12px at the bottom.
+        indent && 'mt-1.5',
+        indent,
       )}
     >
       {/* Floated rather than in a header bar: a bar would cost a row of height
 		      on every output block, and the button reads clearly against the
-		      surface on its own. `pr-9` on the body keeps the first line from
-		      running under it. */}
+		      surface on its own. `pr-11` on the body keeps the first line from
+		      running under it — one reserve value for every floating copy in the
+		      tool views (`bash`'s command/output panes and `ToolCodeCard` use the
+		      same one). */}
       {copyText && (
         <CopyButton
           code={copyText}
           className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
         />
       )}
-      <div data-scrollable className="max-h-72 overflow-auto p-3 pr-9">
+      <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
         {children}
       </div>
     </div>
@@ -802,7 +820,14 @@ export const StalePendingContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
-export { ToolSurfaceContext, type ToolSurface } from '@/features/session/tool/shared/surface';
+export {
+  TOOL_INDENT,
+  ToolSurfaceContext,
+  useToolCardFrame,
+  useToolCardPad,
+  useToolIndent,
+  type ToolSurface,
+} from '@/features/session/tool/shared/surface';
 
 // Background memory plumbing (searches/gets and raw .kortix/memory reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
@@ -843,8 +868,8 @@ export const BoundActivateContext = createContext<(() => void) | null>(null);
 //
 // The colour rule skips `[data-tone]` icons. It is a descendant selector on the
 // ROW — `(0,2,2)` — so it outranks any `text-*` class the icon carries itself
-// `(0,1,0)`, and it silently repainted every toned leading icon back to muted.
-// Excluding toned icons by attribute is how the failure icon keeps its red
+// `(0,1,0)`, and it silently repainted every toned leading icon. Excluding
+// toned icons by attribute keeps the verdict icon's OWN class authoritative
 // without an `!important` arms race inside a shared class.
 const TOOL_ROW_CLASS = cn(
   'flex items-center gap-1.5 py-0.5',
@@ -860,10 +885,12 @@ const TOOL_ROW_CLASS = cn(
  * one 16px gutter, and the thing the reader needs from it is the verdict — the
  * tool's identity is still spelled out in the title immediately to its right.
  *
- * One glyph, two tones: a wholly failed call is `destructive`, a batch that
- * half-landed is `warning`. Same triangle `ScrapeResultItem` already puts on a
- * dead URL inside the card, so the summary row and the row it summarises say
- * the same thing with the same mark.
+ * One glyph, one muted tone: the triangle itself is the verdict, and it stays
+ * `neutral` so a failed step reads as information beside the row's title, not
+ * as an alarm. Which KIND of failure it was still travels on `data-tone` and
+ * the aria-label. Same triangle `ScrapeResultItem` already puts on a dead URL
+ * inside the card, so the summary row and the row it summarises say the same
+ * thing with the same mark.
  */
 /**
  * The verdict mark on a tool row.
@@ -880,10 +907,7 @@ function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
       weight="fill"
       data-tone={outcome}
       aria-label={outcome === 'failed' ? 'This step failed' : 'This step partly failed'}
-      className={cn(
-        'size-4 shrink-0',
-        outcome === 'failed' ? STATUS_TEXT.destructive : STATUS_TEXT.warning,
-      )}
+      className={cn('size-4 shrink-0', STATUS_TEXT.neutral)}
     />
   );
 }
@@ -984,107 +1008,203 @@ function ToolHeaderRow({
   );
 }
 
-// Title + subtitle/args for the large side-panel header layout.
-function PanelTriggerTitle({
+/**
+ * The row title's shrink priority: it yields LAST, and only to a cap.
+ *
+ * Title and subtitle are flex siblings, and both used to be plain `min-w-0
+ * truncate` — no shrink priority at all, so flexbox took the overflow out of
+ * both in proportion to their content. A long subtitle therefore ate the
+ * title: the `testing` skill's row rendered as `t…` beside 28 characters of
+ * description, and `mcp__linear__create_issue` rendered as `C..`. The name is
+ * the one thing a closed row exists to say, so it cannot be the part that
+ * loses.
+ *
+ * `shrink-0` alone would let a sentence-length title push the subtitle off the
+ * card entirely, which is the same failure mirrored. The `max-w-[60%]` cap is
+ * the second half: a short title always renders whole, a long one truncates at
+ * 60% of the trigger and leaves the rest to the subtitle.
+ */
+const PANEL_TITLE_CLASS = 'min-w-0 max-w-[60%] shrink-0 truncate';
+
+/**
+ * Title + subtitle + args on ONE line, for the panel's disclosure row.
+ *
+ * The panel used to stack these — an `h3` with a second mono line under it —
+ * which is a page header, and a page header only works when there is one call
+ * on the page. A detail routinely holds several, so the unit here is a row: one
+ * line, closed, that says which call this is and nothing more. Everything the
+ * old header showed still shows, it just reads left-to-right instead of
+ * top-to-bottom.
+ */
+function PanelRowTitle({
   trigger,
   running,
-  badge,
   onSubtitleClick,
 }: {
   trigger: TriggerTitle;
   running: boolean;
-  badge?: React.ReactNode;
   onSubtitleClick?: () => void;
 }) {
   const args = trigger.args ?? [];
-  const hasMeta = Boolean(trigger.subtitle || args.length > 0);
 
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 flex-1">
-        {running ? (
-          <TextShimmer className="text-sm font-medium">{trigger.title || 'Working'}</TextShimmer>
-        ) : (
-          <h3 className="text-foreground truncate text-sm font-medium">{trigger.title}</h3>
-        )}
-        {hasMeta && (
-          <div className="text-muted-foreground mt-0.5 flex min-w-0 items-baseline gap-1.5 font-mono text-xs">
-            {trigger.subtitle && (
-              <span
-                className={cn(
-                  'truncate',
-                  onSubtitleClick &&
-                    'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
-                )}
-                title={trigger.subtitle}
-                onClick={onSubtitleClick}
-              >
-                {trigger.subtitle}
-              </span>
-            )}
-            {args.length > 0 && (
-              <>
-                {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
-                <span
-                  className="text-muted-foreground/60 min-w-0 truncate"
-                  title={args.join(' · ')}
-                >
-                  {args.join(' · ')}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      {badge && (
-        <span className="text-muted-foreground/60 shrink-0 pt-0.5 font-mono text-xs whitespace-nowrap tabular-nums">
-          {badge}
+    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+      {running ? (
+        <TextShimmer className={cn(PANEL_TITLE_CLASS, 'text-sm font-medium')}>
+          {trigger.title || 'Working'}
+        </TextShimmer>
+      ) : (
+        <span className={cn('text-foreground text-sm font-medium', PANEL_TITLE_CLASS)}>
+          {trigger.title}
+        </span>
+      )}
+      {trigger.subtitle && (
+        <span
+          className={cn(
+            'text-muted-foreground min-w-0 truncate font-mono text-xs',
+            onSubtitleClick &&
+              'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
+          )}
+          title={trigger.subtitle}
+          // `stopPropagation` is load-bearing now and was not before: the
+          // subtitle sits INSIDE the disclosure trigger, so without it every
+          // "open this file" click would also toggle the row it lives on.
+          onClick={
+            onSubtitleClick
+              ? (e) => {
+                  e.stopPropagation();
+                  onSubtitleClick();
+                }
+              : undefined
+          }
+        >
+          {trigger.subtitle}
+        </span>
+      )}
+      {args.length > 0 && (
+        <span
+          className="text-muted-foreground/60 min-w-0 truncate font-mono text-xs"
+          title={args.join(' · ')}
+        >
+          {args.join(' · ')}
         </span>
       )}
     </div>
   );
 }
 
-// Side-panel surface: large sticky header on top, padded body below.
-function PanelTool({
+/**
+ * Side-panel surface: one closed-by-default disclosure row per tool call.
+ *
+ * The panel is not a page for a single call. A Progress step or a Context group
+ * hands the detail N calls at once, and the old layout answered that with N
+ * sticky `px-4 pt-4 pb-3` headers and N padded bodies stacked down the pane —
+ * the same title treatment repeated, every payload open, nothing skimmable.
+ * A row inverts it: the detail opens as a list of one-line summaries, and the
+ * reader expands the one they came for.
+ *
+ * The row is the `bg-popover rounded-md border` surface the design system uses
+ * for every panel row, and its disclosure affordance is the same MARK the Easy
+ * cards use — a `CaretRightIcon` that points down once the thing is open. Only
+ * the mark is shared: `PanelCard` sits on `bg-pane` at a tighter radius and
+ * animates its chevron through `motion` with a press scale, while this row is a
+ * denser, plainer thing that rotates its chevron in CSS. Same vocabulary, not
+ * the same component. No rail, no connector, no per-row header: the gap between
+ * rows is the whole rhythm.
+ *
+ * Interaction is gated on having a body — a childless call has nothing to
+ * disclose, so it gets no chevron, no `role="button"`, and no cursor change
+ * rather than a control that does nothing. `locked` keeps the trigger (a locked
+ * row must still be openable) and only drops the pointer affordance; refusing
+ * the close is {@link BasicTool}'s `handleOpenChange`, shared with inline.
+ */
+function PanelToolRow({
+  icon,
   trigger,
   children,
   running,
   badge,
+  outcome,
   onSubtitleClick,
+  locked,
+  open,
+  onOpenChange,
   className,
 }: {
+  icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   children?: React.ReactNode;
   running: boolean;
   badge?: React.ReactNode;
+  outcome: ToolOutcome;
   onSubtitleClick?: () => void;
+  locked?: boolean;
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
   className?: string;
 }) {
-  return (
-    <div className="bg-background flex flex-col">
-      {trigger && (
-        <div className="bg-background sticky top-0 z-10 px-4 pt-4 pb-3">
-          {isTriggerTitle(trigger) ? (
-            <PanelTriggerTitle
-              trigger={trigger}
-              running={running}
-              badge={badge}
-              onSubtitleClick={onSubtitleClick}
-            />
-          ) : (
-            <div className="flex items-start justify-between gap-3">
-              <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 text-sm font-medium [&>span:first-child>svg]:size-4">
-                {trigger}
-              </div>
-            </div>
-          )}
+  const hasBody = Boolean(children);
+  // Same substitution the inline header makes, from the same context — a failed
+  // call leads with the verdict on both surfaces or the two disagree about what
+  // happened. See {@link ToolOutcomeIcon}.
+  const leading = outcome === 'ok' ? icon : <ToolOutcomeIcon outcome={outcome} />;
+
+  const row = (
+    <div
+      className={cn(
+        'flex min-h-11 w-full items-center gap-2.5 px-3 py-2.5 text-left',
+        hasBody && 'transition-colors',
+        hasBody && !locked && 'hover:bg-muted-foreground/[0.04] cursor-pointer',
+      )}
+    >
+      {leading && (
+        <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center [&>svg]:size-4">
+          {leading}
+        </span>
+      )}
+      {isTriggerTitle(trigger) ? (
+        <PanelRowTitle trigger={trigger} running={running} onSubtitleClick={onSubtitleClick} />
+      ) : (
+        // `truncate` here CLIPS rather than ellipsises — a node trigger's
+        // content is flex children (the DCP tools' label + chip rows), and
+        // `text-overflow` only applies to inline text. Clipping is the intent:
+        // the row is one line, and an over-long node has to stop at the badge
+        // rather than push the chevron off the card.
+        <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 truncate text-sm font-medium [&>span:first-child>svg]:size-4">
+          {trigger}
         </div>
       )}
-      {children && (
-        <div className={cn('h-full min-h-0 flex-1 p-4 pt-0 text-sm', className)}>{children}</div>
+      {badge && (
+        <span className="text-muted-foreground/60 shrink-0 font-mono text-xs whitespace-nowrap tabular-nums">
+          {badge}
+        </span>
+      )}
+      {hasBody && (
+        <CaretRightIcon
+          aria-hidden
+          // CSS, not `motion` — the rotation is a 150ms state change on one
+          // property, and every row on the pane would otherwise carry a
+          // motion component. `motion-reduce` snaps it instead.
+          className={cn(
+            'text-muted-foreground size-4 shrink-0 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
+        />
       )}
     </div>
+  );
+
+  return (
+    <Disclosure
+      open={open}
+      onOpenChange={onOpenChange}
+      className="bg-popover border-border overflow-hidden rounded-md border"
+    >
+      {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
+      {hasBody && open && (
+        <div className={cn('border-border border-t px-3 py-3 text-sm', className)}>{children}</div>
+      )}
+    </Disclosure>
   );
 }
 
@@ -1190,7 +1310,6 @@ export function BasicTool({
   locked,
   onSubtitleClick,
   badge,
-  rightAccessory,
   onClick,
   className,
   durationMs: durationMsProp,
@@ -1201,7 +1320,13 @@ export function BasicTool({
   const outcome = useContext(ToolOutcomeContext);
   const surface = useContext(ToolSurfaceContext);
   const activate = useContext(BoundActivateContext);
-  const [open, setOpen] = useState(defaultOpen);
+  // `forceOpen` seeds the state as well as latching it. The effect below alone
+  // could only open the row on the frame AFTER mount, so a call that arrives
+  // already waiting on a permission or a question rendered closed once and then
+  // snapped open — a flash of the wrong answer on the exact row whose prompt is
+  // the point. The effect stays for the case it is actually for: `forceOpen`
+  // flipping true on an already-mounted row.
+  const [open, setOpen] = useState(defaultOpen || !!forceOpen);
 
   useEffect(() => {
     if (forceOpen) setOpen(true);
@@ -1215,18 +1340,32 @@ export function BasicTool({
     [locked],
   );
 
-  // Side-panel surface has its own header/body layout and ignores the inline modes.
+  // Side-panel surface: a disclosure row, closed unless the caller seeded it
+  // open. It runs on the SAME state the inline branch does — `defaultOpen`
+  // seeds it, `forceOpen` latches it, `locked` refuses the close — because the
+  // panel is a second presentation of one behavior, not a second behavior. The
+  // branch used to ignore all three (plus `icon` and `outcome`) and render an
+  // always-expanded page header instead.
+  //
+  // `onClick` stays inline-only: a panel row's click is its disclosure, and the
+  // two tools that pass one (project-create / project-select) have no body, so
+  // they render as the plain, non-interactive rows they already were here.
   if (surface === 'panel') {
     return (
-      <PanelTool
+      <PanelToolRow
+        icon={icon}
         trigger={trigger}
         running={running}
         badge={badge}
+        outcome={outcome}
         onSubtitleClick={onSubtitleClick}
+        locked={locked}
+        open={open}
+        onOpenChange={handleOpenChange}
         className={className}
       >
         {children}
-      </PanelTool>
+      </PanelToolRow>
     );
   }
 
@@ -1266,36 +1405,15 @@ export function BasicTool({
  * A file's contents inside an expanded tool row, in the same card `bash` draws
  * around a command — so read / write / edit / bash all present code the one way.
  *
- * `TOOL_INDENT` lines the card up with the trigger's text, not its icon:
- * {@link ToolHeaderRow} renders a `size-4` icon and {@link TOOL_ROW_CLASS} sets
- * `gap-1.5`, so the text column starts 22px in. (`bash` used to hardcode `ml-7`
- * against a `gap-3` that this row class does not have, which put its block 6px
- * past the text above it.)
+ * The indent comes from {@link useToolIndent}, and the `mt-1.5` seam rides with
+ * it: both are the inline surface's business (see {@link ToolOutputCard}). On
+ * the panel this card IS the disclosure body and the body already brings
+ * `px-3 py-3`.
  *
- * 22px is the DEFAULT, not the law, because the gap it derives from can be
- * overridden by the surface. A tool row inside a chain of thought is forced to
- * `gap-3` so its label lines up with the thought and file rows above it
- * (`turn/activity-step.tsx`), which moves the text column to 28px and left the
- * card 6px short — the same 6px error the note above records, mirrored. A
- * hardcoded value cannot follow a gap it cannot see, so the surface sets
- * `--tool-indent` alongside the gap it overrides and the two can no longer
- * drift apart. Every other surface leaves the variable unset and gets 22px.
+ * `pr-11` is the shared reserve every floating copy button gets — `CopyOverlay`
+ * pins its button at `top-3 right-3`, and without the reserve the first line of
+ * a wrapped file ran underneath it.
  */
-export const TOOL_INDENT = 'ml-[var(--tool-indent,1.375rem)]';
-
-/**
- * The indent, or nothing, depending on which surface the tool is drawn on.
- *
- * An inline row leads with a `size-4` icon and a `gap-1.5`, so its text column
- * starts 22px in and a card below it has to match. The panel has no icon
- * gutter and supplies its own `p-4`, so the same indent only pushes the card
- * 22px off the header it sits under. {@link ToolOutputCard} already guarded its
- * indent this way; every other site hardcoded `TOOL_INDENT` and drifted.
- */
-export function useToolIndent(): string {
-  return useContext(ToolSurfaceContext) === 'inline' ? TOOL_INDENT : '';
-}
-
 export function ToolCodeCard({
   code,
   language,
@@ -1306,14 +1424,19 @@ export function ToolCodeCard({
   className?: string;
 }) {
   const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
   if (!code) return null;
   return (
-    <div className={cn('mt-1.5', indent, className)}>
-      <div className="border-border bg-popover relative rounded-md border">
+    <div className={cn(indent && 'mt-1.5', indent, className)}>
+      {/* Frame and pad are gated on the surface for the same reason the indent
+          is: on the panel the row card is the frame and its body is the inset.
+          See `useToolCardFrame`. */}
+      <div className={cn('relative', frame)}>
         {/* The scroller sits INSIDE the overlay so the copy button stays pinned
             to the card while long content scrolls under it. */}
         <CopyOverlay code={code}>
-          <div data-scrollable className="max-h-96 overflow-auto p-3">
+          <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
             <HighlightedCode code={code} language={language} />
           </div>
         </CopyOverlay>
@@ -1342,10 +1465,17 @@ export function InlineDiffView({
   );
 }
 
+/**
+ * A frameless code pane, for code that is already inside someone else's card.
+ *
+ * `p-3` is the same inset every other mono body in the tool views carries
+ * ({@link ToolCodeCard}, `bash`'s command and output panes); it used to be the
+ * only one at `px-3 py-2`, which is the row/list inset, not the code one.
+ */
 export function ToolCode({ code, language }: { code: string; language: string }) {
   return (
     <div data-scrollable className="max-h-96 overflow-auto">
-      <pre className="text-foreground/90 overflow-x-auto px-3 py-2 font-mono text-xs leading-[1.65] [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_span]:border-none [&_span]:outline-none">
+      <pre className="text-foreground/90 overflow-x-auto p-3 font-mono text-xs leading-[1.65] [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_span]:border-none [&_span]:outline-none">
         <HighlightedCode code={code} language={language}>
           {code}
         </HighlightedCode>
@@ -1416,13 +1546,13 @@ export function DiagnosticsDisplay({
 
   return (
     <div className="space-y-1 px-2 pb-2">
-      {diagnostics.map((d, i) => {
+      {diagnostics.map((d) => {
         const isError = d.severity === 1;
         const isWarning = d.severity === 2;
         return (
           <button
             type="button"
-            key={i}
+            key={`${d.range.start.line}:${d.range.start.character}:${d.severity ?? 0}:${d.message}`}
             disabled={!navigationEnabled || !filePath}
             className={cn(
               'group flex w-full items-start gap-1.5 text-left text-xs transition-colors',

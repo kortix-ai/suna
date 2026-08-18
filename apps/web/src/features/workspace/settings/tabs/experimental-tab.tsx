@@ -38,7 +38,8 @@
  * `updateFeatureFlag` route, and the `project.customize.write` gate — see
  * `ExperimentalTab` for why that gate replaced manager-OR-project.write.
  * NOT carried across: `main`'s copy of `SandboxProviderRow` (this branch had
- * already moved that to `general-tab.tsx`), and its read off
+ * already moved that out — first to `general-tab.tsx`, and since 2026-08-17 to
+ * `sandbox-tab.tsx`, where every sandbox control now lives), and its read off
  * `qk.project.detail` (every tab in this panel reads
  * `qk.project.summary`; switching one would be an inconsistency, and the
  * mutation below already writes BOTH cache entries so the flag-gated rail,
@@ -251,10 +252,11 @@ export function ExperimentalTabView({
   // Shown once there is something to search, or while a query is active so the
   // field does not vanish under the cursor the moment it matches nothing.
   const showSearch = features.length > 0 || searching;
+  const pendingKeySet = new Set(pendingKeys);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="experimental" />
+      <SettingsTabHeader tab="feature-flags" />
 
       <div className="space-y-4">
         {!isLoading && !isError && showSearch ? (
@@ -314,7 +316,7 @@ export function ExperimentalTabView({
                 <ExperimentalFeatureRow
                   key={feature.key}
                   feature={feature}
-                  pending={pendingKeys.includes(feature.key)}
+                  pending={pendingKeySet.has(feature.key)}
                   canManage={canManage}
                   onToggle={onToggle}
                 />

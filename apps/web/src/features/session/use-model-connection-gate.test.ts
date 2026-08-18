@@ -6,7 +6,16 @@ import { projectProviderModalTab, resolveGateProjectId } from './use-model-conne
 
 const gateSource = readFileSync(join(import.meta.dir, 'use-model-connection-gate.tsx'), 'utf8');
 const selectorSource = readFileSync(join(import.meta.dir, 'model-selector.tsx'), 'utf8');
-const chatInputSource = readFileSync(join(import.meta.dir, 'session-chat-input.tsx'), 'utf8');
+// `composer/composer.tsx`, not `session-chat-input.tsx`. The latter is a
+// re-export barrel now — the implementation (and this hook call with it) moved
+// into the composer during the ProseMirror rebuild. A source-assertion test
+// that keeps reading the barrel does not fail loudly on that move by itself;
+// it just stops being able to find what it is looking for, which is exactly
+// what happened here.
+const chatInputSource = readFileSync(
+  join(import.meta.dir, 'composer', 'composer.tsx'),
+  'utf8',
+);
 const chatGateSource = readFileSync(join(import.meta.dir, 'model-connection-gate.tsx'), 'utf8');
 
 describe('model management entry-point routing', () => {
@@ -116,7 +125,7 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
    * source of truth. If one of them ever starts passing an id, that is a
    * behaviour change on `/projects/[id]` that somebody has to decide on.
    */
-  test('session-chat-input calls the hook with models only', () => {
+  test('the composer calls the hook with models only', () => {
     expect(chatInputSource).toContain('useModelConnectionGate(models)');
     expect(chatInputSource).not.toContain('useModelConnectionGate(models,');
   });
@@ -126,7 +135,8 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
     expect(selectorSource).not.toContain('useModelConnectionGate(models,');
   });
 
-  test('both model-connection-gate call sites still pass nothing at all', () => {
-    expect(chatGateSource.match(/useModelConnectionGate\(\)/g)?.length).toBe(2);
+  test('both model-connection-gate call sites still pass no live data and no options', () => {
+    expect(chatGateSource.match(/useModelConnectionGate\(EMPTY_MODELS\)/g)?.length).toBe(2);
+    expect(chatGateSource).not.toContain('useModelConnectionGate(EMPTY_MODELS,');
   });
 });

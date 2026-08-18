@@ -84,6 +84,10 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
+import {
+  type PreparedInitialSandboxTurn,
+  prepareInitialSandboxTurn,
+} from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
@@ -96,10 +100,10 @@ import {
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
 } from './session-runtime-context';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
-  projectMetaAgentEnabled,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 
@@ -164,14 +168,24 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
   return Number(row?.provisioningCount ?? 0);
 }
 
+/**
+ * @param reserveSlots How many concurrent-session slots this create must LEAVE
+ *   FREE. `0` (the default) is the ordinary cap: a create may take the last
+ *   slot. `1` is speculative creation — a pre-created session is real, booted,
+ *   billed compute holding a slot exactly like a working session, so it must
+ *   never take the LAST one and 429 the next genuine session start. On Starter
+ *   (`concurrentSessionLimit: 3`, billing/services/tiers.ts) three project page
+ *   views with zero real work were enough.
+ */
 export async function enforceConcurrentSessionCap(
   accountId: string,
   userId: string,
   request?: RequestAuditContext,
+  reserveSlots = 0,
 ): Promise<SessionCreateError | null> {
   const { tier, limit, source } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
-  if (activeSessions < limit) return null;
+  if (activeSessions < limit - reserveSlots) return null;
 
   recordAuditEvent({
     accountId,
@@ -187,6 +201,7 @@ export async function enforceConcurrentSessionCap(
       limit,
       limit_source: source,
       active_sessions: activeSessions,
+      reserve_slots: reserveSlots,
     },
   }).catch((error) => {
     console.error('[projects] Failed to record session cap audit event:', error);
@@ -205,6 +220,7 @@ export async function enforceConcurrentSessionCap(
       code: 'concurrent_session_limit',
       limit,
       active_sessions: activeSessions,
+      reserve_slots: reserveSlots,
     },
   };
 }
@@ -213,6 +229,7 @@ export async function checkConcurrentSessionCap(
   accountId: string,
   userId: string,
   request?: RequestAuditContext,
+  reserveSlots = 0,
 ): Promise<{
   error?: SessionCreateError;
   headers: Record<string, string>;
@@ -225,9 +242,9 @@ export async function checkConcurrentSessionCap(
     'X-RateLimit-Remaining': String(remainingAfterCreate),
   };
 
-  if (activeSessions < limit) return { headers };
+  if (activeSessions < limit - reserveSlots) return { headers };
 
-  const error = await enforceConcurrentSessionCap(accountId, userId, request);
+  const error = await enforceConcurrentSessionCap(accountId, userId, request, reserveSlots);
   return {
     headers: error?.headers ?? headers,
     ...(error ? { error } : {}),
@@ -263,6 +280,7 @@ export async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
   /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
@@ -495,6 +513,7 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
+      initialTurn: input.initialTurn,
       // Concrete session model after explicit → agent → project → account →
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
@@ -564,12 +583,75 @@ export function sandboxCallbackUnreachableReason(): string | null {
   );
 }
 
+// One probe verdict is cached briefly: session create and restart are
+// user-facing paths and must not pay a fresh network round-trip on every call.
+const TUNNEL_PROBE_TTL_MS = 30_000;
+const TUNNEL_PROBE_TIMEOUT_MS = 3_000;
+let tunnelProbe: { base: string; reason: string | null; at: number } | null = null;
+
+/** Test seam: drop the cached verdict so a test can force a fresh probe. */
+export function resetTunnelProbeCache(): void {
+  tunnelProbe = null;
+}
+
+/**
+ * Liveness check for a quick-tunnel KORTIX_URL. The static loopback check
+ * above catches a MISSING tunnel; this catches a DEAD one. trycloudflare quick
+ * tunnels die server-side while the local `cloudflared` process stays up, and
+ * every sandbox created after that boots into a callback URL that can never
+ * answer — the runtime never becomes ready and the failure used to surface as
+ * a false "computer was lost" (incident 2026-08-14). Scoped to
+ * *.trycloudflare.com on purpose: deployed environments use a stable public
+ * URL and must not pay a self-probe on the session-create path.
+ */
+export async function sandboxCallbackDeadTunnelReason(
+  now = Date.now(),
+  base = deriveKortixApiBase(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  let host: string;
+  try {
+    host = new URL(base).hostname.toLowerCase();
+  } catch {
+    return null; // sandboxCallbackUnreachableReason() already reports an invalid URL
+  }
+  if (!host.endsWith('.trycloudflare.com')) return null;
+  if (tunnelProbe && tunnelProbe.base === base && now - tunnelProbe.at < TUNNEL_PROBE_TTL_MS) {
+    return tunnelProbe.reason;
+  }
+  let reason: string | null = null;
+  try {
+    const res = await fetchImpl(`${base}/health`, {
+      signal: AbortSignal.timeout(TUNNEL_PROBE_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      reason =
+        `The dev tunnel at ${config.KORTIX_URL} answered ${res.status} to a health probe. ` +
+        `Cloud sandboxes cannot call back to this API through it, so a new sandbox would ` +
+        `boot but never become ready. Restart the dev stack (\`pnpm dev\`) to mint a fresh tunnel.`;
+    }
+  } catch {
+    reason =
+      `The dev tunnel at ${config.KORTIX_URL} is not answering. Cloud sandboxes cannot ` +
+      `call back to this API through it, so a new sandbox would boot but never become ` +
+      `ready. Restart the dev stack (\`pnpm dev\`) to mint a fresh tunnel.`;
+  }
+  tunnelProbe = { base, reason, at: now };
+  return reason;
+}
+
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
+  /**
+   * Concurrent-session slots this create must LEAVE FREE. Defaults to 0 — an
+   * ordinary create may take the last slot. Speculative creation passes 1; see
+   * `enforceConcurrentSessionCap`.
+   */
+  reserveConcurrentSlots?: number;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -642,7 +724,7 @@ export async function createProjectSession(input: {
   // connectors keeps the project-default fallback for the rest unless the caller
   // EXPLICITLY opts into fail-closed with `inherit_unbound: false` (the
   // composer's "I picked these specific connections, turn the others off"
-  // signal). Defaulting absent→true matches the re-scope path (r7.ts), which
+  // signal). Defaulting absent→true matches the re-scope path (routes/session-scope.ts), which
   // deliberately never flips this flag on a scope save. Before this, a caller
   // sending `connector_bindings: {...}` without `inherit_unbound` left it
   // `false`, hiding EVERY unbound connector from `kortix connectors ls`
@@ -737,7 +819,7 @@ export async function createProjectSession(input: {
   // (`meta_agent`). Flag off: agent resolution below is byte-for-byte the
   // pre-meta behavior, and an explicit "meta" request is an ordinary (unknown)
   // agent name.
-  const metaAgentEnabled = projectMetaAgentEnabled(project.metadata);
+  const metaAgentEnabled = resolveFeatureFlag(project.metadata, 'meta_agent');
   // Meta→meta recursion stop. Anyone — dashboard users included — may spawn
   // the meta coordinator, and an omitted agent still defaults to it. The one
   // exception is a caller that IS a meta session: its omitted agent resolves
@@ -1047,7 +1129,8 @@ export async function createProjectSession(input: {
   const providerName: SandboxProviderName =
     'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
 
-  const callbackUnreachable = sandboxCallbackUnreachableReason();
+  const callbackUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
   if (callbackUnreachable) {
     return {
       error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },
@@ -1088,7 +1171,12 @@ export async function createProjectSession(input: {
   // still evaluated/returned before billing (402).
   const [capResult, billingCheck] = await Promise.all([
     input.enforceAccountCap !== false
-      ? checkConcurrentSessionCap(accountId, userId, input.request)
+      ? checkConcurrentSessionCap(
+          accountId,
+          userId,
+          input.request,
+          input.reserveConcurrentSlots ?? 0,
+        )
       : Promise.resolve(null),
     checkBillingActive(accountId),
   ]);
@@ -1129,6 +1217,7 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
   const pendingPrompt =
     body.pending_prompt &&
     typeof body.pending_prompt === 'object' &&
@@ -1321,29 +1410,30 @@ export async function createProjectSession(input: {
       ]);
       const envPromise = baseShaPromise
         .then((baseSha) =>
-        buildSessionSandboxEnvVars({
-          accountId,
-          projectId,
-          sessionId,
-          userId,
-          repoUrl: project.repoUrl,
-          baseRef,
-          agentName,
-          initialPrompt,
-          opencodeModel,
-          llmGatewayEnabled,
-          platformMetaAgent,
-          freshSession: true,
-          baseSha,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath,
-          workspaceMode,
-        }),
+          buildSessionSandboxEnvVars({
+            accountId,
+            projectId,
+            sessionId,
+            userId,
+            repoUrl: project.repoUrl,
+            baseRef,
+            agentName,
+            initialPrompt,
+            initialTurn,
+            opencodeModel,
+            llmGatewayEnabled,
+            platformMetaAgent,
+            freshSession: true,
+            baseSha,
+            defaultBranch: project.defaultBranch,
+            manifestPath: project.manifestPath,
+            workspaceMode,
+          }),
         )
         .then((envVars) => {
-        tl.mark('env-vars');
-        return envVars;
-      });
+          tl.mark('env-vars');
+          return envVars;
+        });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
         await db
@@ -1401,6 +1491,7 @@ export async function createProjectSession(input: {
         agentName,
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        initialTurn,
         extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {

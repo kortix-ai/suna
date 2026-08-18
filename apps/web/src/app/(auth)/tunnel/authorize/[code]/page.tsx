@@ -19,6 +19,12 @@ import {
 } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
 
+// Hoisted: the registry is a module constant, so the grantable subset never
+// changes — no need to re-filter it on every render.
+const GRANTABLE_CAPABILITIES = CAPABILITY_REGISTRY.filter((cap) =>
+  ['filesystem', 'shell', 'desktop'].includes(cap.key),
+);
+
 export default function DeviceAuthorizePage() {
   return (
     <Suspense fallback={<AuthPendingScreen />}>
@@ -175,9 +181,7 @@ function DeviceAuthorize() {
               </p>
             </div>
             <div className="border-border divide-border/60 divide-y overflow-hidden rounded-md border">
-              {CAPABILITY_REGISTRY.filter((cap) =>
-                ['filesystem', 'shell', 'desktop'].includes(cap.key),
-              ).map((cap) => {
+              {GRANTABLE_CAPABILITIES.map((cap) => {
                 const CapIcon = cap.icon;
                 const selected = selectedCaps.has(cap.key);
                 return (
@@ -225,7 +229,18 @@ function DeviceAuthorize() {
           </div>
 
           <div className="space-y-3">
-            <Button size="lg" className="w-full" onClick={handleApprove} disabled={busy}>
+            {selectedCaps.size === 0 ? (
+              <p className="text-muted-foreground text-center text-xs">
+                Select at least one access to approve. A connection with no access cannot do
+                anything, and changing it later needs a new request.
+              </p>
+            ) : null}
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={handleApprove}
+              disabled={busy || selectedCaps.size === 0}
+            >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
               Approve connection
             </Button>

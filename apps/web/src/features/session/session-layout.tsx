@@ -32,7 +32,7 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
-import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
+import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -123,14 +123,26 @@ export const SessionLayout = memo(function SessionLayout({
   const togglePanelMode = useUserPreferencesStore((s) => s.togglePanelMode);
   const isEasy = panelMode === 'easy';
 
-  // The session's own busy/retry status — the exact same signal
+  // The session's own working state — literally the same projection
   // `session-chat.tsx` reads (as `isServerBusy`) to drive its own working
-  // indicator, and the same store `tab-bar.tsx`/`session-list.tsx` read for
-  // their busy dots. EasyPanel ORs this with its part-derived running flag so
-  // an inter-tool-call gap (assistant text streaming, no tool part active)
-  // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
+  // indicator, over one shared `GET .../turn` cache entry and one shared send
+  // receipt. It used to be the raw SSE status slot instead, and a dropped
+  // end-of-turn frame left THIS panel reporting "running" while the composer
+  // beside it correctly read idle — so `useDeliverableReadiness` never saw the
+  // running→settled transition and the W1 "ready" chip never fired for that run.
+  //
+  // A transient sub-session has no Kortix session row for `/turn` to answer
+  // about, so it keeps the stream slot — repaired on every stream (re)connect
+  // by the status-snapshot reconciler in `use-opencode-events`.
   const sessionStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
-  const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
+    enabled: !!projectId && !!projectSessionId,
+    runtimeSessionId: sessionId,
+  });
+  const isSessionBusy =
+    projectId && projectSessionId
+      ? working.state === 'working'
+      : sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the
   // panel is closed. Headless: writes the ready chip; the header renders it.

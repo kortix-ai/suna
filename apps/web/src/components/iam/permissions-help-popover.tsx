@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { AccountRole } from '@kortix/sdk';
 import { QuestionIcon as HelpCircle } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   ACCOUNT_ROLE_DESCRIPTORS,
@@ -16,11 +17,24 @@ const ACCOUNT_ROLES_DESCENDING: AccountRole[] = ['owner', 'admin', 'member'];
 interface Props {
   triggerLabel?: string;
   align?: 'start' | 'center' | 'end';
+  /**
+   * Shows the "Custom roles" section with a real link to
+   * `/accounts/<accountId>?tab=roles`, ONLY when passed. The account page's
+   * own mount (`accounts/[id]/page.tsx`) omits this — a "manage roles" link
+   * to the page the popover is already open on is a link to nowhere new.
+   * Project-scoped mounts (`members-tab.tsx`) pass it: this is the one place
+   * a person reading "how do project roles work" would otherwise never learn
+   * custom roles exist at all, now that the project-level Access tab shows
+   * only agent assignment — group-role and custom-role binding moved to
+   * their account-level homes (see `members-tab.tsx`'s header comment).
+   */
+  accountId?: string;
 }
 
 export function PermissionsHelpPopover({
   triggerLabel = 'How permissions work',
   align = 'start',
+  accountId,
 }: Props = {}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
@@ -77,6 +91,24 @@ export function PermissionsHelpPopover({
             })}
           </ul>
         </section>
+
+        {accountId ? (
+          <section className="space-y-1">
+            <h3 className="text-foreground font-semibold">Custom roles</h3>
+            <p className="text-muted-foreground text-xs">
+              For a permission set beyond these three tiers. Defined once on
+              the account, then bound to a member, group, or agent — either
+              account-wide, or to just this project.{' '}
+              <Link
+                href={`/accounts/${accountId}?tab=roles`}
+                className="text-foreground underline underline-offset-2"
+              >
+                Manage roles
+              </Link>
+              .
+            </p>
+          </section>
+        ) : null}
 
         <section className="space-y-1">
           <h3 className="text-foreground font-semibold">Groups</h3>

@@ -201,8 +201,14 @@ describe('SecretsView states the echo caveat in the boundary panel', () => {
     expect(panel.length).toBeGreaterThan(0);
   });
 
-  test('the caveat is derived from the declared hosts, not hardcoded', () => {
-    expect(code).toContain('const echoNotice = networkBoundaryEchoNotice(brokerHosts);');
+  test('the caveat is derived from the declared hosts and the live mechanism, not hardcoded', () => {
+    // The mechanism is an argument, not a default, because the two answer the
+    // same working request oppositely: the provider edge cuts an echoing
+    // response, the in-guest shim returns 200 with the value replaced. Passing
+    // a literal here would hand half the projects the other one's symptom.
+    expect(code).toContain(
+      "const echoNotice = networkBoundaryEchoNotice(brokerHosts, boundaryMode ?? 'in-guest-shim');",
+    );
     expect(panel).toContain('title={echoNotice.title}');
     expect(panel).toContain('{echoNotice.body}');
     expect(panel).toContain('{echoNotice.probe}');

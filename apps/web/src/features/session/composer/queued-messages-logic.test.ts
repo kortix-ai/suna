@@ -4,6 +4,7 @@ import {
   nextFocusAfterRemove,
   queueSummaryLabel,
   reorderTargetIndex,
+  reorderToPendingIndex,
 } from './queued-messages-logic';
 
 describe('queueSummaryLabel', () => {
@@ -40,6 +41,36 @@ describe('reorderTargetIndex', () => {
   test('returns null for an index outside the list', () => {
     expect(reorderTargetIndex(-1, 'up', 4, 0)).toBeNull();
     expect(reorderTargetIndex(9, 'down', 4, 0)).toBeNull();
+  });
+});
+
+describe('reorderToPendingIndex', () => {
+  test('maps a visible slot to the full pending array', () => {
+    // 'a' and 'b' are in flight and hidden; visible list is c, d, e.
+    const pending = ['a', 'b', 'c', 'd', 'e'];
+    const visible = ['c', 'd', 'e'];
+    // Moving 'd' to slot 0 lands where 'c' sits in the FULL array: 2, not 0.
+    expect(reorderToPendingIndex(visible, pending, 'd', 0)).toBe(2);
+    expect(reorderToPendingIndex(visible, pending, 'd', 2)).toBe(4);
+  });
+
+  test('maps a multi-slot drag, both directions', () => {
+    const pending = ['a', 'b', 'c', 'd'];
+    // Dragging 'a' to the last slot targets where 'd' sits.
+    expect(reorderToPendingIndex(pending, pending, 'a', 3)).toBe(3);
+    expect(reorderToPendingIndex(pending, pending, 'd', 0)).toBe(0);
+  });
+
+  test('returns null for a no-op or out-of-range slot', () => {
+    const pending = ['a', 'b', 'c'];
+    expect(reorderToPendingIndex(pending, pending, 'a', 0)).toBeNull();
+    expect(reorderToPendingIndex(pending, pending, 'a', -1)).toBeNull();
+    expect(reorderToPendingIndex(pending, pending, 'c', 3)).toBeNull();
+  });
+
+  test('returns null for a row that is not visible', () => {
+    // An in-flight row cannot move, however the call was reached.
+    expect(reorderToPendingIndex(['b', 'c'], ['a', 'b', 'c'], 'a', 1)).toBeNull();
   });
 });
 

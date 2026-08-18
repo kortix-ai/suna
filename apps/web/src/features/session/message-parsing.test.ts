@@ -1,6 +1,42 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseSystemNotifications, systemNotificationSeverity } from './message-parsing';
+import {
+  parseFileReferences,
+  parseSystemNotifications,
+  systemNotificationSeverity,
+} from './message-parsing';
+
+describe('parseFileReferences', () => {
+  test('unescapes every attribute it hands back', () => {
+    // The sibling `parseFileMentionReferences` always unescaped; this one
+    // pushed the raw attribute out, so `R&D report.pdf` reached the transcript
+    // — and the model — as `R&amp;D report.pdf`.
+    const { files, cleanText } = parseFileReferences(
+      'read it\n\n<file path="/workspace/uploads/R&amp;D.pdf" mime="application/pdf" filename="R&amp;D report.pdf">\nblurb\n</file>',
+    );
+
+    expect(cleanText).toBe('read it');
+    expect(files).toEqual([
+      { path: '/workspace/uploads/R&D.pdf', mime: 'application/pdf', filename: 'R&D report.pdf' },
+    ]);
+  });
+
+  test('reads a pending id off an in-flight ref', () => {
+    const { files } = parseFileReferences(
+      '<file path="" mime="image/png" filename="image.png" pending="upl_1">\nx\n</file>',
+    );
+
+    expect(files[0].pending).toBe('upl_1');
+    expect(files[0].path).toBe('');
+  });
+
+  test('a tag with no path and no filename is left in the text', () => {
+    // Attributes are read by name now. A `<file>` block that carries neither is
+    // not a file reference, and swallowing it would delete message content.
+    const input = '<file foo="bar">\nnot a ref\n</file>';
+    expect(parseFileReferences(input)).toEqual({ cleanText: input, files: [] });
+  });
+});
 
 describe('parseSystemNotifications', () => {
   test('turns a tag into a sentence, not a headline', () => {

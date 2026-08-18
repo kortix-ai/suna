@@ -160,14 +160,14 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
 
   // Reset the per-stage clock whenever the backend stage changes, so the
   // soft-advance measures time spent in the CURRENT stage (not since mount).
-  const stageEnteredAt = useRef(now);
-  const prevStage = useRef(stage);
-  if (prevStage.current !== stage) {
-    prevStage.current = stage;
-    stageEnteredAt.current = now;
+  const [stageEnteredAt, setStageEnteredAt] = useState(now);
+  const [prevStage, setPrevStage] = useState(stage);
+  if (prevStage !== stage) {
+    setPrevStage(stage);
+    setStageEnteredAt(now);
   }
 
-  return { active: activeStep(stage, now - stageEnteredAt.current), now };
+  return { active: activeStep(stage, now - stageEnteredAt), now };
 }
 
 /**

@@ -37,6 +37,27 @@ interface SandboxConnectionStore {
 	recoveryPhase: SandboxRecoveryPhase;
 	restartRequestedAt: number | null;
 	manualRetryNonce: number;
+	/**
+	 * When the last live SSE event from the active runtime arrived. Proof of
+	 * reachability that outranks a failed health probe: an event that just came
+	 * over the wire cannot be stale, while a probe on a loaded box can time out
+	 * even though the runtime is mid-turn and serving traffic. See
+	 * `shouldIgnoreProbeFailure` in `react/use-runtime-reconnect`.
+	 */
+	lastRuntimeEvidenceAt: number | null;
+	/**
+	 * When the runtime last started waiting to become healthy — set the moment
+	 * `healthy` isn't `true` and cleared the moment it is. Unlike
+	 * `disconnectedAt` (which tracks `status`, and is CLEARED the instant a
+	 * "booting" 503 classification calls `setSandboxStatus('connected')`), this
+	 * survives an indefinite `connected`-but-not-`healthy` stretch — the case a
+	 * wedged OpenCode boot produces: every probe gets a 503, which resets the
+	 * failure counter each time, so `status` never crosses the unreachable
+	 * threshold and `disconnectedAt` never even gets set. Without a clock that
+	 * survives that shape, that case has no time bound at all. See
+	 * `react/use-runtime-boot-stalled`.
+	 */
+	bootingSinceAt: number | null;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -119,12 +140,17 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	recoveryPhase: "idle",
 	restartRequestedAt: null,
 	manualRetryNonce: 0,
+	lastRuntimeEvidenceAt: null,
+	bootingSinceAt: null,
 }));
 
 export function requestRuntimeReconnect() {
 	useSandboxConnectionStore.setState((state) => ({
 		status: "connecting", healthy: null, failCount: 0, runtimeError: null,
 		disconnectedAt: state.disconnectedAt ?? Date.now(), manualRetryNonce: state.manualRetryNonce + 1,
+		// A manual retry is the user's own reset — give the stall clock a fresh
+		// start too, instead of it re-firing on the very next tick.
+		bootingSinceAt: Date.now(),
 	}));
 }
 
@@ -238,6 +264,8 @@ export function resetForServerSwitch() {
 			recoveryPhase: "idle",
 			restartRequestedAt: null,
 			manualRetryNonce: 0,
+			lastRuntimeEvidenceAt: null,
+			bootingSinceAt: null,
 		});
 		saveWasConnected(true);
 		return;
@@ -260,6 +288,8 @@ export function resetForServerSwitch() {
 			recoveryPhase: "idle",
 			restartRequestedAt: null,
 			manualRetryNonce: 0,
+			lastRuntimeEvidenceAt: null,
+			bootingSinceAt: Date.now(),
 		});
 		saveWasConnected(true);
 		return;
@@ -279,8 +309,21 @@ export function resetForServerSwitch() {
 		recoveryPhase: "idle",
 		restartRequestedAt: null,
 		manualRetryNonce: 0,
+		lastRuntimeEvidenceAt: null,
+		bootingSinceAt: Date.now(),
 	});
 	saveWasConnected(false);
+}
+
+/**
+ * Record that a live SSE event from the active runtime just arrived. Cheap and
+ * called per event, so it only writes when the timestamp actually moves the
+ * freshness window (>= 1s granularity keeps store notifications rare).
+ */
+export function noteRuntimeEvidence(at: number = Date.now()) {
+	const previous = useSandboxConnectionStore.getState().lastRuntimeEvidenceAt;
+	if (previous !== null && at - previous < 1_000) return;
+	useSandboxConnectionStore.setState({ lastRuntimeEvidenceAt: at });
 }
 
 export function markRecoveryRequested(phase: Exclude<SandboxRecoveryPhase, 'idle'>) {
@@ -340,6 +383,16 @@ export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeErr
 		updates.runtimeError = nextRuntimeError;
 	} else if (healthy && state.runtimeError !== null) {
 		updates.runtimeError = null;
+	}
+	// Start (or keep) the stall clock while not healthy; clear it the instant
+	// we are. A "booting" 503 classification resets `failCount` on every tick
+	// (see `use-runtime-reconnect`'s `classifyProbeResult`), so it can repeat
+	// forever without ever crossing the unreachable threshold — this clock is
+	// the only thing that still bounds that case. See `bootingSinceAt`.
+	if (healthy) {
+		if (state.bootingSinceAt !== null) updates.bootingSinceAt = null;
+	} else if (state.bootingSinceAt === null) {
+		updates.bootingSinceAt = Date.now();
 	}
 	if (Object.keys(updates).length > 0) {
 		useSandboxConnectionStore.setState(updates);

@@ -59,6 +59,17 @@ export function spawnedBySessionId(session: ProjectSession): string | null {
   return typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
 }
 
+/**
+ * Viewer-relative ownership marker.
+ *
+ * The API computes `is_owner` from the authenticated viewer. Only an explicit
+ * false is shared. Older payloads omit the field, so they keep the unmarked
+ * default state instead of being mislabeled.
+ */
+export function sessionIsShared(session: Pick<ProjectSession, 'is_owner'>): boolean {
+  return session.is_owner === false;
+}
+
 export function sessionSource(session: ProjectSession): SessionSource {
   const meta = (session.metadata ?? {}) as Record<string, unknown>;
   const source = typeof meta.source === 'string' ? meta.source : null;
@@ -232,8 +243,10 @@ export function matchesSourceFilters(
   return filters.some((filter) => {
     // `is_owner` is viewer-relative and older payloads omit it — unknown
     // ownership reads as "mine" so the default view never hides a session.
-    if (filter === 'mine') return kind === 'chat' && session.is_owner !== false;
-    if (filter === 'shared') return kind === 'chat' && session.is_owner === false;
+    if (filter === 'mine') return kind === 'chat' && !sessionIsShared(session);
+    // Ownership is independent of source. A scheduled or channel session can
+    // be shared with the viewer and must remain discoverable through Shared.
+    if (filter === 'shared') return sessionIsShared(session);
     return kind === filter;
   });
 }

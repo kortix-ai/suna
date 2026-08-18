@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 
 import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
+import { syncEgressShim } from '../egress-shim'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
@@ -188,6 +189,26 @@ export function createEnvRouter(
             names: result.names.length,
           })
         }
+        // The capability catalog applied just above is also what arms the
+        // in-guest egress shim, and boundary rules can move on a LIVE box:
+        // adding the session's first network-boundary secret has to start a
+        // listener that boot decided this session did not need.
+        //
+        // Ordered exactly as boot and fork adoption order it — shim first, then
+        // writeAgentEnvFile — because that file is how the proxy + CA variables
+        // reach the agent's shells, and it is equally what CLEARS them when the
+        // last boundary secret goes away.
+        //
+        // Not fatal, by the same rule the boot path follows: a listener that
+        // will not come up is a boundary secret that will not work, not a
+        // reason to drop the project secrets, model and gateway mode arriving
+        // in the same body. Nothing further down consults the outcome — a
+        // catalog change is already respawn-required (opencode.ts), so the
+        // reload below picks the new proxy env up on its own.
+        const egressShim = await syncEgressShim().catch((err) => {
+          logger.error('[env] egress shim sync failed', err)
+          return { outcome: 'failed' as const, hosts: [] as readonly string[] }
+        })
         // Always rewrite the shell artifact, including an identical revision.
         // A warm-fork race can leave agent-env.sh stale while the in-memory
         // store already has the requested revision. A sync replay must repair it.
@@ -250,6 +271,7 @@ export function createEnvRouter(
           exported,
           withheld: Math.max(0, applied.knownNames.length - exported),
           agentEnvWritten,
+          egressShim: egressShim.outcome,
         })
 
         return c.json({
@@ -261,6 +283,11 @@ export function createEnvRouter(
           managed: applied.knownNames.length,
           withheld: Math.max(0, applied.knownNames.length - exported),
           agent_env_written: agentEnvWritten,
+          // 'unchanged' | 'started' | 'restarted' | 'stopped' | 'failed'.
+          // 'failed' is the one a caller must surface: the secret saved, the
+          // catalog landed, and the credential still will not be injected.
+          egress_shim: egressShim.outcome,
+          egress_shim_hosts: egressShim.hosts,
           opencode_env_changed: opencodeEnvChanged,
           opencode_env_names: opencodeEnvNames,
           opencode: opencode.getState(),

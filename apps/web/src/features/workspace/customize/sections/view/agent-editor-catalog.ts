@@ -217,6 +217,10 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
     ],
   },
   {
+    group: 'Apps',
+    actions: ['project.app.read', 'project.app.write', 'project.app.deploy'],
+  },
+  {
     group: 'Review',
     actions: ['project.review.read', 'project.review.submit', 'project.review.act'],
   },

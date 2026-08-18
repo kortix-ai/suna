@@ -63,6 +63,10 @@ import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
+import {
+  type PreparedInitialSandboxTurn,
+  initialSandboxTurnMetadata,
+} from '../../projects/sandbox-turn-lifecycle';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -253,6 +257,8 @@ export async function provisionSessionSandbox(opts: {
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
+  /** Pre-created authority for a prompt the daemon delivers during boot. */
+  initialTurn?: PreparedInitialSandboxTurn | null;
   /** Project metadata, used for per-project experimental gates. */
   projectMetadata?: unknown;
   /**
@@ -357,6 +363,13 @@ export async function provisionSessionSandbox(opts: {
         config: {},
         metadata: {
           ...(opts.metadata ?? {}),
+          ...(opts.initialTurn
+            ? {
+                activeTurns: {
+                  [opts.initialTurn.token]: initialSandboxTurnMetadata(opts.initialTurn),
+                },
+              }
+            : {}),
           initStatus: 'pending',
           initAttempts: 0,
           initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,

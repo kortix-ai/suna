@@ -15,18 +15,19 @@ export function settingsPanel(page: Page): Locator {
 }
 
 /**
- * Opens the settings panel from the sidebar's Settings row and returns it.
+ * Opens the settings panel and returns it.
  *
- * The sidebar button's accessible name is "Settings" plus its `Ctrl ,` hint,
- * so the name is matched as a prefix.
+ * The sidebar's own Settings row is gone (Jay, 2026-08-17): it opened the
+ * exact same panel a click on the workspace switcher's "User Settings" row
+ * already does, one level up — a second row to an identical destination. The
+ * panel's own Mod+, keyboard shortcut (`useSettingsKeyboardShortcut`,
+ * `project-settings-nav.tsx`) is unchanged, and it is the one thing this
+ * helper can trigger without depending on sidebar DOM structure or the
+ * switcher's dropdown being open first — exactly what a real user does to
+ * open it without the mouse.
  */
 export async function openSettingsPanel(page: Page): Promise<Locator> {
-  const trigger = page
-    .locator('[data-slot="sidebar"]')
-    .getByRole("button", { name: /^Settings/ })
-    .first();
-  await expect(trigger).toBeVisible({ timeout: 60_000 });
-  await trigger.click();
+  await page.keyboard.press("Control+,");
   const panel = settingsPanel(page);
   await expect(panel).toBeVisible({ timeout: 30_000 });
   return panel;

@@ -31,7 +31,7 @@ import { voiceCallReadCursors } from '@kortix/db';
  *                     `cursor` (see AgentTranscriptTurn), and the default page
  *                     is 100 rather than readTurns' 200 — a clip now reports
  *                     `truncated` so the caller pages on. Nothing in-repo read
- *                     this path (r7.ts and public-join-routes.ts call readTurns
+ *                     this path (routes/session-transcripts.ts and public-join-routes.ts call readTurns
  *                     directly with their own limits), so nothing broke.
  *
  * ADVANCING IS MUTATION, AND MUTATION CAN LOSE THINGS. If the position moves and

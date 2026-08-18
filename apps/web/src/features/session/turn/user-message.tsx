@@ -11,7 +11,6 @@ import {
   CaretDownIcon as ChevronDown,
   PencilSimpleIcon,
   ScissorsIcon as Scissors,
-  TerminalWindowIcon as Terminal,
   TimerIcon as Timer,
 } from '@phosphor-icons/react';
 
@@ -20,7 +19,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import Loading from '@/components/ui/loading';
 import {
   PreviewImage,
   PreviewImageContent,
@@ -29,21 +27,29 @@ import {
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { useSandboxImageSrc } from '@/features/session/sandbox-image';
 import { cn } from '@/lib/utils';
-import { fileIconFor, getFilename } from '@/lib/utils/file-utils';
+import { getFilename } from '@/lib/utils/file-utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import {
+  isAgentPart,
+  isFilePart,
+  isTextPart,
+  splitUserParts,
   type AgentPart,
   type Command,
   type FilePart,
   type MessageWithParts,
   type TextPart,
-  isAgentPart,
-  isFilePart,
-  isTextPart,
-  splitUserParts,
 } from '@/ui';
+import {
+  FILE_TILE_SURFACE,
+  FileTileBody,
+  TILE_INTERACTIVE,
+  TILE_SURFACE,
+} from '../attachment-tile';
+import { MentionChip } from '../mention-chip';
+import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -250,6 +256,25 @@ const DCP_REASON_LABELS: Record<string, string> = {
   extraction: 'Extraction',
 };
 
+/**
+ * Stable content-derived React keys for immutable parsed lists whose items
+ * carry no id. Duplicate content gets an occurrence suffix so keys stay
+ * unique; the lists never reorder (they are pure derivations of one message
+ * text), so occurrence order is part of an item's identity.
+ */
+function withContentKeys<T>(
+  items: readonly T[],
+  contentOf: (item: T) => string,
+): { key: string; item: T }[] {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const content = contentOf(item);
+    const n = seen.get(content) ?? 0;
+    seen.set(content, n + 1);
+    return { key: n === 0 ? content : `${content}~${n}`, item };
+  });
+}
+
 function formatDCPTokens(tokens: number): string {
   if (tokens >= 1000) {
     const k = (tokens / 1000).toFixed(1).replace('.0', '');
@@ -276,7 +301,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           !hasDetails && 'pointer-events-none',
         )}
       >
-        <Scissors className="text-muted-foreground/70 size-3.5 shrink-0" />
+        <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
         <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
           {isPrune ? 'Context Pruned' : 'Context Compressed'}
         </span>
@@ -323,19 +348,24 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           {/* Pruned items list */}
           {hasItems && (
             <div className="space-y-0.5">
-              {notification.items.map((item, i) => (
-                <div key={i} className="text-muted-foreground/80 flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground/40">
-                    {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
-                  </span>
-                  <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
-                    {item.tool}
-                  </span>
-                  {item.description && (
-                    <span className="max-w-[300px] truncate">{item.description}</span>
-                  )}
-                </div>
-              ))}
+              {withContentKeys(notification.items, (it) => `${it.tool}:${it.description}`).map(
+                ({ key, item }) => (
+                  <div
+                    key={key}
+                    className="text-muted-foreground/80 flex items-center gap-2 text-xs"
+                  >
+                    <span className="text-muted-foreground/40">
+                      {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
+                    </span>
+                    <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
+                      {item.tool}
+                    </span>
+                    {item.description && (
+                      <span className="max-w-[300px] truncate">{item.description}</span>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
 
@@ -376,13 +406,22 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
   );
 }
 
-const BUBBLE_TEXT = cn(
+/**
+ * Exported so `optimistic-turn.tsx` imports these instead of keeping its own
+ * copy. It used to keep one, "matching this file" by comment only — the two
+ * drifted on background shade once already (fixed), then drifted again on
+ * padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`),
+ * which is a visible bubble-size jump the instant a sent message's optimistic
+ * turn hands over to the real server turn. A shared constant makes that
+ * handover a no-op instead of a maintenance promise.
+ */
+export const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 
-const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+export const BUBBLE_SURFACE = cn(
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-4.5 py-3.5 select-none rounded-xl',
 );
 
 export interface NormalizedAttachment {
@@ -395,9 +434,22 @@ export interface NormalizedAttachment {
   pending?: boolean;
 }
 
+/**
+ * The attachment strip's input: message file-parts plus parsed upload refs.
+ *
+ * Uploads are keyed by POSITION first, then by their pending id or path. Keying
+ * on the path alone was a duplicate-key generator: an optimistic ref carries no
+ * path at all until the daemon answers, and three screenshots pasted in one
+ * message are all named `image.png`, so they used to produce three identical
+ * `upload:/workspace/uploads/image.png` keys and React collapsed them.
+ *
+ * A ref with no path is still in flight, so it renders `pending` — a spinner
+ * over its own name — instead of asking the sandbox for a file that does not
+ * exist yet.
+ */
 export function normalizeAttachments(
   parts: FilePart[],
-  uploads: ReadonlyArray<{ path: string; mime: string; filename: string }>,
+  uploads: ReadonlyArray<{ path: string; mime: string; filename: string; pending?: string }>,
 ): NormalizedAttachment[] {
   return [
     ...parts.map((file) => ({
@@ -406,12 +458,13 @@ export function normalizeAttachments(
       mime: file.mime,
       src: file.url,
     })),
-    ...uploads.map((file) => ({
-      key: `upload:${file.path}`,
+    ...uploads.map((file, index) => ({
+      key: `upload:${index}:${file.pending ?? file.path}`,
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
-      src: file.path,
-      path: file.path,
+      src: file.path || undefined,
+      path: file.path || undefined,
+      pending: Boolean(file.pending) || !file.path,
     })),
   ];
 }
@@ -450,49 +503,14 @@ export function planAttachmentGrid(
   };
 }
 
-/**
- * The press/hover feel every attachment shares — a file pill, an image row and
- * an image tile all answer the pointer the same way, so the block reads as one
- * set of controls rather than three.
- */
-const ATTACHMENT_INTERACTIVE =
-  'hover:bg-muted/50 cursor-pointer transition-colors active:scale-[0.97]';
-
-/**
- * Every attachment is the same square tile — the picture if we have one, an
- * icon with the name in the bottom corner otherwise. One shape is the whole
- * idea: there is no rows-vs-tiles mode to pick, nothing reflows when a file
- * joins a message, and a filename's length can never set a tile's width.
- */
-const TILE_SURFACE =
-  'border-border bg-background relative block size-20 shrink-0 overflow-hidden rounded-md border';
-
 /** True when we can actually paint this attachment rather than name it. */
 const isImageAttachment = (file: NormalizedAttachment) =>
   Boolean(file.mime?.startsWith('image/') && file.src);
 
-/**
- * A named attachment: icon top-left, filename along the bottom.
- *
- * Two lines, bottom-aligned, because the name is the only thing distinguishing
- * one document from another — `AdmitCard-260411128971.pdf` truncated to a single
- * line is indistinguishable from its siblings.
- */
-function FileTileBody({ file, pending }: { file: NormalizedAttachment; pending?: boolean }) {
-  const Icon = fileIconFor(file.filename);
-  return (
-    <span className="flex size-full flex-col justify-between gap-1 p-2">
-      {pending ? (
-        <Loading className="text-muted-foreground size-5 shrink-0" variant="spokes" />
-      ) : (
-        <Icon className="text-muted-foreground size-5 shrink-0" />
-      )}
-      <span className="text-foreground line-clamp-2 text-left text-xs leading-tight break-all">
-        {file.filename}
-      </span>
-    </span>
-  );
-}
+// TILE_SURFACE, TILE_INTERACTIVE and FileTileBody (icon top-left, filename
+// two-line-clamped along the bottom) live in `../attachment-tile` — shared
+// with the composer's preview tiles so the two can never drift apart. See
+// that module for why.
 
 /**
  * An image attachment: a square tile that opens full-size on click.
@@ -526,7 +544,7 @@ function AttachmentImage({
     // falls back to the named tile, so the tile always says which it is.
     return (
       <span title={file.filename} className={className}>
-        <FileTileBody file={file} pending={pending || isLoading || file.pending} />
+        <FileTileBody filename={file.filename} pending={pending || isLoading || file.pending} />
       </span>
     );
   }
@@ -604,7 +622,7 @@ export function MessageAttachments({
                 aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
                 className={cn(
                   TILE_SURFACE,
-                  ATTACHMENT_INTERACTIVE,
+                  TILE_INTERACTIVE,
                   'text-muted-foreground flex items-center justify-center text-sm font-medium',
                 )}
               >
@@ -620,7 +638,7 @@ export function MessageAttachments({
               <AttachmentImage
                 file={file}
                 pending={pending}
-                className={cn(TILE_SURFACE, ATTACHMENT_INTERACTIVE)}
+                className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
               />
             </li>
           );
@@ -637,17 +655,142 @@ export function MessageAttachments({
                 e.stopPropagation();
                 if (file.path) openFileInComputer(file.path);
               }}
-              className={cn(
-                'border-border bg-background relative block h-20 min-w-40 shrink-0 overflow-hidden rounded-md border',
-                canOpen && ATTACHMENT_INTERACTIVE,
-              )}
+              className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
             >
-              <FileTileBody file={file} pending={pending || file.pending} />
+              <FileTileBody filename={file.filename} pending={pending || file.pending} />
             </button>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+// ============================================================================
+// The bubble
+// ============================================================================
+
+/**
+ * The message bubble, including the clamp and its expand affordance.
+ *
+ * The expand control is the CHEVRON, not the bubble. The bubble used to carry
+ * `role="button"` + `tabIndex={0}` whenever the text was clamped, and it
+ * contains `MentionChip` buttons — a file or session chip that opens what it
+ * names. Interactive content inside a `role="button"` is invalid for a reason
+ * that bites in practice: assistive technology flattens a button's subtree into
+ * its accessible name, so the chips stopped existing as controls, while still
+ * being tab stops in the browser — a bubble that a keyboard user could enter,
+ * tab through, and never operate.
+ *
+ * Promoting the chevron — which already sat exactly where the affordance reads
+ * — makes it a real `<button>` with a name (`Expand message`), state
+ * (`aria-expanded`) and a target (`aria-controls` → the clamped region). The
+ * bubble keeps a plain `onClick` because clicking anywhere in a long message to
+ * open it is a mouse convenience worth keeping, and a div with a click handler
+ * claims nothing to a screen reader. That click is also why `MentionChip` calls
+ * `stopPropagation`: without it, opening a file would toggle the bubble too.
+ *
+ * Exported, and taking `canExpand` as a PROP rather than measuring it, because
+ * the measurement is a `ResizeObserver` in `UserMessage` that only exists in a
+ * browser. Under `renderToStaticMarkup` — the only render this app can test —
+ * effects never commit, so `canExpand` is permanently `false` and every
+ * assertion about the clamped bubble would pass no matter what the clamped
+ * branch renders. The seam is what makes the expanded/collapsed markup able to
+ * fail at all.
+ */
+export function UserMessageBubble({
+  canExpand,
+  expanded,
+  onToggle,
+  fullWidth,
+  textId,
+  textRef,
+  replyContext,
+  children,
+}: {
+  /** The text overflows its clamp, so there is something to expand. */
+  canExpand: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  /** A plan-owning turn takes the full column instead of hugging its text. */
+  fullWidth?: boolean;
+  /** Ties the toggle's `aria-controls` to the region it expands. */
+  textId: string;
+  textRef?: React.RefObject<HTMLDivElement | null>;
+  replyContext?: string | null;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        BUBBLE_SURFACE,
+        'relative overflow-hidden',
+        fullWidth ? 'w-full' : 'w-fit',
+        canExpand && 'cursor-pointer transition-colors',
+      )}
+      onClick={() => canExpand && onToggle()}
+    >
+      {/* Quoted context — a rule, not a card.
+          A filled, bordered banner sitting on the already-filled bubble
+          made two nested surfaces, and the louder one was the quote rather
+          than the message the reader actually came for. A left rule says
+          "this part is quoted" with no chrome at all, and lets the message
+          lead again.
+          `line-clamp-2` replaces the old `slice(0, 150) + '...'` AND
+          `truncate` pair: two truncations that could stack two ellipses,
+          and cut mid-word at the container edge. Clamping wraps to a
+          second line and ends cleanly, and the full text stays in the DOM
+          to select and copy. */}
+      {replyContext && (
+        <blockquote className="border-border mb-2 border-l-2 pl-2.5">
+          <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{replyContext}</p>
+        </blockquote>
+      )}
+
+      {/* Text content */}
+      {children && (
+        <div className="relative">
+          <div
+            ref={textRef}
+            id={textId}
+            className={cn(
+              'max-w-full min-w-0',
+              BUBBLE_TEXT,
+              !expanded && 'max-h-[200px] overflow-hidden',
+            )}
+          >
+            {children}
+          </div>
+
+          {/* Gradient fade for collapsed long messages. Keyed to `muted`
+              so it dissolves into the bubble it sits on, not the old card. */}
+          {canExpand && !expanded && (
+            <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+          )}
+
+          {/* The expand/collapse control. `stopPropagation` because the bubble
+              behind it still toggles on click — without it one press would fire
+              both handlers and cancel itself out. */}
+          {canExpand && (
+            <button
+              type="button"
+              aria-label={expanded ? 'Collapse message' : 'Expand message'}
+              aria-expanded={expanded}
+              aria-controls={textId}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              className="bg-muted/80 text-muted-foreground hover:bg-muted focus-visible:ring-ring absolute right-0 bottom-0 z-10 cursor-pointer rounded-md p-1 backdrop-blur-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <ChevronDown
+                className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+              />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -760,7 +903,16 @@ export function UserMessage({
 }: {
   message: MessageWithParts;
   agentNames?: string[];
-  commandInfo?: { name: string; args?: string };
+  commandInfo?: {
+    name: string;
+    args?: string;
+    /**
+     * Where the `/` chip sat in `args`. Absent for a message whose command was
+     * inferred from its template (`detectCommandFromText`) rather than typed in
+     * this tab — that path has no position to recover, so the chip leads.
+     */
+    split?: { before: string; after: string };
+  };
   commands?: Command[];
   sessionId: string;
   ownsPlan: boolean;
@@ -775,11 +927,13 @@ export function UserMessage({
 
   // Extract text from sticky parts, parse out <file> and <session_ref> XML references
   // Filter out both synthetic AND ignored parts from user-visible text
-  const visibleTextParts = stickyParts
-    .filter(isTextPart)
-    .filter(
-      (p) => (p as TextPart).text?.trim() && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
+  const visibleTextParts = stickyParts.filter(
+    (p) =>
+      isTextPart(p) &&
+      (p as TextPart).text?.trim() &&
+      !(p as TextPart).synthetic &&
+      !(p as any).ignored,
+  ) as TextPart[];
   const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
   const rawText = stripSystemPtyText(rawVisibleText);
   const { cleanText: textAfterReply, replyContext } = useMemo(
@@ -838,15 +992,35 @@ export function UserMessage({
     [commandInfo, rawText, commands],
   );
 
+  /**
+   * What the bubble actually says.
+   *
+   * For a command message that is the command's ARGUMENTS, not `text` — a
+   * command's `text` is the fully expanded template the runtime sent (often
+   * the whole `.md` file), which is exactly why `detectCommandFromText`
+   * extracts args in the first place. The command itself is drawn as a chip
+   * ahead of this, matching the composer, where the chip contributes no text
+   * of its own and the rest of the line IS the args (`editor/serialize.ts`).
+   *
+   * Declared here, above the overflow-measuring effect that lists it as a
+   * dependency — a `const` read from a dependency array before its own
+   * initializer runs is a TDZ throw, not a stale value.
+   */
+  const commandSplit = commandInfo?.split;
+  const bodyText = effectiveCommandInfo
+    ? commandSplit
+      ? commandSplit.after
+      : (effectiveCommandInfo.args ?? '')
+    : text;
+
   const copyText = useMemo(() => {
-    const textParts = message.parts.filter(
-      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-    return textParts
-      .map((p) => stripSystemPtyText(p.text))
-      .filter((t) => t.trim())
-      .join('\n')
-      .trim();
+    const lines: string[] = [];
+    for (const p of message.parts) {
+      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
+      const stripped = stripSystemPtyText((p as TextPart).text);
+      if (stripped.trim()) lines.push(stripped);
+    }
+    return lines.join('\n').trim();
   }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
@@ -894,9 +1068,9 @@ export function UserMessage({
   }, [rawText]);
 
   // Extract DCP notifications from ignored text parts (DCP plugin sends ignored user messages)
-  const ignoredTextParts = stickyParts
-    .filter(isTextPart)
-    .filter((p) => (p as any).ignored && (p as TextPart).text?.trim());
+  const ignoredTextParts = stickyParts.filter(
+    (p) => isTextPart(p) && (p as any).ignored && (p as TextPart).text?.trim(),
+  );
   const ignoredRawText = ignoredTextParts.map((p) => (p as TextPart).text).join('\n');
   const dcpNotifications = useMemo(() => {
     if (!ignoredRawText) return [];
@@ -958,7 +1132,7 @@ export function UserMessage({
       cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [text, expanded]);
+  }, [bodyText, expanded]);
 
   const handleCopy = async () => {
     if (!text) return;
@@ -967,99 +1141,78 @@ export function UserMessage({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Build highlighted text segments
-  const segments = useMemo(() => {
-    if (!text) return [];
-    type SegType = 'file' | 'agent' | 'session';
-
-    // Detect session @mentions first (titles can contain spaces, so indexOf is used)
-    const sessionDetected: { start: number; end: number; type: SegType }[] = [];
-    for (const s of sessionRefs) {
-      const needle = `@${s.title}`;
-      const idx = text.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    // Collect server-provided source refs (file/agent), filtering out any that
-    // overlap with a session mention (the server sees @Title as a file mention
-    // for the first word only — the session range is more accurate).
-    const serverRefs = [
+  /**
+   * Server-located mention spans. Deliberately dropped for a command message:
+   * these offsets index the full template text, and `bodyText` is a slice of
+   * it, so they would point at the wrong characters. The regex fill in
+   * `buildMentionSegments` covers the args either way.
+   */
+  const sourceRefs = useMemo<MentionSourceRef[]>(() => {
+    if (effectiveCommandInfo) return [];
+    return [
       ...filesWithSource.map((f) => ({
         start: f.source!.text!.start,
         end: f.source!.text!.end,
-        type: 'file' as SegType,
+        type: 'file' as const,
       })),
       ...agentParts
         .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
         .map((a) => ({
           start: a.source!.start,
           end: a.source!.end,
-          type: 'agent' as SegType,
+          type: 'agent' as const,
         })),
-    ].filter((r) => !sessionDetected.some((s) => r.start >= s.start && r.start < s.end));
+    ];
+  }, [effectiveCommandInfo, filesWithSource, agentParts]);
 
-    // Merge session + server refs
-    const allRefs = [...sessionDetected, ...serverRefs];
+  const sessionTitles = useMemo(() => sessionRefs.map((s) => s.title), [sessionRefs]);
 
-    if (allRefs.length > 0) {
-      allRefs.sort((a, b) => a.start - b.start || b.end - a.end);
-      const result: { text: string; type?: SegType }[] = [];
-      let lastIndex = 0;
-      for (const ref of allRefs) {
-        if (ref.start < lastIndex) continue;
-        if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-        result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-        lastIndex = ref.end;
-      }
-      if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-      return result;
+  // Build highlighted text segments — see `../mention-segments.ts`. The walk
+  // used to live inline here and in `optimistic-turn.tsx`, and the two copies
+  // had already diverged.
+  const segments = useMemo(() => {
+    const segs = buildMentionSegments({
+      text: bodyText,
+      sourceRefs,
+      sessionTitles,
+      agentNames,
+    });
+    // A segment's identity is its character offset in the text — stable across
+    // renders, unlike the array index the keys used before.
+    const keyed = [];
+    let offset = 0;
+    for (const seg of segs) {
+      keyed.push({ ...seg, key: `${offset}-${seg.type ?? 'text'}` });
+      offset += seg.text.length;
     }
+    return keyed;
+  }, [bodyText, sourceRefs, sessionTitles, agentNames]);
 
-    // Fallback: detect @mentions from text using regex
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: SegType }[] = [];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(text)) !== null) {
-      const mStart = match.index;
-      const token = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: SegType = token.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(token)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
+  const openSessionMention = (raw: string) => {
+    // Direct session ID (ses_...) — navigate without title lookup
+    if (raw.startsWith('ses_')) {
+      openTabAndNavigate({
+        id: raw,
+        title: 'Session',
+        type: 'session',
+        href: `/sessions/${raw}`,
       });
+      return;
     }
-
-    if (detected.length === 0) return [{ text, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: SegType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-      result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-    return result;
-  }, [text, filesWithSource, agentParts, agentNames, sessionRefs]);
+    const ref = sessionRefs.find((s) => s.title === raw);
+    if (!ref) return;
+    openTabAndNavigate({
+      id: ref.id,
+      title: ref.title || 'Session',
+      type: 'session',
+      href: `/sessions/${ref.id}`,
+    });
+  };
 
   // If the message is purely notifications (no real user content), render only the cards
   const hasUserContent = !!(
     text ||
+    effectiveCommandInfo ||
     replyContext ||
     uploadedFiles.length > 0 ||
     sessionRefs.length > 0 ||
@@ -1070,12 +1223,14 @@ export function UserMessage({
   if (!hasUserContent && (dcpNotifications.length > 0 || systemNotifications.length > 0)) {
     return (
       <div className="flex w-full flex-col gap-1.5">
-        {systemNotifications.map((n, i) => (
-          <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+        {withContentKeys(systemNotifications, (n) => n.tag).map(({ key, item }) => (
+          <SystemNotificationCard key={key} notification={item} />
         ))}
-        {dcpNotifications.map((n, i) => (
-          <DCPNotificationCard key={i} notification={n} />
-        ))}
+        {withContentKeys(dcpNotifications, (n) => `${n.type}:${n.tokensSaved}`).map(
+          ({ key, item }) => (
+            <DCPNotificationCard key={key} notification={item} />
+          ),
+        )}
       </div>
     );
   }
@@ -1144,43 +1299,14 @@ export function UserMessage({
     );
   }
 
-  // Command messages: render as a right-aligned card instead of the raw template text
-  if (effectiveCommandInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-lg border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">/{effectiveCommandInfo.name}</span>
-          </div>
-          {effectiveCommandInfo.args && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
-              style={{ paddingLeft: '1.375rem' }}
-            >
-              {effectiveCommandInfo.args}
-            </div>
-          )}
-        </div>
-        {/* DCP notifications from ignored parts */}
-        {dcpNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {dcpNotifications.map((n, i) => (
-              <DCPNotificationCard key={i} notification={n} />
-            ))}
-          </div>
-        )}
-        {systemNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {systemNotifications.map((n, i) => (
-              <SystemNotificationCard key={`cmd-${n.tag}-${i}`} notification={n} />
-            ))}
-          </div>
-        )}
-        {actions}
-      </div>
-    );
-  }
+  // A `/command` message used to return early here as a bordered card with a
+  // terminal icon and its args in muted 12px underneath. That card was the
+  // whole complaint: the composer draws the command as an inline chip leading
+  // the sentence (`composer/editor/mention-node.ts`), and sending the message
+  // swapped it for different chrome, a different type scale, and — because the
+  // branch returned before the main path — silently dropped the message's
+  // attachments. A command is now just a message whose first token is a chip,
+  // so it falls through to the one bubble below.
 
   return (
     // The whole message is ONE right-aligned column capped at 80%, so the
@@ -1198,158 +1324,84 @@ export function UserMessage({
       )}
     >
       {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
+
+      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
+      {dcpNotifications.length > 0 && (
+        <div className="mt-1 flex w-full flex-col gap-1.5">
+          {withContentKeys(dcpNotifications, (n) => `${n.type}:${n.tokensSaved}`).map(
+            ({ key, item }) => (
+              <DCPNotificationCard key={key} notification={item} />
+            ),
+          )}
+        </div>
+      )}
+      {systemNotifications.length > 0 && (
+        <div className="mt-1 flex w-full flex-col gap-1.5">
+          {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
+            <SystemNotificationCard key={key} notification={item} />
+          ))}
+        </div>
+      )}
+
       {/* No text means no bubble. Attach a file and send with nothing typed and
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
-      {(text || replyContext) && (
-        <div
-          className={cn(
-            BUBBLE_SURFACE,
-            'relative overflow-hidden',
-            showPlan ? 'w-full' : 'w-fit',
-            canExpand && 'cursor-pointer transition-colors',
-            // showPlan && 'shadow',
-          )}
-          role={canExpand ? 'button' : undefined}
-          tabIndex={canExpand ? 0 : undefined}
-          aria-expanded={canExpand ? expanded : undefined}
-          onClick={() => canExpand && setExpanded(!expanded)}
-          onKeyDown={(e) => {
-            if (e.target !== e.currentTarget) return;
-            if (!canExpand) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setExpanded(!expanded);
-            }
-          }}
+      {(bodyText || replyContext || effectiveCommandInfo) && (
+        <UserMessageBubble
+          canExpand={canExpand}
+          expanded={expanded}
+          onToggle={() => setExpanded(!expanded)}
+          fullWidth={showPlan}
+          textId={`${message.info.id}-text`}
+          textRef={textRef}
+          replyContext={replyContext}
         >
-          {/* Quoted context — a rule, not a card.
-              A filled, bordered banner sitting on the already-filled bubble
-              made two nested surfaces, and the louder one was the quote rather
-              than the message the reader actually came for. A left rule says
-              "this part is quoted" with no chrome at all, and lets the message
-              lead again.
-              `line-clamp-2` replaces the old `slice(0, 150) + '...'` AND
-              `truncate` pair: two truncations that could stack two ellipses,
-              and cut mid-word at the container edge. Clamping wraps to a
-              second line and ends cleanly, and the full text stays in the DOM
-              to select and copy. */}
-          {replyContext && (
-            <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-              <p className="text-muted-foreground line-clamp-2 text-xs leading-5">{replyContext}</p>
-            </blockquote>
-          )}
-
-          {/* Text content */}
-          {text && (
-            <div className="relative">
-              <div
-                ref={textRef}
-                className={cn(
-                  'max-w-full min-w-0',
-                  BUBBLE_TEXT,
-                  !expanded && 'max-h-[200px] overflow-hidden',
-                )}
-              >
-                {segments.length > 0 ? (
-                  segments.map((seg, i) => {
-                    const mentionClass =
-                      'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-                    return seg.type === 'file' ? (
-                      <button
-                        key={i}
-                        type="button"
-                        className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openFileInComputer(seg.text.replace(/^@/, ''));
-                        }}
-                      >
-                        {seg.text}
-                      </button>
-                    ) : seg.type === 'session' ? (
-                      <button
-                        key={i}
-                        type="button"
-                        className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const raw = seg.text.replace(/^@/, '');
-                          // Direct session ID (ses_...) — navigate without title lookup
-                          if (raw.startsWith('ses_')) {
-                            openTabAndNavigate({
-                              id: raw,
-                              title: 'Session',
-                              type: 'session',
-                              href: `/sessions/${raw}`,
-                            });
-                            return;
-                          }
-                          const ref = sessionRefs.find((s) => s.title === raw);
-                          if (ref) {
-                            openTabAndNavigate({
-                              id: ref.id,
-                              title: ref.title || 'Session',
-                              type: 'session',
-                              href: `/sessions/${ref.id}`,
-                            });
-                          }
-                        }}
-                      >
-                        {seg.text}
-                      </button>
-                    ) : (
-                      <span
-                        key={i}
-                        className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
-                      >
-                        {seg.text}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <span>{text}</span>
-                )}
-              </div>
-
-              {/* Gradient fade for collapsed long messages. Keyed to `muted`
-                  so it dissolves into the bubble it sits on, not the old card. */}
-              {canExpand && !expanded && (
-                <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+          {(bodyText || effectiveCommandInfo) && (
+            <>
+              {/* The `/command` chip sits exactly where it was typed —
+                  leading the line, between two words, or trailing — because
+                  that is where the composer drew it. `split.before` is the
+                  prose that preceded the chip; without it every command
+                  message rebuilt as `/name` + args and a chip typed
+                  mid-sentence silently jumped to the front. */}
+              {effectiveCommandInfo && (
+                <>
+                  {commandSplit?.before ? <span>{commandSplit.before} </span> : null}
+                  <MentionChip kind="command" label={effectiveCommandInfo.name} />
+                  {bodyText ? ' ' : null}
+                </>
               )}
-
-              {/* Expand/collapse indicator */}
-              {canExpand && (
-                <div className="bg-muted/80 text-muted-foreground absolute right-0 bottom-0 z-10 rounded-md p-1 backdrop-blur-sm">
-                  <ChevronDown
-                    className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+              {segments.map((seg) =>
+                seg.type === 'file' ? (
+                  <MentionChip
+                    key={seg.key}
+                    kind="file"
+                    label={seg.text.replace(/^@/, '')}
+                    onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
                   />
-                </div>
+                ) : seg.type === 'session' ? (
+                  <MentionChip
+                    key={seg.key}
+                    kind="session"
+                    label={seg.text.replace(/^@/, '')}
+                    onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+                  />
+                ) : seg.type === 'agent' ? (
+                  // Static: an agent is named, not navigable. Same surface,
+                  // no press affordance it cannot honour.
+                  <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
+                ) : (
+                  <span key={seg.key}>{seg.text}</span>
+                ),
               )}
-            </div>
+            </>
           )}
-        </div>
+        </UserMessageBubble>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate
           objects and must not come between a message and its own meta. */}
       {actions}
-
-      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
-      {dcpNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {dcpNotifications.map((n, i) => (
-            <DCPNotificationCard key={i} notification={n} />
-          ))}
-        </div>
-      )}
-      {systemNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {systemNotifications.map((n, i) => (
-            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

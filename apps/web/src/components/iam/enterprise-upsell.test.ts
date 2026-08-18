@@ -27,14 +27,23 @@ describe('EnterpriseUpsell component', () => {
 });
 
 describe('account page gates each IAM surface behind the entitlement', () => {
-  test('groups tab: rbac entitlement or upsell', () => {
-    expect(pageSource).toMatch(/rbacEnabled \? \(\s*<GroupsTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="groups" />');
+  // Groups and Roles are NOT gated the way Audit/Identity are: `GET
+  // .../groups` and `GET .../roles` carry no entitlement check server-side
+  // (only the mutating routes do), so the built-in roles and an account's
+  // real group list are free content, not upsell. `GroupsTab`/`RolesTab`
+  // always render and gate only their own "Create"/"New role" controls on
+  // `rbacEnabled` internally — see this file's other describe block, and
+  // `page.tsx`'s comment above these two sections.
+  test('groups tab: always mounted, passed rbacEnabled to gate its own controls', () => {
+    expect(pageSource).toMatch(/activeSection === 'groups' \?[\s\S]*?<GroupsTab/);
+    expect(pageSource).toMatch(/<GroupsTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" />');
   });
 
-  test('roles tab: rbac entitlement or upsell', () => {
-    expect(pageSource).toMatch(/rbacEnabled \? \(\s*<RolesTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="roles" />');
+  test('roles tab: always mounted, passed rbacEnabled to gate its own controls', () => {
+    expect(pageSource).toMatch(/activeSection === 'roles' \?[\s\S]*?<RolesTab/);
+    expect(pageSource).toMatch(/<RolesTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" />');
   });
 
   test('audit tab: auditAccess entitlement or upsell', () => {
@@ -57,12 +66,32 @@ describe('account page gates each IAM surface behind the entitlement', () => {
 });
 
 describe('account page rail groups the enterprise surfaces', () => {
-  test('the rail has a labeled Enterprise group with all four IAM sections', () => {
+  // Members / Groups / Roles are one "Access" cluster — three facets of the
+  // same access-control concern — instead of Members sitting alone at the
+  // top disconnected from Groups/Roles below (2026-08-18 centralized-IAM
+  // redesign). Identity/Audit stay under "Enterprise": unlike Members/
+  // Groups/Roles they have zero free-tier content.
+  test('the rail has a labeled Access group with members, groups, and roles', () => {
+    const accessGroup = pageSource.match(/label: 'Access',\s*items: \[([\s\S]*?)\],\s*\},/);
+    const groupBody = accessGroup?.[1] ?? '';
+    expect(groupBody).not.toBe('');
+    for (const id of ["'members'", "'groups'", "'roles'"]) {
+      expect(groupBody).toContain(`id: ${id}`);
+    }
+  });
+
+  test('the rail has a labeled Enterprise group with identity and audit', () => {
     const enterpriseGroup = pageSource.match(/label: 'Enterprise',\s*items: \[([\s\S]*?)\]/);
     const groupBody = enterpriseGroup?.[1] ?? '';
     expect(groupBody).not.toBe('');
-    for (const id of ["'groups'", "'roles'", "'identity'", "'audit'"]) {
+    for (const id of ["'identity'", "'audit'"]) {
       expect(groupBody).toContain(`id: ${id}`);
+    }
+    // Groups/Roles moved OUT of Enterprise into Access — they have free
+    // content (the built-in roles, an account's real group list), so a
+    // heading that reads as plan-gated would mislabel them.
+    for (const id of ["'groups'", "'roles'"]) {
+      expect(groupBody).not.toContain(`id: ${id}`);
     }
   });
 

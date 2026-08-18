@@ -1,5 +1,5 @@
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, isNull, lte, ne, or } from 'drizzle-orm';
+import { and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type {
@@ -28,7 +28,30 @@ export function createSessionCommandPayload(command: CreateSessionCommand): Queu
   };
 }
 
+/** One part of a prompt body, in OpenCode's own `/prompt_async` shape. */
+export interface PromptPartWire {
+  type: 'text' | 'file' | 'agent';
+  text?: string;
+  mime?: string;
+  url?: string;
+  filename?: string;
+  name?: string;
+  source?: unknown;
+}
+
+/** The per-prompt picks the producer captured at submit time. Applied verbatim
+ *  on delivery, so a prompt queued behind a live turn still runs with the
+ *  agent/model the user chose then, not whatever is current when it drains. */
+export interface PromptOverridesWire {
+  agent?: string | null;
+  model?: { providerID: string; modelID: string } | null;
+  variant?: string | null;
+  directory?: string | null;
+}
+
 export interface QueuedContinueSessionPayload {
+  /** Legacy single-text form. Still written by every non-inbox producer
+   *  (triggers, Slack, approval-resume). Read when `parts` is absent. */
   text: string;
   /** When set, the drain SKIPS delivery if this execution's decision was
    *  already consumed in-band (a live held/poll request resumed the turn) —
@@ -38,6 +61,53 @@ export interface QueuedContinueSessionPayload {
    *  dead-letter alert so "which automation lost its prompt" is answerable
    *  from the log line alone. */
   triggerSlug?: string | null;
+
+  // ── Prompt-inbox fields. Absent on every row enqueued before the inbox
+  //    existed, which is why every reader below falls back to `text`.
+
+  /** The host's stable submission name. Same id = same logical send, which is
+   *  what makes `prompt:<sessionId>:<clientMessageId>` a real idempotency key. */
+  clientMessageId?: string;
+  /**
+   * The CLIENT-minted OpenCode wire id, used VERBATIM on first delivery.
+   *
+   * The client mints it because the client is the process holding the
+   * transcript: OpenCode decides "has this prompt already been answered?" by id
+   * order, so an id has to be placed above everything already on record. The
+   * control plane mints one only on redelivery, where it re-reads the
+   * transcript first (see `wire-message-id.ts`).
+   */
+  wireMessageId?: string;
+  /**
+   * The id this prompt was ACTUALLY delivered under, when it is not
+   * `wireMessageId`.
+   *
+   * Two paths write it, for the same reason — the client's id is only correctly
+   * placed while nothing newer has been written to the transcript: a redelivery
+   * (N >= 1), and a first delivery that WAITED behind a live turn. Persisted
+   * before the POST, so a crash between mint and delivery reuses one id.
+   */
+  redeliveredMessageId?: string;
+  /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
+   *  `MAX_PROMPT_REDELIVERIES`. */
+  redeliveries?: number;
+  /**
+   * This row did NOT go out on its first claim, so the client's wire id can no
+   * longer be trusted to sort above the transcript.
+   *
+   * Written by every path that puts a row back in line — an admission refusal,
+   * a hold, a "send now"/retry — and NEVER cleared, because "was overtaken
+   * once" stays true. It lives in the payload rather than in `result` because
+   * `result` is replaced wholesale by the retry that most needs this fact.
+   *
+   * A PRODUCER may also set it at enqueue time (`remint_on_delivery` on
+   * `POST .../prompts`) when it knows its id was minted somewhere the live
+   * transcript could not be read — the one-time localStorage migration, which
+   * mints at page load for a message typed before the last reload.
+   */
+  remintOnDelivery?: boolean;
+  parts?: PromptPartWire[];
+  overrides?: PromptOverridesWire;
 }
 
 /**
@@ -58,6 +128,14 @@ export interface EnqueueContinueSessionCommandInput {
   availableAt?: Date;
   /** Dedupe key — a repeat enqueue (double-resolve race) is a no-op. */
   idempotencyKey?: string | null;
+  // ── Prompt-inbox fields; see QueuedContinueSessionPayload. ──
+  clientMessageId?: string;
+  wireMessageId?: string;
+  /** The producer already knows its wire id is stale — see
+   *  `QueuedContinueSessionPayload.remintOnDelivery`. */
+  remintOnDelivery?: boolean;
+  parts?: PromptPartWire[];
+  overrides?: PromptOverridesWire;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -67,6 +145,14 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     text: input.text,
     executionId: input.executionId ?? null,
     triggerSlug: input.triggerSlug ?? null,
+    // Omitted rather than nulled: absence is what tells every reader "this row
+    // predates the inbox / did not come from it", and a null would read as
+    // "came from the inbox with no id", which is a different thing.
+    ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+    ...(input.wireMessageId ? { wireMessageId: input.wireMessageId } : {}),
+    ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
+    ...(input.parts ? { parts: input.parts } : {}),
+    ...(input.overrides ? { overrides: input.overrides } : {}),
   };
   return {
     commandType: 'continue_session',
@@ -84,18 +170,88 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
   };
 }
 
+/** The row this enqueue names — inserted now, or the one the idempotency key
+ *  already points at. The inbox answers `POST /prompts` out of it, which is why
+ *  the enqueue no longer returns void. */
+export interface EnqueuedContinueSessionCommand {
+  row: SessionLifecycleCommandRow;
+  /** The key already existed: this call inserted nothing. */
+  deduped: boolean;
+}
+
 export async function enqueueContinueSessionCommand(
   input: EnqueueContinueSessionCommandInput,
-): Promise<void> {
+): Promise<EnqueuedContinueSessionCommand> {
   const values = buildContinueSessionCommandValues(input);
   if (!input.idempotencyKey) {
-    await db.insert(sessionLifecycleCommands).values(values);
-    return;
+    const [row] = await db.insert(sessionLifecycleCommands).values(values).returning();
+    return { row, deduped: false };
   }
-  await db
+  const inserted = await db
     .insert(sessionLifecycleCommands)
     .values(values)
-    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey })
+    .returning();
+  if (inserted[0]) return { row: inserted[0], deduped: false };
+
+  const [existing] = await db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+  if (!existing) {
+    throw new Error(
+      `continue_session ${input.idempotencyKey} conflicted but could not be loaded`,
+    );
+  }
+  return { row: existing, deduped: true };
+}
+
+/**
+ * Put a claimed row back WITHOUT counting the claim as an attempt.
+ *
+ * `claimDueLifecycleCommands` increments `attempts` on every claim, and
+ * `markCommandFailed` dead-letters at 5. An admission refusal is not a failure
+ * — the session was simply busy — so a prompt that waits out a long turn must
+ * not spend its dead-letter budget doing so. Giving the increment back (floored
+ * at 0, because a concurrent writer may already have reset it) is what keeps
+ * "waiting" and "failing" different states.
+ *
+ * The reason is stamped into `result.admission_reason` so `GET /prompts` can
+ * say WHY a row is still queued, and `result.admission_refusals` counts them so
+ * the next refusal can back off further (`admissionBackoffMs`).
+ * `markCommandSucceeded`/`markCommandFailed` both overwrite `result` wholesale,
+ * so both markers clear themselves the moment the row stops waiting.
+ *
+ * `payload.remintOnDelivery` is the SAME fact written where it SURVIVES.
+ * `result` is cleared by everything downstream — a retry, a "send now", a
+ * success — and one of those clears (`retryInboxPrompt`) happens precisely when
+ * the row is about to be delivered, which is when the drain needs to know that
+ * the client's wire id has been overtaken by the turn this prompt waited out.
+ * Reading a display marker to make a correctness decision is how the id got
+ * sent stale; the payload merge (`||`) is the durable half.
+ */
+export async function requeueForAdmission(
+  commandId: string,
+  reason: 'turn_active' | 'older_prompt_pending',
+  availableAt: Date,
+): Promise<void> {
+  await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      availableAt,
+      lockedBy: null,
+      lockedUntil: null,
+      attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb)
+        || ${JSON.stringify({ admission_reason: reason })}::jsonb
+        || jsonb_build_object('admission_refusals',
+             COALESCE((${sessionLifecycleCommands.result}->>'admission_refusals')::int, 0) + 1)`,
+      payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionLifecycleCommands.commandId, commandId));
 }
 
 export async function claimCreateSessionCommand(
@@ -274,7 +430,14 @@ export async function markCommandFailed(
     error,
   });
 
-  if (row.commandType === 'continue_session' && row.sessionId) {
+  // A prompt the USER typed must never park their session. The park exists so a
+  // `session_mode: "reuse"` TRIGGER aims its next fire at a fresh session
+  // instead of a wedged one; an inbox prompt has a person watching, a visible
+  // failed row, and a retry button, and marking the session `failed` under them
+  // takes a working session away over one lost delivery.
+  const isInboxPrompt =
+    typeof (row.payload as { clientMessageId?: unknown } | null)?.clientMessageId === 'string';
+  if (row.commandType === 'continue_session' && row.sessionId && !isInboxPrompt) {
     // Park the target session 'failed': findReusableTriggerSession skips failed
     // sessions, so a `session_mode = "reuse"` trigger's next fire creates a
     // FRESH session instead of re-aiming prompts at a wedged one — the proven
@@ -301,6 +464,22 @@ export async function markCommandFailed(
   }
 }
 
+/**
+ * How long past its expired lock a `running` row waits before another worker
+ * takes it.
+ *
+ * A row goes `running` at claim time and stays there for the whole delivery,
+ * which can be a full cold-boot wait. If the pod handling it dies in that
+ * window — a rollout, an OOM — nothing ever puts the row back: the claim only
+ * ever looked at `queued`. Its session's inbox then wedges for ever, because
+ * `older_prompt_pending` counts `running`.
+ *
+ * The grace sits ON TOP of the 5-minute lock, so a worker that is merely slow
+ * has ten minutes before anyone else touches its row, and a duplicate delivery
+ * would still be absorbed by the proxy's `Idempotency-Key` claim.
+ */
+export const LIFECYCLE_RUNNING_RECLAIM_GRACE_MS = 5 * 60_000;
+
 export async function claimDueLifecycleCommands(input: {
   workerId: string;
   limit: number;
@@ -313,17 +492,32 @@ export async function claimDueLifecycleCommands(input: {
   availableBefore?: Date;
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
+  const staleRunningBefore = new Date(now.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS);
   const rows = await db
     .select()
     .from(sessionLifecycleCommands)
     .where(
       and(
-        eq(sessionLifecycleCommands.status, 'queued'),
+        or(
+          and(
+            eq(sessionLifecycleCommands.status, 'queued'),
+            or(
+              isNull(sessionLifecycleCommands.lockedUntil),
+              lte(sessionLifecycleCommands.lockedUntil, now),
+            ),
+          ),
+          // ABANDONED CLAIM. A `running` row whose lock expired a full grace
+          // ago has no live worker: the pod that claimed it is gone. Left
+          // alone it wedges its session's inbox for ever.
+          and(
+            eq(sessionLifecycleCommands.status, 'running'),
+            lte(sessionLifecycleCommands.lockedUntil, staleRunningBefore),
+          ),
+        ),
         input.idempotencyKey
           ? eq(sessionLifecycleCommands.idempotencyKey, input.idempotencyKey)
           : undefined,
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
-        or(isNull(sessionLifecycleCommands.lockedUntil), lte(sessionLifecycleCommands.lockedUntil, now)),
       ),
     )
     .orderBy(asc(sessionLifecycleCommands.availableAt), asc(sessionLifecycleCommands.createdAt))
@@ -340,10 +534,20 @@ export async function claimDueLifecycleCommands(input: {
         lockedUntil: new Date(now.getTime() + 5 * 60_000),
         updatedAt: now,
       })
+      // CAS on the exact state this row was read in — its status AND its lock
+      // OWNER. For a `queued` row the status flip alone is exclusive, as it
+      // always was. For a reclaimed `running` row there is no flip to rely on,
+      // so the owner is what makes it exclusive: the first worker to write its
+      // own id takes the row, and the second no longer matches. (The lock
+      // TIMESTAMP cannot serve here — Postgres keeps microseconds that a JS
+      // `Date` has already rounded away, so an equality on it never matches.)
       .where(
         and(
           eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, 'queued'),
+          eq(sessionLifecycleCommands.status, row.status),
+          row.lockedBy
+            ? eq(sessionLifecycleCommands.lockedBy, row.lockedBy)
+            : isNull(sessionLifecycleCommands.lockedBy),
         ),
       )
       .returning();

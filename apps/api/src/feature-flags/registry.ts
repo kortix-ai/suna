@@ -230,8 +230,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'apps',
     name: 'Apps',
     description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. The deployment contract is still experimental.',
-    stability: 'experimental',
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
+    stability: 'stable',
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
@@ -253,7 +253,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'network_boundary_shim',
-    name: 'Network boundary without Platinum',
+    name: 'Network boundary in-guest shim',
     description:
       'Use network-boundary secrets on a project that does not run on Platinum. The credential is injected by Kortix at request time instead of by a provider edge, so the sandbox still never receives the value. Requires a sandbox image that runs the in-guest shim; without it a boundary secret saves but nothing in the sandbox can spend it.',
     stability: 'experimental',
@@ -280,6 +280,28 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'sandbox-env-sync.ts, platform/services/session-sandbox.ts). ' +
       'OFF again with a boundary secret still saved ⇒ new sessions fail to ' +
       'provision until the secret changes delivery.',
+  },
+  {
+    key: 'warm_sessions',
+    name: 'Warm Sessions',
+    description:
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, and it uses one of your concurrent-session slots until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+    // The surface is small and server-owned, but the cost tradeoff is real and
+    // the presence model is new. `beta` says "we intend this on for everyone,
+    // and we expect to tune the grant".
+    stability: 'beta',
+    available: () => true,
+    // On by default: an instant session start is the point of the product, and
+    // the cost is bounded per project by `findWarmProjectSession` (one live
+    // warm session per user per project, matched by query, not by a unique
+    // index — see projects/routes/warm-sessions.ts) plus the sandbox deadline.
+    // A replenish also excludes the session the caller just took
+    // (`exclude_session_id`), so it never hands that same session back.
+    platformDefault: () => true,
+    // NOT 'ui-only'. A flag that only hid client surface would let any other
+    // caller keep booting billed sandboxes, which defeats the reason someone
+    // turns this off.
+    enforcement: 'routes',
   },
 ];
 

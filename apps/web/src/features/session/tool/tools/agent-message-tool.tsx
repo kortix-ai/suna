@@ -14,7 +14,7 @@ import { getChildSessionId } from '@/ui';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
-export function AgentMessageTool({ part, forceOpen }: ToolProps) {
+export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -41,6 +41,7 @@ export function AgentMessageTool({ part, forceOpen }: ToolProps) {
           args: isError ? ['failed'] : undefined,
         }}
         onSubtitleClick={hasSession ? () => setModalOpen(true) : undefined}
+        defaultOpen={defaultOpen}
         forceOpen={forceOpen}
       >
         {isError ? (

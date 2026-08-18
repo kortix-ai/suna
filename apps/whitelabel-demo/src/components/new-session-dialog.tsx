@@ -61,7 +61,7 @@ export function NewSessionDialog({
 }: {
   projectId: string;
   trigger: React.ReactNode;
-  /** Pre-picked agent — used when a refused agent switch sends someone here. */
+  /** Pre-selected agent for the new session. */
   initialAgent?: string | null;
 }) {
   const [open, setOpen] = useState(false);

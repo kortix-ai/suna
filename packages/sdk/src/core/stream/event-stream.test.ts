@@ -1166,6 +1166,213 @@ describe('openEventStream gap rehydrate', () => {
   });
 });
 
+describe('openEventStream shared-stream fan-out (F5)', () => {
+  // F5 review finding: the previous single-live-stream invariant SILENTLY
+  // KILLED subscriber #1 the moment subscriber #2 opened a stream for the
+  // same client — an unannounced behavior change for any programmatic
+  // consumer that opens more than one `openEventStream()` for the same
+  // runtime (React hosts are single-subscriber-per-client in practice and
+  // unaffected). Fixed: a second open for the same client SHARES the live
+  // stream instead — one wire connection, refcounted, events fan out to
+  // every subscriber. `close()` decrements the refcount; the underlying
+  // connection tears down only when the last subscriber leaves.
+  test('a second open for the SAME client SHARES the live stream — only one wire connection', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const firstDispatched: OpenCodeEvent[] = [];
+    const secondDispatched: OpenCodeEvent[] = [];
+
+    const first = openEventStream({ client, onEvent: (e) => firstDispatched.push(e), timers: clock });
+    await tick();
+    expect(channels.length).toBe(1);
+
+    // A second subscriber opens a stream for the SAME client (object
+    // identity — mirrors two callers both resolving `getClientForUrl` for
+    // the same runtime) without closing the first handle.
+    const second = openEventStream({ client, onEvent: (e) => secondDispatched.push(e), timers: clock });
+    await tick();
+
+    // No second connect — the existing connection is shared, not replaced.
+    expect(channels.length).toBe(1);
+
+    // A single event on the wire fans out to BOTH subscribers, exactly once
+    // each — one real delivery, not a duplicate SSE connection.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    expect(firstDispatched).toHaveLength(1);
+    expect(secondDispatched).toHaveLength(1);
+    expect((firstDispatched[0].properties as any).part.id).toBe('p1');
+    expect((secondDispatched[0].properties as any).part.id).toBe('p1');
+
+    first.close();
+    second.close();
+  });
+
+  test('closing ONE of two subscribers does not tear down the shared connection — the other keeps receiving', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const firstDispatched: OpenCodeEvent[] = [];
+    const secondDispatched: OpenCodeEvent[] = [];
+
+    const first = openEventStream({ client, onEvent: (e) => firstDispatched.push(e), timers: clock });
+    await tick();
+    const second = openEventStream({ client, onEvent: (e) => secondDispatched.push(e), timers: clock });
+    await tick();
+
+    first.close();
+    await tick();
+
+    // Still the SAME connection — closing one subscriber must not abort the
+    // shared stream while another subscriber remains.
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    expect(channels.length).toBe(1);
+    expect(firstDispatched).toEqual([]);
+    expect(secondDispatched).toHaveLength(1);
+
+    second.close();
+  });
+
+  test('closing the LAST subscriber tears the shared connection down for good', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: OpenCodeEvent[] = [];
+
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    const second = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    first.close();
+    second.close();
+    await tick();
+
+    // No further dispatch, and no reconnect attempt — the underlying
+    // connection is genuinely gone, not merely unsubscribed.
+    channels[0].push(partUpdated('after-close'));
+    await tick();
+    await clock.advance(60_000);
+    expect(dispatched).toEqual([]);
+    expect(channels.length).toBe(1);
+  });
+
+  test('a THIRD open after full teardown opens a genuinely fresh connection', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    first.close();
+    await tick();
+
+    const third = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+
+    expect(channels.length).toBe(2);
+    third.close();
+  });
+
+  test('onGapRehydrate fans out to every live subscriber', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const gapsA: number[] = [];
+    const gapsB: number[] = [];
+
+    const a = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gap) => gapsA.push(gap),
+      timers: clock,
+    });
+    await tick();
+    const b = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gap) => gapsB.push(gap),
+      timers: clock,
+    });
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    await clock.advance(6000);
+    channels[0].end();
+    await tick();
+
+    expect(gapsA).toEqual([6000]);
+    expect(gapsB).toEqual([6000]);
+
+    a.close();
+    b.close();
+  });
+
+  test('onParked fans out to every live subscriber, exactly once each', async () => {
+    const clock = createFakeClock();
+    const { client } = createDeadSandboxClient();
+    const parkedA: unknown[] = [];
+    const parkedB: unknown[] = [];
+
+    const a = openEventStream({ client, onEvent: () => {}, onParked: (r) => parkedA.push(r), timers: clock });
+    await tick();
+    const b = openEventStream({ client, onEvent: () => {}, onParked: (r) => parkedB.push(r), timers: clock });
+    await tick();
+
+    await clock.advance(200_000);
+    await tick();
+
+    expect(parkedA).toHaveLength(1);
+    expect(parkedB).toHaveLength(1);
+
+    a.close();
+    b.close();
+  });
+
+  test('two DIFFERENT clients never collide — both stay live and independently connected', async () => {
+    const clock = createFakeClock();
+    const a = createConnectableClient();
+    const b = createConnectableClient();
+    const dispatchedA: OpenCodeEvent[] = [];
+    const dispatchedB: OpenCodeEvent[] = [];
+
+    const handleA = openEventStream({ client: a.client, onEvent: (e) => dispatchedA.push(e), timers: clock });
+    const handleB = openEventStream({ client: b.client, onEvent: (e) => dispatchedB.push(e), timers: clock });
+    await tick();
+
+    expect(a.channels.length).toBe(1);
+    expect(b.channels.length).toBe(1);
+
+    a.channels[0].push(partUpdated('pa'));
+    b.channels[0].push(partUpdated('pb'));
+    await tick();
+    await clock.advance(16);
+
+    expect(dispatchedA).toHaveLength(1);
+    expect(dispatchedB).toHaveLength(1);
+
+    handleA.close();
+    handleB.close();
+  });
+
+  test('close() is idempotent for every subscriber, shared or not', async () => {
+    const clock = createFakeClock();
+    const { client } = createConnectableClient();
+
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    const second = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+
+    first.close();
+    first.close();
+    second.close();
+    second.close();
+    await tick();
+  });
+});
+
 describe('openEventStream close()', () => {
   test('tears down cleanly: no further connects, timers, or dispatches', async () => {
     const clock = createFakeClock();

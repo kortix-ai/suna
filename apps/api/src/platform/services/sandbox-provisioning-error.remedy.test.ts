@@ -17,7 +17,7 @@ import {
 
 describe('the unsupported-delivery remedy names every way out', () => {
   test('it offers the flag, Platinum, and changing the policy', () => {
-    expect(UNSUPPORTED_SECRET_DELIVERY_MESSAGE).toContain('Network boundary without Platinum');
+    expect(UNSUPPORTED_SECRET_DELIVERY_MESSAGE).toContain('Network boundary in-guest shim');
     expect(UNSUPPORTED_SECRET_DELIVERY_MESSAGE).toContain('Platinum');
     expect(UNSUPPORTED_SECRET_DELIVERY_MESSAGE).toContain('delivery policy');
   });

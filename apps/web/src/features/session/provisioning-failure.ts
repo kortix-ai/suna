@@ -1,5 +1,5 @@
 import type { PendingSessionPrompt } from '@kortix/sdk';
-import type { StartStash } from '@kortix/sdk/react';
+import { readStartStash, type StartStash } from '@kortix/sdk/react';
 
 export interface ProvisioningFailurePresentation {
   title: string;
@@ -87,6 +87,33 @@ export function pendingSessionPromptFromMetadata(
     model: parsedModel,
     variant: typeof prompt.variant === 'string' ? prompt.variant : null,
     attachment_names: attachmentNames,
+  };
+}
+
+/**
+ * The recovery copy, from the server when it has one and from this tab's start
+ * stash otherwise. Never consumes either.
+ *
+ * `metadata.pending_prompt` is written by the session CREATE, so it exists only
+ * when the send created the session. A send that reused a WARM session created
+ * nothing, so its prompt lives only in the start stash the composer wrote before
+ * navigating. Reading both is what keeps the failure card's "copy your prompt"
+ * and Retry working identically on either path.
+ */
+export function pendingSessionPromptForRecovery(
+  sessionId: string,
+  metadata: Record<string, unknown> | null | undefined,
+): PendingSessionPrompt | null {
+  const fromMetadata = pendingSessionPromptFromMetadata(metadata);
+  if (fromMetadata) return fromMetadata;
+  const stash = readStartStash(sessionId);
+  if (!stash || stash.prompt.trim().length === 0) return null;
+  return {
+    text: stash.prompt,
+    agent: stash.agent ?? null,
+    model: stash.model ?? null,
+    variant: stash.variant ?? null,
+    attachment_names: [],
   };
 }
 

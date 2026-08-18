@@ -788,13 +788,12 @@ export const projectSessions = kortixSchema.table(
       table.projectId,
       table.sessionId,
     ),
-    uniqueIndex('idx_project_sessions_one_available_warm')
-      .on(table.projectId, table.createdBy)
-      .where(
-        sql`${table.createdBy} is not null
-          and ${table.metadata}->'warm_session'->>'state' = 'available'
-          and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
-      ),
+    // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
+    // session per project+creator) USED to be declared here. It arbitrated a
+    // create race that no longer exists: a warm session is now an ordinary
+    // session and a duplicate costs one extra box, bounded by the reserved
+    // concurrent-session slot. Dropped by
+    // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: a plain btree `idx_project_sessions_created_at` (created_at) ALSO
     // exists — created by migrations/20260807202731277_admin_analytics_time_indexes.concurrent.ts
     // so the admin activity dashboard's global `created_at >= $1` window scan
@@ -1131,6 +1130,9 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // Account-local sharing policy for sessions created by this trigger. The
+    // portable manifest cannot contain member/group ids from one account.
+    sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
     // The project member this trigger's automated sessions provision AS (the
     // "owner") — the secret-visibility subject and provisioning actor for
     // cron/webhook/manual fires. NULL = fall back to the account owner
@@ -1176,6 +1178,33 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/** Member/group allow-list for a trigger's future and prior created sessions. */
+export const projectTriggerSessionAccessGrants = kortixSchema.table(
+  'project_trigger_session_access_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId, table.slug],
+      foreignColumns: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      name: 'project_trigger_session_access_grants_trigger_fk',
+    }).onDelete('cascade'),
+    index('idx_trigger_session_access_grants_trigger').on(table.projectId, table.slug),
+    uniqueIndex('idx_trigger_session_access_grants_unique').on(
+      table.projectId,
+      table.slug,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 
@@ -1752,17 +1781,14 @@ export const sessionSandboxes = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    // Start of this box's CURRENT continuous running stretch, and the anchor
-    // operand of the 24h cap. Assigned ONLY by the DB trigger
-    // kortix.session_sandboxes_anchor_guard(), which carries it forward on EVERY
-    // application UPDATE in EVERY status and re-anchors a new stretch only when
-    // resuming a park it witnessed itself. Never write this from TypeScript — a
-    // constraint on a difference whose left operand a caller can slide forward
-    // is a suggestion, not a bound.
+    // Start of this box's CURRENT continuous running stretch. The DB trigger
+    // kortix.session_sandboxes_anchor_guard() carries it through every update
+    // and re-anchors it only after a park the trigger witnessed itself.
     activeSince: timestamp('active_since', { withTimezone: true }).defaultNow().notNull(),
-    // When the control plane stops this box. Single TS writer:
-    // apps/api/src/projects/sandbox-deadline.ts. Bounded by a DB CHECK at
-    // active_since + 24h.
+    // When the control plane stops this box. Writers:
+    // apps/api/src/projects/sandbox-deadline.ts and
+    // apps/api/src/projects/sandbox-turn-lifecycle.ts. Active turns renew this
+    // value only after fresh control-plane observation.
     deadlineAt: timestamp('deadline_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1773,6 +1799,69 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+  ],
+);
+
+/**
+ * Durable per-turn ledger.
+ *
+ * `session_sandboxes.metadata.activeTurns` is the LIFECYCLE authority: the
+ * reaper's deadline math reads it and nothing else, and it is deliberately
+ * erased the moment a turn ends. That makes it unable to answer the question a
+ * client actually asks — "is a turn running, and if not, how did the last one
+ * end?". A cleared record and a turn that never existed are indistinguishable.
+ *
+ * This table is the append-and-settle history beside it. Terminal rows are
+ * RETAINED on purpose: `end_reason` is the only place "the runtime went away
+ * mid-turn" is ever written down. Nothing here is read by the reaper.
+ *
+ * No foreign keys — `session_sandboxes` has none either, and a ledger row must
+ * survive the session row it describes.
+ */
+export const sessionTurns = kortixSchema.table(
+  'session_turns',
+  {
+    // The opaque delivery token minted by the control plane. Text, not uuid:
+    // ledger writes are best-effort and must never throw on a token shape the
+    // lifecycle authority happily accepted.
+    turnToken: text('turn_token').primaryKey().notNull(),
+    sessionId: text('session_id').notNull(),
+    sandboxId: uuid('sandbox_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // OpenCode root this turn runs in. Null until the daemon reports it.
+    opencodeSessionId: text('opencode_session_id'),
+    // Client-minted OpenCode user message id. Null for command turns.
+    messageId: text('message_id'),
+    state: varchar('state', { length: 16 }).default('delivering').notNull(),
+    endReason: text('end_reason'),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('session_turns_state_check', sql`${table.state} IN ('delivering', 'active', 'ended')`),
+    check(
+      'session_turns_end_reason_check',
+      // Every value here is written by a real call site: 'completed' by a
+      // daemon-confirmed end, 'failed' by a terminal model error, 'abandoned'
+      // by a delivery that never reached OpenCode, 'runtime_gone' by the stop
+      // writer and by the reaper's deadline expiry, 'unknown' by an observer
+      // that proved the turn is over but could not say how. A value no caller
+      // writes teaches a reader a distinction the data does not carry.
+      sql`${table.endReason} IS NULL OR ${table.endReason} IN ('completed', 'runtime_gone', 'failed', 'abandoned', 'unknown')`,
+    ),
+    index('session_turns_session_idx').on(table.sessionId, table.startedAt.desc()),
+    // The stop writer settles every unsettled row of one sandbox in the same
+    // transaction that erases its lifecycle authority. PARTIAL, on the exact
+    // predicate that query uses: terminal rows are retained forever, so an
+    // index over all of them would grow without bound to answer a question
+    // only ever asked about the handful that are still open.
+    index('session_turns_open_idx')
+      .on(table.sandboxId)
+      .where(sql`${table.state} <> 'ended'`),
   ],
 );
 

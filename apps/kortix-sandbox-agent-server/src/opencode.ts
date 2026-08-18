@@ -45,6 +45,7 @@ import { AGENT_ENV_SH } from './agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
+import { egressShimEnv } from './egress-shim'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
@@ -1288,6 +1289,12 @@ export function createOpencodeSupervisor(
       // opencode plugin/config. Interactive shells + terminals get it from the
       // image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
       BASH_ENV: AGENT_ENV_SH,
+      // Egress shim, when one is running. The agent's SHELLS get these from
+      // AGENT_ENV_SH above; setting them on the opencode process too covers its
+      // in-process HTTP clients (the built-in webfetch tool), which never go
+      // through a shell. Safe for model traffic: NO_PROXY carries 127.0.0.1 (the
+      // local LLM proxy) and the Kortix API host.
+      ...egressShimEnv(),
       PORT: undefined,
       APP_PORT: undefined,
     })
@@ -1558,6 +1565,11 @@ export function createOpencodeSupervisor(
   /**
    * Close the turn the retired opencode took with it, and report whether there
    * was one. Returns null when it could not be determined.
+   *
+   * Idempotent: `options.onUnplannedRespawn` (main.ts's `finalizeOrphanedTurn`)
+   * skips a turn that already carries `info.error` — already finalized by a
+   * prior abort — so repeated replacements over the same stuck turn call
+   * `/abort` at most once, not once per replacement.
    */
   async function finalizeAfterReplacement(): Promise<boolean | null> {
     if (!options.onUnplannedRespawn) return null

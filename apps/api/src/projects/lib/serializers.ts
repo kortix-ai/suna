@@ -131,9 +131,9 @@ export function serializeSession(
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
-    // A row the caller cannot ACCESS is still listed (scope=project shows a
-    // manager the whole project) but must not carry the session's CONTENT.
-    // metadata holds initial_prompt — the literal text an end-user typed.
+    // Inventory filters inaccessible rows. Keep this boundary fail-closed for
+    // other callers that serialize with canAccess=false. Metadata holds
+    // initial_prompt — the literal text an end-user typed.
     metadata: canAccess ? (row.metadata ?? {}) : {},
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
@@ -774,5 +774,21 @@ export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
   return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
 }
 
-// GET /v1/projects/:projectId/group-grants
-// List every group attached to this project, with the role + group name.
+/**
+ * Parse a bounded positive integer query parameter, or report why it is invalid.
+ * Shared by every paged read route (transcript, voice transcript, approvals).
+ */
+export function parseBoundedPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
+  }
+  return { ok: true, value };
+}

@@ -12,33 +12,33 @@
  *     (added as a header in resolveEndpoint, same effective auth as Daytona).
  */
 
+import { SANDBOX_VERSION, config } from '../../config';
+import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
-import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
-import { config, SANDBOX_VERSION } from '../../config';
+import { serviceKeyForExternalId } from '../service-key';
 import type {
-  SandboxProvider,
-  ProviderName,
   CreateSandboxOpts,
-  ProvisionResult,
-  SandboxStatus,
-  ResolvedEndpoint,
-  ProvisioningTraits,
-  ProvisioningStatus,
   InPlaceRecoveryStatus,
+  ProviderName,
+  ProvisionResult,
+  ProvisioningStatus,
+  ProvisioningTraits,
+  ResolvedEndpoint,
   ResolvedSandboxIngress,
   SandboxIngressRequest,
+  SandboxProvider,
+  SandboxStatus,
 } from './index';
 import {
-  assertWorkloadCredential,
   SandboxTemplateNotFoundError,
+  assertWorkloadCredential,
   sandboxWorkloadType,
 } from './index';
-import { classifyPtyWebSocketPath } from './pty-ingress';
 import { providerAutoStopBackstopMinutes } from './index';
-import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { classifyPtyWebSocketPath } from './pty-ingress';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
@@ -109,9 +109,7 @@ export class PlatinumProvider implements SandboxProvider {
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
-    stages: [
-      { id: 'creating', progress: 50, message: 'Creating sandbox...' },
-    ],
+    stages: [{ id: 'creating', progress: 50, message: 'Creating sandbox...' }],
   };
 
   async getProvisioningStatus(): Promise<ProvisioningStatus | null> {
@@ -151,7 +149,10 @@ export class PlatinumProvider implements SandboxProvider {
    * boot path can fall back to a name-boot; a transient 5xx (or any other error)
    * propagates UNCHANGED so it is surfaced/retried, never silently name-booted.
    */
-  async createFromExternalId(externalTemplateId: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
+  async createFromExternalId(
+    externalTemplateId: string,
+    opts: CreateSandboxOpts,
+  ): Promise<ProvisionResult> {
     if (!externalTemplateId || externalTemplateId.trim() === '') {
       throw new Error('[platinum] createFromExternalId called without a template id');
     }
@@ -167,7 +168,10 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
-  private async provisionFromTemplate(template: string, opts: CreateSandboxOpts): Promise<ProvisionResult> {
+  private async provisionFromTemplate(
+    template: string,
+    opts: CreateSandboxOpts,
+  ): Promise<ProvisionResult> {
     const workloadType = sandboxWorkloadType(opts);
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
@@ -267,13 +271,19 @@ export class PlatinumProvider implements SandboxProvider {
     let exposedUrl = '';
     const _tExpose0 = Date.now();
     try {
-      const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
-        method: 'POST',
-        body: JSON.stringify({ port: ingressPort, public: true }),
-      });
+      const exposed = await platinumJson<PlatinumExposedPort>(
+        `/v1/sandboxes/${externalId}/expose`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ port: ingressPort, public: true }),
+        },
+      );
       exposedUrl = (exposed.url ?? '').replace(/\/$/, '');
     } catch (err) {
-      console.warn(`[platinum] eager expose ${externalId}:${AGENT_PORT} failed (lazy fallback):`, err);
+      console.warn(
+        `[platinum] eager expose ${externalId}:${AGENT_PORT} failed (lazy fallback):`,
+        err,
+      );
     }
     const _exposeMs = Date.now() - _tExpose0;
 
@@ -294,7 +304,7 @@ export class PlatinumProvider implements SandboxProvider {
     // becomes usable without any create-path hang.
     console.log(
       `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
-      `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)`,
+        `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)`,
     );
 
     return {
@@ -314,13 +324,10 @@ export class PlatinumProvider implements SandboxProvider {
     // Platinum restores the template filesystem but does not run the image
     // ENTRYPOINT. appd owns daemonization, locking, and PID validation so this
     // path works in images without a shell or flock utility.
-    const response = await platinumJson<PlatinumExecResponse>(
-      `/v1/sandboxes/${externalId}/exec`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ cmd: ['/kortix/bin/kortix-appd', '--daemon'], timeout_ms: 15_000 }),
-      },
-    );
+    const response = await platinumJson<PlatinumExecResponse>(`/v1/sandboxes/${externalId}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ cmd: ['/kortix/bin/kortix-appd', '--daemon'], timeout_ms: 15_000 }),
+    });
     const result = response.result;
     if (!result || result.exit_code !== 0) {
       const detail = result?.stderr || result?.error || response.error || 'missing exec result';
@@ -364,6 +371,23 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  async renewLifecycle(externalId: string): Promise<void> {
+    // Platinum resets last_activity_at before dispatching every /exec request.
+    // One bounded no-op therefore renews its native idle timer without changing
+    // the guest filesystem or starting a stopped sandbox.
+    const response = await platinumJson<PlatinumExecResponse>(`/v1/sandboxes/${externalId}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ cmd: ['true'], timeout_ms: 10_000 }),
+    });
+    const result = response.result;
+    if (!result || result.exit_code !== 0) {
+      const detail = result?.stderr || result?.error || response.error || 'missing exec result';
+      throw new Error(
+        `Platinum lifecycle renewal failed for ${externalId}: exit ${result?.exit_code ?? 'unknown'}: ${detail.slice(0, 500)}`,
+      );
+    }
+  }
+
   async stop(externalId: string): Promise<void> {
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
   }
@@ -381,7 +405,9 @@ export class PlatinumProvider implements SandboxProvider {
    * is shared across prod/dev/local, and an unscoped sweep would stop other
    * environments' boxes. A row without the marker is skipped, never reaped.
    */
-  async listManagedRunningSandboxes(): Promise<Array<{ externalId: string; createdAt: Date | null }>> {
+  async listManagedRunningSandboxes(): Promise<
+    Array<{ externalId: string; createdAt: Date | null }>
+  > {
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
     const limit = 100;
     // Bounded page count as well as page size: a paginator that never reports
@@ -447,7 +473,22 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
     } catch (err) {
-      return isMissingSandboxError(err) ? 'unavailable' : 'recovering';
+      if (!isMissingSandboxError(err)) return 'recovering';
+      // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
+      // sandbox returns. Platinum's reconciler deletes a box whose disk it has
+      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
+      //
+      // Returning 'unavailable' here made the restore branch below DEAD CODE:
+      // it handles `state ∈ {failed-start, lost, deleted}` + a completed backup,
+      // but a `deleted` sandbox can never reach it, because this catch fires
+      // first. So the one path written to recover this exact case never ran.
+      //
+      // Ask for the restore directly instead. Platinum currently refuses a
+      // tombstoned row (`sbx.deletedAt` guard on the endpoint), so this is
+      // expected to fail TODAY — it succeeds the moment that guard is relaxed,
+      // and until then it costs one request and still answers 'unavailable'.
+      return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
     }
 
     const state = String(sandbox.state ?? '').toLowerCase();
@@ -465,29 +506,52 @@ export class PlatinumProvider implements SandboxProvider {
       ['failed-start', 'lost', 'deleted'].includes(state) &&
       String(sandbox.backupState ?? sandbox.backup_state ?? '').toLowerCase() === 'completed'
     ) {
-      await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(120_000),
-      });
-      return 'recovering';
+      return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
     }
 
     if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';
     return 'recovering';
   }
 
-  async resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress> {
+  /**
+   * Ask Platinum to re-spawn this sandbox from its S3 backup, keeping the id.
+   *
+   * Returns false rather than throwing: every caller is deciding "is this
+   * runtime recoverable", and a refusal is an answer, not a fault. Losing that
+   * distinction is what let a recoverable box be reported as permanently gone.
+   */
+  private async tryRestoreFromBackup(externalId: string): Promise<boolean> {
+    try {
+      await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      });
+      return true;
+    } catch (err) {
+      console.warn(
+        `[platinum] restore-from-backup refused for ${externalId}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return false;
+    }
+  }
+
+  async resolveIngress(
+    externalId: string,
+    request: SandboxIngressRequest,
+  ): Promise<ResolvedSandboxIngress> {
     const route = this.routeIngress(request);
     const effectivePort = route.effectivePort;
     // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
     // No preview token: the sandbox is gated by the serviceKey bearer the proxy
     // already adds. Idempotent — re-exposing returns the same URL.
-    const exposed = await platinumJson<PlatinumExposedPort>(
-      `/v1/sandboxes/${externalId}/expose`,
-      { method: 'POST', body: JSON.stringify({ port: effectivePort, public: true }) },
-    );
+    const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
+      method: 'POST',
+      body: JSON.stringify({ port: effectivePort, public: true }),
+    });
     const url = (exposed.url ?? '').replace(/\/$/, '');
-    if (!url) throw new Error(`[platinum] expose returned no URL for ${externalId}:${effectivePort}`);
+    if (!url)
+      throw new Error(`[platinum] expose returned no URL for ${externalId}:${effectivePort}`);
     return {
       url,
       headers: {},
@@ -525,7 +589,10 @@ export class PlatinumProvider implements SandboxProvider {
     // {url,port,...} — the array {expose:[...]} shape is only valid on the
     // create route's inline expose. Sending the array here 400s.
     const ingress = await this.resolveIngress(externalId, { port: AGENT_PORT, transport: 'http' });
-    const headers: Record<string, string> = { ...ingress.headers, 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = {
+      ...ingress.headers,
+      'Content-Type': 'application/json',
+    };
     try {
       const serviceKey = await serviceKeyForExternalId(externalId);
       if (serviceKey) headers.Authorization = `Bearer ${serviceKey}`;

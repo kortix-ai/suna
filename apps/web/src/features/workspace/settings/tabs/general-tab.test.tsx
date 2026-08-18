@@ -5,9 +5,8 @@ import { GeneralTabView } from './general-tab';
 
 /**
  * `GeneralTabView` is the pure, props-only half — see this tab's header
- * comment. `generalFieldsSlot` (name + icon) and `sandboxProviderSlot`
- * (the sandbox-provider pin) are both slots: the real subcomponents behind
- * them own `useMutation`/`useState` of their own and cannot render under
+ * comment. `generalFieldsSlot` (name + icon) is a slot: the real subcomponent
+ * behind it owns `useMutation`/`useState` of its own and cannot render under
  * `renderToStaticMarkup` with no `QueryClientProvider` — same reasoning
  * `connected-tab.tsx`'s `githubAppSetupSlot`/`chatgptConnectSlot` document.
  * These tests pin slot presence, order, and everything the pure view DOES
@@ -21,28 +20,29 @@ describe('GeneralTabView', () => {
     expect(out).toContain('name-icon-marker');
   });
 
-  test('renders the sandbox provider slot', () => {
+  test('the general fields slot renders before the Delete workspace section', () => {
     const out = renderToStaticMarkup(
-      <GeneralTabView sandboxProviderSlot={<div>sandbox-provider-marker</div>} />,
+      <GeneralTabView generalFieldsSlot={<div>fields-marker</div>} />,
     );
-    expect(out).toContain('sandbox-provider-marker');
+    expect(out.indexOf('fields-marker')).toBeLessThan(out.indexOf('Delete workspace'));
   });
 
-  test('the general fields slot renders before the sandbox provider slot', () => {
+  /**
+   * The sandbox-provider pin moved to `sandbox-tab.tsx` (Sandbox templates) —
+   * see both tabs' header comments. This asserts the removal is real: General
+   * must not name the control, its section, or the provider vocabulary again.
+   * Asserted against the FULLY populated view (a slot present, delete section
+   * on), so it cannot pass just because the pane rendered nothing.
+   */
+  test('never mentions the sandbox provider — that control lives on the Sandbox templates tab', () => {
     const out = renderToStaticMarkup(
-      <GeneralTabView
-        generalFieldsSlot={<div>fields-marker</div>}
-        sandboxProviderSlot={<div>sandbox-marker</div>}
-      />,
+      <GeneralTabView generalFieldsSlot={<div>fields-marker</div>} workspaceName="My Workspace" />,
     );
-    expect(out.indexOf('fields-marker')).toBeLessThan(out.indexOf('sandbox-marker'));
-  });
-
-  test('the sandbox provider slot renders before the Delete workspace section', () => {
-    const out = renderToStaticMarkup(
-      <GeneralTabView sandboxProviderSlot={<div>sandbox-marker</div>} />,
-    );
-    expect(out.indexOf('sandbox-marker')).toBeLessThan(out.indexOf('Delete workspace'));
+    expect(out).toContain('fields-marker');
+    expect(out).toContain('Delete workspace');
+    expect(out).not.toContain('Sandbox provider');
+    expect(out).not.toContain('sandbox');
+    expect(out).not.toContain('Automatic');
   });
 
   test('renders a Delete workspace row with a destructive action by default', () => {

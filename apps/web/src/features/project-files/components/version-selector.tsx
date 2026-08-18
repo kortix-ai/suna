@@ -22,6 +22,13 @@ import { useProjectContext } from '../context';
 import { useBranches } from '../hooks/use-branches';
 import { useVersionStore } from '../store/version-store';
 
+/** Shared formatter, hoisted so each row render does not rebuild the Intl
+ *  machinery. Same options as the old `toLocaleDateString` call — identical output. */
+const commitDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+});
+
 export function VersionSelector() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
@@ -187,12 +194,7 @@ function VersionRow({
   onClick: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const date = branch.committed_at
-    ? new Date(branch.committed_at).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-      })
-    : '';
+  const date = branch.committed_at ? commitDateFormatter.format(new Date(branch.committed_at)) : '';
 
   return (
     <button

@@ -80,14 +80,13 @@ export default function PublicSessionSharePage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!token) {
-        setError('Invalid share link');
-        setLoading(false);
-        return;
-      }
       setLoading(true);
       setError(null);
       try {
+        if (!token) {
+          setError('Invalid share link');
+          return;
+        }
         const body = await getPublicShareByToken<PublicShareMeta>(token, {
           backendUrl: base,
           cache: 'no-store',

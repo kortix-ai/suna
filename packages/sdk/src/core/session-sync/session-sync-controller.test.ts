@@ -5,6 +5,7 @@ import {
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
+  type SessionSyncControllerOptions,
   type SessionSyncPage,
   type SessionSyncScheduler,
 } from './session-sync-controller';
@@ -439,7 +440,7 @@ describe('SessionSyncController', () => {
     expect(statuses).toEqual([{ type: 'idle' }]);
   });
 
-  test('starts transcript liveness reconciliation when a REST prompt is accepted', async () => {
+  test('the caller\'s working signal, and only it, starts transcript liveness reconciliation', async () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: string[][] = [];
@@ -461,7 +462,14 @@ describe('SessionSyncController', () => {
       livenessIntervalMs: 10_000,
     });
 
-    controller.beginPromptObservation();
+    // Nothing polls until someone says the session is working. The controller
+    // does not decide that any more — `projectWorking` does, from the server's
+    // turn authority — so an unattended controller is silent.
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(0);
+
+    controller.setBusy(true);
     clock.advance(10_001);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -470,63 +478,27 @@ describe('SessionSyncController', () => {
     expect(statuses).toEqual([{ type: 'idle' }]);
   });
 
-  test('keeps REST prompt completion busy until runtime idle is stable after real work starts', () => {
-    let now = 0;
-    let timeout:
-      | {
-          handler: () => void;
-          dueAt: number;
-        }
-      | undefined;
-    const scheduler = {
-      now: () => now,
-      setInterval: () => 1,
-      clearInterval: () => {},
-      setTimeout: (handler: () => void, delayMs: number) => {
-        timeout = { handler, dueAt: now + delayMs };
-        return 2;
-      },
-      clearTimeout: () => {
-        timeout = undefined;
-      },
-    };
-    const advance = (ms: number) => {
-      now += ms;
-      if (timeout && timeout.dueAt <= now) {
-        const handler = timeout.handler;
-        timeout = undefined;
-        handler();
-      }
-    };
+  test('the snapshot holds transcript state only — never a busy opinion', async () => {
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async () => page([]),
+      loadStatus: async () => ({ type: 'busy' }) as SessionStatus,
       hydrate: () => {},
       markLoaded: () => {},
-      scheduler,
     });
 
-    controller.beginPromptObservation();
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    await controller.start();
+    controller.noteActivity();
 
-    controller.observePromptStatus({ type: 'idle' });
-    advance(1_000);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'busy' });
-    controller.observePromptStatus({ type: 'idle' });
-    advance(400);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'busy' });
-    advance(1_000);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'idle' });
-    advance(499);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-    advance(1);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+    // The three transcript fields, and nothing else. `isPromptObservedBusy`
+    // lived here and latched: it was inferred from silence, and every signal
+    // that could have released it can be lost.
+    expect(Object.keys(controller.getSnapshot()).sort()).toEqual([
+      'freshness',
+      'hasOlder',
+      'isLoadingOlder',
+    ]);
+    expect('isPromptObservedBusy' in controller.getSnapshot()).toBe(false);
   });
 
   test('marks an empty or failed initial read as loaded', async () => {

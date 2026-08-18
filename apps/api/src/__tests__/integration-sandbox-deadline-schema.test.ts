@@ -1,16 +1,14 @@
 /**
- * Integration test (real local DB): the schema-level guarantee behind bounded
- * sandbox lifetime.
+ * Integration test (real local DB): the schema-level lifecycle anchor.
  *
  * This is the ONLY guard in the design, deliberately. An earlier attempt used a
  * source-code scanner to forbid TypeScript from writing `deadlineAt` outside
  * one module; a one-line indirection defeated it —
  *   db.update(x).set({ deadlineAt })              -> caught
  *   const p = { deadlineAt }; db.update(x).set(p)  -> invisible
- * A guard ordinary Drizzle bypasses is worse than none, because it manufactures
- * false confidence. A BEFORE trigger and a CHECK constraint cannot be routed
- * around by any application code, including code that has not been written yet
- * — which is exactly what these tests assert.
+ * The BEFORE trigger cannot be routed around by application code. The former
+ * 24-hour CHECK was removed because it stopped verified active OpenCode turns.
+ * Idle lifetime remains controlled by `deadline_at` and the reaper.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
@@ -18,23 +16,6 @@ import { db } from '../shared/db';
 
 const HOUR_MS = 3_600_000;
 const created: string[] = [];
-
-/** Drizzle wraps driver errors in a DrizzleQueryError, so the real PostgresError
- *  (and its SQLSTATE) lives on `cause`. 23514 = check_violation. Asserting the
- *  CODE and the CONSTRAINT NAME — not a message substring — is what makes these
- *  tests about the constraint itself rather than about Postgres's wording. */
-function pgError(err: unknown): { code?: string; constraint?: string } {
-  type PgLike = {
-    code?: string;
-    constraint?: string;
-    constraint_name?: string;
-    cause?: unknown;
-  };
-  for (let e = err as PgLike, depth = 0; e && depth < 5; e = e.cause as PgLike, depth++) {
-    if (e.code) return { code: e.code, constraint: e.constraint_name ?? e.constraint };
-  }
-  return {};
-}
 
 async function seed(status: 'active' | 'provisioning' | 'stopped', deadline?: string) {
   const sandboxId = crypto.randomUUID();
@@ -86,7 +67,7 @@ describe('the anchor trigger', () => {
     expect(Number(row.span_s)).toBeGreaterThan(5 * 60);
   });
 
-  test('every non-active -> active transition re-anchors AND re-floors', async () => {
+  test('an unwitnessed stopped -> active transition applies the 15-minute boot floor', async () => {
     const id = await seed('stopped', new Date(Date.now() - HOUR_MS).toISOString());
     // A stale, already-expired deadline carried while the box was parked would
     // otherwise present to a user as "Start does nothing".
@@ -115,62 +96,19 @@ describe('the anchor trigger', () => {
   });
 });
 
-describe('the 24h cap — unbypassable by application code', () => {
-  test('a direct UPDATE past the cap raises 23514', async () => {
+describe('deadlines beyond 24 hours', () => {
+  test('a verified active turn may extend the deadline beyond the former cap', async () => {
     const id = await seed('active');
-
-    const err = await db
-      .execute(
-        sql`
-        UPDATE kortix.session_sandboxes
-           SET deadline_at = active_since + interval '25 hours'
-         WHERE sandbox_id = ${id}::uuid`,
-      )
-      .then(() => null)
-      .catch((e) => e);
-
-    expect(pgError(err).code).toBe('23514');
-    expect(pgError(err).constraint).toBe('session_sandboxes_deadline_within_cap');
-  });
-
-  // THE ATTACK THE TRIGGER EXISTS FOR: widen the ceiling by sliding its left
-  // operand forward in the SAME statement. The trigger restores the real
-  // anchor, so the CHECK still sees it and refuses.
-  test('sliding the anchor forward while widening does NOT buy more life', async () => {
-    const id = await seed('active');
-
-    const err = await db
-      .execute(
-        sql`
-        UPDATE kortix.session_sandboxes
-           SET active_since = now() + interval '10 hours',
-               deadline_at  = now() + interval '30 hours'
-         WHERE sandbox_id = ${id}::uuid`,
-      )
-      .then(() => null)
-      .catch((e) => e);
-
-    expect(pgError(err).code).toBe('23514');
-    expect(pgError(err).constraint).toBe('session_sandboxes_deadline_within_cap');
-  });
-
-  test('an INSERT that states a deadline beyond the cap is refused outright', async () => {
-    const err = await seed('active', new Date(Date.now() + 25 * HOUR_MS).toISOString())
-      .then(() => null)
-      .catch((e) => e);
-
-    expect(pgError(err).code).toBe('23514');
-    expect(pgError(err).constraint).toBe('session_sandboxes_deadline_within_cap');
-  });
-
-  test('a write INSIDE the cap is accepted, so the constraint is not just "deny all"', async () => {
-    const id = await seed('active');
-
     await db.execute(sql`
       UPDATE kortix.session_sandboxes
-         SET deadline_at = active_since + interval '23 hours'
+         SET metadata = jsonb_set(
+               coalesce(metadata, '{}'::jsonb),
+               '{activeTurns,turn-token}',
+               '{"token":"turn-token","state":"active"}'::jsonb,
+               true),
+             deadline_at = active_since + interval '25 hours'
        WHERE sandbox_id = ${id}::uuid`);
 
-    expect(Number((await read(id)).span_s)).toBe(23 * 3600);
+    expect(Number((await read(id)).span_s)).toBe(25 * 3600);
   });
 });

@@ -27,23 +27,22 @@ describe('project sidebar footer ordering', () => {
   });
 
   test('the permanent nav keeps its own order', () => {
-    // Connectors/Skills/Commands/Customize collapsed into one Settings entry.
-    // It holds the Customize row's old line: bottom of the footer group, below
-    // Files, above the ChatGPT connect entry.
-    expect(orderOf('ProjectFilesNavItem')).toBeLessThan(orderOf('ProjectSettingsNavItem'));
-    expect(orderOf('ProjectSettingsNavItem')).toBeLessThan(
-      orderOf('ProjectChatGptConnectNavItem'),
-    );
+    // Connectors/Skills/Commands/Customize collapsed into one Settings entry,
+    // which held the Customize row's old line — bottom of the footer group,
+    // below Files, above the ChatGPT connect entry. That Settings row is gone
+    // now too (Jay, 2026-08-17): it opened the same User Settings overlay a
+    // click on the workspace switcher already opens, one level up. Files
+    // sits directly above the ChatGPT connect entry with nothing between them.
+    expect(orderOf('ProjectFilesNavItem')).toBeLessThan(orderOf('ProjectChatGptConnectNavItem'));
+    expect(source).not.toContain('<ProjectSettingsNavItem');
   });
 
-  test('Settings stays in the footer group; only Customize sits up top', () => {
-    // Two entries, one destination: Customize above the session list, Settings
-    // below it. Swapping either side is the regression this pins.
+  test('Customize sits up top; nothing stands in for the old Settings row', () => {
+    // One entry, one destination: Customize above the session list.
     expect(orderOf('ProjectCustomizeNavItem')).toBeLessThan(orderOf('ProjectSessionList'));
-    expect(orderOf('ProjectSessionList')).toBeLessThan(orderOf('ProjectSettingsNavItem'));
     // The three capability rows are gone for good — they are tabs of the one
-    // page both remaining entries link to. `ProjectCustomizeNavItem` is NOT in
-    // this list: the name was reused for the top row.
+    // page Customize links to. `ProjectCustomizeNavItem` is NOT in this list:
+    // the name was reused for the top row.
     expect(source).not.toContain('<ProjectConnectorsNavItem');
     expect(source).not.toContain('<ProjectSkillsNavItem');
     expect(source).not.toContain('<ProjectCommandsNavItem');

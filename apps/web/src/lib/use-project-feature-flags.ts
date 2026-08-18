@@ -35,6 +35,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const networkBoundaryShim = useFeatureFlag(projectId, 'network_boundary_shim');
+  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
 
   return {
     flags: {
@@ -50,7 +51,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       apps: apps.enabled,
       monitors: monitors.enabled,
       network_boundary_shim: networkBoundaryShim.enabled,
+      warm_sessions: warmSessions.enabled,
     },
-    isLoading: networkBoundaryShim.isLoading,
+    // The trailing hook's loading state — keep this on the LAST hook above.
+    isLoading: warmSessions.isLoading,
   };
 }

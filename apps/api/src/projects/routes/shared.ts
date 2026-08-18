@@ -32,8 +32,10 @@ import {
   claimInPlaceRuntimeRecovery,
   finalizeRecoveredRuntimeIfRunning,
   markInPlaceRuntimeRecoveryAccepted,
+  parkEstablishedRuntime,
   preserveEstablishedRuntime,
   retireUnmaterializedRuntime,
+  runtimeLossVerdict,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import type { StopReason } from '../stop-reason';
@@ -595,7 +597,13 @@ function stoppedWakeResult(
 ): SessionStartResult | null {
   if (row?.status !== 'stopped' || !row.externalId) return null;
   const metadata = sandboxMetadata(row);
-  if (runtimeWakeInProgress(metadata)) {
+  // An identity already preserved as unavailable outranks every wake clock on
+  // this row. Both payloads below describe a wake that may still succeed, and
+  // the cooldown one even advertises `retryable: true` — for a runtime the
+  // provider has disowned that is a dead-end button, not a retry. Fall through
+  // to the authoritative removed/recovery path, which either restores the box
+  // in place or re-reports `runtime_identity_unavailable`.
+  if (metadata.runtimeIdentityState !== 'unavailable' && runtimeWakeInProgress(metadata)) {
     return {
       stage: 'starting',
       agent_name: agentName ?? 'default',
@@ -606,6 +614,7 @@ function stoppedWakeResult(
       reason: 'runtime_waking',
     };
   }
+  if (metadata.runtimeIdentityState === 'unavailable') return null;
   if (!runtimeWakeRetryCoolingDown(metadata)) return null;
   return {
     stage: 'stopped',
@@ -685,6 +694,9 @@ async function preserveEstablishedRuntimeOnOpen(
    *  failed wake, a failed boot, a real provider removal) and cannot tell them
    *  apart from the inside. */
   stopReason: StopReason,
+  /** A provider status the CALLER just observed, so the loss gate below does
+   *  not re-probe. Pass only a fresh answer; omit to let the gate ask. */
+  knownProviderStatus?: SandboxStatus,
 ): Promise<SessionStartResult> {
   if (!row.externalId) {
     await retireUnmaterializedRuntime(row, reason);
@@ -695,6 +707,36 @@ async function preserveEstablishedRuntimeOnOpen(
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
+      reason,
+    };
+  }
+  // Incident 2026-08-14: only a definitive provider `removed` may become the
+  // terminal "computer was lost" state. Two healthy boxes were preserved as
+  // lost because a dead local tunnel kept them from booting and nothing asked
+  // the provider first. Anything short of `removed` — including `unknown`,
+  // which is a probe failure, not evidence — parks the row retriable instead.
+  // try/catch, not .catch(): getProvider() itself throws SYNCHRONOUSLY for a
+  // disabled provider (missing API key), and that must read as "cannot ask" —
+  // park — never as a 500 out of /start.
+  let providerStatus: SandboxStatus = knownProviderStatus ?? 'unknown';
+  if (!knownProviderStatus) {
+    try {
+      providerStatus = await getProvider(row.provider as SandboxProviderName).getStatus(
+        row.externalId,
+      );
+    } catch {
+      providerStatus = 'unknown';
+    }
+  }
+  if (runtimeLossVerdict(providerStatus) === 'park') {
+    const parked = await parkEstablishedRuntime(row, reason, stopReason);
+    return {
+      stage: 'failed',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(parked ?? row),
+      opencode_session_id: null,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason,
     };
   }
@@ -956,6 +998,7 @@ export async function openSession(args: {
       // The provider itself answered `removed` and in-place recovery came back
       // unavailable — a real Path D2 removal, not a wake that ran out of time.
       'provider_removed',
+      'removed',
     );
   }
 
@@ -981,16 +1024,31 @@ export async function openSession(args: {
         row,
         staleWake,
         'runtime_wake_failed',
+        providerStatus,
       );
     }
+    // The provider read said `stopped`, but this row still holds turn authority
+    // and the stop was not confirmed by a second read. See below.
+    let stopUnconfirmed = false;
     if (providerStatus === 'stopped') {
       // Provider truth says this active row is parked. Close the old compute
       // window and both durable states first. Then enter the same stopped-row
       // wake fence used by every other access path. No raw provider start exists
       // outside that fence.
+      //
+      // ONE read is not that truth while the row holds turn authority. This
+      // endpoint is an UNSOLICITED OBSERVATION — it has stopped nothing itself —
+      // and it is polled every second, while Daytona folds `stopping` and
+      // `pending_stop` into `stopped` (platform/providers/daytona-state.ts). On
+      // 2026-08-17T20:40:03Z one such read parked session 0fc6897a mid-turn,
+      // settled its ledger `runtime_gone` and returned the client to the wake
+      // flow with the turn's work lost. So it takes the same confirmation gate
+      // as the reaper's poll: a second `stopped` read, one window later.
       const activeExternalId = row.externalId;
       await import('../reaping/sandbox-state-sync').then((m) =>
-        m.reconcileSandboxStoppedByExternalId(activeExternalId),
+        m.reconcileSandboxStoppedByExternalId(activeExternalId, new Date(), {
+          confirmMidTurnStop: true,
+        }),
       );
       const [stoppedRow] = await db
         .select()
@@ -1006,6 +1064,12 @@ export async function openSession(args: {
           externalId: stoppedRow.externalId,
           metadata: stoppedRow.metadata as Record<string, unknown> | null,
         });
+      } else if (stoppedRow?.status === 'active') {
+        // Nothing was parked and nothing is waking: the box keeps running with
+        // its turn intact. Say exactly that instead of claiming a wake — the
+        // next poll either reads `running` again, which drops the marker, or
+        // earns the confirmation and takes the branch above.
+        stopUnconfirmed = true;
       }
     } else {
       // Unknown is not permission to issue repeated provider starts. Record one
@@ -1019,8 +1083,28 @@ export async function openSession(args: {
       sandbox: null,
       opencode_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
-      reason: providerStatus === 'stopped' ? 'runtime_waking' : 'runtime_status_unknown',
+      reason:
+        providerStatus !== 'stopped'
+          ? 'runtime_status_unknown'
+          : stopUnconfirmed
+            ? 'runtime_stop_unconfirmed'
+            : 'runtime_waking',
     };
+  }
+
+  // The provider says RUNNING, so the pending-stop confirmation this endpoint
+  // may have armed above is answered: drop it.
+  //
+  // A confirmation is about ONE provider transition. This route is polled about
+  // once a second and it can arm the marker; an endpoint that arms and never
+  // disarms turns two transient `pending_stop` misreads MINUTES apart — with
+  // hundreds of healthy `running` reads in between — into a confirmed park of a
+  // live box. Only a row that carries a marker pays for the write, and the
+  // reaper's own running read does the same thing for rows nobody is polling.
+  if (sandboxMetadata(row).pendingStopObservedAtMs !== undefined) {
+    await import('../reaping/sandbox-state-sync').then((m) =>
+      m.clearPendingStopObservation(row.sandboxId),
+    );
   }
 
   if (sandboxMetadata(row).runtimeIdentityState === 'recovering') {

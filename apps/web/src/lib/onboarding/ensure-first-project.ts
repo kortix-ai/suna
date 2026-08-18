@@ -58,8 +58,7 @@ export function clearAutoProjectSuppression(): void {
  * `localStorage` is absent on the server and in tests, and can throw in
  * private mode. Every access to the provision-attempt key goes through here.
  * Read directly off `globalThis`, not `window.localStorage` — this is what
- * lets a test install a fake without a DOM (see message-queue-store.ts for
- * the same pattern).
+ * lets a test install a fake without a DOM.
  */
 function localAttemptStorage(): Storage | undefined {
   try {

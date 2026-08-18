@@ -1,6 +1,7 @@
 import {
   isSessionTargetVisibleToCaller,
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
+  isTriggerCreatedSessionMetadata,
   loadSessionGrants,
   resolveShareSubject,
   type SecretGrant,
@@ -8,6 +9,12 @@ import {
 } from '../../connectors/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+// Straight from `iam/denial-message`, not the `iam` barrel or the dispatcher:
+// both of those are replaced wholesale by `mock.module` in several route tests,
+// so every name imported from them is a name those stubs must also declare.
+// These two are pure wording policy. Same reason `deriveRequestContext` above
+// comes from `iam/cache` directly.
+import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
@@ -112,12 +119,31 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
+  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   if (
-    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject, {
-      origin: row.origin ?? null,
-      sessionId,
-      callerSessionId,
-    })
+    !canManageProject &&
+    isSessionTargetVisibleToCaller(ownership) &&
+    isTriggerCreatedSessionMetadata(row.metadata)
+  ) {
+    canManageProject = (
+      await authorize(
+        loaded.userId,
+        loaded.row.accountId,
+        'project.members.manage',
+        { type: 'project', id: loaded.row.projectId },
+      )
+    ).allowed;
+  }
+  if (
+    !isProjectSessionVisibleTo(
+      row.visibility as 'private' | 'project' | 'restricted',
+      row.createdBy,
+      grants,
+      subject,
+      ownership,
+      { metadata: row.metadata, canManageProject },
+    )
   ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
@@ -134,7 +160,6 @@ export async function loadVisibleSession(
     });
   }
   const isOwner = row.createdBy === loaded.userId;
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 
@@ -669,12 +694,27 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
   if (!verdict.allowed && !adminBypass) {
-    // Distinguish "no access at all" from "has access but not for this
-    // action" so the UI can show a meaningful message. A Viewer can see
-    // the project but can't create a session — telling them "no access"
-    // is misleading and they spend time wondering why they can see the
-    // page at all. Only do the second probe when the failed action was
-    // NOT already 'read' — otherwise it's the same answer.
+    const iamAction = iamActionForProjectAccess(action);
+    // The engine already computed WHY. When the reason names a constraint other
+    // than the caller's project role — an agent-session grant, a service
+    // account's assigned role, MFA, token scope — report THAT.
+    //
+    // The role-probe below cannot: `project.read` is one of the two actions the
+    // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in engine-v2),
+    // so for an agent-session token the probe passes no matter what actually
+    // denied the request. Every agent-scope and service-account-scope denial
+    // therefore rendered as "your role is too low" — advice that told an
+    // account owner running the meta coordinator to ask an account owner for a
+    // higher role.
+    if (denialReasonMessage(iamAction, verdict.reason) !== null) {
+      throw buildDenialError(iamAction, verdict.reason);
+    }
+    // Genuine role denial. Distinguish "no access at all" from "has access but
+    // not for this action" so the UI can show a meaningful message. A Viewer can
+    // see the project but can't create a session — telling them "no access" is
+    // misleading and they spend time wondering why they can see the page at
+    // all. Only do the second probe when the failed action was NOT already
+    // 'read' — otherwise it's the same answer.
     if (action !== 'read') {
       const readVerdict = await authorize(
         userId,

@@ -113,6 +113,12 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
 
+  // Kortix Apps: creating/resizing an App and shipping a version are
+  // customization, like triggers and gitops. Editor keeps exactly what it had
+  // when these routes asserted project.customize.write.
+  PROJECT_ACTIONS.PROJECT_APP_WRITE,
+  PROJECT_ACTIONS.PROJECT_APP_DEPLOY,
+
   // Sensitive READS — moved out of the floor `member` role. A plain member can
   // use the project (run the agent/chat) but can't browse the file tree via the
   // files page or view secret values; editor+ retains both. Makes "project
@@ -157,6 +163,9 @@ const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+  // Kortix Apps: a member sees the Apps the App access policy shares with
+  // them. The policy, not this leaf, decides which Apps that is.
+  PROJECT_ACTIONS.PROJECT_APP_READ,
 
   // Review Center: the floor role can see the inbox and (via its agent) submit
   // outputs/decisions for review. Acting on them is editor-tier (EDITOR_EXTRAS).

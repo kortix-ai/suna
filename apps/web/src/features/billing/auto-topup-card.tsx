@@ -253,29 +253,27 @@ export function AutoTopupCard({
                 }}
               />
 
-              {showSaveButton && (
-                <AnimatePresence initial={false}>
-                  {dirty && (
-                    <m.div
-                      initial={{ opacity: 0, scale: 0.96 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.96 }}
-                      transition={spring.moderate}
-                      className="ml-auto"
+              <AnimatePresence initial={false}>
+                {showSaveButton && dirty && (
+                  <m.div
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={spring.moderate}
+                    className="ml-auto"
+                  >
+                    <Button
+                      size="sm"
+                      disabled={saving}
+                      onClick={handleSave}
+                      className="gap-1.5 transition-transform active:scale-[0.96]"
                     >
-                      <Button
-                        size="sm"
-                        disabled={saving}
-                        onClick={handleSave}
-                        className="gap-1.5 transition-transform active:scale-[0.96]"
-                      >
-                        {saving ? <Loading className="size-3.5 shrink-0" /> : null}
-                        Save
-                      </Button>
-                    </m.div>
-                  )}
-                </AnimatePresence>
-              )}
+                      {saving ? <Loading className="size-3.5 shrink-0" /> : null}
+                      Save
+                    </Button>
+                  </m.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {showMissingCardWarning && (

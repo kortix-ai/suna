@@ -775,7 +775,7 @@ projectsApp.openapi(
         return c.json(
           {
             error:
-              'Network-boundary delivery needs Platinum, or the "Network boundary without Platinum" project feature flag',
+              'Network-boundary delivery needs Platinum, or the "Network boundary in-guest shim" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,
@@ -1056,7 +1056,7 @@ projectsApp.openapi(
         return c.json(
           {
             error:
-              'Network-boundary delivery needs Platinum, or the "Network boundary without Platinum" project feature flag',
+              'Network-boundary delivery needs Platinum, or the "Network boundary in-guest shim" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,

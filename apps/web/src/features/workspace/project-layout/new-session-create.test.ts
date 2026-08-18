@@ -6,9 +6,10 @@ import { buildNewSessionCreateInput } from './new-session-create';
 
 describe('buildNewSessionCreateInput', () => {
   it('binds the picked agent as agent_name so it matches the first prompt', () => {
-    // The whole bug: the composer sends agent="veyris" on the first prompt, so
-    // the session MUST be created bound to "veyris" — otherwise the proxy 409s
-    // (AGENT_SWITCH_REQUIRES_NEW_SESSION) and the task never starts.
+    // The composer sends agent="veyris" on the first prompt, so the session MUST
+    // be created bound to "veyris": `project_sessions.agent_name` is what the
+    // grant re-mint and connector authz resolve against, and a stale name mints
+    // the wrong agent's tokens for that first turn.
     expect(buildNewSessionCreateInput({ agent: 'veyris' })).toEqual({
       agent_name: 'veyris',
     });
@@ -41,8 +42,8 @@ describe('buildNewSessionCreateInput', () => {
   });
 
   it('ignores an empty-string agent (never binds agent_name="")', () => {
-    // An empty agent must NOT become agent_name:"" — that would mismatch the
-    // proxy's `?? "default"` and 409 the first prompt.
+    // An empty agent must NOT become agent_name:"" — that would record a bogus
+    // agent name and resolve the first turn's grant against nothing.
     expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
   });
 

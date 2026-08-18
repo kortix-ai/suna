@@ -12,11 +12,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import {
-  featureFlagRow,
-  openSettingsTab,
-  selectAccountForUi,
-} from "../helpers/ui";
+import { featureFlagRow, selectAccountForUi } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:13738/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://localhost:13740";
@@ -85,20 +81,22 @@ async function dismissOnboarding(page: Page): Promise<void> {
 }
 
 /**
- * Settings → Experimental, driven exactly as a user does it: the sidebar's
- * Settings row opens the settings panel (a full-screen modal), then the rail's
- * "Experimental" tab selects the pane.
- *
- * The flag list used to be the Customize overlay's "Feature flags" section; it
- * is the `experimental` tab now (`rail.ts`: `label: 'Experimental'`), and the
- * rail rows are `tab`s, not `button`s.
+ * Feature flags graduated out of the Settings overlay's Experimental tab a
+ * second time, onto the Customize bar's Settings tab
+ * (`/projects/[id]/config?section=feature-flags`, `settings-tabs.ts`
+ * GRADUATED map: `experimental` -> `feature-flags`). The pane's own copy
+ * reverted to "Feature flags" at the new location
+ * (`project-settings-sections.ts`'s `FEATURE_FLAGS_SECTION`), so the page
+ * title is that, not "Experimental" any more. Navigate straight there.
  */
-async function openFeatureFlags(page: Page): Promise<Locator> {
-  const panel = await openSettingsTab(page, "Experimental");
+async function openFeatureFlags(page: Page, projectId: string): Promise<Locator> {
+  await page.goto(`/projects/${projectId}/config?section=feature-flags`, {
+    waitUntil: "domcontentloaded",
+  });
   await expect(
-    panel.getByRole("heading", { name: "Experimental", exact: true }),
-  ).toBeVisible();
-  return panel;
+    page.getByRole("heading", { name: "Feature flags", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  return page.locator("body");
 }
 
 /** The row that owns one flag — never DOM order, which is registry order and
@@ -203,7 +201,7 @@ test.describe("19 — Feature flags UI", () => {
 
       // (b) every available flag renders a row with a stability badge and an
       //     origin line.
-      const panel = await openFeatureFlags(page);
+      const panel = await openFeatureFlags(page, project.id);
       await expect(panel.getByRole("switch")).toHaveCount(flags.length);
       for (const flag of flags) {
         const row = flagRow(panel, page, flag.name);
@@ -256,7 +254,10 @@ test.describe("19 — Feature flags UI", () => {
 
       await page.reload({ waitUntil: "domcontentloaded" });
       await dismissOnboarding(page);
-      const reopened = await openFeatureFlags(page);
+      await expect(
+        page.getByRole("heading", { name: "Feature flags", exact: true }),
+      ).toBeVisible({ timeout: 30_000 });
+      const reopened = page.locator("body");
       const targetRow = flagRow(reopened, page, target.name);
       await expect(targetRow.getByRole("switch")).toHaveAttribute(
         "aria-checked",

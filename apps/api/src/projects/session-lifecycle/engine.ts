@@ -1,12 +1,23 @@
-import { connectorCalls, projectSessions, projects, serviceAccounts } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import {
+  connectorCalls,
+  projectSessions,
+  projects,
+  serviceAccounts,
+  sessionLifecycleCommands,
+  sessionSandboxes,
+} from '@kortix/db';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
@@ -16,6 +27,7 @@ import {
 } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { openSession } from '../routes/shared';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
@@ -30,9 +42,22 @@ import {
   markCommandFailed,
   markCommandQueued,
   markCommandSucceeded,
+  requeueForAdmission,
   resultFromExistingCommand,
 } from './store';
-import type { QueuedContinueSessionPayload } from './store';
+import type {
+  PromptOverridesWire,
+  PromptPartWire,
+  QueuedContinueSessionPayload,
+} from './store';
+import { admitInboxPrompt } from './inbox-admission';
+import {
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  mintWireMessageId,
+  newestWireIdTime,
+  wireIdTime,
+} from '../wire-message-id';
 import { crossAccountIdempotencyResult } from './idempotency-guard';
 import type {
   ContinueSessionCommand,
@@ -226,6 +251,7 @@ export async function createSession(
       projectId: command.project.projectId,
       sessionId: result.sessionId,
       actions: command.postCreate,
+      commandId: claimed.row.commandId,
     });
     if (!postCreate.ok) {
       await markCommandFailed(claimed.row.commandId, postCreate.error, {
@@ -324,8 +350,21 @@ export async function startSession(command: StartSessionCommand) {
 
 export async function continueSession(
   command: ContinueSessionCommand,
+  // F2: the queued `continue_session` row's stable identity, when this
+  // delivery originates from the durable queue (`executeQueuedContinue`,
+  // `applyPostCreateActions`'s `deliver_prompt` action). Sent to `postPrompt`
+  // as the `Idempotency-Key` — see the note there for why this must be
+  // STABLE across every retry of ONE command and DISTINCT across different
+  // commands, even when their prompt text is byte-identical. Callers with no
+  // durable row of their own (direct API/channel delivery) get a fresh
+  // `randomUUID()` per call instead — still stable across THIS call's own
+  // internal `deliverWithRetry` retries (computed once, below, outside that
+  // loop), just not across separate invocations, which those callers never
+  // rely on for dedupe.
+  commandId?: string,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
+  const idempotencyKey = commandId ?? randomUUID();
   const [session] = await db
     .select({
       accountId: projectSessions.accountId,
@@ -474,7 +513,11 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: (externalId, runtimeId) =>
-      postPrompt(externalId, runtimeId, text, userId, sessionId),
+      postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
+        parts: command.parts,
+        overrides: command.overrides,
+        wireMessageId: command.wireMessageId,
+      }),
   });
 }
 
@@ -496,11 +539,40 @@ export async function drainSessionLifecycleQueue(
     availableBefore: input.availableBefore,
   });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
+
+  // ONE LANE PER SESSION, and the lanes run concurrently.
+  //
+  // Order matters WITHIN a session and nowhere else, so that is the only order
+  // kept. Draining the whole claim sequentially made every prompt in the batch
+  // wait behind the slowest one, and the slowest one can be very slow:
+  // `continueSession` waits up to `READY_DEADLINE_MS` (5 min) for a cold box.
+  // With every user prompt in the product now going through this queue, one
+  // cold boot would hold nine other people's messages for the length of it.
+  const lanes = new Map<string, SessionLifecycleCommandRow[]>();
   for (const row of rows) {
+    // A create has no session yet; each one is its own lane.
+    const lane = row.sessionId ?? `command:${row.commandId}`;
+    const existing = lanes.get(lane);
+    if (existing) existing.push(row);
+    else lanes.set(lane, [row]);
+  }
+
+  const runRow = async (row: SessionLifecycleCommandRow): Promise<void> => {
     if (row.commandType === 'continue_session') {
-      const outcome = await executeQueuedContinue(row);
+      // Contained per row. Every row in this batch is CLAIMED (`running`), and
+      // one throw escaping the loop would leave the rest of them there — a
+      // state nothing reclaims until the lock expires, and one that blocks
+      // every later prompt of the same session behind it.
+      const outcome = await executeQueuedContinue(row).catch(async (err) => {
+        await markCommandFailed(
+          row.commandId,
+          `drain failed: ${err instanceof Error ? err.message : String(err)}`,
+          { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
+        ).catch(() => undefined);
+        return 'failed' as const;
+      });
       out[outcome] += 1;
-      continue;
+      return;
     }
     if (row.commandType !== 'create_session') {
       await markCommandFailed(row.commandId, `Unsupported command type: ${row.commandType}`, {
@@ -508,7 +580,7 @@ export async function drainSessionLifecycleQueue(
         attempts: row.attempts,
       });
       out.failed += 1;
-      continue;
+      return;
     }
     const result = await executeQueuedCreate(row);
     if (result.status === 'created' && result.sessionId) {
@@ -517,6 +589,7 @@ export async function drainSessionLifecycleQueue(
         projectId: row.projectId,
         sessionId: result.sessionId,
         actions: payload.postCreate,
+        commandId: row.commandId,
       });
       if (!postCreate.ok) {
         await markCommandFailed(row.commandId, postCreate.error, {
@@ -531,7 +604,7 @@ export async function drainSessionLifecycleQueue(
           },
         });
         out.queued += 1;
-        continue;
+        return;
       }
       await markCommandSucceeded(
         row.commandId,
@@ -548,7 +621,13 @@ export async function drainSessionLifecycleQueue(
       if (retryable) out.queued += 1;
       else out.failed += 1;
     }
-  }
+  };
+
+  await Promise.all(
+    [...lanes.values()].map(async (lane) => {
+      for (const row of lane) await runRow(row);
+    }),
+  );
   return out;
 }
 
@@ -558,18 +637,331 @@ export async function drainSessionLifecycleQueue(
  * consumed-marker check runs at DRAIN time, not enqueue time, so a live held
  * request that picked the decision up during the grace window cleanly turns
  * this into a no-op instead of a duplicate prompt.
+ *
+ * T13 — no-blind-repost on a retryable ('pending') delivery: below,
+ * `retryable = delivery === 'pending'` re-queues this SAME row, and a later
+ * drain calls `continueSession` again with the identical `sessionId`/`text` —
+ * so a delivery that actually reached opencode but was reported ambiguous
+ * (network reset after the daemon accepted it, a timed-out response read)
+ * must not re-POST blind on the next pass.
+ *
+ * This module does not re-check that itself — a cheap authoritative read
+ * (list opencode's messages by id, or ask the daemon "did you see this one?")
+ * is not available here without another round trip per retry. Instead the
+ * guarantee is carried by `postPrompt`'s own transport: it POSTs through
+ * `forwardToSandbox`, which is the SAME proxy path the SDK's browser/CLI
+ * sends run through, and that path claims a delivery in
+ * `apps/api/src/sandbox-proxy/prompt-dedupe.ts` before it ever reaches
+ * opencode. Two `postPrompt` calls for the same row carry byte-identical
+ * bodies (same `sessionId` + `text`, no messageID field — see `postPrompt`
+ * below), so the claim's content-hash key collides on the retry and the
+ * SECOND POST is answered `200 {"deduplicated":true}`, which `postPrompt`
+ * reads as accepted. That claim is held for `DEDUPE_TTL_MS` (10 minutes,
+ * `prompt-dedupe.ts`) — comfortably past both the scheduler's ~60s drain tick
+ * and this file's own `deliverWithRetry` deadline (45s), so an ordinary
+ * requeue-and-redrain cycle never outlives it. Pinned in
+ * `prompt-dedupe.test.ts`: the TTL boundary itself ("a key is claimable again
+ * once its TTL has elapsed") and, exercising `postPrompt`'s exact body shape
+ * (`{"parts":[{"type":"text","text":…}]}`, no messageID field), "a retried
+ * `continue_session` delivery — postPrompt's exact body shape — collides on
+ * the same dedupe key". Only a retry that is itself starved past 10 minutes
+ * (the same bound
+ * `UNDELIVERED_PROMPT_STARVATION_MS` in `undelivered-prompts.ts` treats as a
+ * dead scheduler) can outrun this — an accepted risk, not a silent one.
  */
-async function executeQueuedContinue(
+/**
+ * T22 — staged-revert guard for the queued `continue_session` backstop.
+ *
+ * OpenCode's `session.revert` is a STAGED pointer on the session row
+ * (`Session.revert?: { messageID, ... }`, `@opencode-ai/sdk` `types.gen`).
+ * Nothing is deleted until the NEXT prompt — from ANY producer — commits the
+ * truncation. A queued continue (an approval "resume", a trigger fire) that
+ * was enqueued BEFORE a user staged a revert must never be that committing
+ * prompt: the user is mid-edit of their own session history, and an
+ * automated continue queued against the pre-rewind trajectory is void once
+ * the rewind lands. This is checked at DRAIN time (same reasoning as the
+ * consumed-marker check above `executeQueuedContinue`) so a revert staged
+ * after enqueue but before this row's turn to drain is still caught.
+ *
+ * Reuses `sandboxOpencodeEndpoint` (the same signed-proxy resolution
+ * `session-transcript.ts` and `opencode-mapping.ts` already use — no new
+ * client) to read the sandbox's live OpenCode session row. Any resolution
+ * failure (no pin yet, sandbox unreachable, request timeout) fails OPEN —
+ * returns false, i.e. delivers exactly as before this guard existed — so a
+ * transient read failure never blocks a legitimate follow-up.
+ */
+/**
+ * Resolve the signed-proxy OpenCode endpoint for a queued row's session.
+ *
+ * The same resolution `session-transcript.ts` and `opencode-mapping.ts` use —
+ * no new client. Returns null for every "cannot answer" case (no pin yet, no
+ * sandbox, endpoint unresolvable) so both callers can fail OPEN on their own
+ * terms.
+ */
+async function queuedContinueOpencodeEndpoint(row: SessionLifecycleCommandRow): Promise<{
+  endpoint: { url: string; headers: Record<string, string> };
+  opencodeSessionId: string;
+} | null> {
+  if (!row.sessionId) return null;
+  const [session] = await db
+    .select({
+      opencodeSessionId: projectSessions.opencodeSessionId,
+      sandboxUrl: projectSessions.sandboxUrl,
+      accountId: projectSessions.accountId,
+      projectId: projectSessions.projectId,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .limit(1);
+  if (!session?.opencodeSessionId) return null;
+
+  let externalId = externalIdFromSandboxUrlField(session.sandboxUrl);
+  if (!externalId) {
+    const [sandbox] = await db
+      .select({ externalId: sessionSandboxes.externalId })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sessionId, row.sessionId),
+          eq(sessionSandboxes.projectId, session.projectId),
+          eq(sessionSandboxes.accountId, session.accountId),
+        ),
+      )
+      .orderBy(desc(sessionSandboxes.updatedAt))
+      .limit(1);
+    externalId = sandbox?.externalId ?? null;
+  }
+  if (!externalId) return null;
+
+  const endpoint = await sandboxOpencodeEndpoint(externalId, row.actorUserId ?? undefined);
+  if (!endpoint) return null;
+  return { endpoint, opencodeSessionId: session.opencodeSessionId };
+}
+
+/** What one read of the root transcript tells the drain about this prompt. */
+interface InboxTranscriptState {
+  /** The highest id clock on record, for placing a re-mint above it. */
+  newest: bigint | null;
+  /** An assistant message answers one of this prompt's delivered ids, so the
+   *  turn RAN. `false` also covers "could not read" — see `read`. */
+  answered: boolean;
+  /** The transcript was actually read. A failed read answers nothing. */
+  read: boolean;
+}
+
+/**
+ * Read the root once, for the two things a delivery needs to know.
+ *
+ * Uses the SAME signed-proxy resolution `queuedContinueHasStagedRevert` uses —
+ * no new client. Fails OPEN (`read: false`) on every error: a transient read
+ * failure must never block a prompt, and every caller has its own safe default.
+ */
+async function readInboxTranscriptState(
+  row: SessionLifecycleCommandRow,
+  deliveredIds: string[],
+): Promise<InboxTranscriptState> {
+  const empty: InboxTranscriptState = { newest: null, answered: false, read: false };
+  try {
+    const resolved = await queuedContinueOpencodeEndpoint(row);
+    if (!resolved) return empty;
+    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return empty;
+    const messages = (await res.json().catch(() => null)) as Array<{
+      info?: { id?: unknown; role?: unknown; parentID?: unknown };
+    }> | null;
+    if (!Array.isArray(messages)) return empty;
+
+    const newest = newestWireIdTime(
+      messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
+    );
+    // Same rule the daemon's `observeOpencodeDelivery` uses: an assistant
+    // message parented on the prompt is the turn having run.
+    const answered = messages.some(
+      (message) =>
+        message?.info?.role === 'assistant' &&
+        typeof message.info.parentID === 'string' &&
+        deliveredIds.includes(message.info.parentID),
+    );
+    return { newest, answered, read: true };
+  } catch (err) {
+    console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return empty;
+  }
+}
+
+/**
+ * Mint the wire id this attempt delivers with, placed above the root's newest
+ * message, and persist it before the POST.
+ *
+ * TWO callers need this, for one reason. OpenCode resolves "has this prompt
+ * already been answered?" by ID ORDER, so an id that sorts below what is on
+ * record is accepted and then silently never runs:
+ *
+ *  - a REDELIVERY: the abandoned attempt may already have persisted its user
+ *    message, and repeating that id reads as already answered;
+ *  - a prompt that WAITED: the client minted its id when the user pressed
+ *    Enter, and the turn it queued behind has been writing higher ids ever
+ *    since. This is the ordinary case, not the exotic one — it is what "queue
+ *    while busy" does on every single send.
+ *
+ * Persisted into `payload.redeliveredMessageId` BEFORE delivery, so a crash
+ * between mint and POST reuses one id rather than minting a second.
+ *
+ * A FAILED transcript read still mints rather than blocking the prompt — but it
+ * must not mint blind. `mintWireMessageId` backdates by `WIRE_ID_BACKDATE_MS`
+ * (2 min) on purpose: too early is self-correcting when there IS a transcript
+ * to lift against. With no transcript there is nothing to lift against, and
+ * OpenCode mints its own ids from a raw `Date.now()` with no backdate — so the
+ * fallback would land two minutes BELOW every message the box wrote in the last
+ * two minutes, which is the exact silent drop this function exists to prevent.
+ * The un-backdated clock is the floor instead. An unreadable box is also the
+ * commonest trigger for a redelivery, so this path is not the exotic one.
+ */
+async function remintWireMessageId(
+  row: SessionLifecycleCommandRow,
+  payload: QueuedContinueSessionPayload,
+  transcript: InboxTranscriptState,
+): Promise<string> {
+  const submitted = wireIdTime(payload.wireMessageId ?? '');
+  const floor = transcript.read
+    ? transcript.newest
+    : // OpenCode's own minting rule, so an id it wrote a second ago is still
+      // beaten: `Date.now()` scaled into the id clock, with no backdate.
+      (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
+  const newest = floor !== null && (submitted === null || floor > submitted) ? floor : submitted;
+
+  const minted = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: newest });
+  if (newest !== null && minted.time <= newest) {
+    // The lift refused: `MAX_WIRE_ID_CLOCK_CORRECTION` (1h) caps how far a
+    // transcript may drag an id, and past that cap the id we are about to send
+    // sorts BELOW what is on record — OpenCode will read it as answered and the
+    // turn will never run. Nothing here can repair it, so it is reported loudly
+    // rather than dropped quietly.
+    logger.error('[session-lifecycle] re-minted wire id could not clear the transcript', {
+      session_id: row.sessionId,
+      command_id: row.commandId,
+      minted_time: minted.time.toString(),
+      newest_known_time: newest.toString(),
+      transcript_read: transcript.read,
+    });
+  }
+  try {
+    await db
+      .update(sessionLifecycleCommands)
+      .set({
+        payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionLifecycleCommands.commandId, row.commandId));
+  } catch (err) {
+    // Losing the persist costs a re-mint on the next attempt, nothing more.
+    // Throwing here would abandon a CLAIMED row in `running`, where nothing
+    // reclaims it until its lock expires.
+    console.warn('[session-lifecycle] could not persist the re-minted wire id', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return minted.id;
+}
+
+async function queuedContinueHasStagedRevert(row: SessionLifecycleCommandRow): Promise<boolean> {
+  if (!row.sessionId) return false;
+  try {
+    const resolved = await queuedContinueOpencodeEndpoint(row);
+    if (!resolved) return false;
+    const { endpoint, opencodeSessionId } = resolved;
+
+    const url = `${endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return false;
+    const info = (await res.json().catch(() => null)) as { revert?: unknown } | null;
+    return Boolean(info?.revert);
+  } catch (err) {
+    console.warn('[session-lifecycle] staged-revert check failed — proceeding as not staged', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/** `sandboxUrl` on the session row looks like `.../p/<external_id>/8000/...`. */
+function externalIdFromSandboxUrlField(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/\/p\/([^/]+)\//);
+  return match?.[1] ?? null;
+}
+
+export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
   const text = typeof payload.text === 'string' ? payload.text : '';
-  if (!row.sessionId || !text) {
-    await markCommandFailed(row.commandId, 'continue_session command missing sessionId or text', {
+  // TEXT OR PARTS. An attachment-only prompt carries no text at all — the
+  // composer allows it and the POST route accepts it on exactly that basis — so
+  // requiring text here would turn a 202 into a permanently dead row (and, via
+  // the dead-letter, park the user's session `failed`).
+  const hasBody = !!text || (payload.parts?.length ?? 0) > 0;
+  if (!row.sessionId || !hasBody) {
+    await markCommandFailed(row.commandId, 'continue_session command missing sessionId or body', {
       retryable: false,
       attempts: row.attempts,
     });
     return 'failed';
+  }
+
+  // ADMISSION FIRST, before any side effect. A prompt that arrives while the
+  // session holds live turn authority — or behind an older prompt of its own —
+  // waits instead of aborting the turn in progress. The refusal gives the
+  // claim's attempt increment back, so waiting can never dead-letter a prompt.
+  //
+  // Wrapped: this row is CLAIMED (`running`), and a read that throws out of
+  // here would strand it there — where nothing reclaims it until its lock
+  // expires, while `older_prompt_pending` blocks every later prompt of the
+  // session behind it. A failed read is a retryable failure, not a wedge.
+  let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
+  try {
+    admission = await admitInboxPrompt(row);
+  } catch (err) {
+    await markCommandFailed(
+      row.commandId,
+      `admission check failed: ${err instanceof Error ? err.message : String(err)}`,
+      { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
+    );
+    return 'failed';
+  }
+  if (!admission.admit) {
+    try {
+      await requeueForAdmission(
+        row.commandId,
+        admission.reason,
+        new Date(Date.now() + admission.retryAfterMs),
+      );
+    } catch (err) {
+      await markCommandFailed(
+        row.commandId,
+        `admission requeue failed: ${err instanceof Error ? err.message : String(err)}`,
+        { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
+      );
+      return 'failed';
+    }
+    return 'queued';
   }
 
   if (payload.executionId) {
@@ -589,13 +981,147 @@ async function executeQueuedContinue(
     }
   }
 
-  try {
-    const delivery = await continueSession({
-      source: row.source as SessionInvocationSource,
+  // DID THIS ROW WAIT?
+  //
+  // `payload.remintOnDelivery` is the DURABLE half of "this row waited".
+  // `result.admission_reason` is the display half, and it is cleared wholesale
+  // by `retryInboxPrompt` — which runs on "send now", i.e. exactly on the row
+  // that waited longest. Reading only the display half sent that row under the
+  // id minted when the user pressed Enter, and OpenCode read it as answered.
+  //
+  // Read here, above the staged-revert guard, because both questions turn on
+  // it: which wire id this attempt delivers with, and whether this row is
+  // allowed to commit a revert.
+  const waited =
+    payload.remintOnDelivery === true ||
+    typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
+  // `result.promoted` is written by `retryInboxPrompt` alone — the user pointed
+  // at ONE row and pressed "send now". `requeueForAdmission` merges into
+  // `result`, so it survives the row waiting again behind a live turn.
+  const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
+
+  // WHICH ROW MAY COMMIT A STAGED REVERT.
+  //
+  // The guard exists (JAY-600/T22) for the approval-resume / trigger backstop:
+  // a continue queued BEFORE the user staged a revert is void for the rewound
+  // trajectory, and delivering it commits the truncation under a prompt the
+  // user wrote against the trajectory that is being discarded.
+  //
+  // The REPLACEMENT prompt is the exact opposite. "Edit from this message"
+  // stages the revert and prefills the composer with that message; the prompt
+  // the user then sends IS what commits it. OpenCode truncates on the next
+  // delivery, from any producer — that is the whole mechanism. Running the
+  // guard on it marked the row `succeeded/skipped:staged_revert`, and
+  // `listInboxPrompts` omits succeeded rows, so the replacement prompt
+  // disappeared with no error, no turn and no reply — and so did every prompt
+  // after it, because nothing else clears `info.revert`.
+  //
+  // `payload.clientMessageId` does NOT separate those two: a composer prompt
+  // queued while the session was busy carries one too. Whether the row WAITED
+  // does. A revert can only be staged on an IDLE session (`session.rewind()`
+  // refuses a working one), so a row that was refused admission or held by Stop
+  // predates the idle window this revert was staged in; the replacement prompt
+  // is sent INTO that window and goes out on its first claim. `promoted` beats
+  // both — "send now" names one row explicitly, and without that escape a
+  // refused row could never be retried, because retrying re-stamps the very
+  // marker the refusal reads.
+  const mayCommitStagedRevert = !!payload.clientMessageId && (promoted || !waited);
+  if (!mayCommitStagedRevert && (await queuedContinueHasStagedRevert(row))) {
+    // A COMPOSER prompt is failed, never dropped. `listInboxPrompts` keeps
+    // `failed`/`dead_lettered` rows, so the user's text stays on screen with
+    // its reason and a retry button that promotes it past this guard. Silently
+    // marking it succeeded is how the message was lost. `markCommandFailed`
+    // does not park a session for an inbox row, so nothing else is taken away.
+    if (payload.clientMessageId) {
+      await markCommandFailed(
+        row.commandId,
+        'queued before the session was rewound — send it again to run it',
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+      );
+      return 'failed';
+    }
+    console.warn('[session-lifecycle] dropping queued continue — session has a staged revert', {
       sessionId: row.sessionId,
-      text,
-      userId: row.actorUserId,
+      commandId: row.commandId,
     });
+    await markCommandSucceeded(
+      row.commandId,
+      { status: 'skipped', reason: 'staged_revert' },
+      row.sessionId,
+    );
+    return 'succeeded';
+  }
+
+  // WHICH WIRE ID THIS ATTEMPT DELIVERS WITH.
+  //
+  // The client's id is used verbatim only when it is still correctly placed:
+  // this prompt went out on its first claim, without ever waiting. Two things
+  // invalidate it, and both are ordinary rather than exotic:
+  //
+  //  - the prompt WAITED (`result.admission_reason` is stamped by every
+  //    admission refusal). It queued behind a live turn that has been writing
+  //    higher ids ever since, so the submitted id now sorts below them and
+  //    OpenCode would read it as already answered — the flagship "queue while
+  //    busy" path, on every send;
+  //  - the prompt is a REDELIVERY. The abandoned attempt may already have
+  //    persisted its user message under that id.
+  //
+  // Both re-mint against the root's current newest id, from ONE read that also
+  // answers "did this prompt already run?".
+  const redeliveries = Number(payload.redeliveries ?? 0);
+  let wireMessageId = payload.wireMessageId;
+  if (payload.wireMessageId && (redeliveries > 0 || waited)) {
+    const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+    const transcript = await readInboxTranscriptState(row, deliveredIds);
+    // The already-answered guard is not redelivery-only. Every re-mint path
+    // re-reads the transcript, and an assistant reply parented on one of THIS
+    // prompt's delivered ids proves the same thing on all of them: the turn
+    // ran. (On a first delivery no id was ever posted, so this cannot fire.)
+    if (transcript.read && transcript.answered) {
+      // The record said `delivering`, but that only ever proved the ACCEPTANCE
+      // write never landed. An assistant reply under this prompt proves the
+      // turn ran, so re-sending it would run the user's message — and spend a
+      // second real LLM turn — twice.
+      console.warn('[session-lifecycle] dropping delivery — the prompt was already answered', {
+        sessionId: row.sessionId,
+        commandId: row.commandId,
+        redeliveries,
+      });
+      await markCommandSucceeded(
+        row.commandId,
+        { status: 'skipped', reason: 'already_answered' },
+        row.sessionId,
+      );
+      return 'succeeded';
+    }
+    wireMessageId = await remintWireMessageId(row, payload, transcript);
+  }
+
+  try {
+    const delivery = await continueSession(
+      {
+        source: row.source as SessionInvocationSource,
+        sessionId: row.sessionId,
+        text,
+        userId: row.actorUserId,
+        ...(payload.parts?.length ? { parts: payload.parts } : {}),
+        ...(payload.overrides ? { overrides: payload.overrides } : {}),
+        ...(wireMessageId ? { wireMessageId } : {}),
+      },
+      // F2: stable across every drain-and-retry of THIS row — see
+      // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
+      // `commandId`s) with identical text now deliver independently instead
+      // of the second silently deduping against the first.
+      //
+      // A REDELIVERY suffixes it: the abandoned attempt's 10-minute dedupe
+      // claim is still live in the proxy, and reusing the key would let that
+      // claim swallow the delivery meant to replace it — which is precisely
+      // the loss the redelivery exists to repair. Still stable across
+      // `deliverWithRetry`'s inner retries, which is what the claim is for.
+      redeliveries > 0 ? `${row.commandId}:r${redeliveries}` : row.commandId,
+    );
     if (delivery === 'delivered') {
       await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       return 'succeeded';
@@ -745,6 +1271,13 @@ async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
+  // F2: the CREATE command's own commandId, when this create can be retried
+  // against the same row (the idempotency-key and queued-create paths — see
+  // call sites). Forwarded to `continueSession` so `postPrompt`'s
+  // `Idempotency-Key` stays stable across those retries. Omitted by the
+  // one-shot, non-retryable create path, which falls back to a fresh
+  // `randomUUID()` per call inside `continueSession`.
+  commandId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!input.actions?.length) return { ok: true };
   try {
@@ -758,15 +1291,24 @@ async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
         });
       } else if (action.type === 'deliver_prompt') {
-        const outcome = await continueSession({
-          source: action.source,
-          sessionId: input.sessionId,
-          text: action.text,
-          userId: action.userId ?? undefined,
-        });
+        const outcome = await continueSession(
+          {
+            source: action.source,
+            sessionId: input.sessionId,
+            text: action.text,
+            userId: action.userId ?? undefined,
+          },
+          input.commandId,
+        );
         if (outcome !== 'delivered') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };
         }
+      } else if (action.type === 'apply_trigger_session_access') {
+        await applyTriggerSessionAccess({
+          projectId: input.projectId,
+          sessionId: input.sessionId,
+          triggerSlug: action.triggerSlug,
+        });
       }
     }
     return { ok: true };
@@ -791,13 +1333,35 @@ function sandboxExternalId(
 }
 
 function isProviderName(value: string | null): value is ProviderName {
-  return (
-    value === 'daytona' ||
-    value === 'platinum' ||
-    value === 'e2b'
-  );
+  return value === 'daytona' || value === 'platinum' || value === 'e2b';
 }
 
+/**
+ * The wire `messageID` is SUPPLIED, never minted here.
+ *
+ * OpenCode orders its transcript by the id's clock prefix and decides "has this
+ * prompt already been answered?" from that order, so an id has to be placed
+ * above everything already on record. The process holding the transcript is the
+ * one that can do that: the browser/CLI for a first delivery, and the
+ * redelivery path here — which re-reads the transcript before it re-mints (see
+ * `remintWireMessageId`). Every other producer (triggers, Slack, approval
+ * resume) still sends no `messageID`, exactly as before, and gets a
+ * root-scoped turn.
+ *
+ * F2: without a messageID, `prompt-dedupe.ts`'s precedence used to fall all
+ * the way to its content-hash fallback — `sessionId` + `text` only. That is
+ * sound across retries of ONE command (identical body by construction, see
+ * `executeQueuedContinue`'s guarantee above), but unsound across TWO
+ * different commands that happen to carry byte-identical text (two approvals
+ * of one `actionPath`, a fixed-text trigger firing twice inside the TTL):
+ * both hash to the SAME key, so the second is answered `200
+ * {"deduplicated":true}` — which this function reads as delivered — and its
+ * turn silently never runs. `idempotencyKey` closes this: it outranks the
+ * content hash (`promptDeliveryKey`'s precedence, `prompt-dedupe.ts`), is
+ * STABLE across every retry of one command (the caller passes the same value
+ * every time — see `continueSession`), and is DISTINCT across different
+ * commands even when their text matches exactly.
+ */
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -806,8 +1370,28 @@ async function postPrompt(
   /** The session this prompt is FOR. Passed as the caller binding so the
    *  isolation guard proves the target matches, rather than being waived. */
   callerSessionId: string,
+  /** F2: per-command identity forwarded as `Idempotency-Key` — see the note
+   *  above. */
+  idempotencyKey: string,
+  /** The full prompt body + picks + wire id, when the producer supplied them. */
+  prompt?: {
+    parts?: PromptPartWire[];
+    overrides?: PromptOverridesWire;
+    wireMessageId?: string;
+  },
 ): Promise<boolean> {
-  const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
+  const parts: PromptPartWire[] =
+    prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
+  const overrides = prompt?.overrides;
+  const body = new TextEncoder().encode(
+    JSON.stringify({
+      ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
+      parts,
+      ...(overrides?.agent ? { agent: overrides.agent } : {}),
+      ...(overrides?.model ? { model: overrides.model } : {}),
+      ...(overrides?.variant ? { variant: overrides.variant } : {}),
+    }),
+  );
   try {
     const res = await forwardToSandbox(
       externalId,
@@ -815,8 +1399,10 @@ async function postPrompt(
       { kind: 'principal', userId, callerSessionId, sandboxAuthored: false },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-      `?directory=${encodeURIComponent(WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json' }),
+      // The producer's own directory when it named one, so a project-scoped
+      // agent resolves the same way it does on a direct browser send.
+      `?directory=${encodeURIComponent(overrides?.directory || WORKSPACE)}`,
+      new Headers({ 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );

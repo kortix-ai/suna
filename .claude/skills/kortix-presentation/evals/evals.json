@@ -2,58 +2,48 @@
   "skill_name": "kortix-presentation",
   "evals": [
     {
-      "id": "create-pitch-deck",
-      "prompt": "Build a Kortix pitch deck — 6 slides introducing our coding-agent platform that runs in your own repo.",
-      "expected_output": "An on-brand .pptx generated with pptxgenjs, run through repair.py + office/validate.py until it passes, and visually QA'd. Should read /product-marketing.md and ../comms for copy and ../brand-guidelines for visuals first.",
+      "id": "build-a-deck",
+      "prompt": "Build a Kortix deck for our connectors page — a short guided walkthrough I can screen record.",
+      "expected_output": "A new Next.js route: apps/web/src/app/presentations/decks/connectors.tsx exporting useSlides(), plus a row in registry.ts. No file artifact of any kind.",
       "assertions": [
-        "Reads product-marketing.md (or fallbacks) and ../brand-guidelines/SKILL.md before building.",
-        "Generates a .pptx via pptxgenjs using 6-char hex colors with no '#' prefix.",
-        "Uses Kortix neutrals plus exactly one accent (e.g. 2B91F7), not a rainbow.",
-        "Runs scripts/repair.py then office/validate.py (from inside office/) and iterates until 'All validations PASSED!'.",
-        "Composites the Kortix symbol top-left rather than generating or drawing a logo.",
-        "Avoids AI-slide hallmarks: no accent underline under titles, no colored side borders, no gradient fills."
+        "Creates decks/<slug>.tsx exporting `useSlides(): SlideDef[]` and adds exactly one row to DECKS in registry.ts — no hand-written route, layout, or metadata.",
+        "Never produces a .pptx, Keynote, Google Slides link, or Markdown slides file, and never suggests one.",
+        "Imports copy from features/marketing/connectors/content.ts rather than retyping claims.",
+        "Names its chapters in a const and renders them through <Spine chapters={…} active={n} />.",
+        "Attaches the spoken script as `notes`, as an array where a slide has build steps.",
+        "Verifies with `npx tsc --noEmit` and `npx eslint src/app/presentations`, then drives the deck in a browser."
       ]
     },
     {
-      "id": "edit-existing-deck",
-      "prompt": "Here's deck.pptx from a client template — swap it to Kortix branding and fix the wording on slides 2 and 4.",
-      "expected_output": "Enters the editing flow: unpack → edit XML → clean → pack --original, recolored to Kortix tokens, validated, and visually checked.",
+      "id": "animated-mechanism",
+      "prompt": "Make the credential flow slide animate — each arrow press should add another stage of the diagram.",
+      "expected_output": "The slide gains `steps: N` and its `node` becomes `(step) => …`, with parts ghosted until their step raises them.",
       "assertions": [
-        "Uses office/unpack.py and office/pack.py (run from office/) rather than regenerating from scratch.",
-        "Recolors to Kortix neutrals + one accent and recolors the logo to the surface instead of redrawing it.",
-        "Removes template hallmarks (accent underlines, colored side borders, gradients) during the recolor.",
-        "Validates the result (pack.py --original or office/validate.py) and runs visual QA before delivering.",
-        "Edits each slide{N}.xml as an independent file and keeps one <a:p> per logical item."
+        "Sets `steps` on the SlideDef and changes `node` to a function of `step`.",
+        "Reveals parts with opacity transitions, never conditional rendering — layout must not reflow between steps.",
+        "Declares any sub-component at module scope, not inside the diagram's render.",
+        "Gives each build step its own line in the `notes` array.",
+        "Confirms in a browser that one press adds exactly one stage."
       ]
     },
     {
-      "id": "extract-deck-text",
-      "prompt": "Pull all the text out of this quarterly.pptx so I can paste it into an email.",
-      "expected_output": "Uses markitdown to extract text (and optionally thumbnail.py for a visual grid); does not regenerate or edit the file.",
+      "id": "refuses-file-formats",
+      "prompt": "Can you export this deck as a PowerPoint so I can email it?",
+      "expected_output": "Explains that Kortix decks are routes and offers the link (and fullscreen recording) instead of generating a file.",
       "assertions": [
-        "Runs `python -m markitdown quarterly.pptx` to extract the content.",
-        "Does not modify or regenerate the source file for a read-only extraction task.",
-        "Returns the extracted text in a usable form."
+        "Does not generate a .pptx or install pptx tooling.",
+        "Offers the /presentations/<slug> URL, and recording the deck as a video, as the way to share it.",
+        "Does not treat the request as a reason to abandon the route format."
       ]
     },
     {
-      "id": "validation-gate-required",
-      "prompt": "I generated slides with pptxgenjs but PowerPoint says the file needs repair. Fix it.",
-      "expected_output": "Runs repair.py (which fixes phantom slideMaster entries, ZIP directory entries, and presentation.xml element order) then office/validate.py to confirm schema validity.",
+      "id": "copy-accuracy",
+      "prompt": "Add a slide saying every session runs in its own microVM and secrets are scoped per person.",
+      "expected_output": "Pushes back with the accurate wording from the content modules' accuracy gates before writing anything.",
       "assertions": [
-        "Runs scripts/repair.py on the .pptx.",
-        "Knows raw pptxgenjs output is not schema-valid until repaired (notesMasterIdLst emitted out of order).",
-        "Confirms the fix with office/validate.py run from inside the office/ directory.",
-        "Iterates fix-and-verify until validation passes."
-      ]
-    },
-    {
-      "id": "defer-non-deck-image",
-      "prompt": "Make me a single square social graphic announcing our launch.",
-      "expected_output": "Recognizes this is a standalone image, not a slide deck, and defers to the kortix-image skill rather than producing a .pptx.",
-      "assertions": [
-        "Does not generate a .pptx for a single standalone image request.",
-        "Defers to ../kortix-image/SKILL.md for social/brand image generation."
+        "Flags that blanket 'microVM' is false for the default provider — accurate for Platinum only — and uses 'sandbox'.",
+        "Flags that per-person/per-group secret scoping was retired; scoping is per project, per agent grant, and connector-scoped.",
+        "Cites features/marketing/security-page/content.ts rather than asserting from memory."
       ]
     }
   ]

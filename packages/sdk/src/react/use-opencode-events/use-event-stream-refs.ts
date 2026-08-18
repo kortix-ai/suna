@@ -113,9 +113,15 @@ export function useEventStreamRefs(deps: {
   const markSessionAbortedLocally = useRef(
     (sessionID: string, message = 'The operation was aborted because the runtime shut down.') => {
       if (!sessionID) return;
+      // `reason: 'runtime-disposed'` — pure infrastructure (OpenCode
+      // disposed/respawned mid-stream), never a user action. Read via the
+      // SDK's `abortErrorReason` (`core/http/abort-error.ts`); apps/web
+      // renders this reason as nothing — no Interrupted row, no error
+      // banner — because a runtime that respawns cleanly must not scar the
+      // transcript.
       const error: SyntheticAbortError = {
         name: 'AbortError',
-        data: { message },
+        data: { message, reason: 'runtime-disposed' },
       };
       stopCompaction(sessionID);
       // Locally-synthesized event — not from the wire, so it intentionally
@@ -145,6 +151,19 @@ export function useEventStreamRefs(deps: {
     useSyncStore.getState().clearOptimisticMessages(sessionID);
   });
 
+  /**
+   * Walk any session the runtime no longer reports as busy back to idle.
+   *
+   * This is NOT an inference from silence. `client.session.status()` is a REST
+   * read of the runtime's COMPLETE set of non-idle sessions, so a session's
+   * absence from it is a positive statement about that session. It is the only
+   * repair the raw `sessionStatus` slot has for a MISSED terminal frame — a
+   * laptop sleeping mid-turn, a stream reconnect — and two live surfaces still
+   * read that slot directly rather than the working projection: the session
+   * panel's `isSessionBusy`, and `SubAgentStatusBanner`'s retry countdown for
+   * CHILD sessions, which have no Kortix session row at all and therefore can
+   * never be covered by `GET .../turn`.
+   */
   const reconcileMissingBusySessions = useRef((nextStatuses: Record<string, SessionStatus>) => {
     const previousStatuses = useSyncStore.getState().sessionStatus;
     for (const [sessionID, status] of Object.entries(previousStatuses)) {

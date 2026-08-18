@@ -40,7 +40,7 @@ describe('kortix-projects SQL safety', () => {
 
 describe('kortix-projects authorization safety', () => {
   test('session inventory requires project.session.read before querying sessions', () => {
-    const source = readProjectRoute('r7.ts');
+    const source = readProjectRoute('project-sessions.ts');
     const routeStart = source.indexOf('// GET /v1/projects/:projectId/sessions');
     const routeEnd = source.indexOf("path: '/{projectId}/sessions/{sessionId}'", routeStart);
     const route = source.slice(routeStart, routeEnd);

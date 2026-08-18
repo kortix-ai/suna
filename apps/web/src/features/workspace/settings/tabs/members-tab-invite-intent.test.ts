@@ -3,13 +3,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { consumeMembersTabIntent } from './members-tab-intent';
-import { buildSettingsPanelSettingsNav } from '@/features/workspace/settings/settings-panel';
+import { buildStandaloneCapabilityNav } from '@/features/workspace/capabilities/shared/standalone-settings-nav';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
  * `MembersTabInner` (`members-tab.tsx`) consumes the Cmd+K "Invite members"
- * deep link (`command-palette.tsx:1146`,
- * `openSettings('members', { membersTab: 'invite' })`) via a `useEffect`
+ * deep link (`handleInviteMembers` in `command-palette.tsx`, which sets
+ * `membersTab: 'invite'` on the store and then routes to
+ * `/projects/<id>/members`) via a `useEffect`
  * that calls `consumeMembersTabIntent` and, on a non-null result, sets
  * `inviteOpen` to open `InviteMemberDialog`. That producer never stopped
  * firing when `MembersView` (the previous consumer) was unmounted by this
@@ -31,24 +32,37 @@ import { useSettingsPanelStore } from '@/stores/settings-panel-store';
  * fired — same caveat `members-view.test.ts` already carried for its own
  * `if (consumed) setTab(consumed)` line, never separately DOM-tested either.
  */
+/**
+ * Members is its own top-level Customize tab now (`/projects/[id]/members`),
+ * so the `SettingsNav` under test is `members-page.tsx`'s adapter. The intent
+ * itself still rides on the settings-panel store — see
+ * `members-tab-intent.test.ts`'s header for why.
+ */
+const nav = () =>
+  buildStandaloneCapabilityNav({
+    projectId: 'p1',
+    activeTab: 'members',
+    membersTab: useSettingsPanelStore.getState().membersTab,
+    navigateTo: () => {},
+  });
+
 beforeEach(() => {
-  useSettingsPanelStore.setState({ open: false, tab: 'secrets', membersTab: 'people' });
+  useSettingsPanelStore.setState({ open: false, membersTab: 'people' });
 });
 
 describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 -> members-tab.tsx)", () => {
   test('a fresh Cmd+K "Invite members" intent is consumed on mount — the dialog should open', () => {
-    // Step 1: Cmd+K "Invite members" -> openSettings('members', { membersTab: 'invite' }).
-    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
+    // Step 1: Cmd+K "Invite members" sets the intent, then routes.
+    useSettingsPanelStore.setState({ membersTab: 'invite' });
     expect(useSettingsPanelStore.getState().membersTab).toBe('invite');
 
-    // Step 2: MembersTab mounts (SettingsTabPane's `if (!active) return null;`
-    // has already passed — this is the active tab). Its effect calls exactly
-    // this function with the nav it was just handed.
-    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    // Step 2: MembersTab mounts (the page mounts only the active section).
+    // Its effect calls exactly this function with the nav it was just handed.
+    const current = nav();
     const consumed = consumeMembersTabIntent({
-      membersTab: nav.membersTab,
-      activeTab: nav.activeTab,
-      navigate: nav.navigate,
+      membersTab: current.membersTab,
+      activeTab: current.activeTab,
+      navigate: current.navigate,
     });
 
     // A non-null return is what `MembersTabInner` maps 1:1 to
@@ -57,12 +71,12 @@ describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 
   });
 
   test('consuming clears the intent in the same shot — a re-render does not see it again', () => {
-    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
-    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    useSettingsPanelStore.setState({ membersTab: 'invite' });
+    const current = nav();
     consumeMembersTabIntent({
-      membersTab: nav.membersTab,
-      activeTab: nav.activeTab,
-      navigate: nav.navigate,
+      membersTab: current.membersTab,
+      activeTab: current.activeTab,
+      navigate: current.navigate,
     });
 
     // Cleared on the live store.
@@ -72,7 +86,7 @@ describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 
     // double invocation, or the user leaving and returning to the tab)
     // reads a FRESH nav off the now-cleared store and must NOT reopen the
     // dialog.
-    const navAfter = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    const navAfter = nav();
     const consumedAgain = consumeMembersTabIntent({
       membersTab: navAfter.membersTab,
       activeTab: navAfter.activeTab,
@@ -83,14 +97,13 @@ describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 
 
   test('a plain tab switch to Members with no pending intent does not open the dialog', () => {
     // No Cmd+K invite — just navigating to Members normally.
-    useSettingsPanelStore.getState().openSettings('members');
     expect(useSettingsPanelStore.getState().membersTab).toBe('people');
 
-    const nav = buildSettingsPanelSettingsNav(useSettingsPanelStore.getState());
+    const current = nav();
     const consumed = consumeMembersTabIntent({
-      membersTab: nav.membersTab,
-      activeTab: nav.activeTab,
-      navigate: nav.navigate,
+      membersTab: current.membersTab,
+      activeTab: current.activeTab,
+      navigate: current.navigate,
     });
     expect(consumed).toBeNull();
   });
@@ -102,8 +115,7 @@ describe("MembersTabInner's invite-intent consumption (command-palette.tsx:1146 
  * deep link has to do two things, not one: select `people` AND open the
  * dialog. `MembersTabInner` can't render here (no `SettingsNavProvider`, no
  * `QueryClientProvider`, no DOM library — this app has none), so the wiring is
- * pinned at source level, the same mechanism `member-role-safety.test.ts` uses
- * against this exact file.
+ * pinned at source level, reading `members-tab.tsx`'s own source below.
  *
  * **Comments are stripped first.** This file's own header comment quotes the
  * statement sequence; matching the raw source would let the documentation
@@ -130,11 +142,15 @@ describe('the invite deep link lands on the People tab, not just any tab', () =>
   });
 
   test('the invite dialog slot is mounted outside Tabs, so it survives a tab switch', () => {
-    // Both dialog slots are rendered after `</Tabs>`; if either moved inside a
-    // `TabsContent`, Radix would unmount it the moment the user changed tab.
+    // Rendered after `</Tabs>`; if it moved inside a `TabsContent`, Radix
+    // would unmount it the moment the user changed tab. This pane has one
+    // dialog slot now — the account-scope one (`accountInviteDialogSlot`)
+    // was removed along with every other account-scope control on this page
+    // (2026-08-18, "Account controls moved out" — see members-tab.tsx's
+    // header comment).
     const closingTabs = flatMembersTab.indexOf('</Tabs>');
     expect(closingTabs).toBeGreaterThan(-1);
     expect(flatMembersTab.indexOf('{inviteDialogSlot}')).toBeGreaterThan(closingTabs);
-    expect(flatMembersTab.indexOf('{accountInviteDialogSlot}')).toBeGreaterThan(closingTabs);
+    expect(flatMembersTab).not.toContain('accountInviteDialogSlot');
   });
 });

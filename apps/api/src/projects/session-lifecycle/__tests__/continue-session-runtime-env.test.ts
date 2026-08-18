@@ -13,6 +13,10 @@ const events: string[] = [];
 mock.module('../../../config', () => ({ config: { KORTIX_URL: 'https://api.test' } }));
 
 mock.module('../../../shared/db', () => ({
+  // `mock.module` replaces the WHOLE module: every export the import graph
+  // reaches must exist here. `hasDatabase` entered this test's graph when
+  // engine.ts started importing opencode-mapping (staged-revert check).
+  hasDatabase: false,
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -58,6 +62,10 @@ mock.module('../../routes/shared', () => ({
 
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
+  // Complete-module stand-ins: every export the (growing) import graph
+  // reaches must exist, or the whole file dies with "Export named X not
+  // found". `resolveServiceKey` is reached via engine.ts → opencode-mapping.
+  resolveServiceKey: async () => 'service-key-1',
 }));
 
 mock.module('../../../platform/service-key', () => ({
@@ -92,11 +100,18 @@ mock.module('../../lib/sessions', () => ({
 }));
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => 'automation-user-1',
+  resolveAgentRunAttribution: async () => null,
 }));
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
+  // The prompt inbox's admission refusal — `executeQueuedContinue` calls it
+  // before anything else, so every store mock has to carry it or the engine
+  // import fails outright.
+  requeueForAdmission: async () => {
+    throw new Error('not expected: this test never refuses admission');
+  },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
   },

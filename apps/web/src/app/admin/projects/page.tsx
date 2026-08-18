@@ -53,12 +53,18 @@ const STATUS_OPTIONS = [
 
 type StatusFilter = (typeof STATUS_OPTIONS)[number]['value'];
 
+const shortDateFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 /** Absolute date for the Created column — same format the accounts table uses. */
 function shortDate(value: string | null): string {
   if (!value) return '—';
   const t = new Date(value);
   if (!Number.isFinite(+t)) return '—';
-  return t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return shortDateFormat.format(t);
 }
 
 export default function AdminProjectsPage() {

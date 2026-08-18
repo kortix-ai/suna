@@ -25,6 +25,7 @@ afterEach(() => {
 });
 
 import {
+  START_STASH_TTL_MS,
   clearStartStash,
   migrateLegacyStash,
   migrateStash,
@@ -268,5 +269,54 @@ describe('migrateStash', () => {
     expect(readStartStash('oc_4')?.prompt).toBe('already here');
     // Source is still cleared even when the migration was skipped.
     expect(readStartStash('route_4')).toBeNull();
+  });
+});
+
+describe('start-stash age bound', () => {
+  // Regression guard: a stash restored by a failed replay (or never consumed
+  // because the session page never mounted) used to live for the tab's whole
+  // life — reopening that session days later auto-sent the stale prompt into
+  // its by-then-real conversation. A stash is a hand-off for THIS navigation,
+  // so one older than the delivery-starvation bound is dead, not pending.
+  test('a stash older than the TTL reads as null and is cleared', () => {
+    const stale = Date.now() - START_STASH_TTL_MS - 1;
+    sessionStorage.setItem(
+      startStashKey('ses_ttl'),
+      JSON.stringify({ prompt: 'old prompt', model: null, agent: null, at: stale }),
+    );
+
+    expect(readStartStash('ses_ttl')).toBeNull();
+    expect(sessionStorage.getItem(startStashKey('ses_ttl'))).toBeNull();
+  });
+
+  test('a stash within the TTL still reads', () => {
+    const fresh = Date.now() - 1000;
+    sessionStorage.setItem(
+      startStashKey('ses_ttl2'),
+      JSON.stringify({ prompt: 'recent prompt', model: null, agent: null, at: fresh }),
+    );
+
+    expect(readStartStash('ses_ttl2')?.prompt).toBe('recent prompt');
+  });
+
+  test('writeStartStash stamps the write time', () => {
+    const before = Date.now();
+    writeStartStash('ses_ttl3', { prompt: 'p', model: null, agent: null });
+    const raw = JSON.parse(sessionStorage.getItem(startStashKey('ses_ttl3')) ?? '{}') as {
+      at?: number;
+    };
+    expect(typeof raw.at).toBe('number');
+    expect(raw.at as number).toBeGreaterThanOrEqual(before);
+  });
+
+  test('a stash without a stamp (pre-TTL producer, legacy shape) is treated as fresh', () => {
+    sessionStorage.setItem(
+      startStashKey('ses_ttl4'),
+      JSON.stringify({ prompt: 'unstamped', model: null, agent: null }),
+    );
+    expect(readStartStash('ses_ttl4')?.prompt).toBe('unstamped');
+
+    sessionStorage.setItem('opencode_pending_prompt:ses_ttl5', 'legacy prompt');
+    expect(readStartStash('ses_ttl5')?.prompt).toBe('legacy prompt');
   });
 });

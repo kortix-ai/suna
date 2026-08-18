@@ -22,6 +22,8 @@ A sandbox session connector token must include:
 - `project_id`: the owning project.
 - `session_id`: the project session id, equal to the sandbox id.
 - `agent_grant`: the resolved grant for the session boot agent from `[[agents]]`.
+  The proxy re-mints this field before every prompt from the agent that actually
+  runs. See **Agent Switching Policy**.
 
 Cold provisioning and restored warm-snapshot sessions must mint the same shape of token. The token is unique per session; a restored session must never keep a project-only token from its seed capture.
 
@@ -29,9 +31,17 @@ Cold provisioning and restored warm-snapshot sessions must mint the same shape o
 
 ## Agent Switching Policy
 
-The connector credential is bound to the session boot agent. A prompt that explicitly asks OpenCode to run a **different concrete agent** inside the same running sandbox is rejected by the API proxy before the request reaches OpenCode. This prevents a switched agent from inheriting the original agent's connector or Kortix CLI grant.
+A prompt may ask OpenCode to run a **different concrete agent** inside the same running sandbox. The API proxy allows it and re-scopes the session before the request reaches OpenCode. Three steps run per prompt, in order:
 
-The supported secure flow for a different agent is to start a new session with that agent selected. A future per-turn token model may relax this, but it must mint and inject a new connector token per requested agent before the prompt reaches tool execution.
+1. Authorize the switch. The caller must hold `project.agent.read` on the agent the prompt names. Otherwise the proxy returns `403 AGENT_NOT_AUTHORIZED`.
+2. Re-push the secret env for the running agent (`syncSandboxEnvForPrompt`). An unreadable `[[agents]]` manifest fails closed with `503 AGENT_SECRET_GRANT_UNRESOLVED`.
+3. Re-mint the session token's `agent_grant` from the running agent's manifest block (`remintGrantForAgentSwitch`). A failed re-mint returns `503 AGENT_SWITCH_GRANT_UNAPPLIED`.
+
+A switched agent therefore never inherits the boot agent's connector or Kortix CLI grant: both are checked against `account_tokens.agent_grant` at call time, and step 3 rewrites that row.
+
+Secrets are the exception. Step 2 changes future delivery only. It cannot un-read a value the previous agent already read into its shell or its context.
+
+Known limit (`session-token-grant.ts:200-206`): two concurrent prompts that name different agents on one `session_id` race on the single token row, and the last writer wins. The loser's agent then runs under the winner's grant for that turn. The single-prompt path — every ordinary session — is correct.
 
 ### The `default` sentinel is non-binding
 
@@ -40,12 +50,14 @@ The supported secure flow for a different agent is to start a new session with t
 Consequently the proxy treats `default` as non-binding on **either** side of the comparison:
 
 - A prompt whose `agent` is `default`, or which omits `agent`, is never a switch.
-- A session whose bound agent is `default` never rejects a prompt's `agent`, whatever concrete name it carries.
-- A switch is rejected **only** when the session is bound to a concrete (non-`default`) agent *and* the prompt requests a *different* concrete agent.
+- A session whose bound agent is `default` never treats a prompt's `agent` as a switch, whatever concrete name it carries.
+- `isConcreteAgentSwitch` (`sandbox-proxy/routes/preview.ts`) recognises a switch **only** when the session is bound to a concrete (non-`default`) agent *and* the prompt requests a *different* concrete agent.
+
+That predicate now gates the authorization check, not a refusal. A prompt it does not recognise as a switch skips the `project.agent.read` check and runs the session's own agent.
 
 For a `default` session the proxy also strips the prompt's `agent` field before forwarding, so OpenCode always runs the agent the session actually booted with (`default_agent` = the agent the connector token was minted for), regardless of which concrete name the client speculatively echoed.
 
-This is required for correctness, not just leniency: the web client resolves "the default" to a concrete agent name for display and echoes it back on follow-up turns, and a first-turn race can send that name before the session's bound agent has loaded. A literal `requested !== stored` comparison turned that ordinary echo into a bogus `AGENT_SWITCH_REQUIRES_NEW_SESSION` 409 on the second message of essentially every new session.
+This is required for correctness, not just leniency: the web client resolves "the default" to a concrete agent name for display and echoes it back on follow-up turns, and a first-turn race can send that name before the session's bound agent has loaded. A literal `requested !== stored` comparison turned that ordinary echo into a bogus `AGENT_SWITCH_REQUIRES_NEW_SESSION` 409 on the second message of essentially every new session (the 409 has since been removed entirely).
 
 ## CLI Behavior
 

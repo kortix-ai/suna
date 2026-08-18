@@ -1597,17 +1597,6 @@ describe('project session API contract', () => {
 
   test('derives session origin from the caller token without session attribution fields', async () => {
     const app = createApp();
-    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'daytona',
-        base_ref: 'main',
-        metadata: { source: 'system:forged' },
-      }),
-    });
-    expect(bodySpoof.status).toBe(201);
-    expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
 
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1649,6 +1638,29 @@ describe('project session API contract', () => {
     expect(patBody.origin).toBe('backend');
     expect(patBody).not.toHaveProperty('end_user_ref');
     expect(patBody).not.toHaveProperty('origin_ref');
+  });
+
+  test('rejects client-supplied trigger authorization metadata at session create', async () => {
+    const app = createApp();
+    for (const [key, value] of [
+      ['source', 'trigger:scheduler'],
+      ['trigger_kind', 'git'],
+      ['trigger_slug', 'forged-trigger'],
+    ] as const) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'daytona',
+          base_ref: 'main',
+          metadata: { [key]: value },
+        }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: `metadata key is server-managed: ${key}`,
+      });
+    }
   });
 
   test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
@@ -2066,6 +2078,18 @@ describe('project session API contract', () => {
       {
         body: { metadata: { title_source: 'zzz' } },
         message: 'metadata key is server-managed: title_source',
+      },
+      {
+        body: { metadata: { source: 'trigger:scheduler' } },
+        message: 'metadata key is server-managed: source',
+      },
+      {
+        body: { metadata: { trigger_kind: 'git' } },
+        message: 'metadata key is server-managed: trigger_kind',
+      },
+      {
+        body: { metadata: { trigger_slug: 'forged-trigger' } },
+        message: 'metadata key is server-managed: trigger_slug',
       },
       {
         body: { random: 'field' },
@@ -2542,7 +2566,195 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a sandbox that stayed stopped after wake grace', async () => {
+  // ═══ THE MID-TURN PARK THIS CLOSES ═══
+  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
+  // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
+  // This endpoint is polled every second and Daytona folds `stopping` and
+  // `pending_stop` into `stopped` (platform/providers/daytona-state.ts), so ONE
+  // transitional read parked the row, settled the live turn's ledger
+  // `runtime_gone` and kicked the client into the wake flow with the turn's work
+  // lost. Unlike account deletion or the orphan sweep, this caller has NOT
+  // stopped the box itself — it is a pure observation, so it must confirm.
+  test('dashboard start does NOT park a box mid-turn on one stopped provider read', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_stop_unconfirmed',
+    });
+    // The row keeps its turn authority, the box is never stopped, and nothing
+    // is woken: the next poll either sees `running` again or earns the
+    // confirmation one window later.
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+    expect(providerStartCalls).toBe(0);
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toEqual(expect.any(Number));
+  });
+
+  test('dashboard start parks a mid-turn box once a SECOND stopped read confirms it', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-confirmed',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // An earlier poll recorded the first observation, longer ago than
+          // MIDTURN_STOP_CONFIRMATION_MS.
+          pendingStopObservedAtMs: Date.now() - 20_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_waking',
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  // ═══ THE ARMED-AND-NEVER-DISARMED MARKER THIS CLOSES ═══
+  // This endpoint is polled about once a second, and it can ARM the mid-turn
+  // stop confirmation. If it never disarms it, two transient `pending_stop`
+  // misreads MINUTES apart — with hundreds of healthy `running` reads in
+  // between — read as one confirmed provider transition and park a live box.
+  // A confirmation is about ONE transition, so a `running` answer from any
+  // observer ends it.
+  test('dashboard start drops the pending-stop marker when the provider says running', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-recovered',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // Armed by an earlier poll that read the transitional `pending_stop`.
+          pendingStopObservedAtMs: Date.now() - 5_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'ready' });
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toBeUndefined();
+    // The turn authority is untouched — only the confirmation is.
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+  });
+
+  // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
+  // provider lost the box — the provider just answered `stopped`, which proves
+  // the box exists. The row parks retriable instead of being preserved as
+  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2578,8 +2790,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_wake_timeout',
       sandbox: { external_id: 'box-stuck-stopped', status: 'stopped' },
     });
 
@@ -2587,6 +2799,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-stuck-stopped');
+    // A park must never carry the loss flag the web renders as "computer was
+    // lost", and must record which failure parked it.
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
   });
 
   test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
@@ -2805,6 +3022,62 @@ describe('project session API contract', () => {
     expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
   });
 
+  // The wake cooldown is a "the provider did not confirm this wake, retry
+  // shortly" payload, and it is evaluated BEFORE any provider truth. For a row
+  // already preserved as `runtimeIdentityState: 'unavailable'` that answer is
+  // false twice over: the identity is gone, so there is nothing to retry, and
+  // `failure.retryable: true` invites exactly the click that can only 409.
+  //
+  // This window used to be unreachable in practice (a preserve happened long
+  // after the cooldown lapsed). The maintenance pass now preserves the identity
+  // the moment the provider proves removal — which lands INSIDE the 2-minute
+  // cooldown of the wake that just failed — so the cooldown must yield to it.
+  test('a preserved-unavailable identity is not reported as a retryable wake cooldown', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, status: 'stopped', opencodeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-gone-in-cooldown',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          runtimeIdentityState: 'unavailable',
+          preservedExternalId: 'box-gone-in-cooldown',
+          runtimeUnavailableReason: 'runtime_removed',
+          // Cooldown still ticking from the wake that failed moments ago.
+          runtimeWakeRetryAfterAt: new Date(Date.now() + 90_000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+    });
+    // The specific lie: a retryable cooldown offered for an identity that is gone.
+    expect(body.reason).not.toBe('runtime_wake_cooldown');
+    expect((body.failure as { retryable?: boolean } | null)?.retryable).not.toBe(true);
+    // No wake is issued against a runtime the provider has already disowned.
+    expect(providerStartCalls).toBe(0);
+  });
+
   test('dashboard start restores a provider-removed sandbox in place without provisioning', async () => {
     const app = createApp();
     sessionRow = {
@@ -2982,7 +3255,13 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  // Incident 2026-08-14: this exact population — a RUNNING box whose runtime
+  // never became ready (a dead local tunnel blocked the guest's git clone) —
+  // was preserved as "computer was lost" while both provider control planes
+  // showed the box alive. A failed boot on a present box parks retriable and
+  // stops the provider box, so a DB-stopped row cannot keep burning unmetered
+  // compute.
+  test('dashboard start parks (not preserves) a running sandbox whose OpenCode runtime never becomes reachable', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -3021,8 +3300,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_unreachable_timeout',
       sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
     });
 
@@ -3030,6 +3309,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
+    // The box was RUNNING when the boot failed: the park must stop it.
+    expect(providerStopCalls).toBe(1);
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {

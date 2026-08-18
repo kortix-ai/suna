@@ -1,9 +1,48 @@
 import { describe, expect, test } from 'bun:test';
-import { CAPABILITY_TABS, activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
+import {
+  CAPABILITY_TABS,
+  activeCapabilityTab,
+  capabilityTabHref,
+  channelsHref,
+} from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists connectors, agent, skills in that order', () => {
-    expect(CAPABILITY_TABS.map((t) => t.key)).toEqual(['connectors', 'agent', 'skills']);
+  test('lists models, connectors, agent, skills, triggers, secrets, members, config in that order', () => {
+    // Models leads the bar (Jay, 2026-08-17) — it used to sit after Triggers.
+    expect(CAPABILITY_TABS.map((t) => t.key)).toEqual([
+      'models',
+      'connectors',
+      'agent',
+      'skills',
+      'triggers',
+      'secrets',
+      'members',
+      'config',
+    ]);
+  });
+
+  test('Channels is not a tab — it is a scope of Connectors', () => {
+    // It was one, briefly. Asserted absent rather than merely left out of the
+    // list above, so re-adding the key without re-adding a route fails here
+    // instead of shipping a tab that 404s.
+    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('channels');
+    expect(CAPABILITY_TABS.map((t) => t.label)).not.toContain('Channels');
+  });
+
+  test('channelsHref names the Connectors page and the scope that shows Channels', () => {
+    // The one URL. `/projects/<id>/channels` redirects to it, `GRADUATED`
+    // points at it, and the project-home Slack tile opens it — all through
+    // this function, so none of them can drift from the param the page parses.
+    expect(channelsHref('p1')).toBe('/projects/p1/connectors?scope=channels');
+  });
+
+  test('the Settings tab keys on `config`, never on `settings`', () => {
+    // `/projects/<id>/settings` is the settings OVERLAY's deep-link route. Two
+    // routes cannot share one segment, so the tab that holds project
+    // configuration takes `config` and keeps the label a person reads.
+    const settings = CAPABILITY_TABS.find((t) => t.label === 'Settings');
+    expect(settings?.key).toBe('config');
+    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('settings');
   });
 
   test('the Agents tab keeps a singular key and a plural label', () => {
@@ -18,6 +57,8 @@ describe('capabilityTabHref', () => {
   test('builds a project-scoped path', () => {
     expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/skills');
     expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/agent');
+    expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/triggers');
+    expect(capabilityTabHref('p1', 'config')).toBe('/projects/p1/config');
   });
 });
 
@@ -26,8 +67,10 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/agent')).toBe('agent');
     expect(activeCapabilityTab('/projects/p1/connectors')).toBe('connectors');
     expect(activeCapabilityTab('/projects/p1/skills')).toBe('skills');
+    expect(activeCapabilityTab('/projects/p1/triggers')).toBe('triggers');
+    expect(activeCapabilityTab('/projects/p1/config')).toBe('config');
   });
-  test('ignores trailing segments', () => {
+  test('ignores a trailing slash', () => {
     expect(activeCapabilityTab('/projects/p1/skills/')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/agent/')).toBe('agent');
   });
@@ -36,5 +79,18 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1')).toBeNull();
     // `agents` is the OLD Customize section name, not this route.
     expect(activeCapabilityTab('/projects/p1/agents')).toBeNull();
+  });
+  test('does not match a deeper path that merely ends in a tab key', () => {
+    // The Settings overlay is routable at /projects/<id>/settings/<tab>, and
+    // its former schedules/webhooks tab ids still redirect through
+    // `legacySectionRedirect`. Matching on the last segment alone reported
+    // Settings as the capability tab and lit the sidebar's Customize row from
+    // inside Settings.
+    expect(activeCapabilityTab('/projects/p1/settings/schedules')).toBeNull();
+    expect(activeCapabilityTab('/projects/p1/settings/webhooks')).toBeNull();
+    expect(activeCapabilityTab('/projects/p1/customize/skills')).toBeNull();
+    // The Settings tab's own segment, one level deeper — the overlay route is
+    // `/settings/<tab>`, so `config` must not be claimed from there either.
+    expect(activeCapabilityTab('/projects/p1/settings/config')).toBeNull();
   });
 });

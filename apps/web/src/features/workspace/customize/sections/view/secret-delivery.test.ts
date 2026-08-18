@@ -11,6 +11,7 @@ import {
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
   networkBoundaryEchoNotice,
+  networkBoundaryMode,
   parseBoundaryHosts,
   readSecretDeliverySync,
   secretDeliveryBlockedReason,
@@ -81,10 +82,12 @@ describe('secretDeliveryPresentation', () => {
 
 /** The two fix sentences, pinned once. They are user-facing copy, so the exact
  *  wording is the assertion — a helper that stopped naming the flag would still
- *  return a non-empty string. */
-const SHIM_FIX = 'Turn on "Network boundary without Platinum" in Feature flags → Experimental.';
+ *  return a non-empty string. The flag name has to match the
+ *  `network_boundary_shim` entry in the API's feature-flag registry, which is
+ *  the label the Experimental screen renders. */
+const SHIM_FIX = 'Turn on "Network boundary in-guest shim" in Feature flags → Experimental.';
 const PIN_FIX =
-  'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider, or turn on "Network boundary without Platinum" in Feature flags → Experimental.';
+  'Turn on "Network boundary in-guest shim" in Feature flags → Experimental, or pin this project to Platinum in Feature flags → Runtime → Sandbox provider.';
 
 describe('networkBoundaryAvailability', () => {
   test('requires the project itself to run on Platinum', () => {
@@ -111,6 +114,12 @@ describe('networkBoundaryAvailability', () => {
         default_sandbox_provider: 'daytona',
       }),
     ).toBe('project_not_pinned');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'e2b', 'platinum'],
+        default_sandbox_provider: 'e2b',
+      }),
+    ).toBe('project_not_pinned');
   });
 
   test('reports a deployment without Platinum as unsupported', () => {
@@ -120,17 +129,31 @@ describe('networkBoundaryAvailability', () => {
         default_sandbox_provider: 'daytona',
       }),
     ).toBe('unsupported');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'e2b'],
+        default_sandbox_provider: 'e2b',
+      }),
+    ).toBe('unsupported');
     expect(networkBoundaryAvailability(undefined)).toBe('unsupported');
     expect(networkBoundaryAvailability(null)).toBe('unsupported');
   });
 
   test('the shim flag makes it available on a project with no Platinum at all', () => {
     // The second mechanism does not run at a provider edge, so the provider the
-    // project is pinned to stops mattering.
+    // project is pinned to stops mattering — the shim is guest-side code and is
+    // the same code on every provider that runs it.
     expect(
       networkBoundaryAvailability({
         available_sandbox_providers: ['daytona'],
         default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('available');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['e2b'],
+        default_sandbox_provider: 'e2b',
         experimental: { network_boundary_shim: true },
       }),
     ).toBe('available');
@@ -162,9 +185,67 @@ describe('networkBoundaryAvailability', () => {
   });
 });
 
+describe('networkBoundaryMode', () => {
+  test('a project pinned to Platinum is served by the provider edge', () => {
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+      }),
+    ).toBe('provider-edge');
+  });
+
+  test('the edge wins over the flag when both would serve', () => {
+    // Mirrors the API's precedence: the edge needs nothing in the guest and
+    // injects for every client, so it is what the session actually gets.
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('provider-edge');
+  });
+
+  test('every non-Platinum provider is served by the same in-guest shim', () => {
+    for (const provider of ['daytona', 'e2b']) {
+      expect(
+        networkBoundaryMode({
+          available_sandbox_providers: [provider, 'platinum'],
+          default_sandbox_provider: provider,
+          experimental: { network_boundary_shim: true },
+        }),
+      ).toBe('in-guest-shim');
+    }
+  });
+
+  test('reports no mechanism when neither half is in place', () => {
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['e2b'],
+        default_sandbox_provider: 'e2b',
+      }),
+    ).toBeNull();
+    // Platinum offered but not pinned is the state that used to read as
+    // "available": nothing injects until a session actually runs there.
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'daytona',
+      }),
+    ).toBeNull();
+    expect(networkBoundaryMode(undefined)).toBeNull();
+    expect(networkBoundaryMode(null)).toBeNull();
+  });
+});
+
 describe('networkBoundaryBlockedReason', () => {
-  test('names both fixes for an unpinned project', () => {
-    expect(networkBoundaryBlockedReason('project_not_pinned')).toBe(PIN_FIX);
+  test('leads with the flag on an unpinned project and keeps the pin as the alternative', () => {
+    const reason = networkBoundaryBlockedReason('project_not_pinned') ?? '';
+    expect(reason).toBe(PIN_FIX);
+    // The order is the assertion. Turning the flag on fixes this project;
+    // re-pinning moves every session in it onto another provider.
+    expect(reason.indexOf('Experimental')).toBeLessThan(reason.indexOf('Sandbox provider'));
   });
 
   test('a deployment without Platinum is now fixable, so it says how', () => {
@@ -173,6 +254,11 @@ describe('networkBoundaryBlockedReason', () => {
     expect(networkBoundaryBlockedReason('unsupported')).toBe(SHIM_FIX);
     expect(networkBoundaryBlockedReason('unsupported')).not.toContain('Not available');
     expect(networkBoundaryBlockedReason('available')).toBeNull();
+  });
+
+  test('names the flag by its mechanism, not by the provider it does without', () => {
+    expect(networkBoundaryBlockedReason('unsupported')).toContain('in-guest shim');
+    expect(networkBoundaryBlockedReason('project_not_pinned')).not.toContain('without Platinum');
   });
 });
 
@@ -617,36 +703,62 @@ describe('parseBoundaryHosts', () => {
  * The incident this text exists for: an agent probed an echo endpoint, read the
  * cut connection as a dead host, and invented a TLS explanation. Nothing in the
  * product said the boundary was there.
+ *
+ * The mode argument exists for the mirror-image failure. The shim never cuts a
+ * response, so telling a shim-backed project to expect an empty reply describes
+ * a working boundary as a broken one — and a genuinely dead host as success.
  */
 describe('networkBoundaryEchoNotice', () => {
-  test('names the symptom and denies the wrong conclusion', () => {
-    const notice = networkBoundaryEchoNotice('api.stripe.com');
+  test('names the provider edge symptom and denies the wrong conclusion', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com', 'provider-edge');
     expect(notice.body).toContain('curl: (52) Empty reply from server');
     expect(notice.body).toContain('the boundary working, not the host being down');
   });
 
+  test('the shim returns a redacted 200, so its notice says that instead', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com', 'in-guest-shim');
+    expect(notice.title).toContain('[REDACTED]');
+    expect(notice.body).toContain('[REDACTED]');
+    // The exact symptom the edge calls success is a real failure here, so the
+    // shim copy must not carry it.
+    expect(notice.body).not.toContain('curl: (52) Empty reply from server');
+    expect(notice.body).toContain('a real failure here');
+  });
+
   test('probes the first declared host with a credential-consuming request', () => {
-    const notice = networkBoundaryEchoNotice('API.Stripe.com\nuploads.stripe.com');
+    const notice = networkBoundaryEchoNotice('API.Stripe.com\nuploads.stripe.com', 'provider-edge');
     expect(notice.probe).toContain('https://api.stripe.com/');
     expect(notice.probe).toContain('never one that echoes headers');
     expect(notice.probe).toContain('200 = the header arrived. 401 = it did not.');
   });
 
+  test('probes the same way under both mechanisms', () => {
+    // An endpoint that spends the credential answers 200 or 401 either way,
+    // which is why it is the probe worth pasting.
+    expect(networkBoundaryEchoNotice('api.stripe.com', 'in-guest-shim').probe).toBe(
+      networkBoundaryEchoNotice('api.stripe.com', 'provider-edge').probe,
+    );
+  });
+
   test('falls back to a placeholder host before anything is typed', () => {
-    expect(networkBoundaryEchoNotice('').probe).toContain('https://api.example.com/');
+    expect(networkBoundaryEchoNotice('', 'in-guest-shim').probe).toContain(
+      'https://api.example.com/',
+    );
   });
 
   test('points at the two-probe procedure in the docs', () => {
-    const notice = networkBoundaryEchoNotice('api.stripe.com');
+    const notice = networkBoundaryEchoNotice('api.stripe.com', 'provider-edge');
     expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
     expect(notice.docsLabel).toBe('Verify it with two probes');
   });
 
   test('never suggests looking for the value in the sandbox', () => {
-    const notice = networkBoundaryEchoNotice('api.stripe.com');
-    const text = `${notice.title} ${notice.body} ${notice.probe}`;
-    expect(text).not.toContain('env ');
-    expect(text).not.toContain('{{secret}}');
-    expect(text.toLowerCase()).not.toContain('authorization:');
+    for (const mode of ['provider-edge', 'in-guest-shim'] as const) {
+      const notice = networkBoundaryEchoNotice('api.stripe.com', mode);
+      const text = `${notice.title} ${notice.body} ${notice.probe}`;
+      expect(text).not.toContain('env ');
+      expect(text).not.toContain('{{secret}}');
+      expect(text.toLowerCase()).not.toContain('authorization:');
+    }
   });
 });

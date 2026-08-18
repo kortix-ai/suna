@@ -21,11 +21,19 @@
  * opens no dialog at all, which is JAY-510's first acceptance criterion.
  */
 
-import { Modal, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
+import {
+  Modal,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProviderConnect } from '@/features/providers/provider-connect';
+import { useState } from 'react';
+import { CustomProviderPanel } from './custom-provider-panel';
 import { ModelsTab } from './models-tab';
-import type { ProjectProviderModalProps } from './types';
+import type { ActiveTab, ProjectProviderModalProps } from './types';
 import { pickInitialTab } from './utils';
 
 export type { ProjectProviderModalProps } from './types';
@@ -39,46 +47,105 @@ export function ProjectProviderModal({
 }: ProjectProviderModalProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="flex h-[min(680px,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-[600px] flex-col gap-0 overflow-hidden p-0 lg:max-w-[600px]">
-        <ModalHeader className="shrink-0 pb-3">
-          <ModalTitle>Models</ModalTitle>
+      {/* ONE height, declared once as a var and pinned from both sides.
+          `h-` alone is not enough on desktop: ModalVariants' bottom side
+          carries `lg:h-auto` (modal.tsx), which twMerge does NOT collapse
+          into the unprefixed `h-[…]` (different modifier group) — so the
+          modal silently became content-sized at `lg:` and its height jumped
+          with every tab switch (3 key rows vs 34 model rows vs the Custom
+          form). `lg:min-h` + `lg:max-h` clamp that `h-auto` to a constant.
+          The unprefixed mobile sheet keeps its own `max-h-[90%]` cap. */}
+      <ModalContent className="flex h-(--provider-modal-h) w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 [--provider-modal-h:min(680px,calc(100dvh-2rem))] lg:max-h-(--provider-modal-h) lg:min-h-(--provider-modal-h) lg:max-w-4xl">
+        <ModalHeader className="shrink-0">
+          <ModalTitle>AI models</ModalTitle>
+          {/* One line. Each tab states its own rule beside its own controls,
+              so repeating "everyone on this project can use it" up here only
+              makes the reader read it twice on the way to the same field. */}
           <ModalDescription>
-            Connect providers. Keys are stored per project and shared with everyone on it.
+            Connect your own AI accounts, and choose which models this project can use.
           </ModalDescription>
         </ModalHeader>
-        {/* UNCONTROLLED, keyed on the caller's request. The pre-image held the
-            active tab in state and re-seeded it from an effect on every open —
-            a synchronous `setState` in an effect body (React Compiler's
-            `react-hooks/set-state-in-effect`) plus an extra render. Remounting
-            on `${open}-${defaultTab}` gives the identical behaviour with no
-            state and no effect: reopening resets to the requested tab, and a
-            switch the user makes persists for as long as the modal stays
-            open. */}
-        <Tabs
+
+        <ProviderModalTabs
           key={`${open}-${defaultTab ?? ''}`}
-          defaultValue={pickInitialTab(defaultTab)}
-          className="flex min-h-0 flex-1 flex-col gap-0"
-        >
-          <div className="flex items-center gap-3 px-5 pb-3">
-            <TabsList className="shrink-0">
-              <TabsTrigger value="providers" className="text-xs">
-                Providers
-              </TabsTrigger>
-              <TabsTrigger value="models" className="text-xs">
-                Models
-              </TabsTrigger>
-            </TabsList>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <TabsContent value="providers" className="mt-0">
-              <ProviderConnect projectId={projectId} canWrite={canWrite} enabled={open} />
-            </TabsContent>
-            <TabsContent value="models" className="mt-0">
-              <ModelsTab projectId={projectId} />
-            </TabsContent>
-          </div>
-        </Tabs>
+          projectId={projectId}
+          open={open}
+          canWrite={canWrite}
+          defaultTab={defaultTab}
+        />
       </ModalContent>
     </Modal>
+  );
+}
+
+/**
+ * The tab strip, below the `key` boundary the shell owns.
+ *
+ * CONTROLLED, but with no effect and no re-seeding: `useState`'s initializer
+ * runs once per mount, and the parent's `key={`${open}-${defaultTab}`}`
+ * remounts this on every open — so reopening still lands on the requested tab,
+ * exactly as the uncontrolled version did, with no `setState` in an effect
+ * body (`react-hooks/set-state-in-effect`).
+ *
+ * Controlled at all because the Custom tab has to be able to hand the reader
+ * back: saving a custom provider gives it a key like any other, and the API
+ * keys list is where it now has a row. A "Done" that leaves you on the form
+ * you just submitted is not done.
+ */
+function ProviderModalTabs({
+  projectId,
+  open,
+  canWrite,
+  defaultTab,
+}: {
+  projectId: string;
+  open: boolean;
+  canWrite: boolean;
+  defaultTab?: ActiveTab;
+}) {
+  const [tab, setTab] = useState<ActiveTab>(() => pickInitialTab(defaultTab));
+
+  return (
+    <Tabs
+      value={tab}
+      onValueChange={(next) => setTab(next as ActiveTab)}
+      className="flex min-h-0 flex-1 flex-col gap-0"
+    >
+      <div className="flex items-center gap-3 px-5 pb-3">
+        <TabsList className="flex w-full shrink-0 items-center justify-start" type="underline">
+          {/* "API keys", not "Providers" — the tab is named after what you do
+              on it. Everything on that tab is a field you paste a key into,
+              and "API key" is the phrase every provider's own site uses on the
+              page you copy it from. */}
+          <TabsTrigger value="providers" className="w-auto flex-none text-xs" size="sm">
+            API keys
+          </TabsTrigger>
+          <TabsTrigger value="models" className="w-auto flex-none text-xs" size="sm">
+            Models
+          </TabsTrigger>
+          {/* Third, and last, because it is the rarest. "Custom" rather than
+              "Advanced": it names WHAT is on the tab, where "Advanced" only
+              warns you off it. */}
+          <TabsTrigger value="custom" className="w-auto flex-none text-xs" size="sm">
+            Custom
+          </TabsTrigger>
+        </TabsList>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <TabsContent value="providers" className="mt-0">
+          <ProviderConnect projectId={projectId} canWrite={canWrite} enabled={open} />
+        </TabsContent>
+        <TabsContent value="models" className="mt-0">
+          <ModelsTab projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="custom" className="mt-0">
+          <CustomProviderPanel
+            projectId={projectId}
+            canWrite={canWrite}
+            onDone={() => setTab('providers')}
+          />
+        </TabsContent>
+      </div>
+    </Tabs>
   );
 }

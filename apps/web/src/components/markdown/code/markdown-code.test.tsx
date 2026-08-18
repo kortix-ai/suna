@@ -10,10 +10,25 @@ import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
 
 const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode {...props} />);
 
-/** The card header's language chip. The card also renders the code itself, so a
- *  whole-markup match on the language name would pass with the header blank. */
-const labelOf = (html: string) =>
-  html.match(/<span class="[^"]*uppercase[^"]*">([^<]*)<\/span>/)?.[1] ?? '';
+/**
+ * The card header's language chip, found by its test hook rather than a
+ * styling class — the card also renders the code itself, so a whole-markup
+ * match on the language name would pass with the header blank.
+ *
+ * The hook may sit ANYWHERE in the tag: an earlier version required
+ * `data-testid` to be the first attribute, so adding one prop ahead of it in
+ * `code-block.tsx` would have re-broken this the same way the `uppercase` →
+ * `lowercase` class change did — silently, by returning `''`. And a miss throws
+ * rather than returning `''`, because a selector that has stopped matching must
+ * fail the test, not quietly assert about an empty string.
+ */
+const LANGUAGE_CHIP =
+  /<span\b[^>]*\bdata-testid="code-block-language"[^>]*>([^<]*)<\/span>/;
+const labelOf = (html: string) => {
+  const found = html.match(LANGUAGE_CHIP);
+  if (!found) throw new Error('no [data-testid="code-block-language"] span in the rendered card');
+  return found[1] ?? '';
+};
 
 /** `not-prose` sits on the card root and nowhere else in this subtree. */
 const CARD = 'not-prose';
@@ -63,8 +78,6 @@ describe('MarkdownCode — fenced blocks', () => {
 
     expect(markup).toContain(CARD);
     expect(markup).toContain(COPY);
-    // Lowercase in the markup — the chip is uppercased by CSS, which is why
-    // labelOf keys off the `uppercase` class rather than the text.
     expect(labelOf(markup)).toBe('typescript');
   });
 

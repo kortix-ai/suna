@@ -1,11 +1,18 @@
 /**
- * JAY-510 collapsed the old three-tab provider modal ('catalog' | 'connected' |
- * 'models') into two: `providers` is `provider-connect.tsx`'s four-section
- * surface, which already contains what 'catalog' and 'connected' used to be
- * separate tabs for. `CatalogSubview` is gone with the list -> detail -> connect
- * drill-down it described.
+ * Three tabs, each answering one question and owning one list:
+ *
+ *  - `providers` — "where do my models come from" (`ProviderConnect`): ONE
+ *     flat list of providers, one key field each.
+ *  - `models`    — "which of them can this project use" (`ModelsTab`).
+ *  - `custom`    — "connect something that isn't in the list"
+ *     (`CustomProviderForm`).
+ *
+ * Custom used to be a fourth section stacked under the provider list. It is a
+ * different job done maybe once, by one person in a hundred, and every reader
+ * who was not that person had to scroll past it — so it became a tab, which is
+ * exactly what a tab is for.
  */
-export type ActiveTab = 'providers' | 'models';
+export type ActiveTab = 'providers' | 'models' | 'custom';
 
 export interface ProjectProviderModalProps {
   projectId: string;

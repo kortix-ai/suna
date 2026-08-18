@@ -107,10 +107,11 @@ export default function ProjectIndexPage() {
       // then navigates into the instant shell, which auto-sends `text` once the
       // box is ready. No server-side initial_prompt — the shell shows the
       // message + inline boot status, matching the global dashboard composer.
-      // Bind the chosen agent at session birth so it matches the `agent` the
-      // composer sends on the first prompt — sessions are agent-immutable and the
-      // API proxy 409s any prompt whose agent differs from the bound one, which
-      // defaults to "default" when unset (see buildNewSessionCreateInput).
+      // Bind the chosen agent at session birth so `project_sessions.agent_name`
+      // is honest from turn one: the grant re-mint and connector authz resolve
+      // against that name, so an unbound session would mint the wrong agent's
+      // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
+      // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
       newSession({
         create: {

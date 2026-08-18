@@ -20,7 +20,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,6 +63,25 @@ import {
 } from '@/lib/iam-client';
 
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
+
+/**
+ * SP URLs come from the BROWSER's runtime env (`window.__KORTIX_RUNTIME_CONFIG`),
+ * which can differ from the server's absolute `SUPABASE_URL` — so the server
+ * snapshot is `null` and the client snapshot is computed once and cached.
+ * `useSyncExternalStore` renders the client value in the hydration pass itself,
+ * so the block appears in the first paint instead of popping in after an effect.
+ */
+const subscribeToNothing = () => () => {};
+let clientSpUrlsSnapshot: SamlSpUrls | null | undefined;
+function getClientSpUrlsSnapshot(): SamlSpUrls | null {
+  if (clientSpUrlsSnapshot === undefined) {
+    clientSpUrlsSnapshot = buildSamlSpUrls(getEnv().SUPABASE_URL);
+  }
+  return clientSpUrlsSnapshot;
+}
+function useSpUrls(): SamlSpUrls | null {
+  return useSyncExternalStore(subscribeToNothing, getClientSpUrlsSnapshot, () => null);
+}
 
 async function copyValue(value: string, successMsg = 'Copied to clipboard') {
   if (await copyToClipboard(value)) {
@@ -186,7 +205,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
   const provider = providerQuery.data;
   const mappings = mappingsQuery.data ?? [];
-  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  const spUrls = useSpUrls();
 
   // Off by default — orgs opt in once their SAML connection is proven. Re-sends
   // every other stored field unchanged (the PUT route is a full upsert), only
@@ -629,7 +648,7 @@ function EditProviderDialog({
     /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim()) &&
     (importing ? metadataReady : true);
 
-  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  const spUrls = useSpUrls();
 
   return (
     <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
@@ -690,6 +709,7 @@ function EditProviderDialog({
                 <textarea
                   value={metaXml}
                   onChange={(e) => setMetaXml(e.target.value)}
+                  aria-label="IdP SAML metadata"
                   placeholder="<EntityDescriptor …>…</EntityDescriptor>"
                   disabled={mutation.isPending}
                   rows={5}

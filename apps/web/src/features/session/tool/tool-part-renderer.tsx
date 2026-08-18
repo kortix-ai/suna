@@ -146,6 +146,13 @@ function ToolPartRendererImpl({
     // No `icon` prop: the outcome context supplies the same warning triangle a
     // tool that returned its error gets. A thrown call and a returned error are
     // the same event to the reader, so they must not be two different marks.
+    //
+    // `defaultOpen`/`forceOpen` are threaded for the same reason every other
+    // branch threads them: the panel surface is a disclosure now, and the one
+    // thing nobody wants behind a closed row is the error that explains the
+    // failure. This branch used to drop both, so an errored call painted shut
+    // on the very surface (Advanced, a single-call detail) whose whole job is
+    // showing it.
     return (
       <BoundActivateContext.Provider value={boundActivate}>
         <ToolOutcomeContext.Provider value={outcome}>
@@ -157,6 +164,9 @@ function ToolPartRendererImpl({
                 args: server ? [server] : undefined,
               }}
               badge="error"
+              defaultOpen={defaultOpen}
+              forceOpen={!!permission || !!question}
+              locked={!!permission || !!question}
             >
               <ToolError error={errorStr} toolName={part.tool} />
             </BasicTool>
@@ -189,7 +199,16 @@ function ToolPartRendererImpl({
       onPermissionReply={onPermissionReply}
     />
   ) : (
-    <GenericTool part={part} />
+    // Same four props the registered branch above gets. `GenericTool` is the
+    // fallback for every unregistered/MCP tool, and dropping them left that
+    // whole class of call permanently closed and unopenable on the panel — the
+    // one surface where a single call IS the view.
+    <GenericTool
+      part={part}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={isLocked}
+    />
   );
 
   return (

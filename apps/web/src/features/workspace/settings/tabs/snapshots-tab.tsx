@@ -124,7 +124,6 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
-import { SettingsTabHeader } from '../settings-tab-header';
 
 /** Build-status tile icons render solid/fill — a filled status glyph inside
  *  the colored tile, distinct from the app's default outline weight. */
@@ -245,16 +244,18 @@ function formatRelative(input: string | null | undefined): string {
 /** The exact moment, for the detail grid — "how long ago" is already on the
  *  collapsed row, and a reader comparing a build against something that
  *  happened in their day needs the clock time, not an age. */
+const startedAtFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
 function formatStartedAt(input: string | null | undefined): string {
   if (!input) return '—';
   const t = new Date(input).getTime();
   if (!Number.isFinite(t)) return '—';
-  return new Date(t).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return startedAtFormat.format(t);
 }
 
 export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
@@ -819,7 +820,14 @@ export function SnapshotsTabView({
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <div className="space-y-8">
-        <SettingsTabHeader tab="snapshots" />
+        {/* No `SettingsTabHeader` here any more. Snapshots merged INTO the
+            Sandbox templates section — a snapshot is the build history of a
+            sandbox template, not a separate pane — and `SandboxTabView`,
+            mounted directly above this one on `/projects/[id]/config`, already
+            renders the shared pane heading (title, description, and its own
+            `docsHref` to the same `/docs/work/runtime` page). A second
+            top-level heading here would be a duplicate, not a fix for the
+            'snapshots' id no longer existing in either heading registry. */}
         {isLoading ? (
           <div className="space-y-2">
             {['snapshot-skeleton-1', 'snapshot-skeleton-2', 'snapshot-skeleton-3'].map((row) => (

@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { getSupabase } from '../shared/supabase';
+import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 
 const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;
 const ARCHIVE_FILE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024;
@@ -39,7 +39,7 @@ export async function createOpencodeArchiveUploadUrl(
   if (error || !data?.signedUrl) {
     throw error ?? new Error('failed to create opencode archive upload url');
   }
-  return { uploadUrl: data.signedUrl, path };
+  return { uploadUrl: toPublicStorageUrl(data.signedUrl), path };
 }
 
 export async function uploadOpencodeArchive(

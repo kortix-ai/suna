@@ -366,6 +366,19 @@ const nextConfig = (): NextConfig => ({
 
   async redirects() {
     return [
+      // Decks moved from the single /presentation route to the /presentations
+      // framework (index + one route per registered deck). The old paths were
+      // shared in Slack and calendar invites, so they keep working.
+      {
+        source: '/presentation',
+        destination: '/presentations/sales',
+        permanent: false,
+      },
+      {
+        source: '/presentation/platform',
+        destination: '/presentations/platform',
+        permanent: false,
+      },
       // Canonical self-host doc lives at /docs/self-hosting (fumadocs derives
       // the slug from content/docs/self-hosting.mdx). The CLI, README, and
       // most people say "self-host" (no -ing) out loud and in links, which

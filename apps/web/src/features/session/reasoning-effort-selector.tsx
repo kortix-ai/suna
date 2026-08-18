@@ -16,9 +16,9 @@
  * `promptRuntimeMessage`) only ever carries `model` / `agent` / `variant` /
  * `directory` — there is no per-message reasoning-effort field to set on a
  * chat send today. Separately, models.dev-sourced models don't populate
- * OpenCode's legacy per-model `variant` map, which is why the composer's
- * `VariantSelector` renders nothing for a model like `openai/gpt-5.6-sol`
- * even though it's very much a reasoning model.
+ * OpenCode's legacy per-model `variant` map, so a model like
+ * `openai/gpt-5.6-sol` has no per-model variant to cycle even though it's
+ * very much a reasoning model.
  *
  * The one path that reliably reaches the wire today is the per-project
  * **model_generation_config** the gateway injects at resolution time —
@@ -35,34 +35,34 @@
  * injection only ever fills a field the client left unset.
  *
  * Writing requires the `gateway.routing-policy` PUT's capability gate
- * (`PROJECT_CUSTOMIZE_WRITE`, editor+) — a plain project member can see the
- * currently configured effort but not change it; the control disables with
- * an explanatory tooltip in that case rather than hiding outright, so it
- * stays discoverable.
+ * (`PROJECT_CUSTOMIZE_WRITE`, editor+) — a plain project member gets no
+ * control at all. A locked dropdown that cannot change the value is noise.
  */
 
-import {
-  BrainIcon as Brain,
-  CheckIcon as Check,
-  CaretDownIcon as ChevronDown,
-} from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import {
-  CommandGroup,
-  CommandItem,
-  CommandList,
-  CommandPopover,
-  CommandPopoverContent,
-  CommandPopoverTrigger,
-} from '@/components/ui/command';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { catalogModelForGateway } from '@/features/workspace/customize/sections/view/gateway/generation-controls';
-import { modelKeyToWire } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { generationControlCapabilities } from '@kortix/llm-catalog';
 import type { GatewayProjectRoutingPolicy } from '@kortix/sdk';
-import { useGatewayRoutingPolicy } from '@kortix/sdk/react';
+import { modelKeyToWire, useGatewayRoutingPolicy } from '@kortix/sdk/react';
+import {
+  CaretDownIcon,
+  CellSignalFullIcon,
+  CellSignalHighIcon,
+  CellSignalLowIcon,
+  CellSignalMediumIcon,
+  CellSignalNoneIcon,
+  GaugeIcon,
+} from '@phosphor-icons/react';
 
 export interface ReasoningEffortModelKey {
   providerID: string;
@@ -70,8 +70,9 @@ export interface ReasoningEffortModelKey {
 }
 
 export interface ReasoningEffortControl {
-  /** False when the model has no reasoning-effort knob, or there's no
-   *  project to scope the setting to — render nothing. */
+  /** False when the model has no reasoning-effort knob, there's no project
+   *  to scope the setting to, or the user cannot write the routing policy —
+   *  render nothing. */
   visible: boolean;
   /** The model's own effort labels (e.g. ['none','low','medium','high','xhigh','max']). */
   values: string[];
@@ -150,7 +151,9 @@ export function useReasoningEffortControl(
   };
 
   return {
-    visible: !!projectId && values.length > 0,
+    // Viewers (no `gateway.routing-policy` write) never see the control —
+    // a disabled effort picker is not useful discovery, it is dead chrome.
+    visible: !!projectId && values.length > 0 && canWrite,
     values,
     current,
     canWrite,
@@ -160,91 +163,167 @@ export function useReasoningEffortControl(
   };
 }
 
+/**
+ * The value `setEffort(null)` means: no project override, let the model decide.
+ * A sentinel is needed because Radix's radio group addresses items by string
+ * and cannot carry `null`.
+ */
+const AUTO = '__auto__';
+
+/** `medium` → `Medium`. The catalog ships lowercase ids; the trigger and the
+ *  menu should not. */
+function label(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/**
+ * Same stop list as `KORTIX_BULLET_GRADIENT` — expressed as a Tailwind
+ * arbitrary `bg-[linear-gradient(...)]` so max/full stay utility-class-only
+ * (no `style={{ backgroundImage }}`).
+ */
+/**
+ * Cell-signal bars for effort — none → full ladder. Extra ladder steps
+ * (`xhigh`, `max`) share Full; unknown ids fall back to Medium so a future
+ * catalog value never renders without an icon.
+ *
+ * `null`/`'auto'` (model decides, no project override) gets a Gauge icon
+ * instead of a cell-signal step — it isn't a fixed point on the none→full
+ * ladder, it's the dial that finds its own reading per turn. Reusing the
+ * Kortix brand mark here read as an unrelated "Kortix" button rather than a
+ * value on this control, and a generic sparkle is the same AI-chrome glyph
+ * used everywhere else in the product for unrelated things.
+ *
+ * A switch that returns JSX (not a component reference) — assigning
+ * `const Icon = map[value]` and then `<Icon />` trips the React Compiler's
+ * "Cannot create components during render" rule.
+ */
+function EffortIcon({ value, className }: { value: string | null; className?: string }) {
+  switch (value) {
+    case null:
+    case 'auto':
+      return <GaugeIcon className={className} weight="bold" />;
+    case 'none':
+      return <CellSignalNoneIcon className={className} weight="fill" />;
+    case 'low':
+      return <CellSignalLowIcon className={className} weight="fill" />;
+    case 'medium':
+      return <CellSignalMediumIcon className={className} weight="fill" />;
+    case 'high':
+      return <CellSignalHighIcon className={className} weight="fill" />;
+    case 'xhigh':
+      return <CellSignalFullIcon className={className} weight="fill" />;
+    case 'max':
+    case 'full':
+      return <CellSignalFullIcon weight="fill" className={className} />;
+    default:
+      return <CellSignalMediumIcon className={className} weight="fill" />;
+  }
+}
+
+export interface ReasoningEffortSelectorProps {
+  model: ReasoningEffortModelKey | null | undefined;
+  projectId: string | undefined;
+  /**
+   * Controlled open state — omit and the trigger owns it. Supplied by
+   * `composer.tsx` so the `/` palette's "Set reasoning effort" row can open
+   * this directly. Same controlled/uncontrolled rule as `ModelSelector`.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+/**
+ * Reasoning effort as its own composer-toolbar control.
+ *
+ * It previously lived as a chip row folded into the bottom of the model
+ * popover. That put a per-project setting two clicks deep behind a per-message
+ * one, and — because the popover only renders that footer once a model is
+ * selected and the section is non-empty — made it invisible at rest, so
+ * nothing in the composer showed the effort a turn would actually run at. As a
+ * peer of the model pill it states its own value without being opened.
+ *
+ * Renders NOTHING when `visible` is false — no effort knob, no project, or
+ * the user cannot write the routing policy. A model without reasoning, or a
+ * viewer without `PROJECT_CUSTOMIZE_WRITE`, never grows a dead control.
+ *
+ * A `DropdownMenu` rather than the `CommandPopover` the model and agent
+ * pickers use: this is a fixed list of four to six values with no search, no
+ * grouping and no empty state, and `DropdownMenuRadioGroup` gives the
+ * single-select semantics — roving focus, typeahead, `aria-checked` — for
+ * free, where the command palette would need them re-implemented.
+ */
 export function ReasoningEffortSelector({
   model,
   projectId,
-}: {
-  model: ReasoningEffortModelKey | null;
-  projectId: string | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  const { visible, values, current, canWrite, pending, wireModel, setEffort } =
-    useReasoningEffortControl(model, projectId);
+  open: openProp,
+  onOpenChange,
+}: ReasoningEffortSelectorProps) {
+  const { visible, values, current, pending, setEffort } = useReasoningEffortControl(
+    model,
+    projectId,
+  );
+
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : uncontrolledOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange],
+  );
+
+  const onValueChange = useCallback(
+    (next: string) => setEffort(next === AUTO ? null : next),
+    [setEffort],
+  );
 
   if (!visible) return null;
 
-  const locked = !canWrite;
-  const displayValue = current ?? 'auto';
-
   return (
-    <CommandPopover open={open} onOpenChange={(next) => setOpen(locked || pending ? false : next)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-disabled={locked || pending || undefined}
-              aria-label="Reasoning effort"
-              className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
-                open && 'bg-muted text-foreground',
-                current && 'text-foreground',
-                (locked || pending) &&
-                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
-              )}
-            >
-              <Brain className="size-3.5 shrink-0" />
-              <span className="max-w-[80px] truncate">{displayValue}</span>
-              <ChevronDown
-                className={cn(
-                  'size-3 opacity-50 transition-transform duration-200',
-                  open && 'rotate-180',
-                )}
-              />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px]">
-          {locked ? (
-            <p>Only project editors can change reasoning effort for this model.</p>
-          ) : (
-            <p>
-              Reasoning effort for <span className="font-mono">{wireModel}</span> — applies to every
-              session in this project using this model.
-            </p>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-disabled={pending || undefined}
+          onClick={(e) => {
+            if (pending) e.preventDefault();
+          }}
+          className={cn(
+            'text-foreground/70 gap-1.5 rounded-lg',
+            pending && 'cursor-not-allowed opacity-60',
           )}
-        </TooltipContent>
-      </Tooltip>
+        >
+          <EffortIcon value={current} className="size-4 shrink-0" />
+          <span className="max-w-[7rem] truncate">{current ? label(current) : 'Auto'}</span>
+          <CaretDownIcon className={cn('size-3 opacity-50', open && 'rotate-180')} />
+        </Button>
+      </DropdownMenuTrigger>
 
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[180px]">
-        <CommandList>
-          <CommandGroup heading="Reasoning effort">
-            <CommandItem
-              value="reasoning-effort-default"
-              onSelect={() => {
-                setEffort(null);
-                setOpen(false);
-              }}
-            >
-              <span className="flex-1 truncate">Model default</span>
-              {current === null && <Check className="text-foreground size-3.5 shrink-0" />}
-            </CommandItem>
-            {values.map((value) => (
-              <CommandItem
-                key={value}
-                value={`reasoning-effort-${value}`}
-                onSelect={() => {
-                  setEffort(value);
-                  setOpen(false);
-                }}
-              >
-                <span className="flex-1 truncate capitalize">{value}</span>
-                {current === value && <Check className="text-foreground size-3.5 shrink-0" />}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandPopoverContent>
-    </CommandPopover>
+      <DropdownMenuContent side="top" align="start" className="min-w-[10rem]">
+        <DropdownMenuRadioGroup value={current ?? AUTO} onValueChange={onValueChange}>
+          {/* Auto is first and always present: it is the only way BACK to the
+              model's own default once an override is set, and without it the
+              control would be a one-way door. */}
+          <DropdownMenuRadioItem value={AUTO} disabled={pending}>
+            <span className="flex items-center gap-2">
+              <EffortIcon value={null} className="size-4 shrink-0" />
+              Auto
+            </span>
+          </DropdownMenuRadioItem>
+          {values.map((value) => (
+            <DropdownMenuRadioItem key={value} value={value} disabled={pending}>
+              <span className="flex items-center gap-2">
+                <EffortIcon value={value} className="size-4 shrink-0" />
+                {label(value)}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

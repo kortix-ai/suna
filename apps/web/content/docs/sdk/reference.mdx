@@ -107,9 +107,10 @@ A repeat that arrives while the first call is still provisioning gets `409` with
 `code: 'provision_in_flight'` rather than a `project_id` that call may still roll
 back. Retry with the same key.
 
-`project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
-private, unavailable, and soft-deleted sessions, with ownership and
-runtime-state metadata.
+`project(id).sessions.list({ scope: 'project' })` is a manager-only lifecycle
+inventory. It adds accessible unavailable, warm, and soft-deleted sessions with
+ownership and runtime-state metadata. Both list scopes omit every session the
+caller cannot open.
 
 ### GitHub — `kortix.github`
 
@@ -259,7 +260,7 @@ agent, a skill, a secret) instead of the whole project.
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under Customize → Feature flags → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
 | method | what |
 | --- | --- |
@@ -301,11 +302,19 @@ templating.
 | `fire(triggerId)` | run it now |
 | `setActivation(paused)` | pause or resume every trigger on the project |
 
-`create(input)` takes `{ name, type: 'cron' | 'webhook', prompt_template,
+`create(input)` takes `{ name, type: 'cron' | 'webhook' | 'monitor', prompt_template,
 slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
-timezone?, secret_env? }`. `name` and `prompt_template` are required.
+timezone?, secret_env?, session_access? }`. `name` and `prompt_template` are required.
 `cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
 webhook HMAC secret) applies to `type: 'webhook'`.
+
+`session_access` controls who can open sessions the trigger creates. It is
+`{ mode: 'private' | 'members' | 'project', memberIds: string[], groupIds:
+string[] }` and defaults to `private`. This policy is account-local runtime
+state. It does not enter the portable `kortix.yaml` manifest. Updating only
+`session_access` creates no Git commit. A pinned session keeps its own sharing
+settings. Project managers can always open trigger-created sessions, including
+sessions that use `private` or selected-member access.
 
 #### `p.marketplace` / `p.registry` — installed items
 
