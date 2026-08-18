@@ -74,7 +74,7 @@ export function TrustSection(): ReactNode {
                 {/* <p className="mt-5 max-w-md text-base leading-relaxed text-white/55">{trust.sub}</p> */}
               </div>
 
-              <Button size="lg" variant="ghost" className="group/arrow-right" asChild>
+              <Button size="lg" variant="secondary" className="group/arrow-right" asChild>
                 <Link href={trust.ctaHref}>
                   {trust.ctaLabel}
                   <ArrowRightIcon />
