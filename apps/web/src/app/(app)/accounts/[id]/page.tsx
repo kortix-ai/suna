@@ -167,17 +167,29 @@ const VALID_TABS = [
 ] as const;
 type AccountSection = (typeof VALID_TABS)[number];
 
-// Three labeled groups: day-to-day account plumbing, money, and the
-// enterprise IAM surface (Groups / Roles / Identity / Audit all share the
-// same entitlement story, so they live together under one "Enterprise"
-// heading instead of being scattered across the rail and the Settings tab).
+// Four labeled groups. Members / Groups / Roles are one "Access" cluster —
+// three facets of the same access-control concern (who's in the account,
+// what pools they're in, what those pools can do) — instead of Members
+// sitting alone at the top, disconnected from Groups/Roles below. Identity
+// (SSO/SCIM) and Audit log stay under "Enterprise": unlike Members/Groups/
+// Roles, they have ZERO free-tier content (no list to show a non-entitled
+// account), so grouping them under a plan-gated heading is accurate, not
+// mislabeling. Git/Tokens/Settings remain the unlabeled day-to-day plumbing
+// group; Billing is unchanged.
 const NAV_GROUPS: Array<{
   label?: string;
   items: Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>;
 }> = [
   {
+    label: 'Access',
     items: [
       { id: 'members', label: 'Members', icon: Users },
+      { id: 'groups', label: 'Groups', icon: Network },
+      { id: 'roles', label: 'Roles', icon: Shield },
+    ],
+  },
+  {
+    items: [
       { id: 'git', label: 'Git', icon: GitBranch },
       { id: 'tokens', label: 'Tokens', icon: KeyRound },
       { id: 'settings', label: 'Settings', icon: CogOne },
@@ -193,8 +205,6 @@ const NAV_GROUPS: Array<{
   {
     label: 'Enterprise',
     items: [
-      { id: 'groups', label: 'Groups', icon: Network },
-      { id: 'roles', label: 'Roles', icon: Shield },
       { id: 'identity', label: 'Identity', icon: Fingerprint },
       { id: 'audit', label: 'Audit log', icon: ScrollText },
     ],
@@ -368,7 +378,13 @@ export default function AccountSettingsPage() {
   const sectionVisible: Record<AccountSection, boolean> = {
     members: true,
     groups: true,
-    roles: canManageRoles === true,
+    // Discoverable for everyone, same as Groups — the six built-in roles are
+    // free content (GET .../roles carries no entitlement check), and RolesTab
+    // itself already gates "New role" on rbacEnabled + canManage internally.
+    // This used to hide the rail item for non-admins, contradicting the
+    // comment above NAV_GROUPS (and this same file's own doc comment further
+    // up) that both should stay visible for discoverability.
+    roles: true,
     identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
     transactions: canWriteAccount === true,
@@ -556,7 +572,7 @@ export default function AccountSettingsPage() {
               )
             ) : null}
 
-            {activeSection === 'roles' && canManageRoles ? (
+            {activeSection === 'roles' ? (
               entitlementsLoading ? (
                 <Skeleton className="h-64 w-full rounded-md" />
               ) : (
