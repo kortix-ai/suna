@@ -41,8 +41,13 @@ import {
 import {
   buildGitHubAppInstallUrl,
   getGitHubAppInstallation,
+  githubAppClientId,
+  githubAppClientSecret,
   githubAppSlug,
+  githubAppStateSecret,
   isGithubAppConfigured,
+  isGithubAppOAuthConfigured,
+  normalizeGitHubFrontendOrigin,
   signGitHubAppJwt,
   type GitHubAppInstallState,
   verifyGitHubAppInstallStatePayload,
@@ -64,6 +69,13 @@ export interface GithubAppManifest {
   url: string;
   redirect_url: string;
   setup_url: string;
+  /** OAuth callback URL(s) for the App's own user-to-server ("Sign in with
+   *  this GitHub App") flow — a DIFFERENT field from `redirect_url`, which
+   *  only controls where GitHub returns after the App is CREATED from this
+   *  manifest. Without this, a manifest-created App has no registered
+   *  callback and GitHub rejects the `redirect_uri` that oauth/authorize
+   *  sends, so account linking never completes. */
+  callback_urls: string[];
   setup_on_update: boolean;
   public: boolean;
   /** GitHub's actual manifest field name for the App's permission set — the
@@ -94,6 +106,7 @@ export function buildGithubAppManifest(opts: {
     url: opts.homepageUrl,
     redirect_url: `${base}/v1/platform/github-app/manifest-callback`,
     setup_url: `${base}/v1/platform/github-app/install-callback`,
+    callback_urls: [`${base}/v1/platform/github-app/oauth/callback`],
     setup_on_update: true,
     public: false,
     default_permissions: {
@@ -101,6 +114,13 @@ export function buildGithubAppManifest(opts: {
       contents: 'write',
       pull_requests: 'write',
       metadata: 'read',
+      // Backs the account-linking identity proof (oauth/authorize +
+      // oauth/callback below): GET /orgs/{org}/memberships/{user} and
+      // GET /user/memberships/orgs both require "Members: read" on a GitHub
+      // App user-to-server token — without it, verifyGitHubInstallationAdmin
+      // / listLinkableGitHubAppInstallations (projects/github.ts) 403 for
+      // every organization installation.
+      members: 'read',
     },
     default_events: [],
     hook_attributes: { url: opts.homepageUrl, active: false },
@@ -224,6 +244,151 @@ export async function exchangeManifestCode(
     client_secret: String(body.client_secret ?? ''),
     webhook_secret: String(body.webhook_secret ?? ''),
   };
+}
+
+/** `POST /login/oauth/access_token` — exchanges a "Sign in with this GitHub
+ *  App" authorization code for a user-to-server access token, using the
+ *  App's OWN OAuth client (see oauth/authorize + oauth/callback below). This
+ *  is the App-native replacement for routing the same identity proof through
+ *  Supabase's separately-configured (and unrelated-purpose) GitHub login
+ *  provider. */
+export async function exchangeGitHubOAuthCode(
+  input: { code: string; redirectUri: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  const clientId = githubAppClientId();
+  const clientSecret = githubAppClientSecret();
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'GitHub App OAuth is not configured (set KORTIX_GITHUB_APP_CLIENT_ID and KORTIX_GITHUB_APP_CLIENT_SECRET, or complete the manifest setup flow)',
+    );
+  }
+  const res = await fetchImpl('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'kortix-api',
+    },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: input.code,
+      redirect_uri: input.redirectUri,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`GitHub OAuth token exchange failed (${res.status}): ${detail || res.statusText}`);
+  }
+  const body = (await res.json()) as {
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+  };
+  if (body.error || !body.access_token) {
+    throw new Error(body.error_description || body.error || 'GitHub did not return an access token');
+  }
+  return body.access_token;
+}
+
+// ─── OAuth identity-proof state (round-tripped through GitHub's
+//    /login/oauth/authorize → oauth/callback redirect) ────────────────────────
+// Same shape/TTL/HMAC scheme as manifestStartState above, carrying ONLY a CSRF
+// nonce and an expiry.
+//
+// It deliberately does NOT carry a redirect target. An earlier revision let
+// the caller pass `frontend_origin`, signed it into the state, and had the
+// callback redirect the exchanged GitHub token to it — validating only that
+// it was https (or http on localhost). Any attacker HTTPS origin passed, so
+// `?frontend_origin=https://attacker.example` exfiltrated the victim's
+// user-to-server token, replayable against the installation-linking endpoints
+// (CWE-601, HIGH). Shape validation is not authorization.
+//
+// The redirect target is now always `frontendUrl()` — the environment's own
+// configured frontend. That is the only origin this API should ever hand a
+// token to: each environment's API already knows its frontend, and the popup
+// only accepts the postMessage when the opener is same-origin anyway, so a
+// caller-chosen origin bought nothing and cost a token-exfiltration path.
+
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+export interface GitHubOAuthState {
+  nonce: string;
+  exp: number;
+}
+
+/**
+ * The OAuth state rides the GitHub App's OWN state secret, not the manifest
+ * flow's `SUPABASE_JWT_SECRET`-only one: `githubAppStateSecret()` resolves
+ * stateSecret → KORTIX_GITHUB_APP_STATE_SECRET → SUPABASE_JWT_SECRET → the App
+ * private key, so this signs in exactly the deployments where the rest of the
+ * GitHub App flow already works. (A hosted deployment configures
+ * KORTIX_GITHUB_APP_STATE_SECRET and no SUPABASE_JWT_SECRET — binding to the
+ * latter made every authorize call fail there.)
+ *
+ * On `createHmac('sha256', …)` and CodeQL's js/insufficient-password-hash:
+ * this is a SIGNATURE, not a stored password hash, and the alert is a false
+ * positive of the same class already dismissed for `tokenKey` in
+ * apps/cli/src/api/token-identity.ts. CWE-916 is about low-entropy human
+ * passwords, where a slow KDF (bcrypt/scrypt/Argon2) raises the cost of
+ * offline guessing. Here nothing is a password: the message is a base64url
+ * state payload (`{nonce, exp}`) and the key is a
+ * high-entropy server-side secret the attacker never sees. HMAC-SHA256 with
+ * a secret key is the correct, standard construction for exactly this — it is
+ * what JWT HS256 does — and a slow KDF would be wrong twice over: it would
+ * make every verify expensive and it cannot be compared against a
+ * recomputed MAC. Verification recomputes the MAC and compares it with
+ * `timingSafeEqual`, so the comparison is not a timing oracle either.
+ * CodeQL's taint path (sign → returned token → verify's `.update(body)`) is
+ * inherent to verifying ANY HMAC and would flag any correct implementation.
+ */
+function oauthStateSecret(): string {
+  const secret = githubAppStateSecret();
+  if (!secret) {
+    throw new Error(
+      'No GitHub App state secret is configured — set KORTIX_GITHUB_APP_STATE_SECRET (or SUPABASE_JWT_SECRET) to sign the OAuth state',
+    );
+  }
+  return secret;
+}
+
+export function signGitHubOAuthState(nowMs = Date.now()): string {
+  const state: GitHubOAuthState = {
+    nonce: randomBytes(8).toString('hex'),
+    exp: nowMs + OAUTH_STATE_TTL_MS,
+  };
+  const body = Buffer.from(JSON.stringify(state)).toString('base64url');
+  const mac = createHmac('sha256', oauthStateSecret()).update(body).digest('base64url');
+  return `${body}.${mac}`;
+}
+
+export function verifyGitHubOAuthState(
+  token: string | undefined | null,
+  nowMs = Date.now(),
+): GitHubOAuthState | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [body, mac] = parts as [string, string];
+  let expected: string;
+  try {
+    expected = createHmac('sha256', oauthStateSecret()).update(body).digest('base64url');
+  } catch {
+    return null;
+  }
+  const a = Buffer.from(mac);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as GitHubOAuthState;
+    if (typeof parsed.exp !== 'number' || parsed.exp < nowMs) return null;
+    if (typeof parsed.nonce !== 'string' || !parsed.nonce) return null;
+    return { nonce: parsed.nonce, exp: parsed.exp };
+  } catch {
+    return null;
+  }
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -505,6 +670,144 @@ githubAppSetupRouter.openapi(
   },
 );
 
+// ─── GET /oauth/authorize, GET /oauth/callback ────────────────────────────────
+// "Sign in with this GitHub App" identity proof — the App-native replacement
+// for the account-linking popup that used to run through Supabase's separate
+// GitHub login provider (apps/web/src/app/(auth)/auth/github-connect/page.tsx).
+// Used by github/setup/page.tsx's requestGitHubUserProof() for BOTH triggers
+// that need a caller's verified GitHub identity/org-role: selecting an
+// existing installation to link, and completing a fresh install (the signed
+// install `state` proves who initiated the install, but never binds WHICH
+// installation_id it may pair with — this token is what
+// verifyGitHubInstallationAdmin/listLinkableGitHubAppInstallations,
+// projects/github.ts, checks against the actual owner/org).
+//
+// Both routes are PUBLIC (unauthenticated) by necessity, same reasoning as
+// manifest-callback/install-callback above: the popup opens `oauth/authorize`
+// directly (no Kortix session is attached to that navigation), and GitHub's
+// redirect back to `oauth/callback` cannot carry a Kortix auth header either.
+// The resulting token proves nothing on its own — every route that consumes
+// it (POST /projects/github/installations/{linkable,link}, POST
+// /projects/github/installation) independently re-verifies it against GitHub
+// and is itself Kortix-auth-gated, so an unauthenticated caller minting a
+// token here gains nothing they couldn't already get by signing into GitHub.
+//
+// The signed `state` carries ONLY a CSRF nonce and an expiry. The redirect
+// target is never caller-supplied: both routes always land on `frontendUrl()`,
+// this environment's own configured frontend. See the state block above for
+// why (an earlier revision accepted a `frontend_origin` param and leaked the
+// exchanged token to any attacker HTTPS origin, CWE-601).
+
+githubAppSetupRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/oauth/authorize',
+    tags: ['platform'],
+    summary: "Start the GitHub App's own OAuth identity-proof flow",
+    responses: {
+      302: { description: "Redirect to GitHub's OAuth authorize page (or the popup's error state)" },
+    },
+  }),
+  async (c: any) => {
+    // No caller-controlled redirect target, by design — see above.
+    const frontendOrigin = frontendUrl();
+
+    if (!isGithubAppOAuthConfigured()) {
+      return c.redirect(
+        `${frontendOrigin}/auth/github-connect?error=oauth_not_configured`,
+        302,
+      );
+    }
+
+    let state: string;
+    try {
+      state = signGitHubOAuthState();
+    } catch (err) {
+      console.error(
+        '[github-app] oauth/authorize could not sign state',
+        err instanceof Error ? err.message : err,
+      );
+      return c.redirect(
+        `${frontendOrigin}/auth/github-connect?error=state_secret_unavailable`,
+        302,
+      );
+    }
+
+    const authorizeUrl = new URL('https://github.com/login/oauth/authorize');
+    authorizeUrl.searchParams.set('client_id', githubAppClientId()!);
+    authorizeUrl.searchParams.set(
+      'redirect_uri',
+      `${apiBaseUrl(c)}/v1/platform/github-app/oauth/callback`,
+    );
+    authorizeUrl.searchParams.set('state', state);
+    return c.redirect(authorizeUrl.toString(), 302);
+  },
+);
+
+githubAppSetupRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/oauth/callback',
+    tags: ['platform'],
+    summary: "GitHub OAuth redirect target — exchanges the code, hands the user token back to the popup",
+    request: {
+      query: z.object({
+        code: z.string().optional(),
+        state: z.string().optional(),
+        error: z.string().optional(),
+        error_description: z.string().optional(),
+      }),
+    },
+    responses: {
+      302: { description: "Redirect to the popup page (apps/web's /auth/github-connect) with the result" },
+    },
+  }),
+  async (c: any) => {
+    const query = c.req.query();
+    const state = verifyGitHubOAuthState(query.state);
+    // Always this environment's own frontend — never anything derived from the
+    // request. This is the redirect that carries the exchanged GitHub token,
+    // so it is the one that must never point anywhere a caller can choose.
+    const landingOrigin = frontendUrl();
+
+    if (query.error) {
+      return c.redirect(
+        `${landingOrigin}/auth/github-connect?error=${encodeURIComponent(query.error_description || query.error)}`,
+        302,
+      );
+    }
+    if (!state) {
+      return c.redirect(`${landingOrigin}/auth/github-connect?error=invalid_state`, 302);
+    }
+    if (!query.code) {
+      return c.redirect(`${landingOrigin}/auth/github-connect?error=missing_code`, 302);
+    }
+
+    try {
+      const accessToken = await exchangeGitHubOAuthCode({
+        code: query.code,
+        redirectUri: `${apiBaseUrl(c)}/v1/platform/github-app/oauth/callback`,
+      });
+      // The token is single-use-in-spirit and about to be handed straight to
+      // window.opener by the popup page, which closes itself within ~200ms —
+      // a URL fragment never reaches this or any other server (unlike a query
+      // string, it's not sent in the redirect's own request, any Referer
+      // header, or proxy/CDN access logs), so it's the right place for a
+      // short-lived credential in a same-tab redirect chain that has no
+      // durable server-side session to stash it in.
+      const fragment = new URLSearchParams({ access_token: accessToken });
+      return c.redirect(`${landingOrigin}/auth/github-connect#${fragment.toString()}`, 302);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[github-app] oauth/callback exchange failed', message);
+      return c.redirect(
+        `${landingOrigin}/auth/github-connect?error=${encodeURIComponent(message)}`,
+        302,
+      );
+    }
+  },
+);
+
 // ─── GET /status ──────────────────────────────────────────────────────────────
 //
 // `source` reports WHICH of the three managed-git methods (see module
@@ -618,6 +921,12 @@ githubAppSetupRouter.openapi(
           installation_id: z.string().nullable(),
           source: z.enum(['db', 'env', 'pat', 'none']),
           reason: z.string().optional(),
+          /** Whether the App's own OAuth identity-proof flow (oauth/authorize
+           *  + oauth/callback) has a client_id/client_secret to run — distinct
+           *  from `configured`, which only covers the App-JWT/installation
+           *  half. An operator on the "paste an existing App" path (POST
+           *  /app) without OAuth credentials sees this false. */
+          oauth_configured: z.boolean(),
         }),
         'Managed GitHub App status',
       ),
@@ -656,6 +965,7 @@ githubAppSetupRouter.openapi(
       slug,
       installation_id: installationId,
       source,
+      oauth_configured: isGithubAppOAuthConfigured(),
       ...(reason ? { reason } : {}),
     });
   },
@@ -725,6 +1035,15 @@ githubAppSetupRouter.openapi(
               private_key: z.string().min(1),
               installation_id: z.string().min(1),
               slug: z.string().optional(),
+              // Optional: the App's own OAuth client (Settings → General →
+              // "Client secrets" on the App's GitHub page). Without these the
+              // App-JWT/installation half still works (repo access, managed
+              // git), but the account-linking identity proof (oauth/authorize
+              // + oauth/callback above) stays unconfigured for this App until
+              // an operator supplies them here or via
+              // KORTIX_GITHUB_APP_CLIENT_ID/SECRET.
+              client_id: z.string().optional(),
+              client_secret: z.string().optional(),
             }),
           },
         },
@@ -743,6 +1062,12 @@ githubAppSetupRouter.openapi(
     const installationId =
       typeof body?.installation_id === 'string' ? body.installation_id.trim() : '';
     const slug = typeof body?.slug === 'string' && body.slug.trim() ? body.slug.trim() : undefined;
+    const clientId =
+      typeof body?.client_id === 'string' && body.client_id.trim() ? body.client_id.trim() : undefined;
+    const clientSecret =
+      typeof body?.client_secret === 'string' && body.client_secret.trim()
+        ? body.client_secret.trim()
+        : undefined;
 
     if (!appId || !privateKey || !installationId) {
       return c.json(
@@ -775,6 +1100,8 @@ githubAppSetupRouter.openapi(
       owner,
       ownerType,
       slug,
+      clientId,
+      clientSecret,
       stateSecret: managedGithubAppConfig().stateSecret || randomBytes(32).toString('hex'),
       // Mutually exclusive with a PAT — see POST /pat's matching comment.
       pat: undefined,

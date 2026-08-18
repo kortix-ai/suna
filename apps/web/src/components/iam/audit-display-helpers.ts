@@ -225,6 +225,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/oauth/userinfo': 'Viewed OAuth user information',
   'POST /v1/platform/boot-timeline': 'Recorded platform boot timeline',
   'POST /v1/platform/github-app/manifest-start': 'Started GitHub App setup',
+  'GET /v1/platform/github-app/oauth/authorize': 'Started GitHub identity verification',
+  'GET /v1/platform/github-app/oauth/callback': 'Completed GitHub identity verification',
   'POST /v1/prewarm': 'Prewarmed sandbox capacity',
 };
 

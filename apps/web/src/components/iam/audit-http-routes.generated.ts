@@ -271,6 +271,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|platform|github-app|install-callback",
   "GET|v1|platform|github-app|manifest-callback",
   "POST|v1|platform|github-app|manifest-start",
+  "GET|v1|platform|github-app|oauth|authorize",
+  "GET|v1|platform|github-app|oauth|callback",
   "POST|v1|platform|github-app|pat",
   "GET|v1|platform|github-app|status",
   "GET|v1|platform|sandbox|version",

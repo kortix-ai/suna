@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 584,
+  "count": 586,
   "routes": [
     {
       "method": "GET",
@@ -1077,6 +1077,14 @@
     {
       "method": "POST",
       "path": "/v1/platform/github-app/manifest-start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/oauth/authorize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/oauth/callback"
     },
     {
       "method": "POST",
