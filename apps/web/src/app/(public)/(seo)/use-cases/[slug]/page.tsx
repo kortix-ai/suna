@@ -1,4 +1,3 @@
-import { ArrowLeftIcon as ArrowLeft } from '@/lib/icons/ssr';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -7,9 +6,6 @@ import { BlogProse } from '@/components/blog/blog-prose';
 import { PostByline } from '@/components/blog/post-byline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
-import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   Callout,
   Fact,
@@ -118,12 +114,11 @@ export default async function UseCasePage(props: PageProps) {
   const MDX = data.body;
   const author = resolveAuthor(data.author);
   const archetype = data.tags?.[0] as string | undefined;
-  const readingTime = getAllUseCases().find((p) => p.slug === slug)?.readingTime ?? 1;
-  const more = getAllUseCases()
-    .filter((p) => p.slug !== slug)
-    .slice(0, 3);
+  const allUseCases = getAllUseCases();
+  const post = allUseCases.find((p) => p.slug === slug);
+  const readingTime = post?.readingTime ?? 1;
+  const more = allUseCases.filter((p) => p.slug !== slug).slice(0, 3);
   const toc = (data.toc ?? []) as TocItem[];
-  const post = getAllUseCases().find((p) => p.slug === slug);
   // Default-on kill-switch shared with the API (KORTIX_TEMPLATES_ENABLED) — set it
   // to 'false' to hide the "Use this template" button.
   const templatesEnabled = process.env.KORTIX_TEMPLATES_ENABLED !== 'false';
@@ -172,29 +167,23 @@ export default async function UseCasePage(props: PageProps) {
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
-      {/* Branded hero header — faint letter-field backdrop ties it to the platform. */}
-      <section className="relative overflow-hidden px-5 pt-28 pb-4 sm:pt-32">
-        <div className="absolute inset-0 z-0 mask-y-to-90% opacity-60">
-          <KortixLetterField seed={5190} />
-        </div>
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-x-12 lg:grid-cols-[minmax(0,1fr)_16rem]">
-          <div className="min-w-0">
-            <Link
-              href="/use-cases"
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
-            >
-              <ArrowLeft className="size-3.5" />
-              Use Cases
-            </Link>
-
-            <header className="mt-8">
+      {/* Measure first: the article column is pinned to 42rem (~78 characters)
+          at every breakpoint. Below xl it is simply centred on the page; at xl
+          the sticky rail appears beside it and the pair is centred together, so
+          the prose width never changes when the rail arrives. */}
+      <div className="mx-auto max-w-[42rem] px-6 pt-28 pb-20 sm:pt-32 lg:max-w-7xl lg:px-8">
+        <div className="lg:grid lg:grid-cols-[minmax(0,64rem)_16rem] lg:justify-center lg:gap-x-16">
+          <article className="min-w-0">
+            <header>
               {archetype && (
-                <div className="text-muted-foreground mb-4 flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                  <KortixAsterisk index={0} parentClass="size-4" />
+                <span
+                  className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none"
+                  data-text="true"
+                >
                   {archetype}
-                </div>
+                </span>
               )}
-              <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+              <h1 className="text-foreground mt-4 text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
                 {data.title}
               </h1>
               {data.description && (
@@ -202,65 +191,41 @@ export default async function UseCasePage(props: PageProps) {
                   {data.description}
                 </p>
               )}
-              {data.tags?.length > 1 && (
-                <div className="mt-6 flex flex-wrap gap-1.5">
-                  {data.tags.slice(1).map((tag: string) => (
-                    <Badge key={tag} size="sm" variant="secondary">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
               <PostByline
                 author={author}
                 date={data.date}
                 readingTime={readingTime}
-                className="mt-8"
+                className="border-border/60 mt-8 border-t pt-8"
               />
-              {templatesEnabled && data.template && (
-                <div className="mt-8">
-                  <UseTemplateButton templateId={data.template} />
-                </div>
-              )}
             </header>
-          </div>
-        </div>
-      </section>
 
-      <div className="px-5 pb-16 sm:pb-20">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_16rem]">
-          <div className="min-w-0">
             {post && (
               <UseCaseCover
                 post={post}
-                className="border-border aspect-[16/9] w-full rounded-2xl border"
+                className="border-border/60 mt-10 aspect-[16/9] w-full rounded-md border"
               />
             )}
+
             <BlogProse className="mt-10">
               <MDX components={mdxComponents} />
             </BlogProse>
-          </div>
+
+            {data.tags?.length > 1 && (
+              <div className="border-border/60 mt-12 flex flex-wrap gap-1.5 border-t pt-8">
+                {data.tags.slice(1).map((tag: string) => (
+                  <Badge key={tag} variant="secondary">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </article>
 
           <aside className="hidden lg:block">
             <div className="sticky top-24 space-y-8">
-              <div className="flex items-center gap-3">
-                <UserAvatar
-                  email={author.email}
-                  name={author.name}
-                  avatarUrl={author.avatarUrl}
-                  size="lg"
-                />
-                <div className="min-w-0">
-                  <p className="text-foreground truncate text-sm font-medium">{author.name}</p>
-                  {author.role && (
-                    <p className="text-muted-foreground truncate text-xs">{author.role}</p>
-                  )}
-                </div>
-              </div>
-
               <UseCaseToc items={toc} />
 
-              <div className="border-border rounded-2xl border p-5">
+              <div className="border-border/60 bg-popover rounded-md border px-4 py-5">
                 {templatesEnabled && data.template ? (
                   <>
                     <p className="text-foreground text-sm font-medium">Run this yourself</p>
@@ -293,10 +258,12 @@ export default async function UseCasePage(props: PageProps) {
       </div>
 
       {more.length > 0 && (
-        <section className="border-border/60 border-t px-5">
-          <div className="mx-auto max-w-7xl py-16 sm:py-20">
-            <h2 className="text-foreground mb-8 text-2xl font-medium tracking-tight">Read more</h2>
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="border-border border-t">
+          <div className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
+            <h2 className="text-muted-foreground mb-10 font-mono text-xs tracking-wider uppercase">
+              More use cases
+            </h2>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
               {more.map((item) => (
                 <UseCaseCard key={item.slug} post={item} />
               ))}

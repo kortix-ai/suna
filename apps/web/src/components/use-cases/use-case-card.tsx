@@ -1,9 +1,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { PostByline } from '@/components/blog/post-byline';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
-import type { Post } from '@/lib/blog';
+import { formatPostDate, type Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 import { USE_CASE_COVERS } from './covers';
 
@@ -37,8 +37,8 @@ export function UseCaseCover({
           src={post.data.cover}
           alt={post.data.title}
           fill
-          className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-          sizes="(max-width: 768px) 100vw, 768px"
+          className="object-cover"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
       </div>
     );
@@ -58,57 +58,54 @@ export function UseCaseCover({
   );
 }
 
-export function UseCaseCard({ post, featured = false }: { post: Post; featured?: boolean }) {
+/**
+ * One entry in the use-case catalog. Deliberately chrome-free: the thumbnail
+ * carries the only border on the page, and the text sits directly on the page
+ * background. A card border around every cell would double every line the grid
+ * already draws with whitespace.
+ *
+ * No author avatar here — a case study is about the company and the loop, not
+ * about who wrote it up. The byline belongs on the article itself.
+ */
+export function UseCaseCard({ post }: { post: Post }) {
   const archetype = post.data.tags[0];
 
   return (
     <Link
       href={post.url}
       className={cn(
-        'group border-border bg-card hover:border-foreground/20 flex flex-col overflow-hidden rounded-2xl border transition-colors duration-200',
-        featured && 'md:flex-row',
+        'group focus-visible:ring-ring flex flex-col rounded-md',
+        'focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-4 focus-visible:outline-none',
       )}
     >
       <UseCaseCover
         post={post}
-        featured={featured}
-        className={cn(
-          'shrink-0',
-          featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[4/3]',
-        )}
+        className="border-border/60 group-hover:border-border aspect-[4/3] w-full shrink-0 rounded-md border transition-colors"
       />
-      <div className={cn('flex flex-1 flex-col p-6', featured && 'md:justify-center md:p-10')}>
+
+      <div className="mt-4 flex flex-1 flex-col">
         {archetype && (
-          <div className="text-muted-foreground mb-4 flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-            <KortixAsterisk index={0} parentClass="size-3.5" variant="solid" />
+          <span className="text-muted-foreground/70 mb-2 font-mono text-xs tracking-wider uppercase">
             {archetype}
-          </div>
+          </span>
         )}
-        <h3
-          className={cn(
-            'text-foreground font-medium tracking-tight',
-            featured ? 'text-2xl leading-tight md:text-3xl' : 'text-lg leading-snug',
-          )}
-        >
+
+        {/* Transparent-by-default underline: the rule is always laid out, so
+            revealing it on hover shifts nothing. */}
+        <h3 className="text-foreground group-hover:decoration-foreground/40 text-base leading-snug font-medium tracking-tight underline decoration-transparent decoration-1 underline-offset-[3px] transition-colors">
           {post.data.title}
         </h3>
+
         {post.data.description && (
-          <p
-            className={cn(
-              'text-muted-foreground group-hover:text-foreground/80 mt-3 transition-colors duration-200',
-              featured ? 'line-clamp-3 text-base leading-relaxed' : 'line-clamp-2 text-sm',
-            )}
-          >
+          <p className="text-muted-foreground mt-2 line-clamp-2 text-sm leading-relaxed">
             {post.data.description}
           </p>
         )}
-        <PostByline
-          author={post.author}
-          date={post.data.date}
-          readingTime={post.readingTime}
-          compact
-          className={cn('mt-6', featured && 'md:mt-8')}
-        />
+
+        <InlineMeta className="mt-4">
+          <time dateTime={post.data.date}>{formatPostDate(post.data.date)}</time>
+          {`${post.readingTime} min read`}
+        </InlineMeta>
       </div>
     </Link>
   );
