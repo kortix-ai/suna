@@ -113,6 +113,9 @@ export default function GroupDetailPage() {
   const accountId = params?.id;
   const groupId = params?.groupId;
   const { user, isLoading: authLoading } = useAuth();
+  // Controlled so the "give a custom role" empty state can jump straight to
+  // the Projects tab (where built-in roles are actually assigned to a group).
+  const [activeGroupTab, setActiveGroupTab] = useState('members');
 
   const accountQuery = useQuery({
     queryKey: ['account', accountId],
@@ -213,7 +216,7 @@ export default function GroupDetailPage() {
       ) : null}
 
       {group && account ? (
-        <Tabs defaultValue="members" className="space-y-6">
+        <Tabs value={activeGroupTab} onValueChange={setActiveGroupTab} className="space-y-6">
           <TabsList type="underline" className="flex w-full items-center justify-start">
             <TabsTrigger value="members" className="w-fit flex-none">
               Members
@@ -235,6 +238,7 @@ export default function GroupDetailPage() {
               canAssignRoles={canAssignRoles}
               rbacEnabled={rbacEnabled}
               idpManaged={group.source === 'scim'}
+              onOpenBuiltinRolePath={() => setActiveGroupTab('projects')}
             />
           </TabsContent>
 
@@ -274,6 +278,7 @@ function GroupMembersCard({
   canAssignRoles,
   rbacEnabled,
   idpManaged,
+  onOpenBuiltinRolePath,
 }: {
   accountId: string;
   groupId: string;
@@ -287,6 +292,10 @@ function GroupMembersCard({
   /** SCIM-sourced group: membership is owned by the IdP — the API 409s local
    *  edits (they'd be clobbered by the next push), so hide the affordances. */
   idpManaged: boolean;
+  /** Jump to the Projects tab, where a built-in role (Manager/Editor/Member)
+   *  is actually attached to this group — surfaced from the assignment
+   *  dialog's empty state when there are no custom roles to pick from. */
+  onOpenBuiltinRolePath: () => void;
 }) {
   // Local membership edits only make sense for locally-owned groups.
   const canMutate = canManage && !idpManaged;
@@ -521,6 +530,7 @@ function GroupMembersCard({
         projects={projectsQuery.data ?? []}
         projectsLoading={projectsQuery.isLoading}
         presetPrincipal={{ type: 'group', id: groupId, label: groupName }}
+        onOpenBuiltinRolePath={onOpenBuiltinRolePath}
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
           setAssignRoleOpen(false);

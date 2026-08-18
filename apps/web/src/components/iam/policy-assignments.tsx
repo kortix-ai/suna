@@ -8,6 +8,7 @@
 import { errorToast, successToast } from '@/components/ui/toast';
 import { PlusIcon as Plus, ShieldIcon as Shield, TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -421,6 +422,7 @@ export function CreateAssignmentDialog({
   projectsLoading,
   onCreated,
   presetPrincipal,
+  onOpenBuiltinRolePath,
 }: {
   accountId: string;
   open: boolean;
@@ -437,6 +439,10 @@ export function CreateAssignmentDialog({
   /** Pre-bind the principal (e.g. a group already open on screen) and hide
    * the principal-type/entity pickers so the dialog is just role + scope. */
   presetPrincipal?: AssignmentPrincipalPreset;
+  /** Only used with presetPrincipal: jump to wherever this principal's
+   * built-in role actually gets assigned (e.g. a group's Projects tab),
+   * surfaced from the empty-state when the account has no custom roles yet. */
+  onOpenBuiltinRolePath?: () => void;
 }) {
   // `service_account` is a UI-only principal type — a standalone (non-agent)
   // service account. It maps to the backend `token` principal on submit.
@@ -703,7 +709,42 @@ export function CreateAssignmentDialog({
             {rolesLoading ? (
               <p className="text-muted-foreground text-xs">Loading roles…</p>
             ) : customRoles.length === 0 ? (
-              <p className="text-muted-foreground text-xs">Create a custom role first.</p>
+              <div className="border-border bg-muted/30 space-y-2 rounded-md border border-dashed p-3">
+                <p className="text-muted-foreground text-xs">
+                  This account has no custom roles yet. Custom roles are an additive layer on top
+                  of built-in roles (Owner, Admin, Manager, Editor, Member) — for a built-in role,
+                  assign it directly instead of through this dialog.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {presetPrincipal && onOpenBuiltinRolePath ? (
+                    <button
+                      type="button"
+                      className="text-foreground text-xs font-medium underline underline-offset-2"
+                      onClick={() => {
+                        onOpenBuiltinRolePath();
+                        onOpenChange(false);
+                      }}
+                    >
+                      Open Projects tab
+                    </button>
+                  ) : !presetPrincipal ? (
+                    <Link
+                      href={`/accounts/${accountId}?tab=members`}
+                      className="text-foreground text-xs font-medium underline underline-offset-2"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      Open Members tab
+                    </Link>
+                  ) : null}
+                  <Link
+                    href={`/accounts/${accountId}?tab=roles`}
+                    className="text-foreground text-xs font-medium underline underline-offset-2"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Create a custom role
+                  </Link>
+                </div>
+              </div>
             ) : (
               <Select value={roleId} onValueChange={setRoleId} disabled={mutation.isPending}>
                 <SelectTrigger id="assignment-role">
