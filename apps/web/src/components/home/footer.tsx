@@ -146,7 +146,7 @@ const Footer = () => {
             </small>
           </div>
 
-          <ThemeToggle variant="compact" />
+          <ThemeToggle variant="compact" systemTheme={false} />
         </div>
       </footer>
     </section>

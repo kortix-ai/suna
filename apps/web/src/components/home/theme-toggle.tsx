@@ -13,9 +13,10 @@ import * as React from 'react';
 interface ThemeToggleProps {
   variant?: 'icon' | 'compact';
   className?: string;
+  systemTheme?: boolean;
 }
 
-export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
+export function ThemeToggle({ variant = 'icon', className, systemTheme = true }: ThemeToggleProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -117,35 +118,37 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
             ></path>
           </svg>
         </button>
-        <button
-          aria-label={tI18nHardcoded.raw(
-            'autoComponentsHomeThemeToggleJsxAttrAriaLabelSystemThemeb9e760e3',
-          )}
-          className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
-          type="button"
-          style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}
-          onClick={() => setTheme('system')}
-        >
-          <svg
-            aria-hidden="true"
-            width="24px"
-            height="24px"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+        {systemTheme && (
+          <button
+            aria-label={tI18nHardcoded.raw(
+              'autoComponentsHomeThemeToggleJsxAttrAriaLabelSystemThemeb9e760e3',
+            )}
+            className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
+            type="button"
+            style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}
+            onClick={() => setTheme('system')}
           >
-            <path
-              d="M6 3C3.79 3 2 4.79 2 7V12H22V7C22 4.79 20.21 3 18 3H6Z"
-              fill="currentColor"
-            ></path>
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M2 14H22C22 16.21 20.21 18 18 18H15V21C15 21.55 14.55 22 14 22H10C9.45 22 9 21.55 9 21V18H6C3.79 18 2 16.21 2 14ZM11 18V20H13V18H11Z"
-              fill="currentColor"
-            ></path>
-          </svg>
-        </button>
+            <svg
+              aria-hidden="true"
+              width="24px"
+              height="24px"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M6 3C3.79 3 2 4.79 2 7V12H22V7C22 4.79 20.21 3 18 3H6Z"
+                fill="currentColor"
+              ></path>
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M2 14H22C22 16.21 20.21 18 18 18H15V21C15 21.55 14.55 22 14 22H10C9.45 22 9 21.55 9 21V18H6C3.79 18 2 16.21 2 14ZM11 18V20H13V18H11Z"
+                fill="currentColor"
+              ></path>
+            </svg>
+          </button>
+        )}
       </div>
     );
   }
