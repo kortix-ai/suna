@@ -3,7 +3,11 @@
 import { cn } from '@/lib/utils';
 import {
   BrainIcon,
+  CpuIcon,
   GitBranchIcon,
+  IconWeight,
+  LightningIcon,
+  PlugsConnectedIcon,
   RobotIcon,
   ShieldIcon,
   SparkleIcon,
@@ -13,59 +17,61 @@ import { useState, type ComponentType, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
 
 /**
- * Layer 01 — the repo IS the company, drawn as a map rather than as config.
+ * Layer 01 — the repo IS the company, drawn as an orthogonal schematic.
  *
- * WHY THIS IS NOT TWO CODE PANELS ANY MORE
+ * One trunk line leaves the repo node and runs off the right edge of the
+ * panel; seven nodes hang off it on strict 90° drops, alternating above and
+ * below. The rightmost nodes are deliberately cut by the panel border — the
+ * crop says "this row keeps going", which is the point: the repo holds more
+ * than a diagram can politely fit.
  *
- * The panel used to be a YAML block beside a list of directory paths. Every
- * word on it was accurate and almost none of it was legible: a reader who does
- * not write YAML met two monospace columns and learned that Kortix has config
- * files, which is not the claim. The claim is that ONE repo holds the whole
- * company — who works for you, how they do a job, what they have learned, and
- * what each of them may touch — and that a claim about containment is a shape,
- * not a listing. So the panel is now that shape: one root node, four things
- * hanging off it, connected by a line you can follow.
+ * GEOMETRY. Nodes and edges share one CSS percentage space. Each node is
+ * positioned AT ITS PORT (bottom-center for the top row, top-center for the
+ * bottom row), and every edge is a 1px div spanning exactly from the trunk
+ * row to the node's row — line and port meet by construction. No SVG: a
+ * div has no dash math to go wrong (Motion's `pathLength` draw left
+ * per-axis dash residue under `preserveAspectRatio="none"`), and it draws
+ * with `scaleX`/`scaleY`, which composites.
  *
- * The config did not go away, it stopped leading. It sits at the bottom as a
- * three-line excerpt with its plain-English reading beside it, which is the one
- * place the file earns its space — showing that a rule is a line of text is
- * exactly what makes "files you own" concrete rather than a slogan.
- *
- * ACCURACY GATE — the manifest excerpt below is an EXCERPT, not a complete
- * document (the old panel showed a full `kortix_version: 2` manifest and had to
- * validate clean; this one deliberately does not pretend to). The lines are
- * copied verbatim from that validated manifest, and these rules still bind:
+ * ACCURACY GATE — every node below is something that verifiably lives in the
+ * repo, and these rules still bind:
+ *   - Connectors, Triggers and Machine are all declared in `kortix.yaml` —
+ *     that is the manifest's whole job (machine image, connectors, triggers).
  *   - Agent BEHAVIOUR (model, mode, prompt, permission) is a hard error in
  *     `kortix.yaml` — it lives in `.kortix/opencode/agents/<name>.md`. The
  *     manifest grants; it does not configure the agent. The "Rules" node says
  *     "what each agent may touch" for exactly this reason.
- *   - An omitted grant resolves to `none`. That is what the closing line claims,
- *     and it is why the excerpt shows no `secrets:` key.
  *   - `channels:` is rejected outright in version 2 — channel routing is live
- *     project state, not manifest config. Never add one, here or to the map.
- *   - `secrets:` grants secret NAMES, and a granted secret IS a real env value
- *     inside the session. Never write that it is hidden from the model.
- * Paths are the shipped starter template
- * (`packages/starter/templates/base`), checked file by file: `kortix.yaml` at
- * the repo ROOT, everything else under `.kortix/`. `acme-co`, `invoice-clerk`
- * and `reconcile-invoices` are placeholders, not customers.
+ *     project state, not manifest config. Never add a Channels node.
+ *   - There is deliberately NO "Members" node: members and roles are live
+ *     project state managed in the control plane, not files in the repo.
+ *     Adding one would claim repo-ness the product does not have.
+ *   - `secrets:` grants secret NAMES, and a granted secret IS a real env
+ *     value inside the session. Never write that it is hidden from the model.
+ * Paths are the shipped starter template (`packages/starter/templates/base`),
+ * checked file by file: `kortix.yaml` at the repo ROOT, everything else under
+ * `.kortix/`. `acme-co` is a placeholder, not a customer.
  */
 
-/**
- * The four things the repo holds, in the order the layer's own copy names them:
- * agents, skills, memory, then the config that scopes all three.
- *
- * `note` is the whole point of the redesign — it is the node's meaning in words
- * a reader who has never opened a terminal already owns. `path` is the proof
- * underneath it, deliberately the smaller and quieter of the two: the file is
- * evidence for the sentence, not the other way round.
- */
+type NodeId =
+  | 'agents'
+  | 'skills'
+  | 'memory'
+  | 'rules'
+  | 'connectors'
+  | 'triggers'
+  | 'machine';
+
 const NODES: {
-  id: string;
-  icon: ComponentType<{ className?: string }>;
+  id: NodeId;
+  icon: ComponentType<{ className?: string; weight?: IconWeight }>;
   label: string;
   note: string;
   path: string;
+  /** Stub position along the trunk, percent. */
+  x: number;
+  /** Which side of the trunk the node sits on. */
+  side: 'up' | 'down';
 }[] = [
   {
     id: 'agents',
@@ -73,6 +79,8 @@ const NODES: {
     label: 'Agents',
     note: 'who does the work',
     path: '.kortix/opencode/agents/',
+    x: 34,
+    side: 'up',
   },
   {
     id: 'skills',
@@ -80,6 +88,8 @@ const NODES: {
     label: 'Skills',
     note: 'how your company does a job',
     path: '.kortix/opencode/skills/',
+    x: 46,
+    side: 'down',
   },
   {
     id: 'memory',
@@ -87,6 +97,8 @@ const NODES: {
     label: 'Memory',
     note: 'what it has learned so far',
     path: '.kortix/memory/',
+    x: 58,
+    side: 'up',
   },
   {
     id: 'rules',
@@ -94,244 +106,305 @@ const NODES: {
     label: 'Rules',
     note: 'what each agent may touch',
     path: 'kortix.yaml',
+    x: 70,
+    side: 'down',
+  },
+  {
+    id: 'triggers',
+    icon: LightningIcon,
+    label: 'Triggers',
+    note: 'when work starts on its own',
+    path: 'kortix.yaml',
+    x: 82,
+    side: 'up',
+  },
+  {
+    id: 'connectors',
+    icon: PlugsConnectedIcon,
+    label: 'Connectors',
+    note: 'the tools it is wired to',
+    path: 'kortix.yaml',
+    x: 94,
+    side: 'down',
+  },
+  {
+    id: 'machine',
+    icon: CpuIcon,
+    label: 'Machine',
+    note: 'the image sessions boot',
+    path: 'kortix.yaml',
+    x: 104,
+    side: 'up',
   },
 ];
 
-/**
- * One rule, and its reading. Left column is the file; right column is what a
- * person would say out loud looking at it.
- *
- * Paired rather than stacked so the two columns share a baseline grid — the
- * gloss lands on the same line as the line it glosses, which is what makes it
- * read as a translation instead of as a caption.
- */
-const GRANT: { code: string; gloss: string }[] = [
-  { code: 'invoice-clerk:', gloss: 'this agent…' },
-  { code: '  connectors: [gmail-read]', gloss: '…may read Gmail' },
-  { code: '  skills: [reconcile-invoices]', gloss: '…and run one skill' },
-];
+/** The trunk's row, and the two rows the stubs reach. All in percent. */
+const TRUNK_Y = 46;
+const UP_Y = 32;
+const DOWN_Y = 60;
+/** The repo's output port — the trunk starts here and runs off the edge. */
+const REPO = { x: 22, y: TRUNK_Y };
+const TRUNK_END = 112;
 
-/**
- * The map builds in reading order: the repo, then the line, then what hangs off
- * it. That is the one thing a still image of this panel cannot say — that the
- * four nodes are INSIDE the first one — so the motion is carrying information,
- * not decorating a diagram.
- *
- * It fires once, from `useStepShowcaseStart` — the same IntersectionObserver
- * the CLI-driven panels in this folder start their movies from. Deliberately
- * NOT motion's `whileInView`: nothing else in this app uses the viewport
- * feature, and its failure mode is a panel frozen at `opacity: 0` rather than
- * an animation that simply does not play. The observer disconnects on the first
- * hit, so the map never rebuilds when the reader scrolls back up.
- */
-const ENTER: Transition = { duration: 0.42, ease: [0.23, 1, 0.32, 1] };
+const ENTER: Transition = { duration: 0.4, ease: [0.23, 1, 0.32, 1] };
+/** The trunk draws at constant speed — a line crossing a canvas is time
+ *  passing, and time passes linearly. */
+const TRUNK_AT = 0.15;
+const TRUNK_DURATION = 0.8;
+/** A stub fires the moment the trunk's tip passes its junction. */
+const stubAt = (x: number): number =>
+  TRUNK_AT + TRUNK_DURATION * ((x - REPO.x) / (TRUNK_END - REPO.x));
+const nodeAt = (x: number): number => stubAt(x) + 0.22;
 
-/** Neutral tile, never tinted. Four accent colours across four sibling nodes
- *  would be decoration — the design system spends colour on state, and none of
- *  these four nodes has a state. */
-function Tile({
-  icon: Icon,
-  root,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  root?: boolean;
-}) {
+function PortDot({ className }: { className?: string }): ReactNode {
   return (
     <span
+      aria-hidden
       className={cn(
-        'flex items-center justify-center rounded-sm',
-        root
-          ? 'bg-foreground text-background size-8'
-          : 'border-border bg-muted/50 text-muted-foreground size-7 border sm:size-8',
+        'border-border bg-background absolute size-1.5 rounded-full border transition-colors duration-200',
+        className,
       )}
-    >
-      <Icon className="size-4" />
-    </span>
+    />
   );
 }
 
 export function StepSourceOfTruth(): ReactNode {
   const reduced = useReducedMotion();
   const [drawn, setDrawn] = useState(false);
+  const [hovered, setHovered] = useState<NodeId | null>(null);
   const rootRef = useStepShowcaseStart(() => setDrawn(true));
 
-  /** Reduced motion keeps the fade — it is what says the map finished drawing —
-   *  and drops the travel. Never `animation: none`. */
-  const from = (y: number) => (reduced ? { opacity: 0 } : { opacity: 0, y });
-  /** Every node animates from `from()` to this, gated on the same flag, so a
-   *  panel that never enters the viewport is simply invisible rather than
-   *  half-drawn. */
-  const to = { opacity: 1, y: 0 };
-  const step = (delay: number) => ({ ...ENTER, delay: reduced ? 0 : delay });
+  /** Reduced motion keeps the fades — they say the schematic finished
+   *  building — and drops travel, scale and the line drawing. */
+  const from = (extra: object) => (reduced ? { opacity: 0 } : { opacity: 0, ...extra });
+  const to = { opacity: 1, y: 0, scale: 1 };
+  const at = (delay: number): Transition => (reduced ? { ...ENTER, delay: 0 } : { ...ENTER, delay });
+
+  /**
+   * Every edge is a 1px div, not SVG. Motion's `pathLength` draw runs on
+   * `stroke-dasharray`, and under `preserveAspectRatio="none"` the dash math
+   * scales differently per axis — finished lines kept residual dashes and
+   * stopped short of their ports. A div has no dash math, and it is positioned
+   * by the same CSS percentages as the nodes, so line and port meet exactly.
+   * The wrapper owns position (and centering translate); the inner m.div owns
+   * the scale draw — Motion's inline transform must never share an element
+   * with a translate class.
+   */
+  const edge = (
+    axis: 'x' | 'y',
+    origin: string,
+    delay: number,
+    duration: number,
+    active: boolean,
+  ) => {
+    const collapsed = axis === 'x' ? { scaleX: 0 } : { scaleY: 0 };
+    return (
+      <m.div
+        initial={reduced ? { opacity: 0 } : collapsed}
+        animate={
+          drawn ? { scaleX: 1, scaleY: 1, opacity: 1 } : reduced ? { opacity: 0 } : collapsed
+        }
+        transition={reduced ? { duration: 0.3 } : { duration, ease: 'linear', delay }}
+        style={{ transformOrigin: origin }}
+        className={cn(
+          'h-full w-full transition-colors duration-200',
+          active ? 'bg-foreground/40' : 'bg-border',
+        )}
+      />
+    );
+  };
 
   return (
-    <div
-      ref={rootRef}
-      // `--spacing` is 0.23rem in this theme, so every step on the scale is ~62%
-      // of what it reads as: `p-5` here is 18px, not 20px, and `gap-4` is 15px.
-      className="flex h-full min-h-0 w-full flex-col justify-center gap-4 overflow-hidden p-4 sm:gap-5 sm:p-5"
-    >
-      {/* The map is ONE block with no internal gap, because the connectors are
-          drawn as bordered spans inside it — a flex `gap` between the root and
-          the grid would cut the stem in half and leave the line floating. All
-          vertical spacing inside the map is carried by the connectors
-          themselves, and by `space-y-2` at the one width where they are hidden. */}
-      <div className="flex flex-col space-y-2 sm:space-y-0">
-        <m.div
-          initial={from(8)}
-          animate={drawn ? to : from(8)}
-          transition={step(0)}
-          className="flex justify-center"
-        >
-          <div className="border-border bg-background flex items-center gap-3 rounded-md border px-4 py-3">
-            <Tile icon={GitBranchIcon} root />
-            <div className="min-w-0">
-              <div className="text-foreground font-mono text-sm font-medium">acme-co</div>
-              <div className="text-muted-foreground hidden text-xs sm:block">
-                one repo — your whole company, as files
-              </div>
-            </div>
-          </div>
-        </m.div>
-
-        {/* Stem: root → bus. Hidden at the width where the nodes stack, because
-            a single vertical line into a vertical list says nothing the layout
-            has not already said. */}
-        <m.span
+    <div ref={rootRef} className="h-full min-h-0 w-full overflow-hidden">
+      {/* ── The schematic (lg+, where the pinned pane gives it room) ──── */}
+      <div
+        className={cn(
+          'relative hidden h-full w-full lg:block',
+          'bg-[radial-gradient(circle,color-mix(in_oklab,var(--color-border)_45%,transparent)_1px,transparent_1px)] bg-[size:16px_16px]',
+        )}
+      >
+        {/* Trunk: repo port → off the right edge, drawn left to right. */}
+        <div
           aria-hidden
-          initial={reduced ? { opacity: 0 } : { opacity: 0, scaleY: 0 }}
-          animate={drawn ? { opacity: 1, scaleY: 1 } : { opacity: 0, scaleY: reduced ? 1 : 0 }}
-          transition={step(0.14)}
-          style={{ transformOrigin: 'top' }}
-          className="bg-border mx-auto hidden h-6 w-px sm:block"
-        />
+          className="absolute -translate-y-1/2"
+          style={{
+            left: `${REPO.x}%`,
+            top: `${TRUNK_Y}%`,
+            width: `${TRUNK_END - REPO.x}%`,
+            height: 1,
+          }}
+        >
+          {edge('x', 'left center', TRUNK_AT, TRUNK_DURATION, false)}
+        </div>
 
-        {/* The gutter between the four nodes is CELL PADDING at `sm`, not a grid
-            `gap`, and `-mx-1.5` on the grid cancels the two outer halves so the
-            row still lines up with everything above and below it.
+        {/* Stubs: trunk → each node's port, drawn away from the trunk. */}
+        {NODES.map((node) => {
+          const up = node.side === 'up';
+          return (
+            <div
+              key={node.id}
+              aria-hidden
+              className="absolute -translate-x-1/2"
+              style={{
+                left: `${node.x}%`,
+                top: `${up ? UP_Y : TRUNK_Y}%`,
+                height: `${up ? TRUNK_Y - UP_Y : DOWN_Y - TRUNK_Y}%`,
+                width: 1,
+              }}
+            >
+              {edge(
+                'y',
+                up ? 'center bottom' : 'center top',
+                stubAt(node.x),
+                0.2,
+                hovered === node.id,
+              )}
+            </div>
+          );
+        })}
 
-            A `gap` would have been the obvious way to space them and it breaks
-            the bus: an absolutely-positioned rail is laid out against its cell's
-            padding box, so with a gap the four half-rails end at four cell edges
-            with 11px of nothing between them — a connector drawn as four
-            disconnected stubs. Padding puts that same 11px INSIDE the cells, the
-            cells stay flush, and the rails meet. Below `sm` the nodes are a 2×2
-            block with no bus to protect, so an ordinary `gap-2` is fine there. */}
-        <div className="grid grid-cols-2 gap-2 sm:-mx-1.5 sm:grid-cols-4 sm:gap-0">
-          {NODES.map((node, index) => {
-            const first = index === 0;
-            const last = index === NODES.length - 1;
-            return (
+        {/* The repo node — anchored by its output port (right-center). */}
+        <div
+          style={{ left: `${REPO.x}%`, top: `${REPO.y}%` }}
+          className="absolute -translate-x-full -translate-y-1/2"
+        >
+          <m.div
+            initial={from({ scale: 0.95, y: 6 })}
+            animate={drawn ? to : from({ scale: 0.95, y: 6 })}
+            transition={at(0)}
+            className="relative translate-x-12"
+          >
+            <span className="bg-foreground text-background absolute -top-5 left-0 rounded-t-sm px-2 py-0.5 font-mono text-[10px] leading-4">
+              repo
+            </span>
+            <div className="border-border bg-background relative flex items-center gap-3 rounded-md rounded-tl-none border px-4 py-3">
+              <span className="bg-foreground text-background flex size-8 items-center justify-center rounded-sm">
+                <GitBranchIcon weight='fill' className="size-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="text-foreground block font-mono text-sm leading-tight font-medium">
+                  acme-co
+                </span>
+                <span className="text-muted-foreground block text-[11px] leading-tight whitespace-nowrap">
+                  your whole company, as files
+                </span>
+              </span>
+              <PortDot
+                className={cn(
+                  'top-1/2 -right-[3px] -translate-y-1/2',
+                  drawn && 'border-foreground/40',
+                )}
+              />
+            </div>
+          </m.div>
+        </div>
+
+        {/* The row — each node anchored by the port its stub arrives at. */}
+        {NODES.map((node) => {
+          const Icon = node.icon;
+          const up = node.side === 'up';
+          return (
+            <div
+              key={node.id}
+              style={{ left: `${node.x}%`, top: `${up ? UP_Y : DOWN_Y}%` }}
+              className={cn('absolute -translate-x-1/2', up && '-translate-y-full')}
+            >
               <m.div
-                key={node.id}
-                initial={from(10)}
-                animate={drawn ? to : from(10)}
-                // 60ms apart: enough to read as a sequence, short enough that
-                // the whole map has settled inside ~0.7s.
-                transition={step(0.22 + index * 0.06)}
-                className="relative flex sm:px-1.5 sm:pt-6"
+                initial={from({ scale: 0.95, y: up ? -6 : 6 })}
+                animate={drawn ? to : from({ scale: 0.95, y: up ? -6 : 6 })}
+                transition={at(nodeAt(node.x))}
+                onMouseEnter={() => setHovered(node.id)}
+                onMouseLeave={() => setHovered(null)}
+                className={cn(
+                  'border-border bg-background relative rounded-md border transition-colors duration-200',
+                  hovered === node.id && 'border-foreground/25',
+                )}
               >
-                {/* The bus, drawn as four half-rails rather than one absolute
-                    element. A single spanning line would need to know the grid's
-                    pixel width; a half-rail per cell only needs to know whether
-                    it is an end, so it stays correct at every panel width.
-                    Hidden below `sm`, where the nodes are a 2×2 block and there
-                    is no single row for a bus to span. */}
-                <span
-                  aria-hidden
+                <PortDot
                   className={cn(
-                    'bg-border absolute top-0 hidden h-px sm:block',
-                    first && 'right-0 left-1/2',
-                    last && 'right-1/2 left-0',
-                    !first && !last && 'inset-x-0',
+                    up
+                      ? '-bottom-[3px] left-1/2 -translate-x-1/2'
+                      : '-top-[3px] left-1/2 -translate-x-1/2',
+                    hovered === node.id && 'border-foreground/40',
                   )}
                 />
-                {/* The drop. `-translate-x-1/2` because a 1px line placed at
-                    `left-1/2` sits half a pixel to the RIGHT of the centre it is
-                    supposed to mark, and on a diagram made of hairlines that is
-                    the difference between drawn and nearly drawn. */}
-                <span
-                  aria-hidden
-                  className="bg-border absolute top-0 left-1/2 hidden h-6 w-px -translate-x-1/2 sm:block"
-                />
 
-                <article className="border-border bg-background flex w-full flex-col gap-2 rounded-md border p-3 sm:gap-2.5 sm:p-4">
-                  {/* Icon beside the label when the card is half a column wide,
-                      above it when it is a quarter — the same two elements,
-                      turned through 90° at the width where the column stops
-                      being able to hold them side by side. */}
-                  <div className="flex items-center gap-2 sm:flex-col sm:items-start sm:gap-2.5">
-                    <Tile icon={node.icon} />
-                    <span className="text-foreground text-sm font-medium">{node.label}</span>
-                  </div>
-                  <p className="text-muted-foreground text-xs leading-snug text-pretty">
-                    {node.note}
-                  </p>
-                  <code className="text-muted-foreground/60 hidden truncate font-mono text-[11px] sm:block">
-                    {node.path}
-                  </code>
-                </article>
+                <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                  <span className="border-border bg-muted/50 text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-sm border">
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="text-foreground block text-sm leading-tight font-medium">
+                      {node.label}
+                    </span>
+                    {/* Meaning by default, file path on hover — both in one
+                        grid cell so the swap never reflows the node. */}
+                    <span className="grid text-[11px] leading-tight whitespace-nowrap">
+                      <span
+                        className={cn(
+                          'text-muted-foreground col-start-1 row-start-1 transition-opacity duration-200',
+                          hovered === node.id && 'opacity-0',
+                        )}
+                      >
+                        {node.note}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-muted-foreground col-start-1 row-start-1 font-mono opacity-0 transition-opacity duration-200',
+                          hovered === node.id && 'opacity-100',
+                        )}
+                      >
+                        {node.path}
+                      </span>
+                    </span>
+                  </span>
+                </div>
               </m.div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Below lg: the 256–304px frame has no room for a schematic —
+          same content as a plain stack. ────────────────────────────── */}
+      <div className="flex h-full flex-col justify-center gap-2 overflow-y-auto p-3 lg:hidden">
+        <div className="border-border bg-background flex items-center gap-3 rounded-md border px-3.5 py-2.5">
+          <span className="bg-foreground text-background flex size-7 items-center justify-center rounded-sm">
+            <GitBranchIcon weight='fill' className="size-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="text-foreground block font-mono text-sm leading-tight font-medium">
+              acme-co
+            </span>
+            <span className="text-muted-foreground block text-[11px] leading-tight">
+              your whole company, as files
+            </span>
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {NODES.map((node) => {
+            const Icon = node.icon;
+            return (
+              <div
+                key={node.id}
+                className="border-border bg-background flex items-center gap-2.5 rounded-md border px-3 py-2"
+              >
+                <span className="border-border bg-muted/50 text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-sm border">
+                  <Icon weight='fill' className="size-3.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="text-foreground block text-[13px] leading-tight font-medium">
+                    {node.label}
+                  </span>
+                  <span className="text-muted-foreground block truncate text-[11px] leading-tight">
+                    {node.note}
+                  </span>
+                </span>
+              </div>
             );
           })}
         </div>
       </div>
-
-      {/* The file, once, at the bottom — where it is evidence for the map
-          rather than the thing the reader has to decode first.
-
-          `lg` and up only. Below that the panel's frame is 256–304px tall
-          (`MobileCard` in how-it-works.tsx) and the map alone fills it; a strip
-          that clips halfway through its own second line is worse than a strip
-          that is not there. */}
-      <m.div
-        initial={from(10)}
-        animate={drawn ? to : from(10)}
-        transition={step(0.46)}
-        className="border-border bg-background hidden rounded-md border lg:block"
-      >
-        <div className="border-border/70 flex items-center gap-2 border-b px-4 py-2">
-          <ShieldIcon className="text-muted-foreground size-3.5" />
-          <span className="text-muted-foreground font-mono text-[11px]">kortix.yaml</span>
-          <span className="text-muted-foreground/60 ml-auto text-xs">
-            one rule, and what it means
-          </span>
-        </div>
-
-        {/* Both columns run at the same size and the same line-height so the
-            gloss sits on the baseline of the line it translates. A 12px gloss
-            beside an 11.5px code line drifts by ~3px over three rows, which is
-            just enough to read as two unrelated lists. */}
-        {/* No `sm:` prefixes in here. The strip itself is `lg` and up, so every
-            width that can see it is already past `sm` — a responsive variant
-            that can never be false is a variant that hides what the rule does. */}
-        <div className="divide-border/70 grid grid-cols-2 divide-x">
-          <pre
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll this overflowing code region, as required by Axe.
-            tabIndex={0}
-            aria-label="A grant in the Kortix project manifest"
-            className="overflow-x-auto px-4 py-3 font-mono text-[11.5px] leading-[1.75]"
-          >
-            <code>
-              {GRANT.map((line) => (
-                <div key={line.code} className="text-foreground/85">
-                  {line.code}
-                </div>
-              ))}
-            </code>
-          </pre>
-
-          <ul className="text-muted-foreground px-4 py-3 text-[11.5px] leading-[1.75]">
-            {GRANT.map((line) => (
-              <li key={line.code}>{line.gloss}</li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="text-muted-foreground/70 border-border/70 border-t px-4 py-2 text-xs">
-          Nothing else. A grant you do not write is a grant it does not get.
-        </p>
-      </m.div>
     </div>
   );
 }
