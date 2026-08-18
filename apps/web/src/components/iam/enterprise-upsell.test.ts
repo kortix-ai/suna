@@ -27,14 +27,23 @@ describe('EnterpriseUpsell component', () => {
 });
 
 describe('account page gates each IAM surface behind the entitlement', () => {
-  test('groups tab: rbac entitlement or upsell', () => {
-    expect(pageSource).toMatch(/rbacEnabled \? \(\s*<GroupsTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="groups" />');
+  // Groups and Roles are NOT gated the way Audit/Identity are: `GET
+  // .../groups` and `GET .../roles` carry no entitlement check server-side
+  // (only the mutating routes do), so the built-in roles and an account's
+  // real group list are free content, not upsell. `GroupsTab`/`RolesTab`
+  // always render and gate only their own "Create"/"New role" controls on
+  // `rbacEnabled` internally — see this file's other describe block, and
+  // `page.tsx`'s comment above these two sections.
+  test('groups tab: always mounted, passed rbacEnabled to gate its own controls', () => {
+    expect(pageSource).toMatch(/activeSection === 'groups' \?[\s\S]*?<GroupsTab/);
+    expect(pageSource).toMatch(/<GroupsTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" />');
   });
 
-  test('roles tab: rbac entitlement or upsell', () => {
-    expect(pageSource).toMatch(/rbacEnabled \? \(\s*<RolesTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="roles" />');
+  test('roles tab: always mounted, passed rbacEnabled to gate its own controls', () => {
+    expect(pageSource).toMatch(/activeSection === 'roles' && canManageRoles \?[\s\S]*?<RolesTab/);
+    expect(pageSource).toMatch(/<RolesTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" />');
   });
 
   test('audit tab: auditAccess entitlement or upsell', () => {

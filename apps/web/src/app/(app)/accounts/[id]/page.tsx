@@ -301,13 +301,24 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
-  // The IAM surfaces (Groups, Roles, Audit, SSO/SCIM) are enterprise-gated.
-  // Tabs/sections stay VISIBLE for discoverability, but a non-entitled
-  // account sees the EnterpriseUpsell card in place of the feature — mirrors
-  // the server's 402 (requireEntitlement) so an admin never touches a control
-  // the backend will reject. While the account state is still loading we
-  // render nothing gated (skeleton) to avoid flashing the upsell at
-  // enterprise accounts.
+  // Audit and SSO/SCIM have no free-tier content — the server has nothing to
+  // list until the account is entitled, so the EnterpriseUpsell card stands
+  // in for the whole feature. Groups and Roles are different: `GET
+  // .../groups` and `GET .../roles` carry NO entitlement check
+  // (`apps/api/src/accounts/iam/groups.ts` / `custom-roles.ts` — only the
+  // mutating routes call `requireEntitlement(..., 'rbac')`), because the six
+  // built-in roles and an account's real (if empty) group list are product,
+  // not upsell. `GroupsTab`/`RolesTab` already render that list unconditionally
+  // and gate only "Create a group" / "New role" behind `rbacEnabled` — a
+  // disabled control with an inline "Enterprise feature" tooltip/banner,
+  // mirroring the server's 403 so an admin never submits a mutation the
+  // backend will reject. Blocking the whole tab behind `rbacEnabled` here (as
+  // this used to) hid that free content behind an upsell card for no reason;
+  // see `enterprise-upsell.tsx`'s own header comment, which already said the
+  // intent was to "keep the tab/section visible for discoverability" — the
+  // page-level gate below just never let that happen. Audit/Identity keep the
+  // outer gate; Groups/Roles no longer do. While the account state is still
+  // loading we render nothing gated (skeleton) to avoid flashing.
   const rbacEnabled = !!entitlements?.rbac;
   const auditEnabled = !!entitlements?.auditAccess;
   const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
@@ -536,28 +547,24 @@ export default function AccountSettingsPage() {
             {activeSection === 'groups' ? (
               entitlementsLoading ? (
                 <Skeleton className="h-64 w-full rounded-md" />
-              ) : rbacEnabled ? (
+              ) : (
                 <GroupsTab
                   accountId={account.account_id}
                   canCreate={canCreateGroup}
                   rbacEnabled={rbacEnabled}
                 />
-              ) : (
-                <EnterpriseUpsell feature="groups" />
               )
             ) : null}
 
             {activeSection === 'roles' && canManageRoles ? (
               entitlementsLoading ? (
                 <Skeleton className="h-64 w-full rounded-md" />
-              ) : rbacEnabled ? (
+              ) : (
                 <RolesTab
                   accountId={account.account_id}
                   canManage={canManageRoles}
                   rbacEnabled={rbacEnabled}
                 />
-              ) : (
-                <EnterpriseUpsell feature="roles" />
               )
             ) : null}
 
