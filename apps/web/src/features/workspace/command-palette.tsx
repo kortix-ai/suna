@@ -131,7 +131,7 @@ import {
   useModelStore,
   useRuntimeMessages,
 } from '@kortix/sdk/react';
-import { chalkColors, formatRelativeTime } from '@kortix/shared';
+import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 
@@ -2078,7 +2078,9 @@ export function CommandPalette() {
                             <Bot className="size-5 shrink-0" />
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm font-medium">{agent.name}</span>
+                            <span className="truncate text-sm font-medium">
+                              {capitalizeWords(agent.name)}
+                            </span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}
@@ -2121,7 +2123,7 @@ export function CommandPalette() {
                             )}
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm capitalize">{agent.name}</span>
+                            <span className="truncate text-sm">{capitalizeWords(agent.name)}</span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}

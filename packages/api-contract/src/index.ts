@@ -488,6 +488,49 @@ export const ReconcileConnectionInputSchema = z
   .strict();
 export type ReconcileConnectionInput = z.infer<typeof ReconcileConnectionInputSchema>;
 
+const OAuth2TokenParameterNameSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z][A-Za-z0-9_.~-]{0,127}$/,
+    'token parameter names must be 1-128 URL-form-safe characters and start with a letter',
+  );
+
+export const OAUTH2_RESERVED_TOKEN_PARAMETER_NAMES = [
+  'grant_type',
+  'client_id',
+  'client_secret',
+  'client_assertion',
+  'client_assertion_type',
+  'scope',
+  'resource',
+  'audience',
+] as const;
+const OAUTH2_RESERVED_TOKEN_PARAMETERS = new Set<string>(OAUTH2_RESERVED_TOKEN_PARAMETER_NAMES);
+
+const OAuth2AdditionalTokenParametersSchema = z
+  .record(OAuth2TokenParameterNameSchema, z.string().max(4096))
+  .superRefine((value, ctx) => {
+    const entries = Object.entries(value);
+    if (entries.length > 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_big,
+        type: 'array',
+        maximum: 32,
+        inclusive: true,
+        message: 'at most 32 additional token parameters are allowed',
+      });
+    }
+    for (const [key] of entries) {
+      if (OAUTH2_RESERVED_TOKEN_PARAMETERS.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `${key} is owned by the OAuth2 client-credentials protocol`,
+        });
+      }
+    }
+  });
+
 export const OAuth2ClientCredentialsSchema = z
   .object({
     type: z.literal('oauth2_client_credentials'),
@@ -509,6 +552,7 @@ export const OAuth2ClientCredentialsSchema = z
     scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
     resource: z.string().trim().min(1).max(4096).optional(),
     audience: z.string().trim().min(1).max(4096).optional(),
+    token_params: OAuth2AdditionalTokenParametersSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

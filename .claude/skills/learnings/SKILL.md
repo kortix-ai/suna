@@ -21,6 +21,31 @@ linked, not inlined.
 
 ## Register
 
+### A shared connector catalog needs one canonical credential scope (2026-08-18)
+
+**When:** rematerializing a credential-dependent connector catalog. Only the
+project-default credential may write project-wide `connectorActions`. Never use
+a member-owned or non-default connection credential. Store catalogs per
+connection before supporting credential-specific action sets.
+*Incident:* Strix found that PR #6507 let a member MCP credential overwrite the
+shared project catalog and expose tenant-specific tool metadata before merge.
+*Enforcer:* `sync-mcp.test.ts` rejects member and non-default rematerialization.
+
+### Catalog discovery must use execution credentials and fail on upstream errors (2026-08-18)
+
+**When:** materializing a remote connector catalog, especially MCP
+`tools/list`. Resolve the same effective connection credential and static
+headers used by tool execution, including OAuth refresh. Reject non-2xx,
+protocol-error, and malformed responses; persist a safe error instead of an
+apparently healthy empty catalog. Re-run discovery after credentials change,
+and never include raw or encoded credential material in diagnostics.
+*Incident:* Essentia Dev Sage Intacct authenticated successfully and exposed
+four MCP tools, while Kortix sent no credential, parsed an empty HTTP 401 body,
+and materialized zero actions without an error.
+*Enforcer:* `sync-mcp.test.ts`, `unit-connector-call.test.ts`, and
+`oauth2.test.ts` cover authenticated discovery, refresh/rematerialization,
+HTTP/JSON-RPC failures, and credential redaction.
+
 ### A reused speculative resource needs a consumption signal every holder can see (2026-08-17)
 
 **When:** caching a server-side find-or-create resource client-side (the warm

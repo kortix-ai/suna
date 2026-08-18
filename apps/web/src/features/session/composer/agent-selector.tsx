@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
-import { isMetaAgentName } from '@kortix/shared';
+import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
@@ -84,7 +84,7 @@ export function AgentSelector({
   const showSearch = primaryAgents.length >= SEARCH_MIN_AGENTS;
 
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name || 'Agent';
+  const displayName = currentAgent?.name ? capitalizeWords(currentAgent.name) : 'Agent';
   const metaSelected = isMetaAgentName(currentAgent?.name);
 
   /**
@@ -123,8 +123,8 @@ export function AgentSelector({
       >
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="text-foreground truncate text-sm font-medium capitalize">
-              {agent.name}
+            <span className="text-foreground truncate text-sm font-medium">
+              {capitalizeWords(agent.name)}
             </span>
             {meta && (
               <Badge variant="outline" size="xs" className="shrink-0 font-normal">

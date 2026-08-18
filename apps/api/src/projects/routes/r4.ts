@@ -61,6 +61,7 @@ import {
 import { setProjectBotName } from '../../channels/voice-identity';
 import { config } from '../../config';
 import {
+  resolveConnectionCredentialValue,
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
@@ -71,7 +72,10 @@ import {
   pipedreamConfigured,
   pipedreamConnectUrl,
 } from '../../connectors/pipedream';
-import { reconcileChannelConnectors } from '../../connectors/sync';
+import {
+  reconcileChannelConnectors,
+  rematerializeCatalogAfterCredentialUpdate,
+} from '../../connectors/sync';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -781,6 +785,7 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
           connectorId: connectorConnections.connectorId,
           ownerType: connectorConnections.ownerType,
           ownerId: connectorConnections.ownerId,
+          isDefault: connectorConnections.isDefault,
           metadata: connectorConnections.metadata,
           authorizationStrategy: connectors.authorizationStrategy,
           providerType: connectors.providerType,
@@ -850,6 +855,23 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
         } catch (error) {
           return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
         }
+        await rematerializeCatalogAfterCredentialUpdate({
+          projectId,
+          accountId: loaded.row.accountId,
+          provider: connection.providerType,
+          ownerType: connection.ownerType,
+          isDefault: connection.isDefault,
+          connectorId: connection.connectorId,
+          credential:
+            connection.providerType === 'mcp' &&
+            connection.ownerType === 'project' &&
+            connection.isDefault
+              ? await resolveConnectionCredentialValue({
+                  connectorId: connection.connectorId,
+                  connectionId,
+                })
+              : null,
+        });
       } else if (operation === 'default') {
         // Make THIS the default connection for its owner scope. Defaults are
         // per-owner (one team default; one per member), and the partial unique
@@ -871,6 +893,21 @@ for (const operation of ['credential', 'revoke', 'activate', 'default'] as const
             .update(connectorConnections)
             .set({ isDefault: true, updatedAt: new Date() })
             .where(eq(connectorConnections.connectionId, connectionId));
+        });
+        await rematerializeCatalogAfterCredentialUpdate({
+          projectId,
+          accountId: loaded.row.accountId,
+          provider: connection.providerType,
+          ownerType: connection.ownerType,
+          isDefault: true,
+          connectorId: connection.connectorId,
+          credential:
+            connection.providerType === 'mcp' && connection.ownerType === 'project'
+              ? await resolveConnectionCredentialValue({
+                  connectorId: connection.connectorId,
+                  connectionId,
+                })
+              : null,
         });
       } else {
         if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);

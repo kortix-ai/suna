@@ -798,6 +798,7 @@ const DISABLED_CHAT_ENGINE_SYNC = {
   hasOlder: false,
   isLoadingOlder: false,
   loadOlder: async () => {},
+  promptLikelyDropped: false,
 };
 
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
@@ -1305,6 +1306,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     hasOlder: sync.hasOlder,
     isLoadingOlder: sync.isLoadingOlder,
     loadOlder: sync.loadOlder,
+    /** See `SessionSyncSnapshot.promptLikelyDropped` — a sent message whose
+     *  stall deadline confirmed the runtime idle with no proof the turn ever
+     *  started. Cleared on the next send. */
+    promptLikelyDropped: sync.promptLikelyDropped,
 
     // lifecycle
     phase,

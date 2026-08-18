@@ -164,6 +164,7 @@ export {
 } from './use-session';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
+export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
 export {
   useQuestionSelfHeal,
   hasRunningQuestionTool,

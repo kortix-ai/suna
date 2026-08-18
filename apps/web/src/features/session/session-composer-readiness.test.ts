@@ -58,4 +58,27 @@ describe('sessionComposerReadiness', () => {
     expect(readiness.notice).not.toMatch(/waking/i);
     expect(readiness.notice).toMatch(/queue/i);
   });
+
+  test('stalled (booting past the ceiling, never unreachable) also offers a retry', () => {
+    // The gap `unreachable` alone can't cover: a sandbox proxy that keeps
+    // answering 503 resets the probe's failure counter every tick, so
+    // `unreachable` never fires no matter how long OpenCode stays wedged
+    // mid-boot. `useRuntimeBootStalled()` is the only thing that still bounds
+    // that case — see its doc and `bootingSinceAt` on the connection store.
+    const readiness = sessionComposerReadiness({ runtimeReady: false, stalled: true });
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.retryable).toBe(true);
+    expect(readiness.notice).toMatch(/queue/i);
+  });
+
+  test('unreachable is checked before stalled — its notice wins when both are true', () => {
+    const readiness = sessionComposerReadiness({
+      runtimeReady: false,
+      unreachable: true,
+      stalled: true,
+    });
+
+    expect(readiness.notice).toMatch(/lost contact/i);
+  });
 });
