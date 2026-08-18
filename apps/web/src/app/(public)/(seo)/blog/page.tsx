@@ -70,12 +70,16 @@ export default function BlogIndexPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
-      <div className="mx-auto max-w-5xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
-        <Reveal>
-          <h1 className="text-foreground mb-3 text-3xl font-medium tracking-tight sm:text-4xl md:text-5xl">
+      <div className="mx-auto max-w-7xl px-6 pt-28 pb-24 sm:pt-40 sm:pb-32">
+        {/* The deck is capped at max-w-2xl so it reads as a sentence rather
+            than a line stretched across the full listing width. */}
+        <Reveal className="max-w-2xl">
+          <h1 className="text-foreground text-3xl font-medium tracking-tight text-balance sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
             {TITLE}
           </h1>
-          <p className="text-muted-foreground max-w-xl text-base leading-relaxed">{DESCRIPTION}</p>
+          <p className="text-muted-foreground mt-5 text-base leading-relaxed sm:text-lg">
+            {DESCRIPTION}
+          </p>
         </Reveal>
 
         {posts.length === 0 ? (
@@ -88,18 +92,22 @@ export default function BlogIndexPage() {
             />
           </div>
         ) : (
-          <div className="mt-12 sm:mt-16">
+          <div className="mt-14 sm:mt-20">
             <Reveal>
               <PostCard post={featured} featured />
             </Reveal>
 
             {rest.length > 0 && (
-              <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
-                {rest.map((post, i) => (
-                  <Reveal key={post.slug} delay={Math.min(i * 0.05, 0.2)}>
-                    <PostCard post={post} />
-                  </Reveal>
-                ))}
+              // One hairline separates the lead from the archive — the only
+              // rule on the page, so it reads as structure rather than chrome.
+              <div className="border-border/60 mt-14 border-t pt-14 sm:mt-16 sm:pt-16">
+                <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 sm:gap-y-12 lg:grid-cols-3">
+                  {rest.map((post, i) => (
+                    <Reveal key={post.slug} delay={Math.min(i * 0.05, 0.2)}>
+                      <PostCard post={post} />
+                    </Reveal>
+                  ))}
+                </div>
               </div>
             )}
           </div>
