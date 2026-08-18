@@ -2,6 +2,7 @@
 
 import { favicon } from '@/components/home/interactive-demo/data';
 import { KortixLogo } from '@/components/ui/kortix-logo';
+import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { m, useReducedMotion } from 'motion/react';
 import { useCallback, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
@@ -138,7 +139,7 @@ export function StepConnectors(): ReactNode {
       ref={rootRef}
       className="relative isolate h-full w-full overflow-hidden [--gap:0.5rem] [--tile:2.5rem] sm:[--gap:0.625rem] sm:[--tile:3.25rem] xl:[--tile:3.75rem]"
     >
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[var(--gap)] mask-x-from-72% mask-x-to-100% mask-y-from-68% mask-y-to-100%">
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-[var(--gap)] mask-y-from-68% mask-y-to-100% mask-x-from-72% mask-x-to-100% opacity-50">
         {ROWS.map((row, rowIndex) => (
           <div
             key={rowIndex}
@@ -146,9 +147,7 @@ export function StepConnectors(): ReactNode {
             // Brick offset: odd rows shift by half a pitch (tile + gap).
             style={{
               transform:
-                rowIndex % 2 === 1
-                  ? 'translateX(calc((var(--tile) + var(--gap)) / 2))'
-                  : undefined,
+                rowIndex % 2 === 1 ? 'translateX(calc((var(--tile) + var(--gap)) / 2))' : undefined,
             }}
           >
             {row.map((domain, colIndex) => (
@@ -179,18 +178,9 @@ export function StepConnectors(): ReactNode {
 
       {/* The mark sits on top of the wall, opaque, one plane above it. */}
       <div className="pointer-events-none absolute inset-0 grid place-items-center">
-        <m.div
-          initial={reduced ? false : { opacity: 0, scale: 0.9 }}
-          animate={shown ? { opacity: 1, scale: 1 } : undefined}
-          transition={{ type: 'spring', stiffness: 320, damping: 26, delay: reduced ? 0 : 0.12 }}
-          className="border-border bg-background flex size-[calc(var(--tile)*2.4)] items-center justify-center rounded-[calc(var(--tile)*0.42)] border shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_32px_-8px_rgba(0,0,0,0.24)]"
-        >
-          <KortixLogo
-            variant="icon"
-            className="text-foreground"
-            style={{ width: 'calc(var(--tile) * 1.15)', height: 'calc(var(--tile) * 1.15)' }}
-          />
-        </m.div>
+        <IconFrame className="size-[calc(var(--tile)*2)]">
+          <KortixLogo variant="icon" />
+        </IconFrame>
       </div>
     </div>
   );
