@@ -870,6 +870,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `INV-6` A pending account invite admits the invited user and applies the project bootstrap grant.
 `INV-7` Invite accept and decline are email-bound, idempotent where documented, and cannot be used by another user.
 `MEM-6` Changing an account role reconciles project grants so account-wide permissions do not retain stale project rows.
+`MEM-7` `POST /accounts/:id/members {email,role,project_grants}` grants project access alongside the invite: applied immediately for an existing user, staged on the pending invite and applied on accept for a new one. A grant naming a project outside the caller's account is rejected. Grants are ignored for `admin`/`owner` invites (implicit access already covers every project).
 `MKTP-6` An authenticated user reads one catalog file. Unknown items and invalid paths are rejected.
 `MKTP-7` An authenticated user lists available marketplaces.
 `MKTP-8` An authenticated user reads the featured marketplace collection.
