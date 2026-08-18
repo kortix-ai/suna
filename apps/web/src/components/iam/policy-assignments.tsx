@@ -227,14 +227,14 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
     rbacEnabled ? (
       <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)} className="gap-1.5">
         <Plus className="size-4" />
-        New assignment
+        Assign role
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
           <Button size="sm" variant="secondary" className="gap-1.5" disabled>
             <Plus className="size-4" />
-            New assignment
+            Assign role
           </Button>
           <Badge variant="outline" size="sm">
             Enterprise
@@ -251,10 +251,11 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <p className="text-foreground text-sm font-medium">
-            Assignments{settled ? ` · ${policies.length}` : ''}
+            Custom-role assignments{settled ? ` · ${policies.length}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
-            Bind a member, group, or agent to a custom role at a scope.
+            Give one of your custom roles to a person, group, or agent — for the whole account, or
+            just one project.
           </p>
         </div>
         {!hasError ? newAssignmentButton : null}
@@ -281,17 +282,17 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
         <EmptyState
           icon={Shield}
           size="sm"
-          title="No assignments yet"
-          description="Bind a member, group, or agent to a custom role."
+          title="No custom-role assignments yet"
+          description="Give one of your custom roles to a person, group, or agent."
           action={newAssignmentButton}
         />
       ) : (
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Principal</TableHead>
+              <TableHead>Who</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Scope</TableHead>
+              <TableHead>Where</TableHead>
               <TableHead>Expires</TableHead>
               <TableHead className="w-16">
                 <span className="sr-only">Actions</span>
@@ -369,10 +370,16 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
         onOpenChange={(o) => {
           if (!o) setDeleteTarget(null);
         }}
-        title="Remove assignment"
+        title="Remove this assignment"
         description={
           deleteTarget
-            ? `Remove this assignment? The principal will lose the access this policy grants.`
+            ? (() => {
+                const principal = principalLabel(deleteTarget);
+                const roleName = roleNameById.get(deleteTarget.role_id) ?? deleteTarget.role_id;
+                return `${principal.name} loses the ${roleName} role${
+                  deleteTarget.scope_type === 'project' ? ` on ${scopeLabel(deleteTarget)}` : ' on this account'
+                } immediately.`;
+              })()
             : ''
         }
         confirmLabel="Remove"
@@ -480,15 +487,16 @@ function CreateAssignmentDialog({
     >
       <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>New assignment</ModalTitle>
+          <ModalTitle>Give a custom role</ModalTitle>
           <ModalDescription>
-            Bind a member, group, or agent to a custom role at a scope.
+            Give one of your custom roles to a person, group, or agent — for the whole account, or
+            just one project.
           </ModalDescription>
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
           <div className="space-y-1.5">
-            <Label htmlFor="assignment-principal-type">Principal type</Label>
+            <Label htmlFor="assignment-principal-type">Who is this for?</Label>
             <Select
               value={principalType}
               onValueChange={(v) => {
@@ -681,7 +689,7 @@ function CreateAssignmentDialog({
           {principalType !== 'token' && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="assignment-scope">Scope</Label>
+                <Label htmlFor="assignment-scope">Where does this apply?</Label>
                 <Select
                   value={scopeType}
                   onValueChange={(v) => {

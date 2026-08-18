@@ -173,32 +173,34 @@ const VALID_TABS = [
 ] as const;
 type AccountSection = (typeof VALID_TABS)[number];
 
-// Four labeled groups. Members / Groups / Roles are one "Access" cluster —
-// three facets of the same access-control concern (who's in the account,
-// what pools they're in, what those pools can do) — instead of Members
-// sitting alone at the top, disconnected from Groups/Roles below. Identity
-// (SSO/SCIM) and Audit log stay under "Enterprise": unlike Members/Groups/
-// Roles, they have ZERO free-tier content (no list to show a non-entitled
-// account), so grouping them under a plan-gated heading is accurate, not
-// mislabeling. Git/Tokens/Settings remain the unlabeled day-to-day plumbing
-// group; Billing is unchanged.
+// Four labeled groups. The unlabeled plumbing group (Settings/Git/Tokens —
+// name, security, repo, machine tokens) leads: "who am I and how is this
+// account configured" comes before "who else is in it" (Marko's call,
+// 2026-08-18 — was Access-first; moved Settings ahead of it). Members /
+// Groups / Roles are still one "Access" cluster right after — three facets
+// of the same access-control concern (who's in the account, what pools
+// they're in, what those pools can do) — instead of Members sitting alone,
+// disconnected from Groups/Roles. Identity (SSO/SCIM) and Audit log stay
+// under "Enterprise": unlike Members/Groups/Roles, they have ZERO free-tier
+// content (no list to show a non-entitled account), so grouping them under
+// a plan-gated heading is accurate, not mislabeling. Billing is unchanged.
 const NAV_GROUPS: Array<{
   label?: string;
   items: Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>;
 }> = [
+  {
+    items: [
+      { id: 'settings', label: 'Settings', icon: CogOne },
+      { id: 'git', label: 'Git', icon: GitBranch },
+      { id: 'tokens', label: 'Tokens', icon: KeyRound },
+    ],
+  },
   {
     label: 'Access',
     items: [
       { id: 'members', label: 'Members', icon: Users },
       { id: 'groups', label: 'Groups', icon: Network },
       { id: 'roles', label: 'Roles', icon: Shield },
-    ],
-  },
-  {
-    items: [
-      { id: 'git', label: 'Git', icon: GitBranch },
-      { id: 'tokens', label: 'Tokens', icon: KeyRound },
-      { id: 'settings', label: 'Settings', icon: CogOne },
     ],
   },
   {
