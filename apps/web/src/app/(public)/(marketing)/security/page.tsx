@@ -1,12 +1,12 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
+import { SecurityHeroVisual } from '@/features/marketing/security-page/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { BoundaryDiagram } from '@/features/marketing/security-page/boundary-diagram';
 import { CodePanel } from '@/features/marketing/security-page/code-panel';
 import {
   audit,
-  closing,
   control,
   credentials,
   disclosure,
@@ -18,9 +18,7 @@ import {
 } from '@/features/marketing/security-page/content';
 import { CredentialFlow } from '@/features/marketing/security-page/credential-flow';
 import { PermissionMatrix } from '@/features/marketing/security-page/permission-matrix';
-import { SectionHeading } from '@/features/marketing/security-page/section-heading';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /**
@@ -81,53 +79,20 @@ function RowList({
 export default function SecurityPage(): ReactNode {
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className="relative px-6 pt-32 pb-12 sm:pt-36">
-        <div className="mx-auto max-w-7xl">
-          <Reveal>
-            <Badge variant="kortix" className="rounded">
-              {hero.eyebrow}
-            </Badge>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              {hero.title}
-            </h1>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              {hero.sub}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
-              </Button>
-            </div>
-            <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-              {hero.microline}
-            </p>
-          </Reveal>
-
-          {/* the four facts the rest of the page proves */}
-          <Reveal delay={0.1}>
-            <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-              {hero.specs.map((spec, i) => (
-                <div key={spec.k} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
-                  <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                    {spec.k}
-                  </dt>
-                  <dd className="text-foreground mt-2.5 text-sm leading-snug">{spec.v}</dd>
-                </div>
-              ))}
-            </dl>
-          </Reveal>
-        </div>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.sub}
+        ctaPrimary={hero.ctaPrimary}
+        ctaPrimaryHref={hero.ctaPrimaryHref}
+        ctaSecondary={hero.ctaSecondary}
+        ctaSecondaryHref={hero.ctaSecondaryHref}
+        visual={<SecurityHeroVisual />}
+      />
 
       {/* ── 1 · isolation ───────────────────────────────────────────────── */}
       <section id="isolation" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={isolation.eyebrow} title={isolation.title} sub={isolation.sub} />
+        <SectionHeader eyebrow={isolation.eyebrow} title={isolation.title} description={isolation.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -146,10 +111,10 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 2 · credentials ─────────────────────────────────────────────── */}
       <section id="credentials" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading
+        <SectionHeader
           eyebrow={credentials.eyebrow}
           title={credentials.title}
-          sub={credentials.sub}
+          description={credentials.sub}
         />
 
         <Reveal delay={0.06}>
@@ -169,7 +134,7 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 3 · identity & permissions ──────────────────────────────────── */}
       <section id="identity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={identity.eyebrow} title={identity.title} sub={identity.sub} />
+        <SectionHeader eyebrow={identity.eyebrow} title={identity.title} description={identity.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -245,7 +210,7 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 4 · control ─────────────────────────────────────────────────── */}
       <section id="control" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={control.eyebrow} title={control.title} sub={control.sub} />
+        <SectionHeader eyebrow={control.eyebrow} title={control.title} description={control.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -273,7 +238,7 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 5 · how work lands ──────────────────────────────────────────── */}
       <section id="change-requests" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={landing.eyebrow} title={landing.title} sub={landing.sub} />
+        <SectionHeader eyebrow={landing.eyebrow} title={landing.title} description={landing.sub} />
 
         <Reveal delay={0.06}>
           <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
@@ -299,7 +264,7 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 6 · audit ───────────────────────────────────────────────────── */}
       <section id="audit" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={audit.eyebrow} title={audit.title} sub={audit.sub} />
+        <SectionHeader eyebrow={audit.eyebrow} title={audit.title} description={audit.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -312,7 +277,7 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 7 · deployment & posture ────────────────────────────────────── */}
       <section id="posture" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading eyebrow={posture.eyebrow} title={posture.title} sub={posture.sub} />
+        <SectionHeader eyebrow={posture.eyebrow} title={posture.title} description={posture.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -358,10 +323,10 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── disclosure ──────────────────────────────────────────────────── */}
       <section id="disclosure" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeading
+        <SectionHeader
           eyebrow={disclosure.eyebrow}
           title={disclosure.title}
-          sub={disclosure.sub}
+          description={disclosure.sub}
         />
 
         <Reveal delay={0.06}>
@@ -400,30 +365,6 @@ export default function SecurityPage(): ReactNode {
         </Reveal>
       </section>
 
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              {closing.eyebrow}
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              {closing.title}
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">{closing.sub}</p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href={closing.ctaSecondaryHref}>{closing.ctaSecondary}</Link>
-              </Button>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }

@@ -60,10 +60,10 @@ export const hero = {
   microline: 'One sandbox per session · Connector keys never enter it · Nothing merges itself',
   /** Four mono facts the rest of the page proves. Every value is defensible. */
   specs: [
-    { k: 'Isolation', v: 'One sandbox per session' },
-    { k: 'Secrets', v: 'AES-256-GCM, key per project' },
-    { k: 'Principals', v: 'People and service accounts' },
-    { k: 'Path to main', v: 'Change request, default-deny merge' },
+    { k: 'Isolation', v: 'One sandbox per session', visual: 'isolation' },
+    { k: 'Secrets', v: 'AES-256-GCM, key per project', visual: 'encrypt' },
+    { k: 'Principals', v: 'People and service accounts', visual: 'principals' },
+    { k: 'Path to main', v: 'Change request, default-deny merge', visual: 'diff' },
   ],
 } as const;
 
@@ -139,10 +139,26 @@ export const credentials = {
   /** The five-step path a credential takes. Drawn as a mono flow. */
   flow: [
     { n: '01', k: 'Stored', v: 'Encrypted with AES-256-GCM under a key derived per project.' },
-    { n: '02', k: 'Granted', v: 'The person’s role and the agent’s declared grant must both allow it.' },
-    { n: '03', k: 'Delivered', v: 'Placed in the session at boot, by name, on tmpfs at mode 0600.' },
-    { n: '04', k: 'Used', v: 'The tool reads it from the environment. It is not written into the prompt.' },
-    { n: '05', k: 'Shredded', v: 'The file is wiped on shutdown and the machine is destroyed with it.' },
+    {
+      n: '02',
+      k: 'Granted',
+      v: 'The person’s role and the agent’s declared grant must both allow it.',
+    },
+    {
+      n: '03',
+      k: 'Delivered',
+      v: 'Placed in the session at boot, by name, on tmpfs at mode 0600.',
+    },
+    {
+      n: '04',
+      k: 'Used',
+      v: 'The tool reads it from the environment. It is not written into the prompt.',
+    },
+    {
+      n: '05',
+      k: 'Shredded',
+      v: 'The file is wiped on shutdown and the machine is destroyed with it.',
+    },
   ],
   rows: [
     {
@@ -202,9 +218,18 @@ export const identity = {
     /** Every item here is an entitlement key that really exists. SAML only —
         there is no enterprise OIDC login, so never write "SAML/OIDC". */
     items: [
-      { k: 'SAML 2.0 SSO', v: 'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per account today.' },
-      { k: 'SCIM 2.0', v: 'Directory sync over /scim/v2, with tokens you mint and revoke. Built against Okta and Microsoft Entra.' },
-      { k: 'Custom roles', v: 'Your own roles and fine-grained policy bindings beyond the presets.' },
+      {
+        k: 'SAML 2.0 SSO',
+        v: 'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per account today.',
+      },
+      {
+        k: 'SCIM 2.0',
+        v: 'Directory sync over /scim/v2, with tokens you mint and revoke. Built against Okta and Microsoft Entra.',
+      },
+      {
+        k: 'Custom roles',
+        v: 'Your own roles and fine-grained policy bindings beyond the presets.',
+      },
       { k: 'Groups', v: 'Grant to a group once instead of to twenty people twenty times.' },
     ],
     note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.',
