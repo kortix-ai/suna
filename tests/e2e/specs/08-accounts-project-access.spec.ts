@@ -640,8 +640,10 @@ test.describe("08 — Accounts, invites, and project access", () => {
       .first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
     // Third column = "Project role" (`members-tab.tsx:930-934`). Pinned by
-    // column because that select carries no accessible name of its own, and
-    // the row's other combobox is the account-role one beside it.
+    // column because that select carries no accessible name of its own. The
+    // Account column (index 1) is a plain read-only link now, not a
+    // combobox — account-role editing moved to /accounts/:id entirely
+    // (2026-08-18) — so this row carries exactly one combobox.
     await expect(
       memberAccessRow.getByRole("cell").nth(2).getByRole("combobox"),
     ).toContainText("Member");

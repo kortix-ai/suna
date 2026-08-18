@@ -1,24 +1,8 @@
-import type {
-  AccountInvitation,
-  PendingProjectInvite,
-  ProjectAccessMember,
-  ProjectAccessRequest,
-} from '@kortix/sdk';
+import type { PendingProjectInvite, ProjectAccessMember, ProjectAccessRequest } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { MembersTabView } from './members-tab';
-
-const accountInvite = (o: Partial<AccountInvitation>): AccountInvitation => ({
-  invite_id: 'ainv1',
-  email: 'invitee@kortix.com',
-  initial_role: 'member',
-  invited_by: 'u0',
-  created_at: '2026-01-01T00:00:00Z',
-  expires_at: '2026-02-01T00:00:00Z',
-  invite_url: 'https://kortix.com/invite/ainv1',
-  ...o,
-});
 
 const pendingInvite = (o: Partial<PendingProjectInvite>): PendingProjectInvite => ({
   invite_id: 'inv1',
@@ -242,17 +226,16 @@ describe('MembersTabView', () => {
     expect(out.indexOf('Members')).toBeLessThan(out.indexOf('role="tablist"'));
   });
 
-  test('the Invites tab counts everyone waiting across all three lists', () => {
+  test('the Invites tab counts everyone waiting across both lists', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
         members={[member({})]}
         accountId="acc1"
         pendingInvites={[pendingInvite({})]}
-        accountInvites={[accountInvite({})]}
         accessRequests={[accessRequest({})]}
       />,
     );
-    expect(out).toContain('>3<');
+    expect(out).toContain('>2<');
   });
 
   // ── The People tab's client-side search. It filters `userLabel(member)` —
@@ -501,21 +484,17 @@ describe('MembersTabView', () => {
     expect(out).not.toContain('Access requests');
   });
 
-  test('all three waiting lists render together, invites before requests', () => {
+  test('both waiting lists render together, invites before requests', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
         section="invites"
         members={[member({})]}
         accountId="acc1"
         pendingInvites={[pendingInvite({})]}
-        accountInvites={[accountInvite({})]}
         accessRequests={[accessRequest({})]}
       />,
     );
-    expect(out.indexOf('Invited to this workspace')).toBeLessThan(
-      out.indexOf('Invited to this account'),
-    );
-    expect(out.indexOf('Invited to this account')).toBeLessThan(out.indexOf('Asked to join'));
+    expect(out.indexOf('Invited to this workspace')).toBeLessThan(out.indexOf('Asked to join'));
   });
 
   test('the waiting lists are NOT on the People tab', () => {
@@ -536,67 +515,46 @@ describe('MembersTabView', () => {
     expect(out).not.toContain('pending@kortix.com');
   });
 
-  // ── JAY-548: account invites + leave account (rehomed from
-  // accounts/[id]/page.tsx — see members-tab.tsx's header comment). ──
+  // ── Account controls moved out (2026-08-18): role change, remove-from-
+  // account, invite-to-account, and leave-account all live on
+  // `/accounts/:id` now, exclusively — see members-tab.tsx's header comment,
+  // "Account controls moved out". This pane keeps exactly one account-scope
+  // surface: a link out. ──
 
-  test('account invites live on the Invites tab, under a title distinct from the workspace list', () => {
+  test('the account role is a plain link to /accounts/:id when accountId is known', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
-        section="invites"
-        members={[member({})]}
+        members={[member({ user_id: 'u1', email: 'other@kortix.com', account_role: 'admin' })]}
         accountId="acc1"
-        accountInvites={[accountInvite({ email: 'joiner@kortix.com' })]}
       />,
     );
-    expect(out).toContain('Invited to this account');
-    expect(out).toContain('joiner@kortix.com');
-    expect(out).not.toContain('Account invites');
+    expect(out).toContain('href="/accounts/acc1?section=members"');
+    expect(out).toContain('admin');
+    // Not a Select, not a remove control — this pane cannot mutate account
+    // membership at all any more.
+    expect(out).not.toContain('role="combobox"');
+    expect(out).not.toContain('from account');
   });
 
-  test('account invites section is absent with no accountId, even with invites data', () => {
+  test('the account role falls back to plain text (no link) with no accountId', () => {
+    const out = renderToStaticMarkup(
+      <MembersTabView members={[member({ user_id: 'u1', account_role: 'owner' })]} />,
+    );
+    expect(out).toContain('owner');
+    expect(out).not.toContain('href="/accounts/');
+  });
+
+  test('no account invites section, no leave-account row, no account invite dialog — gone, not hidden', () => {
     const out = renderToStaticMarkup(
       <MembersTabView
         section="invites"
-        members={[member({})]}
-        accountInvites={[accountInvite({})]}
+        members={[member({ user_id: 'u1', account_role: 'owner' })]}
+        accountId="acc1"
       />,
     );
     expect(out).not.toContain('Invited to this account');
-  });
-
-  test('account invites section is absent with an accountId but nothing pending', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView section="invites" members={[member({})]} accountId="acc1" />,
-    );
-    expect(out).not.toContain('Invited to this account');
-  });
-
-  test('resend/cancel controls on an account invite gate on canManageAccountInvites, NOT canManageMembers', () => {
-    const withoutPerm = renderToStaticMarkup(
-      <MembersTabView
-        section="invites"
-        members={[member({})]}
-        accountId="acc1"
-        accountInvites={[accountInvite({})]}
-        canManageMembers
-        canManageAccountInvites={false}
-      />,
-    );
-    expect(withoutPerm).not.toContain('>Resend<');
-    expect(withoutPerm).not.toContain('>Cancel<');
-
-    const withPerm = renderToStaticMarkup(
-      <MembersTabView
-        section="invites"
-        members={[member({})]}
-        accountId="acc1"
-        accountInvites={[accountInvite({})]}
-        canManageMembers={false}
-        canManageAccountInvites
-      />,
-    );
-    expect(withPerm).toContain('>Resend<');
-    expect(withPerm).toContain('>Cancel<');
+    expect(out).not.toContain('Leave ');
+    expect(out).not.toContain('account-invite-dialog-marker');
   });
 
   /**
@@ -605,9 +563,7 @@ describe('MembersTabView', () => {
    * a plain link with no probe on it — that page gates its own sections.
    */
   test('the organization-settings row links to /accounts/<accountId>, below the table', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
-    );
+    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
     expect(out).toContain('Organization account settings');
     expect(out).toContain('href="/accounts/acc1"');
     expect(out.indexOf('</table>')).toBeLessThan(out.indexOf('Organization account settings'));
@@ -619,239 +575,16 @@ describe('MembersTabView', () => {
     expect(out).not.toContain('/accounts/undefined');
   });
 
-  test('the sole owner still gets the organization-settings row, without a Leave row', () => {
-    // The two rows share one group but not one gate: `isLastOwner` hides only
-    // the leave control.
-    const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" isLastOwner />,
-    );
-    expect(out).toContain('href="/accounts/acc1"');
-    expect(out).not.toContain('Leave Acme');
-  });
-
-  test('the leave-account row sits at the foot of the People tab, only once an accountId resolves', () => {
-    const withAccount = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
-    );
-    const withoutAccount = renderToStaticMarkup(<MembersTabView members={[member({})]} />);
-    // A quiet row, not its own titled section competing with the table.
-    expect(withAccount).toContain('Leave Acme');
-    expect(withAccount.indexOf('</table>')).toBeLessThan(withAccount.indexOf('Leave Acme'));
-    expect(withoutAccount).not.toContain('Leave ');
-  });
-
-  test('the leave-account row falls back to "this account" with no account name', () => {
-    const out = renderToStaticMarkup(<MembersTabView members={[member({})]} accountId="acc1" />);
-    expect(out).toContain('Leave this account');
-  });
-
-  /**
-   * The sole owner does not get a Leave row at all. It used to render disabled,
-   * with a line explaining why — a control that can never do anything, plus an
-   * apology for it. `isLastOwner` means "the viewer IS the only owner"
-   * (`currentAccountRole === 'owner' && ownerCount <= 1`), so this hides
-   * exactly the case that could never work.
-   */
-  test('the sole owner gets no leave-account row at all, not a disabled one', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" isLastOwner />,
-    );
-    expect(out).not.toContain('Leave Acme');
-    // …and no leftover apology for a control that is no longer there.
-    expect(out).not.toContain('only owner');
-  });
-
-  /**
-   * A CO-owner can genuinely leave, so the gate is "only owner", never "is an
-   * owner" — the second would take a working capability away from anyone who
-   * shares ownership. This is the test that fails if the two are ever conflated.
-   */
-  test('a co-owner keeps the leave-account row, enabled', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', account_role: 'owner' })]}
-        accountId="acc1"
-        accountName="Acme"
-        isLastOwner={false}
-      />,
-    );
-    expect(out).toContain('Leave Acme');
-    expect(out).not.toContain('disabled=""');
-  });
-
-  test('the leave-account row is a settings row, not hand-rolled markup', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView members={[member({})]} accountId="acc1" accountName="Acme" />,
-    );
-    // From the group's opening tag through the leave row — the two
-    // account-scoped rows share ONE bordered group, so the marker sits above
-    // the organization-settings row rather than immediately above this one.
-    const group = out.slice(
-      out.indexOf('data-slot="settings-row-group"'),
-      out.indexOf('Leave Acme') + 2000,
-    );
-    expect(group).toContain('data-slot="settings-row-group"');
-    expect(group).toContain('data-slot="field-description"');
-    expect(group).toContain('Leave Acme');
-  });
-
-  // ── JAY-549: inviteAccountMember / updateAccountMemberRole /
-  // removeAccountMember — see members-tab.tsx's header comment, "JAY-549".
-  // The ConfirmDialogs staged by these controls are untestable here for the
-  // same reason every other ConfirmDialog in this file is (AlertDialog's
-  // portal gates on a mounted flag — never rendered by `renderToStaticMarkup`,
-  // confirmed directly: no existing test in this file queries `removeTarget`/
-  // `revokeInviteTarget`/`cancelAccountInviteTarget`'s dialog content either).
-  // These tests cover what the pure view CAN prove statically: which control
-  // renders, for whom, and its disabled state. ──
-
-  test('the account role is a read-only Badge, not a Select, when canUpdateAccountRole is false', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
-        currentUserId="viewer"
-      />,
-    );
-    expect(out).not.toContain('Account role for other@kortix.com');
-    expect(out).not.toContain('role="combobox"');
-  });
-
-  test('the account role becomes a Select for another member when canUpdateAccountRole is true', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
-        currentUserId="viewer"
-        canUpdateAccountRole
-      />,
-    );
-    expect(out).toContain('Account role for other@kortix.com');
-    expect(out).toContain('role="combobox"');
-  });
-
-  test('a "Remove from account" button renders for another member when canRemoveFromAccount is true', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
-        currentUserId="viewer"
-        canRemoveFromAccount
-      />,
-    );
-    expect(out).toContain('Remove other@kortix.com from account');
-  });
-
-  test('no "Remove from account" button when canRemoveFromAccount is false', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', email: 'other@kortix.com' })]}
-        currentUserId="viewer"
-      />,
-    );
-    expect(out).not.toContain('Remove other@kortix.com from account');
-  });
-
-  test("both account-role controls are hidden on the viewer's own row, even with both permissions", () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'viewer', email: 'self@kortix.com' })]}
-        currentUserId="viewer"
-        canUpdateAccountRole
-        canRemoveFromAccount
-      />,
-    );
-    expect(out).not.toContain('Account role for self@kortix.com');
-    expect(out).not.toContain('Remove self@kortix.com from account');
-    // Falls back to the read-only Badge on the viewer's own row.
-    expect(out).toContain('member');
-  });
-
-  test('a busy account row shows a spinner instead of either control', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', email: 'busy@kortix.com' })]}
-        currentUserId="viewer"
-        canUpdateAccountRole
-        canRemoveFromAccount
-        accountPendingUserIds={new Set(['u1'])}
-      />,
-    );
-    expect(out).not.toContain('Account role for busy@kortix.com');
-    expect(out).not.toContain('Remove busy@kortix.com from account');
-  });
-
-  test('"Remove from account" is disabled for the account\'s sole owner', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[member({ user_id: 'u1', email: 'owner@kortix.com', account_role: 'owner' })]}
-        currentUserId="viewer"
-        canRemoveFromAccount
-      />,
-    );
-    expect(out).toContain('The account needs at least one owner.');
-  });
-
-  test('"Remove from account" is enabled for an owner when a second owner exists', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView
-        members={[
-          member({ user_id: 'u1', email: 'owner1@kortix.com', account_role: 'owner' }),
-          member({ user_id: 'u2', email: 'owner2@kortix.com', account_role: 'owner' }),
-        ]}
-        currentUserId="viewer"
-        canRemoveFromAccount
-      />,
-    );
-    expect(out).not.toContain('The account needs at least one owner.');
-    expect(out).toContain('Remove owner1@kortix.com from account');
-    expect(out).toContain('Remove owner2@kortix.com from account');
-  });
-
-  test('renders the account invite dialog slot', () => {
-    const out = renderToStaticMarkup(
-      <MembersTabView accountInviteDialogSlot={<div>account-invite-dialog-marker</div>} />,
-    );
-    expect(out).toContain('account-invite-dialog-marker');
-  });
-
-  test('the account-invite section shows an Invite button gated on canManageAccountInvites, even with zero invites', () => {
-    const withoutPerm = renderToStaticMarkup(
-      <MembersTabView
-        section="invites"
-        members={[member({})]}
-        accountId="acc1"
-        canManageAccountInvites={false}
-      />,
-    );
-    expect(withoutPerm).not.toContain('Invited to this account');
-
-    const withPerm = renderToStaticMarkup(
-      <MembersTabView
-        section="invites"
-        members={[member({})]}
-        accountId="acc1"
-        canManageAccountInvites
-      />,
-    );
-    expect(withPerm).toContain('Invited to this account');
-    expect(withPerm).toContain('Nobody is waiting to sign up.');
-    expect(withPerm).toContain('>Invite<');
-  });
-
-  // ── Both dialog slots sit OUTSIDE `Tabs`, so an open dialog survives a tab
-  // switch — and so the Cmd+K invite deep link cannot be swallowed by whatever
-  // tab happened to be active. ──
-
-  test('both dialog slots render on every tab, not only on People', () => {
+  test('only inviteDialogSlot renders — there is no second, account-scope dialog slot', () => {
     for (const section of ['people', 'invites', 'access'] as const) {
       const out = renderToStaticMarkup(
         <MembersTabView
           section={section}
           members={[member({})]}
           inviteDialogSlot={<div>invite-dialog-marker</div>}
-          accountInviteDialogSlot={<div>account-invite-dialog-marker</div>}
         />,
       );
       expect(out).toContain('invite-dialog-marker');
-      expect(out).toContain('account-invite-dialog-marker');
     }
   });
 });

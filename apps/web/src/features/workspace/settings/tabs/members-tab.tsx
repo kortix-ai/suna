@@ -430,7 +430,6 @@ import { consumeMembersTabIntent } from './members-tab-intent';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -473,36 +472,24 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { usePermission } from '@/lib/use-permission';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   approveProjectAccessRequest,
-  cancelAccountInvite,
   createProjectResourceGrant,
   deleteProjectResourceGrant,
-  getAccount,
   getProject,
-  inviteAccountMember,
   inviteProjectMember,
   isInviteSent,
-  leaveAccount,
-  listAccountInvites,
   listPendingProjectInvites,
   listProjectAccess,
   listProjectAccessRequests,
   listProjectResourceGrants,
   rejectProjectAccessRequest,
-  removeAccountMember,
-  resendAccountInvite,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
   revokeProjectAccess,
-  updateAccountMemberRole,
   updateProjectAccess,
-  type AccountInvitation,
-  type AccountRole,
   type PendingProjectInvite,
   type ProjectAccessMember,
   type ProjectAccessRequest,
@@ -637,95 +624,11 @@ export interface MembersTabViewProps {
    *  all: both need an account id to fetch or mutate against. Distinct from
    *  every `project*` field above — those are keyed on `projectId`, these on
    *  this account. */
+  /** Account-scope actions (role change, remove-from-account, invite-to-
+   *  account, leave-account) no longer live on this pane — see this file's
+   *  header comment, "Account controls moved out". `accountId` is kept
+   *  only so the Account column can link to `/accounts/:id`. */
   accountId?: string;
-
-  /** `listAccountInvites` — pending invitations to JOIN THIS ACCOUNT
-   *  (`initial_role`, no `project_role`). A different list from
-   *  `pendingInvites` above, which is project access invites
-   *  (`listPendingProjectInvites`) — see this file's header comment,
-   *  "JAY-548". Section title is "Account invites" specifically so it never
-   *  reads as the same list as "Pending invites". */
-  accountInvites?: AccountInvitation[];
-  isAccountInvitesLoading?: boolean;
-  accountInviteBusyIds?: Set<string>;
-  /** `member.invite` — the SAME leaf `accounts/[id]/page.tsx` gated
-   *  `PendingInvitesSection`'s resend/cancel controls on (`canInvite`,
-   *  `ACCOUNT_PERMISSION_PROBES`'s `member.invite`). Preserved exactly, not
-   *  re-derived from `canManageMembers` (a different, project-scoped leaf).
-   *  Gates the row actions only — the list itself renders for anyone, same
-   *  as the source (`invitesQuery` there has no `canManage`-gated `enabled`
-   *  clause). */
-  canManageAccountInvites?: boolean;
-  onResendAccountInvite?: (invite: AccountInvitation) => void;
-  onRequestCancelAccountInvite?: (invite: AccountInvitation) => void;
-  cancelAccountInviteTarget?: AccountInvitation | null;
-  onCancelCancelAccountInvite?: () => void;
-  onConfirmCancelAccountInvite?: () => void;
-  isCancelAccountInvitePending?: boolean;
-
-  /** `leaveAccount` — self-directed, see this file's header comment,
-   *  "JAY-548". NO permission probe gates this — a member leaving their own
-   *  account is not the same permission as inviting or removing someone
-   *  else (`member.invite`/`member.remove`), so it is never gated on
-   *  `canManageMembers`/`canManageAccountInvites`. The only thing that
-   *  governs it is `isLastOwner` — computed from the SAME account roster
-   *  this tab's own table already renders (`accessQuery.data.members`,
-   *  every account member with `account_role`), not a second fetch. */
-  accountName?: string;
-  isAccountRosterLoading?: boolean;
-  /** True only when the viewer IS the account's single owner
-   *  (`currentAccountRole === 'owner' && ownerCount <= 1`). HIDES the leave
-   *  row rather than disabling it — see this file's header comment, "The sole
-   *  owner sees no leave row at all". Never widen this to "is an owner": a
-   *  co-owner can leave. */
-  isLastOwner?: boolean;
-  leaveAccountOpen?: boolean;
-  onOpenLeaveAccount?: () => void;
-  onCancelLeaveAccount?: () => void;
-  onConfirmLeaveAccount?: () => void;
-  isLeaveAccountPending?: boolean;
-
-  /** The signed-in viewer's own `user_id` — both account-role row controls
-   *  (below) are hidden entirely on this row, same as `page.tsx`'s per-row
-   *  `!isSelf` guard. See this file's header comment, "JAY-549". */
-  currentUserId?: string;
-  /** `member.update` — the SAME leaf `page.tsx`'s `canUpdateMember`
-   *  (`ACCOUNT_PERMISSION_PROBES`) gated the "Change role" submenu on. Turns
-   *  the "Account role" column's `Badge` into a `Select`. Distinct from
-   *  `canManageMembers`/`canManageAccountInvites` — never re-derived from
-   *  either. */
-  canUpdateAccountRole?: boolean;
-  /** `member.remove` — the SAME leaf `page.tsx`'s `canRemoveMember` gated
-   *  "Remove from team" on. Renders a "Remove from account" icon button
-   *  next to the role control. */
-  canRemoveFromAccount?: boolean;
-  /** user_id set — rows currently mid account-role-change or
-   *  account-removal. Separate from `pendingUserIds` above (that Set is for
-   *  the project-role column's own mutations) so an account-scope
-   *  mutation never shows a misleading "workspace access is changing"
-   *  spinner. */
-  accountPendingUserIds?: Set<string>;
-  accountRoleChangeTarget?: { member: ProjectAccessMember; role: AccountRole } | null;
-  onRequestAccountRoleChange?: (member: ProjectAccessMember, role: AccountRole) => void;
-  onCancelAccountRoleChange?: () => void;
-  onConfirmAccountRoleChange?: () => void;
-  isAccountRoleChangePending?: boolean;
-  accountRemoveTarget?: ProjectAccessMember | null;
-  onRequestRemoveFromAccount?: (member: ProjectAccessMember) => void;
-  onCancelRemoveFromAccount?: () => void;
-  onConfirmRemoveFromAccount?: () => void;
-  isAccountRemovePending?: boolean;
-
-  /** Opens `InviteToAccountDialog` — see this file's header comment,
-   *  "JAY-549". Gated on `canManageAccountInvites` (the "Account invites"
-   *  section header's own action slot), not a new probe: `member.invite` is
-   *  the SAME leaf `page.tsx:325`'s `canInviteMember` used for both the
-   *  Invite button and the pending-invite row actions. */
-  onOpenAccountInvite?: () => void;
-  /** `InviteToAccountDialog` — a slot for the same reason `inviteDialogSlot`
-   *  above is one (owns its own `useMutation`, can't render under
-   *  `renderToStaticMarkup`). */
-  accountInviteDialogSlot?: ReactNode;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -769,74 +672,17 @@ export function MembersTabView({
   onApproveRequest = () => {},
   onRejectRequest = () => {},
   accountId,
-  accountInvites = [],
-  isAccountInvitesLoading = false,
-  accountInviteBusyIds = new Set(),
-  canManageAccountInvites = false,
-  onResendAccountInvite = () => {},
-  onRequestCancelAccountInvite = () => {},
-  cancelAccountInviteTarget = null,
-  onCancelCancelAccountInvite = () => {},
-  onConfirmCancelAccountInvite = () => {},
-  isCancelAccountInvitePending = false,
-  accountName,
-  isAccountRosterLoading = false,
-  isLastOwner = false,
-  leaveAccountOpen = false,
-  onOpenLeaveAccount = () => {},
-  onCancelLeaveAccount = () => {},
-  onConfirmLeaveAccount = () => {},
-  isLeaveAccountPending = false,
-  currentUserId,
-  canUpdateAccountRole = false,
-  canRemoveFromAccount = false,
-  accountPendingUserIds = new Set(),
-  accountRoleChangeTarget = null,
-  onRequestAccountRoleChange = () => {},
-  onCancelAccountRoleChange = () => {},
-  onConfirmAccountRoleChange = () => {},
-  isAccountRoleChangePending = false,
-  accountRemoveTarget = null,
-  onRequestRemoveFromAccount = () => {},
-  onCancelRemoveFromAccount = () => {},
-  onConfirmRemoveFromAccount = () => {},
-  isAccountRemovePending = false,
-  onOpenAccountInvite = () => {},
-  accountInviteDialogSlot,
 }: MembersTabViewProps) {
   const showPendingInvites = isPendingInvitesLoading || pendingInvites.length > 0;
   const showAccessRequests = isAccessRequestsLoading || accessRequests.length > 0;
-  // Both account-scoped surfaces need an account id to fetch/mutate against —
-  // hidden entirely (not a skeleton) while it's unresolved, same as every
-  // other account-scoped tab in this panel treats a missing accountId. The
-  // `canManageAccountInvites` OR-branch keeps the section header (and its
-  // Invite button) visible for an authorized viewer with zero pending
-  // invites, not only after the first invite exists. Unchanged by the tab
-  // split — see this file's header comment, "JAY-549".
-  const showAccountInvites =
-    !!accountId &&
-    (canManageAccountInvites || isAccountInvitesLoading || accountInvites.length > 0);
-  // Hidden for the sole owner, not disabled. `isLastOwner` already means "the
-  // viewer IS the only owner" (`currentAccountRole === 'owner' && ownerCount
-  // <= 1` in the container), so the row it used to render was a control that
-  // could never do anything plus a line explaining why — the dead-button shape
-  // this panel removed from Profile and Organization. A CO-owner can genuinely
-  // leave, so the gate is "only owner", never "is an owner": that would take a
-  // working capability away. Transferring ownership first is done in the
-  // Account role column of the table right above this.
-  const showLeaveAccount = !!accountId && !isLastOwner;
   // The Access tab is exactly the three rehomed slots. The container decides
   // whether each one exists at all (its gate, unchanged); this only decides
   // whether the tab shows them or one muted row instead of a blank panel.
   const showAccessCards = !!resourceAccessSlot;
   // Everyone waiting to get in, counted once for the Invites tab's own count.
-  const waitingCount =
-    pendingInvites.length + accessRequests.length + (accountId ? accountInvites.length : 0);
-  // Every account-owner row, for the per-row "last owner" guard on "Remove
-  // from account" — mirrors `page.tsx`'s own `isLastOwner` (computed inline
-  // per row there too), off the SAME `members` array this table already
-  // renders. See this file's header comment, "JAY-549".
-  const accountOwnerCount = members.filter((m) => m.account_role === 'owner').length;
+  // Account invites moved out with the rest of account-scope management —
+  // see this file's header comment, "Account controls moved out".
+  const waitingCount = pendingInvites.length + accessRequests.length;
   // Client-side, over data the table already renders (`userLabel` is the
   // email, falling back to the user id). No route, no new field — the one
   // filter this pane can honestly offer.
@@ -978,17 +824,6 @@ export function MembersTabView({
                     !member.has_implicit_access &&
                     !isInheritedFromGroupOnly(member);
 
-                  // JAY-549 — account-scope row actions. Hidden entirely on
-                  // the viewer's own row (mirrors page.tsx's per-row
-                  // `!isSelf` guard) — self goes through the separate "Leave
-                  // account" row instead. See this file's header comment.
-                  const isSelfAccountRow = !!currentUserId && member.user_id === currentUserId;
-                  const accountBusy = accountPendingUserIds.has(member.user_id);
-                  const accountRoleEditable = canUpdateAccountRole && !isSelfAccountRow;
-                  const accountRemovable = canRemoveFromAccount && !isSelfAccountRow;
-                  const isLastAccountOwner =
-                    member.account_role === 'owner' && accountOwnerCount === 1;
-
                   return (
                     <TableRow key={member.user_id}>
                       <TableCell className="max-w-[240px] whitespace-normal">
@@ -999,66 +834,33 @@ export function MembersTabView({
                           </span>
                         </div>
                       </TableCell>
+                      {/* Read-only, always — changing an ACCOUNT role, or
+                          removing someone from the account entirely, is an
+                          account-wide action with no natural home on a
+                          single project's pane. It happens in exactly one
+                          place now: `/accounts/:id`. The role itself links
+                          there instead of offering a control here that would
+                          only duplicate (and could drift from) that page's
+                          own. See this file's header comment, "Account
+                          controls moved out". */}
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          {accountBusy ? (
-                            <Loading className="text-muted-foreground size-3.5 shrink-0" />
-                          ) : accountRoleEditable ? (
-                            <Select
-                              value={member.account_role}
-                              onValueChange={(next) =>
-                                onRequestAccountRoleChange(member, next as AccountRole)
-                              }
-                            >
-                              <SelectTrigger
-                                className="h-7 w-28 text-xs capitalize"
-                                aria-label={`Account role for ${userLabel(member)}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="owner">
-                                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
-                                </SelectItem>
-                                <SelectItem value="admin">
-                                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
-                                </SelectItem>
-                                <SelectItem value="member">
-                                  {ACCOUNT_ROLE_DESCRIPTORS.member.label}
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            // Coloured text, not a filled badge — Linear's
-                            // own treatment for this column. See
-                            // `accountRoleToneClass` above.
-                            <span
-                              className={cn(
-                                'capitalize',
-                                accountRoleToneClass(member.account_role),
-                              )}
-                            >
-                              {member.account_role}
-                            </span>
-                          )}
-                          {!accountBusy && accountRemovable ? (
-                            <Button
-                              type="button"
-                              size="icon-xs"
-                              variant="ghost"
-                              onClick={() => onRequestRemoveFromAccount(member)}
-                              disabled={isLastAccountOwner}
-                              title={
-                                isLastAccountOwner
-                                  ? 'The account needs at least one owner.'
-                                  : 'Remove from account'
-                              }
-                              aria-label={`Remove ${userLabel(member)} from account`}
-                            >
-                              <X className="size-3.5" />
-                            </Button>
-                          ) : null}
-                        </div>
+                        {accountId ? (
+                          <Link
+                            href={`/accounts/${accountId}?section=members`}
+                            className={cn(
+                              'capitalize underline decoration-dotted underline-offset-2 transition-colors',
+                              accountRoleToneClass(member.account_role),
+                              'hover:decoration-solid',
+                            )}
+                            title="Change this in account settings"
+                          >
+                            {member.account_role}
+                          </Link>
+                        ) : (
+                          <span className={cn('capitalize', accountRoleToneClass(member.account_role))}>
+                            {member.account_role}
+                          </span>
+                        )}
                       </TableCell>
                       {/* One column, one fact: the workspace-access control
                             lives in the project-role column it edits. No
@@ -1159,21 +961,11 @@ export function MembersTabView({
             </Table>
           )}
 
-          {/* The two account-scoped rows, quiet and at the foot of the People
-              tab rather than in titled sections competing with the table.
-              Both need a resolved account id: one links to that account, the
-              other leaves it. */}
+          {/* Account membership — role, removal, invite, leave — is managed
+              in exactly one place now. This row is the only account-scope
+              surface left on this pane: a link out, not a duplicate control. */}
           {accountId ? (
             <SettingsRowGroup className="mt-2">
-              {/* This table edits ONE workspace's access. Everything else
-                  about the organization — account roles across every
-                  workspace, groups, custom roles, billing, audit — lives on
-                  `/accounts/<id>`, and nothing on this pane said so (Jay,
-                  2026-08-17: "have a link to the account settings somewhere").
-                  `/accounts/<id>` with no `?tab=` lands on that page's own
-                  Members section (`accounts/[id]/page.tsx`'s `VALID_TABS`
-                  falls back to `members`), which is the continuation of what
-                  a reader is already looking at. */}
               <SettingsRow
                 label="Organization account settings"
                 description="Account roles, groups, custom roles, billing, and audit — for every workspace, not just this one."
@@ -1182,33 +974,6 @@ export function MembersTabView({
                   <Link href={`/accounts/${accountId}`}>Manage account</Link>
                 </Button>
               </SettingsRow>
-
-              {/* Self-directed. NO permission probe gates it — leaving your
-                  own account is not an IAM leaf. See this file's header
-                  comment, "JAY-548". */}
-              {showLeaveAccount ? (
-                isAccountRosterLoading ? (
-                  <div className="px-4 py-3">
-                    <Skeleton className="h-8 w-full rounded-md" />
-                  </div>
-                ) : (
-                  <SettingsRow
-                    label={`Leave ${accountName || 'this account'}`}
-                    description="You'll lose access to this account and its projects."
-                  >
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
-                      onClick={onOpenLeaveAccount}
-                    >
-                      {isLeaveAccountPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                      Leave
-                    </Button>
-                  </SettingsRow>
-                )
-              ) : null}
             </SettingsRowGroup>
           ) : null}
         </TabsContent>
@@ -1295,91 +1060,6 @@ export function MembersTabView({
             </section>
           ) : null}
 
-          {showAccountInvites ? (
-            <section className="space-y-4">
-              <SettingsSubsectionHeader
-                title="Invited to this account"
-                description="They still need to sign up. Once they do, you can add them to workspaces."
-                action={
-                  canManageAccountInvites ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={onOpenAccountInvite}
-                      className="gap-1.5"
-                    >
-                      <Plus className="size-3.5" />
-                      Invite
-                    </Button>
-                  ) : undefined
-                }
-              />
-              {isAccountInvitesLoading ? (
-                <Skeleton className="h-14 w-full rounded-md" />
-              ) : accountInvites.length === 0 ? (
-                <p className="text-muted-foreground text-xs">Nobody is waiting to sign up.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {accountInvites.map((invite) => {
-                    const busy = accountInviteBusyIds.has(invite.invite_id);
-                    return (
-                      <li key={invite.invite_id} className={MEMBER_ROW}>
-                        <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                          <Mail className="size-4" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-foreground truncate text-sm font-medium">
-                              {invite.email}
-                            </span>
-                            <Badge variant="outline" size="sm" className="capitalize">
-                              {invite.initial_role}
-                            </Badge>
-                          </div>
-                          <InlineMeta>
-                            <span className="tabular-nums">
-                              Invited {formatDate(invite.created_at)}
-                            </span>
-                            <span className="inline-flex items-center gap-1 tabular-nums">
-                              <Clock className="size-3" />
-                              Expires {formatDate(invite.expires_at)}
-                            </span>
-                          </InlineMeta>
-                        </div>
-                        {busy ? (
-                          <Loading className="text-muted-foreground shrink-0" />
-                        ) : canManageAccountInvites ? (
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onResendAccountInvite(invite)}
-                              className="gap-1.5"
-                            >
-                              <RefreshCw className="size-3.5" />
-                              Resend
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onRequestCancelAccountInvite(invite)}
-                              className="gap-1.5"
-                            >
-                              <X className="size-3.5" />
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-          ) : null}
-
           {showAccessRequests ? (
             <section className="space-y-4">
               <SettingsSubsectionHeader
@@ -1442,7 +1122,7 @@ export function MembersTabView({
             </section>
           ) : null}
 
-          {!showPendingInvites && !showAccountInvites && !showAccessRequests ? (
+          {!showPendingInvites && !showAccessRequests ? (
             <EmptyState
               icon={Mail}
               title="Nobody is waiting"
@@ -1485,7 +1165,10 @@ export function MembersTabView({
         description={
           removeTarget ? (
             <span>
-              <strong>{userLabel(removeTarget)}</strong> will lose access to this project.
+              <strong>{userLabel(removeTarget)}</strong> loses their direct role on this project.{' '}
+              {(removeTarget.group_sources?.length ?? 0) > 0
+                ? `They keep ${removeTarget.group_sources!.length === 1 ? 'access' : 'the access'} they get via the ${removeTarget.group_sources![0].group_name}${removeTarget.group_sources!.length > 1 ? ` and ${removeTarget.group_sources!.length - 1} other group${removeTarget.group_sources!.length - 1 === 1 ? '' : 's'}` : ''} group.`
+                : 'They lose access to this project entirely.'}
             </span>
           ) : null
         }
@@ -1514,90 +1197,7 @@ export function MembersTabView({
         onConfirm={onConfirmRevokeInvite}
       />
 
-      <ConfirmDialog
-        open={cancelAccountInviteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) onCancelCancelAccountInvite();
-        }}
-        title="Cancel invite"
-        description={
-          cancelAccountInviteTarget ? (
-            <span>
-              Revoke the pending invite for <strong>{cancelAccountInviteTarget.email}</strong>?
-              They&apos;ll need a new invite to join.
-            </span>
-          ) : null
-        }
-        confirmLabel="Cancel invite"
-        confirmVariant="destructive"
-        isPending={isCancelAccountInvitePending}
-        onConfirm={onConfirmCancelAccountInvite}
-      />
-
-      <ConfirmDialog
-        open={leaveAccountOpen}
-        onOpenChange={(open) => {
-          if (!open) onCancelLeaveAccount();
-        }}
-        title="Leave account"
-        description={
-          <span>
-            You&apos;ll lose access to <strong>{accountName || 'this account'}</strong> and its
-            projects.
-          </span>
-        }
-        confirmLabel="Leave"
-        confirmVariant="destructive"
-        isPending={isLeaveAccountPending}
-        onConfirm={onConfirmLeaveAccount}
-      />
-
-      {/* JAY-549 — see this file's header comment, "JAY-549". Role-change
-          uses the default (non-destructive) variant, matching page.tsx's own
-          choice; removal uses "destructive", matching this file's own
-          established dialect for every other removal dialog above. */}
-      <ConfirmDialog
-        open={accountRoleChangeTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) onCancelAccountRoleChange();
-        }}
-        title="Change account role"
-        description={
-          accountRoleChangeTarget ? (
-            <span>
-              Change <strong>{userLabel(accountRoleChangeTarget.member)}</strong> to{' '}
-              <strong>{ACCOUNT_ROLE_DESCRIPTORS[accountRoleChangeTarget.role].label}</strong>.{' '}
-              {ACCOUNT_ROLE_DESCRIPTORS[accountRoleChangeTarget.role].blurb}
-            </span>
-          ) : null
-        }
-        confirmLabel="Change role"
-        isPending={isAccountRoleChangePending}
-        onConfirm={onConfirmAccountRoleChange}
-      />
-
-      <ConfirmDialog
-        open={accountRemoveTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) onCancelRemoveFromAccount();
-        }}
-        title="Remove from account?"
-        description={
-          accountRemoveTarget ? (
-            <span>
-              <strong>{userLabel(accountRemoveTarget)}</strong> will lose access to this account and
-              its projects immediately.
-            </span>
-          ) : null
-        }
-        confirmLabel="Remove"
-        confirmVariant="destructive"
-        isPending={isAccountRemovePending}
-        onConfirm={onConfirmRemoveFromAccount}
-      />
-
       {inviteDialogSlot}
-      {accountInviteDialogSlot}
     </CapabilityPageShell>
   );
 }
@@ -1855,168 +1455,6 @@ function MembersTabInner({
     onError: (error: Error) => errorToast(error.message || 'Failed to decline request'),
   });
 
-  // ── JAY-548: the two account-scoped surfaces orphaned by
-  // `accounts/[id]/page.tsx`'s deletion — see this file's header comment. ──
-
-  // member.invite — the SAME leaf `page.tsx`'s `canInviteMember`
-  // (`ACCOUNT_PERMISSION_PROBES`) gated `PendingInvitesSection`'s row
-  // actions on. A DIFFERENT leaf from `canManageMembers` above
-  // (`project.members.manage`) — never re-derived from it.
-  const { allowed: canManageAccountInvites } = usePermission(accountId, 'member.invite');
-
-  // Account name — only for this tab's own "Leave {name}" copy and the
-  // leave-confirm dialog. Same `['account', accountId]` key
-  // `organization-tab.tsx`/`groups-tab.tsx` use, so it's warm if the viewer
-  // already opened one of those tabs this session.
-  const accountQuery = useQuery({
-    queryKey: ['account', accountId],
-    queryFn: () => getAccount(accountId!),
-    enabled: !!accountId,
-    staleTime: 30_000,
-  });
-
-  const accountInvitesQuery = useQuery({
-    queryKey: ['account-invites', accountId],
-    queryFn: () => listAccountInvites(accountId!),
-    enabled: !!accountId,
-    staleTime: 20_000,
-  });
-
-  function invalidateAccountInvites() {
-    queryClient.invalidateQueries({ queryKey: ['account-invites', accountId] });
-  }
-
-  const [accountInviteBusyIds, setAccountInviteBusyIds] = useState<Set<string>>(() => new Set());
-  const markAccountInviteBusy = (id: string) =>
-    setAccountInviteBusyIds((prev) => new Set(prev).add(id));
-  const clearAccountInviteBusy = (id: string) =>
-    setAccountInviteBusyIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-
-  const resendAccountInviteMutation = useMutation({
-    mutationFn: (inviteId: string) => resendAccountInvite(accountId!, inviteId),
-    onMutate: (inviteId) => markAccountInviteBusy(inviteId),
-    onSettled: (_data, _error, inviteId) => clearAccountInviteBusy(inviteId),
-    onSuccess: (result) => {
-      if (result.email_sent) {
-        successToast('Invite email sent');
-      } else {
-        warningToast('Email skipped — copy the invite link to share manually', {
-          duration: 8_000,
-          button: (
-            <Button size="sm" onClick={() => copy(result.invite_url)}>
-              Copy link
-            </Button>
-          ),
-        });
-      }
-      invalidateAccountInvites();
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to resend invite'),
-  });
-
-  const [cancelAccountInviteTarget, setCancelAccountInviteTarget] =
-    useState<AccountInvitation | null>(null);
-  const cancelAccountInviteMutation = useMutation({
-    mutationFn: (inviteId: string) => cancelAccountInvite(accountId!, inviteId),
-    onMutate: (inviteId) => markAccountInviteBusy(inviteId),
-    onSettled: (_data, _error, inviteId) => clearAccountInviteBusy(inviteId),
-    onSuccess: () => {
-      successToast('Invite cancelled');
-      invalidateAccountInvites();
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to cancel invite'),
-  });
-
-  // leaveAccount — self-directed (see this file's header comment). NO
-  // permission probe gates this: whether the CURRENT user can leave their
-  // own account is not an IAM leaf at all, just "are you the sole owner".
-  // `isLastOwner` is computed from the SAME account roster the table above
-  // already renders (`accessQuery.data.members` — every account member,
-  // with `account_role`, per this file's header comment) rather than a
-  // second fetch.
-  const accountRoster = accessQuery.data?.members ?? [];
-  const currentAccountRole = accountRoster.find((m) => m.user_id === user?.id)?.account_role;
-  const ownerCount = accountRoster.filter((m) => m.account_role === 'owner').length;
-  const isLastOwner = currentAccountRole === 'owner' && ownerCount <= 1;
-
-  const [leaveAccountOpen, setLeaveAccountOpen] = useState(false);
-  const leaveAccountMutation = useMutation({
-    mutationFn: () => leaveAccount(accountId!),
-    onSuccess: () => {
-      successToast(`Left ${accountQuery.data?.name ?? 'account'}`);
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      // `/accounts/[id]` is the page this panel replaced. After leaving, the
-      // account's settings are no longer yours to see, so land on the landing
-      // door — NOT the remembered project, which names a project in the
-      // account just left. Same rule `account-switcher.tsx` and
-      // `command-palette.tsx` follow when the account context changes.
-      router.push(PROJECT_LANDING_PATH);
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to leave account'),
-  });
-
-  // ── JAY-549: inviteAccountMember / updateAccountMemberRole /
-  // removeAccountMember — the three genuinely-orphaned functions this task
-  // exists to close. See this file's header comment, "JAY-549". Gates
-  // copied byte-for-byte from `page.tsx`'s `ACCOUNT_PERMISSION_PROBES`,
-  // never re-derived from `canManageMembers` (project.members.manage) or
-  // `canManageAccountInvites` above. ──
-
-  // member.update — page.tsx's canUpdateMember (`page.tsx:327`).
-  const { allowed: canUpdateAccountRole } = usePermission(accountId, 'member.update');
-  // member.remove — page.tsx's canRemoveMember (`page.tsx:326`).
-  const { allowed: canRemoveFromAccount } = usePermission(accountId, 'member.remove');
-
-  // Separate busy-set from `pendingUserIds` above — that one belongs to the
-  // project-role column's own mutations. Sharing it would show a
-  // misleading "workspace access is changing" spinner during an
-  // account-scope mutation.
-  const [accountPendingUserIds, setAccountPendingUserIds] = useState<Set<string>>(() => new Set());
-  const markAccountRowPending = (id: string) =>
-    setAccountPendingUserIds((prev) => new Set(prev).add(id));
-  const clearAccountRowPending = (id: string) =>
-    setAccountPendingUserIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-
-  const [accountRoleChangeTarget, setAccountRoleChangeTarget] = useState<{
-    member: ProjectAccessMember;
-    role: AccountRole;
-  } | null>(null);
-  const accountRoleMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: AccountRole }) =>
-      updateAccountMemberRole(accountId!, userId, role),
-    onMutate: ({ userId }) => markAccountRowPending(userId),
-    onSettled: (_data, _error, vars) => clearAccountRowPending(vars.userId),
-    onSuccess: () => {
-      successToast('Role updated');
-      // listProjectAccess left-joins account_role — invalidating the SAME
-      // query the table already reads re-fetches this row's new role.
-      invalidateAccess();
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update role'),
-  });
-
-  const [accountRemoveTarget, setAccountRemoveTarget] = useState<ProjectAccessMember | null>(null);
-  const accountRemoveMutation = useMutation({
-    mutationFn: (userId: string) => removeAccountMember(accountId!, userId),
-    onMutate: (userId) => markAccountRowPending(userId),
-    onSettled: (_data, _error, userId) => clearAccountRowPending(userId),
-    onSuccess: () => {
-      successToast('Removed from account');
-      invalidateAccess();
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to remove member'),
-  });
-
-  const [accountInviteOpen, setAccountInviteOpen] = useState(false);
-
   return (
     <MembersTabView
       section={section}
@@ -2081,67 +1519,6 @@ function MembersTabInner({
         ) : undefined
       }
       accountId={accountId}
-      accountInvites={accountInvitesQuery.data ?? []}
-      isAccountInvitesLoading={!!accountId && accountInvitesQuery.isLoading}
-      accountInviteBusyIds={accountInviteBusyIds}
-      canManageAccountInvites={canManageAccountInvites}
-      onResendAccountInvite={(invite) => resendAccountInviteMutation.mutate(invite.invite_id)}
-      onRequestCancelAccountInvite={(invite) => setCancelAccountInviteTarget(invite)}
-      cancelAccountInviteTarget={cancelAccountInviteTarget}
-      onCancelCancelAccountInvite={() => setCancelAccountInviteTarget(null)}
-      onConfirmCancelAccountInvite={() => {
-        if (!cancelAccountInviteTarget) return;
-        const target = cancelAccountInviteTarget;
-        setCancelAccountInviteTarget(null);
-        cancelAccountInviteMutation.mutate(target.invite_id);
-      }}
-      isCancelAccountInvitePending={cancelAccountInviteMutation.isPending}
-      accountName={accountQuery.data?.name}
-      isAccountRosterLoading={!!accountId && accessQuery.isLoading}
-      isLastOwner={isLastOwner}
-      leaveAccountOpen={leaveAccountOpen}
-      onOpenLeaveAccount={() => setLeaveAccountOpen(true)}
-      onCancelLeaveAccount={() => setLeaveAccountOpen(false)}
-      onConfirmLeaveAccount={() => {
-        setLeaveAccountOpen(false);
-        leaveAccountMutation.mutate();
-      }}
-      isLeaveAccountPending={leaveAccountMutation.isPending}
-      currentUserId={user?.id}
-      canUpdateAccountRole={canUpdateAccountRole}
-      canRemoveFromAccount={canRemoveFromAccount}
-      accountPendingUserIds={accountPendingUserIds}
-      accountRoleChangeTarget={accountRoleChangeTarget}
-      onRequestAccountRoleChange={(member, role) => setAccountRoleChangeTarget({ member, role })}
-      onCancelAccountRoleChange={() => setAccountRoleChangeTarget(null)}
-      onConfirmAccountRoleChange={() => {
-        if (!accountRoleChangeTarget) return;
-        const { member, role } = accountRoleChangeTarget;
-        setAccountRoleChangeTarget(null);
-        accountRoleMutation.mutate({ userId: member.user_id, role });
-      }}
-      isAccountRoleChangePending={accountRoleMutation.isPending}
-      accountRemoveTarget={accountRemoveTarget}
-      onRequestRemoveFromAccount={(member) => setAccountRemoveTarget(member)}
-      onCancelRemoveFromAccount={() => setAccountRemoveTarget(null)}
-      onConfirmRemoveFromAccount={() => {
-        if (!accountRemoveTarget) return;
-        const target = accountRemoveTarget;
-        setAccountRemoveTarget(null);
-        accountRemoveMutation.mutate(target.user_id);
-      }}
-      isAccountRemovePending={accountRemoveMutation.isPending}
-      onOpenAccountInvite={() => setAccountInviteOpen(true)}
-      accountInviteDialogSlot={
-        accountId ? (
-          <InviteToAccountDialog
-            accountId={accountId}
-            open={accountInviteOpen}
-            onOpenChange={setAccountInviteOpen}
-            onInvited={invalidateAccountInvites}
-          />
-        ) : undefined
-      }
     />
   );
 }
@@ -2244,150 +1621,6 @@ function InviteMemberDialog({
                 <ProjectRoleSelectItem role="member" />
                 <ProjectRoleSelectItem role="editor" />
                 <ProjectRoleSelectItem role="manager" />
-              </SelectContent>
-            </Select>
-          </Field>
-        </ModalBody>
-        <ModalFooter className="sm:justify-between">
-          <Button
-            type="button"
-            variant="outline-ghost"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => mutation.mutate()}
-            disabled={!canSubmit}
-            className="gap-1.5"
-          >
-            {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
-            Invite
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
-  );
-}
-
-/** Invite-to-ACCOUNT composer — a single email + `AccountRole`, mirroring
- *  `InviteMemberDialog` above's shape rather than `page.tsx`'s
- *  `InviteMemberModal` (bulk multi-email chip composer) ported verbatim.
- *  See this file's header comment, "JAY-549", for why. Calls
- *  `inviteAccountMember` — the first other caller besides `page.tsx`. Owns
- *  its own `useMutation`, so it's a slot on `MembersTabView`
- *  (`accountInviteDialogSlot`), same reasoning as `inviteDialogSlot`. */
-function InviteToAccountDialog({
-  accountId,
-  open,
-  onOpenChange,
-  onInvited,
-}: {
-  accountId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onInvited: () => void;
-}) {
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<AccountRole>('member');
-  const { copy } = useCopy({
-    successMessage: 'Invite link copied',
-    errorMessage: 'Could not copy link',
-  });
-
-  const mutation = useMutation({
-    mutationFn: () => inviteAccountMember(accountId, { email: email.trim(), role }),
-    onSuccess: (result) => {
-      if (result.status === 'pending') {
-        if (result.email_sent) {
-          successToast(`Invite sent to ${result.email}`);
-        } else {
-          const inviteUrl = result.invite_url;
-          warningToast('Invite created — email skipped. Share the link manually.', {
-            duration: 10_000,
-            button: (
-              <Button size="sm" onClick={() => copy(inviteUrl)}>
-                Copy link
-              </Button>
-            ),
-          });
-        }
-      } else {
-        successToast(`Added ${result.email}`);
-      }
-      onInvited();
-      setEmail('');
-      setRole('member');
-      onOpenChange(false);
-    },
-    onError: (error: Error) => {
-      const status = (error as Error & { status?: number }).status;
-      errorToast(
-        status === 409
-          ? `${email.trim()} is already a member of this account.`
-          : error.message || 'Failed to invite member',
-      );
-    },
-  });
-
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const canSubmit = EMAIL_RE.test(email.trim()) && !mutation.isPending;
-
-  return (
-    <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>Invite to account</ModalTitle>
-          <ModalDescription>They&apos;ll get account access at the role you pick.</ModalDescription>
-        </ModalHeader>
-        <ModalBody className="space-y-4">
-          <Field className="gap-1.5">
-            <FieldLabel htmlFor="invite-account-email">Email</FieldLabel>
-            <Input
-              id="invite-account-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="teammate@example.com"
-              disabled={mutation.isPending}
-              autoFocus
-              variant="popover"
-            />
-          </Field>
-          <Field className="gap-1.5">
-            <FieldLabel htmlFor="invite-account-role">Role</FieldLabel>
-            <Select
-              value={role}
-              onValueChange={(next) => setRole(next as AccountRole)}
-              disabled={mutation.isPending}
-            >
-              <SelectTrigger id="invite-account-role">
-                <SelectValue />
-              </SelectTrigger>
-              {/* `description`, not a concatenated "label — blurb" string.
-                  Each option used to read its full sentence inline
-                  ("Admin — Everything except deleting the account or
-                  transferring ownership."), which wrapped to two lines per
-                  row inside a `lg:max-w-md` modal and pushed the open
-                  popover past the bottom of the screen. `SelectItem`'s own
-                  `description` prop already renders label and blurb as two
-                  properly-laid-out lines — the exact pattern
-                  `ProjectRoleSelectItem` (`components/iam/role-select-item.tsx`)
-                  uses for the project-role picker right below this one in the
-                  same file. */}
-              <SelectContent>
-                <SelectItem value="member" description={ACCOUNT_ROLE_DESCRIPTORS.member.blurb}>
-                  {ACCOUNT_ROLE_DESCRIPTORS.member.label}
-                </SelectItem>
-                <SelectItem value="admin" description={ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}>
-                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label}
-                </SelectItem>
-                <SelectItem value="owner" description={ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}>
-                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label}
-                </SelectItem>
               </SelectContent>
             </Select>
           </Field>
