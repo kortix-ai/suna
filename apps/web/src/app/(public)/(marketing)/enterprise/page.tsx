@@ -1,11 +1,10 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
-import { Button } from '@/components/ui/marketing/button';
-import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
+import { EnterpriseHeroVisual } from '@/features/marketing/enterprise/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { cn } from '@/lib/utils';
 import {
   PackageIcon as Box,
@@ -17,7 +16,6 @@ import {
   HardDrivesIcon as Server,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useState } from 'react';
 
 const DIFFERENTIATORS = [
@@ -122,16 +120,7 @@ const DEPLOYMENT = [
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-enterprise-demo';
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-      {children}
-    </span>
-  );
-}
-
 const EnterprisePage = () => {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = (key: string) => tHardcodedUi.raw(`appHomeEnterprisePage.${key}`);
   const [calOpen, setCalOpen] = useState(false);
@@ -139,35 +128,16 @@ const EnterprisePage = () => {
   return (
     <>
       <div className="bg-background relative">
-        <section className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
-          <div className="absolute inset-0 z-0 mask-y-to-95%">
-            <KortixLetterField seed={3382} />
-          </div>
-          <div className="mx-auto max-w-7xl">
-            <Reveal>
-              <Badge variant="kortix" className="rounded">
-                {t('heroEyebrow')}
-              </Badge>
-              <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-                {t('heroTitle')}
-              </h1>
-              <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-                {t('heroDescription')}
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="lg" onClick={() => setCalOpen(true)}>
-                  {t('talkToSalesCta')}
-                </Button>
-                <Button size="lg" variant="secondary" asChild>
-                  <Link href="/pricing">{t('comparePlansCta')}</Link>
-                </Button>
-              </div>
-              <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-                {t('heroMicroline')}
-              </p>
-            </Reveal>
-          </div>
-        </section>
+        <CapabilityHero
+          eyebrow={t('heroEyebrow')}
+          title={t('heroTitle')}
+          sub={t('heroDescription')}
+          ctaPrimary={t('talkToSalesCta')}
+          onCtaPrimaryClick={() => setCalOpen(true)}
+          ctaSecondary={t('comparePlansCta')}
+          ctaSecondaryHref="/pricing"
+          visual={<EnterpriseHeroVisual />}
+        />
 
         <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 xl:px-0">
           <Reveal>
