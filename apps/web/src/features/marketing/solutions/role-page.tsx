@@ -1,20 +1,14 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ArtifactPanel } from './artifact';
+import { SolutionsHeroVisual } from './hero-visual';
 import { ROLES } from './registry';
-import {
-  DefinitionRows,
-  Eyebrow,
-  Section,
-  SectionDivider,
-  SectionHeading,
-  SOLUTIONS_MEASURE,
-  SpecGrid,
-} from './shared';
+import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
 import type { RoleContent } from './types';
 
 const MODE_STEP: Record<RoleContent['cadence']['modes'][number]['id'], string> = {
@@ -41,41 +35,24 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
 
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className={cn(SOLUTIONS_MEASURE, 'relative pt-32 pb-12 sm:pt-36')}>
-        <Reveal>
-          <Badge variant="kortix" className="rounded">
-            Solutions · {role.name}
-          </Badge>
-          <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-            {role.hero.title}
-          </h1>
-          <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-            {role.hero.sub}
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="lg" asChild>
-              <Link href="/auth">Get started</Link>
-            </Button>
-            <Button size="lg" variant="secondary" asChild>
-              <Link href="/contact">Talk to us</Link>
-            </Button>
-          </div>
-          <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-            {role.hero.microline}
-          </p>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <SpecGrid specs={role.hero.specs} />
-        </Reveal>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow={`Solutions · ${role.name}`}
+        title={role.hero.title}
+        sub={role.hero.sub}
+        ctaPrimary="Get started"
+        ctaPrimaryHref="/auth"
+        ctaSecondary="Talk to us"
+        ctaSecondaryHref="/contact"
+        visual={<SolutionsHeroVisual specs={role.hero.specs} />}
+      />
 
       {/* ── 1 · what you hand off ───────────────────────────────────────── */}
       <Section id="handoff">
-        <SectionHeading eyebrow="The handoff" title={role.handoff.title} sub={role.handoff.sub} />
+        <SectionHeader
+          eyebrow="The handoff"
+          title={role.handoff.title}
+          description={role.handoff.sub}
+        />
 
         {/* Individually bordered cards rather than one continuous hairline grid: the job
             count varies by role (four to six), so a hand-written hairline table
@@ -102,7 +79,11 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
 
       {/* ── 2 · what comes back ─────────────────────────────────────────── */}
       <Section id="output">
-        <SectionHeading eyebrow="The output" title={role.output.title} sub={role.output.sub} />
+        <SectionHeader
+          eyebrow="The output"
+          title={role.output.title}
+          description={role.output.sub}
+        />
 
         <div className="mt-10 grid gap-4 lg:grid-cols-12">
           {/* `min-w-0` on both grid items: the artifact frame contains a wide
@@ -142,7 +123,11 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
 
       {/* ── 3 · where it reaches ────────────────────────────────────────── */}
       <Section id="reach">
-        <SectionHeading eyebrow="Where it reaches" title={role.reach.title} sub={role.reach.sub} />
+        <SectionHeader
+          eyebrow="Where it reaches"
+          title={role.reach.title}
+          description={role.reach.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -161,7 +146,11 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
 
       {/* ── 4 · how it runs ─────────────────────────────────────────────── */}
       <Section id="cadence">
-        <SectionHeading eyebrow="How it runs" title={role.cadence.title} sub={role.cadence.sub} />
+        <SectionHeader
+          eyebrow="How it runs"
+          title={role.cadence.title}
+          description={role.cadence.sub}
+        />
 
         <Reveal delay={0.06}>
           <ol className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border lg:grid-cols-3">
@@ -191,7 +180,11 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
 
       {/* ── 5 · what lands, and what does not ───────────────────────────── */}
       <Section id="control">
-        <SectionHeading eyebrow="Control" title={role.control.title} sub={role.control.sub} />
+        <SectionHeader
+          eyebrow="Control"
+          title={role.control.title}
+          description={role.control.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -252,33 +245,6 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
           </Link>
         </Reveal>
       </Section>
-
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <Section id="cta">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              {role.name}
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              {role.closing.title}
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
-              {role.closing.sub}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="lg" asChild>
-                <Link href="/auth">Get started</Link>
-              </Button>
-              <Button size="lg" variant="secondary" asChild>
-                <Link href="/contact">Talk to us</Link>
-              </Button>
-            </div>
-          </div>
-        </Reveal>
-      </Section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }
