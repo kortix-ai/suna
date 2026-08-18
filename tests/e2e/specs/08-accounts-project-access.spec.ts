@@ -544,12 +544,16 @@ test.describe("08 — Accounts, invites, and project access", () => {
         response.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Invite", exact: true }).click();
+    // Title renamed "Invite members" -> "Invite to account" (page.tsx's
+    // InviteMemberModal) — the account page's own invite composer, kept
+    // distinct from InviteMemberDialog's "Invite a member" above, which is
+    // the project-scoped one.
     await expect(
-      page.getByRole("dialog", { name: "Invite members" }),
+      page.getByRole("dialog", { name: "Invite to account" }),
     ).toBeVisible();
     await page.getByLabel("Emails").fill(uiInvitedEmail);
     await page
-      .getByRole("dialog", { name: "Invite members" })
+      .getByRole("dialog", { name: "Invite to account" })
       .getByRole("button", { name: "Invite", exact: true })
       .click();
     expect((await uiInviteResponse).status()).toBe(201);
