@@ -1129,6 +1129,47 @@ describe('project session API contract', () => {
     expect((await response.json()).agent_name).toBe('meta');
   });
 
+  test('a session-bound spawn inherits the SPAWNING session sharing, not the private default', async () => {
+    // The caller's own session (sessionRow / SESSION_ID) is shared project-wide.
+    // A worker it spawns must be reachable by the same grantees, not fall back
+    // to the private default — otherwise sharing the coordinator would not
+    // actually share anything it spawns. See resolveInheritedSessionSharing.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.visibility).toBe('project');
+  });
+
+  test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
+    // Same shared-project-wide parent state as above, but with the Supabase
+    // browser auth path (no Authorization header) instead of a session-bound
+    // PAT — proves inheritance is gated on an actual spawning session, not
+    // just on the existence of an unrelated session row in the fixture.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.visibility).toBe('private');
+  });
+
   test('GET project session inventory rejects callers without project.session.read', async () => {
     deniedIamAction = 'project.session.read';
     const app = createApp();

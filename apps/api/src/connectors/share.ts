@@ -251,6 +251,29 @@ export function visibilityToIntent(visibility: SessionVisibility, grants: Secret
   return { mode: 'members', memberIds, groupIds };
 }
 
+/**
+ * A session created while another running session's own token is the caller
+ * (a sub-agent/coordinator spawning a worker) inherits THAT session's sharing
+ * instead of defaulting to private. Without this, a worker a coordinator
+ * spawns is invisible to anyone the coordinator was shared with — only the
+ * human who happens to match `created_by` could ever open it, which defeats
+ * the point of sharing the parent in the first place.
+ *
+ * `requestedVisibility` explicit (automation callers — triggers, channels —
+ * always pass one) wins outright and carries no inherited grants: those
+ * callers manage their own sharing story and were never eligible to inherit.
+ * `parent` is null when there is no spawning session, or it could not be
+ * resolved (defense in depth) — falls back to the private default.
+ */
+export function resolveInheritedSessionSharing(
+  requestedVisibility: SessionVisibility | undefined,
+  parent: { visibility: SessionVisibility; grants: SecretGrant[] } | null,
+): { visibility: SessionVisibility; grants: SecretGrant[] } {
+  if (requestedVisibility !== undefined) return { visibility: requestedVisibility, grants: [] };
+  if (parent) return { visibility: parent.visibility, grants: parent.grants };
+  return { visibility: 'private', grants: [] };
+}
+
 /** Bulk-load session grants → map sessionId → grants. */
 export async function loadSessionGrants(sessionIds: string[]): Promise<Map<string, SecretGrant[]>> {
   const out = new Map<string, SecretGrant[]>();

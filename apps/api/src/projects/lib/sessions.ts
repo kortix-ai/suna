@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   projectSessionConnectorBindings,
+  projectSessionGrants,
   projectSessionRuntimeContexts,
   projectSessions,
 } from '@kortix/db';
@@ -11,6 +12,12 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { agentMayUseConnector } from '../../iam/agent-scope';
+import {
+  loadSessionGrants,
+  resolveInheritedSessionSharing,
+  type SecretGrant,
+  type SessionVisibility,
+} from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
@@ -640,6 +647,29 @@ export async function sandboxCallbackDeadTunnelReason(
   return reason;
 }
 
+/**
+ * Read the SPAWNING session's own sharing (visibility + grants), scoped to
+ * the same account and project as the session being created — a stale or
+ * cross-project caller id (should not happen; defense in depth) falls back
+ * to the caller's normal default rather than inheriting nothing.
+ */
+async function loadParentSessionSharing(
+  callerSessionId: string,
+  accountId: string,
+  projectId: string,
+): Promise<{ visibility: SessionVisibility; grants: SecretGrant[] } | null> {
+  const [parent] = await db
+    .select({ visibility: projectSessions.visibility, projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, callerSessionId), eq(projectSessions.accountId, accountId)))
+    .limit(1);
+  if (!parent || parent.projectId !== projectId) return null;
+  const visibility = parent.visibility as SessionVisibility;
+  if (visibility !== 'restricted') return { visibility, grants: [] };
+  const grants = (await loadSessionGrants([callerSessionId])).get(callerSessionId) ?? [];
+  return { visibility, grants };
+}
+
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
@@ -687,9 +717,21 @@ export async function createProjectSession(input: {
   headers?: Record<string, string>;
 }> {
   const { project, userId, body } = input;
-  const visibility = input.visibility ?? 'private';
   const projectId = project.projectId;
   const accountId = project.accountId;
+  // A session spawned by ANOTHER running session (a sub-agent/coordinator
+  // worker, via that session's own bound token) inherits the SPAWNING
+  // session's sharing instead of defaulting to private — see
+  // resolveInheritedSessionSharing. Automation callers (triggers, channels)
+  // always pass `visibility` explicitly, so the lookup is skipped for them.
+  const parentSharing =
+    input.visibility === undefined && input.callerSessionId
+      ? await loadParentSessionSharing(input.callerSessionId, accountId, projectId)
+      : null;
+  const { visibility, grants: inheritedGrants } = resolveInheritedSessionSharing(
+    input.visibility,
+    parentSharing,
+  );
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -1346,6 +1388,15 @@ export async function createProjectSession(input: {
             })),
           )
           .returning({ sessionId: projectSessionConnectorBindings.sessionId });
+      }
+      if (inheritedGrants.length > 0) {
+        await tx.insert(projectSessionGrants).values(
+          inheritedGrants.map((g) => ({
+            sessionId,
+            principalType: g.principalType,
+            principalId: g.principalId,
+          })),
+        );
       }
       return row;
     });
