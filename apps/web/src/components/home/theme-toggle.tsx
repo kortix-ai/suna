@@ -44,7 +44,7 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
           aria-label={tI18nHardcoded.raw(
             'autoComponentsHomeThemeToggleJsxAttrAriaLabelLightTheme26963d69',
           )}
-          className="[&amp;&gt;svg]:size-4 text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
+          className="[&amp;&gt;svg]:size-4 text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-[calc(var(--radius)-2px)] transition-colors duration-150 ease-out"
           style={{ backgroundColor: theme === 'light' ? 'var(--background)' : 'transparent' }}
           type="button"
           onClick={() => setTheme('light')}
