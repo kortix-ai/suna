@@ -8,6 +8,7 @@
 import { errorToast, successToast } from '@/components/ui/toast';
 import { PlusIcon as Plus, ShieldIcon as Shield, TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -398,7 +399,16 @@ export function PolicyAssignments({ accountId, canManage, rbacEnabled }: PolicyA
 type PrincipalType = 'member' | 'group' | 'token';
 type ScopeType = 'account' | 'project';
 
-function CreateAssignmentDialog({
+/** A principal already known by the caller — e.g. a group page assigning a
+ * role to the group it's showing. Skips the principal-type + entity pickers
+ * and binds straight to this identity. */
+export interface AssignmentPrincipalPreset {
+  type: 'group';
+  id: string;
+  label: string;
+}
+
+export function CreateAssignmentDialog({
   accountId,
   open,
   onOpenChange,
@@ -411,6 +421,8 @@ function CreateAssignmentDialog({
   projects,
   projectsLoading,
   onCreated,
+  presetPrincipal,
+  onOpenBuiltinRolePath,
 }: {
   accountId: string;
   open: boolean;
@@ -424,11 +436,20 @@ function CreateAssignmentDialog({
   projects: KortixProject[];
   projectsLoading: boolean;
   onCreated: () => void;
+  /** Pre-bind the principal (e.g. a group already open on screen) and hide
+   * the principal-type/entity pickers so the dialog is just role + scope. */
+  presetPrincipal?: AssignmentPrincipalPreset;
+  /** Only used with presetPrincipal: jump to wherever this principal's
+   * built-in role actually gets assigned (e.g. a group's Projects tab),
+   * surfaced from the empty-state when the account has no custom roles yet. */
+  onOpenBuiltinRolePath?: () => void;
 }) {
   // `service_account` is a UI-only principal type — a standalone (non-agent)
   // service account. It maps to the backend `token` principal on submit.
-  const [principalType, setPrincipalType] = useState<PrincipalType | 'service_account'>('member');
-  const [principalId, setPrincipalId] = useState('');
+  const [principalType, setPrincipalType] = useState<PrincipalType | 'service_account'>(
+    presetPrincipal?.type ?? 'member',
+  );
+  const [principalId, setPrincipalId] = useState(presetPrincipal?.id ?? '');
   const [roleId, setRoleId] = useState('');
   const [scopeType, setScopeType] = useState<ScopeType>('account');
   const [projectId, setProjectId] = useState('');
@@ -438,8 +459,8 @@ function CreateAssignmentDialog({
   const customRoles = useMemo(() => roles.filter((r) => !r.is_system), [roles]);
 
   function reset() {
-    setPrincipalType('member');
-    setPrincipalId('');
+    setPrincipalType(presetPrincipal?.type ?? 'member');
+    setPrincipalId(presetPrincipal?.id ?? '');
     setRoleId('');
     setScopeType('account');
     setProjectId('');
@@ -487,49 +508,61 @@ function CreateAssignmentDialog({
     >
       <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>Give a custom role</ModalTitle>
+          <ModalTitle>
+            {presetPrincipal ? `Give ${presetPrincipal.label} a custom role` : 'Give a custom role'}
+          </ModalTitle>
           <ModalDescription>
-            Give one of your custom roles to a person, group, or agent — for the whole account, or
-            just one project.
+            {presetPrincipal
+              ? `Bind ${presetPrincipal.label} to a custom role at a scope.`
+              : 'Give one of your custom roles to a person, group, or agent — for the whole account, or just one project.'}
           </ModalDescription>
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-          <div className="space-y-1.5">
-            <Label htmlFor="assignment-principal-type">Who is this for?</Label>
-            <Select
-              value={principalType}
-              onValueChange={(v) => {
-                const next = v as PrincipalType;
-                setPrincipalType(next);
-                setPrincipalId('');
-                // Agents are project-scoped — switch to project scope and make
-                // the admin pick the project FIRST, then its agents. Member /
-                // group default back to account scope.
-                if (next === 'token') {
-                  setScopeType('project');
-                } else {
-                  setScopeType('account');
-                }
-                setProjectId('');
-              }}
-              disabled={mutation.isPending}
-            >
-              <SelectTrigger id="assignment-principal-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="group">Group</SelectItem>
-                {/* token = a service-account / agent standing identity. Assigning
-                    a role here promotes the agent to a standing teammate. */}
-                <SelectItem value="token">Agent</SelectItem>
-                {/* Standalone service account — a CI/CD / integration machine
-                    identity (no agent). Backend principal is also `token`. */}
-                <SelectItem value="service_account">Service account</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {presetPrincipal ? null : (
+            <div className="space-y-1.5">
+              <Label htmlFor="assignment-principal-type">Who is this for?</Label>
+              <Select
+                value={principalType}
+                onValueChange={(v) => {
+                  const next = v as PrincipalType;
+                  setPrincipalType(next);
+                  setPrincipalId('');
+                  // Agents are project-scoped — switch to project scope and make
+                  // the admin pick the project FIRST, then its agents. Member /
+                  // group default back to account scope.
+                  if (next === 'token') {
+                    setScopeType('project');
+                  } else {
+                    setScopeType('account');
+                  }
+                  setProjectId('');
+                }}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger id="assignment-principal-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="group">Group</SelectItem>
+                  {/* token = a standing service identity: an Agent (lives inside a
+                      project) or a standalone Service account (CI/CD, no agent).
+                      Assigning a role here makes it act with that access on its
+                      own, the same as any human teammate. */}
+                  <SelectItem value="token">Agent</SelectItem>
+                  <SelectItem value="service_account">Service account</SelectItem>
+                </SelectContent>
+              </Select>
+              {principalType === 'token' || principalType === 'service_account' ? (
+                <p className="text-muted-foreground text-xs">
+                  {principalType === 'token'
+                    ? "A role here binds to the agent's own standing identity — it acts with that access on its own, the same as a human teammate."
+                    : 'A standalone machine identity (CI/CD, integrations) with no human or agent behind it.'}
+                </p>
+              ) : null}
+            </div>
+          )}
 
           {/* Agents live IN a project — pick the project first, then its agents. */}
           {principalType === 'token' && (
@@ -567,6 +600,14 @@ function CreateAssignmentDialog({
             </div>
           )}
 
+          {presetPrincipal ? (
+            <div className="space-y-1.5">
+              <Label>Group</Label>
+              <div className="border-input bg-muted/40 flex h-9 items-center rounded-md border px-3 text-sm">
+                {presetPrincipal.label}
+              </div>
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <Label htmlFor="assignment-principal">
               {principalType === 'member'
@@ -661,13 +702,49 @@ function CreateAssignmentDialog({
               </SelectContent>
             </Select>
           </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="assignment-role">Role</Label>
             {rolesLoading ? (
               <p className="text-muted-foreground text-xs">Loading roles…</p>
             ) : customRoles.length === 0 ? (
-              <p className="text-muted-foreground text-xs">Create a custom role first.</p>
+              <div className="border-border bg-muted/30 space-y-2 rounded-md border border-dashed p-3">
+                <p className="text-muted-foreground text-xs">
+                  This account has no custom roles yet. Custom roles are an additive layer on top
+                  of built-in roles (Owner, Admin, Manager, Editor, Member) — for a built-in role,
+                  assign it directly instead of through this dialog.
+                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {presetPrincipal && onOpenBuiltinRolePath ? (
+                    <button
+                      type="button"
+                      className="text-foreground text-xs font-medium underline underline-offset-2"
+                      onClick={() => {
+                        onOpenBuiltinRolePath();
+                        onOpenChange(false);
+                      }}
+                    >
+                      Open Projects tab
+                    </button>
+                  ) : !presetPrincipal ? (
+                    <Link
+                      href={`/accounts/${accountId}?tab=members`}
+                      className="text-foreground text-xs font-medium underline underline-offset-2"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      Open Members tab
+                    </Link>
+                  ) : null}
+                  <Link
+                    href={`/accounts/${accountId}?tab=roles`}
+                    className="text-foreground text-xs font-medium underline underline-offset-2"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Create a custom role
+                  </Link>
+                </div>
+              </div>
             ) : (
               <Select value={roleId} onValueChange={setRoleId} disabled={mutation.isPending}>
                 <SelectTrigger id="assignment-role">
