@@ -110,7 +110,6 @@ const CASES: Case[] = [
   { name: 'project session audit', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/audit` },
   { name: 'project session scope', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/scope` },
   { name: 'project access list', leaf: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, path: () => `/v1/projects/${PROJECT}/access` },
-  { name: 'oauth credentials list', leaf: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, path: () => `/v1/projects/${PROJECT}/oauth` },
   { name: 'review items inbox', leaf: PROJECT_ACTIONS.PROJECT_REVIEW_READ, path: () => `/v1/projects/${PROJECT}/review/items` },
   { name: 'branches', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/branches` },
   { name: 'commits', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/commits` },
@@ -120,10 +119,12 @@ const CASES: Case[] = [
   { name: 'triggers list', leaf: PROJECT_ACTIONS.PROJECT_TRIGGER_READ, path: () => `/v1/projects/${PROJECT}/triggers` },
 ];
 
-// EDITOR-TIER reads: project.file.read + project.secret.read were moved OUT of
-// the floor `member` role into editor, so a bare member is 403 here (they can
-// run the agent/chat but not browse the file tree or view secret values); an
-// editor passes. Same agent-grant fold as the member-tier CASES above.
+// EDITOR-TIER reads: project.file.read, project.secret.read, and the entire
+// Agents/Connectors/Skills/Customize surface were moved OUT of the floor
+// `member` role into editor, so a bare member is 403 here (they can start/stop
+// sessions but can't browse the file tree, view secret values, or reach
+// Customize); an editor passes. Same agent-grant fold as the member-tier CASES
+// above.
 const EDITOR_TIER_READ_CASES: Case[] = [
   { name: 'files list', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files` },
   { name: 'files archive', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/archive` },
@@ -131,6 +132,7 @@ const EDITOR_TIER_READ_CASES: Case[] = [
   { name: 'files content', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/content?path=README.md` },
   { name: 'files history', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/history?path=README.md` },
   { name: 'secrets list', leaf: PROJECT_ACTIONS.PROJECT_SECRET_READ, path: () => `/v1/projects/${PROJECT}/secrets` },
+  { name: 'oauth credentials list', leaf: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, path: () => `/v1/projects/${PROJECT}/oauth` },
 ];
 
 describe('HTTP enforcement — project read-leaf gates (agent-grant fold now reachable)', () => {
@@ -172,7 +174,7 @@ describe('HTTP enforcement — gateway playground spend gate', () => {
   });
 });
 
-describe('HTTP enforcement — editor-tier read gates (file.read / secret.read moved off member)', () => {
+describe('HTTP enforcement — editor-tier read gates (file/secret/connector reads moved off member)', () => {
   for (const c of EDITOR_TIER_READ_CASES) {
     describe(c.name, () => {
       test('floor MEMBER (no file/secret read) → 403', async () => {

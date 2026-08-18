@@ -120,26 +120,35 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_APP_DEPLOY,
 
   // Sensitive READS — moved out of the floor `member` role. A plain member can
-  // use the project (run the agent/chat) but can't browse the file tree via the
-  // files page or view secret values; editor+ retains both. Makes "project
-  // access without files/secrets" expressible as the built-in `member` role.
+  // read the project shell and its own sessions, but not browse the file tree,
+  // view secret values, or reach ANY of the "Customize" surface (Agents,
+  // Connectors, Skills, the customize hub itself). Editor+ retains all of it.
+  // Running an already-started/default session is unaffected — this only gates
+  // BROWSING/LAUNCHING agents by name and the Customize UI (see
+  // PROJECT_MEMBER_BASELINE below for the full rationale).
   PROJECT_ACTIONS.PROJECT_FILE_READ,
   PROJECT_ACTIONS.PROJECT_SECRET_READ,
+  PROJECT_ACTIONS.PROJECT_AGENT_READ,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+  PROJECT_ACTIONS.PROJECT_SKILL_READ,
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
 
   // Acting on a review item (approve / reject / answer) is a decision on agent
   // work — editor-tier, alongside gitops.
   PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
 ];
 
-/** Baseline for the floor project role. `member` is the base *usable* role:
- *  it can read the project and start / run / stop sessions — i.e. actually use
- *  the agent and the chat — but NOT view secret values or browse the file tree
- *  (those moved to editor-tier). A role that can't open a session is useless,
- *  and this is the role new members get by default, so it has to be able to
- *  drive Kortix. What it CANNOT do is customize the project (edit settings,
- *  deploy, manage members, create/delete triggers) OR read files/secrets —
- *  those live in EDITOR_EXTRAS / MANAGER_ONLY above. Named PROJECT_MEMBER_* to
- *  avoid colliding with the account-role MEMBER_BASELINE above. */
+/** Baseline for the floor project role. `member` is a READ-ONLY, no-Customize
+ *  role: it can see the project shell, its sessions, and its member/trigger
+ *  list, and it can start/stop/fire what it's already scoped to — but it
+ *  CANNOT browse, launch-by-name, or manage Agents, Connectors, or Skills, and
+ *  it cannot open the Customize surface at all (project.customize.read lives in
+ *  EDITOR_EXTRAS now). Agents/Connectors/Skills/Customize are ALL editor-tier
+ *  by default: a plain member gets none of them unless an explicit per-resource
+ *  IAM v1 grant names them, or their role is bumped to editor/manager. This is
+ *  deliberate — access is opt-in via role/scope, never blanket-on-for-everyone.
+ *  Named PROJECT_MEMBER_* to avoid colliding with the account-role
+ *  MEMBER_BASELINE above. */
 const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
@@ -152,17 +161,14 @@ const PROJECT_MEMBER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
   PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
 
-  // Per-capability read leaves (IAM v1). NOTE: project.file.read and
-  // project.secret.read are DELIBERATELY NOT here — they moved to EDITOR_EXTRAS
-  // so a floor `member` can run the agent/chat but can't browse the file tree or
-  // view secret values (the sensitive reads are an editor concern). This is the
-  // one place `member ⊂ editor` is a real capability difference on reads.
-  PROJECT_ACTIONS.PROJECT_AGENT_READ,
-  PROJECT_ACTIONS.PROJECT_SKILL_READ,
+  // Per-capability read leaves (IAM v1). NOTE: project.file.read,
+  // project.secret.read, project.agent.read, project.connector.read,
+  // project.skill.read, and project.customize.read are DELIBERATELY NOT here —
+  // they all moved to EDITOR_EXTRAS. A floor `member` gets NO default access to
+  // Agents/Connectors/Skills/Customize; that whole surface is editor-tier
+  // (or an explicit per-resource grant) by design.
   PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
   PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
   // Kortix Apps: a member sees the Apps the App access policy shares with
   // them. The policy, not this leaf, decides which Apps that is.
   PROJECT_ACTIONS.PROJECT_APP_READ,

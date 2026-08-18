@@ -135,9 +135,11 @@ describe('IAM V2 — role helpers', () => {
 describe('IAM V2 — no unknown actions', () => {
   // IAM v1 per-capability leaves: backward-compat invariant. Editor must hold
   // every write leaf (it had all of these via project.write before). The floor
-  // Member role keeps MOST read leaves — EXCEPT file.read + secret.read, which
-  // moved to editor-tier (a member can run the agent/chat but can't browse the
-  // file tree or view secret values). Member must NOT gain any write leaf.
+  // Member role keeps only the non-Customize read leaves — file.read,
+  // secret.read, agent.read, connector.read, skill.read, and customize.read are
+  // ALL editor-tier: a plain member gets zero default access to Agents,
+  // Connectors, Skills, or the Customize surface. Member must NOT gain any
+  // write leaf.
   test('per-capability leaves preserve the editor/member capability surface', () => {
     const writeLeaves = [
       PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
@@ -152,17 +154,18 @@ describe('IAM V2 — no unknown actions', () => {
     ];
     // Reads the floor member role keeps.
     const memberReadLeaves = [
-      PROJECT_ACTIONS.PROJECT_AGENT_READ,
-      PROJECT_ACTIONS.PROJECT_SKILL_READ,
       PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
     ];
-    // Sensitive reads that are now editor-tier (member is denied).
+    // Sensitive/Customize reads that are now editor-tier (member is denied):
+    // files, secrets, and the entire Agents/Connectors/Skills/Customize surface.
     const editorReadLeaves = [
       PROJECT_ACTIONS.PROJECT_FILE_READ,
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
+      PROJECT_ACTIONS.PROJECT_AGENT_READ,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+      PROJECT_ACTIONS.PROJECT_SKILL_READ,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
     ];
     for (const a of writeLeaves) {
       expect(projectRoleAllows('editor', a)).toBe(true);

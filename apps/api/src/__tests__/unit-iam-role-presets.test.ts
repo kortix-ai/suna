@@ -41,9 +41,13 @@ describe('built-in role presets', () => {
     expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
     expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
     expect(set.has(PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
-    // read leaves yes…
-    expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_READ)).toBe(true);
-    // …but NO write/config/gitops/members/deploy
+    // Agents/Connectors/Skills/Customize reads are editor-tier, NOT in the
+    // Member floor — a member gets zero default access to that surface.
+    expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_READ)).toBe(false);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_READ)).toBe(false);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_SKILL_READ)).toBe(false);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ)).toBe(false);
+    // …and NO write/config/gitops/members/deploy
     expect(set.has(PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_WRITE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE)).toBe(false);
