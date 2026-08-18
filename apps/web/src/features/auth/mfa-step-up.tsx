@@ -10,7 +10,10 @@
 // Members with NO enrolled factor get pointed at Settings → Security instead
 // of a dead-end code prompt.
 
-import { ShieldCheckIcon as ShieldCheck } from '@phosphor-icons/react';
+import {
+  ShieldCheckIcon as ShieldCheck,
+  ShieldWarningIcon as ShieldWarning,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -123,7 +126,7 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
               />
             </div>
           ) : (
-            <InfoBanner tone="warning" title="No second factor enrolled">
+            <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
               Enroll an authenticator app under Settings → Security, then retry — this account
               blocks gated actions until your session is MFA-verified.
             </InfoBanner>

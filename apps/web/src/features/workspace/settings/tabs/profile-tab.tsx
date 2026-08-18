@@ -21,7 +21,7 @@
  *   text on the right instead of swapping the row out for a paragraph.
  *
  * The factor list answers in four states and each one is visible: loading
- * (skeleton row), failed (red `InfoBanner` + Retry), empty (yellow "No second
+ * (skeleton row), failed (red `InfoBanner` + Retry), empty (orange "No second
  * factor enrolled" nudge), and populated (`FactorRow`s). A failed fetch never
  * borrows the empty-state copy — that copy asserts the account has no second
  * factor, which a failed fetch cannot know.
@@ -462,7 +462,9 @@ export function ProfileTabView({
             - it failed  → say so, in red, with a Retry. Never the empty-state
               copy: "No second factor enrolled" is a claim about the account,
               and a fetch that failed knows nothing about the account.
-            - it is empty → the enrollment nudge, in yellow.
+            - it is empty → the enrollment nudge, in orange ("needs attention"
+              per the design system's status-token table — matches the same
+              copy's tone in mfa-step-up.tsx's step-up dialog).
             - it has factors → nothing here; the rows above ARE the answer.
             Loading outranks both: an in-flight list has no answer yet. */}
         {!factorsLoading && factorsError ? (
@@ -479,7 +481,7 @@ export function ProfileTabView({
             Your two-factor settings are unchanged — this is only the list failing to load.
           </InfoBanner>
         ) : !factorsLoading && factors.length === 0 && !enrolling ? (
-          <InfoBanner tone="info" icon={ShieldWarning} title="No second factor enrolled">
+          <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
             If your organization requires MFA, you’ll be blocked from gated actions until you enroll
             an authenticator here.
           </InfoBanner>
