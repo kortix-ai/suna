@@ -1,7 +1,9 @@
+import { ConnectorsHeroVisual } from '@/features/marketing/connectors/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import { AuditSection } from '@/features/marketing/connectors/audit-section';
 import { BrokerSection } from '@/features/marketing/connectors/broker-section';
 import { ConnectSection } from '@/features/marketing/connectors/connect-section';
-import { ConnectorsHero } from '@/features/marketing/connectors/hero';
+import { hero } from '@/features/marketing/connectors/content';
 import { PolicySection } from '@/features/marketing/connectors/policy-section';
 import { ScopeSection } from '@/features/marketing/connectors/scope-section';
 import { redirect } from 'next/navigation';
@@ -42,7 +44,16 @@ export default async function ConnectorsPage({
 
   return (
     <div className="bg-background relative">
-      <ConnectorsHero />
+      <CapabilityHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.sub}
+        ctaPrimary={hero.ctaPrimary}
+        ctaPrimaryHref={hero.ctaPrimaryHref}
+        ctaSecondary={hero.ctaSecondary}
+        ctaSecondaryHref={hero.ctaSecondaryHref}
+        visual={<ConnectorsHeroVisual />}
+      />
       <PolicySection />
       <ConnectSection />
       <BrokerSection />
