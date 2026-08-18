@@ -11,7 +11,7 @@ export const sales: RoleContent = {
 
   hero: {
     title: 'Everything around the conversation, so you can have the conversation.',
-    sub: 'The research, the pre-call brief, the notes typed back into the CRM, the follow-up drafted from what was actually said. An agent picks up the work that sits either side of a call — and nothing leaves the building without your approval.',
+    sub: 'The research, the pre-call brief, the notes typed back into the CRM, the follow-up written from what was actually said. The agent takes the work either side of a call. Nothing sends without your approval.',
     microline: 'Drafts, not sends · every action logged · your CRM, your rules',
     specs: [
       { k: 'Reaches', v: 'Your CRM, your inbox, your sheets' },
@@ -23,7 +23,7 @@ export const sales: RoleContent = {
 
   handoff: {
     title: 'The half of the job that is not selling.',
-    sub: 'Nobody joined a sales team to update a CRM. But the pipeline is only as good as the data in it, and the data is only as good as the last hour someone was willing to spend on admin. That hour is the handoff.',
+    sub: 'Nobody joined a sales team to update a CRM. But the pipeline is only as good as the data in it, and the data is only as good as the last hour someone spent on admin.',
     jobs: [
       {
         id: 'brief',
@@ -60,7 +60,7 @@ export const sales: RoleContent = {
 
   output: {
     title: 'A worklist with a proposed action on every row.',
-    sub: 'A report tells you what is wrong. A sales session hands you the rows and the specific thing it wants to do to each one, already drafted, waiting for a yes. The difference between those two is the whole product.',
+    sub: 'A report tells you what is wrong. A sales session hands you the rows and the drafted action for each one, waiting for a yes. That difference is the whole product.',
     artifact: {
       kind: 'table',
       file: 'pipeline/2026-07-31-gone-quiet.md',
@@ -105,7 +105,7 @@ export const sales: RoleContent = {
 
   reach: {
     title: 'Your CRM and your inbox — without handing over the keys.',
-    sub: 'A sales agent is only useful if it can reach the systems the pipeline actually lives in. Connect each one once for the whole project. The raw credential is decrypted on our side and attached to the outbound call; it never lands in the machine the model is driving.',
+    sub: 'A sales agent is only useful if it reaches the systems the pipeline lives in. Connect each one once for the project. Credentials are decrypted on our side and never enter the machine.',
     rows: [
       {
         k: 'Salesforce, HubSpot',
@@ -134,7 +134,7 @@ export const sales: RoleContent = {
 
   cadence: {
     title: 'Before the call, during the week, and at 07:00 on a Monday.',
-    sub: 'The same session machinery started three different ways. What changes is when it runs, not what it is allowed to do.',
+    sub: 'Three ways to start the same session. What changes is when it runs, not what it is allowed to do.',
     modes: [
       {
         id: 'on-demand',
@@ -159,7 +159,7 @@ export const sales: RoleContent = {
 
   control: {
     title: 'Nothing goes to a customer without a yes.',
-    sub: 'Sales is the function where an autonomous mistake is a customer-visible mistake. So be precise about the defaults rather than reassuring about them.',
+    sub: 'In sales, a mistake is customer-visible. So the defaults below are stated precisely, not reassuringly.',
     rows: [
       {
         id: 'gates',

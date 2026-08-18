@@ -11,7 +11,7 @@ export const dataScience: RoleContent = {
 
   hero: {
     title: 'An analysis you can re-run, not a number in a chat window.',
-    sub: 'A session is a real Linux machine. The agent installs what it needs, runs the query, does the work in a script you can read, and commits it. What lands is the analysis and the code that produced it — reproducible by definition, because it is a file in your repo.',
+    sub: 'A session is a real machine. The agent installs what it needs, runs the query, does the work in a script you can read, and commits it. You get the answer and the code behind it.',
     microline: 'Real shell · real packages · the notebook lands in the repo',
     specs: [
       { k: 'Runs on', v: 'A real machine with a shell' },
@@ -23,7 +23,7 @@ export const dataScience: RoleContent = {
 
   handoff: {
     title: 'The requests that arrive faster than you can answer them.',
-    sub: 'Most of the queue is not modelling. It is the fourth variation of a question someone already asked, a pipeline that broke overnight, or a definition of "active" that three teams disagree about. That queue is the handoff.',
+    sub: 'Most of the queue is not modelling. It is the fourth version of a question already asked, a pipeline that broke overnight, and three teams disagreeing on what "active" means.',
     jobs: [
       {
         id: 'adhoc',
@@ -60,7 +60,7 @@ export const dataScience: RoleContent = {
 
   output: {
     title: 'The query, in a file, on a branch.',
-    sub: 'A chat answer is unfalsifiable and unrepeatable. So an analysis session commits its work: the query, the script, the notebook, the chart, and the note about what it checked. That is what arrives for review.',
+    sub: 'A chat answer cannot be checked or repeated. So the session commits its work: the query, the script, the chart, and a note on what it verified.',
     artifact: {
       kind: 'code',
       file: 'analysis/wk27-conversion/query.sql',
@@ -111,7 +111,7 @@ export const dataScience: RoleContent = {
 
   reach: {
     title: 'Your warehouse, however it is actually reachable.',
-    sub: 'We are not going to list a row of warehouse logos we have not verified. Here is what is genuinely true about how an analysis session reaches data, including the part where it does the work locally.',
+    sub: 'We will not list warehouse logos we have not verified. Here is how an analysis session actually reaches data, including the part it does on its own machine.',
     rows: [
       {
         k: 'The machine itself',
@@ -140,7 +140,7 @@ export const dataScience: RoleContent = {
 
   cadence: {
     title: 'Answer it now, check the writes, refresh it on a schedule.',
-    sub: 'The same session machinery started three ways. The isolation and the review path do not change with the trigger.',
+    sub: 'Three ways to start the same session. The isolation and the review path do not change with the trigger.',
     modes: [
       {
         id: 'on-demand',
@@ -165,7 +165,7 @@ export const dataScience: RoleContent = {
 
   control: {
     title: 'What it can read, and what it can overwrite.',
-    sub: 'An analysis agent is mostly a read problem — right up until the moment it is not. Be exact about both halves.',
+    sub: 'An analysis agent mostly reads, right up until it does not. Both halves, stated exactly.',
     rows: [
       {
         id: 'gates',
