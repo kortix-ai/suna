@@ -3,71 +3,73 @@
 import { EASE_OUT, LEAD } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
+import { ROLES } from './registry';
 
 /**
- * `/solutions` hero scene — the index.
+ * `/solutions` hub hero scene — the eight, as an index.
  *
- * Unlike the capability heroes this one takes its content as a prop, because
- * the surface is templated: one hub plus a role page per registry entry, each
- * with its own four facts. Eight bespoke scenes would be eight scenes saying
- * the same thing.
+ * The hub's subject is the eight teams, so the scene lists them rather than
+ * repeating the platform facts the role pages already carry. Each role page
+ * shows its own specimen artifact instead (`role-hero-visual.tsx`), which is
+ * what stops these nine pages reading as one template.
  *
- * What keeps it from being another bordered list is typographic scale: the
- * ordinals are set enormous and nearly invisible, the facts sit against them,
- * and each row is inset a little further than the last so the column leans. The
- * first ordinal is cropped by the top edge.
+ * Composition:
+ *  - the names are set large and run past the top and bottom edges, masked
+ *    there — the list is a column you are looking at part of;
+ *  - each line is inset a little further than the last, so the column leans;
+ *  - the artifact each role returns is set beside its name in mono, which is
+ *    the hub's actual promise: same platform, eight different objects back.
  *
  * MOTION — one pass on mount, then rest.
  */
 
-export function SolutionsHeroVisual({
-  specs,
-}: {
-  specs: readonly { readonly k: string; readonly v: string }[];
-}): ReactNode {
+/** What each role gets back, from that role's own specimen. */
+const RETURNS: Record<string, string> = {
+  diff: 'a patch',
+  table: 'a table',
+  doc: 'a document',
+  code: 'a query',
+};
+
+export function SolutionsHeroVisual(): ReactNode {
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
-    <div className="flex w-full items-center justify-center">
-      <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[25rem]">
-        {/* One hairline the whole column hangs off, bleeding both ends. */}
+    <div
+      className="flex w-full items-center justify-center"
+      role="img"
+      aria-label="The eight teams this platform serves, and the object each one gets back."
+    >
+      <div className="relative h-[24rem] w-full max-w-[38rem] overflow-hidden sm:h-[27rem]">
+        {/* the hairline the column hangs off, bleeding both ends */}
         <m.span
-          className="bg-border absolute inset-y-0 left-[6%] w-px mask-y-from-80% mask-y-to-100%"
+          className="bg-border absolute inset-y-0 left-[3%] w-px mask-y-from-82% mask-y-to-100%"
           initial={reduceMotion ? false : { scaleY: 0, opacity: 0 }}
           animate={{ scaleY: 1, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.06, ease: EASE_OUT }}
           aria-hidden
         />
 
-        <dl className="absolute inset-0 flex flex-col justify-center">
-          {specs.map((spec, i) => (
-            <m.div
-              key={spec.k}
-              className="relative flex items-baseline gap-5 py-3.5"
-              style={{ paddingLeft: `${8 + i * 3}%` }}
-              initial={reduceMotion ? false : { opacity: 0, x: -10 }}
+        <ul className="absolute inset-0 flex flex-col justify-center mask-y-from-88% mask-y-to-100%">
+          {ROLES.map((role, i) => (
+            <m.li
+              key={role.slug}
+              className="flex items-baseline gap-4 py-[0.42rem]"
+              style={{ paddingLeft: `${6 + i * 1.6}%` }}
+              initial={reduceMotion ? false : { opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.4, delay: LEAD + i * 0.08, ease: EASE_OUT }}
+              transition={{ duration: 0.4, delay: LEAD + i * 0.055, ease: EASE_OUT }}
             >
-              {/* the ordinal, set as texture rather than as a label */}
-              <span
-                className="text-foreground/[0.07] pointer-events-none absolute -top-3 left-[4%] font-mono text-[3.6rem] leading-none font-medium tabular-nums select-none"
-                aria-hidden
-              >
-                {String(i + 1).padStart(2, '0')}
+              <span className="text-foreground text-[22px] leading-none font-medium tracking-tight sm:text-[26px]">
+                {role.name}
               </span>
-
-              <div className="relative min-w-0">
-                <dt className="text-muted-foreground/55 font-mono text-[10px] tracking-widest uppercase">
-                  {spec.k}
-                </dt>
-                <dd className="text-foreground mt-2 text-[15px] leading-snug font-medium text-pretty">
-                  {spec.v}
-                </dd>
-              </div>
-            </m.div>
+              <span className="bg-border/70 hidden h-px flex-1 sm:block" />
+              <span className="text-muted-foreground/45 shrink-0 font-mono text-[10.5px] whitespace-nowrap">
+                {RETURNS[role.output.artifact.kind]}
+              </span>
+            </m.li>
           ))}
-        </dl>
+        </ul>
       </div>
     </div>
   );

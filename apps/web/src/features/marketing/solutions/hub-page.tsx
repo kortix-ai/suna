@@ -17,13 +17,6 @@ import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
  *
  * Accuracy gate: `./types.ts`. It governs this page too.
  */
-/** The four facts that hold across every role. */
-const HUB_SPECS = [
-  { k: 'Every session', v: 'Its own cloud computer, on its own branch' },
-  { k: 'Work lands', v: 'Through a change request' },
-  { k: 'Merge', v: 'Default-deny for agents' },
-  { k: 'Approval gates', v: 'Off until you set them' },
-] as const;
 
 export function SolutionsHubPage(): ReactNode {
   return (
@@ -36,7 +29,7 @@ export function SolutionsHubPage(): ReactNode {
         ctaPrimaryHref="/auth"
         ctaSecondary="Talk to us"
         ctaSecondaryHref="/contact"
-        visual={<SolutionsHeroVisual specs={HUB_SPECS} />}
+        visual={<SolutionsHeroVisual />}
       />
 
       {/* ── the eight roles ─────────────────────────────────────────────── */}

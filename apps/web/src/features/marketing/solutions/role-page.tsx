@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ArtifactPanel } from './artifact';
-import { SolutionsHeroVisual } from './hero-visual';
 import { ROLES } from './registry';
+import { RoleHeroVisual } from './role-hero-visual';
 import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
 import type { RoleContent } from './types';
 
@@ -43,7 +43,7 @@ export function RolePage({ role }: { role: RoleContent }): ReactNode {
         ctaPrimaryHref="/auth"
         ctaSecondary="Talk to us"
         ctaSecondaryHref="/contact"
-        visual={<SolutionsHeroVisual specs={role.hero.specs} />}
+        visual={<RoleHeroVisual role={role} />}
       />
 
       {/* ── 1 · what you hand off ───────────────────────────────────────── */}
