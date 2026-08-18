@@ -49,7 +49,7 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
       role="img"
       aria-label={`Two files: ${skill.md.title} behind, and ${agent.md.title} in front.`}
     >
-      <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
+      <div className="relative h-[23rem] w-full max-w-[38rem] sm:h-[26rem]">
         {/* ── the sheet behind, cut by the top edge ───────────────────── */}
         <m.div
           className="border-border/50 bg-card/60 absolute -top-[9%] right-[2%] left-[16%] rounded-lg border px-5 pt-5 pb-8 shadow-md"
