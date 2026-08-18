@@ -39,6 +39,7 @@ import { scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   OPENCODE_SESSION_PIN_PATH,
   resolveOpenCodeAuditSpoolPath,
@@ -2154,6 +2155,23 @@ export async function relayTurnEndToApi(
   if (dedupSig && relayedTurnSignatures.has(dedupSig)) {
     logger.info('[opencode-events] turn-end already relayed for this turn; skipping', { opencodeSessionId })
     return
+  }
+
+  // A genuinely new, non-duplicate `idle` completion — check it isn't the
+  // SAME standing prompt answering itself again with no new user message in
+  // between (see `runaway-turn-guard.ts`). Scoped to `idle` only: an `error`
+  // completion repeating is `turn-auto-resume.ts`'s concern, not this one's.
+  if (effectiveStatus === 'idle') {
+    void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
+      try {
+        await fetch(
+          `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(cfg.workspace)}`,
+          { method: 'POST', signal: AbortSignal.timeout(10_000) },
+        )
+      } catch (err) {
+        logger.warn('[runaway-turn-guard] abort call failed', { opencodeSessionId, err: (err as Error).message })
+      }
+    })
   }
 
   const { projectId, sessionId, token, apiRoot } = ctx
