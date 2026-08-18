@@ -353,6 +353,162 @@ flow(
   },
 );
 
+// MEM-7 — `project_grants` on POST /members: the centralized-IAM redesign's
+// "one invite, pick account role + project(s)" dialog needs the invite to
+// carry project access, not just an account role. Proves the four cases the
+// handler (apps/api/src/accounts/core/members.ts:227-291) encodes:
+//   - existing-user invite + a grant for a project THIS account owns →
+//     applied immediately (grantProjectRole), visible on GET .../access.
+//   - a grant naming a project from a DIFFERENT account is silently
+//     dropped, never inserted — the ownership check must not trust the
+//     client-supplied project_id.
+//   - a pending invite (new email, no Kortix user yet) stages the grant on
+//     bootstrap_grants; it lands only once the addressee accepts.
+//   - an `admin` invite ignores project_grants outright — admins already
+//     hold implicit Manager on every project (mirrors applyBootstrapGrants'
+//     own initialRole==='member' gate in accounts/invites.ts).
+flow(
+  'MEM-7',
+  {
+    domain: 'accounts',
+    serial: true,
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/projects/:projectId/access',
+      'POST /v1/account-invites/:inviteId/accept',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const otherTeam = await ctx.fixtures.team();
+    const otherProject = await otherTeam.project();
+
+    await ctx.step(
+      'existing user + project_grants for an owned project → applied immediately',
+      async () => {
+        const invitee = await ctx.fixtures.userWithEmail(
+          `${ctx.fixtures.name('mem7-existing')}@ke2e.kortix.test`.toLowerCase(),
+          { label: 'MEM7-EXISTING' },
+        );
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/members',
+          {
+            email: invitee.email,
+            role: 'member',
+            project_grants: [{ project_id: p.id, role: 'editor' }],
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(201)
+          .body()
+          .has('$.status', 'added')
+          .has('$.project_grants[0].project_id', p.id)
+          .has('$.project_grants[0].role', 'editor');
+
+        const access = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        access.status(200);
+        const row = access
+          .json<{ members: any[] }>()
+          .members.find((m) => m.user_id === invitee.userId);
+        if (!row) throw new Error('invited user missing from project access list');
+        if (row.effective_project_role !== 'editor')
+          throw new Error(`expected editor, got ${row.effective_project_role}`);
+      },
+    );
+
+    await ctx.step(
+      'a grant naming a project from a DIFFERENT account is silently dropped',
+      async () => {
+        const invitee = await ctx.fixtures.userWithEmail(
+          `${ctx.fixtures.name('mem7-crossacct')}@ke2e.kortix.test`.toLowerCase(),
+          { label: 'MEM7-CROSSACCT' },
+        );
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/members',
+          {
+            email: invitee.email,
+            role: 'member',
+            project_grants: [{ project_id: otherProject.id, role: 'manager' }],
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(201).body().has('$.status', 'added').has('$.project_grants', []);
+
+        const access = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/access', { params: { projectId: otherProject.id } });
+        access.status(200);
+        const row = access
+          .json<{ members: any[] }>()
+          .members.find((m) => m.user_id === invitee.userId);
+        if (row) throw new Error('cross-account project grant was NOT supposed to land');
+      },
+    );
+
+    await ctx.step(
+      'pending invite (no Kortix user yet) stages the grant, applied on accept',
+      async () => {
+        const inviteEmail = `${ctx.fixtures.name('mem7-pending')}@${ctx.env.testEmailDomain}`.toLowerCase();
+        let inviteId = '';
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/members',
+          {
+            email: inviteEmail,
+            role: 'member',
+            project_grants: [{ project_id: p.id, role: 'manager' }],
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(201)
+          .body()
+          .has('$.status', 'pending')
+          .has('$.project_grants[0].project_id', p.id)
+          .has('$.project_grants[0].role', 'manager');
+        inviteId = r.json<any>().invite_id;
+
+        const addressee = await ctx.fixtures.userWithEmail(inviteEmail, {
+          label: 'MEM7-PENDING-ADDRESSEE',
+        });
+        const accept = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        accept.status(200).body().has('$.account_id', team.id);
+
+        const access = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        access.status(200);
+        const row = access
+          .json<{ members: any[] }>()
+          .members.find((m) => m.user_id === addressee.userId);
+        if (!row) throw new Error('accepted invitee missing from project access list');
+        if (row.effective_project_role !== 'manager')
+          throw new Error(`expected manager, got ${row.effective_project_role}`);
+      },
+    );
+
+    await ctx.step('an admin invite ignores project_grants — admins already have implicit access', async () => {
+      const invitee = await ctx.fixtures.userWithEmail(
+        `${ctx.fixtures.name('mem7-admin')}@ke2e.kortix.test`.toLowerCase(),
+        { label: 'MEM7-ADMIN' },
+      );
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/members',
+        {
+          email: invitee.email,
+          role: 'admin',
+          project_grants: [{ project_id: p.id, role: 'manager' }],
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().has('$.status', 'added').has('$.project_grants', []);
+    });
+  },
+);
+
 flow(
   'INV-1',
   { domain: 'accounts', routes: ['GET /v1/accounts/:accountId/invites'] },
