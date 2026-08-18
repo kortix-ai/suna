@@ -146,6 +146,15 @@ const ACCOUNT_PERMISSION_PROBES = [
   { action: 'group.create' },
   { action: 'audit.read' },
   { action: 'role.create' },
+  // Roles is the only Access section whose LIST call is not in the account
+  // `member` floor: `role.read` lives in ADMIN_EXTRAS while `member.read` and
+  // `group.read` are in MEMBER_BASELINE (`apps/api/src/iam/role-perms.ts`), and
+  // `GET /accounts/:id/iam/roles` asserts it (`accounts/iam/custom-roles.ts`).
+  // Probing `role.create` alone only answered "can this caller MAKE a role",
+  // which is why the rail item stayed visible for a plain member and the pane
+  // then failed with "You don't have permission to perform this action
+  // (role.read)".
+  { action: 'role.read' },
 ];
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -360,6 +369,7 @@ export default function AccountSettingsPage() {
     { allowed: canCreateGroup },
     { allowed: canReadAudit },
     { allowed: canManageRoles },
+    { allowed: canReadRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   const prefersReducedMotion = useReducedMotion();
@@ -386,13 +396,20 @@ export default function AccountSettingsPage() {
   const sectionVisible: Record<AccountSection, boolean> = {
     members: true,
     groups: true,
-    // Discoverable for everyone, same as Groups — the six built-in roles are
-    // free content (GET .../roles carries no entitlement check), and RolesTab
-    // itself already gates "New role" on rbacEnabled + canManage internally.
-    // This used to hide the rail item for non-admins, contradicting the
-    // comment above NAV_GROUPS (and this same file's own doc comment further
-    // up) that both should stay visible for discoverability.
-    roles: true,
+    // Discoverable for everyone the API will actually serve. The six built-in
+    // roles carry no ENTITLEMENT check (that was the gate this line was right
+    // to drop — RolesTab gates "New role" on rbacEnabled + canManage
+    // internally), but `GET /accounts/:id/iam/roles` still asserts the
+    // PERMISSION `role.read`, which is admin/owner-tier (ADMIN_EXTRAS in
+    // `apps/api/src/iam/role-perms.ts`) and NOT in the account `member` floor
+    // — unlike `member.read`/`group.read` above, which is why those two stay
+    // unconditional and this one cannot. Hardcoding `true` here showed a plain
+    // member a rail item that opened straight into "Failed to load roles — You
+    // don't have permission to perform this action (role.read)". Strict
+    // `=== true` (hidden until the probe answers yes) matches every other
+    // gated row in this map — audit, identity, billing, git, tokens, settings
+    // — rather than introducing a second, optimistic dialect on one line.
+    roles: canReadRoles === true,
     identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
     transactions: canWriteAccount === true,

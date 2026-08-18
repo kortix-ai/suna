@@ -47,7 +47,9 @@ import {
   projectSettingsSectionHref,
   type ProjectSettingsSectionKey,
 } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
@@ -494,6 +496,22 @@ type SetupTile = {
    * half of it.
    */
   href?: (projectId: string) => string;
+  /**
+   * The IAM leaf the tile's DESTINATION asserts. A tile whose probe comes back
+   * an explicit deny is not rendered: without this the row offered every user
+   * six buttons and a plain project `member` — who holds none of
+   * project.connector.read / skill.read / agent.read (they live in
+   * EDITOR_EXTRAS, `apps/api/src/iam/role-perms.ts`) — got a "forbidden" toast
+   * on click instead of a page.
+   *
+   * Each action is copied from `TAB_PREFERENCE`
+   * (`project-sidebar/project-settings-nav.tsx`), the single table that already
+   * maps a capability tab to the leaf its route asserts, so the pill row, the
+   * Customize rail and the Customize index all hide the same rows for the same
+   * caller. Do not invent a narrower leaf here — a pill that survives its own
+   * gate but 403s on arrival is the bug this field exists to prevent.
+   */
+  action: string;
 };
 
 const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
@@ -506,18 +524,21 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     title: 'Connectors',
     desc: 'Connect tools your agent can act in.',
     section: 'connectors',
+    action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
   },
   {
     icon: CalendarClock,
     title: 'Triggers',
     desc: 'Run work on a repeating schedule, or when another app sends a signal.',
     section: 'triggers',
+    action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
   },
   {
     icon: SparklesSolid,
     title: 'Skills',
     desc: 'Repeatable workflows your agent reuses.',
     section: 'skills',
+    action: PROJECT_ACTIONS.PROJECT_SKILL_READ,
   },
   {
     icon: Slack,
@@ -525,12 +546,17 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     desc: 'Run this project right from chat.',
     section: 'connectors',
     href: channelsHref,
+    // Channels is a SCOPE of the Connectors page, so it gates on the same leaf
+    // the Connectors tile does — exactly as TAB_PREFERENCE folded the old
+    // `channels` row into `project.connector.read`.
+    action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
   },
   {
     icon: UsersGroupSolid,
     title: 'Your team',
     desc: 'Invite people to run and review work.',
     section: 'members',
+    action: PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
   },
   {
     icon: Kortix,
@@ -541,12 +567,27 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     // silently fall through to the Settings tab and land on its default
     // section instead of Agents.
     section: 'agent',
+    action: PROJECT_ACTIONS.PROJECT_AGENT_READ,
   },
 ];
 
+/** Stable across renders — `useProjectCans` keys its query on this list. */
+const SETUP_TILE_ACTIONS: readonly string[] = Array.from(
+  new Set(PROJECT_SETUP_TILES.map((t) => t.action)),
+);
+
 function ProjectHomeSections({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const tiles = PROJECT_SETUP_TILES;
+  const caps = useProjectCans(projectId, SETUP_TILE_ACTIONS);
+  // Hide on an explicit deny only, never on `!allowed`: a probe still in
+  // flight reports `allowed:false`, so gating on truthiness would blank the
+  // whole row on every cold load and pop it back in. Same rule as
+  // `CustomizeIndexPage` and `ProjectCustomizeNavItem`.
+  const tiles = PROJECT_SETUP_TILES.filter((tile) => caps[tile.action]?.allowed !== false);
+
+  // A caller denied every destination gets no row at all, not an empty strip
+  // holding its gap/margin open under the composer.
+  if (tiles.length === 0) return null;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
