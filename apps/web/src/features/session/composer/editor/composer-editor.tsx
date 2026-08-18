@@ -505,14 +505,18 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           'aria-multiline': 'true',
           'aria-label': 'Message input',
           /**
-           * `min-h-[2.25em]` — slightly taller than one line by design (Jay's
-           * call, 2026-08-17: "increase the base height... just slightly").
-           * This used to be `1.5em`, exactly one line, on the reasoning that a
-           * taller floor made an empty composer look padded beyond its
-           * content — that reasoning still holds in spirit, `2.25em` is a
-           * deliberately modest bump (~1.5 lines), not a return to the old
-           * `3rem` floor it was written to avoid. It still grows with the
-           * text past this floor.
+           * `min-h-[3.5em]` — taller than one line by design. History: was
+           * `1.5em` (exactly one line) on the reasoning that a taller floor
+           * made an empty composer look padded beyond its content; bumped to
+           * `2.25em` on 2026-08-17 (Jay's call, "just slightly"); bumped
+           * again here on 2026-08-18 (explicit follow-up ask — the first
+           * bump still read as short) to `3.5em` (~2.3 lines). Still short
+           * of the old `3rem` floor this was originally written to avoid in
+           * spirit, but the "avoid padding an empty composer" reasoning has
+           * now been outweighed twice by "it still looks too short" — if
+           * asked again, stop nudging by increments and ask what target
+           * looks right instead. It still grows with the text past this
+           * floor.
            *
            * The `vh` caps are the reference's, verbatim, including the fact
            * that the middle band is the SHORTEST. Tailwind emits base → sm →
@@ -522,7 +526,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * change the `sm:` step if the tablet cap turns out to be wrong.
            */
           class:
-            'outline-none min-h-[2.25em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
+            'outline-none min-h-[3.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },
