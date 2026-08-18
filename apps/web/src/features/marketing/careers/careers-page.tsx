@@ -8,6 +8,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
+import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -18,14 +19,6 @@ import { LOCATIONS, apply, bar, hero, openings } from './content';
 /* Prose sits on a ~65–70 character measure. The grid is 6xl; body copy never
    runs its full width. */
 const MEASURE = 'max-w-[34rem]';
-
-function Eyebrow({ children }: { children: string }): ReactNode {
-  return (
-    <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-      {children}
-    </p>
-  );
-}
 
 /**
  * The board. One accordion row per opening: collapsed shows the name, the two
@@ -98,12 +91,8 @@ function Board({ onApply }: { onApply: () => void }): ReactNode {
 function Bar(): ReactNode {
   return (
     <section id="what-we-look-for" className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
-      <SectionHeader eyebrow={bar.eyebrow} title={bar.title} />
+      <SectionHeader eyebrow={bar.eyebrow} title={bar.title} description={bar.lead} />
       <Reveal>
-        <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>
-          {bar.lead}
-        </p>
-
         <ul className="border-border mt-12 border-b">
           {bar.items.map((item) => (
             <li
@@ -128,12 +117,12 @@ function Apply({ onApply }: { onApply: () => void }): ReactNode {
   return (
     <section id="apply" className="mx-auto max-w-7xl px-6 pb-16 sm:pb-24">
       <div className="border-border border-t pt-12 sm:pt-16">
-        <SectionHeader eyebrow={apply.eyebrow} title={apply.title} />
+        <SectionHeader
+          eyebrow={apply.eyebrow}
+          title={apply.title}
+          description={apply.body}
+        />
         <Reveal>
-          <p className={cn(MEASURE, 'text-muted-foreground mt-5 text-base leading-relaxed')}>
-            {apply.body}
-          </p>
-
           <Button size="sm" className="mt-8" onClick={onApply}>
             {apply.cta}
           </Button>
@@ -175,21 +164,22 @@ export function CareersPage(): ReactNode {
   return (
     <main className="bg-background min-h-screen">
       <section className="mx-auto max-w-7xl px-6 pt-32 pb-12 sm:pt-44 sm:pb-16">
-        <Reveal>
-          <Eyebrow>{hero.eyebrow}</Eyebrow>
-
-          <h1 className="text-foreground mt-8 text-4xl leading-[1.02] font-medium tracking-tight sm:text-6xl">
-            {hero.title}
-          </h1>
-
-          <p className="text-muted-foreground mt-6 text-lg">{hero.lead}</p>
-
-          <div className="mt-10 flex flex-wrap items-center gap-3">
-            <Button size="sm" onClick={openApply}>
+        <SectionHeader eyebrow={hero.eyebrow} title={hero.title} description={hero.lead} />
+        <Reveal delay={0.06}>
+          <div className="kx-hero-text mt-8 flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
+            <Button size="lg" className="flex-1 active:scale-[0.97] sm:flex-none" onClick={openApply}>
               {hero.ctaPrimary}
             </Button>
-            <Button size="sm" variant="outline" asChild>
-              <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
+            <Button
+              size="lg"
+              variant="ghost"
+              className="group/arrow-right flex-1 gap-1.5 active:scale-[0.97] sm:flex-none"
+              asChild
+            >
+              <Link href={hero.ctaSecondaryHref}>
+                {hero.ctaSecondary}
+                <ArrowRightIcon aria-hidden />
+              </Link>
             </Button>
           </div>
         </Reveal>
