@@ -447,7 +447,7 @@ flow(
   },
 );
 
-// GW-13 — per-project OTLP trace export ("Observability" tab). The project
+// GW-14 — per-project OTLP trace export ("Observability" tab). The project
 // points the gateway's gen_ai.* spans at its OWN OTLP backend
 // (Langfuse/Datadog/Honeycomb/anything OTLP) instead of the operator env var.
 // Three things this flow has to prove, because all three are security
@@ -461,7 +461,7 @@ flow(
 //      `member` can READ the config (project.gateway.spend.read) but any
 //      PUT/DELETE is 403.
 flow(
-  'GW-13',
+  'GW-14',
   {
     domain: 'llm-gateway',
     routes: [

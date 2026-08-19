@@ -550,3 +550,81 @@ flow(
     });
   },
 );
+
+// `GW-11` covers `GET /v1/usage` for `group_by=model`, an invalid `group_by`,
+// and `start` > `end`. It leaves the rest of the contract unclaimed: the other
+// two valid enum values, the fact that each value produces a DIFFERENT
+// breakdown-row shape (`day` vs `provider` vs `provider`+`model` — see
+// `mapUsageBreakdownRow`), a malformed timestamp as distinct from an inverted
+// window, and the zero-row window that must still answer 200 with zeroed
+// totals and an empty breakdown rather than a 404 or a 500.
+flow(
+  'GW-13',
+  {
+    domain: 'llm-gateway',
+    routes: ['GET /v1/usage'],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    type BreakdownRow = Record<string, unknown>;
+    const breakdownOf = (r: { json: <T>() => T }) =>
+      r.json<{ breakdown?: BreakdownRow[] }>().breakdown ?? [];
+
+    await ctx.step('group_by=provider returns a breakdown of provider-only rows', async () => {
+      const r = await owner.get('/v1/usage', { query: { group_by: 'provider' } });
+      r.status(200).body().exists('$.data').exists('$.breakdown');
+      for (const row of breakdownOf(r)) {
+        if ('day' in row) throw new Error('provider breakdown row leaked a `day` field');
+        if ('model' in row) throw new Error('provider breakdown row leaked a `model` field');
+        if (typeof row.provider !== 'string')
+          throw new Error(`provider row missing string \`provider\`: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('group_by=day returns a breakdown of day-only rows', async () => {
+      const r = await owner.get('/v1/usage', { query: { group_by: 'day' } });
+      r.status(200).body().exists('$.data').exists('$.breakdown');
+      for (const row of breakdownOf(r)) {
+        if (typeof row.day !== 'string')
+          throw new Error(`day row missing string \`day\`: ${JSON.stringify(row)}`);
+        if ('model' in row) throw new Error('day breakdown row leaked a `model` field');
+        if ('provider' in row) throw new Error('day breakdown row leaked a `provider` field');
+      }
+    });
+
+    await ctx.step('group_by=model rows carry both provider and model, never day', async () => {
+      const r = await owner.get('/v1/usage', { query: { group_by: 'model' } });
+      r.status(200).body().exists('$.breakdown');
+      for (const row of breakdownOf(r)) {
+        if ('day' in row) throw new Error('model breakdown row leaked a `day` field');
+        if (typeof row.model !== 'string')
+          throw new Error(`model row missing string \`model\`: ${JSON.stringify(row)}`);
+        if (!('provider' in row))
+          throw new Error(`model row missing \`provider\`: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('a malformed start timestamp is a 400 boundary, never a 500', async () => {
+      const r = await owner.get('/v1/usage', { query: { start: 'not-a-date' } });
+      r.status(400);
+    });
+
+    await ctx.step('a malformed end timestamp is a 400 boundary, never a 500', async () => {
+      const r = await owner.get('/v1/usage', { query: { end: '2026-13-99T99:99:99Z' } });
+      r.status(400);
+    });
+
+    await ctx.step('a window with no usage events returns zeroed totals and no rows', async () => {
+      const r = await owner.get('/v1/usage', {
+        query: { start: '2019-01-01T00:00:00Z', end: '2019-01-02T00:00:00Z', group_by: 'model' },
+      });
+      r.status(200);
+      const body = r.json<{ data: Record<string, number>; breakdown?: unknown[] }>();
+      if (body.data.count !== 0) throw new Error(`expected count 0, got ${body.data.count}`);
+      if (body.data.total_cost !== 0)
+        throw new Error(`expected total_cost 0, got ${body.data.total_cost}`);
+      if (!Array.isArray(body.breakdown) || body.breakdown.length !== 0)
+        throw new Error(`expected an empty breakdown, got ${JSON.stringify(body.breakdown)}`);
+    });
+  },
+);
