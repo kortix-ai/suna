@@ -48,9 +48,13 @@ the three-synchronized-edits rule did not fire. `version` untouched at `0.3.0`.
 helper `resolveAnonKey({SUPABASE_ANON_KEY, KORTIX_PUBLIC_SUPABASE_ANON_KEY,
 NEXT_PUBLIC_SUPABASE_ANON_KEY})` in `apps/api/src/config.ts`, wired into
 `config.SUPABASE_ANON_KEY`. The 503 message now names all three variables.
-`SUPABASE_ANON_KEY` is now set (dotenvx ciphertext) in `apps/api/.env` (local
-`supabase-demo` key) and `apps/api/.env.dev` (project `heprlhlltebrxydgtsjs`,
-which matches that file's `SUPABASE_URL`).
+Committed dotenvx values for `apps/api/.env` / `.env.dev` were TRIED and
+REVERTED: CI test sandboxes carry no dotenvx private key, so the raw
+`encrypted:` ciphertext shadowed the test profile's real anon key and broke
+every auth-header build (browser lanes red on f85ff177c0). The fallback chain
+is the mechanism: `scripts/dev-local.sh` loads `apps/web/.env`
+(`NEXT_PUBLIC_SUPABASE_ANON_KEY`) into the API process, and the deterministic
+test stack injects all three names (`tests/src/core/local-stack.ts:367`).
 
 **Fixed in THIS turn (F3 regression).**
 `apps/api/src/projects/reaping/test-support/mock-config.ts` must carry every
@@ -153,8 +157,8 @@ transcribe tunnel validateToken`. Only `referrals` left.
 **Corrections to earlier entries in this file.** The session
 `claude/sdk-central` entries state that `GET /v1/auth/config` returns `503`
 "until `SUPABASE_ANON_KEY` is set per environment" and that the key is "absent
-from `apps/api/.env`, `.env.dev`, `.env.prod`". As of this turn: `.env`,
-`.env.dev`, and `.env.staging` all carry it, and the API also accepts
+from `apps/api/.env`, `.env.dev`, `.env.prod`". As of this turn: no committed API env
+carries it (a ciphertext attempt was reverted — see above); the API accepts
 `KORTIX_PUBLIC_SUPABASE_ANON_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Backlog row
 B52 no longer lists `kortix.referrals`.
 
