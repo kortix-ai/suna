@@ -170,13 +170,21 @@ async function openRepositoriesSection(page: Page, projectId: string) {
  * required.
  */
 async function openMembersSection(page: Page, projectId: string) {
+  // The per-project Members page is gone (2026-08-18/19): `/projects/:id/members`
+  // redirects into the account hub's Projects panel for that project
+  // (`?tab=access-projects&project=…`), which lists who has access as one
+  // shared `AccessList` and opens the shared "Grant access" dialog.
   await page.goto(`/projects/${projectId}/members`, {
     waitUntil: "domcontentloaded",
   });
   await dismissOnboarding(page);
-  await expect(
-    page.getByRole("heading", { name: "Members", exact: true }),
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(page).toHaveURL(
+    new RegExp(`/accounts/[0-9a-f-]+\\?tab=access-projects&project=${projectId}`),
+    { timeout: 30_000 },
+  );
+  await expect(page.getByText(/^Access · \d+$/).first()).toBeVisible({
+    timeout: 30_000,
+  });
   return page;
 }
 
@@ -396,18 +404,28 @@ test.describe("08 — Accounts, invites, and project access", () => {
       `/projects/${project.project_id}`,
     );
     expect(readableProject.effective_project_role).toBe("member");
-    // A plain member is the floor *usable* role: it can start sessions and use the
-    // agent chat (this previously 403'd, which made the floor project role useless).
-    // It reaches provider validation just like an owner — an invalid provider is a
-    // 400, NOT the old role 403 (and avoids actually provisioning a sandbox here).
-    expect(
-      await apiStatus(
-        memberSession.access_token,
-        "POST",
-        `/projects/${project.project_id}/sessions`,
-        { provider: "justavps" },
-      ),
-    ).toBe(400);
+    // A plain member holds `project.session.start`, but agents are
+    // deny-by-default for member-tier (2026-08-19): with no agent grant —
+    // and this repo-URL project has no manifest, so there is no agent to
+    // grant — session create is refused with a NAMED reason, not the old
+    // "your role is too low" 403. Owners and managers are untouched (the
+    // owner already created sessions above). The granted-member happy path
+    // is pinned by `integration-member-session-prompt-gates-http.test.ts`.
+    {
+      const refused = await fetch(
+        `${apiBase}/projects/${project.project_id}/sessions`,
+        {
+          method: "POST",
+          headers: authHeaders(memberSession.access_token),
+          // A well-formed body: the agent gate answers before provider
+          // validation would, and an invalid provider would 400 first.
+          body: JSON.stringify({ name: "member-blocked" }),
+        },
+      );
+      expect(refused.status).toBe(403);
+      const refusedBody = (await refused.json()) as { code?: string };
+      expect(refusedBody.code).toBe("no_agent_access");
+    }
     // ...but it still cannot customize the project.
     expect(
       await apiStatus(
@@ -544,17 +562,21 @@ test.describe("08 — Accounts, invites, and project access", () => {
         response.request().method() === "POST",
     );
     await page.getByRole("button", { name: "Invite", exact: true }).click();
-    // Title renamed "Invite members" -> "Invite to account" (page.tsx's
-    // InviteMemberModal) — the account page's own invite composer, kept
-    // distinct from InviteMemberDialog's "Invite a member" above, which is
-    // the project-scoped one.
-    await expect(
-      page.getByRole("dialog", { name: "Invite to account" }),
-    ).toBeVisible();
-    await page.getByLabel("Emails").fill(uiInvitedEmail);
-    await page
-      .getByRole("dialog", { name: "Invite to account" })
-      .getByRole("button", { name: "Invite", exact: true })
+    // One shared "Grant access" dialog for every access surface (2026-08-19,
+    // `features/workspace/shared/access/access-dialog.tsx`): the account
+    // Invite button opens it in grant mode. A new person is invited by
+    // typing their email into the principal picker and choosing the
+    // "Invite <email>" row it surfaces — no separate email composer.
+    const grantDialog = page.getByRole("dialog", { name: "Grant access" });
+    await expect(grantDialog).toBeVisible();
+    await grantDialog
+      .getByPlaceholder("Search or type an email")
+      .fill(uiInvitedEmail);
+    await grantDialog
+      .getByRole("button", { name: `Invite ${uiInvitedEmail}` })
+      .click();
+    await grantDialog
+      .getByRole("button", { name: /^Grant access/ })
       .click();
     expect((await uiInviteResponse).status()).toBe(201);
     await expect(page.getByText(uiInvitedEmail, { exact: true })).toBeVisible();
@@ -607,46 +629,40 @@ test.describe("08 — Accounts, invites, and project access", () => {
     const membersPanel = await openMembersSection(page, project.project_id);
     // Wait for the initial access inventory before submitting a mutation.
     // Otherwise a slow pre-mutation response can overwrite the invalidated query.
-    // The member list is a `Table` now (`members-tab.tsx:926-1080`), so a
-    // member is a `row`, not a list item.
+    // Rows are the shared `AccessRow` (a list item), not a table row.
     await expect(
-      membersPanel.getByRole("row").filter({ hasText: ownerEmail }).first(),
+      membersPanel.getByRole("listitem").filter({ hasText: ownerEmail }).first(),
     ).toBeVisible();
-    // Inviting is a dialog off the People tab's own Invite button
-    // (`members-tab.tsx:888`, `InviteMemberDialog`), not the "Invite" tab the
-    // old members section carried. The dialog is portalled, so it is a sibling
-    // of the settings panel rather than a descendant.
-    await membersPanel.getByRole("button", { name: "Invite", exact: true }).click();
-    const inviteDialog = page.getByRole("dialog", { name: "Invite a member" });
-    await expect(inviteDialog).toBeVisible();
-    await inviteDialog.getByLabel("Email", { exact: true }).fill(memberEmail);
-    await inviteDialog.locator("#invite-member-role").click();
-    // Each option renders its role name plus a capability blurb, so the
-    // accessible name is "Member <blurb>" — matched on the role word only.
-    await page.getByRole("option", { name: /^Member\b/ }).click();
-    const accessInvite = page.waitForResponse(
+    // ONE "Grant access" dialog for every access surface: pick the account
+    // member in the principal picker, keep the default Member role, submit.
+    // An existing account member is granted through PUT /access/:userId (the
+    // invite route is only for people who are not on the account yet).
+    await membersPanel
+      .getByRole("button", { name: "Grant access", exact: true })
+      .click();
+    const grantAccessDialog = page.getByRole("dialog", { name: "Grant access" });
+    await expect(grantAccessDialog).toBeVisible();
+    await grantAccessDialog.getByRole("button", { name: memberEmail }).click();
+    const accessGrant = page.waitForResponse(
       (response) =>
         response
           .url()
-          .includes(`/v1/projects/${project.project_id}/access/invite`) &&
-        response.request().method() === "POST",
+          .includes(`/v1/projects/${project.project_id}/access/${member.id}`) &&
+        response.request().method() === "PUT",
     );
-    await inviteDialog.getByRole("button", { name: "Invite", exact: true }).click();
-    expect((await accessInvite).status()).toBe(200);
-    await expect(inviteDialog).toHaveCount(0);
+    await grantAccessDialog
+      .getByRole("button", { name: /^Grant access/ })
+      .click();
+    expect((await accessGrant).status()).toBe(200);
+    await expect(grantAccessDialog).toHaveCount(0);
     const memberAccessRow = membersPanel
-      .getByRole("row")
+      .getByRole("listitem")
       .filter({ hasText: memberEmail })
       .first();
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
-    // Third column = "Project role" (`members-tab.tsx:930-934`). Pinned by
-    // column because that select carries no accessible name of its own. The
-    // Account column (index 1) is a plain read-only link now, not a
-    // combobox — account-role editing moved to /accounts/:id entirely
-    // (2026-08-18) — so this row carries exactly one combobox.
-    await expect(
-      memberAccessRow.getByRole("cell").nth(2).getByRole("combobox"),
-    ).toContainText("Member");
+    // The row's trailing slot carries the role label — "Member" — and its
+    // meta says the member has no agent yet (deny-by-default).
+    await expect(memberAccessRow.getByText("Member", { exact: true })).toBeVisible();
 
     // Initialize member auth before persisting the organization. Otherwise the
     // auth reset clears the selection and the personal account wins /projects.

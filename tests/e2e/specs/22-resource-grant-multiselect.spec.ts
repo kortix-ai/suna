@@ -115,19 +115,26 @@ test.describe('22 — Resource-grant multi-select', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
-      await page.getByRole('tab', { name: 'Access', exact: true }).click();
-      await expect(page.getByText('No agents assigned', { exact: true })).toBeVisible();
-
+      // The per-project Members page is gone (2026-08-18/19): `/projects/:id/
+      // members` redirects into the account hub's Projects panel for this
+      // project, and agent access is a field of the ONE "Grant access" dialog
+      // (`features/workspace/shared/access/access-dialog.tsx`), not a separate
+      // "Assign an agent" flow. Members are deny-by-default for agents, so
+      // granting the two members with Agents = "Only these… → kortix" is what
+      // creates the two resource grants.
+      await expect(page).toHaveURL(
+        new RegExp(`/accounts/${accountId}\\?tab=access-projects&project=${projectId}`),
+      );
       await page.getByRole('button', { name: 'Grant access', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Assign an agent', exact: true });
+      const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
       await expect(dialog).toBeVisible();
 
-      // Multi-select on both sides: one agent, two members, one dialog, one
-      // submit. Both steps are Checkbox lists now (members-tab.tsx), not
-      // single-select dropdowns.
-      await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
+      // Multi-select principals in the shared picker (each row is a toggle
+      // button named by the member's email), then narrow Agents to kortix.
       await dialog.getByRole('button', { name: memberAEmail }).click();
       await dialog.getByRole('button', { name: memberBEmail }).click();
+      await dialog.getByRole('tab', { name: 'Only these…', exact: true }).click();
+      await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
 
       const grantPostStatuses: number[] = [];
       page.on('response', (r) => {
@@ -138,7 +145,8 @@ test.describe('22 — Resource-grant multi-select', () => {
           grantPostStatuses.push(r.status());
         }
       });
-      // 1 agent x 2 members = 2 total grants.
+      // 2 principals × 1 agent = 2 resource grants (plus one project-role
+      // write per principal, which is not what this contract counts).
       await dialog.getByRole('button', { name: 'Grant access (2)', exact: true }).click();
       await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       await expect
@@ -147,11 +155,14 @@ test.describe('22 — Resource-grant multi-select', () => {
       // POST /resource-grants returns 201 (created), not 200.
       expect(grantPostStatuses).toEqual([201, 201]);
 
-      // The list re-renders with both grants, each labeled by the member it
-      // went to — not just a count, the actual two people.
-      await expect(page.getByText('kortix', { exact: true }).first()).toBeVisible();
-      await expect(page.getByText(`Member: ${memberAEmail}`, { exact: true })).toBeVisible();
-      await expect(page.getByText(`Member: ${memberBEmail}`, { exact: true })).toBeVisible();
+      // The access list re-renders with both people, each row carrying the
+      // narrowed agent count — the actual two rows, not just a total.
+      const rowA = page.getByRole('listitem').filter({ hasText: memberAEmail });
+      const rowB = page.getByRole('listitem').filter({ hasText: memberBEmail });
+      await expect(rowA).toBeVisible();
+      await expect(rowB).toBeVisible();
+      await expect(rowA.getByText(/Agents: 1\b/)).toBeVisible();
+      await expect(rowB.getByText(/Agents: 1\b/)).toBeVisible();
 
       // API is the source of truth for persistence, not the optimistic re-render.
       const after = await api<ResourceGrantsResponse>(
