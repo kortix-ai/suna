@@ -26,9 +26,10 @@ export {
 export {
   aiGatewaySseFromFullStream,
   billingUsageFromWire,
+  fullStreamPartHasContent,
   wireUsageFromLanguageModelUsage,
 } from './sse-native';
-export type { NativeBillingUsage, NativeStreamCtx, WireUsage } from './sse-native';
+export type { FullStreamPart, NativeBillingUsage, NativeStreamCtx, WireUsage } from './sse-native';
 export {
   AI_GATEWAY_PROTOCOL_VERSION,
   LanguageModelRequestError,

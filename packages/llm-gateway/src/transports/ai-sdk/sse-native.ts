@@ -24,6 +24,39 @@ function frame(part: unknown): Uint8Array {
   return enc.encode(`data: ${JSON.stringify(part)}\n\n`);
 }
 
+// A streamText `fullStream` part (TextStreamPart union). The parts are typed at
+// the SDK, but this gateway only depends on `.type` + a few string fields, so it
+// carries the minimal open shape the serializer/probe read.
+export type FullStreamPart = { type: string; [k: string]: unknown };
+
+// The typed analog of usage/completion-guard.ts's `partHasContent`. A part is
+// "content" — real assistant output the client would see — when it is:
+//   - a `text-delta` or `reasoning-delta` carrying a NON-EMPTY `text` (an
+//     empty-text delta is not content, exactly like partHasContent requires
+//     `content.length > 0`);
+//   - a `tool-call` (a fully-assembled call) or a `tool-input-start` (the model
+//     has committed to calling a tool — the streaming analog of a populated
+//     `tool_calls`).
+// Everything else (`start`, `start-step`, `text-start`, `reasoning-start`,
+// `finish`, `finish-step`, `response-metadata`, `raw`, ...) is framing, not
+// content. The native failover path (pipeline/native-failover.ts) commits a
+// candidate the instant this returns true — the moment real output exists,
+// switching candidates is no longer allowed (same invariant as the byte path).
+export function fullStreamPartHasContent(part: FullStreamPart): boolean {
+  switch (part.type) {
+    case 'text-delta':
+    case 'reasoning-delta': {
+      const text = part.text;
+      return typeof text === 'string' && text.length > 0;
+    }
+    case 'tool-call':
+    case 'tool-input-start':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export interface NativeStreamCtx {
   model: string;
   provider: string;
@@ -114,7 +147,7 @@ function withProviderMetadata<T extends Record<string, unknown>>(
 // (LanguageModelV{3,4}StreamPart frames). `onUsage` fires once, when the
 // terminal usage is known, so the pipeline can bill without re-parsing bytes.
 export function aiGatewaySseFromFullStream(
-  fullStream: AsyncIterable<{ type: string; [k: string]: unknown }>,
+  fullStream: AsyncIterable<FullStreamPart>,
   ctx: NativeStreamCtx,
   opts: { onUsage?: (usage: NativeBillingUsage) => void; includeRawChunks?: boolean } = {},
 ): ReadableStream<Uint8Array> {

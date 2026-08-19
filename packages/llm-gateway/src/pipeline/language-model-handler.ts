@@ -1,6 +1,8 @@
 import type { AuthedPrincipal, ModelRoutePlan, UpstreamDescriptor, UsageEvent } from '../domain';
-import { GatewayResolutionError } from '../errors';
+import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import {
+  type FullStreamPart,
   aiGatewaySseFromFullStream,
   guardAgainstUnhandledResultRejections,
   resolveAiModel,
@@ -14,8 +16,9 @@ import {
 import type { NativeBillingUsage } from '../transports/ai-sdk/sse-native';
 import { calculateCost } from '../usage';
 import { gatewayErrorResponse } from './error-response';
-import { admit } from './handler';
+import { MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE, admit } from './handler';
 import type { HandlerRuntime } from './handler';
+import { type NativeFailure, runNativeFailover } from './native-failover';
 
 // ---------------------------------------------------------------------------
 // AI-SDK-NATIVE ingress handler (`POST /language-model`).
@@ -36,13 +39,14 @@ import type { HandlerRuntime } from './handler';
 // point: it preserves the Anthropic reasoning `signature`
 // (`providerMetadata.anthropic`) the OpenAI re-encode drops.
 //
-// DEFERRED to Phase 2/3 (documented, NOT silently missing):
-//   - Mid-stream candidate failover + empty-completion retries. The chat path's
-//     `runFailover`/`probeStream`/`relayStream` operate on OpenAI-shaped SSE
-//     BYTES; reusing them for AI-gateway frames needs a pluggable content/usage
-//     scanner (a real but separate seam). This handler resolves candidates and
-//     dispatches the FIRST viable one; model-level "no upstream configured"
-//     fallback still works, but per-turn provider failover does not yet.
+// PHASE 2 — per-turn provider failover + empty-completion retries (this file):
+//   - `runNativeFailover` (native-failover.ts) iterates the resolved candidates,
+//     PROBES each stream for the first content part, and commits the first that
+//     serves — mirroring `runFailover`'s limit-vs-terminal classification and
+//     handler.ts's empty-completion retry loop, but over typed `fullStream`
+//     parts instead of OpenAI SSE bytes. ONLY the committed candidate is billed.
+//
+// DEFERRED to Phase 3 (documented, NOT silently missing):
 //   - Non-streaming (`ai-language-model-streaming: false`) collects the stream
 //     into a single JSON result — exact `doGenerate` wire parity is Phase 2.
 //   - `buildAiSdkArgs`'s thinking/caching re-shaping. opencode's
@@ -76,10 +80,6 @@ function sseResponse(stream: ReadableStream<Uint8Array>): Response {
       connection: 'keep-alive',
     },
   });
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // A synthetic zero-usage event that refunds an admission hold — identical
@@ -126,7 +126,11 @@ async function resolveCandidates(
   runtime: HandlerRuntime,
   principal: AuthedPrincipal,
   decoded: DecodedLanguageModelRequest,
-): Promise<{ candidates: Candidate[]; routedModel: string; resolutionError: GatewayResolutionError | null }> {
+): Promise<{
+  candidates: Candidate[];
+  routedModel: string;
+  resolutionError: GatewayResolutionError | null;
+}> {
   const requestedModel = decoded.headers.modelId;
   let route: ModelRoutePlan | null = null;
   try {
@@ -153,7 +157,10 @@ async function resolveCandidates(
       const resolved = await runtime.hooks.resolveUpstream(principal, routeModel);
       candidates.push(...resolved.map((descriptor) => ({ descriptor, routeModel })));
     } catch (err) {
-      runtime.logger.warn(`[llm-gateway] native upstream resolution failed for ${routeModel}:`, err);
+      runtime.logger.warn(
+        `[llm-gateway] native upstream resolution failed for ${routeModel}:`,
+        err,
+      );
       if (!resolutionError && err instanceof GatewayResolutionError) resolutionError = err;
     }
   }
@@ -240,18 +247,91 @@ export async function handleLanguageModel(
     });
   }
 
-  // Phase 1: dispatch the FIRST candidate (see the file header for the deferred
-  // mid-stream failover seam).
-  const { descriptor } = candidates[0];
-
-  // Honor a host-supplied fetch (production middleware, or a test double) on the
-  // sole dispatch path, exactly like the chat handler does via callUpstream.
+  // Honor a host-supplied fetch (production middleware, or a test double) on
+  // every candidate attempt, exactly like the chat handler does via callUpstream.
   const fetchImpl = runtime.fetchImpl;
-  const model = resolveAiModel(descriptor, {}, {
-    extraHeaders: { 'x-kortix-request-id': requestId },
-    ...(fetchImpl ? { fetch: (input, init) => fetchImpl(String(input), init ?? {}) } : {}),
+
+  // Open a fresh streamText for ONE candidate. Called once per attempt — an
+  // empty-completion retry calls it again to get a new stream. `onError`
+  // swallows the SDK's own rejection path; the error is surfaced as an `error`
+  // part through `fullStream`, which the failover probe classifies.
+  const startStream = (candidate: Candidate): AsyncIterable<FullStreamPart> => {
+    const model = resolveAiModel(
+      candidate.descriptor,
+      {},
+      {
+        extraHeaders: { 'x-kortix-request-id': requestId },
+        ...(fetchImpl ? { fetch: (input, init) => fetchImpl(String(input), init ?? {}) } : {}),
+      },
+    );
+    // biome-ignore lint/suspicious/noExplicitAny: decoded.call is the AI-SDK
+    // CallSettings-shaped args (messages/tools/providerOptions/...), forwarded
+    // to streamText verbatim; the exact union is validated by the SDK at runtime.
+    const result = streamText({
+      model,
+      system: decoded.call.system,
+      messages: decoded.call.messages,
+      tools: decoded.call.tools,
+      toolChoice: decoded.call.toolChoice,
+      temperature: decoded.call.temperature,
+      topP: decoded.call.topP,
+      topK: decoded.call.topK,
+      frequencyPenalty: decoded.call.frequencyPenalty,
+      presencePenalty: decoded.call.presencePenalty,
+      stopSequences: decoded.call.stopSequences,
+      maxOutputTokens: decoded.call.maxOutputTokens,
+      seed: decoded.call.seed,
+      providerOptions: decoded.call.providerOptions,
+      maxRetries: 0,
+      abortSignal: req.signal,
+      onError: () => {
+        /* surfaced as an `error` part through fullStream */
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    guardAgainstUnhandledResultRejections(result);
+    return result.fullStream as AsyncIterable<FullStreamPart>;
+  };
+
+  const failover = await runNativeFailover<Candidate>({
+    candidates,
+    providerOf: (candidate) => candidate.descriptor.provider,
+    startStream,
+    toTransportError,
+    maxInvalidAttempts: MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE,
+    logger,
+    requestId,
+    ...(typeof runtime.config.streamProbeTimeoutMs === 'number' &&
+    runtime.config.streamProbeTimeoutMs > 0
+      ? { commitDeadlineMs: runtime.config.streamProbeTimeoutMs }
+      : {}),
   });
 
+  if (failover.kind === 'failed') {
+    // Nothing was relayed to the client — refund any admission hold and surface
+    // the failure as an HTTP error response (mirrors the chat path, which
+    // returns a non-200 JSON body when no candidate ever served).
+    refundBillingHold(runtime, principal, requestId);
+    const { status, code, message } = describeNativeFailure(failover);
+    logger.warn(`[llm-gateway] native failover exhausted for ${requestId}: ${message}`);
+    return gatewayErrorResponse(status, {
+      message,
+      code,
+      provider: failover.provider,
+      requestedModel: decoded.headers.modelId,
+      resolvedModel: routedModel,
+      requestId,
+      suggestion:
+        status === 401 || status === 402 || status === 403
+          ? 'Check the provider credentials, billing, and model access, or switch to another model.'
+          : 'Retry the request. If the error continues, switch to another model.',
+    });
+  }
+
+  // A candidate committed: bill ONLY it (its own descriptor/pricing), and
+  // serialize ITS stream (the buffered probe parts + the rest). A candidate the
+  // failover skipped/failed over never reaches this settle — it is never billed.
+  const { descriptor } = failover.candidate;
   const usedModel = descriptor.resolvedModel || decoded.headers.modelId;
 
   const settle = async (usage: NativeBillingUsage): Promise<void> => {
@@ -298,64 +378,49 @@ export async function handleLanguageModel(
 
   const ctx = { model: usedModel, provider: descriptor.provider };
 
-  try {
-    // biome-ignore lint/suspicious/noExplicitAny: decoded.call is the AI-SDK
-    // CallSettings-shaped args (messages/tools/providerOptions/...), forwarded
-    // to streamText verbatim; the exact union is validated by the SDK at runtime.
-    const result = streamText({
-      model,
-      system: decoded.call.system,
-      messages: decoded.call.messages,
-      tools: decoded.call.tools,
-      toolChoice: decoded.call.toolChoice,
-      temperature: decoded.call.temperature,
-      topP: decoded.call.topP,
-      topK: decoded.call.topK,
-      frequencyPenalty: decoded.call.frequencyPenalty,
-      presencePenalty: decoded.call.presencePenalty,
-      stopSequences: decoded.call.stopSequences,
-      maxOutputTokens: decoded.call.maxOutputTokens,
-      seed: decoded.call.seed,
-      providerOptions: decoded.call.providerOptions,
-      maxRetries: 0,
-      abortSignal: req.signal,
-      onError: () => {
-        /* surfaced as an `error` part through fullStream */
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
-    guardAgainstUnhandledResultRejections(result);
+  let settled: NativeBillingUsage | null = null;
+  const stream = aiGatewaySseFromFullStream(failover.stream, ctx, {
+    onUsage: (usage) => {
+      settled = usage;
+      void settle(usage);
+    },
+  });
+  // If the stream ends without ever reporting usage (should not happen —
+  // aiGatewaySseFromFullStream always reports once), refund any hold.
+  void Promise.resolve().then(() => {
+    if (!settled && principal.billingHold) refundBillingHold(runtime, principal, requestId);
+  });
 
-    let settled: NativeBillingUsage | null = null;
-    const stream = aiGatewaySseFromFullStream(
-      result.fullStream as AsyncIterable<{ type: string; [k: string]: unknown }>,
-      ctx,
-      {
-        onUsage: (usage) => {
-          settled = usage;
-          void settle(usage);
-        },
-      },
-    );
-    // If the stream ends without ever reporting usage (should not happen —
-    // aiGatewaySseFromFullStream always reports once), refund any hold.
-    void Promise.resolve().then(() => {
-      if (!settled && principal.billingHold) refundBillingHold(runtime, principal, requestId);
-    });
+  return sseResponse(stream);
+}
 
-    return sseResponse(stream);
-  } catch (err) {
-    refundBillingHold(runtime, principal, requestId);
-    const transportError = toTransportError(err, descriptor.provider);
-    logger.warn(`[llm-gateway] native dispatch failed for ${requestId}:`, transportError);
-    return gatewayErrorResponse(502, {
-      message: errorMessage(transportError),
-      code: 'upstream_unreachable',
-      provider: descriptor.provider,
-      requestedModel: decoded.headers.modelId,
-      resolvedModel: usedModel,
-      requestId,
-      suggestion: 'Retry the request. If the error continues, switch to another model.',
-    });
+// Map a `runNativeFailover` failure into the HTTP status/code/message the client
+// sees. Mirrors runFailover's terminal-4xx vs unreachable-5xx split and pulls
+// the real upstream message out of an `UpstreamHttpError` body via the SAME
+// `parseUpstreamErrorBody` the byte path uses.
+function describeNativeFailure(failure: NativeFailure): {
+  status: number;
+  code: string;
+  message: string;
+} {
+  const err = failure.transportError;
+  if (err instanceof UpstreamHttpError) {
+    const parsed = parseUpstreamErrorBody(err.body);
+    if (err.status >= 400 && err.status < 500) {
+      const code =
+        parsed.code === 'context_length_exceeded'
+          ? 'context_length_exceeded'
+          : 'upstream_client_error';
+      return { status: err.status, code, message: parsed.message };
+    }
+    return { status: 502, code: 'upstream_unreachable', message: parsed.message };
   }
+  if (failure.reason === 'empty') {
+    return {
+      status: 502,
+      code: 'empty_completion',
+      message: 'All upstream candidates returned an empty completion',
+    };
+  }
+  return { status: 502, code: 'upstream_unreachable', message: failure.message };
 }
