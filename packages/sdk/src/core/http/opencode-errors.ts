@@ -59,6 +59,40 @@ export function isOpenCodeConfigInvalidError(error: unknown): boolean {
   return getOpenCodeConfigInvalidError(error) !== null;
 }
 
+// Every readiness phrase the API can answer with while a sandbox (or the
+// OpenCode server inside it) is provisioning, resuming, or parked. Each line
+// maps to a production site in apps/api:
+//   - `sandbox not ready (status: X)` / bare `sandbox not ready`
+//     → sandbox-proxy/routes/preview.ts (HTTP proxy + WebSocket resolver)
+//   - `Sandbox is not running` → sandbox-proxy/routes/public-share.ts
+//   - `Sandbox is not ready` → public-session-shares, shared/session-public-shares
+//   - `opencode … not ready` → daemon 503 pass-through, session-transcript,
+//     public-session-share-view
+//   - `sandbox_not_ready`, `sandbox_lifecycle_unavailable` → machine codes on
+//     503 bodies from the sandbox proxy
+// Deliberately NOT here: `sandbox port unreachable` — that is emitted only
+// after the box reported active and the port still failed to answer, which is
+// a genuine failure, not parking.
+const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
+  /sandbox not ready/i,
+  /sandbox is not (?:ready|running)/i,
+  /opencode (?:session )?(?:is )?not ready/i,
+  /\bsandbox_not_ready\b/,
+  /\bsandbox_lifecycle_unavailable\b/,
+];
+
+/**
+ * True when an error means "the sandbox is still starting / parked", i.e. a
+ * readiness state the control plane reports on purpose. A UI must render this
+ * as a pending "waking up" state and keep polling — never as a terminal error.
+ * Accepts an `Error`, the raw message string, or a JSON body containing one.
+ */
+export function isSandboxNotReadyError(error: unknown): boolean {
+  const raw = rawErrorMessage(error);
+  if (!raw) return false;
+  return SANDBOX_NOT_READY_PATTERNS.some((pattern) => pattern.test(raw));
+}
+
 export function formatOpenCodeRuntimeError(error: unknown): {
   title: string;
   message: string;
@@ -83,20 +117,19 @@ export function formatOpenCodeRuntimeError(error: unknown): {
 
   const raw = rawErrorMessage(error);
 
-  // A parked box is not a crash. The proxy answers `sandbox not ready
-  // (status: stopped)` for a sandbox the control plane stopped ON PURPOSE to
-  // save compute, and the conversation is intact behind it. Reserve "OpenCode
-  // failed to load" for a runtime that genuinely broke.
+  // A parked or still-provisioning box is not a crash. The proxy answers with
+  // a readiness phrase for a sandbox the control plane stopped ON PURPOSE to
+  // save compute (or has not finished booting), and the conversation is intact
+  // behind it. Reserve "OpenCode failed to load" for a runtime that genuinely
+  // broke.
   //
-  // Matched against `raw`, not a `parseOpenCodeErrorPayload` field: `unwrap()`
-  // (react/use-opencode-sessions/shared.ts) is what actually produces the
-  // error this function receives for the session-list poll that drives the
-  // page's runtime-error card, and it throws `new Error(body.error)` — just
-  // the bare phrase, with the JSON wrapper already stripped off. There is no
-  // payload left to parse by the time it gets here. The regex is exact enough
-  // (`(status: stopped)` and all) that matching it against the raw string
-  // cannot false-positive on an unrelated error that merely mentions "stopped".
-  if (/sandbox not ready \(status: stopped\)/.test(raw)) {
+  // Matched against the raw string, not a `parseOpenCodeErrorPayload` field:
+  // `unwrap()` (react/use-opencode-sessions/shared.ts) is what actually
+  // produces the error this function receives for the session-list poll that
+  // drives the page's runtime-error card, and it throws `new Error(body.error)`
+  // — just the bare phrase, with the JSON wrapper already stripped off. There
+  // is no payload left to parse by the time it gets here.
+  if (isSandboxNotReadyError(raw)) {
     return {
       title: 'Session is waking up',
       message:

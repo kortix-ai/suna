@@ -12,9 +12,11 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
-### 2026-08-19 — session `sandbox-waking` — additive: `isSandboxNotReadyError` classifier + `formatOpenCodeRuntimeError` covers every readiness phrase — IN PROGRESS
+### 2026-08-19 — session `sandbox-waking` — additive: `isSandboxNotReadyError` classifier + `formatOpenCodeRuntimeError` covers every readiness phrase — DONE
 
-**Files:** `core/http/opencode-errors.ts` + `opencode-errors.test.ts`, surface snapshots.
+**Files:** `core/http/opencode-errors.ts` + `opencode-errors.test.ts`, surface snapshots
+(additive: `isSandboxNotReadyError` on the root barrel via the existing
+`export * from './core/http/opencode-errors'`).
 
 **Why.** The web file viewer (and terminal panel, drive explorer, public share)
 render the proxy's `sandbox not ready (status: stopped)` 503 as a terminal red
@@ -24,6 +26,23 @@ error. The proxy emits several readiness phrases (`sandbox not ready`,
 classified today, and only by `formatOpenCodeRuntimeError`. Hosts need one
 boolean classifier so every surface can show "waking up" + retry instead of an
 error card.
+
+**What.** `isSandboxNotReadyError(error)` — accepts an `Error`, a raw message
+string, or a JSON body containing one; matches every readiness phrase listed
+above. `sandbox port unreachable` is deliberately excluded (emitted only after
+the box reported active — a genuine failure). `formatOpenCodeRuntimeError` now
+routes its waking branch through the classifier instead of the exact
+`(status: stopped)` regex. TDD: 4 new tests seen RED
+(`Export named 'isSandboxNotReadyError' not found`) before implementation.
+
+**Gates.**
+
+```
+pnpm --filter @kortix/sdk typecheck       → clean
+pnpm --filter @kortix/sdk test            → 2324 pass, 2 skip, 0 fail, 158 files
+                                            (baseline before this change: 2320 / 2 / 0, 158 files)
+pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
+```
 
 ---
 

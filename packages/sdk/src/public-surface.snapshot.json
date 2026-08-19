@@ -441,6 +441,7 @@
     "isReasoningPart",
     "isRetryableTurnError",
     "isRuntimeReady",
+    "isSandboxNotReadyError",
     "isServerReachable",
     "isSessionFresh",
     "isSessionStartError",
@@ -1886,6 +1887,7 @@
     "formatOpenCodeRuntimeError",
     "getOpenCodeConfigInvalidError",
     "isOpenCodeConfigInvalidError",
+    "isSandboxNotReadyError",
     "parseOpenCodeErrorPayload"
   ],
   "./platform-client": [
