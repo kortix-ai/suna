@@ -316,9 +316,22 @@ flow(
             `the first turn's assistant message has no time.completed set — it is a dangling, never-finalized row (the phantom "Interrupted" class of bug): ${JSON.stringify(turn1Last)}`,
           );
         }
-        if (!info?.error) {
+        // OpenCode 1.17.11 (pinned in packages/shared/src/runtime-versions.json)
+        // does NOT guarantee `info.error` on an abort. `SessionProcessor.cleanup`
+        // stamps `time.completed` with no error at the end of EVERY processor
+        // iteration, and the prompt-level abort finalizer early-returns when
+        // `time.completed` is already set — so an abort that lands between
+        // iterations finalizes the row with no error at all. Run 32306385663
+        // caught exactly that: `time.completed` set, `parts: []`, no error.
+        //
+        // `time.completed` above is the load-bearing half — it is what
+        // `isAbortableHusk` reads, and a missing one is the real "dangling row"
+        // bug. What must still never happen is the turn ending on a genuine
+        // provider failure dressed up as an abort, so assert that instead.
+        const abortErrorName = (info?.error as { name?: string } | undefined)?.name;
+        if (abortErrorName && !['AbortError', 'MessageAbortedError'].includes(abortErrorName)) {
           throw new Error(
-            `the first turn's assistant message carries no abort error even though it was aborted: ${JSON.stringify(turn1Last)}`,
+            `the first turn ended on a NON-abort error even though it was aborted: ${JSON.stringify(turn1Last)}`,
           );
         }
       },
@@ -338,7 +351,13 @@ flow(
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    // 420_000 was smaller than the sum of the bounds this flow itself contains:
+    // boot readiness 300_000 + OpenCode readiness 120_000 + stop-settle 60_000
+    // + wake readiness (below) + assistant marker 240_000. The two readiness
+    // waits ALONE were 600_000 — 1.43x the whole budget — so run 32306385663
+    // hit `flow SESS-23 exceeded 420000ms` on both attempts. Matches the
+    // 900_000 that SESS-10 already declares for the same boot+turn shape.
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -411,7 +430,10 @@ flow(
     );
 
     await ctx.step('wake the box back up via /start', async () => {
-      await waitForSessionReady(ctx, projectId, sessionId);
+      // A WAKE is not a cold boot — the VM is resumed, not created (~19-25s
+      // measured). The 300_000 default is cold-boot money, and spending it here
+      // lets one slow wake swallow the whole flow budget.
+      await waitForSessionReady(ctx, projectId, sessionId, 180_000);
     });
 
     await ctx.step(
@@ -856,18 +878,38 @@ flow(
       // What the Stop button writes. A client-side pause would leave the
       // admission gate free to deliver the very message the user pressed Stop
       // to get ahead of, one scheduler tick after the abort.
-      const held = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
-        { held: true },
-        { params },
+      // A row the drain has ALREADY CLAIMED (status 'running') gets only a
+      // PAYLOAD flag from the instant hold — `stopPausedOnDelivery` — because
+      // `markCommandForwarded` replaces `result` wholesale, so `promptState`
+      // answers `delivering/null` for it. The `held` marker lands only once the
+      // claimed delivery settles, in the background (CLAIMED_SETTLE_MS = 3_000,
+      // apps/api/src/projects/session-lifecycle/inbox-hold-settle.ts). Run
+      // 32306385663 read the response one tick too early and saw exactly that.
+      // The route is idempotent, so re-POST until the row is held or gone — a
+      // hold that never lands still fails the flow.
+      const held = await waitFor(
+        async () =>
+          owner.post(
+            '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+            { held: true },
+            { params },
+          ),
+        {
+          until: (r) => {
+            if (r.statusCode !== 200) return false;
+            const mine = (r.json<any>().prompts ?? []).find(
+              (p: any) => p.prompt_id === promptId,
+            );
+            // Absent = already delivered; it IS the transcript and cannot be held.
+            return !mine || (mine.state === 'waiting' && mine.reason === 'held');
+          },
+          timeoutMs: 30_000,
+          intervalMs: 2_000,
+          description: `prompt ${promptId} to read waiting/held once the hold settles`,
+          retryOnError: isKe2eRetryableError,
+        },
       );
       held.status(200);
-      for (const prompt of held.json<any>().prompts ?? []) {
-        if (prompt.prompt_id !== promptId) continue;
-        if (prompt.state !== 'waiting' || prompt.reason !== 'held') {
-          throw new Error(`a held prompt must read waiting/held, got ${prompt.state}/${prompt.reason}`);
-        }
-      }
 
       const bad = await owner.post(
         '/v1/projects/:projectId/sessions/:sessionId/prompts/hold',

@@ -971,7 +971,13 @@ flow(
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.sharedSeededProject();
+    // A DEDICATED project, not the shard-wide shared one. The warm pool is
+    // scoped by (accountId, projectId, createdBy) — warm-sessions.ts:66-89 — so
+    // every `reused: false` assertion below is only deterministic when nothing
+    // else can leave a warm row in this project. On a shared project a warm row
+    // whose create response was lost to an edge-laundered 503 is never learned,
+    // never tracked, never torn down, and the next `reused: false` reads `true`.
+    const p = await ctx.fixtures.project({ seed: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     let warmSessionId = '';
     let replacementId = '';

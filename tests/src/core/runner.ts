@@ -161,7 +161,9 @@ async function runOneFlow(
       skip: (reason) => {
         throw new SkipSignal(reason);
       },
-      fixtures: world.makeFixtures(stack),
+      // Attempt-scoped: a retry must not re-derive the SAME names its failed
+      // predecessor already committed (see world.ts attemptSuffix).
+      fixtures: world.makeFixtures(stack, attempt),
       step: async (name, fn) => {
         const collector = new StepCollector(routesHit);
         const start = performance.now();

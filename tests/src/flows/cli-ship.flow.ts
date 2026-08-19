@@ -39,7 +39,7 @@ import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { assert } from '../core/expect';
 import { waitFor } from '../core/poll';
-import { CliSandbox } from '../fixtures/cli';
+import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
 
 function check(description: string, pass: boolean, expected: unknown, actual: unknown): void {
   assert({ kind: 'cli', description, expected, actual, pass });
@@ -47,9 +47,12 @@ function check(description: string, pass: boolean, expected: unknown, actual: un
 
 function checkExit(
   description: string,
-  result: { exitCode: number; all: string },
+  result: CliResult,
   expected: number,
 ): void {
+  // CR-9 failed here in run 32306385663 with `HTTP 503: Kortix is temporarily
+  // unavailable` — an edge blip recorded as a CLI contract failure, unretried.
+  if (expected === 0) throwIfCliInfraFailure(result, description);
   check(description, result.exitCode === expected, expected, {
     exitCode: result.exitCode,
     output: result.all.slice(0, 3_000),
