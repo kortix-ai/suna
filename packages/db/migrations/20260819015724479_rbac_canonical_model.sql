@@ -202,6 +202,12 @@ CREATE UNIQUE INDEX "uq_role_assignments_identity" ON "kortix"."role_assignments
 
 -- ─── 4. Roles: system rows live in iam_roles ────────────────────────────────
 
+-- mixed-version-safe: system roles are the ONLY rows with account_id NULL, and
+-- they are inserted below by THIS migration. Every pre-existing reader filters
+-- `account_id = :accountId`, so a NULL row is invisible to old code, and no old
+-- writer path can produce NULL (all of them thread the caller's account id).
+-- Dropping NOT NULL therefore changes nothing an old replica can observe.
+-- squawk-ignore ban-drop-not-null
 ALTER TABLE "kortix"."iam_roles" ALTER COLUMN "account_id" DROP NOT NULL;
 
 -- Account-scoped custom roles keep idx_iam_roles_account_key UNIQUE
