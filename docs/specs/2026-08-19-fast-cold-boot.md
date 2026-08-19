@@ -1,6 +1,6 @@
 # Fast cold boot runtime
 
-Status: experimental on dev. Staging and production remain disabled.
+Status: implemented but disabled. Dev, staging, and production use the standard image.
 
 ## Problem
 
@@ -26,6 +26,7 @@ The standard image remains available through the same flag.
 
 The fast image contains the complete session-critical path:
 
+- Ubuntu 24.04, matching the standard runtime's faster OpenCode startup path
 - Git and the baked scaffold repository
 - Node.js, npm, pnpm, Bun, uv, OpenCode, the Kortix daemon, and the Kortix CLI
 - OpenCode configuration dependencies, tool bundle cache, database migration, and instance warm-up
@@ -46,8 +47,8 @@ Platinum cannot reuse the standard template ID for a fast-image session.
 
 ## Rollout and rollback
 
-Dev enables the flag in `infra/terraform/environments/dev/variables.tf`.
-Staging, production, and self-hosted installations default to `false`.
+All environments default to `false`.
+Dev sets the flag explicitly in `.github/workflows/deploy-dev.yml`.
 
 Set `KORTIX_FAST_COLD_BOOT_ENABLED=false` and redeploy to restore the standard image.
 Rollback does not require a database migration or sandbox cleanup.
@@ -64,3 +65,19 @@ The experiment can advance beyond dev only when all gates pass:
 5. The fast image remains smaller than the standard runtime image.
 
 Disable the flag if runtime-ready p90 exceeds 32,607 ms or a lazy tool path fails.
+
+## Dev result
+
+Five clean Platinum boots on 2026-08-19 used `kortix-fast-dev-6ec80828f8659cfa`.
+The one-time 229,015 ms image build was excluded.
+
+| Milestone | Standard p50 | Fast p50 | Standard p90 | Fast p90 |
+|---|---:|---:|---:|---:|
+| Runtime ready | 25,288 ms | 30,773 ms | 32,607 ms | 35,816 ms |
+| Repository materialized | 7,489 ms | 7,050 ms | 8,007 ms | 7,944 ms |
+| Config dependencies | 542 ms | 18 ms | 580 ms | 19 ms |
+| OpenCode answering | 5,308 ms | 7,600 ms | 6,908 ms | 7,798 ms |
+
+The fast image failed the p50 and p90 acceptance gate.
+Dev therefore sets `KORTIX_FAST_COLD_BOOT_ENABLED=false`.
+The implementation remains available for more image and provider work behind the same flag.

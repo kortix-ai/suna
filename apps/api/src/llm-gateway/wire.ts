@@ -343,6 +343,18 @@ function modelsRoute(path: string) {
     tags: [GATEWAY_INFERENCE_TAG],
     summary: `GET ${fullPath}`,
     description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
+    request: {
+      query: z.object({
+        scope: z
+          .enum(['managed'])
+          .optional()
+          .openapi({
+            description:
+              'Set to `managed` for the platform-managed lineup only (~3KB instead of ~3.3MB). Sandboxes call this on every boot to learn the current managed set. Omit for the caller\'s full catalog.',
+            example: 'managed',
+          }),
+      }),
+    },
     ...auth,
     responses: { 200: json(ModelsResponseSchema, 'Servable model catalog'), ...errors(401, 502) },
   });
@@ -384,7 +396,16 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         // billing for) upstream tokens no one is listening for anymore.
         signal: c.req.raw.signal,
       });
-    const models = (c: import('hono').Context) => gateway.listModels(c.req.header('authorization'));
+    // `?scope=managed` serves ONLY the platform-managed lineup (~3KB) instead
+    // of the project's full catalog (~3.3MB). Every sandbox calls it on boot to
+    // learn the current managed set — the catalog baked into its image is stale
+    // as soon as the managed lineup changes (prod incident 2026-08-19:
+    // `ModelNotFound: kortix/grok-4.6`). Auth and free-tier semantics are
+    // identical to the default listing; no param = byte-identical response.
+    const models = (c: import('hono').Context) =>
+      gateway.listModels(c.req.header('authorization'), {
+        managedOnly: c.req.query('scope') === 'managed',
+      });
     const messages = async (c: import('hono').Context) =>
       gateway.messages({
         authorization: c.req.header('authorization'),

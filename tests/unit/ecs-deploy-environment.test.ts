@@ -55,7 +55,7 @@ describe('ECS task environment overrides', () => {
     ).toThrow();
   });
 
-  it('enables fast cold boot only on the dev API deployment', () => {
+  it('keeps fast cold boot disabled on the dev API deployment', () => {
     const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
     const deployScript = readFileSync(resolve(root, 'infra/scripts/ecs-deploy.sh'), 'utf8');
     const apiDeploy = workflow.slice(
@@ -68,7 +68,7 @@ describe('ECS task environment overrides', () => {
     );
 
     expect(apiDeploy).toContain(
-      `KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'`,
+      `KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"false"}'`,
     );
     const apiFilter = workflow.slice(
       workflow.indexOf('            api:'),

@@ -9,17 +9,19 @@
  *
  * Two rules, in order:
  *
- * 1. Every `serial` and every `global` flow goes to shard 1. `global` flows
- *    (ADM-19, BILL-13, CONN-5) mutate platform-wide state that all shards share
- *    — two jobs running them at once would corrupt each other. `serial` flows
- *    mutate their own run's OWNER/platform-admin principals; each shard builds
- *    its own world, so those are technically shard-safe, but pinning the whole
- *    non-parallel tail to one shard keeps ONE job responsible for it and lets
- *    the model below give the other shards proportionally more parallel work.
+ * 1. Every `serial` and every `global` flow goes to shard 1, and — whenever such
+ *    a flow exists and there is more than one shard — shard 1 gets NOTHING else.
+ *    `global` flows (ADM-19, BILL-13, CONN-5) mutate platform-wide state that
+ *    all shards share, so two jobs running them at once would corrupt each
+ *    other. `serial` flows mutate their own run's OWNER/platform-admin
+ *    principals. Both kinds run strictly one-at-a-time (`runner.ts` drains them
+ *    after the parallel lanes), so any parallel flow sharing their shard waits
+ *    behind a queue it cannot help drain. Giving the tail its own runner is what
+ *    lets the remaining shards be sized purely by parallel work.
  * 2. The remaining flows are bin-packed longest-processing-time-first onto the
- *    shard with the lowest projected load, ties broken by shard index then flow
- *    id. LPT is deterministic given the same registry, so every job computes an
- *    identical partition without coordinating.
+ *    eligible shard with the lowest projected load, ties broken by shard index
+ *    then flow id. LPT is deterministic given the same registry, so every job
+ *    computes an identical partition without coordinating.
  *
  * The cost model is in worker-seconds and uses the flow's declared `timeoutMs`
  * (default 120_000, matching `runner.ts`'s `withTimeout` fallback) as a static
@@ -27,7 +29,8 @@
  * the expensive sandbox flows from piling onto one shard, and it needs no
  * results artifact to stay current. A serial flow occupies a whole shard while
  * the other workers idle, so it is charged `SERIAL_WORKER_PENALTY` times its
- * weight; a parallel flow is charged once.
+ * weight; a parallel flow is charged once. Read a projected load as a wall-clock
+ * ceiling of `load / KE2E_API_WORKERS`, uniformly across every shard.
  */
 import type { RegisteredFlow } from './flow';
 
@@ -37,10 +40,16 @@ export const DEFAULT_FLOW_WEIGHT_MS = 120_000;
 /**
  * Models the per-shard API worker count: a serial flow blocks the shard for its
  * whole duration while the other workers idle, so it costs the shard that many
- * worker-seconds. Kept equal to the `KE2E_API_WORKERS` the release gate gives
- * each API shard.
+ * worker-seconds. Must equal the `KE2E_API_WORKERS` the release gate gives each
+ * API shard (`tests-release.yml`), or a projected load no longer converts to a
+ * wall-clock ceiling by the same divisor on every shard. It was 3 while the gate
+ * ran 3 API workers; the gate now runs 2.
+ *
+ * This value cannot change the partition. Rule 1 gives the serial tail its own
+ * shard, so the only load it inflates is a shard that receives no bin-packed
+ * work — it is a reporting constant, not a packing input.
  */
-export const SERIAL_WORKER_PENALTY = 3;
+export const SERIAL_WORKER_PENALTY = 2;
 
 export interface ShardSpec {
   current: number;
@@ -92,6 +101,13 @@ export function planShard(flows: RegisteredFlow[], spec: ShardSpec): ShardPlan {
     loads[0] += flowWeightMs(flow) * SERIAL_WORKER_PENALTY;
   }
 
+  // Rule 1: the serial tail owns shard 1 alone. Two escapes, both required to
+  // keep the planner total — a shard that can receive nothing must not exist:
+  // at `--shard 1/1` shard 1 is the only shard there is, and a registry with no
+  // serial or global flow has no tail to isolate.
+  const firstShardIsReserved = pinned.length > 0 && spec.total > 1;
+  const packStart = firstShardIsReserved ? 1 : 0;
+
   const parallel = flows
     .filter((flow) => !isPinnedToFirstShard(flow))
     .sort((a, b) => {
@@ -100,8 +116,8 @@ export function planShard(flows: RegisteredFlow[], spec: ShardSpec): ShardPlan {
     });
 
   for (const flow of parallel) {
-    let target = 0;
-    for (let i = 1; i < spec.total; i++) {
+    let target = packStart;
+    for (let i = packStart + 1; i < spec.total; i++) {
       if (loads[i] < loads[target]) target = i;
     }
     assigned[target].push(flow.id);

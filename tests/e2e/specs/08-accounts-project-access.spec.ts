@@ -5,6 +5,8 @@ import {
   authHeaders,
   createApiJsonClient,
   createApiStatusClient,
+  isProductServerError,
+  pollApiStatus,
 } from "../helpers/http";
 import {
   type DisposableInbox,
@@ -235,8 +237,11 @@ test.describe("08 — Accounts, invites, and project access", () => {
     page.on("response", (response) => {
       const status = response.status();
       const url = response.url();
+      // 500 only — a 502/503/504 on this shared staging origin is the edge or
+      // the maintenance gate, not a defect in the page. See
+      // `isProductServerError`.
       if (
-        status >= 500 &&
+        isProductServerError(status) &&
         (url.includes("/v1/accounts") || url.includes("/v1/projects"))
       ) {
         serverErrors.push(`${status} ${url}`);
@@ -443,11 +448,17 @@ test.describe("08 — Accounts, invites, and project access", () => {
       "DELETE",
       `/projects/${project.project_id}/access/${member.id}`,
     );
+    // Poll, do not assert instantly: the revoke is only guaranteed to be
+    // visible on the replica that served it. See `pollApiStatus`.
     expect(
-      await apiStatus(
-        memberSession.access_token,
-        "GET",
-        `/projects/${project.project_id}`,
+      await pollApiStatus(
+        () =>
+          apiStatus(
+            memberSession.access_token,
+            "GET",
+            `/projects/${project.project_id}`,
+          ),
+        403,
       ),
     ).toBe(403);
 
@@ -474,11 +485,16 @@ test.describe("08 — Accounts, invites, and project access", () => {
       `/accounts/${account.account_id}/members/${member.id}`,
       { role: "member" },
     );
+    // A demotion is a revoke: same process-local IAM cache window as above.
     expect(
-      await apiStatus(
-        memberSession.access_token,
-        "GET",
-        `/projects/${project.project_id}`,
+      await pollApiStatus(
+        () =>
+          apiStatus(
+            memberSession.access_token,
+            "GET",
+            `/projects/${project.project_id}`,
+          ),
+        403,
       ),
     ).toBe(403);
 

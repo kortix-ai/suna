@@ -516,15 +516,103 @@ const deltaActiveParts = new Map<string, Set<string>>();
 const deltaEventTails = new Map<string, Map<string, Set<string>>>();
 
 /** Session-scoped tracking for `session.error`'s stub assistant message (see
- *  the handler below) — same shape/reason as the maps above. A stub only
- *  ever stands in for a real assistant message that has not arrived yet;
- *  `hydrate` reconciles (drops) it the moment the server's own transcript
- *  contains a real one for this session, which is the promise the stub's own
- *  creation comment made but that nothing previously fulfilled. Released
- *  wholesale by `forgetSessionIds`/`reset()`; NOT cleared on idle/error — the
- *  stub message it names still lives in `messages[sessionID]` until hydrate
- *  reconciles it or the session itself ends. */
-const stubAssistantIds = new Map<string, Set<string>>();
+ *  the handler below) — same shape/reason as the maps above, except the value
+ *  is a MAP: stub message id → the id of the user message whose turn failed
+ *  (`null` only when the session held no user message at all).
+ *
+ *  The parent is tracked, not merely implied, because every question asked
+ *  about a stub afterwards is a question about its TURN. A stub stands in for
+ *  the assistant message that turn never produced, so `hydrate` may drop it
+ *  only once the server's transcript answers THAT turn — a session-wide "any
+ *  assistant message exists" test deleted the only record of a failure the
+ *  moment an EARLIER turn's reply arrived (the 2026-08-19 report: the first
+ *  `ModelNotFound` rendered nothing at all).
+ *
+ *  Released wholesale by `forgetSessionIds`/`reset()`; NOT cleared on
+ *  idle/error — the stub message it names still lives in `messages[sessionID]`
+ *  until hydrate reconciles it or the session itself ends. */
+const stubAssistantIds = new Map<string, Map<string, string | null>>();
+
+/** Remember `stubId` as this session's stand-in for the turn `parentId` opened. */
+function trackStub(sessionID: string, stubId: string, parentId: string | null): void {
+	const bucket = stubAssistantIds.get(sessionID);
+	if (bucket) bucket.set(stubId, parentId);
+	else stubAssistantIds.set(sessionID, new Map([[stubId, parentId]]));
+}
+
+function untrackStub(sessionID: string, stubId: string): void {
+	const bucket = stubAssistantIds.get(sessionID);
+	if (!bucket) return;
+	bucket.delete(stubId);
+	if (bucket.size === 0) stubAssistantIds.delete(sessionID);
+}
+
+/** The stub id for the turn `userId` opened.
+ *
+ *  Derived from the user message's own id, for two reasons. It is IDEMPOTENT —
+ *  a second `session.error` for the same turn finds the stub it already made
+ *  instead of appending another. And it SORTS immediately after that user
+ *  message: every id the store handles has the same length, so an id that
+ *  extends `userId` byte for byte precedes every id greater than `userId` and
+ *  follows `userId` itself. Position and `parentID` therefore agree, whichever
+ *  of the two a reader uses. */
+const stubIdFor = (userId: string) => `${userId}_error`;
+
+/** A stub id as seen from a list that has no tracking map to hand (`hydrate`'s
+ *  incoming server snapshot, which can never legitimately contain one). */
+const isStubShaped = (id: string) => id.endsWith("_error");
+
+/** Does `messages` hold an assistant message answering the turn `parentId`
+ *  opened? `parentID` is the linkage `groupMessagesIntoTurns` reads; the id
+ *  comparison covers a wire assistant message that carries none (ids ascend,
+ *  so a greater id is a later message). With no parent turn to speak of, any
+ *  assistant message answers. */
+function hasAssistantForTurn(
+	messages: readonly Message[],
+	parentId: string | null,
+): boolean {
+	return messages.some(
+		(m) =>
+			m.role === "assistant" &&
+			!isStubShaped(m.id) &&
+			(!parentId || m.parentID === parentId || (!m.parentID && m.id > parentId)),
+	);
+}
+
+/** Move this session's `session.error` stubs from the optimistic user message
+ *  `fromId` onto the server's own copy of that prompt, `toId`.
+ *
+ *  Both paths that retire an optimistic user message call this — `hydrate`'s
+ *  correlation and the `message.updated` echo — because a stub whose parent id
+ *  no longer names a message in the list has lost the only link that says which
+ *  turn failed, and `groupMessagesIntoTurns` would fall back to "the last turn
+ *  seen", i.e. the bottom of the thread. Returns the list unchanged when this
+ *  session has no stub on `fromId`. */
+function rekeyStubParent(
+	sessionID: string,
+	list: readonly Message[],
+	fromId: string,
+	toId: string,
+): Message[] {
+	const bucket = stubAssistantIds.get(sessionID);
+	if (!bucket) return list as Message[];
+	const moved = [...bucket.entries()].filter(([, parentId]) => parentId === fromId);
+	if (moved.length === 0) return list as Message[];
+	let next = [...list];
+	for (const [stubId] of moved) {
+		untrackStub(sessionID, stubId);
+		const idx = next.findIndex((m) => m.id === stubId);
+		if (idx === -1) continue;
+		const nextId = stubIdFor(toId);
+		trackStub(sessionID, nextId, toId);
+		const rekeyed = { ...next[idx], id: nextId, parentID: toId } as Message;
+		next.splice(idx, 1);
+		const parentIdx = next.findIndex((m) => m.id === toId);
+		if (parentIdx === -1) next = [...next, rekeyed];
+		else next.splice(parentIdx + 1, 0, rekeyed);
+	}
+	return next;
+}
 
 // ---------------------------------------------------------------------------
 // Session retention — how a transcript ever LEAVES memory again.
@@ -1282,22 +1370,32 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				.map((m) => m.info)
 				.sort((a, b) => cmp(a.id, b.id));
 
-			// T16 — reconcile a `session.error` stub assistant message
-			// (see `stubAssistantIds` and the `session.error` handler above). The
-			// stub only ever stood in for a real assistant message that had not
-			// arrived yet, sorted BELOW every server id (`ascendingId('msg')`) —
-			// wrong once real data exists. The moment the server's OWN transcript
-			// contains a real assistant message for this session, every
-			// currently-tracked stub for it is stale and is dropped below rather
-			// than kept alongside the real one at the wrong position. If the
-			// incoming snapshot has no assistant message at all yet, nothing has
-			// arrived to reconcile against, so the stub is left untouched.
+			// T16 — a `session.error` stub assistant message is reconciled
+			// PER TURN, after the optimistic correlation below has run (see
+			// `pendingStubs`). It only ever stood in for the assistant message
+			// its own turn never produced, so the question is not "does this
+			// session have an assistant message" — an earlier turn's answer is
+			// no answer at all — but "does the server now answer THAT turn".
+
+			// Re-adopt a stub that arrives IN the snapshot. The transcript cache
+			// mirrors `messages[sessionID]` to IndexedDB, stubs included, so the
+			// first paint after a reload brings one back — while
+			// `stubAssistantIds` (module state) did not survive the reload. An
+			// unadopted stub is unreconcilable: it would sit beside the server's
+			// own reply forever. Only the runtime ever produces these ids, so
+			// nothing else can be mistaken for one.
+			for (const info of incoming) {
+				if (info.role !== "assistant" || !isStubShaped(info.id)) continue;
+				if (!(info as { error?: unknown }).error) continue;
+				if (stubAssistantIds.get(sessionID)?.has(info.id)) continue;
+				trackStub(sessionID, info.id, info.parentID ?? null);
+			}
+
 			const trackedStubIds = stubAssistantIds.get(sessionID);
-			const reconcileStubs =
-				!!trackedStubIds &&
-				trackedStubIds.size > 0 &&
-				incoming.some((m) => m.role === "assistant");
-			if (reconcileStubs) stubAssistantIds.delete(sessionID);
+			/** Stubs held back from the merge below until their parent turn is
+			 *  known (an optimistic parent may be superseded by the server's own
+			 *  copy in this very snapshot). */
+			const pendingStubs: Message[] = [];
 
 			// Merge incoming messages with existing ones — never delete messages
 			// that exist in the sync store but are missing from the fetch (they may
@@ -1375,10 +1473,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const unmatchedOptimisticUsers: typeof existing = [];
 			for (const m of existing) {
 				if (!seen.has(m.id)) {
-					if (reconcileStubs && trackedStubIds!.has(m.id)) {
-						// Superseded by a real assistant message this same hydrate
-						// snapshot introduced — drop it, don't reinsert it below the
-						// real data at its stale `ascendingId` position.
+					if (trackedStubIds?.has(m.id)) {
+						// Placed (or dropped) after the correlation passes below,
+						// because where it belongs depends on what happened to the
+						// user message it is parented to.
+						pendingStubs.push(m);
 						continue;
 					}
 					if (isOptimistic(sessionID, m.id)) {
@@ -1436,6 +1535,60 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Append surviving optimistic messages at the end
 			for (const m of deferredOptimistic) {
 				merged.push(m);
+			}
+
+			// Now place (or retire) each `session.error` stub, with its turn
+			// finally settled. Three outcomes, in order:
+			//
+			//  - its user message was superseded by the server's own copy in this
+			//    snapshot → the stub follows it, re-keyed onto the real id;
+			//  - the server now holds a real assistant message for that turn →
+			//    the stub was a stand-in for exactly that message, so it goes;
+			//  - otherwise → it stays, directly after its user message. This is
+			//    the case the reported bug turned on: the `reconcileTail` that
+			//    every `session.error` triggers returns a transcript with NO
+			//    reply for the failed turn, and dropping the stub there left the
+			//    user staring at their own prompt and nothing else.
+			for (const stub of pendingStubs) {
+				const trackedParent = trackedStubIds?.get(stub.id) ?? null;
+				const parentId = (trackedParent && supersededBy.get(trackedParent)) || trackedParent;
+				untrackStub(sessionID, stub.id);
+				// The server DOES hold a reply for this turn — the stub stood in
+				// for exactly that message, so it goes. Its error moves onto the
+				// real message first, unless the server's copy carries one of its
+				// own: `session.error` is the runtime's report of THIS turn
+				// failing, and the transcript read that follows it does not always
+				// carry the failure back (the same race
+				// `use-opencode-events`'s cache patch exists for). Dropping the
+				// stub against an error-free server copy would erase the only
+				// evidence the turn failed.
+				if (hasAssistantForTurn(incoming, parentId)) {
+					const replyIdx = merged.findIndex(
+						(m) =>
+							m.role === "assistant" &&
+							!isStubShaped(m.id) &&
+							(!parentId || m.parentID === parentId || (!m.parentID && m.id > parentId)),
+					);
+					const reply = replyIdx === -1 ? undefined : merged[replyIdx];
+					const stubError = (stub as { error?: unknown }).error;
+					if (reply && !(reply as { error?: unknown }).error && stubError) {
+						merged[replyIdx] = { ...reply, error: stubError } as Message;
+					}
+					continue;
+				}
+				const stubId = parentId ? stubIdFor(parentId) : stub.id;
+				const placed =
+					stubId === stub.id && (stub as { parentID?: string }).parentID === (parentId ?? undefined)
+						? stub
+						: ({ ...stub, id: stubId, ...(parentId ? { parentID: parentId } : {}) } as Message);
+				trackStub(sessionID, stubId, parentId);
+				const parentIdx = parentId ? merged.findIndex((m) => m.id === parentId) : -1;
+				if (parentIdx !== -1) {
+					merged.splice(parentIdx + 1, 0, placed);
+					continue;
+				}
+				const r = Binary.search(merged, placed.id, (x) => x.id);
+				if (!r.found) merged.splice(r.index, 0, placed);
 			}
 
 			// Merge parts: for each message, reconcile by part ID.
@@ -1691,11 +1844,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 								const without = list.filter((m) => !optIds.includes(m.id));
 								// Insert the real message at sorted position
 								const r = Binary.search(without, info.id, (m) => m.id);
-								const next = [...without];
+								let next = [...without];
 								if (r.found) {
 									next[r.index] = info;
 								} else {
 									next.splice(r.index, 0, info);
+								}
+								// A turn that failed before this confirmation arrived
+								// has a `session.error` stub keyed to the optimistic id
+								// being retired here. Re-key it, or its error detaches
+								// from the turn and drifts to the bottom of the thread.
+								for (const id of optIds) {
+									next = rekeyStubParent(info.sessionID, next, id, info.id);
 								}
 								// Bridge optimistic parts to the real message ID so
 								// the user bubble never flickers empty while waiting
@@ -1911,47 +2071,76 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			deltaActiveParts.delete(sid);
 			deltaEventTails.delete(sid);
 
-			// Patch the error onto the last assistant message in the sync store.
-			// If no assistant message exists yet, create a temporary one so the
-			// error is visible immediately. The event handler in
-			// use-opencode-events.ts will also fetch real messages from the
-			// server which will bring in the authoritative data via hydrate().
+			// Attach the error to the TURN THAT FAILED, which is the turn the
+			// last user message opened: `session.error` terminates the turn the
+			// runtime was running, and the runtime runs one at a time.
+			//
+			// When that turn already produced an assistant message the error is
+			// patched onto it, as before. When it produced none — the whole
+			// class of failures that die before generation starts, e.g.
+			// `ModelNotFound`, which arrives ~2ms after the prompt — a stub
+			// assistant message stands in for it, parented to that user message
+			// and positioned directly after it.
+			//
+			// It used to be "the last assistant message ANYWHERE, else append a
+			// stub at the end", and both halves put the error in the wrong turn:
+			// the patch landed on the previous turn's answer (where the
+			// `reconcileTail` hydrate that follows every `session.error` then
+			// overwrote it with the server's error-free copy, so the failure
+			// rendered NOTHING), and the appended stub rode the bottom of the
+			// thread, reappearing under whichever prompt came next.
+			//
+			// The event handler in use-opencode-events.ts also fetches real
+			// messages from the server, which brings in the authoritative data
+			// via hydrate().
 			set((s) => {
 				const msgs = s.messages[sid] ?? [];
-				// Find last assistant message and patch .error onto it
+				// The prompt this error answers.
+				let userIdx = -1;
 				for (let i = msgs.length - 1; i >= 0; i--) {
-					const msg = msgs[i];
-					if (msg.role === "assistant") {
-						if (msg.error) return s; // already has error
-						const next = [...msgs];
-						// `error` may be the client-synthesized `SyntheticAbortError`
-						// (see `MessageError`), which the SDK's own `AssistantMessage.error`
-						// union doesn't declare — the assertion is the documented, narrow
-						// exception for that one extra shape.
-						next[i] = { ...msg, error } as typeof msg;
-						return { messages: { ...s.messages, [sid]: next } };
+					if (msgs[i].role === "user") {
+						userIdx = i;
+						break;
 					}
 				}
+				const userId = userIdx === -1 ? null : msgs[userIdx].id;
 
-				// No assistant message yet — create a stub so the error shows.
-				// Tracked in `stubAssistantIds` (T16) so `hydrate` can
-				// reconcile it away once a real assistant message for this
-				// session lands — see that map's doc comment and the
-				// reconciliation in `hydrate` below. `ascendingId('msg')` sorts
-				// BELOW every server id, which is fine as a placeholder position
-				// but wrong once real data exists; that is exactly what the
-				// reconciliation fixes.
-				const stubId = ascendingId("msg");
-				trackId(stubAssistantIds, sid, stubId);
+				// An assistant message that already belongs to THAT turn takes
+				// the error. Scanning back only as far as the user message is
+				// what keeps an earlier turn's answer out of it.
+				for (let i = msgs.length - 1; i > userIdx; i--) {
+					const msg = msgs[i];
+					if (msg.role !== "assistant") continue;
+					if (userId && msg.parentID && msg.parentID !== userId) continue;
+					if (msg.error) return s; // already has error
+					const next = [...msgs];
+					// `error` may be the client-synthesized `SyntheticAbortError`
+					// (see `MessageError`), which the SDK's own `AssistantMessage.error`
+					// union doesn't declare — the assertion is the documented, narrow
+					// exception for that one extra shape.
+					next[i] = { ...msg, error } as typeof msg;
+					return { messages: { ...s.messages, [sid]: next } };
+				}
+
+				// No assistant message for this turn yet — stand one in so the
+				// error renders under the prompt it answers. Tracked in
+				// `stubAssistantIds` (T16) with its parent so `hydrate` can
+				// reconcile it away once the server's own transcript answers
+				// THAT turn — see that map's doc comment and the reconciliation
+				// in `hydrate` below.
+				const stubId = userId ? stubIdFor(userId) : ascendingId("msg");
+				if (msgs.some((m) => m.id === stubId)) return s;
+				trackStub(sid, stubId, userId);
 				const stubMsg: Message = {
 					id: stubId,
 					sessionID: sid,
 					role: "assistant",
+					...(userId ? { parentID: userId } : {}),
 					error,
 				} as Message;
-				return {
-					messages: { ...s.messages, [sid]: [...msgs, stubMsg] },
-				};
+				const next = [...msgs];
+				next.splice(userIdx === -1 ? next.length : userIdx + 1, 0, stubMsg);
+				return { messages: { ...s.messages, [sid]: next } };
 			});
 			return;
 		}

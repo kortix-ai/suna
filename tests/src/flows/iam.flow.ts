@@ -1736,7 +1736,7 @@ flow(
       const projectAccess = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/iam/members/:userId/project-access', {
-          params: { accountId: team.id, userId: member.userId },
+          params: { accountId: team.id, userId: member.userId! },
         });
       projectAccess.status(200);
       const entry = (projectAccess.json<any>().projects as any[]).find(

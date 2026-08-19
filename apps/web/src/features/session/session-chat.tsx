@@ -73,6 +73,7 @@ import type { AttachedFile, TrackedMention } from '@/features/session/session-ch
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { SessionTurnMeta } from './session-turn-meta';
 import {
@@ -1661,7 +1662,7 @@ function SessionTurnImpl({
       )}
 
       {/* ── Working status indicator (always at the end while working) ── */}
-      {working && (
+      {showTurnBusyIndicator({ working, hasError: !!turnError, isRetrying: !!retryInfo }) && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
             <SessionRetryDisplay

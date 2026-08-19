@@ -3,7 +3,7 @@ export type { ProviderKind, UpstreamDescriptor } from './descriptor';
 export type { TokenCounts, UsageEvent } from './usage';
 export type { GatewayTrace } from './trace';
 export type { GatewayAttemptFailure, GatewayAttemptFailureStage } from './failure';
-export type { AuthorizeResult, GatewayHooks } from './hooks';
+export type { AuthorizeResult, GatewayHooks, ListModelsOptions } from './hooks';
 export type {
   ModelInfo,
   ModelCatalog,

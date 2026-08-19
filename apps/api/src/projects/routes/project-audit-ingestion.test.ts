@@ -5,6 +5,10 @@
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import {
+  SESSION_EVENT_RATE_LIMITED_ACTION,
+  __resetAuditRateGuardForTest,
+} from '../../shared/opencode-audit-rate-guard';
 
 const ORIGINAL_ENV = {
   ALLOWED_SANDBOX_PROVIDERS: process.env.ALLOWED_SANDBOX_PROVIDERS,
@@ -128,7 +132,12 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ accepted: 1, inserted: 1, duplicates: 0 });
+    expect(await response.json()).toEqual({
+      accepted: 1,
+      inserted: 1,
+      duplicates: 0,
+      suppressed: 0,
+    });
     expect(insertedValues).toHaveLength(1);
     expect(insertedValues[0]).toMatchObject({
       accountId: ACCOUNT_ID,
@@ -157,5 +166,98 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
         },
       },
     });
+  });
+});
+
+/**
+ * The runaway guard, exercised through the real route rather than the pure
+ * function — this is the layer that decides what actually reaches the INSERT.
+ */
+describe('per-session ingest ceiling', () => {
+  const CEILING = 5;
+
+  function deltaEvent(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `rev-${n}`,
+      type: 'message.part.delta',
+      occurred_at: '2026-08-08T12:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'b'.repeat(64),
+    };
+  }
+
+  async function post(events: unknown[]) {
+    const response = await projectsApp.request(
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ events }),
+      },
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, number> };
+  }
+
+  beforeEach(() => {
+    process.env.KORTIX_AUDIT_SESSION_EVENT_CEILING = String(CEILING);
+    __resetAuditRateGuardForTest();
+  });
+
+  afterAll(() => {
+    delete process.env.KORTIX_AUDIT_SESSION_EVENT_CEILING;
+    __resetAuditRateGuardForTest();
+  });
+
+  test('persists every delta while the session stays under the ceiling', async () => {
+    const { status, body } = await post([deltaEvent(1), deltaEvent(2), deltaEvent(3)]);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ accepted: 3, inserted: 3, duplicates: 0, suppressed: 0 });
+    expect(insertedValues).toHaveLength(3);
+  });
+
+  test('stops persisting deltas over the ceiling and records one notice', async () => {
+    const { status, body } = await post(
+      Array.from({ length: 12 }, (_, i) => deltaEvent(i + 1)),
+    );
+
+    expect(status).toBe(200);
+    expect(body.accepted).toBe(12);
+    expect(body.suppressed).toBe(12 - CEILING);
+
+    // 5 deltas + 1 rate-limited notice reach the INSERT; the other 7 never do.
+    expect(insertedValues).toHaveLength(CEILING + 1);
+    const notices = insertedValues.filter(
+      (value) => value.action === SESSION_EVENT_RATE_LIMITED_ACTION,
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      actorType: 'system',
+      outcome: 'denied',
+    });
+    expect(
+      insertedValues.filter((value) => value.action === 'opencode.message.part.delta'),
+    ).toHaveLength(CEILING);
+  });
+
+  test('a runaway session never blocks the request or loses lifecycle events', async () => {
+    await post(Array.from({ length: 12 }, (_, i) => deltaEvent(i + 1)));
+
+    const lifecycle = {
+      ...deltaEvent(99),
+      event_id: 'f'.repeat(64),
+      type: 'session.idle',
+    };
+    const { status, body } = await post([lifecycle]);
+
+    expect(status).toBe(200);
+    expect(body.suppressed).toBe(0);
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]).toMatchObject({ action: 'opencode.session.idle' });
   });
 });

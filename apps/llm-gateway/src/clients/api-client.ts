@@ -4,6 +4,7 @@ import {
   type AuthedPrincipal,
   type AuthorizeResult,
   type GatewayTrace,
+  type ListModelsOptions,
   type ModelCatalog,
   type ModelRouteInput,
   type ModelRoutePlan,
@@ -49,7 +50,7 @@ export interface ApiClient {
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace: (trace: GatewayTrace) => Promise<void>;
-  listModels: (principal: AuthedPrincipal) => Promise<ModelCatalog>;
+  listModels: (principal: AuthedPrincipal, opts?: ListModelsOptions) => Promise<ModelCatalog>;
   ping: () => Promise<ApiPingResult>;
 }
 
@@ -172,9 +173,10 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     recordTrace: async (trace) => {
       await post<{ ok: boolean }>('/internal/gateway/trace', { trace });
     },
-    listModels: async (principal) => {
+    listModels: async (principal, opts) => {
       const result = await post<{ models: ModelCatalog }>('/internal/gateway/models', {
         principal,
+        managedOnly: !!opts?.managedOnly,
       });
       return result.models ?? {};
     },

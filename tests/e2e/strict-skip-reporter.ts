@@ -8,6 +8,16 @@
  * required capability up front, so on the strict lane a missing capability now
  * fails in seconds and never reaches a skip. What remains here is the genuine
  * case: a journey excluded for a reason the setup could not predict.
+ *
+ * A `@quarantine` journey is NOT such a case, and does not need an allowance
+ * here. `playwright.config.ts` turns `E2E_EXCLUDE_TAGS` into `grepInvert`, and
+ * Playwright applies grep at COLLECTION — before sharding, before any hook, and
+ * before this reporter exists. An excluded journey therefore produces no
+ * `TestCase` and no `onTestEnd` call at all: it is absent from the run, not
+ * skipped in it, so `this.skipped` never sees it and the lane stays green
+ * without weakening the strict rule for anything else. Verified by
+ * `playwright test --list`: 21 tests bare, 19 with `E2E_EXCLUDE_TAGS`, and
+ * exactly the 2 quarantined tests with `E2E_INCLUDE_TAGS`.
  */
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import { mkdir, writeFile } from 'node:fs/promises';

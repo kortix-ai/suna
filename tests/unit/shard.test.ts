@@ -68,6 +68,25 @@ describe('planShard', () => {
     }
   });
 
+  it('gives the serial tail shard 1 to itself', () => {
+    // A parallel flow sharing the tail's shard waits behind a queue it cannot
+    // help drain, so shard 1 takes no bin-packed work at all.
+    const flows = [
+      fakeFlow('S-1', { serial: true, timeoutMs: 60_000 }),
+      ...Array.from({ length: 12 }, (_, i) => fakeFlow(`P-${i}`, { timeoutMs: 600_000 })),
+    ];
+    expect(planShard(flows, { current: 1, total: 3 }).ids).toEqual(['S-1']);
+    const rest = [2, 3].flatMap((current) => planShard(flows, { current, total: 3 }).ids);
+    expect(rest.sort()).toEqual(flows.slice(1).map((f) => f.id).sort());
+  });
+
+  it('leaves every shard eligible when the registry has no serial tail', () => {
+    // Reserving shard 1 for a tail that does not exist would idle a whole job.
+    const flows = Array.from({ length: 8 }, (_, i) => fakeFlow(`P-${i}`, { timeoutMs: 60_000 }));
+    const loads = planShard(flows, { current: 1, total: 4 }).loads;
+    expect(loads).toEqual([120_000, 120_000, 120_000, 120_000]);
+  });
+
   it('is deterministic — the same registry always yields the same partition', () => {
     const flows = Array.from({ length: 50 }, (_, i) =>
       fakeFlow(`F-${i}`, { timeoutMs: ((i * 7) % 9) * 30_000 + 30_000 }),
@@ -113,10 +132,13 @@ interface RegistryShardReport {
   total: number;
   shards: number;
   perShard: number[];
+  loadsMs: number[];
   duplicates: string[];
   missing: string[];
   pinned: string[];
   pinnedOffShardOne: string[];
+  /** Flows on shard 1 that are neither serial nor global — must always be empty. */
+  unpinnedOnShardOne: string[];
 }
 
 function shardTheRealRegistry(shards: number): RegistryShardReport {
@@ -140,34 +162,44 @@ function shardTheRealRegistry(shards: number): RegistryShardReport {
       }
     }
     const pinned = flows.filter(isPinnedToFirstShard).map((f) => f.id).sort();
-    const shardOne = new Set(planShard(flows, { current: 1, total }).ids);
+    const pinnedSet = new Set(pinned);
+    const plans = [];
+    for (let current = 1; current <= total; current++) plans.push(planShard(flows, { current, total }));
+    const shardOne = new Set(plans[0].ids);
     console.log(JSON.stringify({
       total: flows.length,
       shards: total,
       perShard,
+      loadsMs: plans[0].loads,
       duplicates,
       missing: flows.filter((f) => !owner.has(f.id)).map((f) => f.id),
       pinned,
       pinnedOffShardOne: pinned.filter((id) => !shardOne.has(id)),
+      unpinnedOnShardOne: [...shardOne].filter((id) => !pinnedSet.has(id)),
     }));
   `;
   const out = execFileSync('bun', ['-e', script], { encoding: 'utf8', cwd: testsDir });
   return JSON.parse(out.trim().split('\n').at(-1) as string) as RegistryShardReport;
 }
 
+/** The shard count `tests-release.yml` actually runs. Keep the two in step. */
+const RELEASE_GATE_API_SHARDS = 6;
+
 describe('the real flow registry', () => {
+  const shardCounts = [2, 4, RELEASE_GATE_API_SHARDS];
   const reports = new Map<number, RegistryShardReport>();
 
   beforeAll(() => {
-    for (const shards of [2, 3, 4]) reports.set(shards, shardTheRealRegistry(shards));
-  }, 120_000);
+    for (const shards of shardCounts) reports.set(shards, shardTheRealRegistry(shards));
+  }, 180_000);
 
   it('discovers the whole suite', () => {
-    expect(reports.get(4)!.total).toBeGreaterThan(400);
-    expect(reports.get(4)!.pinned.length).toBeGreaterThan(0);
+    const report = reports.get(RELEASE_GATE_API_SHARDS)!;
+    expect(report.total).toBeGreaterThan(400);
+    expect(report.pinned.length).toBeGreaterThan(0);
   });
 
-  for (const shards of [2, 3, 4]) {
+  for (const shards of shardCounts) {
     it(`assigns every registered flow to exactly one of ${shards} shards`, () => {
       const report = reports.get(shards)!;
       expect(report.duplicates, 'flows claimed by more than one shard').toEqual([]);
@@ -180,5 +212,33 @@ describe('the real flow registry', () => {
       // platform-wide state they mutate.
       expect(reports.get(shards)!.pinnedOffShardOne).toEqual([]);
     });
+
+    it(`gives shard 1 of ${shards} nothing but that tail`, () => {
+      // The tail drains one flow at a time. Anything else on its runner waits
+      // for the whole queue, which is what made shard 1 the critical path.
+      const report = reports.get(shards)!;
+      expect(report.unpinnedOnShardOne, 'parallel flows stuck behind the serial tail').toEqual([]);
+      expect(report.perShard[0]).toBe(report.pinned.length);
+    });
   }
+
+  it(`splits the parallel flows evenly across shards 2-${RELEASE_GATE_API_SHARDS}`, () => {
+    // The reason to shard at all. On run 32240074477 every 137-flow shard was
+    // killed by its cap ~60% through; the packer must not leave one shard
+    // carrying materially more than its peers.
+    const report = reports.get(RELEASE_GATE_API_SHARDS)!;
+    const packed = report.perShard.slice(1);
+    expect(packed).toHaveLength(RELEASE_GATE_API_SHARDS - 1);
+    expect(Math.max(...packed) - Math.min(...packed)).toBeLessThanOrEqual(10);
+
+    const packedLoads = report.loadsMs.slice(1);
+    const spread = Math.max(...packedLoads) - Math.min(...packedLoads);
+    expect(spread / Math.max(...packedLoads)).toBeLessThan(0.05);
+  });
+
+  it('cuts the per-shard parallel load by going from 4 shards to 6', () => {
+    const four = Math.max(...reports.get(4)!.loadsMs.slice(1));
+    const six = Math.max(...reports.get(RELEASE_GATE_API_SHARDS)!.loadsMs.slice(1));
+    expect(six).toBeLessThan(four * 0.7);
+  });
 });

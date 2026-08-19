@@ -1,6 +1,10 @@
 import { type Page, expect, test } from "@playwright/test";
 
-import { queryDatabaseRows, runDatabaseSql } from "../helpers/database";
+import {
+  pollDatabaseRows,
+  queryDatabaseRows,
+  runDatabaseSql,
+} from "../helpers/database";
 import {
   type AuthEmailAction,
   createDisposableInbox,
@@ -91,23 +95,34 @@ test.describe("01 - Account authentication", () => {
       await test.step("A new email receives a real signup message", async () => {
         const sentAt = await requestEmailAuthentication(page, email);
         const action = await inbox.waitForAuthAction(sentAt);
-        const accountsResponse = page.waitForResponse((response) => {
-          const url = new URL(response.url());
-          return url.pathname === "/v1/accounts" && response.status() === 200;
-        });
         await completeEmailAuthentication(page, action);
-        const accounts = (await accountsResponse).json() as Promise<
-          Array<{ account_id?: string }>
-        >;
-        for (const account of await accounts) {
-          if (account.account_id) accountIds.push(account.account_id);
-        }
-        const rows = await queryDatabaseRows<UserRow>(
+        // The account ids this test must clean up come from the database, not
+        // from a `page.waitForResponse('/v1/accounts')`.
+        //
+        // That wait was the single most frequent failure of the deployed gate:
+        // `TimeoutError: page.waitForResponse: Timeout 30000ms exceeded` on
+        // runs 32240074477 and 32231251280. It is not a product assertion —
+        // nothing was asserted about the response beyond harvesting ids the
+        // `finally` block already re-reads from `kortix.account_members`. And
+        // it is unsound as a wait: whether the freshly authenticated app
+        // issues exactly one `GET /v1/accounts` that resolves 200 inside 30s
+        // is a client cache and hydration detail, and on a staging replica
+        // answering 503 it never resolves at all.
+        //
+        // What the step actually proves is unchanged and stronger:
+        // `completeEmailAuthentication` already asserts the browser left
+        // `/auth`, and the row below proves the user exists.
+        const rows = await pollDatabaseRows<UserRow>(
           "select id::text from auth.users where lower(email) = lower($1) limit 1",
           [email],
         );
         userId = rows[0]?.id ?? null;
-        expect(userId).toBeTruthy();
+        expect(userId, `no auth.users row for ${email}`).toBeTruthy();
+        const accountRows = await queryDatabaseRows<AccountRow>(
+          "select distinct account_id::text from kortix.account_members where user_id = $1::uuid",
+          [userId],
+        ).catch(() => []);
+        for (const row of accountRows) accountIds.push(row.account_id);
       });
 
       await test.step("The test clears the browser session", async () => {

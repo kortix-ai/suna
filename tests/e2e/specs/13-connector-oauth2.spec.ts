@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resolvePersonalAccountId } from "../helpers/accounts";
 import { seedDatabaseProject } from "../helpers/database";
 import { createApiResultClient } from "../helpers/http";
 import {
@@ -17,13 +18,6 @@ const password = "E2eConnectorOauth123!";
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-interface AccountSummary {
-  account_id: string;
-  personal_account?: boolean;
-  is_primary_owner?: boolean;
-  account_role?: "owner" | "admin" | "member";
-}
-
 test.describe("13 — Custom connector OAuth2", () => {
   test.setTimeout(180_000);
 
@@ -36,20 +30,7 @@ test.describe("13 — Custom connector OAuth2", () => {
     const email = `e2e-connector-oauth-${Date.now()}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
-    const accounts = await api<AccountSummary[]>(
-      session.access_token,
-      "GET",
-      "/accounts",
-    );
-    const personalAccount = accounts.json?.find(
-      (account) =>
-        account.personal_account ||
-        account.is_primary_owner ||
-        account.account_role === "owner",
-    );
-    expect(personalAccount?.account_id).toBeTruthy();
-    if (!personalAccount) throw new Error("test user has no personal account");
-    accountId = personalAccount.account_id;
+    accountId = await resolvePersonalAccountId(api, session.access_token);
     projectId = await seedDatabaseProject({
       accountId,
       userId: user.id,

@@ -37,7 +37,7 @@ export interface FastSandboxDockerfileOptions {
  */
 export function buildFastSandboxDockerfile(options: FastSandboxDockerfileOptions): string {
   return `# syntax=docker/dockerfile:1.7
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \

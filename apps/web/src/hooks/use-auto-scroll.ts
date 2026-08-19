@@ -29,8 +29,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * stranded mid-screen (the re-expansion is just another layout change).
  * `follow` becomes false only on READER intent — a wheel/touch/keyboard scroll
  * up, or a scrollbar drag that leaves the end — and true again when the reader
- * comes back to the end (drag, wheel, chevron) or sends. Programmatic scrolls
- * never count as intent. Nothing here reads "is the session working": if the
+ * comes back to the end (drag, wheel, chevron, End key) or sends. Intent is
+ * read from the INPUT event, and keys are read on `document`: the transcript
+ * is not focusable, so a key that scrolls it is never delivered to it.
+ * Programmatic scrolls never count as intent. Nothing here reads "is the session working": if the
  * reader is at the end and something appears, they see it.
  *
  * Direct DOM writes only (`spacer.style.height`, `el.scrollTop`) — never React
@@ -60,6 +62,89 @@ export function isAtEnd(distanceFromEnd: number): boolean {
 /** Pure: does the chevron show for a reader who is NOT following? */
 export function chevronVisible(distanceFromContentEnd: number): boolean {
   return distanceFromContentEnd > CHEVRON_PX;
+}
+
+export type ScrollKeyIntent = 'up' | 'down' | 'end' | null;
+
+/**
+ * Pure: which way a key scrolls the transcript, or null when it does not
+ * scroll it.
+ *
+ * Up is one intent — Cmd+ArrowUp, Ctrl+Home and bare Home all mean "the reader
+ * took over" — so modifiers are deliberately not inspected. Down splits in two,
+ * because resuming is the direction that can go wrong:
+ *   'end'  — End / Cmd+ArrowDown. A discrete, unambiguous "go to the end", the
+ *            keyboard form of the chevron, so it goes to the end and follows.
+ *   'down' — PageDown / ArrowDown / Space. Ordinary movement: it resumes only
+ *            if it actually lands at the end (isAtEnd), like a wheel-down.
+ * Alt/Option is excluded: on macOS that is a caret move, not a scroll.
+ */
+export function classifyScrollKey(event: {
+  key: string;
+  shiftKey?: boolean;
+  altKey?: boolean;
+  metaKey?: boolean;
+}): ScrollKeyIntent {
+  if (event.altKey) return null;
+  switch (event.key) {
+    case 'ArrowUp':
+    case 'PageUp':
+    case 'Home':
+      return 'up';
+    case 'End':
+      return 'end';
+    case 'ArrowDown':
+      return event.metaKey ? 'end' : 'down';
+    case 'PageDown':
+      return 'down';
+    case ' ':
+    case 'Spacebar':
+      return event.shiftKey ? 'up' : 'down';
+    default:
+      return null;
+  }
+}
+
+/** Pure: an editable target owns its own caret and its own scrollport, so a
+ *  key typed in the composer is never transcript intent. */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== 'function') return false;
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  return el.closest('[contenteditable="true"], [role="textbox"], [role="combobox"]') !== null;
+}
+
+/** Pure: Space activates the focused control instead of scrolling. Every other
+ *  scroll key still scrolls while a button holds focus, so only Space is
+ *  filtered on this one. */
+export function isSpaceActivatedTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== 'function') return false;
+  return (
+    el.closest(
+      'button, summary, a[href], [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="checkbox"], [role="switch"]',
+    ) !== null
+  );
+}
+
+/** Pure: the whole keyboard decision — key plus where focus is. Kept pure so
+ *  the matrix (modifiers, editable focus, Space-on-a-button) is testable
+ *  without a DOM. */
+export function keyScrollIntentFor(event: {
+  key: string;
+  shiftKey?: boolean;
+  altKey?: boolean;
+  metaKey?: boolean;
+  target: EventTarget | null;
+}): ScrollKeyIntent {
+  if (isEditableTarget(event.target)) return null;
+  const intent = classifyScrollKey(event);
+  if (!intent) return null;
+  if ((event.key === ' ' || event.key === 'Spacebar') && isSpaceActivatedTarget(event.target)) {
+    return null;
+  }
+  return intent;
 }
 
 /** Pure: the room under the anchor turn, given the height from that turn's
@@ -272,11 +357,31 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
         updateChevron();
       });
     };
-    // Keyboard scrolling inside the transcript.
+    // Keyboard scrolling. Bound to `document` in the CAPTURE phase (below),
+    // NOT to `el`: the transcript carries no tabindex, so the browser delivers
+    // the key to <body> — or to whatever else holds focus — and an element
+    // listener never fires. That is the bug the reader sees: at the end,
+    // Cmd+↑ scrolls up for an instant and the next `settle()` puts it straight
+    // back, because follow was never told the reader had taken over. Capture
+    // also means a handler that stops propagation cannot hide the intent.
     const onKeyDown = (e: KeyboardEvent) => {
-      if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) leaveEnd('key-up');
+      // A session tab kept mounted but off-screen (`hidden`) must not react to
+      // a key aimed at the visible transcript.
+      if (el.clientHeight === 0) return;
+      const intent = keyScrollIntentFor(e);
+      if (!intent) return;
+      if (intent === 'end') {
+        // "Go to the end" — run the chevron's own jump instead of waiting for
+        // the browser's animation to land. A transcript that is still growing
+        // moves the end away from that animation's target, so the reader would
+        // press End and never get follow back.
+        goToEnd('auto');
+        setFollow(true, 'key-end');
+        return;
+      }
+      if (intent === 'up') leaveEnd('key-up');
       requestAnimationFrame(() => {
-        if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) maybeResume('key-down');
+        if (intent === 'down') maybeResume('key-down');
         updateChevron();
       });
     };
@@ -288,8 +393,22 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     // random (a composer shrink clamped scrollTop by 24px in the same frame a
     // send committed). This listener only re-arms follow when the reader has
     // come back to the end, and keeps the chevron honest.
+    let lastTop = el.scrollTop;
     const onScroll = () => {
-      if (!followRef.current && isAtEnd(distanceFromEnd(el))) setFollow(true, 'scroll-to-end');
+      const top = el.scrollTop;
+      const movedTowardEnd = top >= lastTop;
+      lastTop = top;
+      // Re-arm only when the viewport ARRIVED at the end moving toward it.
+      // Direction matters: the browser animates a keyboard scroll, and its
+      // first frame off the end is 2-3px — inside AT_END_PX. A direction-blind
+      // check therefore re-armed follow on the first frame of Cmd+↑/PageUp,
+      // and the next `settle()` yanked the reader straight back, which is the
+      // very symptom the keydown intent above exists to remove. Content
+      // shrinking and clamping scrollTop moves away from the end too, so this
+      // also keeps the "a clamp is not intent" promise in the header.
+      if (!followRef.current && movedTowardEnd && isAtEnd(distanceFromEnd(el))) {
+        setFollow(true, 'scroll-to-end');
+      }
       updateChevron();
     };
     el.dataset.follow = String(followRef.current);
@@ -297,16 +416,16 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
     el.addEventListener('wheel', onWheel, { passive: true });
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: true });
-    el.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keydown', onKeyDown, { capture: true, passive: true });
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown, { capture: true });
       el.removeEventListener('scroll', onScroll);
     };
-  }, [hasContent, setFollow]);
+  }, [goToEnd, hasContent, setFollow]);
 
   return {
     scrollRef,

@@ -750,6 +750,7 @@ export async function provisionSessionSandbox(opts: {
         throw createErr;
       }
       bgExternalId = result.externalId;
+      tl.mark(`provider-create:${attempts}x`);
       // `syncNetworkBoundary` is optional on the provider interface. The
       // non-null assertion was safe only while the pre-check above guaranteed
       // the method existed; now that a shim-backed provider gets past that
@@ -765,7 +766,6 @@ export async function provisionSessionSandbox(opts: {
           throw error;
         }
       }
-      tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();
 
       const [currentSession] = await db

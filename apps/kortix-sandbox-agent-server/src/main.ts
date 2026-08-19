@@ -22,6 +22,7 @@ import {
   OPENCODE_HOME,
   refreshGatewayCatalogFile,
   scheduleCatalogWarm,
+  startManagedModelsPrefetch,
   waitForOpencodeReady,
   type Opencode,
 } from './opencode'
@@ -203,6 +204,16 @@ async function main() {
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('proxy-up')
+
+  // Learn the CURRENT managed lineup from the gateway this session bills
+  // against, concurrently with the repo clone. The managed set is deployment
+  // config and the image's baked catalog goes stale the moment it changes, so
+  // without this a managed model added after the last template build is absent
+  // from OpenCode's provider map and every turn on it dies with
+  // `ModelNotFound: kortix/<id>` (prod incident 2026-08-19). The result is
+  // consumed by buildOpencodeConfigContent at spawn; the clone is the boot
+  // long-pole, so the fetch costs no critical-path time.
+  startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_LLM_API_KEY)
 
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {

@@ -449,7 +449,7 @@ jobs:
     env:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"false"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

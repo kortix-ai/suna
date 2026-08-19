@@ -16,6 +16,7 @@ import {
   KE2E_FLOW_TIMEOUT,
   maxAttemptBound,
   readAttemptPolicy,
+  resolveFlowTimeoutMs,
   type RegisteredFlow,
 } from "./flow";
 import { loadEnv, type Env } from "./env";
@@ -176,7 +177,7 @@ async function runOneFlow(
     };
 
     try {
-      await withTimeout(f.fn(ctx), f.meta.timeoutMs ?? 120_000, f.id);
+      await withTimeout(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id);
       await stack.teardown();
       return mkResult(f, "pass", undefined, steps, performance.now() - flowStart, attempt);
     } catch (err) {
