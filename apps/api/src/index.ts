@@ -1517,19 +1517,17 @@ import {
 export default {
   port: config.PORT,
 
-  // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
-  // bytes by then gets its socket closed with an EMPTY reply — no status, no
-  // body — which clients report as a bare network error and Better Stack as a
-  // URL-only timeout. Raise it above the 25s request deadline so a genuinely
-  // stuck request surfaces as the middleware's clean 503 (with Retry-After)
-  // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
-  // server.timeout(req, 0) below.
-  // Must stay comfortably ABOVE the 25s request deadline. When this equalled
-  // the client's own 30s timeout, whichever fired first was a coin flip, and
-  // the socket-kill path returns an empty reply that the load balancer turns
-  // into a 502 with no CORS headers — surfacing in browsers as a bogus CORS
-  // error rather than a timeout.
-  idleTimeout: 45,
+  // idleTimeout DISABLED (0). Bun's default is 10s and its MAX is 255s, and Bun
+  // does NOT reset idleTimeout on server->client writes — so ANY fixed ceiling
+  // can kill a legitimately long request (e.g. project provisioning runs ~90s
+  // and was being cut at the previous 45s; see provisionProjectWithToken) or a
+  // long-poll/SSE surface, returning an EMPTY reply that the LB turns into a
+  // 502 with no CORS headers (a bogus browser CORS error). The 25s request
+  // deadline middleware remains the PRIMARY guard: a genuinely stuck request
+  // still surfaces as a clean 503 (with Retry-After) well before any socket
+  // concern. So 0 removes only the redundant backstop while letting legitimate
+  // long requests and streams run to completion.
+  idleTimeout: 0,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,

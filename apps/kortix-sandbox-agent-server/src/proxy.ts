@@ -416,8 +416,11 @@ export function startProxy(
     port: cfg.servicePort,
     hostname: '0.0.0.0',
     // SSE streams from OpenCode can be long-lived with no traffic; default 10s
-    // kills them. 255s matches kortix-master's tuned value.
-    idleTimeout: 255,
+    // kills them. idleTimeout DISABLED (0): Bun's max is 255s AND Bun does not
+    // reset idleTimeout on server->client stream writes, so a 255s ceiling still
+    // killed long-lived low-traffic SSE mid-stream. 0 hands lifetime to the
+    // stream itself / a real client disconnect (still aborts req.signal).
+    idleTimeout: 0,
     async fetch(req, srv) {
       const url = new URL(req.url)
       const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'

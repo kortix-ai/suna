@@ -678,6 +678,18 @@ function applyBedrockThinking(
   return { reasoningConfig: { type: 'adaptive', maxReasoningEffort: resolved.effort } };
 }
 
+// A Bedrock-family model resolves to one of two DIFFERENT wire contracts.
+// Anthropic Claude on Bedrock speaks the Converse Anthropic surface: `cachePoint`
+// (prompt caching) and `reasoningConfig:{type:'adaptive'}` (extended thinking)
+// are Claude-Converse-only primitives. OpenAI-on-Bedrock (`global.openai.*`),
+// Amazon Nova, Meta, and DeepSeek do NOT accept them — Bedrock rejects the
+// request with `403 "You invoked an unsupported model or your request did not
+// allow prompt caching."`. Gate both primitives on the model id, mirroring
+// model.ts's `isNovaModel` regex (the existing Bedrock model-id discriminator).
+function isBedrockClaudeModel(resolvedModel: string | undefined): boolean {
+  return /anthropic\.claude/i.test(resolvedModel ?? '');
+}
+
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
 const BEDROCK_CACHE_POINT = { type: 'default' } as const;
 
@@ -790,11 +802,24 @@ interface NormalizedRequest {
   // wins over any family default (see each adapter's `defaultMaxTokens`).
   // Clamped to the model's `limit.output` ceiling when one is known.
   explicitMaxTokens: number | undefined;
+  // The upstream model id (`descriptor.resolvedModel`), e.g.
+  // `global.openai.gpt-5.6-sol` vs `us.anthropic.claude-fable-5`. Gates the
+  // bedrock adapter's Anthropic-Claude-only Converse primitives (cachePoint,
+  // reasoningConfig:adaptive) — a single Bedrock family covers Claude AND
+  // non-Claude (OpenAI/Nova/Meta) models, and only Claude accepts those fields.
+  resolvedModel: string | undefined;
+  // The resolved catalog model, threaded through so an adapter's
+  // `defaultMaxTokens` can default to the model's REAL output ceiling
+  // (`limit.output`, e.g. 128000) instead of a fixed 32000/4096 when the client
+  // sent no max_tokens — a fixed cap far below the ceiling truncates Claude
+  // mid-answer once adaptive thinking eats the budget. Absent → the fixed
+  // fallback (preserves pre-gating behavior for unresolved models).
+  model: CatalogModel | undefined;
 }
 
 function normalizeRequest(
   body: Record<string, unknown>,
-  opts: { defaultReasoningEffort?: string; model?: CatalogModel },
+  opts: { defaultReasoningEffort?: string; model?: CatalogModel; resolvedModel?: string },
 ): NormalizedRequest {
   const { system, messages } = toModelMessages(body.messages);
   const tools = toToolSet(body.tools);
@@ -836,6 +861,8 @@ function normalizeRequest(
     temperature,
     topP,
     explicitMaxTokens,
+    resolvedModel: opts.resolvedModel,
+    model: opts.model,
   };
 }
 
@@ -900,8 +927,11 @@ interface ProviderAdapter {
   // gates whether the orchestrator builds an `AiSdkOutput` at all.
   supportsResponseFormat: boolean;
   // Prompt-cache breakpoint insertion (anthropic/bedrock only). Absent on
-  // families with no caching primitive here (openai/openai-compatible).
+  // families with no caching primitive here (openai/openai-compatible). Takes
+  // `req` so the bedrock adapter can gate the Claude-only `cachePoint` on the
+  // resolved model id (see `isBedrockClaudeModel`).
   applyCaching?(
+    req: NormalizedRequest,
     system: string | AiSdkSystemInstruction | undefined,
     messages: ModelMessage[],
     tools: ToolSet | undefined,
@@ -963,12 +993,19 @@ const anthropicAdapter: ProviderAdapter = {
     if (thinking) Object.assign(options, applyAnthropicThinking(thinking));
     return options;
   },
+  // Prefer the model's REAL output ceiling (`limit.output`, e.g. 128000) when
+  // the client sent no max_tokens — an injected cap below the ceiling truncates
+  // Claude mid-answer once adaptive thinking eats the budget. The 32000/4096
+  // stay as the fallback for an unresolved model (unknown ceiling). The
+  // client's own explicit max_tokens always wins (see buildAiSdkArgs:
+  // `req.explicitMaxTokens ?? adapter.defaultMaxTokens(req)`).
   defaultMaxTokens(req) {
+    const ceiling = req.model?.limit?.output;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
-    return thinking ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096;
+    return thinking ? (ceiling ?? DEFAULT_MAX_TOKENS_WITH_THINKING) : (ceiling ?? 4096);
   },
   supportsResponseFormat: false,
-  applyCaching: (system, messages, tools) =>
+  applyCaching: (_req, system, messages, tools) =>
     applyAnthropicPromptCaching(system, messages, tools, 'anthropic'),
 };
 
@@ -976,6 +1013,10 @@ const bedrockAdapter: ProviderAdapter = {
   optionsKey: () => 'bedrock',
   buildProviderOptions(req) {
     const options: BedrockProviderOptions = {};
+    // `reasoningConfig:{type:'adaptive'}` is a Claude-Converse-only primitive.
+    // Non-Claude Bedrock models (`global.openai.*`, Nova, …) 403 on it — never
+    // attach it for them.
+    if (!isBedrockClaudeModel(req.resolvedModel)) return options;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
     // Adaptive thinking carries no token budget to clamp — the model manages
     // its own. `defaultMaxTokens` below still bumps maxOutputTokens so thinking
@@ -983,13 +1024,24 @@ const bedrockAdapter: ProviderAdapter = {
     if (thinking) Object.assign(options, applyBedrockThinking(thinking));
     return options;
   },
+  // Prefer the model's REAL output ceiling (`limit.output`) when the client
+  // sent no max_tokens — an injected cap below the ceiling truncates Claude
+  // mid-answer once adaptive thinking eats the budget. The 32000/4096 stay as
+  // the fallback for an unresolved model. The client's own explicit max_tokens
+  // always wins (see buildAiSdkArgs).
   defaultMaxTokens(req) {
+    const ceiling = req.model?.limit?.output;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
-    return thinking ? DEFAULT_MAX_TOKENS_WITH_THINKING : 4096;
+    return thinking ? (ceiling ?? DEFAULT_MAX_TOKENS_WITH_THINKING) : (ceiling ?? 4096);
   },
   supportsResponseFormat: false,
-  applyCaching: (system, messages, tools) =>
-    applyAnthropicPromptCaching(system, messages, tools, 'bedrock'),
+  // `cachePoint` is a Claude-Converse-only primitive. Non-Claude Bedrock models
+  // (`global.openai.*`, Nova, …) 403 on it — pass the system/tools through
+  // unchanged for them.
+  applyCaching: (req, system, messages, tools) =>
+    isBedrockClaudeModel(req.resolvedModel)
+      ? applyAnthropicPromptCaching(system, messages, tools, 'bedrock')
+      : { system, tools },
 };
 
 const ADAPTERS: Record<AiSdkFamily, ProviderAdapter> = {
@@ -1030,6 +1082,12 @@ export function buildAiSdkArgs(
     // schema. Merged LAST so an upstream pin always wins over a same-named
     // client field, exactly as the retired native openai-compat transport did.
     bodyExtras?: Record<string, unknown>;
+    // The upstream model id (`descriptor.resolvedModel`), e.g.
+    // `global.openai.gpt-5.6-sol` vs `us.anthropic.claude-fable-5`. Gates the
+    // bedrock adapter's Claude-Converse-only primitives (cachePoint, adaptive
+    // reasoningConfig) — same signal `clampMaxOutputTokensForBedrock` keys the
+    // Nova clamp off of. Absent → treated as non-Claude (no Claude primitives).
+    resolvedModel?: string;
   } = {},
 ): AiSdkCallArgs {
   const req = normalizeRequest(body, opts);
@@ -1080,7 +1138,7 @@ export function buildAiSdkArgs(
   let system = req.system;
   let tools = req.tools;
   if (adapter.applyCaching) {
-    const cached = adapter.applyCaching(system, req.messages, tools);
+    const cached = adapter.applyCaching(req, system, req.messages, tools);
     system = cached.system;
     tools = cached.tools;
   }
