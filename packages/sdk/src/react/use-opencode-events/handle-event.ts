@@ -14,6 +14,7 @@ import {
 } from '../../platform/ui';
 import { deleteSessionFromIDB } from '../../browser/cache/idb-sync-cache';
 import { useSyncStore } from '../../browser/stores/sync-store';
+import { isAbortError } from '../../core/http/abort-error';
 import { getClient } from '../../core/runtime/client';
 import {
   SESSION_SYNC_PAGE_SIZE,
@@ -25,7 +26,6 @@ import { type MessageWithParts, opencodeKeys, type Session } from '../use-openco
 import { applyPartDiagnostics } from './diagnostics';
 import {
   asStringOrUndefined,
-  looksLikeAbortError,
   patchKortixSessionTitleMirrors,
   readSessionInfo,
   realRuntimeTitle,
@@ -33,6 +33,9 @@ import {
   scheduleProjectMetadataRefetch,
 } from './helpers';
 import type { NormalizeDiagnosticPaths, OpenCodeEvent } from './types';
+
+/** See `createEventHandler`'s `userPartsGraceMs`. */
+export const USER_PARTS_GRACE_MS = 1_500;
 
 /** Builds the SSE event handler; all closure dependencies are injected. */
 export function createEventHandler(deps: {
@@ -48,6 +51,14 @@ export function createEventHandler(deps: {
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
   reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
+  /**
+   * How long a USER `message.updated` may sit with no parts before the tail is
+   * re-read. The runtime emits the info frame and the text part separately;
+   * lose the part (a stream reconnect during the boot hand-off) and the
+   * transcript shows an empty bubble until a reload. Injected so tests can
+   * make it immediate.
+   */
+  userPartsGraceMs?: number;
   /** The route-scoped project this SSE connection belongs to — see
    *  `refetchKortixSessionMirrors`'s doc comment for why this can't default
    *  to "every project". Optional only so existing test harnesses that don't
@@ -68,6 +79,7 @@ export function createEventHandler(deps: {
     markSessionAbortedLocally,
     fetchLspDiagnosticsDebounced,
     projectId = null,
+    userPartsGraceMs = USER_PARTS_GRACE_MS,
   } = deps;
   const reconcileTail =
     deps.reconcileSessionTail ??
@@ -103,7 +115,26 @@ export function createEventHandler(deps: {
 
     switch (event.type) {
       // ---- Message events — handled by sync store only ----
-      case 'message.updated':
+      case 'message.updated': {
+        // A user message is two frames — the info, then its text part. If the
+        // second never lands this tab renders an empty bubble for good; a
+        // tail re-read after a short grace repairs it from the server.
+        const info = (
+          event.properties as { info?: { id?: string; role?: string; sessionID?: string } }
+        ).info;
+        const sessionID = info?.sessionID ?? (event.properties as { sessionID?: string }).sessionID;
+        if (info?.role === 'user' && info.id && sessionID) {
+          const messageID = info.id;
+          setTimeout(() => {
+            const state = useSyncStore.getState();
+            const stillListed = state.messages[sessionID]?.some((m) => m.id === messageID);
+            if (stillListed && !(state.parts[messageID]?.length ?? 0)) {
+              void reconcileTail(sessionID, 'sse-gap');
+            }
+          }, userPartsGraceMs);
+        }
+        break;
+      }
       case 'message.removed':
         break;
 
@@ -125,6 +156,15 @@ export function createEventHandler(deps: {
       case 'session.created': {
         const info = readSessionInfo(event);
         if (info) {
+          // T22 — reload/cross-tab recovery: a `Session.revert` field on the
+          // info this event carries is the only way a fresh mount (nothing
+          // staged locally yet, the `.staged` wire event already happened
+          // before this tab connected) rediscovers an already-staged revert.
+          // See `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment —
+          // absence never clears an existing record; only the three
+          // dedicated wire events (also routed through `applySyncEvent`
+          // above) do that.
+          useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
           queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
             if (!old) return [info];
             const exists = old.findIndex((s) => s.id === info.id);
@@ -152,6 +192,8 @@ export function createEventHandler(deps: {
       case 'session.updated': {
         const info = readSessionInfo(event);
         if (info) {
+          // T22 — see the identical call in the `session.created` case above.
+          useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
           // OpenCode auto-titles after the first message via session.updated.
           // Capture the previous title before local cache mutation so we only
           // force the server-owned mirror read when the title actually changed.
@@ -221,7 +263,21 @@ export function createEventHandler(deps: {
           const client = getClient();
           void reconcileTail(sessionID, 'compaction');
           // Refetch the individual session to clear time.compacting
-          // (targeted refetch, not full session list invalidation)
+          // (targeted refetch, not full session list invalidation). This is
+          // the FAST path — it fires the instant the frame arrives, and on
+          // success also patches the session list mirror.
+          //
+          // It is not the ONLY path any more: a failure here (this fetch has
+          // no retry of its own) used to leave `time.compacting` stale in the
+          // `opencodeKeys.runtimeSession` cache FOREVER — `useOpenCodeSession`
+          // reads it with `staleTime: Infinity` and nothing else refetches it,
+          // so `projectCompacting`'s server-observed rule (`core/session/
+          // compaction.ts`) stayed pinned `true` for the rest of the tab's
+          // life. On failure, route the retry through the SAME query
+          // `useOpenCodeSession` registers (3 attempts, exponential backoff)
+          // instead of swallowing it silently. `use-session.ts` also arms a
+          // `serverCompactionRevalidateAtMs` timer as a second, frame-
+          // independent backstop — see that function's doc comment.
           client.session
             .get({ sessionID })
             .then((res) => {
@@ -237,9 +293,33 @@ export function createEventHandler(deps: {
                   next[idx] = session;
                   return next;
                 });
+              } else {
+                void queryClient.invalidateQueries({
+                  queryKey: opencodeKeys.runtimeSession(sessionID),
+                });
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              void queryClient.invalidateQueries({
+                queryKey: opencodeKeys.runtimeSession(sessionID),
+              });
+            });
+        }
+        break;
+      }
+
+      // ---- Rewind commit in a view that never saw the staging ----
+      case 'session.next.revert.committed': {
+        // The store's `applyEvent` refuses to guess-delete when this tab has
+        // no tracked revert record (second tab / fresh mount) — guessing a
+        // watermark from the local tip can delete the user's REPLACEMENT
+        // prompt. It raises `sessionRevertNeedsTailReconcile` instead; this
+        // is the one consumer: fetch the server's already-truncated tail so
+        // truth arrives by read, not by guess.
+        const { sessionID } = event.properties as { sessionID?: string };
+        if (sessionID && useSyncStore.getState().sessionRevertNeedsTailReconcile[sessionID]) {
+          useSyncStore.getState().clearSessionRevertNeedsTailReconcile(sessionID);
+          void reconcileTail(sessionID, 'manual');
         }
         break;
       }
@@ -343,8 +423,8 @@ export function createEventHandler(deps: {
           // may not have persisted the partial assistant response yet,
           // so hydrating would wipe the streamed content the user saw.
           // The error is already patched onto the message above.
-          const isAbortError = looksLikeAbortError(error);
-          if (!isAbortError) {
+          const aborted = isAbortError(error);
+          if (!aborted) {
             reconcileTail(sessionID, 'session-error')
               .then(() => {
                 useSyncStore.getState().clearOptimisticMessages(sessionID);

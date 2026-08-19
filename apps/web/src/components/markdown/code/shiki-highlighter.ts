@@ -158,8 +158,11 @@ function ensureLangLoaded(h: Highlighter, lang: string): Promise<void> {
   return p;
 }
 
-function clampCode(code: string): string {
-  return code.length > SHIKI_MAX_LENGTH
+// `unbounded` skips the clamp entirely — for a surface whose whole point is
+// showing the real, complete content (e.g. a request/response log), a clipped
+// "preview" masquerading as the highlighted code is worse than plain text.
+function clampCode(code: string, unbounded?: boolean): string {
+  return !unbounded && code.length > SHIKI_MAX_LENGTH
     ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
     : code;
 }
@@ -183,14 +186,19 @@ function cacheHtml(key: string, html: string) {
   }
 }
 
-export function highlightSync(code: string, language: string, theme: CodeThemeName): string | null {
+export function highlightSync(
+  code: string,
+  language: string,
+  theme: CodeThemeName,
+  opts?: { unbounded?: boolean },
+): string | null {
   const lang = normalizeLanguage(language);
   const key = shikiKey(code, lang, theme);
   const cached = shikiCache.get(key);
   if (cached) return cached;
   if (!highlighterReady || !loadedLangs.has(lang)) return null;
   try {
-    const html = highlighterReady.codeToHtml(clampCode(code), {
+    const html = highlighterReady.codeToHtml(clampCode(code, opts?.unbounded), {
       lang,
       theme,
       transformers: shikiTransformers,
@@ -206,6 +214,7 @@ export function highlightAsync(
   code: string,
   language: string,
   theme: CodeThemeName,
+  opts?: { unbounded?: boolean },
 ): Promise<string | null> {
   const lang = normalizeLanguage(language);
   const key = shikiKey(code, lang, theme);
@@ -218,12 +227,16 @@ export function highlightAsync(
     .then(async (h) => {
       if (!h) return null;
       await ensureLangLoaded(h, lang);
-      return h.codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers });
+      return h.codeToHtml(clampCode(code, opts?.unbounded), {
+        lang,
+        theme,
+        transformers: shikiTransformers,
+      });
     })
     // Both palette halves are bundled theme names, so the one-off highlighter
     // this falls back to resolves them by name with nothing pre-registered.
     .catch(() =>
-      codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers }),
+      codeToHtml(clampCode(code, opts?.unbounded), { lang, theme, transformers: shikiTransformers }),
     )
     .then((html) => {
       // null = the highlighter isn't available (yet) — don't negative-cache

@@ -10,7 +10,7 @@ import {
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -129,6 +129,9 @@ function resetState() {
 
 mockIamEngineAllowAll();
 
+// The hermetic db shim models the legacy tables; the read models project from
+// those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
 mockIamMembershipSyncNoop();
 
 const realPlatformRoles = await import('../shared/platform-roles');

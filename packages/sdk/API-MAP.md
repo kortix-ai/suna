@@ -135,6 +135,22 @@ Daemon-direct (bypasses v2 client), full 12-op client now in the SDK (`@kortix/s
 | find files | `GET /find/file?query=&type=` (also `client.find.files`) | ✅ `files.findFiles` |
 | ripgrep text | `GET /find?pattern=` | ✅ `files.findText` |
 | upload / create / copy / delete / mkdir / rename | `POST /file/upload`, `POST /file/mkdir`, `POST /file/rename`, `DELETE /file` | ✅ `files.{uploadFile,createFile,copyFile,deleteFile,mkdir,renameFile}` |
+| **overwrite in place** | `POST /file/upload` (temp name) → `POST /file/rename` (over target) | ✅ `files.writeFile` |
+
+`writeFile` is the only op that overwrites. The daemon's upload writes with
+`flag: 'wx'` and, on `EEXIST`, lands the bytes under a suffixed name
+(`notes-mdx8k2-3f9a1c04.md`) — so `uploadFile` over an existing path writes a
+DIFFERENT file and reports where it went. `writeFile` uploads to a temp name and
+renames over the target (`fs.rename` overwrites atomically), backing the
+original up and restoring it if the swap fails. Use it for every "save this
+edited file" flow; `uploadFile` is for new files only.
+
+`files.createFile` is built on `writeFile` for the same reason it is
+version-safe: the daemon is baked into the sandbox image and `/v1/runtime-assets`
+does **not** ship it, so an old daemon (which drops the filename of a 0-byte
+multipart part) lands an empty create as `undefined`. Renaming the
+daemon-REPORTED path onto the requested path makes both fleets correct. Do not
+turn it back into a direct upload.
 React hooks are still web-local (`features/files/`, + duplicated in `features/project-files/` — collapsing that twin remains open). **`useWorkspaceSearch` is alive and consumed (`features/workspace/command-palette.tsx`) — not dead.** `useLssSearch` / `useTextSearch` are already gone.
 
 ### 11. Git / versions / change-requests  🟡

@@ -3,6 +3,11 @@ import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
+import {
+  ArrowSquareOutIcon,
+  FileCsvIcon,
+  FilePdfIcon,
+} from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -263,5 +268,70 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     expect(html).toContain('Report');
     expect(html).toContain('aria-label="Refresh"');
     expect(html).not.toContain('viewBox="0 0 38 64"');
+  });
+});
+
+// The header glyph is format-aware: a single item shows its file-type icon
+// (PDF, CSV, …), a multi-item carousel shows an AvatarGroup of per-item type
+// icons with a "+N" overflow. Icons are compared by their SVG path data —
+// the only stable fingerprint that distinguishes one Phosphor glyph from
+// another in static markup.
+function iconPathData(icon: ReactNode): string {
+  const match = renderToStaticMarkup(<>{icon}</>).match(/ d="([^"]+)"/);
+  if (!match) throw new Error('icon rendered no path data');
+  return match[1];
+}
+
+describe('ShowTool header shows format-specific icons and avatar groups', () => {
+  test('a single PDF shows the PDF glyph, not the generic redirect icon', () => {
+    const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html).toContain(iconPathData(<FilePdfIcon />));
+    expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
+    // Single item — no avatar group in the header.
+    expect(html).not.toContain('data-slot="avatar-group"');
+  });
+
+  test('a CSV path resolves the CSV glyph (used to fall through to ExternalLink)', () => {
+    const part = makePart({ type: 'file', path: '/workspace/data.csv', title: 'Data' });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html).toContain(iconPathData(<FileCsvIcon />));
+    expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
+  });
+
+  test('a multi-item carousel renders an avatar group capped at 3 with a +N overflow', () => {
+    const part = makePart({
+      title: 'Deliverables',
+      items: [
+        { type: 'text', content: 'notes' },
+        { type: 'file', path: '/workspace/report.pdf' },
+        { type: 'file', path: '/workspace/data.csv' },
+        { type: 'audio', path: '/workspace/song.mp3' },
+        { type: 'file', path: '/workspace/deck.pptx' },
+      ],
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html).toContain('data-slot="avatar-group"');
+    // 3 visible avatars + "+2" for the two items past the cap.
+    expect(html.match(/data-slot="avatar"/g)?.length).toBe(3);
+    expect(html).toContain('+2');
+    // The second visible avatar carries the PDF glyph.
+    expect(html).toContain(iconPathData(<FilePdfIcon />));
+  });
+
+  test('a two-item carousel renders two avatars and no overflow count', () => {
+    const part = makePart({
+      items: [
+        { type: 'file', path: '/workspace/report.pdf' },
+        { type: 'file', path: '/workspace/data.csv' },
+      ],
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html.match(/data-slot="avatar"/g)?.length).toBe(2);
+    expect(html).not.toContain('data-slot="avatar-group-count"');
   });
 });

@@ -101,6 +101,18 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/sessions/:sessionId/audit/events': 'Ingested session audit events',
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': 'Viewed session transcript',
   'GET /v1/projects/:projectId/sessions/:sessionId/voice-transcript': 'Viewed voice transcript',
+  'GET /v1/projects/:projectId/sessions/:sessionId/turn': 'Viewed session turn state',
+  // The prompt inbox: a prompt is a durable server row from the moment the
+  // composer accepts it, so every one of these is a real, auditable action on
+  // the session's pending work.
+  'POST /v1/projects/:projectId/sessions/:sessionId/prompts': 'Queued a session prompt',
+  'GET /v1/projects/:projectId/sessions/:sessionId/prompts': 'Viewed queued session prompts',
+  'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId':
+    'Removed a queued session prompt',
+  'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry':
+    'Retried a queued session prompt',
+  'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold':
+    'Held or released the session prompt queue',
   // The park-and-restore pair (`r4.ts`): a parked session's `question` tool
   // survives past its sandbox (`lib/pending-questions.ts`); GET reads the one
   // still waiting on a human, POST answers it as a follow-up turn. Reads
@@ -213,6 +225,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/oauth/userinfo': 'Viewed OAuth user information',
   'POST /v1/platform/boot-timeline': 'Recorded platform boot timeline',
   'POST /v1/platform/github-app/manifest-start': 'Started GitHub App setup',
+  'GET /v1/platform/github-app/oauth/authorize': 'Started GitHub identity verification',
+  'GET /v1/platform/github-app/oauth/callback': 'Completed GitHub identity verification',
   'POST /v1/prewarm': 'Prewarmed sandbox capacity',
 };
 
@@ -529,6 +543,11 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (m === 'DELETE' && s.length === 4) return { title: 'Deleted trigger', kind: 'delete' };
       if (m === 'POST' && s[4] === 'fire') return { title: 'Fired trigger', kind: 'create' };
     }
+    // Monitor event intake — the project monitor box appending to its event
+    // log (sandbox-token-only; see docs/specs/2026-08-12-monitors.md).
+    if (s[0] === 'projects' && s[2] === 'monitors' && s[3] === 'ingest' && m === 'POST') {
+      return { title: 'Ingested monitor events', kind: 'create' };
+    }
     return null;
   },
   // ── Project lifecycle ────────────────────────────────────────────
@@ -573,6 +592,21 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
       if (m === 'POST' && s[5] === 'apply')
         return { title: 'Applied policy template', detail: slug ?? undefined, kind: 'grant' };
       if (m === 'GET') return { title: 'Listed policy templates', kind: 'read' };
+    }
+    return null;
+  },
+  // ── Role assignments + the permission catalog ────────────────────
+  // The canonical grant surface: ONE row per (principal, role, scope, object).
+  // It replaced the five endpoint families below, which stay mapped while they
+  // dual-write.
+  (m, s) => {
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'assignments') {
+      if (m === 'POST') return { title: 'Granted a role', kind: 'grant' };
+      if (m === 'DELETE') return { title: 'Revoked a role assignment', kind: 'revoke' };
+      if (m === 'GET') return { title: 'Listed role assignments', kind: 'read' };
+    }
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'permissions' && m === 'GET') {
+      return { title: 'Listed the permission catalog', kind: 'read' };
     }
     return null;
   },

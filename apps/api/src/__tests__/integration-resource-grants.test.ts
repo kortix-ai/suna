@@ -111,12 +111,35 @@ describe('iam_resource_grants — real DB round-trip + engine fold', () => {
     expect(await isProjectResourceAccessible(ctx.projectId, 'secret', 'OPENAI_KEY', OTHER_USER, [])).toBe(true);
   });
 
-  test('filterAccessibleResourceIds hides ungranted resources, keeps unscoped ones', async () => {
+  test('filterAccessibleResourceIds — AGENTS are deny-by-default for a member', async () => {
     if (!ctx) return;
     // 'release-bot' is member-scoped to GRANTED_USER; 'free-agent' is unscoped.
     const ids = ['release-bot', 'free-agent'];
-    expect(await filterAccessibleResourceIds(ctx.projectId, 'agent', ids, GRANTED_USER, [])).toEqual(['release-bot', 'free-agent']);
-    expect(await filterAccessibleResourceIds(ctx.projectId, 'agent', ids, OTHER_USER, [])).toEqual(['free-agent']);
+    // Member tier (the default): an agent is usable only when a grant NAMES you.
+    // The unscoped 'free-agent' is therefore hidden from BOTH — including the
+    // user who holds a grant on the other agent. This is the deny-by-default
+    // rule: projects ship with a default_agent and no grants, so an open default
+    // meant every member could run every agent and a grant added nothing.
+    expect(await filterAccessibleResourceIds(ctx.projectId, 'agent', ids, GRANTED_USER, [])).toEqual(['release-bot']);
+    expect(await filterAccessibleResourceIds(ctx.projectId, 'agent', ids, OTHER_USER, [])).toEqual([]);
+  });
+
+  test('filterAccessibleResourceIds — a manager keeps unscoped agents, not scoped ones', async () => {
+    if (!ctx) return;
+    const ids = ['release-bot', 'free-agent'];
+    // managerTier=true moves ONLY the unscoped default. An explicit grant still
+    // excludes a manager who is not named in it, which is what makes "scope this
+    // agent to the finance group" mean anything at all.
+    expect(await filterAccessibleResourceIds(ctx.projectId, 'agent', ids, OTHER_USER, [], true)).toEqual(['free-agent']);
+    // …and the grantee keeps both.
+    expect(await filterAccessibleResourceIds(ctx.projectId, 'agent', ids, GRANTED_USER, [], true)).toEqual(['release-bot', 'free-agent']);
+  });
+
+  test('filterAccessibleResourceIds — skills keep the unscoped-is-open rule', async () => {
+    if (!ctx) return;
+    // Only agents flipped. Skills/secrets still use isResourceAccessible, so an
+    // unscoped one stays project-wide even at member tier.
+    expect(await filterAccessibleResourceIds(ctx.projectId, 'skill', ['unscoped-skill'], OTHER_USER, [])).toEqual(['unscoped-skill']);
   });
 
   test('delete reverts the resource to unscoped (open) and busts the cache', async () => {
@@ -131,7 +154,7 @@ describe('iam_resource_grants — real DB round-trip + engine fold', () => {
       grantedBy: GRANTED_USER,
     });
     expect(await isProjectResourceAccessible(ctx.projectId, 'agent', 'temp-bot', OTHER_USER, [])).toBe(false);
-    const removed = await deleteResourceGrant(grantId, ctx.projectId);
+    const removed = await deleteResourceGrant(grantId, ctx.projectId, ctx.accountId);
     expect(removed).toBe(true);
     // Cache busted on delete → now unscoped → open again.
     expect(await isProjectResourceAccessible(ctx.projectId, 'agent', 'temp-bot', OTHER_USER, [])).toBe(true);

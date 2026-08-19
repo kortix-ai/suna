@@ -11,13 +11,19 @@ import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
-import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
+import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
+import {
+  isAccountGraduatedSection,
+  legacySectionRedirect,
+} from '@/features/workspace/settings/settings-tabs';
+import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { legacyCustomizeRedirect, parseCustomizeSection } from '@/lib/customize-sections';
+import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import {
   clearLastProjectId,
@@ -26,10 +32,9 @@ import {
 } from '@/lib/onboarding/last-project-cookie';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useGatewayCatalogSync } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 
 const CommandPalette = lazy(() =>
@@ -76,6 +81,25 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   useGatewayCatalogSync(projectId);
 
+  // Presence: this shell is mounted for EVERY /projects/[id] route and survives
+  // in-project navigation, so mounting the warm hook here means "one ensure
+  // while the user is on this project", not one per page they click through.
+  // Gated on the `warm_sessions` flag (a warm sandbox is billed compute) and on
+  // the account being able to run at all. The server enforces the flag too —
+  // this is the client short-circuit that avoids a 403 on every project visit.
+  const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
+  const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
+  // `params.sessionId` (read again below for the tabs store) doubles as the
+  // hook's adoption signal: navigating to a session — from ANY surface,
+  // including the manager inventory's unbadged warm rows or a direct URL —
+  // consumes a matching held warm entry and publishes the id cross-tab.
+  const routeParams = useParams<{ sessionId?: string }>();
+  useWarmProjectSession(
+    projectId,
+    warmSessions.enabled && !billingLoading && canRun,
+    routeParams?.sessionId ?? null,
+  );
+
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
@@ -103,24 +127,40 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     router.replace(PROJECT_LANDING_PATH);
   }, [projectDetailError, projectId, router, user?.id]);
 
+  // The project's owning account, falling back to the app-wide selected one
+  // — the same resolution every account-scoped surface uses. Feeds the
+  // `?customize=` redirect below, which can name an account-scoped section.
+  const shellAccountId = useSettingsAccountId(projectDetail?.project?.account_id);
+
   useEffect(() => {
-    // Files, Connectors, Skills, and Commands graduated out of Customize into
-    // their own pages — send legacy ?customize=<section> links there instead
-    // of opening the overlay.
-    const redirect = legacyCustomizeRedirect(projectId, searchParams.get('customize'));
+    // Old bookmarks/links carry `?customize=<legacy-section-id>`. Files,
+    // Connectors, Skills, and Commands graduated out of the overlay into
+    // their own pages; every other legacy id resolves through
+    // `legacySectionRedirect` to its `/settings/<tab>` route, which itself
+    // opens the Settings overlay via the store and bounces back here — see
+    // that route's header comment. An unrecognized id just drops the stale
+    // query param.
+    const raw = searchParams.get('customize');
+    if (!raw) return;
+    // Organization, Billing, Usage, Groups, Roles, Identity, Audit log and
+    // API keys resolve to `/accounts/<accountId>`, so they need the id this
+    // shell already holds. Hold the redirect until it resolves rather than
+    // dropping the param — the detail query is in flight for the first few
+    // hundred ms of a cold load, and firing early would silently discard the
+    // destination the link named. Unlike the deep-link routes, this shell has
+    // something to render meanwhile, so waiting costs nothing.
+    if (isAccountGraduatedSection(raw) && !shellAccountId) return;
+    const redirect = legacySectionRedirect(projectId, raw, shellAccountId);
     if (redirect) {
       router.replace(redirect);
       return;
     }
-    const section = parseCustomizeSection(searchParams.get('customize'));
-    if (!section) return;
-    useCustomizeStore.getState().openCustomize(section);
 
     const next = new URLSearchParams(searchParams.toString());
     next.delete('customize');
     const query = next.toString();
     router.replace(`/projects/${projectId}${query ? `?${query}` : ''}`, { scroll: false });
-  }, [projectId, router, searchParams]);
+  }, [projectId, router, searchParams, shellAccountId]);
 
   useEffect(() => {
     try {
@@ -190,7 +230,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           <ProjectSheelLayout>{children}</ProjectSheelLayout>
         </div>
 
-        <CustomizPanel projectId={projectId} />
+        <SettingsPanel projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />

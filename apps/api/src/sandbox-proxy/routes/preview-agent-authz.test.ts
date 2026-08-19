@@ -1,7 +1,7 @@
 // A prompt that names a CONCRETE different agent must be AUTHORIZED for that
 // agent before anything acts on it.
 //
-// `project.agent.read` was asserted only at session create (projects/routes/r7.ts),
+// `project.agent.read` was asserted only at session create (projects/routes/project-sessions.ts),
 // against `body.agent_name`. The prompt path never re-checked, so a member scoped
 // to agent A could create the session as A and then prompt `{"agent":"B"}` — and
 // `remintGrantForAgentSwitch` would hand them B's connector / Kortix-CLI grant,
@@ -14,6 +14,8 @@ import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
+
+let sessionAgentName: string | null = 'pipeline-hygiene';
 
 const ACTIVE_RECORD = {
   status: 'active',
@@ -32,7 +34,7 @@ let authorizeAllowed = true;
 let remintCalls: Array<{ requestedAgent: string | null }> = [];
 let envSyncCalls: Array<{ requestedAgent: string | null | undefined }> = [];
 
-mock.module('../../config', () => ({ config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false } }));
+mock.module('../../config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
@@ -53,10 +55,12 @@ mock.module('../../shared/preview-ownership', () => ({
 }));
 mock.module('../../iam', () => ({
   PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
-  authorize: async (_userId: string, _accountId: string, action: string, target: unknown) => {
+  // `authorize(actor, action, obj)` — the acting credential is part of the
+  // Actor now, so the action moved to position 2.
+  authorize: async (_actor: unknown, action: string, target: unknown) => {
     authorizeCalls.push({ action, target });
     return authorizeAllowed
-      ? { allowed: true, reason: 'project_role' }
+      ? { allowed: true, reason: 'role' }
       : { allowed: false, reason: 'resource_scope_insufficient' };
   },
 }));
@@ -81,11 +85,18 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
+const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  beginSandboxTurn: async () => 'granted',
+  acceptSandboxTurn: async () => true,
+  abandonSandboxTurn: async () => true,
+}));
 mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({
-  loadSandbox: async () => ({ ...ACTIVE_RECORD }),
+  loadSandbox: async () => ({ ...ACTIVE_RECORD, agentName: sessionAgentName }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
   resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),
   buildSandboxUpstreamHeaders: async () => ({}),
@@ -109,6 +120,7 @@ const ACCESS = {
   kind: 'principal' as const,
   userId: 'user-1',
   callerSessionId: null,
+  boundCredentialSessionId: null,
   sandboxAuthored: false,
 };
 
@@ -132,6 +144,7 @@ function prompt(agent?: string | null): Promise<Response> {
 }
 
 beforeEach(() => {
+  sessionAgentName = 'pipeline-hygiene';
   authorizeCalls = [];
   authorizeAllowed = true;
   remintCalls = [];
@@ -198,6 +211,50 @@ test('the non-binding "default" sentinel is not a switch and is not gated', asyn
 
 test('naming the session own agent is not a switch and is not gated', async () => {
   const response = await prompt('pipeline-hygiene');
+
+  expect(response.status).toBe(200);
+  expect(authorizeCalls).toEqual([]);
+});
+
+// REGRESSION (CWE-863). A `default`-bound session used to skip this gate
+// entirely: `isConcreteAgentSwitch` carved out `sessionAgent === 'default'`, so
+// naming a concrete agent reached neither the authorization check nor a refusal.
+// That was not harmless. The body's `agent` is stripped only when the REQUESTED
+// agent is the sentinel, so the named agent really ran, and the token really was
+// re-minted to its connector/Kortix-CLI grant. Anyone who could use a
+// default-bound session could run any agent in the project.
+test('a default-bound session naming a concrete agent IS authorized', async () => {
+  sessionAgentName = 'default';
+  authorizeAllowed = false;
+
+  const response = await prompt('nda-turnaround');
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+  // The bypass handed over the grant. Neither may run.
+  expect(remintCalls).toEqual([]);
+  expect(envSyncCalls).toEqual([]);
+  expect(upstreamCalls).toBe(0);
+});
+
+test('a default-bound session still runs a concrete agent once authorized', async () => {
+  sessionAgentName = 'default';
+
+  const response = await prompt('nda-turnaround');
+
+  expect(response.status).toBe(200);
+  expect(authorizeCalls).toHaveLength(1);
+  expect(remintCalls).toEqual([{ requestedAgent: 'nda-turnaround' }]);
+  expect(upstreamCalls).toBe(1);
+});
+
+// The sentinel echo must stay free: asking for 'default' is asking for this
+// session's own agent, so there is no concrete agent to authorize and no
+// round-trip to pay for.
+test('a default-bound session naming the sentinel is still not gated', async () => {
+  sessionAgentName = 'default';
+
+  const response = await prompt('default');
 
   expect(response.status).toBe(200);
   expect(authorizeCalls).toEqual([]);

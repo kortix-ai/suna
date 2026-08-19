@@ -34,7 +34,7 @@
  * `secret` stay in RESOURCE_GRANT_TYPES / ResourceType purely for back-compat:
  * pre-existing grant rows of those types must keep reading, listing, and
  * revoking correctly. NEW grants of those types are rejected at the API layer
- * (see CREATABLE_RESOURCE_GRANT_TYPES + the r7.ts POST /resource-grants gate)
+ * (see CREATABLE_RESOURCE_GRANT_TYPES + the routes/resource-grants.ts POST gate)
  * — this module stays permissive so it never has to know which caller is
  * enforcing that; it's a write-time policy, not a storage-model change.
  *
@@ -44,6 +44,9 @@
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { iamResourceGrants } from '@kortix/db';
 import { db } from '../shared/db';
+import type { ObjectType as ObjectGrantType } from './catalog';
+import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from './assignments';
+import { objectGrantRows } from './read-models';
 import { ttlMemo } from '../shared/ttl-memo';
 import {
   invalidateIamCacheForProjectResources,
@@ -59,7 +62,7 @@ export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
 
 /** The resource kinds a NEW member/department-scoped grant may be created
- *  for. Only `agent` — skills and secrets are governed by the editor role
+ *  for. Only `agent` — skills and secrets are governed by the manager role
  *  (edit) + agent inheritance (use), not a direct member-scoped grant. Existing
  *  skill/secret grant rows (created before this restriction) still read,
  *  list, and revoke normally; this only gates the CREATE path. */
@@ -140,9 +143,70 @@ export async function isProjectResourceExplicitlyGranted(
 }
 
 /**
+ * THE per-resource policy for a human caller — the one place that decides what
+ * "nobody scoped this" means. Both folds (authorizeV2's single-resource check
+ * and filterAccessibleProjectResources' batch filter) route through here, so
+ * "can this user use agent X" answers the same whether it is asked one resource
+ * at a time or for a whole list.
+ *
+ * Two independent questions, and only the FIRST one differs by tier:
+ *
+ *   1. UNSCOPED (no grant rows at all). For an `agent`, open to manager-tier
+ *      and CLOSED to member-tier. `skill`/`secret` stay open to everyone.
+ *   2. SCOPED (>=1 grant row). Usable only by the named members/groups —
+ *      IDENTICALLY for both tiers.
+ *
+ * Agents turned deny-by-default for members because an unscoped agent is the
+ * NORMAL state: projects ship with a `default_agent` and no grants at all.
+ * Under the old open rule every member could run every agent in every project
+ * they could see, and "grant this department one agent" added nothing, because
+ * they already had all of them. The open default made the grants UI decorative
+ * for the one case it exists to serve.
+ *
+ * `managerTier` deliberately moves ONLY the default. A manager is not exempt
+ * from an explicit grant: scoping an agent to the finance group still keeps
+ * every other manager out of it, which is what makes scoping meaningful at all.
+ * What the tier prevents is the opposite failure — a project manager who has
+ * created no grants yet being locked out of the agents they administer.
+ *
+ * Account owners/admins never reach here; they bypass the fold at the call
+ * sites, as do service accounts (governed by their own policies + agentGrant).
+ */
+/** Object types whose UNSCOPED default is closed for member-tier. Drives both
+ *  `isProjectResourceUsableByMember` and the memo's empty-map caching rule. */
+export const CLOSED_BY_DEFAULT_RESOURCE_TYPES: ReadonlySet<string> = new Set(['agent']);
+
+export function isProjectResourceUsableByMember(
+  resourceType: ResourceType,
+  grantsForResource: ResourceGrantPrincipal[] | undefined,
+  userId: string,
+  groupIds: readonly string[],
+  managerTier: boolean,
+): boolean {
+  if (!CLOSED_BY_DEFAULT_RESOURCE_TYPES.has(resourceType)) {
+    return isResourceAccessible(grantsForResource, userId, groupIds);
+  }
+  // Unscoped agent: the tier decides. Scoped agent: only the grantees, whatever
+  // the tier — `isResourceExplicitlyGranted` answers both because it returns
+  // false for the empty case, which the branch above has already handled.
+  if (!grantsForResource || grantsForResource.length === 0) return managerTier;
+  return isResourceExplicitlyGranted(grantsForResource, userId, groupIds);
+}
+
+/**
  * project+type keyed map: resourceId → granted principals (non-expired allows).
- * Memoized; the empty map is cached too (the common unscoped case) and busted on
- * mutation. Registered as a project-scoped memo so a grant change drops it.
+ * Memoized and busted on mutation; registered as a project-scoped memo so a
+ * grant change drops it — on THIS process. Invalidation does not cross API
+ * replicas, so a sibling replica can hold a stale entry for up to TTL_MS.
+ *
+ * The EMPTY map is cached only for object types whose unscoped default is
+ * OPEN (skills, secrets): a stale empty map there means "still open", which is
+ * the state the caller already had. Agents are deny-by-default for member-tier
+ * (2026-08-19), so a stale empty map would mean "still closed" — a member who
+ * was just granted an agent kept getting 403 for ~15s on replicas that had not
+ * seen the write (observed on dev: create 201, immediate prompt 403, then 202).
+ * One extra indexed query per uncached check is the price of grants taking
+ * effect immediately everywhere.
  */
 const loadProjectResourceGrants = ttlMemo({
   ttlMs: TTL_MS,
@@ -175,7 +239,8 @@ const loadProjectResourceGrants = ttlMemo({
     }
     return map;
   },
-  shouldCache: () => true,
+  shouldCache: (map, _projectId, resourceType) =>
+    map.size > 0 || !CLOSED_BY_DEFAULT_RESOURCE_TYPES.has(resourceType),
 });
 registerProjectScopedMemo(loadProjectResourceGrants);
 
@@ -232,9 +297,12 @@ export async function filterAccessibleResourceIds(
   resourceIds: readonly string[],
   userId: string,
   groupIds: readonly string[],
+  managerTier = false,
 ): Promise<string[]> {
   const map = await loadProjectResourceGrants(projectId, resourceType);
-  return resourceIds.filter((id) => isResourceAccessible(map.get(id), userId, groupIds));
+  return resourceIds.filter((id) =>
+    isProjectResourceUsableByMember(resourceType, map.get(id), userId, groupIds, managerTier),
+  );
 }
 
 // ─── Repository (CRUD) ──────────────────────────────────────────────────────
@@ -250,21 +318,24 @@ interface ResourceGrantRow {
   createdAt: Date;
 }
 
-/** Every grant for a project (for the Members UI). */
+/**
+ * Every grant for a project (for the Members UI), read from
+ * `kortix.role_assignments` — the store the engine decides on. `grant_id` is
+ * the ASSIGNMENT id; the DELETE route accepts either that or a legacy grant id,
+ * so a client holding one from either era can still revoke it.
+ */
 export async function listResourceGrants(projectId: string): Promise<ResourceGrantRow[]> {
-  return db
-    .select({
-      grantId: iamResourceGrants.grantId,
-      resourceType: iamResourceGrants.resourceType,
-      resourceId: iamResourceGrants.resourceId,
-      principalType: iamResourceGrants.principalType,
-      principalId: iamResourceGrants.principalId,
-      expiresAt: iamResourceGrants.expiresAt,
-      grantedBy: iamResourceGrants.grantedBy,
-      createdAt: iamResourceGrants.createdAt,
-    })
-    .from(iamResourceGrants)
-    .where(eq(iamResourceGrants.projectId, projectId));
+  const rows = await objectGrantRows({ projectId });
+  return rows.map((r) => ({
+    grantId: r.grantId,
+    resourceType: r.resourceType,
+    resourceId: r.resourceId,
+    principalType: r.principalType,
+    principalId: r.principalId,
+    expiresAt: r.expiresAt,
+    grantedBy: r.grantedBy,
+    createdAt: r.createdAt,
+  }));
 }
 
 /** Create or update a grant (idempotent on the unique principal+resource key). */
@@ -309,16 +380,78 @@ export async function upsertResourceGrant(input: {
       },
     })
     .returning({ grantId: iamResourceGrants.grantId });
+  // …and the canonical object assignment, through the ONE write path, so the
+  // grant carries an `iam.assignment.granted` audit event. The route already
+  // asserted `project.members.manage`; `SYSTEM_ACTOR` says the caller was
+  // authorized THERE rather than re-deriving a different action here.
+  //
+  // Best-effort: the mirror trigger on `iam_resource_grants` wrote the same
+  // canonical row inside the upsert above, so a failure costs the audit event,
+  // not the grant.
+  let assignmentId: string | null = null;
+  try {
+    const assignment = await assignRole(SYSTEM_ACTOR, input.accountId, {
+      principal: {
+        type: input.principalType === 'group' ? 'group' : 'user',
+        id: input.principalId,
+      },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: input.projectId },
+      object: { type: input.resourceType as ObjectGrantType, id: input.resourceId },
+      expiresAt: input.expiresAt ?? null,
+      source: 'manual',
+      grantedBy: input.grantedBy,
+    });
+    assignmentId = assignment.assignmentId;
+  } catch (err) {
+    console.warn('[resource-grants] canonical object assignment failed', {
+      projectId: input.projectId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      err: (err as Error)?.message,
+    });
+  }
   invalidateIamCacheForProjectResources(input.projectId);
-  return { grantId: row.grantId };
+  // The ASSIGNMENT id, so the id this returns is the id the list returns and
+  // the id the DELETE route takes. The legacy id is the fallback for the one
+  // case that has no assignment: the canonical write above failed.
+  return { grantId: assignmentId ?? row.grantId };
 }
 
-/** Delete a grant by id (scoped to the project so a stray id can't cross over). */
-export async function deleteResourceGrant(grantId: string, projectId: string): Promise<boolean> {
+/**
+ * Delete a grant by id, scoped to the project so a stray id can't cross over.
+ *
+ * Accepts EITHER id. `listResourceGrants` now returns assignment ids, but a
+ * client holding a legacy `iam_resource_grants.grant_id` — from a cached page,
+ * or from a response this API returned before the cutover — must still be able
+ * to revoke. Both paths remove both rows: the legacy delete fires the mirror
+ * trigger, and `revokeAssignment` deletes the legacy row itself.
+ */
+export async function deleteResourceGrant(
+  grantId: string,
+  projectId: string,
+  accountId: string,
+): Promise<boolean> {
   const deleted = await db
     .delete(iamResourceGrants)
     .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.projectId, projectId)))
     .returning({ grantId: iamResourceGrants.grantId });
+  if (deleted.length > 0) {
+    invalidateIamCacheForProjectResources(projectId);
+    return true;
+  }
+
+  const [assignment] = await listAssignments({
+    accountId,
+    scopeType: 'project',
+    scopeId: projectId,
+    liveOnly: false,
+  }).then((rows) => rows.filter((r) => r.assignmentId === grantId && r.objectType !== null));
+  if (!assignment) return false;
+  // The route asserted project.members.manage before calling; skip the
+  // grant-side re-derivation, which would ask for it again under a different
+  // name. SYSTEM_ACTOR because this repository function has no request actor.
+  await revokeAssignment(SYSTEM_ACTOR, accountId, grantId, { skipWriterAuthz: true });
   invalidateIamCacheForProjectResources(projectId);
-  return deleted.length > 0;
+  return true;
 }

@@ -173,14 +173,67 @@ CURRENT_TD="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" 
   --services "$SERVICE" --query 'services[0].taskDefinition' --output text)"
 [ -n "$CURRENT_TD" ] && [ "$CURRENT_TD" != "None" ] || { echo "service $SERVICE has no task-def" >&2; exit 1; }
 
-NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
-  --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json \
+CURRENT_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
+  --task-definition "$CURRENT_TD" --query 'taskDefinition' --output json)"
+
+# ── task size (cpu/memory) is owned by Terraform, not by the running task ────
+# Terraform owns task_cpu/task_memory (infra/terraform/modules/ecs-api), but the
+# service carries `ignore_changes = [task_definition]`, so a TF apply that
+# resizes the task registers a revision the service never adopts. This renderer
+# rebuilds from the service's CURRENT revision — which is how image, env and any
+# out-of-band container change survive a deploy — so without the override below
+# a Terraform resize could never reach a running task.
+#
+# Terraform and this script register into the SAME family, and every
+# register-task-definition call appends. The family's LATEST ACTIVE revision is
+# therefore either (a) Terraform's, immediately after an apply that changed the
+# size, or (b) this script's own previous revision, which already carries
+# Terraform's size. Taking ONLY cpu/memory from family-latest, and everything
+# else from the service's current revision, propagates a Terraform resize on the
+# very next deploy and is a no-op on every other deploy. The ordering holds
+# because deploy-{dev,staging,prod}.yml run their terraform-* job before the ECS
+# roll.
+#
+# Soft-fail by design: if the family cannot be read, the current size is kept and
+# the deploy proceeds exactly as it did before this override existed.
+FAMILY="$(printf '%s' "$CURRENT_TD_JSON" | jq -r '.family // empty')"
+CURRENT_CPU="$(printf '%s' "$CURRENT_TD_JSON" | jq -r '.cpu // empty')"
+CURRENT_MEMORY="$(printf '%s' "$CURRENT_TD_JSON" | jq -r '.memory // empty')"
+DESIRED_CPU="$CURRENT_CPU"
+DESIRED_MEMORY="$CURRENT_MEMORY"
+
+if [ -n "$FAMILY" ]; then
+  LATEST_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
+    --task-definition "$FAMILY" --query 'taskDefinition' --output json 2>/dev/null || true)"
+  if [ -n "$LATEST_TD_JSON" ]; then
+    LATEST_CPU="$(printf '%s' "$LATEST_TD_JSON" | jq -r '.cpu // empty')"
+    LATEST_MEMORY="$(printf '%s' "$LATEST_TD_JSON" | jq -r '.memory // empty')"
+    if [ -n "$LATEST_CPU" ]; then DESIRED_CPU="$LATEST_CPU"; fi
+    if [ -n "$LATEST_MEMORY" ]; then DESIRED_MEMORY="$LATEST_MEMORY"; fi
+  else
+    echo "⚠ could not read family $FAMILY — keeping the running task size ${CURRENT_CPU}/${CURRENT_MEMORY}"
+  fi
+fi
+
+if [ "$DESIRED_CPU" != "$CURRENT_CPU" ] || [ "$DESIRED_MEMORY" != "$CURRENT_MEMORY" ]; then
+  echo "▶ task size ${CURRENT_CPU} cpu / ${CURRENT_MEMORY} MiB → ${DESIRED_CPU} cpu / ${DESIRED_MEMORY} MiB (from the latest $FAMILY revision — Terraform)"
+else
+  echo "▶ task size ${DESIRED_CPU} cpu / ${DESIRED_MEMORY} MiB (unchanged)"
+fi
+
+NEW_TD_JSON="$(printf '%s' "$CURRENT_TD_JSON" \
   | jq --arg img "$IMAGE" --arg c "$CONTAINER" --arg ver "$VERSION_OVERRIDE" \
        --arg version_env "$VERSION_ENV_NAME" \
+       --arg cpu "$DESIRED_CPU" --arg memory "$DESIRED_MEMORY" \
        --argjson secrets "$SECRETS_JSON" '
       # drop read-only fields register-task-definition rejects
       del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
           .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+      # Adopt the Terraform task size resolved above. Empty means not readable
+      # — keep whatever the running revision declares. NOTE: this jq program is
+      # a single-quoted shell string; an apostrophe here terminates it.
+      | (if $cpu == "" then . else .cpu = $cpu end)
+      | (if $memory == "" then . else .memory = $memory end)
       # Override image + full secrets on the target container. Stamp
       # KORTIX_VERSION as explicit container env so ECS reports the same clean
       # version EKS reports. Always remove KORTIX_COMMIT from the task
@@ -206,6 +259,7 @@ NEW_TD_JSON="$(aws ecs describe-task-definition --region "$REGION" \
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "── dry-run: rendered task-def override for container '$CONTAINER' ──"
+  echo "$NEW_TD_JSON" | jq '{family, cpu, memory}'
   echo "$NEW_TD_JSON" | jq --arg c "$CONTAINER" \
     '.containerDefinitions[] | select(.name == $c) | {image, environment, secretKeys: (.secrets | length)}'
   echo "✅ dry-run only — nothing registered, nothing rolled."

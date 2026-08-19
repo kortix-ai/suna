@@ -1,6 +1,24 @@
 # @kortix/sandbox-agent-server
 
-Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
+Thin sandbox-side daemon that runs inside every Kortix project-session sandbox
+— and, in a second boot mode, inside every project **monitor box**.
+
+**Boot modes** (decided by `KORTIX_WORKLOAD` at startup):
+
+- *(default)* **session** — everything under "Scope" below.
+- **`monitor`** — the box supervises the project's monitor processes instead
+  of opencode (`src/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
+  injected by the API — the daemon never parses `kortix.yaml` itself), spawns
+  one process per enabled monitor (`poll` on an interval / `stream`
+  long-running, restart budget + backoff), captures stdout line-by-line
+  (8 KiB truncation), batches ~200 ms, and POSTs batches to
+  `POST /projects/:id/monitors/ingest` with the box's sandbox token and
+  `KORTIX_MONITOR_BOX_EPOCH`. Lifecycle events (`exited`,
+  `restart_budget_exhausted`, `silent`) are synthesized into the same stream.
+  Opencode never starts; its routes 503 honestly. `GET /kortix/health`
+  reports `workload: "monitor"` — the API's reconciler uses that field to
+  detect (and recycle) a box whose baked agent binary predates monitor mode.
+  Contract: `docs/specs/2026-08-12-monitors.md`.
 
 **Scope:**
 

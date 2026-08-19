@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { SecretDeliveryBlockedReason } from './secrets';
 import {
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
@@ -50,7 +51,7 @@ test('listProjectSecrets throws when the response is unsuccessful', async () => 
 });
 
 test('listProjectSecrets is a silent background read — a 403 never hits the global error sink', async () => {
-  // project.secret.read is editor-tier: plain members legitimately 403 from
+  // project.secret.read is manager-tier: plain members legitimately 403 from
   // member-visible surfaces (model picker, LLM providers). No global toast.
   const onError = mock(() => {});
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
@@ -247,4 +248,81 @@ test('deletePersonalProjectSecret encodes special characters in the secret name'
   nextResponse = { status: 200, body: { ok: true } };
   await deletePersonalProjectSecret('P1', 'FOO/BAR');
   expect(last().url).toContain('/projects/P1/secrets/FOO%2FBAR/personal');
+});
+
+// The server answers "can this secret actually be delivered?" on two separate
+// axes and an SDK consumer needs both: `delivery_status` is the deployment's
+// verdict on the chosen path, `delivery_blocked_reason` is the agent-grant
+// verdict, and `network_boundary_available` is why an `egress` path is dead.
+// Both of the latter two were declared on the wire and absent from this type
+// for long enough that no host could explain an undeliverable secret.
+test('listProjectSecrets surfaces both delivery axes an egress secret depends on', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        {
+          identifier: 'STRIPE_KEY',
+          name: 'STRIPE_KEY',
+          strategy: 'egress',
+          consumer: 'network',
+          delivery_status: 'unavailable',
+          delivery_blocked_reason: 'no_agent_grant',
+          network_boundary_available: false,
+        },
+      ],
+      required: [],
+      optional: [],
+    },
+  };
+
+  const [secret] = (await listProjectSecrets('P1')).items;
+
+  const blockedReason: SecretDeliveryBlockedReason | null | undefined =
+    secret?.delivery_blocked_reason;
+  const boundaryAvailable: boolean | undefined = secret?.network_boundary_available;
+  expect(blockedReason).toBe('no_agent_grant');
+  expect(boundaryAvailable).toBe(false);
+});
+
+test('a deliverable boundary secret reports the boundary present and no grant block', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [
+        {
+          identifier: 'STRIPE_KEY',
+          name: 'STRIPE_KEY',
+          strategy: 'egress',
+          consumer: 'network',
+          delivery_status: 'available',
+          delivery_blocked_reason: null,
+          network_boundary_available: true,
+        },
+      ],
+      required: [],
+      optional: [],
+    },
+  };
+
+  const [secret] = (await listProjectSecrets('P1')).items;
+
+  expect(secret?.delivery_blocked_reason).toBeNull();
+  expect(secret?.network_boundary_available).toBe(true);
+});
+
+test('an older server that omits both fields still parses', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [{ identifier: 'API_KEY', name: 'API_KEY', strategy: 'runtime', consumer: 'sandbox' }],
+      required: [],
+      optional: [],
+    },
+  };
+
+  const [secret] = (await listProjectSecrets('P1')).items;
+
+  expect(secret?.delivery_blocked_reason).toBeUndefined();
+  expect(secret?.network_boundary_available).toBeUndefined();
 });

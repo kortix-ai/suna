@@ -4,6 +4,7 @@ import { Claude } from '@/features/icon/icons/claude';
 import { Github } from '@/features/icon/icons/github';
 import { OpenAI } from '@/features/icon/icons/open-ai';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
 import type { ComponentType, ReactNode } from 'react';
 
@@ -27,7 +28,7 @@ function GrokMark({ className }: { className?: string }) {
       fill="currentColor"
     >
       <title>Grok</title>
-      <path d="M12.4579 15.6036L26.1529 35H20.0656L6.37059 15.6036H12.4579ZM12.4524 26.3764L15.4974 30.6909L12.4551 35H6.36377L12.4524 26.3764ZM33.6365 7.15727V35H28.647V14.2236L33.6365 7.15727ZM33.6365 5L20.0656 24.2205L17.0206 19.9073L27.5451 5H33.6365Z" />
+      <path d="M12.46 15.6L26.15 35H20.07L6.37 15.6H12.46ZM12.45 26.38L15.5 30.69L12.46 35H6.36L12.45 26.38ZM33.64 7.16V35H28.65V14.22L33.64 7.16ZM33.64 5L20.07 24.22L17.02 19.91L27.55 5H33.64Z" />
     </svg>
   );
 }
@@ -40,11 +41,16 @@ const BRAND_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   openclaw: OpenClaw,
   github: Github,
   grok: GrokMark,
+  // Without this entry a Slack cover fell through to the Google favicon
+  // service — a network request to a third party for a mark this repo already
+  // ships as an SVG. Slack keeps its own colours, same as `Claude` (#D97757);
+  // brands with a mandated palette are not recoloured to `currentColor`.
+  slack: Slack,
 };
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="border-border bg-card flex size-14 items-center justify-center overflow-hidden rounded-2xl border shadow-2xs sm:size-16">
+    <span className="border-foreground/10 bg-card flex size-14 items-center justify-center overflow-hidden rounded-2xl border sm:size-16">
       {children}
     </span>
   );

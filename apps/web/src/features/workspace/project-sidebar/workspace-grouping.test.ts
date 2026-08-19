@@ -1,28 +1,41 @@
 import { describe, expect, test } from 'bun:test';
 
-import { groupWorkspacesByAccount, filterWorkspaceGroups } from './workspace-grouping';
+import {
+  filterWorkspaceGroups,
+  groupWorkspacesByAccount,
+  resolveSwitcherAccountId,
+  resolveWorkspaceRowNavigation,
+} from './workspace-grouping';
 
 const account = (accountId: string, name: string) => ({ account_id: accountId, name });
 
-const workspace = (projectId: string, accountId: string, name: string, lastOpenedAt: string | null) =>
-  ({
-    project_id: projectId,
-    account_id: accountId,
-    name,
-    last_opened_at: lastOpenedAt,
-    repo_url: 'https://example.test/repo',
-    default_branch: 'main',
-    manifest_path: 'kortix.yaml',
-    status: 'active' as const,
-    metadata: {},
-    created_at: '2026-01-01T00:00:00.000Z',
-    updated_at: '2026-01-01T00:00:00.000Z',
-  });
+const workspace = (
+  projectId: string,
+  accountId: string,
+  name: string,
+  lastOpenedAt: string | null,
+) => ({
+  project_id: projectId,
+  account_id: accountId,
+  name,
+  last_opened_at: lastOpenedAt,
+  repo_url: 'https://example.test/repo',
+  default_branch: 'main',
+  manifest_path: 'kortix.yaml',
+  status: 'active' as const,
+  metadata: {},
+  created_at: '2026-01-01T00:00:00.000Z',
+  updated_at: '2026-01-01T00:00:00.000Z',
+});
 
 describe('groupWorkspacesByAccount', () => {
   test("puts the active workspace's account first, then the rest alphabetically", () => {
     const groups = groupWorkspacesByAccount({
-      accounts: [account('a-zebra', 'Zebra'), account('a-acme', 'Acme'), account('a-kortix', 'Kortix')],
+      accounts: [
+        account('a-zebra', 'Zebra'),
+        account('a-acme', 'Acme'),
+        account('a-kortix', 'Kortix'),
+      ],
       workspaces: [
         workspace('p1', 'a-zebra', 'zebra-one', null),
         workspace('p2', 'a-acme', 'acme-one', null),
@@ -91,14 +104,108 @@ describe('groupWorkspacesByAccount', () => {
   });
 });
 
+describe('resolveSwitcherAccountId', () => {
+  const accounts = [account('a-first', 'First'), account('a-other', 'Other')];
+  const workspaces = [
+    workspace('p1', 'a-first', 'one', null),
+    workspace('p2', 'a-other', 'two', null),
+  ];
+
+  test("prefers the open workspace's account over the stored selection", () => {
+    expect(
+      resolveSwitcherAccountId({
+        accounts,
+        workspaces,
+        activeWorkspaceId: 'p2',
+        selectedAccountId: 'a-first',
+      }),
+    ).toBe('a-other');
+  });
+
+  test('falls back to the stored selection when no workspace is open', () => {
+    expect(
+      resolveSwitcherAccountId({
+        accounts,
+        workspaces,
+        activeWorkspaceId: null,
+        selectedAccountId: 'a-other',
+      }),
+    ).toBe('a-other');
+  });
+
+  test('falls back to the first account when nothing is selected yet', () => {
+    expect(
+      resolveSwitcherAccountId({
+        accounts,
+        workspaces,
+        activeWorkspaceId: null,
+        selectedAccountId: null,
+      }),
+    ).toBe('a-first');
+  });
+
+  test('an active id with no matching workspace still resolves, not crashes', () => {
+    expect(
+      resolveSwitcherAccountId({
+        accounts,
+        workspaces,
+        activeWorkspaceId: 'p-unknown',
+        selectedAccountId: 'a-other',
+      }),
+    ).toBe('a-other');
+  });
+
+  test('null while the accounts are genuinely unknown — never `/accounts/null`', () => {
+    expect(
+      resolveSwitcherAccountId({
+        accounts: [],
+        workspaces: [],
+        activeWorkspaceId: null,
+        selectedAccountId: null,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('resolveWorkspaceRowNavigation', () => {
+  const active = workspace('p-active', 'a1', 'active', null);
+  const other = workspace('p-other', 'a2', 'other', null);
+
+  test('the already-active row opens ITS account settings, not a switch', () => {
+    expect(resolveWorkspaceRowNavigation(active, 'p-active')).toEqual({
+      kind: 'account-settings',
+      href: '/accounts/a1',
+    });
+  });
+
+  test('every other row still switches to that workspace', () => {
+    expect(resolveWorkspaceRowNavigation(other, 'p-active')).toEqual({
+      kind: 'switch',
+      href: '/projects/p-other',
+    });
+  });
+
+  test('with no active workspace every row switches', () => {
+    expect(resolveWorkspaceRowNavigation(active, null).kind).toBe('switch');
+    expect(resolveWorkspaceRowNavigation(active, undefined).kind).toBe('switch');
+  });
+});
+
 describe('filterWorkspaceGroups', () => {
   const groups = [
     {
       accountId: 'a1',
       accountName: 'Kortix',
-      workspaces: [workspace('p1', 'a1', 'suna-web', null), workspace('p2', 'a1', 'kortix-api', null)],
+      workspaces: [
+        workspace('p1', 'a1', 'suna-web', null),
+        workspace('p2', 'a1', 'kortix-api', null),
+      ],
     },
-    { accountId: 'a2', accountName: 'Acme', workspaces: [workspace('p3', 'a2', 'acme-agent', null)] },
+    {
+      accountId: 'a2',
+      accountName: 'Acme',
+      workspaces: [workspace('p3', 'a2', 'acme-agent', null)],
+    },
   ];
 
   test('an empty query returns every group untouched', () => {

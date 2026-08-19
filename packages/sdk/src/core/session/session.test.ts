@@ -79,6 +79,54 @@ describe('session/health', () => {
 
     setCurrentRuntime(null);
   });
+
+  // Hop attribution: the sandbox proxy names which of its four hops produced a
+  // failure. Without it every 502 read the same and the web app painted "Waking
+  // this session up…" over a healthy box whose dev server merely wasn't up.
+  it('getSessionHealth reads the hop + upstream status from the proxy headers', async () => {
+    respond = () =>
+      new Response(JSON.stringify({ error: 'sandbox port unreachable' }), {
+        status: 502,
+        headers: {
+          'X-Kortix-Proxy-Hop': 'upstream_port',
+          'X-Kortix-Upstream-Status': '502',
+        },
+      });
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBe('upstream_port');
+    expect(r.upstreamStatus).toBe(502);
+  });
+
+  it('getSessionHealth falls back to the JSON body when the header is not CORS-exposed', async () => {
+    respond = () =>
+      new Response(
+        JSON.stringify({ error: 'sandbox not ready', hop: 'control_plane', upstream_status: null }),
+        { status: 503 },
+      );
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBe('control_plane');
+    expect(r.upstreamStatus).toBeNull();
+  });
+
+  it('getSessionHealth reports no hop when nothing attributed the failure', async () => {
+    respond = () => new Response('gateway blew up', { status: 502 });
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBeNull();
+    expect(r.upstreamStatus).toBeNull();
+  });
+
+  it('getSessionHealth rejects a hop value outside the agreed set', async () => {
+    respond = () =>
+      new Response('{}', { status: 502, headers: { 'X-Kortix-Proxy-Hop': 'something_else' } });
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBeNull();
+  });
+
+  it('getSessionHealth short-circuits with a null hop, not undefined', async () => {
+    const r = await getSessionHealth('');
+    expect(r.hop).toBeNull();
+    expect(r.upstreamStatus).toBeNull();
+  });
 });
 
 describe('session/url', () => {

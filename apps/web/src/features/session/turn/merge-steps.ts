@@ -177,7 +177,13 @@ function stripMarkdown(text: string): string {
  * prefix would read as a stutter ("Thinking about thinking about…").
  */
 export function flattenThought(texts: ReadonlyArray<string>): string {
-  const joined = texts.map(stripMarkdown).filter(Boolean).join(' ').trim();
+  const joined = texts
+    .flatMap((text) => {
+      const stripped = stripMarkdown(text);
+      return stripped ? [stripped] : [];
+    })
+    .join(' ')
+    .trim();
 
   if (!joined) return 'Thinking';
   if (ALREADY_THINKING.test(joined)) return joined;

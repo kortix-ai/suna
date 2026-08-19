@@ -19,17 +19,19 @@
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
-  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
+  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
   listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
+  parseDuration, selectForPrune, type PruneCandidate,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
   type DbMode, type KillResult,
 } from './lib';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, readFileSync, statSync } from 'node:fs';
+import { isAbsolute, join as joinPath } from 'node:path';
 import * as clack from '@clack/prompts';
 import pc from 'picocolors';
 
@@ -164,6 +166,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
   ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
+  ${pc.cyan('nuke --all')} ${pc.dim('[--older-than 3d] [--idle 2d] [--include-dirty] [--dry-run] [--yes]')}   ${pc.dim('bulk: skips running stacks + dirty trees')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
   ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
@@ -390,14 +393,13 @@ async function cmdCreate(a: Args) {
   const existing = sh(['git', '-C', root, 'worktree', 'list', '--porcelain']).stdout;
   if (existing.includes(`worktree ${wtPath}`)) {
     sub('already exists — reusing');
-  } else if (branchExists(root, branch)) {
-    const r = sh(['git', '-C', root, 'worktree', 'add', wtPath, branch]);
-    if (!r.ok) await failCreate(`git worktree add failed: ${r.stderr}`);
-    sub(`checked out existing branch "${branch}"`);
   } else {
-    const r = sh(['git', '-C', root, 'worktree', 'add', '-b', branch, wtPath, from]);
-    if (!r.ok) await failCreate(`git worktree add -b failed: ${r.stderr}`);
-    sub(`created branch "${branch}" from ${from}`);
+    const { args, mode } = worktreeAddArgs(root, wtPath, branch, from);
+    const r = sh(args);
+    if (!r.ok) await failCreate(`${args.slice(0, 5).join(' ')} failed: ${r.stderr}`);
+    if (mode === 'local') sub(`checked out existing branch "${branch}"`);
+    else if (mode === 'remote') sub(`checked out "${branch}" tracking origin/${branch}`);
+    else sub(`created branch "${branch}" from ${from}`);
   }
 
   // Use the shared global pnpm store (default). Each worktree still has its own
@@ -654,7 +656,75 @@ async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string 
  * individually in a TTY (answer no to skip one, Ctrl+C/Esc to stop the rest).
  * `--yes` or a non-TTY stdin keeps the old non-interactive behavior for scripts.
  */
+/**
+ * Snapshot one registry slot for the bulk selector. Impure by design: probes
+ * live ports, `git status`, HEAD commit time and the worktree index mtime.
+ */
+function pruneCandidate(name: string, e: SlotEntry, live: Set<number> | null): PruneCandidate {
+  const isLive = live ? live.has(e.ports.web) || live.has(e.ports.api) : e.status === 'running';
+  const missing = !existsSync(e.path);
+  let dirty = false;
+  let lastActivity: number | null = null;
+  if (!missing) {
+    dirty = sh(['git', '-C', e.path, 'status', '--porcelain', '--untracked-files=no']).stdout.trim().length > 0;
+    const head = Number(sh(['git', '-C', e.path, 'log', '-1', '--format=%ct']).stdout.trim());
+    if (Number.isFinite(head) && head > 0) lastActivity = head * 1000;
+    try {
+      // `<path>/.git` is a file: "gitdir: <repo>/.git/worktrees/<id>" — its index mtime is the last checkout/stage.
+      const gitFile = joinPath(e.path, '.git');
+      const gitdir = readFileSync(gitFile, 'utf8').replace(/^gitdir:\s*/, '').trim();
+      const idx = joinPath(isAbsolute(gitdir) ? gitdir : joinPath(e.path, gitdir), 'index');
+      const m = statSync(idx).mtimeMs;
+      lastActivity = lastActivity === null ? m : Math.max(lastActivity, m);
+    } catch {}
+  }
+  return { name, live: isLive, dirty, missing, createdAt: e.createdAt, lastActivity };
+}
+
+/**
+ * `nuke --all [--older-than <dur>] [--idle <dur>] [--include-dirty] [--dry-run]`
+ * — bulk teardown. Running stacks are never touched; checkouts with
+ * uncommitted tracked changes are kept unless --include-dirty; slots whose
+ * directory is already gone are always freed. Local branches survive as usual
+ * (`git branch -d` only, unless --force).
+ */
+async function cmdNukeAll(a: Args) {
+  const reg = loadRegistry();
+  const names = Object.keys(reg.slots);
+  if (!names.length) { ok('no worktrees registered — nothing to nuke'); return; }
+  const rule = {
+    olderThanMs: typeof a.flags['older-than'] === 'string' ? parseDuration(a.flags['older-than']) : undefined,
+    idleMs: typeof a.flags.idle === 'string' ? parseDuration(a.flags.idle) : undefined,
+    includeDirty: !!a.flags['include-dirty'],
+  };
+  step(`Scanning ${plural(names.length, 'worktree', 'worktrees')}`);
+  const live = listenPorts();
+  const candidates = names.map((n) => pruneCandidate(n, reg.slots[n], live));
+  const verdicts = selectForPrune(candidates, rule, Date.now());
+  const keep = verdicts.filter((v) => !v.nuke);
+  const nuke = verdicts.filter((v) => v.nuke);
+  for (const v of keep) sub(`${pc.dim('keep')} ${pc.bold(v.name)} ${pc.dim('— ' + v.why)}`);
+  for (const v of nuke) sub(`${pc.red('nuke')} ${pc.bold(v.name)} ${pc.dim('— ' + v.why)}`);
+  console.log();
+  if (!nuke.length) { ok(`nothing selected (${keep.length} kept)`); return; }
+  if (a.flags['dry-run']) { ok(`dry run: would nuke ${nuke.length}, keep ${keep.length}`); return; }
+  const confirm = !!process.stdin.isTTY && !!process.stdout.isTTY && !a.flags.yes;
+  if (confirm) {
+    const v = await clack.confirm({ message: `Nuke ${pc.bold(String(nuke.length))} worktrees and keep ${keep.length}?`, initialValue: false });
+    if (clack.isCancel(v) || !v) { clack.cancel('Cancelled — nothing was touched.'); return; }
+  }
+  let done = 0;
+  const failed: string[] = [];
+  for (const v of nuke) {
+    try { await nukeOne(v.name, reg.slots[v.name], a.flags); done++; }
+    catch (err: any) { failed.push(v.name); warn(`"${v.name}" failed: ${err?.message ?? err}`); }
+  }
+  ok(`nuked ${done}/${nuke.length} · kept ${keep.length}${failed.length ? ` · failed: ${failed.join(', ')}` : ''}`);
+  if (failed.length) process.exit(1);
+}
+
 async function cmdNuke(a: Args) {
+  if (a.flags.all) return cmdNukeAll(a);
   const names = (a.names.length ? a.names : [need(a.name)]).map(sanitizeName);
   const reg = loadRegistry();
   const targets: { name: string; e: SlotEntry }[] = [];
@@ -837,7 +907,7 @@ try {
     const r = await promptCreate();
     if (!r) process.exit(0);
     a = r;
-  } else if (tty && (a.cmd === 'nuke' || a.cmd === 'rm') && !a.names.length) {
+  } else if (tty && (a.cmd === 'nuke' || a.cmd === 'rm') && !a.names.length && !a.flags.all) {
     clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
     const names = await pickWorktrees(a.cmd);
     if (!names || !names.length) process.exit(0);

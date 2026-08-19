@@ -5,8 +5,12 @@ import { accountMembers, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
+import { actorOf } from '../../iam/actor';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { accountRolesForUser } from '../../iam/read-models';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
+import { sortAccountsForListing } from "./account-order";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
@@ -75,25 +79,37 @@ export function registerAccountRoutes(): void {
 
       await autoClaimPendingInvites(userId, userEmail);
 
-      const memberships = await db
-        .select({
-          accountId: accountMembers.accountId,
-          accountRole: accountMembers.accountRole,
-          name: accounts.name,
-          createdAt: accounts.createdAt,
-          updatedAt: accounts.updatedAt,
-        })
-        .from(accountMembers)
-        .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-        .where(eq(accountMembers.userId, userId));
+      // `account_members` says WHICH accounts; `role_assignments` says at what
+      // role. Reading the role off the join labelled the switcher with a value
+      // the engine no longer decides on.
+      const [membershipRows, rolesByAccount] = await Promise.all([
+        db
+          .select({
+            accountId: accountMembers.accountId,
+            name: accounts.name,
+            createdAt: accounts.createdAt,
+            updatedAt: accounts.updatedAt,
+          })
+          .from(accountMembers)
+          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+          .where(eq(accountMembers.userId, userId)),
+        accountRolesForUser(userId),
+      ]);
+      const memberships = membershipRows.map((m) => ({
+        ...m,
+        accountRole: rolesByAccount.get(m.accountId) ?? 'member',
+      }));
 
       if (memberships.length > 0) {
         const displayNames = await resolveAccountDisplayNames(memberships, {
           userId,
           email: userEmail,
         });
+        // Deterministic order (owned first, oldest first): the web landing
+        // door falls back to the FIRST account of this list, so an unordered
+        // result made the default landing account nondeterministic.
         return c.json(
-          memberships.map((m) => ({
+          sortAccountsForListing(memberships).map((m) => ({
             account_id: m.accountId,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),
@@ -186,6 +202,21 @@ export function registerAccountRoutes(): void {
         accountRole: 'owner',
         isSuperAdmin: true,
       });
+      // …and the canonical owner assignment. `SYSTEM_ACTOR`: nobody holds a
+      // permission in an account that did not exist a statement ago, so there
+      // is no writer to authorize — creating it is the authorization.
+      // Best-effort: the mirror trigger already wrote the same row inside the
+      // INSERT above, so a failure costs the audit event, not the account.
+      try {
+        await assignRole(SYSTEM_ACTOR, account.accountId, {
+          principal: { type: 'user', id: userId },
+          roleKey: 'owner',
+          scope: { type: 'account' },
+          source: 'system',
+        });
+      } catch (err) {
+        console.warn('[accounts] canonical owner assignment failed', err);
+      }
 
       return c.json(
         {
@@ -307,7 +338,7 @@ export function registerAccountRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
       const body = await readBody(c);
       const name = normalizeString(body.name);

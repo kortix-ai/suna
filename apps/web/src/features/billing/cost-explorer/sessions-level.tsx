@@ -238,15 +238,17 @@ function ownerTypeLabel(session: SessionCostSummary): string | null {
   return null;
 }
 
+const activityFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatActivity(value: string | null): string {
   if (!value) return 'No billed activity';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return activityFormat.format(new Date(value));
 }
 
 function sumBy(

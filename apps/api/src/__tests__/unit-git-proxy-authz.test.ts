@@ -21,6 +21,7 @@ let projectRow: Record<string, unknown> | null = null;
 let patResult: Record<string, unknown> = {};
 let apiKeyResult: Record<string, unknown> = {};
 let sandboxRow: Record<string, unknown> | null = null;
+let monitorBoxRow: Record<string, unknown> | null = null;
 let authorizeAllowed = false;
 let authorizeCalls: Array<{
   userId: string;
@@ -34,10 +35,13 @@ mock.module('../shared/db', () => ({
     select: (fields?: Record<string, unknown>) => {
       const rows = fields?.sessionMetadata
         ? () => (sandboxRow ? [sandboxRow] : [])
-        : () => (projectRow ? [projectRow] : []);
+        : fields?.boxEpoch
+          ? () => (monitorBoxRow ? [monitorBoxRow] : [])
+          : () => (projectRow ? [projectRow] : []);
       return {
         from: () => ({
           innerJoin: () => ({ where: () => ({ limit: async () => rows() }) }),
+          // Monitor-box lookup (loadMonitorBoxForToken) has no join.
           where: () => ({ limit: async () => rows() }),
         }),
       };
@@ -50,7 +54,7 @@ mock.module('../shared/db', () => ({
 const realAccountTokens = await import('../repositories/account-tokens');
 const realApiKeys = await import('../repositories/api-keys');
 const realIamActions = await import('../iam/actions');
-const realIamDispatcher = await import('../iam/dispatcher');
+const realIamAuthorize = await import('../iam/authorize');
 
 mock.module('../repositories/account-tokens', () => ({
   ...realAccountTokens,
@@ -61,17 +65,22 @@ mock.module('../repositories/api-keys', () => ({
   validateSecretKey: async () => apiKeyResult,
 }));
 mock.module('../iam/actions', () => ({ ...realIamActions }));
-mock.module('../iam/dispatcher', () => ({
-  ...realIamDispatcher,
+mock.module('../iam/authorize', () => ({
+  ...realIamAuthorize,
+  // The acting token is now part of the Actor's credential, not a trailing
+  // argument — this assertion is the point of the test, so read it back out of
+  // the credential the git proxy built.
   authorize: async (
-    userId: string,
-    accountId: string,
+    actor: { userId: string; accountId: string; credential: { tokenId?: string } },
     action: string,
-    _t: unknown,
-    actingTokenId?: string,
   ) => {
-    authorizeCalls.push({ userId, accountId, action, actingTokenId });
-    return { allowed: authorizeAllowed };
+    authorizeCalls.push({
+      userId: actor.userId,
+      accountId: actor.accountId,
+      action,
+      actingTokenId: actor.credential.tokenId,
+    });
+    return { allowed: authorizeAllowed, reason: 'role' };
   },
 }));
 
@@ -256,5 +265,34 @@ describe('authorizeGitProxy — sandbox token', () => {
     const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
 
     expect(res.ok).toBe(true);
+  });
+
+  // A monitor box has NO session_sandboxes row by design — its token scopes
+  // against project_monitor_boxes (docs/specs/2026-08-12-monitors.md). Caught
+  // live on dev 2026-08-12: the box could not clone and no monitor ever ran.
+  test('a live monitor box clones through the proxy without a session row', async () => {
+    sandboxRow = null;
+    monitorBoxRow = {
+      boxId: 'sandbox-1',
+      projectId: PROJECT_ID,
+      boxEpoch: 'epoch-1',
+    };
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+
+    expect(res.ok).toBe(true);
+  });
+
+  test('a sandbox token with neither a session nor a monitor box stays denied', async () => {
+    sandboxRow = null;
+    monitorBoxRow = null;
+
+    const res = await authorizeGitProxy('kortix_abc', PROJECT_ID, 'read');
+
+    expect(res).toMatchObject({
+      ok: false,
+      status: 403,
+      message: 'sandbox token is not scoped to this project',
+    });
   });
 });

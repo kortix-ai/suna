@@ -208,7 +208,6 @@ describe('step shell primitive', () => {
 
 describe('step action copy', () => {
   test('names survey and optional skips explicitly', () => {
-    expect(step('use-case-step.tsx')).toContain('skipLabel="Skip survey"');
     expect(step('company-step.tsx')).toContain('skipLabel="Skip survey"');
     expect(step('tools-step.tsx')).toContain('skipLabel="Skip for now"');
   });

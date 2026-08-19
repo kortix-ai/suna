@@ -687,8 +687,10 @@ Ordered by distance from the specification:
   state and session output looks like (R-7.1 – R-7.3).
 - Whether a continuation budget is per-goal, per-trigger, or per-project, and
   where it is declared (R-7.12).
-- Whether per-turn credential minting should replace the session-bound model,
-  which would permit safe in-session agent switching (R-6.9 – R-6.11).
+- ~~Whether per-turn credential minting should replace the session-bound model,
+  which would permit safe in-session agent switching (R-6.9 – R-6.11).~~
+  Resolved: the proxy re-mints the session token's `agent_grant` before every
+  prompt, and in-session agent switching is allowed.
 - Whether approval scope is per-call, per-session, or per-connector, and how an
   approval is revoked before it expires (R-8.14).
 - How R-8.1 parity is mechanically enforced rather than asserted.

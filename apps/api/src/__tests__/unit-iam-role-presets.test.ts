@@ -12,7 +12,10 @@ describe('built-in role presets', () => {
   test('exposes the built-ins with "user" as the project floor (no viewer)', () => {
     const keys = BUILTIN_PRESETS.map((p) => p.key).sort();
     // `viewer` was retired — folded into `user`, the read+run floor role.
-    expect(keys).toEqual(['admin', 'editor', 'manager', 'member', 'owner', 'user']);
+    // `editor` was REMOVED outright (2026-08-18) — it folded into `manager`.
+    expect(keys).toEqual(['admin', 'manager', 'member', 'owner', 'user']);
+    expect(keys).not.toContain('editor');
+    expect(BUILTIN_BY_ID.has('builtin:editor')).toBe(false);
   });
 
   test('every preset action is a real action (no drift from actions.ts)', () => {
@@ -26,13 +29,13 @@ describe('built-in role presets', () => {
     expect(BUILTIN_BY_ID.has('builtin:nope')).toBe(false);
   });
 
-  test('only manager-tier project presets can bind and manage connections', () => {
+  test('only manager can bind and manage connections — the floor role cannot', () => {
     const manager = new Set(BUILTIN_BY_ID.get('builtin:manager')?.actions ?? []);
-    const editor = new Set(BUILTIN_BY_ID.get('builtin:editor')?.actions ?? []);
+    const floor = new Set(BUILTIN_BY_ID.get('builtin:user')?.actions ?? []);
     expect(manager.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(true);
     expect(manager.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(true);
-    expect(editor.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(false);
-    expect(editor.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(false);
+    expect(floor.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(false);
+    expect(floor.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)).toBe(false);
   });
 
   test('User tier = read + run: has session start/stop + trigger.fire, NOT write/config', () => {
@@ -41,9 +44,17 @@ describe('built-in role presets', () => {
     expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
     expect(set.has(PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
     expect(set.has(PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
-    // read leaves yes…
+    // "Run" includes agents, so project.agent.read IS in the floor — a grant
+    // cannot add a permission the role withholds, so without this leaf the
+    // per-agent grants meant nothing for a member. WHICH agents they get is
+    // decided by the deny-by-default grant fold, not by the role.
     expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_READ)).toBe(true);
-    // …but NO write/config/gitops/members/deploy
+    // Connectors/Skills/Customize reads stay manager-tier — those folds are
+    // still unscoped-is-open, so the leaf alone would mean blanket access.
+    expect(set.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_READ)).toBe(false);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_SKILL_READ)).toBe(false);
+    expect(set.has(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ)).toBe(false);
+    // …and NO write/config/gitops/members/deploy
     expect(set.has(PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_AGENT_WRITE)).toBe(false);
     expect(set.has(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE)).toBe(false);

@@ -31,10 +31,30 @@ mock.module('../billing/services/entitlements', () => ({
   accountHasEntitlement: async () => true,
 }));
 
+// The groups routes now build an `Actor`, and `iam/actor` registers its memos
+// here at module load — so this stub must declare the registration hooks too or
+// the import fails with `Export named 'registerPrincipalScopedMemo' not found`.
 mock.module('../iam/cache-invalidation', () => ({
   invalidateIamCacheForGroup: async () => {},
   invalidateIamCacheForUser: () => {},
   invalidateIamCacheForUsers: () => {},
+  invalidateIamCacheForAccount: async () => {},
+  invalidateIamCacheForRole: async () => {},
+  invalidateIamCacheForPolicyPrincipal: async () => {},
+  invalidateIamCacheForProjectResources: () => {},
+  registerPrincipalScopedMemo: () => {},
+  registerProjectScopedMemo: () => {},
+}));
+
+// The routes resolve the request's principal before asking the engine; this
+// suite mocks the engine to allow-all, so the actor only has to exist.
+mock.module('../iam/actor', () => ({
+  actorOf: async (c: { get(k: string): unknown }, accountId: string) => ({
+    userId: (c.get('userId') as string | undefined) ?? 'user-1',
+    accountId,
+    credential: { kind: 'jwt' as const },
+    ctx: {},
+  }),
 }));
 
 const base = {

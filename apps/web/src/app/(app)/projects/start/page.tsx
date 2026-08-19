@@ -1,16 +1,18 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
+import { SignOutIcon } from '@phosphor-icons/react';
 import {
   clearAutoProjectSuppression,
-  ensureFirstProject,
   isAutoProjectSuppressed,
   isProvisionInFlightError,
   navigationMayCreateProject,
 } from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
+import { resolveLandingDestination } from '@/lib/onboarding/resolve-landing-destination';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
@@ -56,8 +58,10 @@ export default function ProjectStartPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const selectedAccountId = useCurrentAccountStore((state) => state.selectedAccountId);
+  const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
   const attempts = useRef(0);
   const resolving = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [failed, setFailed] = useState(false);
   const [terminal, setTerminal] = useState<ReturnType<typeof classifyLandingTerminal> | null>(
     null,
@@ -90,37 +94,43 @@ export default function ProjectStartPage() {
   const resolve = useCallback(async () => {
     if (resolving.current) return;
     const accounts = accountsQuery.data;
-    if (!accounts) return;
-
-    const account =
-      accounts.find((entry) => entry.account_id === selectedAccountId) ?? accounts[0] ?? null;
-    if (!account) return;
+    if (!accounts || accounts.length === 0) return;
 
     resolving.current = true;
     attempts.current += 1;
 
-    // Only owners/admins may create a project (ACCOUNT_ACTIONS.PROJECT_CREATE).
-    const canCreate = account.account_role === 'owner' || account.account_role === 'admin';
     const suppressed = isAutoProjectSuppressed();
 
     try {
-      const project = await ensureFirstProject(account.account_id, {
+      // Every membership is a candidate, not just the remembered/first one: a
+      // stale persisted selection (a team where the user is a plain member
+      // with zero grants) used to end here as a false "No workspace yet"
+      // while the personal account, in the same list, held their projects.
+      const resolution = await resolveLandingDestination({
+        accounts,
+        selectedAccountId,
         preferredProjectId: readLastProjectId(user?.id),
-        allowCreate: canCreate && !suppressed && navigationMayCreateProject(),
+        suppressed,
+        mayCreate: navigationMayCreateProject(),
       });
 
-      if (project) {
+      if (resolution.kind === 'project') {
+        const { project } = resolution;
+        // Heal the persisted selection: every account-scoped surface after
+        // this navigation must agree with where the user actually landed.
+        setSelectedAccountId(resolution.accountId);
         writeLastProjectId(user?.id, project.project_id);
         router.replace(withCurrentQuery(`/projects/${project.project_id}`));
         return;
       }
 
-      // No project exists AND none may be created here: a member without
-      // PROJECT_CREATE, the account the user just emptied by deleting their
-      // last project, or the rare cross-site-navigation edge. `/projects` is
-      // a redirect back to THIS route (Task 21), so bouncing there would
-      // loop forever — render the terminal state inline instead.
-      setTerminal(classifyLandingTerminal({ canCreate, suppressed }));
+      // No project exists in ANY account and the primary candidate account
+      // may not create one: a member workspace context (flow 08's revoked
+      // member), the account the user just emptied by deleting their last
+      // project, or the rare cross-site-navigation edge. `/projects` is a
+      // redirect back to THIS route (Task 21), so bouncing there would loop
+      // forever — render the terminal state inline instead.
+      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed }));
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not
@@ -139,7 +149,7 @@ export default function ProjectStartPage() {
       if (attempts.current < MAX_RESOLVE_ATTEMPTS && delay !== undefined) {
         // A transient backend hiccup must not demote the user to the projects
         // list — retry in place, behind the same paint.
-        setTimeout(() => {
+        retryTimer.current = setTimeout(() => {
           resolving.current = false;
           void resolve();
         }, delay);
@@ -149,32 +159,86 @@ export default function ProjectStartPage() {
     } finally {
       if (attempts.current >= MAX_RESOLVE_ATTEMPTS) resolving.current = false;
     }
-  }, [accountsQuery.data, selectedAccountId, router, user?.id]);
+  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId, router, user?.id]);
 
   useEffect(() => {
     if (attempts.current > 0) return;
     void resolve();
   }, [resolve]);
 
+  useEffect(() => {
+    return () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    };
+  }, []);
+
   if (terminal) {
-    return <ProjectStartEmpty reason={terminal} />;
+    return (
+      <div className="relative">
+        <StartSignOutButton />
+        <ProjectStartEmpty reason={terminal} />
+      </div>
+    );
   }
 
   if (failed || accountsQuery.isError) {
     return (
-      <ProjectStartError
-        onRetry={() => {
-          attempts.current = 0;
-          resolving.current = false;
-          setFailed(false);
-          if (accountsQuery.isError) void accountsQuery.refetch();
-          else void resolve();
-        }}
-      />
+      <div className="relative">
+        <StartSignOutButton />
+        <ProjectStartError
+          onRetry={() => {
+            attempts.current = 0;
+            resolving.current = false;
+            setFailed(false);
+            if (accountsQuery.isError) void accountsQuery.refetch();
+            else void resolve();
+          }}
+        />
+      </div>
     );
   }
 
   return <ProjectStartSkeleton />;
+}
+
+/**
+ * Both stuck states on this route (terminal and error) used to be dead ends:
+ * no app chrome renders here, so a user parked on "No workspace yet" had no
+ * way to sign out and try another account. `signOut` (auth-provider) already
+ * clears every piece of persisted client state — including the stale account
+ * selection that used to cause the false terminal.
+ *
+ * Deliberately OUTSIDE `ProjectStartEmpty`: the no-permission case pins "no
+ * <a>/<button> in the empty surface" (landing-terminal.test.tsx), and that
+ * contract is about create controls that would 403 — not about this exit.
+ */
+function StartSignOutButton() {
+  const router = useRouter();
+  const { signOut } = useAuth();
+  const [pending, setPending] = useState(false);
+
+  return (
+    <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 rounded-full"
+        disabled={pending}
+        onClick={async () => {
+          setPending(true);
+          await signOut();
+          router.replace('/auth');
+        }}
+      >
+        {pending ? (
+          <Loading className="size-4 shrink-0" />
+        ) : (
+          <SignOutIcon className="size-4 shrink-0" />
+        )}
+        Log out
+      </Button>
+    </div>
+  );
 }
 
 /**
@@ -196,7 +260,7 @@ function ProjectStartError({ onRetry }: { onRetry: () => void }) {
       </div>
       <div className="flex items-center gap-2">
         <Button onClick={onRetry}>Try again</Button>
-        <Button variant="ghost" asChild>
+        <Button variant="secondary" asChild>
           <Link href="/new">Create a workspace</Link>
         </Button>
       </div>

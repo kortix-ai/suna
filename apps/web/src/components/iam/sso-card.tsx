@@ -8,19 +8,17 @@
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
-import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   ArrowRightIcon as ArrowRight,
   CaretDownIcon as ChevronDown,
   CheckIcon as Check,
-  CopyIcon as Copy,
   PlusIcon as Plus,
   TrashIcon as Trash2,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,15 +36,16 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import {
+  CopyRow,
+  EMPTY_PRINCIPAL_SELECTION,
+  PrincipalPicker,
+  type PrincipalSelection,
+  singlePrincipal,
+} from '@/features/workspace/shared/access';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   type SsoGroupMapping,
@@ -55,20 +54,29 @@ import {
   deleteSsoGroupMapping,
   deleteSsoProvider,
   getSsoProvider,
-  importSsoProviderFromMetadata,
-  listGroups,
   listSsoGroupMappings,
   upsertSsoProvider,
 } from '@/lib/iam-client';
 
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 
-async function copyValue(value: string, successMsg = 'Copied to clipboard') {
-  if (await copyToClipboard(value)) {
-    successToast(successMsg);
-  } else {
-    errorToast('Copy failed — select and copy manually');
+/**
+ * SP URLs come from the BROWSER's runtime env (`window.__KORTIX_RUNTIME_CONFIG`),
+ * which can differ from the server's absolute `SUPABASE_URL` — so the server
+ * snapshot is `null` and the client snapshot is computed once and cached.
+ * `useSyncExternalStore` renders the client value in the hydration pass itself,
+ * so the block appears in the first paint instead of popping in after an effect.
+ */
+const subscribeToNothing = () => () => {};
+let clientSpUrlsSnapshot: SamlSpUrls | null | undefined;
+function getClientSpUrlsSnapshot(): SamlSpUrls | null {
+  if (clientSpUrlsSnapshot === undefined) {
+    clientSpUrlsSnapshot = buildSamlSpUrls(getEnv().SUPABASE_URL);
   }
+  return clientSpUrlsSnapshot;
+}
+function useSpUrls(): SamlSpUrls | null {
+  return useSyncExternalStore(subscribeToNothing, getClientSpUrlsSnapshot, () => null);
 }
 
 /**
@@ -100,38 +108,12 @@ function SpDetails({
         </>
       )}
       <div className={heading ? 'mt-3 space-y-3' : 'space-y-3'}>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Identifier (Entity ID)</Label>
-          <div className="flex items-center gap-2">
-            <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-              {urls.entityId}
-            </code>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Copy Identifier (Entity ID)"
-              onClick={() => copyValue(urls.entityId, 'Entity ID copied')}
-            >
-              <Copy className="size-3.5 shrink-0" />
-            </Button>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Reply URL (ACS)</Label>
-          <div className="flex items-center gap-2">
-            <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-              {urls.acsUrl}
-            </code>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Copy Reply URL (ACS)"
-              onClick={() => copyValue(urls.acsUrl, 'Reply URL copied')}
-            >
-              <Copy className="size-3.5 shrink-0" />
-            </Button>
-          </div>
-        </div>
+        <CopyRow
+          label="Identifier (Entity ID)"
+          value={urls.entityId}
+          successMessage="Entity ID copied"
+        />
+        <CopyRow label="Reply URL (ACS)" value={urls.acsUrl} successMessage="Reply URL copied" />
       </div>
     </div>
   );
@@ -185,7 +167,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
   const provider = providerQuery.data;
   const mappings = mappingsQuery.data ?? [];
-  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  const spUrls = useSpUrls();
 
   // Off by default — orgs opt in once their SAML connection is proven. Re-sends
   // every other stored field unchanged (the PUT route is a full upsert), only
@@ -258,7 +240,23 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
             <Skeleton className="h-12 w-full rounded-md" />
           </div>
         )}
-        {!provider && !providerQuery.isLoading && (
+        {!provider && !providerQuery.isLoading && providerQuery.isError && (
+          <div className="px-4 py-5">
+            <ErrorState
+              size="sm"
+              title="Couldn't load SSO status"
+              description={
+                providerQuery.error instanceof Error ? providerQuery.error.message : undefined
+              }
+              action={
+                <Button variant="outline" size="sm" onClick={() => providerQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          </div>
+        )}
+        {!provider && !providerQuery.isLoading && !providerQuery.isError && (
           <div className="px-4 py-5">
             <p className="text-foreground text-sm font-medium">Not connected yet</p>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
@@ -469,16 +467,20 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         )}
       </div>
 
-      <EditProviderDialog
-        accountId={accountId}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        existing={provider ?? null}
-        onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
-          queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] });
-        }}
-      />
+      {/* Edit only. A provider is CREATED in the guided wizard
+          (features/sso-setup) — the dialog has no create branch to reach. */}
+      {provider && (
+        <EditProviderDialog
+          accountId={accountId}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          existing={provider}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
+            queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] });
+          }}
+        />
+      )}
 
       <AddMappingDialog
         accountId={accountId}
@@ -522,7 +524,13 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   );
 }
 
-// ─── Edit / create provider dialog ────────────────────────────────────────
+// ─── Edit provider dialog ─────────────────────────────────────────────────
+//
+// EDIT ONLY. Registering a NEW provider means importing IdP metadata, and
+// that lives in the guided wizard (`features/sso-setup/setup-wizard.tsx`
+// → `ImportForm`), which is the only entry point the card offers when no
+// provider exists. The dialog's old create branch was unreachable from the
+// UI and duplicated the wizard's form verbatim — it is gone.
 
 function EditProviderDialog({
   accountId,
@@ -534,7 +542,7 @@ function EditProviderDialog({
   accountId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  existing: SsoProvider | null;
+  existing: SsoProvider;
   onSaved: () => void;
 }) {
   const { user } = useAuth();
@@ -543,86 +551,55 @@ function EditProviderDialog({
   // they can lock themselves out or silently land signed in as someone else
   // via IdP session reuse. Warn before that surprises anyone.
   const adminEmailDomain = user?.email?.split('@')[1]?.trim().toLowerCase() || null;
-  const [name, setName] = useState(existing?.name ?? '');
-  const [domain, setDomain] = useState(existing?.primary_domain ?? '');
-  const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
-  const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
-  // New connections default auto-provision ON (groups appear without
-  // hand-mapping); an existing provider keeps whatever the admin chose.
-  const [autoProvision, setAutoProvision] = useState(
-    existing ? existing.auto_provision_groups : true,
-  );
-  // New providers register by importing the IdP metadata (XML or URL) — the
-  // backend handles the identity-provider registration; no internals surface in
-  // the UI. Edits reuse the stored provider id under the hood.
-  const [metaKind, setMetaKind] = useState<'xml' | 'url'>('xml');
-  const [metaXml, setMetaXml] = useState('');
-  const [metaUrl, setMetaUrl] = useState('');
+  const [name, setName] = useState(existing.name);
+  const [domain, setDomain] = useState(existing.primary_domain);
+  const [claim, setClaim] = useState(existing.group_claim_name);
+  const [autoCreate, setAutoCreate] = useState(existing.auto_create_members);
+  const [autoProvision, setAutoProvision] = useState(existing.auto_provision_groups);
 
   // Hydrate when opening for edit; reset when closing.
   useMemo(() => {
     if (open) {
-      setName(existing?.name ?? '');
-      setDomain(existing?.primary_domain ?? '');
-      setClaim(existing?.group_claim_name ?? 'groups');
-      setAutoCreate(existing?.auto_create_members ?? true);
-      setAutoProvision(existing ? existing.auto_provision_groups : true);
-      setMetaKind('xml');
-      setMetaXml('');
-      setMetaUrl('');
+      setName(existing.name);
+      setDomain(existing.primary_domain);
+      setClaim(existing.group_claim_name);
+      setAutoCreate(existing.auto_create_members);
+      setAutoProvision(existing.auto_provision_groups);
     }
   }, [open, existing]);
 
-  const importing = !existing;
   const mutation = useMutation({
     mutationFn: () =>
-      importing
-        ? importSsoProviderFromMetadata(accountId, {
-            name: name.trim(),
-            primary_domain: domain.trim().toLowerCase(),
-            group_claim_name: claim.trim() || 'groups',
-            auto_create_members: autoCreate,
-            auto_provision_groups: autoProvision,
-            ...(metaKind === 'xml'
-              ? { metadata_xml: metaXml.trim() }
-              : { metadata_url: metaUrl.trim() }),
-          })
-        : upsertSsoProvider(accountId, {
-            // Threaded from the loaded provider — an internal id, never shown
-            // or editable in the UI.
-            supabase_sso_provider_id: existing!.supabase_sso_provider_id,
-            name: name.trim(),
-            primary_domain: domain.trim().toLowerCase(),
-            group_claim_name: claim.trim() || 'groups',
-            auto_create_members: autoCreate,
-            auto_provision_groups: autoProvision,
-          }),
+      upsertSsoProvider(accountId, {
+        // Threaded from the loaded provider — an internal id, never shown
+        // or editable in the UI.
+        supabase_sso_provider_id: existing.supabase_sso_provider_id,
+        name: name.trim(),
+        primary_domain: domain.trim().toLowerCase(),
+        group_claim_name: claim.trim() || 'groups',
+        auto_create_members: autoCreate,
+        auto_provision_groups: autoProvision,
+      }),
     onSuccess: () => {
-      successToast(existing ? 'SSO provider updated' : 'SSO provider configured');
+      successToast('SSO provider updated');
       onSaved();
       onOpenChange(false);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to save provider'),
   });
 
-  const metadataReady =
-    metaKind === 'xml' ? metaXml.trim().length > 40 : /^https?:\/\/.+/i.test(metaUrl.trim());
-  const ready =
-    name.trim().length > 0 &&
-    /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim()) &&
-    (importing ? metadataReady : true);
+  const ready = name.trim().length > 0 && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim());
 
-  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+  const spUrls = useSpUrls();
 
   return (
     <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
-          <ModalTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</ModalTitle>
+          <ModalTitle>Edit SAML provider</ModalTitle>
           <ModalDescription>
-            {existing
-              ? 'Update the display name, sign-in domain, and group-claim settings for your identity provider.'
-              : 'Paste your IdP’s SAML metadata (Entra → “App Federation Metadata XML”) and we register it for you.'}
+            Update the display name, sign-in domain, and group-claim settings for your identity
+            provider.
           </ModalDescription>
         </ModalHeader>
 
@@ -641,58 +618,6 @@ function EditProviderDialog({
               variant="popover"
             />
           </div>
-
-          {importing && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label>IdP SAML metadata</Label>
-                <div className="border-border inline-flex overflow-hidden rounded-md border">
-                  {(
-                    [
-                      ['xml', 'Paste XML'],
-                      ['url', 'From URL'],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setMetaKind(k)}
-                      disabled={mutation.isPending}
-                      className={
-                        metaKind === k
-                          ? 'bg-secondary text-foreground px-2.5 py-1 text-xs font-medium'
-                          : 'text-muted-foreground hover:bg-muted/50 px-2.5 py-1 text-xs'
-                      }
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {metaKind === 'xml' ? (
-                <textarea
-                  value={metaXml}
-                  onChange={(e) => setMetaXml(e.target.value)}
-                  placeholder="<EntityDescriptor …>…</EntityDescriptor>"
-                  disabled={mutation.isPending}
-                  rows={5}
-                  className="border-border bg-popover focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1"
-                />
-              ) : (
-                <Input
-                  value={metaUrl}
-                  onChange={(e) => setMetaUrl(e.target.value)}
-                  placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/…"
-                  className="text-xs"
-                  disabled={mutation.isPending}
-                  variant="popover"
-                />
-              )}
-              <p className="text-muted-foreground text-xs">
-                From Entra: Enterprise App → Single sign-on → SAML → “App Federation Metadata XML”.
-              </p>
-            </div>
-          )}
 
           <div className="space-y-1.5">
             <Label>Primary email domain</Label>
@@ -792,7 +717,7 @@ function EditProviderDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
-            {existing ? 'Save changes' : 'Import & configure'}
+            Save changes
           </Button>
         </ModalFooter>
       </ModalContent>
@@ -814,20 +739,17 @@ function AddMappingDialog({
   onCreated: () => void;
 }) {
   const [claimValue, setClaimValue] = useState('');
-  const [groupId, setGroupId] = useState('');
-
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId),
-    enabled: open,
-    staleTime: 30_000,
-  });
+  // The ONE principal picker. Group-only, single-select — the same control
+  // every other "who is this for?" field in the access surface uses.
+  const [principal, setPrincipal] = useState<PrincipalSelection>(EMPTY_PRINCIPAL_SELECTION);
+  const selected = singlePrincipal(principal);
+  const groupId = selected?.kind === 'group' ? selected.id : '';
 
   // Reset on open so re-opening doesn't leak the previous selection.
   useMemo(() => {
     if (open) {
       setClaimValue('');
-      setGroupId('');
+      setPrincipal(EMPTY_PRINCIPAL_SELECTION);
     }
   }, [open]);
 
@@ -845,7 +767,6 @@ function AddMappingDialog({
     onError: (err: Error) => errorToast(err.message || 'Failed to add mapping'),
   });
 
-  const groups = groupsQuery.data ?? [];
   const ready = claimValue.trim().length > 0 && groupId.length > 0;
 
   return (
@@ -877,28 +798,16 @@ function AddMappingDialog({
 
           <div className="space-y-1.5">
             <Label>IAM group</Label>
-            <Select
-              value={groupId || undefined}
-              onValueChange={setGroupId}
-              disabled={mutation.isPending || groupsQuery.isLoading}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Pick a group..." />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.length === 0 ? (
-                  <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                    No groups in this account yet. Create one first.
-                  </div>
-                ) : (
-                  groups.map((g) => (
-                    <SelectItem key={g.group_id} value={g.group_id}>
-                      {g.name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <PrincipalPicker
+              scope={{ kind: 'account', accountId }}
+              selection="single"
+              kinds={['group']}
+              value={principal}
+              onChange={setPrincipal}
+              disabled={mutation.isPending}
+              autoFocus={false}
+              emptyLabel="No groups in this account yet. Create one first."
+            />
           </div>
         </ModalBody>
 

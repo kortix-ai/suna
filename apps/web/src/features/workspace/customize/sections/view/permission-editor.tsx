@@ -179,8 +179,8 @@ function PermissionRuleRow({
                   setting above.
                 </p>
               ) : null}
-              {Object.entries(map).map(([pattern, action], i) => (
-                <div key={`${i}-${pattern}`} className="flex items-center gap-1.5">
+              {Object.entries(map).map(([pattern, action]) => (
+                <div key={pattern} className="flex items-center gap-1.5">
                   <Input
                     value={pattern}
                     aria-label="Pattern"

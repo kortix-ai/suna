@@ -7,6 +7,7 @@ import {
 } from '../../shared/impersonation';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { db } from '../../shared/db';
+import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
 
 /**
  * Tunnel auth model — two tiers:
@@ -75,13 +76,9 @@ export async function getTunnelReadContext(c: any) {
   const impersonatingThisAccount = isImpersonatingAccount(userId, accountId);
 
   if (userId && userId !== accountId && !impersonatingThisAccount) {
-    const [membership] = await db
-      .select({ accountRole: accountMembers.accountRole })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-      .limit(1);
+    const accountRole = await accountRoleFor(accountId, userId);
 
-    if (membership?.accountRole !== 'owner' && membership?.accountRole !== 'admin') {
+    if (!isAccountManagerRole(accountRole)) {
       // Raw tunnel routes bypass connector grants and tool policies. A regular
       // member can use an assigned Computer Tunnel profile, but receives no implicit
       // access to the organization's full machine fleet.

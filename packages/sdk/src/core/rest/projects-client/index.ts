@@ -27,6 +27,7 @@ export * from './gateway';
 export * from './transcription';
 export * from './referrals';
 export * from './iam';
+export * from './assignments';
 export * from './account-lifecycle';
 export * from './admin-providers';
 export * from './presentations';

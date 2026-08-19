@@ -54,6 +54,17 @@ function planKeyMetadata(planKey: string): { tier_key: string; plan_key: string 
   return { tier_key: planKey, plan_key: planKey };
 }
 
+/**
+ * A deleted account keeps its row (ledger history, audit) but is terminal:
+ * balances zeroed, tier free, `paymentStatus: 'deleted'` (account-deletion.ts).
+ * A store subscription outlives that deletion — Apple/Google keep charging and
+ * RevenueCat keeps posting RENEWAL / INITIAL_PURCHASE — so every RevenueCat
+ * handler that grants credits or re-activates a tier must fail closed here.
+ */
+function isDeletedBillingAccount(account: { paymentStatus?: string | null } | null | undefined): boolean {
+  return account?.paymentStatus === 'deleted';
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
 
@@ -1103,45 +1114,56 @@ export async function processRevenueCatWebhook(body: any) {
 
   console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 
-  switch (eventType) {
-    case 'INITIAL_PURCHASE':
-      await handleRevenueCatPurchase(accountId, event);
-      break;
+  try {
+    switch (eventType) {
+      case 'INITIAL_PURCHASE':
+        await handleRevenueCatPurchase(accountId, event, dedupeKey);
+        break;
 
-    case 'RENEWAL':
-      await handleRevenueCatRenewal(accountId, event);
-      break;
+      case 'RENEWAL':
+        await handleRevenueCatRenewal(accountId, event, dedupeKey);
+        break;
 
-    case 'CANCELLATION':
-    case 'EXPIRATION':
-      await handleRevenueCatCancellation(accountId, event);
-      break;
+      case 'CANCELLATION':
+      case 'EXPIRATION':
+        await handleRevenueCatCancellation(accountId, event);
+        break;
 
-    case 'UNCANCELLATION':
-      await handleRevenueCatUncancellation(accountId, event);
-      break;
+      case 'UNCANCELLATION':
+        await handleRevenueCatUncancellation(accountId, event);
+        break;
 
-    case 'PRODUCT_CHANGE':
-      await handleRevenueCatProductChange(accountId, event);
-      break;
+      case 'PRODUCT_CHANGE':
+        await handleRevenueCatProductChange(accountId, event);
+        break;
 
-    case 'NON_RENEWING_PURCHASE':
-      await handleRevenueCatTopup(accountId, event);
-      break;
+      case 'NON_RENEWING_PURCHASE':
+        await handleRevenueCatTopup(accountId, event, dedupeKey);
+        break;
 
-    case 'SUBSCRIPTION_PAUSED':
-    case 'BILLING_ISSUE':
-      await handleRevenueCatBillingIssue(accountId, event);
-      break;
+      case 'SUBSCRIPTION_PAUSED':
+      case 'BILLING_ISSUE':
+        await handleRevenueCatBillingIssue(accountId, event);
+        break;
 
-    default:
-      console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
+      default:
+        console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
+    }
+  } catch (err) {
+    // `recordWebhookEvent` claimed this event id BEFORE the handler ran. If the
+    // handler throws, the claim has to go or RevenueCat's retry is answered
+    // "duplicate, skipped" and the purchase is never applied — money taken, no
+    // credits, forever. Same contract as processStripeWebhook above.
+    await forgetWebhookEvent(dedupeKey).catch((cleanupErr) => {
+      console.error(`[RevenueCat] Failed to clear failed event marker ${dedupeKey}:`, cleanupErr);
+    });
+    throw err;
   }
 
   return { received: true, event_type: eventType, account_id: accountId };
 }
 
-async function handleRevenueCatPurchase(accountId: string, event: any) {
+async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey: string) {
   const productId = event.product_id;
   const tierKey = mapRevenueCatProductToTier(productId);
   if (!tierKey) {
@@ -1149,10 +1171,15 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
     return;
   }
 
+  const existingAccount = await getCreditAccount(accountId);
+  if (isDeletedBillingAccount(existingAccount)) {
+    console.log(`[RevenueCat] Skipping INITIAL_PURCHASE for deleted account ${accountId}`);
+    return;
+  }
+
   const tier = getTier(tierKey);
   const periodType = getRevenueCatPeriodType(productId);
 
-  const existingAccount = await getCreditAccount(accountId);
   const oldStripeSubscriptionId = existingAccount?.stripeSubscriptionId ?? null;
 
   await applyStripeSync(
@@ -1181,6 +1208,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
       'tier_grant',
       `${tier.displayName} subscription (mobile): ${tier.monthlyCredits} credits`,
       true,
+      dedupeKey,
     );
   }
 
@@ -1208,15 +1236,18 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
   console.log(`[RevenueCat] Initial purchase: ${tierKey} for ${accountId}`);
 }
 
-async function handleRevenueCatRenewal(accountId: string, event: any) {
+async function handleRevenueCatRenewal(accountId: string, event: any, dedupeKey: string) {
   const account = await getCreditAccount(accountId);
-  if (!account) return;
+  if (!account || isDeletedBillingAccount(account)) {
+    console.log(`[RevenueCat] Skipping RENEWAL for missing or deleted account ${accountId}`);
+    return;
+  }
 
   const tierName = account.tier ?? 'free';
   const credits = getMonthlyCredits(tierName);
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, `Mobile renewal: ${credits} credits`);
+    await resetExpiringCredits(accountId, credits, `Mobile renewal: ${credits} credits`, dedupeKey);
   }
 
   await applyStripeSync(
@@ -1313,7 +1344,13 @@ async function handleRevenueCatProductChange(accountId: string, event: any) {
   console.log(`[RevenueCat] Product change: ${accountId}`);
 }
 
-async function handleRevenueCatTopup(accountId: string, event: any) {
+async function handleRevenueCatTopup(accountId: string, event: any, dedupeKey: string) {
+  const account = await getCreditAccount(accountId);
+  if (isDeletedBillingAccount(account)) {
+    console.log(`[RevenueCat] Skipping NON_RENEWING_PURCHASE for deleted account ${accountId}`);
+    return;
+  }
+
   const price = event.price ? Number(event.price) : 0;
   if (price <= 0) return;
 
@@ -1323,6 +1360,7 @@ async function handleRevenueCatTopup(accountId: string, event: any) {
     'purchase',
     `Mobile credit purchase: $${price.toFixed(2)}`,
     false,
+    dedupeKey,
   );
 
   console.log(`[RevenueCat] Top-up: $${price} for ${accountId}`);

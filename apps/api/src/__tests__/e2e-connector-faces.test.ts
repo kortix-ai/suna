@@ -516,6 +516,7 @@ describe('MCP face', () => {
         'call',
         'connect',
         'request_secret',
+        'secret_call',
         'add_connector',
         'remove_connector',
       ]);

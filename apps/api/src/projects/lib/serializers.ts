@@ -71,7 +71,7 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** The viewing user, to compute is_owner / can_manage_sharing. */
     viewerId?: string;
-    /** Viewer can manage the project (account owner/admin, or a project editor). */
+    /** Viewer can manage the project (account owner/admin, or a project manager). */
     canManageProject?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
@@ -131,9 +131,9 @@ export function serializeSession(
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
-    // A row the caller cannot ACCESS is still listed (scope=project shows a
-    // manager the whole project) but must not carry the session's CONTENT.
-    // metadata holds initial_prompt — the literal text an end-user typed.
+    // Inventory filters inaccessible rows. Keep this boundary fail-closed for
+    // other callers that serialize with canAccess=false. Metadata holds
+    // initial_prompt — the literal text an end-user typed.
     metadata: canAccess ? (row.metadata ?? {}) : {},
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
@@ -163,7 +163,7 @@ export function serializeSession(
  * Load a session and enforce that the viewer can SEE it (owner, project-wide,
  * or in the allow-list). Returns null for both not-found and not-visible so we
  * never reveal the existence of a private session. Also reports whether the
- * viewer may manage its sharing (account owner/admin, or a project editor).
+ * viewer may manage its sharing (account owner/admin, or a project manager).
  */
 
 function dashboardBaseUrl(): string {
@@ -384,6 +384,19 @@ export function buildSecretView(input: {
   /** The project's loaded config, for the agent-grant axis. Omit it and every
    *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
   agentGrants?: SecretAgentGrantConfig | null;
+  /**
+   * The project's `metadata` column, for the per-project boundary flag.
+   *
+   * REQUIRED, and deliberately so. It feeds `network_boundary_available` and
+   * `delivery_status`, which the web control and the CLI read to decide whether
+   * this delivery mode can be offered at all. As an optional parameter a caller
+   * that simply forgot it still typechecked and silently reported the old
+   * Platinum-only answer — a wrong feature verdict, invisible to tsc and to
+   * every test that did not happen to look. Required turns that into a compile
+   * error. Pass `undefined` explicitly for a caller that genuinely has no
+   * project; that reads as closed, never as "unset".
+   */
+  projectMetadata: unknown;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -441,7 +454,7 @@ export function buildSecretView(input: {
       : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
-    // Members manage only their own override; editors also manage the shared row.
+    // Members manage only their own override; managers also manage the shared row.
     can_manage_shared: canManageShared && !system,
     strategy,
     consumer,
@@ -450,7 +463,9 @@ export function buildSecretView(input: {
       (strategy === 'broker' && consumer === 'llm_gateway') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' && consumer === 'network' && networkBoundaryDeliveryAvailable()) ||
+      (strategy === 'egress' &&
+        consumer === 'network' &&
+        networkBoundaryDeliveryAvailable(input.projectMetadata)) ||
       consumer === 'connector'
         ? 'available'
         : strategy === 'denied'
@@ -461,7 +476,7 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
-    network_boundary_available: networkBoundaryDeliveryAvailable(),
+    network_boundary_available: networkBoundaryDeliveryAvailable(input.projectMetadata),
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
@@ -474,14 +489,22 @@ export function buildSecretView(input: {
  * own override merged). Used by the secrets list + returned after a write.
  */
 
-export async function loadSecretViewsForUser(
-  projectId: string,
-  userId: string,
-  canManageShared: boolean,
+export async function loadSecretViewsForUser(input: {
+  projectId: string;
+  userId: string;
+  canManageShared: boolean;
+  /** The loaded project's `metadata` column — see `buildSecretView`. */
+  projectMetadata: unknown;
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
-  agentGrants?: SecretAgentGrantConfig | null,
-): Promise<ReturnType<typeof buildSecretView>[]> {
+  agentGrants?: SecretAgentGrantConfig | null;
+}): Promise<ReturnType<typeof buildSecretView>[]> {
+  // NAMED, not positional. `projectMetadata` is `unknown`, so it accepts any
+  // argument — as a positional parameter it silently swallowed the `agentGrants`
+  // that a call site passed in that slot, and typechecked while doing it. That
+  // is the same class of invisible failure the required flag exists to prevent,
+  // so the whole signature is by name.
+  const { projectId, userId, canManageShared, projectMetadata, agentGrants } = input;
   const rows = await db
     .select()
     .from(projectSecrets)
@@ -509,6 +532,7 @@ export async function loadSecretViewsForUser(
       personal: slot.personal,
       canManageShared,
       agentGrants,
+      projectMetadata,
     }),
   );
 }
@@ -742,7 +766,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-const PROJECT_ROLES = ['editor', 'member'] as const;
+const PROJECT_ROLES = ['manager', 'member'] as const;
 
 export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
 
@@ -750,5 +774,21 @@ export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
   return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
 }
 
-// GET /v1/projects/:projectId/group-grants
-// List every group attached to this project, with the role + group name.
+/**
+ * Parse a bounded positive integer query parameter, or report why it is invalid.
+ * Shared by every paged read route (transcript, voice transcript, approvals).
+ */
+export function parseBoundedPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
+  }
+  return { ok: true, value };
+}

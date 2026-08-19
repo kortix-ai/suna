@@ -38,6 +38,34 @@ const AUTOMATIC_MAINTENANCE = {
     'Kortix is temporarily unavailable. Service will resume automatically.',
 };
 
+// Header a trusted CI run presents to opt OUT of maintenance laundering and see
+// the real origin response instead. Compared against the CI_PASSTHROUGH_SECRET
+// binding; absent or wrong, the request is treated as ordinary public traffic.
+const CI_PASSTHROUGH_HEADER = 'X-Kortix-CI-Passthrough';
+
+// Constant-time over the compared bytes. The length is not secret (a mismatched
+// length returns false immediately), the contents are.
+function timingSafeEqualStrings(a, b) {
+  const encoder = new TextEncoder();
+  const left = encoder.encode(a);
+  const right = encoder.encode(b);
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) diff |= left[i] ^ right[i];
+  return diff === 0;
+}
+
+// True only when the request carries the exact shared secret. An unset or empty
+// binding disables passthrough entirely, so an environment that never sets the
+// secret cannot be tricked into revealing origin failures.
+function isTrustedCiPassthrough(request, env) {
+  const secret = env?.CI_PASSTHROUGH_SECRET;
+  if (typeof secret !== 'string' || secret.length === 0) return false;
+  const presented = request.headers.get(CI_PASSTHROUGH_HEADER);
+  if (typeof presented !== 'string' || presented.length === 0) return false;
+  return timingSafeEqualStrings(presented, secret);
+}
+
 function addSecurityHeaders(response) {
   response.headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
   response.headers.set('X-Content-Type-Options', 'nosniff');
@@ -93,7 +121,13 @@ async function readMaintenanceConfig(env) {
   }
 }
 
-function maintenanceResponse(config, active, isGateway, request) {
+// `originFailure` is set only on the AUTOMATIC path, where a real origin failure
+// is being replaced by a synthetic 503. It carries what the origin actually did:
+//   status    — the origin HTTP status, or 'fetch-error' when the fetch threw.
+//   requestId — the origin's x-request-id, when it sent one.
+// Both are surfaced on the response so a failure is diagnosable without
+// changing the body every public client already handles.
+function maintenanceResponse(config, active, isGateway, request, originFailure) {
   const origin = request.headers.get('Origin');
   const headers = new Headers({
     'Cache-Control': 'no-store',
@@ -103,6 +137,16 @@ function maintenanceResponse(config, active, isGateway, request) {
     'X-Backend-Service': isGateway ? 'gateway' : 'api',
     'X-Maintenance-Mode': 'blocking',
   });
+  if (originFailure) {
+    headers.set('X-Origin-Status', String(originFailure.status));
+    // Restoring the origin's x-request-id is what makes an app-generated 5xx
+    // distinguishable from an edge/infrastructure one. Laundering used to erase
+    // it, so a genuine application 503 was indistinguishable from an
+    // unreachable origin.
+    if (originFailure.requestId) {
+      headers.set('X-Request-Id', originFailure.requestId);
+    }
+  }
   if (origin) {
     headers.set('Access-Control-Allow-Credentials', 'true');
     headers.set('Access-Control-Allow-Origin', origin);
@@ -252,11 +296,14 @@ export default {
     try {
       response = await fetch(modifiedRequest);
     } catch {
+      // No origin response exists, so there is nothing to pass through even for
+      // CI. Say so explicitly instead of leaving the cause unnamed.
       return maintenanceResponse(
         { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() },
         active,
         isGateway,
         request,
+        { status: 'fetch-error' },
       );
     }
     if (
@@ -264,11 +311,29 @@ export default {
       response.status === 503 ||
       response.status === 504
     ) {
+      // A trusted CI run needs the real failure, not a maintenance page: the
+      // v0.13.0 release gate spent hours reading laundered 503s as a scheduled
+      // maintenance window while staging was simply out of capacity. Public
+      // traffic still gets the identical synthetic 503 it always got.
+      if (isTrustedCiPassthrough(request, env)) {
+        const passthrough = new Response(response.body, response);
+        passthrough.headers.set('X-Backend', active);
+        passthrough.headers.set(
+          'X-Backend-Service',
+          isGateway ? 'gateway' : 'api',
+        );
+        passthrough.headers.set('X-Origin-Status', String(response.status));
+        return addSecurityHeaders(passthrough);
+      }
       return maintenanceResponse(
         { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() },
         active,
         isGateway,
         request,
+        {
+          status: response.status,
+          requestId: response.headers.get('x-request-id'),
+        },
       );
     }
     // Cloudflare attaches the accepted socket to response.webSocket. Creating

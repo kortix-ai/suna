@@ -61,7 +61,12 @@ import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
+import {
+  type PreparedInitialSandboxTurn,
+  initialSandboxTurnMetadata,
+} from '../../projects/sandbox-turn-lifecycle';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -239,6 +244,28 @@ export function decideSessionBoot(input: {
   return { bootByTemplateId: pinnedId };
 }
 
+/**
+ * S1 (Platinum idempotent create): derive the starting point for the
+ * MONOTONIC `platinumCreateAttempt` counter from a session_sandboxes row's
+ * persisted metadata. Pure (no I/O) so the "never resets across a process
+ * restart" guarantee is unit-testable without spinning up the whole
+ * provisioning IIFE — mirrors decideSessionBoot's pure-gate pattern above.
+ *
+ * Returns 0 for a fresh row (no attempt persisted yet) or any
+ * malformed/negative value; the caller then starts counting from 1. For a
+ * RESUMED row (a previous process persisted e.g. `platinumCreateAttempt: 2`
+ * before crashing/restarting mid-attempt), returns that SAME value — the
+ * caller's first provisioning pass reuses attempt 2 as-is (so if that
+ * attempt's create had actually already committed server-side, Platinum's
+ * Idempotency-Key replay adopts it) rather than jumping straight to 3, which
+ * would mint a fresh, unrelated create identity and could orphan a live box.
+ */
+export function restorePlatinumCreateAttempt(metadata: Record<string, unknown> | null | undefined): number {
+  const raw = metadata?.platinumCreateAttempt;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
 export async function provisionSessionSandbox(opts: {
   sandboxId: string;
   accountId: string;
@@ -252,6 +279,8 @@ export async function provisionSessionSandbox(opts: {
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
+  /** Pre-created authority for a prompt the daemon delivers during boot. */
+  initialTurn?: PreparedInitialSandboxTurn | null;
   /** Project metadata, used for per-project experimental gates. */
   projectMetadata?: unknown;
   /**
@@ -356,6 +385,13 @@ export async function provisionSessionSandbox(opts: {
         config: {},
         metadata: {
           ...(opts.metadata ?? {}),
+          ...(opts.initialTurn
+            ? {
+                activeTurns: {
+                  [opts.initialTurn.token]: initialSandboxTurnMetadata(opts.initialTurn),
+                },
+              }
+            : {}),
           initStatus: 'pending',
           initAttempts: 0,
           initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
@@ -460,6 +496,11 @@ export async function provisionSessionSandbox(opts: {
     accountId,
     userId,
     name: sandboxName,
+    // S1: the FULL logical sandbox id — NEVER `sandboxName` above, which is
+    // truncated to 8 chars for display and is not a safe create-dedup key.
+    // `createAttempt` is set below, before the provisioning loop, and bumped
+    // only at the specific "this is a genuinely new attempt" transitions.
+    sandboxId: sandbox.sandboxId,
     serverType,
     location,
     envVars: {
@@ -530,11 +571,35 @@ export async function provisionSessionSandbox(opts: {
     let idBootDisabled = false;
     let lastProvisionAttempt = SANDBOX_INIT_MAX_ATTEMPTS;
     let lastProvisionMaxAttempts = SANDBOX_INIT_MAX_ATTEMPTS;
+    // S1: MONOTONIC Platinum create-attempt counter — restored from the row's
+    // persisted metadata (never resets across a process restart) and set on
+    // providerCreateInput ONCE up front. It only advances at the three
+    // "genuinely new attempt" transitions below (stale-snapshot heal,
+    // provider failover, id-boot-pin-gone fallback) — retrySandboxProvisionCreate's
+    // own internal retry-on-transient-error loop reuses createOpts unchanged,
+    // so it reuses this SAME attempt (and therefore the SAME Platinum
+    // Idempotency-Key/name) across those "ambiguous retry" iterations.
+    let platinumCreateAttempt = restorePlatinumCreateAttempt(sandbox.metadata as Record<string, unknown> | null) || 1;
+    providerCreateInput.createAttempt = platinumCreateAttempt;
     provisioning: while (true) {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
       const networkBoundary = await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
-      if (networkBoundary.length > 0 && !provider.syncNetworkBoundary) {
+      // A provider with no edge to arm is only a failure when nothing else can
+      // deliver the binding. With the in-guest shim the credential is injected
+      // by the broker route at request time, so there is nothing to register
+      // here — the binding reaches the guest as host->identifier rules in the
+      // sandbox env, carrying no value.
+      //
+      // This is the SECOND copy of this check; the other is in
+      // startNetworkBoundaryArm (projects/lib/sandbox-env-sync.ts). They share
+      // a message string and must not drift: relaxing only one still fails
+      // provisioning, just one frame later.
+      if (
+        networkBoundary.length > 0 &&
+        !provider.syncNetworkBoundary &&
+        !(await projectFeatureFlagEnabled(projectId, 'network_boundary_shim'))
+      ) {
         throw new Error(
           `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
         );
@@ -599,14 +664,21 @@ export async function provisionSessionSandbox(opts: {
           await db
             .update(sessionSandboxes)
             .set({
-              metadata: buildSandboxInitAttemptMetadata(
-                sandbox.metadata as Record<string, unknown> | null,
-                attempt,
-                attempt === 1 ? 'provisioning' : 'retrying',
-                firstStage?.id,
-                attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${maxAttempts})…`,
-                maxAttempts,
-              ),
+              metadata: {
+                ...buildSandboxInitAttemptMetadata(
+                  sandbox.metadata as Record<string, unknown> | null,
+                  attempt,
+                  attempt === 1 ? 'provisioning' : 'retrying',
+                  firstStage?.id,
+                  attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${maxAttempts})…`,
+                  maxAttempts,
+                ),
+                // S1: persist the MONOTONIC counter every attempt (cheap,
+                // idempotent write of the current value) so a mid-attempt
+                // process crash still leaves the latest value durable for
+                // restorePlatinumCreateAttempt to pick up on resume.
+                platinumCreateAttempt,
+              },
               updatedAt: new Date(),
             })
             .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
@@ -643,14 +715,25 @@ export async function provisionSessionSandbox(opts: {
             `is gone (404) — booting by name; leaving the pin for the controller to re-pin`,
           );
           idBootDisabled = true;
+          // S1: a confirmed GC'd-pin 404 is a genuinely NEW attempt (a
+          // different template id is about to be booted) — advance so the
+          // next create gets a fresh Idempotency-Key/name instead of reusing
+          // the pinned-template attempt's.
+          platinumCreateAttempt += 1;
+          providerCreateInput.createAttempt = platinumCreateAttempt;
           continue provisioning;
         }
         throw createErr;
       }
       bgExternalId = result.externalId;
-      if (networkBoundary.length > 0) {
+      // `syncNetworkBoundary` is optional on the provider interface. The
+      // non-null assertion was safe only while the pre-check above guaranteed
+      // the method existed; now that a shim-backed provider gets past that
+      // check, calling it unguarded would be a TypeError at provision time
+      // rather than the clean skip this is.
+      if (networkBoundary.length > 0 && provider.syncNetworkBoundary) {
         try {
-          await provider.syncNetworkBoundary!(result.externalId, networkBoundary);
+          await provider.syncNetworkBoundary(result.externalId, networkBoundary);
           tl.mark(`network-secrets:${networkBoundary.length}`);
         } catch (error) {
           await provider.remove(result.externalId).catch(() => {});
@@ -919,6 +1002,11 @@ export async function provisionSessionSandbox(opts: {
           bgExternalId = null;
         }
         imageInfo = null;
+        // S1: the old box (if any) was just removed above and we're about to
+        // build/boot a genuinely fresh image — advance so the retry mints a
+        // fresh Idempotency-Key/name rather than reusing the healed attempt's.
+        platinumCreateAttempt += 1;
+        providerCreateInput.createAttempt = platinumCreateAttempt;
         continue provisioning;
       }
 
@@ -955,6 +1043,13 @@ export async function provisionSessionSandbox(opts: {
           firstImagePromise = null;
           imageInfo = null;
           healedStaleSnapshot = false;
+          // S1: a genuinely new attempt — a DIFFERENT provider is about to
+          // create an unrelated box, so reusing the failed provider's
+          // Idempotency-Key/name here would be meaningless (Platinum is the
+          // only provider that reads it today, but this keeps the counter
+          // correct if `next` is Platinum).
+          platinumCreateAttempt += 1;
+          providerCreateInput.createAttempt = platinumCreateAttempt;
           await db
             .update(sessionSandboxes)
             .set({ provider: next, status: 'provisioning', updatedAt: new Date() })

@@ -16,11 +16,12 @@ Kortix supports four channel platforms today:
 - **Slack** — connect with one click through the Kortix-managed app, or bring
   your own bot token.
 - **Microsoft Teams** — connect through org admin-consent OAuth, or bring your
-  own Azure Bot (experimental; enable it under Customize → Feature flags).
+  own Azure Bot (experimental; enable it under
+  [Settings → Experimental](/docs/feature-flags)).
 - **Email** — an AgentMail-backed channel (experimental; enable it under
-  Customize → Feature flags).
+  [Settings → Experimental](/docs/feature-flags)).
 - **Voice** — a realtime voice channel on LiveKit (experimental; enable it under
-  Customize → Feature flags). A connected call is a LiveKit room;
+  [Settings → Experimental](/docs/feature-flags)). A connected call is a LiveKit room;
   the agent speaks through the live media session.
 
 Only Slack and Microsoft Teams connect through the CLI and dashboard. Email
@@ -124,7 +125,10 @@ words from plain text there.
 | `help` | List all commands |
 
 `policy` accepts `project_open` (default — any project member who mentions
-the bot gets a session), `owner_approval`, or `owner_only`.
+the bot gets a session), `owner_approval`, or `owner_only`. This is a
+per-resource setting on one channel, not a role. It grants no permission the
+role verdict denies — see
+[Accounts & access](/docs/accounts#per-feature-access-settings).
 
 ## What does not work
 

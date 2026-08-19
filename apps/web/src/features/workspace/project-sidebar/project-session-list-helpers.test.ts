@@ -55,7 +55,11 @@ describe('shouldPollProjectSessions', () => {
 });
 
 describe('projectSessionsRefetchInterval', () => {
-  const settled = [makeSession({ status: 'running' })];
+  // `name` is part of being settled, not decoration. A session whose title the
+  // server has not written yet is still waiting on something, and gets the
+  // pending-title poll — see `session-title-convergence.test.ts`. Leaving this
+  // fixture nameless made "settled" mean two different things in one file.
+  const settled = [makeSession({ status: 'running', name: 'Titled Session' })];
 
   test('provisioning polls fast, and outranks the open-session interval', () => {
     const sessions = [makeSession({ status: 'provisioning' })];

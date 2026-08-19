@@ -1,4 +1,5 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
 import { sessionTemplateBuilds } from '../../snapshots/build-state';
@@ -109,7 +110,7 @@ projectsApp.openapi(
   async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const repoFullName = normalizeString(body.repo_full_name ?? body.repoFullName);
   const repoUrlInput = normalizeString(body.repo_url ?? body.repoUrl);
@@ -265,7 +266,7 @@ projectsApp.openapi(
   async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const name = normalizeString(body.name);
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -422,7 +423,10 @@ projectsApp.openapi(
   );
 
 
-  return c.json(serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }), 201);
+  // The creator owns the project outright — manager, not the removed middle
+  // tier. (Was 'editor' until 2026-08-18; both folded to the same permissions
+  // for the creator, who is always an account owner/admin here.)
+  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },
 );
 
@@ -732,7 +736,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: { slug?: unknown; sandbox_slug?: unknown } = {};
@@ -826,7 +830,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
   const userId = c.get('userId') as string;
 
@@ -1027,7 +1031,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: Record<string, unknown> = {};
@@ -1116,7 +1120,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: Record<string, unknown> = {};
@@ -1197,7 +1201,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);

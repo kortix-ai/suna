@@ -45,6 +45,7 @@ import { AGENT_ENV_SH } from './agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
+import { egressShimEnv } from './egress-shim'
 import { logger } from './logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
 import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
@@ -97,6 +98,28 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   'KORTIX_OPENCODE_DENY_ENV',
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
+
+/**
+ * NOT in the list above, deliberately: `KORTIX_CONNECTORS_MCP_ENABLED`.
+ *
+ * It shapes `out.mcp` INSIDE the config file, and `tryDisposeReload` rewrites
+ * that file and makes opencode re-read it — so it belongs to the dispose fast
+ * path by the same rule as every other config-file key.
+ *
+ * Flagged because two comments in this repo disagree and one of them is wrong:
+ * `routes/env.ts` says enabling the face "must restart OpenCode because MCP
+ * servers are registered only at spawn", which would make dispose insufficient
+ * for the email channel's mid-session enable (channels/email/session.ts:123,
+ * 208). Whether `POST /global/dispose` re-registers a server that was not
+ * previously in the set is UNVERIFIED against the pinned opencode.
+ *
+ * Left alone rather than guessed at: adding it here breaks the tested
+ * invariant in dispose-reload.test.ts ("every name spawnChild consumes outside
+ * the config file is listed") and would buy an ~8s respawn for a case nobody
+ * has measured. Resolve it with a live sandbox — enable the face mid-session,
+ * then ask opencode whether the server is registered — and update whichever
+ * comment turns out to be false.
+ */
 
 /** Does this env delta need a full respawn rather than a dispose? */
 export function requiresRespawn(changedNames: readonly string[]): boolean {
@@ -277,7 +300,14 @@ export async function buildOpencodeConfigContent(
         type: 'local',
         // Use the absolute path so OpenCode's MCP launcher does not depend on
         // PATH propagation. The normal agent path is still `kortix connectors`.
-        command: ['/usr/local/bin/kortix', 'connector', 'mcp'],
+        //
+        // `connectors`, plural — it must match a real CLI command. Between
+        // 2026-08-06 (e868be1d6c) and this fix it read `connector`, which the
+        // CLI router rejects with "unknown command", so OpenCode's launcher
+        // got exit 2 and the MCP server never started. The CLI now also
+        // accepts the singular as an alias, which recovers snapshots baked
+        // with the old string.
+        command: ['/usr/local/bin/kortix', 'connectors', 'mcp'],
         enabled: true,
         environment: {
           // Proxy mode: the MCP talks to the localhost connector proxy with a
@@ -836,6 +866,21 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_048_576, output: 64_000 },
   },
+  'deepseek-v4-pro-0813': {
+    name: 'DeepSeek V4 Pro 0813',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [
+      { type: 'toggle' },
+      { type: 'effort', values: ['low', 'high', 'max'] },
+    ],
+    tool_call: true,
+    attachment: false,
+    structured_output: false,
+    temperature: true,
+    limit: { context: 1_048_575, output: 384_000 },
+    cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
+  },
   'glm-5.2': {
     name: 'GLM 5.2',
     provider: 'kortix',
@@ -875,6 +920,23 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     attachment: true,
     temperature: false,
     limit: { context: 1_050_000, output: 128_000 },
+  },
+  'grok-4.6': {
+    name: 'Grok 4.6',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
+    tool_call: true,
+    attachment: true,
+    structured_output: true,
+    temperature: true,
+    limit: { context: 500_000, output: 500_000 },
+    cost: {
+      input: 2,
+      output: 6,
+      cache_read: 0.5,
+      context_over_200k: { input: 4, output: 12, cache_read: 1 },
+    },
   },
   // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
   // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
@@ -1227,6 +1289,12 @@ export function createOpencodeSupervisor(
       // opencode plugin/config. Interactive shells + terminals get it from the
       // image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
       BASH_ENV: AGENT_ENV_SH,
+      // Egress shim, when one is running. The agent's SHELLS get these from
+      // AGENT_ENV_SH above; setting them on the opencode process too covers its
+      // in-process HTTP clients (the built-in webfetch tool), which never go
+      // through a shell. Safe for model traffic: NO_PROXY carries 127.0.0.1 (the
+      // local LLM proxy) and the Kortix API host.
+      ...egressShimEnv(),
       PORT: undefined,
       APP_PORT: undefined,
     })
@@ -1497,6 +1565,11 @@ export function createOpencodeSupervisor(
   /**
    * Close the turn the retired opencode took with it, and report whether there
    * was one. Returns null when it could not be determined.
+   *
+   * Idempotent: `options.onUnplannedRespawn` (main.ts's `finalizeOrphanedTurn`)
+   * skips a turn that already carries `info.error` — already finalized by a
+   * prior abort — so repeated replacements over the same stuck turn call
+   * `/abort` at most once, not once per replacement.
    */
   async function finalizeAfterReplacement(): Promise<boolean | null> {
     if (!options.onUnplannedRespawn) return null

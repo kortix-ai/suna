@@ -4,10 +4,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
   intentToScope,
+  isProjectSessionVisibleTo,
   isSecretUsableBy,
   isSessionTargetVisibleToCaller,
   isSessionVisibleTo,
   parseSharingIntent,
+  resolveInheritedSessionSharing,
   scopeToIntent,
   sessionIntentToVisibility,
   visibilityToIntent,
@@ -129,7 +131,12 @@ describe('scopeToIntent — round-trip for the dashboard', () => {
 
 const WRAPPER = 'wrapper-service-account';
 // Non-KaaB default: an interactive session, caller not session-bound.
-const INTERACTIVE = { origin: 'interactive', sessionId: 's1', callerSessionId: null };
+const INTERACTIVE = {
+  origin: 'interactive',
+  sessionId: 's1',
+  callerSessionId: null,
+  boundCredentialSessionId: null,
+};
 
 describe('session sharing — default private; team-wide or select-members', () => {
   test('owner always sees their own session, regardless of visibility', () => {
@@ -150,6 +157,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'backend',
         sessionId: 'session-of-end-user-b',
         callerSessionId: 'session-of-end-user-a',
+        boundCredentialSessionId: 'session-of-end-user-a',
       }),
     ).toBe(false);
   });
@@ -160,6 +168,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'backend',
         sessionId: 'session-a',
         callerSessionId: 'session-a',
+        boundCredentialSessionId: 'session-a',
       }),
     ).toBe(true);
   });
@@ -172,6 +181,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'backend',
         sessionId: 'session-b',
         callerSessionId: null,
+        boundCredentialSessionId: null,
       }),
     ).toBe(true);
   });
@@ -184,6 +194,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'interactive',
         sessionId: 'other-session',
         callerSessionId: 'my-session',
+        boundCredentialSessionId: 'my-session',
       }),
     ).toBe(true);
   });
@@ -217,6 +228,199 @@ describe('session sharing — default private; team-wide or select-members', () 
   });
 });
 
+describe('resolveInheritedSessionSharing — a spawned worker inherits its parent', () => {
+  test('no parent (no spawning session) → default private, no grants', () => {
+    expect(resolveInheritedSessionSharing(undefined, null)).toEqual({
+      visibility: 'private',
+      grants: [],
+    });
+  });
+
+  test('parent shared project-wide → worker is project-wide too', () => {
+    expect(resolveInheritedSessionSharing(undefined, { visibility: 'project', grants: [] })).toEqual({
+      visibility: 'project',
+      grants: [],
+    });
+  });
+
+  test('parent shared with select members → worker copies the same grants', () => {
+    const grants: SecretGrant[] = [{ principalType: 'member', principalId: BOB }];
+    expect(resolveInheritedSessionSharing(undefined, { visibility: 'restricted', grants })).toEqual({
+      visibility: 'restricted',
+      grants,
+    });
+  });
+
+  test('parent private → worker stays private (unchanged default)', () => {
+    expect(resolveInheritedSessionSharing(undefined, { visibility: 'private', grants: [] })).toEqual({
+      visibility: 'private',
+      grants: [],
+    });
+  });
+
+  test('an explicit requested visibility always wins, even with a parent present', () => {
+    // Automation callers (triggers, channels) pin their own visibility and
+    // must never inherit — this is what stops that regressing.
+    expect(
+      resolveInheritedSessionSharing('project', { visibility: 'restricted', grants: [{ principalType: 'member', principalId: BOB }] }),
+    ).toEqual({ visibility: 'project', grants: [] });
+    expect(resolveInheritedSessionSharing('private', { visibility: 'project', grants: [] })).toEqual({
+      visibility: 'private',
+      grants: [],
+    });
+  });
+});
+
+describe('trigger-created session visibility', () => {
+  const metadata = {
+    source: 'trigger:scheduler',
+    trigger_kind: 'git',
+    trigger_slug: 'daily-review',
+  };
+  const serviceAccount = 'trigger-agent-service-account';
+
+  test('project manager can open a private trigger-created session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('ordinary project member cannot open a private trigger-created session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(false);
+  });
+
+  test('manager still cannot open an ordinary private human session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata: {}, canManageProject: true },
+    )).toBe(false);
+  });
+
+  test('trigger agent service account remains the private-session owner', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: serviceAccount, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('selected grants and project visibility keep their existing behavior', () => {
+    expect(isProjectSessionVisibleTo(
+      'restricted', serviceAccount,
+      [{ principalType: 'member', principalId: ALICE }],
+      { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+    expect(isProjectSessionVisibleTo(
+      'project', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('all server trigger metadata fields are required for manager access', () => {
+    for (const incomplete of [
+      { trigger_kind: 'git', trigger_slug: 'daily-review' },
+      { source: 'ui', trigger_kind: 'git', trigger_slug: 'daily-review' },
+      { source: 'trigger:scheduler', trigger_kind: 'git' },
+      { source: 'trigger:scheduler', trigger_slug: 'daily-review' },
+      { trigger_kind: 'git' },
+      { trigger_slug: 'daily-review' },
+      { trigger_kind: 'git', trigger_slug: '' },
+      null,
+    ]) {
+      expect(isProjectSessionVisibleTo(
+        'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, INTERACTIVE,
+        { metadata: incomplete, canManageProject: true },
+      )).toBe(false);
+    }
+  });
+
+  /*
+   * The override belongs to the HUMAN, not to a token bound to one session.
+   *
+   * Two failure modes are pinned here, and they pull in opposite directions.
+   * The hole: a session-bound AGENT token whose launching user holds `manage`
+   * read every other trigger-created private session in the project — the
+   * interactive origin sails past `isSessionTargetVisibleToCaller`, which only
+   * narrows `backend`-origin targets. The regression: gating that on
+   * `callerSessionId` instead 403s ordinary dashboard users, because
+   * `resolveSupabaseAuth` puts the SUPABASE LOGIN session id in that field for
+   * every signed-in human. Hence the separate `boundCredentialSessionId`.
+   */
+  const BOUND_AGENT = {
+    origin: 'interactive',
+    sessionId: 'trigger-session-b',
+    callerSessionId: 'agent-session-a',
+    boundCredentialSessionId: 'agent-session-a',
+  };
+  /** A signed-in human. `callerSessionId` is their Supabase LOGIN session id —
+   *  non-null — while the agent binding is null. */
+  const BROWSER_MANAGER = {
+    origin: 'interactive',
+    sessionId: 'trigger-session-b',
+    callerSessionId: 'supabase-login-session-id',
+    boundCredentialSessionId: null,
+  };
+
+  test('a session-bound agent token does NOT get the manager override', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: true },
+    )).toBe(false);
+  });
+
+  test('an unbound browser manager STILL gets the override, Supabase session id and all', () => {
+    // The case Strix's suggested diff broke. A non-null `callerSessionId` is
+    // the normal state for a logged-in human, so it can never mean "an agent".
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, BROWSER_MANAGER,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('the owner still sees their own session, bound or not', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', ALICE, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+    expect(isProjectSessionVisibleTo(
+      'private', ALICE, [], { userId: ALICE, groupIds: [] }, BROWSER_MANAGER,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('a bound agent keeps what stored visibility already granted it', () => {
+    // Losing the override must not cost it project-wide sessions or an
+    // explicit grant — it only stops the manager shortcut.
+    expect(isProjectSessionVisibleTo(
+      'project', serviceAccount, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+    expect(isProjectSessionVisibleTo(
+      'restricted', serviceAccount,
+      [{ principalType: 'member', principalId: ALICE }],
+      { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('manager access never bypasses backend sibling-session isolation', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
+      {
+        origin: 'backend',
+        sessionId: 'trigger-session-b',
+        callerSessionId: 'trigger-session-a',
+        boundCredentialSessionId: 'trigger-session-a',
+      },
+      { metadata, canManageProject: true },
+    )).toBe(false);
+  });
+});
+
 /**
  * The SHARING path must obey the same KaaB narrowing as the read path.
  *
@@ -238,6 +442,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'backend',
         sessionId: 'session-of-end-user-b',
         callerSessionId: 'session-of-end-user-a',
+        boundCredentialSessionId: 'session-of-end-user-a',
       }),
     ).toBe(false);
   });
@@ -248,6 +453,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'backend',
         sessionId: 'session-a',
         callerSessionId: 'session-a',
+        boundCredentialSessionId: 'session-a',
       }),
     ).toBe(true);
   });
@@ -258,6 +464,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'user',
         sessionId: 'private-session',
         callerSessionId: null,
+        boundCredentialSessionId: null,
       }),
     ).toBe(true);
   });
@@ -268,6 +475,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'backend',
         sessionId: 'session-of-end-user-b',
         callerSessionId: 'session-of-end-user-a',
+        boundCredentialSessionId: 'session-of-end-user-a',
       }),
     ).toBe(false);
   });

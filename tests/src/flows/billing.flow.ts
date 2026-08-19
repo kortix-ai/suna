@@ -36,11 +36,21 @@ flow(
         .exists('$.plan.label')
         .exists('$.plan.status')
         .exists('$.plan.shape')
-        .has('$.plan.is_grandfathered', false)
+        .exists('$.plan.is_grandfathered')
         .has('$.plan.key', state.subscription.tier_key)
         .has('$.tier.name', state.subscription.tier_key);
       if (typeof state.plan?.rank !== 'number') {
         throw new Error(`plan.rank must be a number, got ${JSON.stringify(state.plan?.rank)}`);
+      }
+      // `is_grandfathered` is resolved from the account's stored
+      // is_grandfathered_free column, so on a shared long-lived fixture account
+      // it is legitimately data-dependent — pin the TYPE, not a fixed value.
+      // (A fixed `false` here flaked the release gate once the shared OWNER
+      // account was grandfathered upstream.)
+      if (typeof state.plan?.is_grandfathered !== 'boolean') {
+        throw new Error(
+          `plan.is_grandfathered must be a boolean, got ${JSON.stringify(state.plan?.is_grandfathered)}`,
+        );
       }
       if (!['free', 'team', 'enterprise'].includes(String(state.plan?.family))) {
         throw new Error(`plan.family must be a public family, got ${String(state.plan?.family)}`);
@@ -274,6 +284,9 @@ flow(
       'POST /v1/billing/create-per-seat-checkout',
       'POST /v1/billing/cancel-subscription',
       'POST /v1/billing/purchase-credits',
+      'POST /v1/billing/sync-seat-quantity',
+      'POST /v1/billing/sync-subscription',
+      'POST /v1/billing/confirm-checkout-session',
     ],
   },
   async (ctx) => {
@@ -297,6 +310,21 @@ flow(
       const r = await asMember.post('/v1/billing/purchase-credits', {
         account_id: team.id,
         amount: 10,
+      });
+      r.status(403);
+    });
+    await ctx.step('MEMBER cannot reconcile the seat quantity → 403', async () => {
+      const r = await asMember.post('/v1/billing/sync-seat-quantity', { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step('MEMBER cannot reconcile the subscription → 403', async () => {
+      const r = await asMember.post('/v1/billing/sync-subscription', { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step('MEMBER cannot confirm a checkout session → 403', async () => {
+      const r = await asMember.post('/v1/billing/confirm-checkout-session', {
+        account_id: team.id,
+        session_id: 'cs_test_member_blocked',
       });
       r.status(403);
     });

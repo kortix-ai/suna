@@ -21,6 +21,39 @@ locals {
   name = var.name
   # PORT is always injected so the app binds the port the target group checks.
   environment = merge(var.environment, { PORT = tostring(var.container_port) })
+
+  # Capacity-provider strategy for the service.
+  #
+  #   use_fargate_spot = false          -> one FARGATE block (weight 1, base 1).
+  #   use_fargate_spot = true, base = 0 -> one FARGATE_SPOT block (weight 1,
+  #                                        base 0). Identical to the pre-2026-08-19
+  #                                        single-block form, so dev/prod do not
+  #                                        move.
+  #   use_fargate_spot = true, base > 0 -> `base` tasks pinned to on-demand
+  #                                        FARGATE, every task above that on
+  #                                        FARGATE_SPOT.
+  #
+  # ECS satisfies `base` first, then splits the remainder by `weight`. The
+  # on-demand block therefore carries weight 0: it must hold exactly the base,
+  # never absorb scale-out. A Spot-only service with base 0 has no floor — one
+  # Spot reclaim empties it, and with deployment_minimum_healthy_percent = 100
+  # ECS cannot place a replacement until Spot capacity returns.
+  capacity_provider_strategy = var.use_fargate_spot ? concat(
+    var.fargate_base_on_demand > 0 ? [{
+      capacity_provider = "FARGATE"
+      weight            = 0
+      base              = var.fargate_base_on_demand
+    }] : [],
+    [{
+      capacity_provider = "FARGATE_SPOT"
+      weight            = 1
+      base              = 0
+    }]
+    ) : [{
+      capacity_provider = "FARGATE"
+      weight            = 1
+      base              = 1
+  }]
 }
 
 data "aws_caller_identity" "current" {}
@@ -500,10 +533,13 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = null # capacity-provider strategy drives placement
 
-  capacity_provider_strategy {
-    capacity_provider = var.use_fargate_spot ? "FARGATE_SPOT" : "FARGATE"
-    weight            = 1
-    base              = var.use_fargate_spot ? 0 : 1
+  dynamic "capacity_provider_strategy" {
+    for_each = local.capacity_provider_strategy
+    content {
+      capacity_provider = capacity_provider_strategy.value.capacity_provider
+      weight            = capacity_provider_strategy.value.weight
+      base              = capacity_provider_strategy.value.base
+    }
   }
 
   network_configuration {
@@ -520,6 +556,15 @@ resource "aws_ecs_service" "this" {
 
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
+
+  # The AWS provider refuses to update `capacity_provider_strategy` unless
+  # `force_new_deployment` is set ("force_new_deployment should be true when
+  # capacity_provider_strategy is being updated"). Only services that carry an
+  # on-demand base (staging) ever change that strategy, so gate it on that: dev
+  # and prod keep today's plan byte-for-byte. `task_definition` stays under
+  # ignore_changes, so a forced deployment re-rolls the service's CURRENT task
+  # definition — the one ecs-deploy.sh registered — never a stale TF revision.
+  force_new_deployment = var.fargate_base_on_demand > 0
 
   # Rolling deploy with circuit breaker → auto-rollback on a bad release.
   deployment_circuit_breaker {
@@ -551,6 +596,13 @@ resource "aws_appautoscaling_target" "this" {
   resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  lifecycle {
+    precondition {
+      condition     = var.fargate_base_on_demand <= var.min_capacity
+      error_message = "fargate_base_on_demand (${var.fargate_base_on_demand}) exceeds min_capacity (${var.min_capacity}); the autoscaling floor cannot be smaller than the on-demand base."
+    }
+  }
 }
 
 resource "aws_appautoscaling_policy" "cpu" {

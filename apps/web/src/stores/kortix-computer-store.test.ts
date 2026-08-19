@@ -778,3 +778,63 @@ describe('a session change closes the right side', () => {
     expect(state()._detailContentBySession.s1).toBe(true);
   });
 });
+
+// ── An open detail panel may never outlive its content ─────────────────────
+//
+// Reported: open a session, navigate to /connectors or /skills, come back —
+// the detail panel is open and completely blank.
+//
+// `setActiveSession` lands every session change closed, but returns early when
+// the id is UNCHANGED, which is exactly this route: you return to the SAME
+// session. What did run is the provider's unmount cleanup
+// (`setDetailContent(sessionId, null)`), so the content disappeared while
+// `detailOpen` stayed true.
+describe('detailOpen never survives its content', () => {
+  const state = () => useKortixComputerStore.getState();
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('the provider unmounting closes the active session detail panel', () => {
+    state().setActiveSession('s1');
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+    expect(state().detailOpen).toBe(true);
+
+    // What `session-panel-provider.tsx` runs on unmount.
+    state().setDetailContent('s1', null);
+
+    expect(state().detailOpen).toBe(false);
+  });
+
+  test('a provider reporting it has no detail closes it too', () => {
+    state().setActiveSession('s1');
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+
+    state().setDetailContent('s1', false);
+
+    expect(state().detailOpen).toBe(false);
+  });
+
+  test('a BACKGROUND session losing its detail leaves the active panel alone', () => {
+    // The content map deliberately outlives a backgrounded tab. Only the
+    // session actually on screen may close the panel.
+    state().setActiveSession('s1');
+    state().setDetailContent('s1', true);
+    state().setDetailOpen(true);
+
+    state().setDetailContent('s2', null);
+
+    expect(state().detailOpen).toBe(true);
+  });
+
+  test('gaining detail content never opens the panel by itself', () => {
+    state().setActiveSession('s1');
+    state().setDetailOpen(false);
+
+    state().setDetailContent('s1', true);
+
+    expect(state().detailOpen).toBe(false);
+  });
+});

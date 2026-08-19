@@ -29,7 +29,11 @@ import {
 } from '@kortix/db';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { config } from '../../config';
-import { type ProviderName, getProvider } from '../../platform/providers';
+import {
+  type ProviderName,
+  type SandboxWorkloadType,
+  getProvider,
+} from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
 import {
@@ -73,7 +77,14 @@ export interface StartComputeOpts {
   provider?: ProviderName;
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
-  workloadType?: 'session' | 'app';
+  /**
+   * `monitor` is the per-project monitor box. It has no `session_sandboxes` and
+   * no `app_runtimes` row — its `sandbox_id` IS `project_monitor_boxes.box_id`,
+   * which is what every monitor-aware billing join keys on. No extra column is
+   * needed for it (unlike `app_runtime_id`, which exists because an App runtime
+   * id and its compute row's sandbox id were allowed to diverge).
+   */
+  workloadType?: SandboxWorkloadType;
   appRuntimeId?: string | null;
 }
 

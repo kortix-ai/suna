@@ -151,6 +151,38 @@ export interface SessionOwnershipContext {
    *  REQUIRED — never optional. An omitted binding would default to the
    *  permissive value and silently reopen the hole on any edge that forgets it. */
   callerSessionId: string | null;
+  /**
+   * The caller's AGENT/SANDBOX token binding — `callerKortixSessionId(c)`, i.e.
+   * `sessionId` for every credential kind EXCEPT a Supabase browser JWT, which
+   * is always null.
+   *
+   * Deliberately separate from `callerSessionId`. That field is fed the RAW
+   * `c.get('sessionId')` at 14 of its call sites, and `resolveSupabaseAuth`
+   * (middleware/auth.ts:285, :341) sets that to the SUPABASE LOGIN SESSION id
+   * for every signed-in human. So `callerSessionId != null` does NOT mean "an
+   * agent token" — it is true for ordinary dashboard users too, and using it to
+   * gate manager standing 403s them (see the trigger-override gate below).
+   *
+   * Only the trigger-session manager override reads this field. The
+   * sibling-session narrowing in `isSessionTargetVisibleToCaller` keeps using
+   * `callerSessionId`, unchanged.
+   *
+   * REQUIRED — never optional, for the same reason as `callerSessionId`.
+   */
+  boundCredentialSessionId: string | null;
+}
+
+/**
+ * What the sibling-session narrowing needs. `boundCredentialSessionId` is
+ * OPTIONAL here — only the trigger-session manager override reads it, so a
+ * caller doing narrowing alone is not forced to source it, while a full
+ * `SessionOwnershipContext` still passes unchanged.
+ */
+export interface SessionNarrowingContext {
+  origin: string | null;
+  sessionId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId?: string | null;
 }
 
 /**
@@ -159,7 +191,11 @@ export interface SessionOwnershipContext {
  * Human credentials and wrapper backend credentials have no session binding.
  * Interactive sessions keep their human ownership semantics.
  */
-export function isSessionTargetVisibleToCaller(ownership: SessionOwnershipContext): boolean {
+export function isSessionTargetVisibleToCaller(
+  /** Narrowing needs only the binding — not the override field, so callers that
+   *  do sibling-isolation alone stay unchanged. */
+  ownership: SessionNarrowingContext,
+): boolean {
   return !(
     ownership.origin === 'backend' &&
     ownership.callerSessionId != null &&
@@ -173,7 +209,7 @@ export function isSessionVisibleTo(
   ownerId: string | null,
   grants: SecretGrant[],
   subject: ShareSubject,
-  ownership: SessionOwnershipContext,
+  ownership: SessionNarrowingContext,
 ): boolean {
   // A sandbox token acts for ONE end-user. It must not reach a sibling backend
   // session just because the wrapper credential created them both. Interactive
@@ -190,6 +226,54 @@ export function isSessionVisibleTo(
     }
   }
   return false;
+}
+
+/**
+ * True only for sessions stamped by the durable trigger create path.
+ * Both fields are required so a partial marker cannot widen access.
+ */
+export function isTriggerCreatedSessionMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const record = metadata as Record<string, unknown>;
+  return (
+    typeof record.source === 'string' &&
+    record.source.startsWith('trigger:') &&
+    record.trigger_kind === 'git' &&
+    typeof record.trigger_slug === 'string' &&
+    record.trigger_slug.length > 0
+  );
+}
+
+/**
+ * Project-session content visibility. Project managers can open sessions that
+ * triggers created. Ordinary private human sessions remain owner-only. The
+ * backend sibling-session gate runs first and cannot be bypassed.
+ */
+export function isProjectSessionVisibleTo(
+  visibility: SessionVisibility,
+  ownerId: string | null,
+  grants: SecretGrant[],
+  subject: ShareSubject,
+  ownership: SessionOwnershipContext,
+  context: { metadata: unknown; canManageProject: boolean },
+): boolean {
+  if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // The manager override is for callers that are NOT a session-bound agent
+  // credential. A sandbox/agent token whose launching user happens to hold
+  // `manage` would otherwise read every OTHER trigger-created private session
+  // in the project — the sibling reach the ownership gate exists to deny.
+  //
+  // Gated on `boundCredentialSessionId`, NOT `callerSessionId`: the latter is
+  // the Supabase login session id for ordinary humans, so gating on it would
+  // strip managers of the override in the dashboard. See the field docs above.
+  if (
+    ownership.boundCredentialSessionId === null &&
+    context.canManageProject &&
+    isTriggerCreatedSessionMetadata(context.metadata)
+  ) {
+    return true;
+  }
+  return isSessionVisibleTo(visibility, ownerId, grants, subject, ownership);
 }
 
 /** Map a sharing intent → persisted (visibility, grants). */
@@ -215,6 +299,29 @@ export function visibilityToIntent(visibility: SessionVisibility, grants: Secret
   const memberIds = grants.filter((g) => g.principalType === 'member').map((g) => g.principalId);
   const groupIds = grants.filter((g) => g.principalType === 'group').map((g) => g.principalId);
   return { mode: 'members', memberIds, groupIds };
+}
+
+/**
+ * A session created while another running session's own token is the caller
+ * (a sub-agent/coordinator spawning a worker) inherits THAT session's sharing
+ * instead of defaulting to private. Without this, a worker a coordinator
+ * spawns is invisible to anyone the coordinator was shared with — only the
+ * human who happens to match `created_by` could ever open it, which defeats
+ * the point of sharing the parent in the first place.
+ *
+ * `requestedVisibility` explicit (automation callers — triggers, channels —
+ * always pass one) wins outright and carries no inherited grants: those
+ * callers manage their own sharing story and were never eligible to inherit.
+ * `parent` is null when there is no spawning session, or it could not be
+ * resolved (defense in depth) — falls back to the private default.
+ */
+export function resolveInheritedSessionSharing(
+  requestedVisibility: SessionVisibility | undefined,
+  parent: { visibility: SessionVisibility; grants: SecretGrant[] } | null,
+): { visibility: SessionVisibility; grants: SecretGrant[] } {
+  if (requestedVisibility !== undefined) return { visibility: requestedVisibility, grants: [] };
+  if (parent) return { visibility: parent.visibility, grants: parent.grants };
+  return { visibility: 'private', grants: [] };
 }
 
 /** Bulk-load session grants → map sessionId → grants. */

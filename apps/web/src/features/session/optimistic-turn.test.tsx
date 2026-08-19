@@ -86,7 +86,8 @@ describe('OptimisticTurn', () => {
     ]);
     const shell = render(<OptimisticTurn text={text} deferPreview />);
     const chat = render(<OptimisticTurn text={text} />);
-    for (const box of ['size-20', 'max-w-[21.5rem]', 'rounded-md border']) {
+    // `rounded-sm border` is what `TILE_SURFACE` (`../attachment-tile`) ships.
+    for (const box of ['size-20', 'max-w-[21.5rem]', 'rounded-sm border']) {
       expect(shell).toContain(box);
       expect(chat).toContain(box);
     }

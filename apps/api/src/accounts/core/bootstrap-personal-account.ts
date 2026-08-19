@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { db } from '../../shared/db';
 import { defaultAccountName } from './app';
 
@@ -39,6 +40,20 @@ export async function bootstrapPersonalAccount(
         isSuperAdmin: true,
       })
       .onConflictDoNothing();
+    // …and the canonical owner assignment. `SYSTEM_ACTOR`: the platform is the
+    // writer here — there is no one to authorize, the account is being created
+    // FOR this user. Best-effort: the mirror trigger already wrote the same row
+    // inside the INSERT, so a failure costs the audit event, not the account.
+    try {
+      await assignRole(SYSTEM_ACTOR, userId, {
+        principal: { type: 'user', id: userId },
+        roleKey: 'owner',
+        scope: { type: 'account' },
+        source: 'system',
+      });
+    } catch (err) {
+      console.warn('[bootstrap-personal-account] canonical owner assignment failed', err);
+    }
 
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       try {

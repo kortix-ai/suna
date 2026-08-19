@@ -9,11 +9,11 @@ import { PROJECT_ACTIONS } from '../iam';
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
-// A second principal on the SAME project with the 'editor' role — the floor
+// A second principal on the SAME project with the 'manager' role — the floor
 // `member` role has most READ leaves but NOT file.read / secret.read / any write
-// (those are editor+), so the "human/legacy token with no agent grant still
-// passes" cases for those routes need an editor, not the floor member.
-const EDITOR = crypto.randomUUID();
+// (those are manager-only), so the "human/legacy token with no agent grant still
+// passes" cases for those routes need a manager, not the floor member.
+const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
 
@@ -35,11 +35,11 @@ beforeAll(async () => {
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
-    { userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
+    { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await db.insert(projectMembers).values([
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
+    { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
 });
 
@@ -63,12 +63,12 @@ async function mintToken(agentGrant: unknown): Promise<string> {
   return t.secretKey;
 }
 
-async function mintEditorToken(agentGrant: unknown): Promise<string> {
+async function mintManagerToken(agentGrant: unknown): Promise<string> {
   const t = await createAccountToken({
     accountId: ACCOUNT,
-    userId: EDITOR,
+    userId: MANAGER,
     projectId: PROJECT,
-    name: 'leaf-gate-http-test-editor',
+    name: 'leaf-gate-http-test-manager',
     agentGrant: agentGrant as any,
   });
   minted.push(t.tokenId);
@@ -110,7 +110,6 @@ const CASES: Case[] = [
   { name: 'project session audit', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/audit` },
   { name: 'project session scope', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/scope` },
   { name: 'project access list', leaf: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, path: () => `/v1/projects/${PROJECT}/access` },
-  { name: 'oauth credentials list', leaf: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, path: () => `/v1/projects/${PROJECT}/oauth` },
   { name: 'review items inbox', leaf: PROJECT_ACTIONS.PROJECT_REVIEW_READ, path: () => `/v1/projects/${PROJECT}/review/items` },
   { name: 'branches', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/branches` },
   { name: 'commits', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/commits` },
@@ -120,17 +119,20 @@ const CASES: Case[] = [
   { name: 'triggers list', leaf: PROJECT_ACTIONS.PROJECT_TRIGGER_READ, path: () => `/v1/projects/${PROJECT}/triggers` },
 ];
 
-// EDITOR-TIER reads: project.file.read + project.secret.read were moved OUT of
-// the floor `member` role into editor, so a bare member is 403 here (they can
-// run the agent/chat but not browse the file tree or view secret values); an
-// editor passes. Same agent-grant fold as the member-tier CASES above.
-const EDITOR_TIER_READ_CASES: Case[] = [
+// MANAGER-TIER reads: project.file.read, project.secret.read, and the entire
+// Agents/Connectors/Skills/Customize surface were moved OUT of the floor
+// `member` role, so a bare member is 403 here (they can start/stop
+// sessions but can't browse the file tree, view secret values, or reach
+// Customize); a manager passes. Same agent-grant fold as the member-tier CASES
+// above.
+const MANAGER_TIER_READ_CASES: Case[] = [
   { name: 'files list', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files` },
   { name: 'files archive', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/archive` },
   { name: 'files search', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/search?q=x` },
   { name: 'files content', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/content?path=README.md` },
   { name: 'files history', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/history?path=README.md` },
   { name: 'secrets list', leaf: PROJECT_ACTIONS.PROJECT_SECRET_READ, path: () => `/v1/projects/${PROJECT}/secrets` },
+  { name: 'oauth credentials list', leaf: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ, path: () => `/v1/projects/${PROJECT}/oauth` },
 ];
 
 describe('HTTP enforcement — project read-leaf gates (agent-grant fold now reachable)', () => {
@@ -172,8 +174,8 @@ describe('HTTP enforcement — gateway playground spend gate', () => {
   });
 });
 
-describe('HTTP enforcement — editor-tier read gates (file.read / secret.read moved off member)', () => {
-  for (const c of EDITOR_TIER_READ_CASES) {
+describe('HTTP enforcement — manager-tier read gates (file/secret/connector reads moved off member)', () => {
+  for (const c of MANAGER_TIER_READ_CASES) {
     describe(c.name, () => {
       test('floor MEMBER (no file/secret read) → 403', async () => {
         const secret = await mintToken(null);
@@ -183,14 +185,14 @@ describe('HTTP enforcement — editor-tier read gates (file.read / secret.read m
         expect(JSON.stringify(body)).toContain(c.leaf);
       });
 
-      test('EDITOR (has the read leaf) → passes the gate (not 403)', async () => {
-        const secret = await mintEditorToken(null);
+      test('MANAGER (has the read leaf) → passes the gate (not 403)', async () => {
+        const secret = await mintManagerToken(null);
         const res = await getReq(c.path(), secret);
         expect(res.status).not.toBe(403);
       });
 
-      test('agent (editor) granted the exact leaf → passes the gate (not 403)', async () => {
-        const secret = await mintEditorToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
+      test('agent (manager) granted the exact leaf → passes the gate (not 403)', async () => {
+        const secret = await mintManagerToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
         const res = await getReq(c.path(), secret);
         expect(res.status).not.toBe(403);
       });
@@ -237,22 +239,22 @@ describe('HTTP enforcement — send-primitive gates (Slack upload / meet speak)'
         expect(JSON.stringify(body)).toContain(c.leaf);
       });
 
-      test('EDITOR (has connector.write) → passes the gate (not 403)', async () => {
-        const secret = await mintEditorToken(null);
+      test('MANAGER (has connector.write) → passes the gate (not 403)', async () => {
+        const secret = await mintManagerToken(null);
         const res = await postReq(c.path(), secret, {});
         expect(res.status).not.toBe(403);
       });
 
-      test('scoped agent launched by an editor but missing connector.write in kortix_cli → 403', async () => {
-        const secret = await mintEditorToken({ agent: 'scoped-bot', kortixCli: ['project.trigger.fire'], connectors: [] });
+      test('scoped agent launched by a manager but missing connector.write in kortix_cli → 403', async () => {
+        const secret = await mintManagerToken({ agent: 'scoped-bot', kortixCli: ['project.trigger.fire'], connectors: [] });
         const res = await postReq(c.path(), secret, {});
         expect(res.status).toBe(403);
         const body = await res.json().catch(() => ({}));
         expect(JSON.stringify(body)).toContain(c.leaf);
       });
 
-      test('scoped agent launched by an editor AND granted connector.write → passes the gate (not 403)', async () => {
-        const secret = await mintEditorToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
+      test('scoped agent launched by a manager AND granted connector.write → passes the gate (not 403)', async () => {
+        const secret = await mintManagerToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
         const res = await postReq(c.path(), secret, {});
         expect(res.status).not.toBe(403);
       });

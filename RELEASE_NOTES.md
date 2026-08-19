@@ -1,36 +1,36 @@
-Entitlement overrides, act-as support sessions, and one-call agent secret grants
+Apps goes stable, Monitors lands experimental, and a big session-reliability pass
 
 ## New
 
-- **Act-as for support** — platform admins can open a customer account for up to one hour, with a visible banner and full auditing. Anything that would outlive the hour — tokens, memberships, invites, SSO providers, public shares, tunnels, agent scope changes — is refused during the session.
-- **Per-account entitlement overrides** — operators grant or extend individual entitlements per account, each with an optional expiry, from a new admin override console. Expired overrides stop applying on their own.
-- **One plan catalog** — plans now resolve through a single catalog and resolver across API, SDK and web. The duplicate frontend tier catalogs and the "· legacy" plan label are gone.
-- **Grant a secret to an agent in one call** — a new API route grants an agent access to a secret, and the web app offers that grant directly from the warning that reports the missing access.
-- **Session overrides in one place** — the Scope panel is replaced by a single overrides popover: agent, model, sandbox and connector overrides together, labels grounded in the agent's real defaults, and a reset that is always reachable.
-- **Managed model lineup refresh** — Muse Spark 1.2, MiniMax M3 and GPT-5.6 Luna join GLM 5.2, and DeepSeek V4 Flash becomes the platform default.
-- **Sandboxes stay current** — every deploy serves its CLI and managed skills at `/v1/runtime-assets`, and sandboxes reconcile against it on start, restart and resume.
-
-## Improved
-
-- Project sessions are grouped by last activity instead of creation date.
-- Account settings are reachable from the user menu.
-- Model errors keep their upstream cause through gateway fallbacks, and context overflow is reported consistently — including after a fallback.
-- Managed-model capabilities reported by the gateway now come from real pricing data.
-- An outdated CLI now gets a clear "update your CLI" warning on the connector routes instead of a raw 404.
+- **Apps is now a stable feature** — it moved out of experimental status and sits in the sidebar under Customize. Apps open instantly (no more loading flash), show their desktop layout on the preview card instead of mobile, and get their own IAM permissions and per-team scoping. Non-public Apps are now usable and honest about who can access them; self-host installs can serve Apps even though they can't publish to kortix.com.
+- **Invite-time project grants** — inviting someone to a project now grants both the account role and project access in one step, instead of two separate actions.
+- **Settings unified into one tabbed panel**, and the Billing pane was rebuilt with fewer boxes and a single credits card.
+- **Chat input rebuilt** to stop duplicate and lost sends; triple-tapping Escape now stops the agent even while you're typing.
+- **Easy panel overhaul** (the non-technical-user view): memory updates are now visible and plainly labelled, skill and task calls expand with live sub-agent activity, and a connect-apps strip and context-card actions were added.
+- **Session usage modal** reworked for clarity and speed; the model switcher and session usage view now show the real upstream provider instead of "Kortix".
+- **Monitors** (experimental): a new trigger type that runs on its own provisioned box, with its own CLI command group and MCP surface.
+- **Network-boundary secrets on Daytona**: an in-guest egress shim scopes a secret to the sandbox it was issued to, replacing the old operator-wide env var.
+- **Presentations framework** at `/presentations`, including a diagram-led security deck.
+- Added managed models: DeepSeek V4 Pro 0813 and Grok 4.6.
+- The CLI now shows the identity behind a minted agent token instead of reporting "not logged in".
 
 ## Fixed
 
-- Two ways the session message queue could stall.
-- Saving session scope without touching connectors no longer writes a connector override, and a saved agent secret selection is retained.
-- Secret delivery on Platinum sandboxes resolves replicas reliably and arms the secrecy boundary within the provider's real timing budget, without re-arming on every turn.
+- A cluster of stuck-session bugs: sessions could get wedged on boot with no retry, get stuck in a runaway self-repeating turn, show phantom interrupts, or strand mid-workspace-switch. A failed direct send now lands in the failed lane instead of disappearing, and prompts no longer get lost around session hand-off.
+- Session truth now reads from a durable server-side turn ledger over HTTP, replacing several client-side guesses about whether a session is still working.
+- Self-host: Storage now hands out public URLs instead of an internal Docker host address, and updates auto-heal from unlogged-table fork corruption that used to block them.
+- The gateway reports what an LLM request actually cost, not what Kortix billed; it no longer kills slow reasoning turns at a hard 90-second timeout, drops the trailing-assistant prefill that made strict backends fail, and its body size ceiling is raised to 1 GiB (was rejecting large multimodal requests).
+- MCP catalog discovery is now authenticated, and private sessions are no longer discoverable by other connectors.
+- Creating a duplicate App slug now returns 409 instead of 500.
+- The Vercel production frontend build now pins its runtime version so it can't get stranded on a stale one.
+- Cleaned up frontend error noise from bot/automation scripts and third-party scripts on Safari.
+- The reasoning-effort icon for Auto is now visually distinct, and agent names are capitalized consistently.
 
-## Security and compliance
+## Notes
 
-- The impersonation deny-list also covers agent-governance writes (`agents/:name/scope`, `secrets/:id/grant`), connector and channel management, and setup-link minting — all closed during review, before release.
-- MFA enforcement for IAM users, WAF attached to the web load balancers, load-balancer log bucket versioning, and a tightly scoped CI Terraform role.
+This release also includes a large internal hardening pass: an in-guest network-boundary/egress-secrets system, a warm-session simplification (session pooling now reuses ordinary sessions instead of a separate warm-session concept), a large API route-file split for maintainability, and expanded test coverage across sessions, monitors, and the deployed staging gate.
 
-## Internal
+## Also in this release
 
-- Terraform for dev and prod now applies from CI behind per-environment OIDC roles, with drift detection re-registered.
-- Production deploys stamp the frontend with the release version and no longer allow mixed frontend/API states; migrations with blocking backfills are rejected at lint time.
-- Full-stack PR previews run in warm sandboxes, and the local test gates were stabilized.
+- **Security hardening** — the sandbox egress pin now trusts the edge-populated client IP rather than spoofable forwarding headers; the App public proxy honors a token's project/session scope when authorizing App access; trigger-session manager visibility no longer extends to session-bound agent tokens; a deleted session is no longer readable by id.
+- **Release-pipeline reliability** — the release gate is sharded into parallel jobs, cleans up its own test debris, and runs against a right-sized staging; several long-standing test-suite defects that kept the gate red were fixed.

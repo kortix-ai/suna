@@ -8,6 +8,7 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import {
@@ -32,9 +33,7 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
-            {tHardcodedUi.raw(
-              'componentsSessionToolRenderers.line5270JsxTextLegacyConnectorTool',
-            )}
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line5270JsxTextLegacyConnectorTool')}
           </span>
           <span className="text-muted-foreground/60 ml-auto text-xs font-medium whitespace-nowrap">
             removed
@@ -45,12 +44,14 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="space-y-2 px-3 py-2.5">
-        <p className="text-muted-foreground text-xs leading-relaxed">
-          {tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line5283JsxTextThisLegacyConnectorToolSurfaceHasBeenRemoved',
-          )}
-        </p>
+      <>
+        <ToolResultCard bodyClassName="px-2 py-1.5">
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line5283JsxTextThisLegacyConnectorToolSurfaceHasBeenRemoved',
+            )}
+          </p>
+        </ToolResultCard>
         {output ? (
           <ToolOutputFallback
             output={output}
@@ -58,7 +59,7 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
             toolName="legacy-integration"
           />
         ) : null}
-      </div>
+      </>
     </BasicTool>
   );
 }

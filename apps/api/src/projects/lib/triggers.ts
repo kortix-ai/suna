@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import type { TriggerList } from '@kortix/api-contract';
 import { connectors, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
+import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { and, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { config } from '../../config';
@@ -32,18 +33,27 @@ import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import {
   GIT_TRIGGER_SESSION_MODES,
+  type GitMonitorMode,
   type GitTriggerSessionMode,
   type GitTriggerSpec,
+  type GitTriggerType,
   type LoadedTriggers,
   MANIFEST_FILENAME,
   type ParsedManifest,
+  defaultTriggerSessionMode,
   extractTriggers,
+  parseMonitorFields,
   readManifest,
   serializeManifest,
   synthesizeBlankManifest,
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  loadTriggerSessionAccessMap,
+} from '../trigger-session-access';
+import { drainMonitorEvents } from './monitor-observer';
 import {
   type ProjectRow,
   type RequestAuditContext,
@@ -52,6 +62,14 @@ import {
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+
+/**
+ * Who asked for this fire. `monitor` is the third trigger type's source
+ * (docs/specs/2026-08-12-monitors.md): the observer draining a monitor event
+ * off `project_monitor_events`. It rides the identical downstream path as
+ * `cron` — the session it mints is stamped `trigger:monitor`.
+ */
+export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -670,10 +688,10 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  * authorization actor (concurrency cap, secret-visibility subject, the
  * standing-role fallback an unactivated agent SA relies on — see
  * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
- * run's recorded identity: see `attributeFiredTriggerSession` below, which
- * overwrites `project_sessions.created_by` to the agent's own service account
- * right after the row exists — "attribution and authorization stop sharing
- * one field" (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
+ * run's recorded identity. The create-session action applies the trigger's
+ * access policy and records the agent's service account after the row exists.
+ * This keeps attribution and authorization on separate fields
+ * (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
  * What a run can actually ACCESS is governed by the AGENT's declared scope in
  * kortix.yaml's `agents:` map (secrets + connectors), applied when the session
  * env is built — not by this stand-in.
@@ -683,28 +701,10 @@ export async function resolveTriggerActor(project: ProjectRow): Promise<string |
 }
 
 /**
- * Re-attribute a freshly created trigger-fired session to the firing agent's
- * standing-identity service account: `created_by` (session identity/audit —
- * NOT the visibility gate, which is `visibility: 'project'` for every trigger
- * session regardless of owner) moves off the arbitrary account-owner stand-in
- * `resolveTriggerActor` returns and onto the agent itself. Closes the TODO
- * that lived here: "resolve to the agent's SERVICE ACCOUNT so per-user
- * connectors + secrets bind to the AGENT itself, with no human userId at all."
- *
- * Deliberately a POST-creation fixup rather than changing what `fireGitTrigger`
- * passes as `userId` into `createSession`: that value also drives provisioning
- * (concurrency cap, secret-share subject) and is the fallback identity IAM
- * v2 authorizes as when the agent's SA has no role bound yet (unactivated —
- * the default state for an auto-provisioned agent). Swapping it for the SA
- * there would make every un-activated trigger agent authorize as a bare,
- * role-less service account and lose that fallback outright — see
- * `resolveActingActor` in iam/engine-v2.ts. The authorization path stays
- * exactly as it is today; only the audit-facing owner changes.
- *
- * Best-effort: failures are logged and swallowed — a session that already
- * fired must not be reported as failed over a cosmetic attribution miss.
- * No-op for the `session_mode = "reuse"` path (the reused session's
- * `created_by` was already fixed up the first time it was created).
+ * Preserve the internal attribution helper for callers that create trigger
+ * sessions outside the durable create-session action. The primary trigger
+ * fire path does not call this helper. Its action applies attribution and the
+ * complete access policy in one transaction.
  */
 export async function attributeFiredTriggerSession(input: {
   project: ProjectRow;
@@ -885,7 +885,7 @@ async function enqueueTriggerPrompt(input: {
   sessionId: string;
   actor: string;
   text: string;
-  source: 'cron' | 'webhook' | 'manual';
+  source: TriggerFireSource;
   triggerSlug: string;
   idempotencyKey?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
@@ -927,7 +927,7 @@ export async function fireGitTrigger(input: {
   project: ProjectRow;
   payload: Record<string, unknown>;
   renderedPrompt: string;
-  source: 'cron' | 'webhook' | 'manual';
+  source: TriggerFireSource;
   idempotencyKey?: string | null;
   request?: RequestAuditContext;
 }): Promise<{
@@ -1042,9 +1042,9 @@ export async function fireGitTrigger(input: {
     userId: actor,
     requestingPrincipalType: 'human',
     enforceAccountCap: false,
-    // Trigger sessions are project automation, not the actor's personal chat —
-    // make them project-visible so the whole team can find them.
-    visibility: 'project',
+    // Fail closed until the post-create action resolves the trigger's current
+    // account-local policy. Queued creates resolve it when the worker runs.
+    visibility: 'private',
     request: input.request,
     queuePolicy: 'on_backpressure',
     idempotencyKey: input.idempotencyKey ?? null,
@@ -1073,6 +1073,12 @@ export async function fireGitTrigger(input: {
       ...(sessionKey ? { trigger_session_key: sessionKey } : {}),
       payload_summary: summarizeTriggerPayload(payload),
     },
+    postCreate: [
+      {
+        type: 'apply_trigger_session_access',
+        triggerSlug: spec.slug,
+      },
+    ],
   });
 
   if (sessionResult.status === 'queued' || sessionResult.status === 'pending') {
@@ -1091,19 +1097,6 @@ export async function fireGitTrigger(input: {
     };
   }
   const firedSessionId = sessionResult.sessionId ?? sessionResult.row?.sessionId;
-  // Re-attribute the run to the agent's own service account (see
-  // attributeFiredTriggerSession's docblock). `row.agentName` is the RESOLVED
-  // name `createProjectSession` actually persisted (default-sentinel/
-  // project-default fallbacks already applied) — using it here means this
-  // never re-derives that resolution logic. Best-effort: this must not turn an
-  // already-fired session into a failed trigger result.
-  if (firedSessionId && sessionResult.row?.agentName) {
-    await attributeFiredTriggerSession({
-      project,
-      sessionId: firedSessionId,
-      agentName: sessionResult.row.agentName,
-    }).catch(() => {});
-  }
   return {
     status: 'fired',
     sessionId: firedSessionId,
@@ -1294,6 +1287,19 @@ export function startProjectTriggerScheduler(): void {
         console.error('[project-triggers] scheduler tick failed:', error);
       });
 
+    // Monitor events land in their own append-only log, so they drain beside
+    // the execution queue rather than through it — one slow monitor fire must
+    // not stall a due cron slot, and vice versa.
+    drainMonitorEvents()
+      .then((result) => {
+        if (result.fired || result.failed || result.skipped) {
+          console.log('[project-monitors] event drain completed', result);
+        }
+      })
+      .catch((error) => {
+        console.error('[project-monitors] event drain failed:', error);
+      });
+
     // Connector reconcile backstop — slower cadence than the trigger sweep so
     // we don't re-read every manifest each tick. Catches out-of-band manifest
     // edits (raw git push / CLI) and heals any DB drift / retries error rows.
@@ -1378,6 +1384,8 @@ export async function loadTriggersForResponse(
           .from(projectTriggerRuntime)
           .where(eq(projectTriggerRuntime.projectId, projectId));
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
+  const sessionAccessBySlug =
+    specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
 
   return {
     triggers: specs.map((spec) => ({
@@ -1392,11 +1400,16 @@ export async function loadTriggersForResponse(
       run_at: spec.runAt,
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
+      run: spec.run,
+      mode: spec.monitorMode,
+      interval_seconds: spec.intervalSeconds,
+      expect_event_within_seconds: spec.expectEventWithinSeconds,
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
       session_id: spec.pinnedSessionId,
       session_key: spec.sessionKey,
       filter: spec.filter,
+      session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
@@ -1414,7 +1427,7 @@ export async function loadTriggersForResponse(
 export interface TriggerDraft {
   slug: string;
   name: string;
-  type: 'cron' | 'webhook';
+  type: GitTriggerType;
   agent: string;
   /** Wire-form model (`provider/model`) or null for "Default" (resolve at fire time). */
   model: string | null;
@@ -1424,6 +1437,14 @@ export interface TriggerDraft {
   runAt: string | null;
   timezone: string;
   secretEnv: string | null;
+  /** For type=monitor only — the repo-relative command the box supervises. */
+  run: string | null;
+  /** For type=monitor only — `poll` (run on interval) or `stream` (long-running). */
+  monitorMode: GitMonitorMode | null;
+  /** For `monitorMode === 'poll'` only — the poll period, in whole seconds. */
+  intervalSeconds: number | null;
+  /** For type=monitor only — the silence watchdog, in whole seconds. */
+  expectEventWithinSeconds: number | null;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
@@ -1446,9 +1467,10 @@ export function parseTriggerDraft(
     return { error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only` };
   }
 
-  const type =
-    (body as any).type === 'webhook' ? 'webhook' : (body as any).type === 'cron' ? 'cron' : null;
-  if (!type) return { error: 'type must be "cron" or "webhook"' };
+  const typeRaw = normalizeString((body as any).type);
+  const type: GitTriggerType | null =
+    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' ? typeRaw : null;
+  if (!type) return { error: 'type must be "cron", "webhook", or "monitor"' };
 
   const promptTemplate = normalizeString(
     (body as any).prompt_template ?? (body as any).promptTemplate,
@@ -1478,7 +1500,7 @@ export function parseTriggerDraft(
     ? (sessionModeRaw as GitTriggerSessionMode)
     : sessionKeyRaw
       ? 'keyed'
-      : 'fresh';
+      : defaultTriggerSessionMode(type);
   const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
@@ -1513,6 +1535,32 @@ export function parseTriggerDraft(
     if (Object.keys(entries).length > 0) filter = entries;
   }
 
+  if (type === 'monitor') {
+    const monitor = parseMonitorFields(body);
+    if ('error' in monitor) return { error: monitor.error };
+    return {
+      slug,
+      name,
+      type: 'monitor',
+      agent,
+      model,
+      enabled,
+      promptTemplate,
+      cron: null,
+      runAt: null,
+      timezone: 'UTC',
+      secretEnv: null,
+      run: monitor.run,
+      monitorMode: monitor.monitorMode,
+      intervalSeconds: monitor.intervalSeconds,
+      expectEventWithinSeconds: monitor.expectEventWithinSeconds,
+      sessionMode,
+      pinnedSessionId,
+      sessionKey,
+      filter,
+    };
+  }
+
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
     const timezoneError = validateTriggerTimezone(timezone);
@@ -1536,6 +1584,10 @@ export function parseTriggerDraft(
         runAt: new Date(parsed).toISOString(),
         timezone,
         secretEnv: null,
+        run: null,
+        monitorMode: null,
+        intervalSeconds: null,
+        expectEventWithinSeconds: null,
         sessionMode,
         pinnedSessionId,
         sessionKey,
@@ -1559,6 +1611,10 @@ export function parseTriggerDraft(
       runAt: null,
       timezone,
       secretEnv: null,
+      run: null,
+      monitorMode: null,
+      intervalSeconds: null,
+      expectEventWithinSeconds: null,
       sessionMode,
       pinnedSessionId,
       sessionKey,
@@ -1583,6 +1639,10 @@ export function parseTriggerDraft(
     runAt: null,
     timezone: 'UTC',
     secretEnv,
+    run: null,
+    monitorMode: null,
+    intervalSeconds: null,
+    expectEventWithinSeconds: null,
     sessionMode,
     pinnedSessionId,
     sessionKey,
@@ -1594,6 +1654,7 @@ export function parseTriggerDraft(
  * PATCH merge before re-parsing. */
 
 export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
+  const isMonitor = spec.type === 'monitor';
   return {
     slug: spec.slug,
     name: spec.name,
@@ -1607,8 +1668,19 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     // `run_at` trigger would drop its schedule and fail re-validation ("cron
     // triggers must declare a `cron` expression or a one-off `run_at`").
     run_at: spec.runAt,
-    timezone: spec.timezone,
+    // A monitor rejects cron wiring outright, so its merge body must carry the
+    // implicit 'UTC' as null — re-parsing the splat would otherwise fail on the
+    // timezone the spec only holds as a placeholder.
+    timezone: isMonitor ? null : spec.timezone,
     secret_env: spec.secretEnv,
+    run: spec.run,
+    mode: spec.monitorMode,
+    interval:
+      spec.intervalSeconds === null ? null : formatDurationSeconds(spec.intervalSeconds),
+    expect_event_within:
+      spec.expectEventWithinSeconds === null
+        ? null
+        : formatDurationSeconds(spec.expectEventWithinSeconds),
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
@@ -1646,6 +1718,10 @@ export function draftToSpec(
     runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
+    run: draft.run,
+    monitorMode: draft.monitorMode,
+    intervalSeconds: draft.intervalSeconds,
+    expectEventWithinSeconds: draft.expectEventWithinSeconds,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,

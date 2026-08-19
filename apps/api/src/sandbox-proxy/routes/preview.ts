@@ -1,9 +1,9 @@
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
-import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
@@ -11,14 +11,7 @@ import {
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import {
-  AgentSecretGrantMismatchError,
-  SecretGrantResolutionError,
-} from '../../projects/lib/secret-grant';
-import {
-  SessionGrantRemintError,
-  remintGrantForAgentSwitch,
-} from '../../projects/lib/session-token-grant';
+import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { recordSessionActivity } from '../../projects/session-activity';
@@ -28,15 +21,9 @@ import {
   isPreviewUseObservation,
   isSandboxAuthored,
   isTurnStartRequest,
-  observeTurnStart,
   previewGrantMs,
-  turnDeliveryGraceMs,
-  turnGrantMs,
 } from '../../projects/sandbox-deadline';
-import {
-  extractPromptInfo,
-  generateSessionTitleFromFirstPrompt,
-} from '../../projects/session-title-generate';
+import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
@@ -53,12 +40,52 @@ import {
   wakeSandbox,
 } from '../backend';
 import {
+  DEFAULT_AGENT_SENTINEL,
+  type PrePromptEnvSyncDeps,
+  bodyWithoutPromptAgent,
+  errorMessage,
+  jsonProxyError,
+  requestedPromptAgent,
+  runPrePromptEnvSync,
+  secretGrantErrorResponse,
+  shouldSyncProjectEnvBeforeProxy,
+} from '../pre-prompt-env-sync';
+import {
+  EFFECTIVE_MESSAGE_ID_HEADER,
+  PROMPT_TRANSCRIPT_READ_LIMIT,
+  WIRE_ID_PLACED_HEADER,
+  isPromptWireIdRepairPath,
+  promptBodyMessageId,
+  promptTranscriptReadPath,
+  readNewestWireIdTime,
+  repairPromptWireId,
+} from '../prompt-wire-id-repair';
+import {
   PROXY_RETRY_BUDGET_MS,
   isLongTurnCompletionRequest,
+  isUploadRequest,
   proxyAttemptTimeoutMs,
 } from '../preview-retry-budget';
-import { claimPromptDelivery, promptDeliveryKey, releasePromptDelivery } from '../prompt-dedupe';
+import {
+  claimPromptDelivery,
+  isNonIdempotentSessionWrite,
+  promptDeliveryKey,
+  releasePromptDelivery,
+  shouldClaimPromptDelivery,
+} from '../prompt-dedupe';
+import {
+  PROXY_HOP_HEADER,
+  PROXY_UPSTREAM_STATUS_HEADER,
+  portFailureHop,
+  type ProxyHop,
+} from '../proxy-hop';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  beginSandboxTurn,
+  extractTurnIdentity,
+} from '../../projects/sandbox-turn-lifecycle';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -85,6 +112,7 @@ const preview = new Hono<{
 // it for the same reason we strip `authorization` — a caller must not be able to
 // hand themselves platform authority by naming a header.
 export const STRIP_FORWARD_HEADERS = new Set([
+  'x-kortix-wire-id-placed',
   'host',
   'authorization',
   'cookie',
@@ -95,21 +123,19 @@ export const STRIP_FORWARD_HEADERS = new Set([
   KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
 
-function jsonProxyError(body: Record<string, unknown>, status: number, origin?: string): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
-  return new Response(JSON.stringify(body), {
-    status,
-    headers,
-  });
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : String(error || fallback);
-}
+// The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit
+// test can reach it without evaluating this route — importing this file caches
+// its collaborators and silently disables every sibling suite's `mock.module`
+// (see the header comment there). Re-exported so existing import paths, and the
+// suites that already read these names off `./preview`, keep working.
+export {
+  bodyWithoutPromptAgent,
+  requestedPromptAgent,
+  runPrePromptEnvSync,
+  secretGrantErrorResponse,
+  shouldSyncProjectEnvBeforeProxy,
+} from '../pre-prompt-env-sync';
+export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
 // SANDBOX_TOUCH_INTERVAL_MS in ../backend.ts, for the same reason: a single page
@@ -131,18 +157,6 @@ export function bindSandboxRequestContext(
   setContextField('projectId', record.projectId);
   setContextField('sessionId', record.sessionId);
   setContextField('sandboxId', sandboxId);
-}
-
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
-
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
 }
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
@@ -285,28 +299,53 @@ function portUnreachableHtml(port: number): string {
 // Response for an unreachable / not-yet-ready sandbox port: a friendly HTML page
 // for browser navigations, machine-readable JSON otherwise. Marked no-store so a
 // retry always re-hits the upstream instead of a cached error.
-function portUnreachableResponse(opts: {
+//
+// `hop` is mandatory: the status alone cannot distinguish a parked row from a
+// dead runtime from a dev server the agent never started, and a caller that has
+// to guess guesses wrong (see `proxy-hop.ts`). `upstreamStatus` is the status
+// the failing hop actually returned, when there was one — a thrown/refused
+// connection has none.
+export function portUnreachableResponse(opts: {
   port: number;
   status: number;
   origin: string;
   incomingHeaders: Headers;
   reason: string;
+  hop: ProxyHop;
+  upstreamStatus?: number | null;
 }): Response {
-  const { port, status, origin, incomingHeaders, reason } = opts;
+  const { port, status, origin, incomingHeaders, reason, hop } = opts;
+  const upstreamStatus = opts.upstreamStatus ?? null;
   const headers = new Headers({ 'Cache-Control': 'no-store' });
+  // Set on EVERY variant, HTML included: a `fetch` probe that lands on the
+  // browser-navigation branch (it sends `Accept: text/html`) must still be able
+  // to attribute the failure.
+  headers.set(PROXY_HOP_HEADER, hop);
+  if (upstreamStatus !== null) {
+    headers.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstreamStatus));
+  }
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Credentials', 'true');
+    // Without this the browser hides both headers from JS and the probe is back
+    // to guessing — the web app and the API are always different origins.
+    headers.set(
+      'Access-Control-Expose-Headers',
+      `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
+    );
   }
   if (isBrowserNavigation(incomingHeaders)) {
     headers.set('Content-Type', 'text/html; charset=utf-8');
     return new Response(portUnreachableHtml(port), { status, headers });
   }
   headers.set('Content-Type', 'application/json');
-  return new Response(JSON.stringify({ error: reason, port, status }), {
-    status,
-    headers,
-  });
+  return new Response(
+    JSON.stringify({ error: reason, port, status, hop, upstream_status: upstreamStatus }),
+    {
+      status,
+      headers,
+    },
+  );
 }
 
 // Response for a blocking session-turn (`POST /session/:id/message`) that
@@ -371,14 +410,6 @@ function sanitizeRedirectLocation(
   }
 }
 
-// === Project-env pre-sync (before a prompt reaches opencode) ===
-
-function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
-  if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
-}
-
 // True only when a fetch failure PROVES nothing reached the box: the upstream
 // actively refused the connection (nothing was ever accepted). Any other thrown
 // error — timeout, abort, connection reset mid-flight — is ambiguous: the
@@ -395,23 +426,6 @@ function isConnectionRefusedError(err: unknown): boolean {
   if (codes.some((c) => c === 'ECONNREFUSED')) return true;
   const message = typeof e.message === 'string' ? e.message : '';
   return /econnrefused|connection refused|failed to connect|unable to connect/i.test(message);
-}
-
-function requestedPromptAgent(
-  body: ArrayBuffer | undefined,
-  incomingHeaders: Headers,
-): string | null {
-  if (!body) return null;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return null;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-      agent?: unknown;
-    };
-    return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -451,17 +465,11 @@ async function agentSwitchRefusal(
   origin?: string,
 ): Promise<Response | null> {
   const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-  // Agent-lock enforcement is OFF by default — in-session agent switching is
-  // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
-  // explicitly enabled.
-  if (
-    requestedAgent &&
-    config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
-    isProhibitedAgentSwitch(requestedAgent, sessionAgent)
-  ) {
-    return agentSwitchConflictResponse(sessionAgent, requestedAgent, origin);
-  }
-  if (!isProhibitedAgentSwitch(requestedAgent, sessionAgent)) return null;
+  // In-session agent switching is allowed, unconditionally. What remains is an
+  // AUTHORIZATION question, not an immutability one: may THIS caller run THAT
+  // agent? The grant the switched-to agent runs under is re-scoped separately
+  // (env sync + token re-mint) before the prompt is forwarded.
+  if (!isConcreteAgentSwitch(requestedAgent, sessionAgent)) return null;
   const switchedToAgent = requestedAgent as string;
   if (!userId) {
     // A switch is an authorization decision and there is no principal to decide
@@ -478,11 +486,19 @@ async function agentSwitchRefusal(
     );
   }
 
-  const verdict = await authorize(userId, record.accountId, PROJECT_ACTIONS.PROJECT_AGENT_READ, {
-    type: 'project',
-    id: record.projectId,
-    resource: { type: 'agent', id: switchedToAgent },
-  });
+  // No Hono context here — this runs inside the proxy forward loop, whose only
+  // identity is the resolved `userId`. The question is an OBJECT-grant one
+  // ("is this agent scoped to you"), which no credential can widen, so the
+  // role-only actor is the same authority this call already had.
+  const verdict = await authorize(
+    actorForUser(userId, record.accountId),
+    PROJECT_ACTIONS.PROJECT_AGENT_READ,
+    {
+      type: 'project',
+      id: record.projectId,
+      resource: { type: 'agent', id: switchedToAgent },
+    },
+  );
   if (verdict.allowed) return null;
   console.warn(
     `[PREVIEW] Refused prompt on ${sandboxId}: caller may not run agent '${switchedToAgent}' (${verdict.reason})`,
@@ -502,7 +518,7 @@ async function agentSwitchRefusal(
  * The refusal body, or null to let the turn through.
  *
  * The shape is byte-identical to what session CREATE returns for the same two
- * codes (projects/routes/r7.ts). That is a contract, not a coincidence: one
+ * codes (projects/routes/project-sessions.ts). That is a contract, not a coincidence: one
  * client classifier has to read both, and a renamed field here degrades to a
  * card that says "a connector is missing" without naming which.
  */
@@ -571,73 +587,6 @@ async function connectorGateRefusal(
   );
 }
 
-function agentSwitchConflictResponse(
-  expectedAgent: string,
-  requestedAgent: string,
-  origin?: string,
-): Response {
-  return jsonProxyError(
-    {
-      error: 'agent switch requires a new session',
-      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      expected_agent: expectedAgent,
-      requested_agent: requestedAgent,
-    },
-    409,
-    origin,
-  );
-}
-
-/**
- * Map a secret-grant failure from the pre-prompt env sync onto its response, or
- * null when the error is an ordinary env-sync failure the caller should handle
- * with its existing retry/502 logic.
- *
- * Both cases refuse the prompt rather than forwarding it: the sandbox's env is
- * provisioned for ONE agent's grant, so a prompt we can't prove is entitled to
- * that env must not reach OpenCode. See projects/lib/secret-grant.ts.
- */
-export function secretGrantErrorResponse(err: unknown, origin?: string): Response | null {
-  // The prompt asked for an agent whose grant differs from the session's. 409,
-  // matching the existing agent-immutability contract the web client already
-  // codes against — re-scoping now cannot un-read what the session's agent
-  // already pulled into the box.
-  if (err instanceof AgentSecretGrantMismatchError) {
-    return agentSwitchConflictResponse(err.sessionAgent, err.requestedAgent, origin);
-  }
-  // We could not establish what this agent may read. 503 rather than 502: the
-  // sandbox is fine, our ability to VERIFY entitlement is what failed, and
-  // retrying is the correct client response.
-  // The switch was legal but we could not rewrite the token's grant to match the
-  // agent now running. 503 for the same reason as above — and refusing is the
-  // point: forwarding would run the new agent against the OLD agent's connector
-  // and CLI grants, which is exactly the escalation the re-mint closes.
-  if (err instanceof SessionGrantRemintError) {
-    return jsonProxyError(
-      { error: err.message, code: 'AGENT_SWITCH_GRANT_UNAPPLIED' },
-      503,
-      origin,
-    );
-  }
-  if (err instanceof SecretGrantResolutionError) {
-    return jsonProxyError(
-      { error: err.message, code: 'AGENT_SECRET_GRANT_UNRESOLVED' },
-      503,
-      origin,
-    );
-  }
-  return null;
-}
-
-// The sentinel name a session carries when it isn't bound to a *concrete* agent.
-// `project_sessions.agent_name` defaults to this, and no agent is literally named
-// "default" — the runtime resolves it to OpenCode's configured `default_agent`
-// (conventionally `kortix`). It is therefore non-binding: a "default" session's
-// connector token carries the least-privileged grant (null = full for ungoverned
-// projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
-// can never use it to escalate into another agent's connector / Kortix-CLI grant.
-const DEFAULT_AGENT_SENTINEL = 'default';
-
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
 // run a DIFFERENT *concrete* agent than the one this session's connector token was
 // minted for. That — and only that — is the escalation the policy prevents (see
@@ -646,41 +595,52 @@ const DEFAULT_AGENT_SENTINEL = 'default';
 // agent-specific grant to inherit, and a prompt asking for 'default' just means
 // "this session's own default agent".
 //
-// Without this, the client's perfectly ordinary behaviour read as a bogus switch:
-// it resolves "the default" to a concrete name (e.g. `kortix`) for display and
-// echoes it back on follow-up turns — and a first-turn race can send that name
-// before the session's bound agent has even loaded. Comparing the concrete echo
-// against the stored sentinel 409'd every "start a new session, send a second
-// message" flow (the false AGENT_SWITCH_REQUIRES_NEW_SESSION reports).
-function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
+// This predicate does NOT refuse the switch. It used to gate a 409; it now gates
+// only the 403 authz check in `agentSwitchRefusal`.
+//
+// The sentinel 'default' is non-binding on EITHER side: a session stored as
+// 'default' has no privileged agent-specific grant to inherit, and a prompt
+// asking for 'default' just means "this session's own default agent".
+//
+// Without that carve-out, the client's perfectly ordinary behaviour read as a
+// switch: it resolves "the default" to a concrete name (e.g. `kortix`) for
+// display and echoes it back on follow-up turns — and a first-turn race can send
+// that name before the session's bound agent has even loaded.
+function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
   if (!requestedAgent) return false;
+  // Asking for the sentinel is asking for "this session's own agent" — never a
+  // switch, and there is no concrete agent to authorize.
   if (requestedAgent === DEFAULT_AGENT_SENTINEL) return false;
-  if (sessionAgent === DEFAULT_AGENT_SENTINEL) return false;
+  // NOTE: there is deliberately NO `sessionAgent === DEFAULT_AGENT_SENTINEL`
+  // carve-out here. There used to be, and it was an authorization bypass
+  // (CWE-863): the body's `agent` is only stripped when the REQUESTED agent is
+  // the sentinel (see the `bodyWithoutPromptAgent` call site), so a
+  // `default`-bound session naming a CONCRETE agent really did run that agent
+  // and really did have the token re-minted to its connector/Kortix-CLI grant —
+  // while skipping the `project.agent.read` check entirely. Anyone who could
+  // use a default-bound session could therefore run any agent in the project.
+  //
+  // The carve-out was written for the old 409 refusal, where it was right: the
+  // client resolves "the default" to a concrete name for display and echoes it
+  // back, and refusing that ordinary echo 409'd every new session. It is wrong
+  // for an authorization check. Authorizing the echo is correct and cheap — the
+  // caller genuinely is asking to run that agent, and a member entitled to it
+  // passes exactly as they do on the concrete-to-concrete path.
   return requestedAgent !== sessionAgent;
 }
 
-// Drop the prompt's `agent` field entirely so OpenCode resolves its own
-// `default_agent`. Used for non-concrete ('default') sessions: the box must
-// always run the agent it booted with — the one the connector token was minted
-// for — regardless of which concrete name the client speculatively echoed.
-function bodyWithoutPromptAgent(
-  body: ArrayBuffer | undefined,
-  incomingHeaders: Headers,
-): ArrayBuffer | undefined {
-  if (!body) return body;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return body;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-      agent?: unknown;
-    };
-    if (!('agent' in parsed)) return body;
-    parsed.agent = undefined;
-    return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
-  } catch {
-    return body;
-  }
-}
+// The REAL collaborators for the pre-prompt turn-start block. Built HERE, not in
+// ../pre-prompt-env-sync.ts: this file is re-evaluated by every proxy suite
+// under its own `mock.module` stubs, so binding the four modules here is what
+// keeps those stubs effective. Binding them in the extracted module instead
+// would cache the real ones for the whole process the first time any test
+// touched it.
+const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
+  syncEnv: syncSandboxEnvForPrompt,
+  remintGrant: remintGrantForAgentSwitch,
+  scheduleSnapshot: scheduleOpencodeSnapshotSync,
+  generateTitle: generateSessionTitleFromFirstPrompt,
+};
 
 // === Core HTTP forwarder ======================================================
 //
@@ -698,6 +658,11 @@ export type PreviewProxyAccess =
        *  this is what separates them. Null means a non-session-bound principal.
        *  REQUIRED so a new entry point cannot silently omit it and fail open. */
       callerSessionId: string | null;
+      /** The caller's AGENT/SANDBOX token binding — `callerKortixSessionId(c)`,
+       *  never the raw `c.get('sessionId')`. Only the trigger-session manager
+       *  override reads it (see connectors/share.ts). REQUIRED for the same
+       *  reason as the two fields around it. */
+      boundCredentialSessionId: string | null;
       /** True when the SANDBOX ITSELF authored this request (it holds a
        *  credential that produces a perfectly valid principal). Such a request
        *  may never extend the box's deadline — that is the self-renewal this
@@ -816,13 +781,17 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
+  const ptl = new ProvisionTimeline(sandboxId, 'proxy');
   let record = await loadSandbox(sandboxId);
+  ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
+  const boundCredentialSessionId =
+    access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
     !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
@@ -851,7 +820,15 @@ export async function forwardToSandbox(
   // observation, the preview-use extend, the auto-resume — must exclude them or
   // the self-renewing lease this design deletes is rebuilt through the proxy.
   const sandboxAuthored = access.kind === 'principal' && access.sandboxAuthored;
-  const promptDelivery = shouldSyncProjectEnvBeforeProxy(port, method, remainingPath);
+  // "May the proxy send this body twice?" — its OWN predicate, no longer
+  // borrowed from `shouldSyncProjectEnvBeforeProxy`. The two questions look
+  // alike and are not: env sync is about `/message` + `/prompt_async` carrying
+  // a user prompt, non-idempotency is about ANY call that creates a turn — and
+  // `/command` does that while needing neither the agent-lock rewrite nor
+  // title generation. Sharing one path list meant `/command` fell out of BOTH,
+  // and losing the second one is what let a single `/webapp` submit execute
+  // four times. See `isNonIdempotentSessionWrite`.
+  const promptDelivery = isNonIdempotentSessionWrite(port, method, remainingPath);
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -866,6 +843,7 @@ export async function forwardToSandbox(
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
     }))
   ) {
     throw new HTTPException(403, {
@@ -923,6 +901,7 @@ export async function forwardToSandbox(
     // and its refusal names the connectors that agent requires — not something a
     // caller who may not run it should be able to enumerate by asking.
     const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
+    ptl.mark('agent-switch');
     if (unauthorized) return unauthorized;
     const refusal = await connectorGateRefusal(record, promptAgent, origin);
     if (refusal) return refusal;
@@ -958,61 +937,14 @@ export async function forwardToSandbox(
         origin,
         incomingHeaders,
         reason: `sandbox not ready (status: ${record.status})`,
+        // We never dialled the box. This is our own row read, so it says
+        // nothing about whether the runtime is reachable — a probe that counts
+        // it as evidence of a dead box is counting our own answer.
+        hop: 'control_plane',
       });
     }
   }
   const serviceKey = record.serviceKey;
-
-  // OBSERVE THE TURN START **BEFORE** FORWARDING IT.
-  //
-  // Two reasons this is here and awaited rather than fire-and-forget after the
-  // response, which is where it used to be:
-  //
-  //  1. At the 24-hour absolute run cap the grant clamps to `active_since + 24h`
-  //     — already in the past — so the old ordering ACCEPTED the prompt and let
-  //     the reaper stop the box seconds later, mid-work, swallowing the user's
-  //     message. Accepting work you are about to kill is worse than refusing it.
-  //     Refuse, park the box so the retry re-anchors a fresh stretch, and say so
-  //     in a machine-readable body.
-  //  2. Before the dedupe claim, so a refusal does not burn the caller's
-  //     Idempotency-Key and turn their retry into a bogus 200 "duplicate".
-  //
-  // A lost/failed observation fails OPEN (see observeTurnStart) — the deadline is
-  // still bounded by the DB CHECK, and refusing a prompt on uncertainty is far
-  // worse than granting one turn too many.
-  if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const observed = await observeTurnStart({ externalId: sandboxId }, turnDeliveryGraceMs());
-    if (observed === 'at_cap') {
-      const capped = {
-        sandboxId: record.sandboxId,
-        sessionId: record.sessionId,
-        externalId: record.externalId,
-        provider: record.provider as ProviderName,
-      };
-      // Dynamic import: the reaper's stop path reaches back into this module's
-      // own package (invalidateProviderCache), and a static edge here would be a
-      // real cycle. This branch is rare by construction — once per 24h of
-      // continuous work — so the one-time load cost is irrelevant.
-      void import('../../projects/reaping/stop-box')
-        .then((m) => m.parkBoxAtRunCap(capped))
-        .catch((err) =>
-          console.warn(
-            `[deadline] run-cap park could not be scheduled for ${sandboxId}:`,
-            err instanceof Error ? err.message : err,
-          ),
-        );
-      console.warn(`[PREVIEW] Refused turn on sandbox ${sandboxId}: 24h run cap reached`);
-      return jsonProxyError(
-        {
-          error: 'This sandbox has reached its 24-hour continuous run limit and is restarting.',
-          code: 'sandbox_run_cap_reached',
-          retry: true,
-        },
-        503,
-        origin,
-      );
-    }
-  }
 
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
@@ -1022,9 +954,14 @@ export async function forwardToSandbox(
   // under the same Idempotency-Key hits the bogus 200 "duplicate" and the user's
   // prompt is silently lost.
   let promptDedupeKey: string | null = null;
-  if (promptDelivery) {
+  const idempotencyKey = incomingHeaders.get('idempotency-key');
+  // Non-idempotent (never re-sent by us) and dedupe-claimed (a later lookalike
+  // is short-circuited) are DIFFERENT guarantees — see
+  // `shouldClaimPromptDelivery`. A command body has no client-unique field, so
+  // claiming one on content alone silently swallows a deliberate re-run.
+  if (promptDelivery && shouldClaimPromptDelivery(remainingPath, !!idempotencyKey?.trim())) {
     promptDedupeKey = promptDeliveryKey({
-      idempotencyKey: incomingHeaders.get('idempotency-key'),
+      idempotencyKey,
       sandboxId,
       sessionId: record.sessionId,
       body: requestBody,
@@ -1044,6 +981,69 @@ export async function forwardToSandbox(
     });
   }
 
+  // `deadline_at` is the idle-stop clock. This separate record is the durable
+  // fact that a specific OpenCode turn is active. It is created immediately
+  // before the first upstream delivery attempt, promoted only after a confirmed
+  // or ambiguous acceptance, and removed by matching terminal evidence.
+  const turnIdentity =
+    !sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)
+      ? extractTurnIdentity(remainingPath, requestBody)
+      : null;
+  // The wire id OpenCode will actually see, once the placement check below has
+  // run — the client's, or the proxy's re-mint. Echoed on the response so the
+  // sender can correlate, and written into `turnIdentity` so the ledger and the
+  // daemon's exact-message probe match the message that exists.
+  let effectiveMessageId: string | null = null;
+  const turnToken = turnIdentity ? crypto.randomUUID() : null;
+  let turnLifecycleBegun = false;
+  let turnLifecycleAccepted = false;
+  const beginTurnLifecycle = async (): Promise<'granted' | 'unavailable'> => {
+    if (!turnIdentity || !turnToken || turnLifecycleBegun) return 'granted';
+    try {
+      const outcome = await beginSandboxTurn(
+        { externalId: sandboxId },
+        { token: turnToken, ...turnIdentity },
+      );
+      turnLifecycleBegun = outcome === 'granted';
+      return outcome === 'no_box' ? 'unavailable' : outcome;
+    } catch (error) {
+      console.error(
+        `[turn-lifecycle] refused prompt for ${sandboxId}: delivery authority is unavailable`,
+        error,
+      );
+      return 'unavailable';
+    }
+  };
+  const acceptTurnLifecycle = async (): Promise<void> => {
+    if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
+    try {
+      turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
+    } catch (error) {
+      // OpenCode already accepted this non-idempotent request. Do not convert a
+      // post-delivery database outage into a failed send or delete the durable
+      // `delivering` record. The provider-neutral reaper probes that exact
+      // token-bound record and promotes it when OpenCode reports the turn live.
+      console.error(
+        `[turn-lifecycle] acceptance persistence failed for ${sandboxId}; reaper will reconcile delivery`,
+        error,
+      );
+    }
+  };
+  const abandonTurnLifecycle = async (): Promise<void> => {
+    if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
+    try {
+      await abandonSandboxTurn({ externalId: sandboxId }, turnToken);
+      turnLifecycleBegun = false;
+    } catch (error) {
+      // Cleanup failure must not replace the upstream response. The durable
+      // delivery record expires through the reaper's exact-message probe.
+      console.error(
+        `[turn-lifecycle] delivery cleanup failed for ${sandboxId}; reaper will reconcile delivery`,
+        error,
+      );
+    }
+  };
+
   // 2. Forward with auto-wake retry.
   const MAX_RETRIES = 3;
   // Short early delays so a transient post-restore RX stall (CH virtio-net misses
@@ -1061,8 +1061,17 @@ export async function forwardToSandbox(
   // providers there is no such signal, so the preview proxy never errors the row;
   // liveness is owned by the health-check loop + reconciler, not a port request.
   let sawDeadSignal = false;
-  // False until this request reaches the non-idempotent upstream prompt fetch.
-  // Pre-prompt failures, such as env synchronization, are safe to retry.
+  // A file upload is non-replayable for the same reason a prompt delivery is,
+  // and the consequence is worse. The daemon NEVER overwrites: it writes with
+  // O_CREAT|O_EXCL and, on collision, suffixes the name. So re-sending a body it
+  // already wrote does not get absorbed — it lands a SECOND file. With this loop
+  // retrying up to 4 times and the SDK retrying up to 3 on top, one user action
+  // could deposit up to 12 copies and still report failure.
+  const uploadDelivery = isUploadRequest({ method, path: remainingPath });
+  // Requests whose body must never be sent twice.
+  const nonReplayableWrite = promptDelivery || uploadDelivery;
+  // False until this request reaches the non-idempotent upstream fetch.
+  // Failures before it, such as env synchronization, are safe to retry.
   let promptDeliveryMayHaveReachedUpstream = false;
   // A blocking session-turn (`POST /session/:id/message`) whose single attempt
   // (it gets ~the whole remaining budget, see proxyAttemptTimeoutMs) still hit
@@ -1081,17 +1090,26 @@ export async function forwardToSandbox(
   // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
   const proxyStartedAt = Date.now();
 
+  // Which hop the LAST attempt got as far as, for the give-up response below.
+  // An attempt that never resolved an ingress address failed at the provider
+  // edge; once it has one, everything after it is the box itself. Never dialling
+  // at all (out of budget on the first pass) is the provider-edge case too — we
+  // have no evidence about the box.
+  let lastAttemptHop: ProxyHop = 'provider_ingress';
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
+      lastAttemptHop = 'provider_ingress';
       const ingress = await resolveSandboxIngress(record, ingressRequest);
+      ptl.mark('ingress');
+      lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
-        const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
         // The agent-lock 409 and the project.agent.read 403 used to live here.
         // They now run in `agentSwitchRefusal`, above the dedupe claim and above
         // the connector gate — see that function for why both moves matter.
@@ -1102,74 +1120,44 @@ export async function forwardToSandbox(
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }
-        // A prompt is the one moment this sandbox is guaranteed awake, so off
-        // it we (1) generate the Kortix-owned session title from this first
-        // prompt, using the model the user picked, and (2) refresh the
-        // opencode_sessions snapshot the conversation list reads. Both are
-        // fire-and-forget and never block the prompt.
-        const prompt = extractPromptInfo(requestBody, incomingHeaders);
-        if (userId && prompt.text) {
-          void generateSessionTitleFromFirstPrompt({
-            sessionId: record.sessionId,
-            projectId: record.projectId,
-            accountId: record.accountId,
+        const refusal = await runPrePromptEnvSync(
+          {
+            record,
+            sandboxId,
+            port,
             userId,
-            firstPromptText: prompt.text,
-            modelHint: prompt.model ?? undefined,
-          });
-        }
-        scheduleOpencodeSnapshotSync({
-          sessionId: record.sessionId,
-          projectId: record.projectId,
-          externalId: record.externalId,
-        });
-        try {
-          await syncSandboxEnvForPrompt({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            externalId: record.externalId,
-            serviceKey,
+            origin,
             previewUrl,
             providerHeaders: ingress.headers,
-            providerName: record.provider as ProviderName,
-            // The secret grant is resolved from the agent this prompt actually
-            // runs, not the session's create-time column — see
-            // projects/lib/secret-grant.ts.
+            serviceKey,
             requestedAgent,
-          });
-          // The env sync above applied the running agent's secret grant, or
-          // refused it when the optional strict lock is enabled. Re-point the
-          // token's connector/CLI grant at the agent that will actually run — it was
-          // frozen at mint from the BOOT agent, and those gates read it at call
-          // time. Only on a real switch: an ordinary turn resolves to the
-          // session's own agent and skips the manifest read entirely.
-          await remintGrantForAgentSwitch({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            sessionAgent,
-            requestedAgent,
-          });
-        } catch (err) {
-          // Fail closed on anything to do with the secret grant: refuse the
-          // prompt rather than forwarding it against an env we can't vouch for.
-          const grantResponse = secretGrantErrorResponse(err, origin);
-          if (grantResponse) {
-            console.warn(
-              `[PREVIEW] Secret grant refused prompt for ${sandboxId}:${port}: ${errorMessage(err, 'secret grant error')}`,
-            );
-            return grantResponse;
+            body: requestBody,
+            incomingHeaders,
+          },
+          REAL_PRE_PROMPT_DEPS,
+        );
+        if (refusal) {
+          // The refusal was raised BELOW `claimPromptDelivery`, so returning it
+          // as-is burns the caller's Idempotency-Key: their retry — the exact
+          // thing a 503 tells them to make — would come back
+          // `200 {"deduplicated":true}` and the message would be silently lost.
+          //
+          // Safe by construction: `runPrePromptEnvSync` talks to the DAEMON's
+          // /kortix/env, never to opencode's session endpoints, and it runs
+          // strictly before the upstream fetch — so nothing was delivered and a
+          // re-delivery cannot double-enqueue. `promptDeliveryMayHaveReachedUpstream`
+          // keeps that honest for the one path that could contradict it: a retry
+          // attempt whose PREVIOUS attempt already fetched. Then the failure is
+          // ambiguous and the claim must stay, exactly as in the giveup path.
+          //
+          // The defect is not new and is not command-specific — it is one of the
+          // "three existing early returns [that] sit after the claim" named on
+          // the connector gate above. Enabling this block for `/command` is what
+          // made fixing it a precondition rather than a cleanup.
+          if (promptDedupeKey && !promptDeliveryMayHaveReachedUpstream) {
+            releasePromptDelivery(promptDedupeKey);
           }
-          const message = errorMessage(err, 'project env sync failed');
-          if (isRetryableEnvSyncFailure(message)) {
-            // Treat daemon/preview-transient env-sync failures like any other
-            // sandbox-port reachability miss: retry/wake in the outer loop, then
-            // return the friendly port-unreachable response if the sandbox never
-            // recovers. Throwing HTTPException here bypassed that retry path and
-            // turned expected 502/timeouts from Daytona into Better Stack errors.
-            throw new Error(message);
-          }
-          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
-          return jsonProxyError({ error: message }, 502, origin);
+          return refusal;
         }
       }
 
@@ -1177,6 +1165,56 @@ export async function forwardToSandbox(
       // identity encoding, regenerate trace headers, then apply the sandbox
       // auth/identity headers (service key, preview token, signed user-context)
       // last so they always win.
+      ptl.mark('env-sync');
+      const authHeaders = await buildSandboxUpstreamHeaders({
+        sandboxId,
+        userId,
+        serviceKey,
+        providerHeaders: ingress.headers,
+      });
+
+      // PLACE THE WIRE ID against the target session's actual tip — for ANY
+      // target, child sessions included. See `prompt-wire-id-repair.ts` for the
+      // incident this closes. One bounded newest-N read; fail-open (a failed
+      // read keeps the client's id); runs after every refusal point and before
+      // the ledger begins, so the identity recorded is the one delivered. Once
+      // per request: a retry attempt keeps the placement the first computed.
+      if (
+        promptDelivery &&
+        !sandboxAuthored &&
+        effectiveMessageId === null &&
+        isPromptWireIdRepairPath(remainingPath) &&
+        // The inbox drain already placed it — one fewer round-trip.
+        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
+        // No client id, nothing to place — OpenCode mints, and the read is
+        // skipped entirely so a plain body pays nothing.
+        promptBodyMessageId(requestBody) !== null
+      ) {
+        const readUrl =
+          previewUrl.replace(/\/$/, '') +
+          promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
+        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        ptl.mark('wire-id-read');
+        const placed = repairPromptWireId({
+          body: requestBody,
+          newestKnownTime,
+          nowMs: Date.now(),
+        });
+        if (placed.outcome === 'reminted') {
+          console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
+            sandboxId,
+            sessionId: record.sessionId,
+            path: remainingPath,
+            effectiveMessageId: placed.effectiveMessageId,
+          });
+          requestBody = placed.body;
+        }
+        effectiveMessageId = placed.effectiveMessageId ?? '';
+        if (turnIdentity && placed.effectiveMessageId) {
+          turnIdentity.messageId = placed.effectiveMessageId;
+        }
+      }
+
       const headers = new Headers();
       for (const [key, value] of incomingHeaders.entries()) {
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
@@ -1186,12 +1224,6 @@ export async function forwardToSandbox(
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
-      const authHeaders = await buildSandboxUpstreamHeaders({
-        sandboxId,
-        userId,
-        serviceKey,
-        providerHeaders: ingress.headers,
-      });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
@@ -1265,7 +1297,26 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
-        if (promptDelivery) promptDeliveryMayHaveReachedUpstream = true;
+        // Begin after every pre-prompt refusal point, but before the first byte
+        // can reach OpenCode. A fast session.idle can now delete this record;
+        // the success path below promotes it with a token CAS and cannot revive
+        // a turn that already ended.
+        const turnLifecycleStart = await beginTurnLifecycle();
+        ptl.mark('turn-begin');
+        if (turnLifecycleStart !== 'granted') {
+          if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+          return jsonProxyError(
+            {
+              error:
+                'The sandbox lifecycle authority is temporarily unavailable. The prompt was not delivered.',
+              code: 'sandbox_lifecycle_unavailable',
+              retry: true,
+            },
+            503,
+            origin,
+          );
+        }
+        if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,
           headers,
@@ -1280,8 +1331,10 @@ export async function forwardToSandbox(
       } finally {
         clearTimeout(connectTimer);
       }
+      ptl.mark('upstream');
 
       if (upstream.status >= 300 && upstream.status < 400) {
+        await abandonTurnLifecycle();
         const respHeaders = clientResponseHeaders(upstream.headers, origin);
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
@@ -1297,6 +1350,7 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status === 401 && serviceKey && userId) {
+        await abandonTurnLifecycle();
         console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
         return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
       }
@@ -1319,6 +1373,7 @@ export async function forwardToSandbox(
           // (once opencode is up) actually delivers instead of short-circuiting
           // to a bogus 200 "duplicate" that would drop the message.
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+          await abandonTurnLifecycle();
           const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
           return new Response(bodyText, {
             status: upstream.status,
@@ -1329,12 +1384,12 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status === 502 || upstream.status === 503) {
-        // A prompt-delivery POST is NEVER retried on a 5xx: an upstream 502 can
-        // mean the sandbox already accepted the message (the gateway just dropped
-        // the response), so re-POSTing would enqueue it twice. Pass the upstream
-        // response straight through to the passthrough below. GET/idempotent
-        // requests retry as before.
-        if (!promptDelivery && attempt < MAX_RETRIES) {
+        // A prompt-delivery or upload POST is NEVER retried on a 5xx: an upstream
+        // 502 can mean the sandbox already accepted the body (the gateway just
+        // dropped the response), so re-POSTing would enqueue the message twice or
+        // write the file twice. Pass the upstream response straight through to the
+        // passthrough below. GET/idempotent requests retry as before.
+        if (!nonReplayableWrite && attempt < MAX_RETRIES) {
           // Port not ready yet — sandbox is booting (container running, port down).
           console.warn(
             `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
@@ -1346,7 +1401,7 @@ export async function forwardToSandbox(
         // Retries exhausted and the port still isn't answering. Show the friendly
         // "port unreachable" page to browsers instead of the upstream's bare 5xx;
         // programmatic clients still get the real status + JSON via passthrough.
-        if (!promptDelivery && isBrowserNavigation(incomingHeaders)) {
+        if (!nonReplayableWrite && isBrowserNavigation(incomingHeaders)) {
           void markSandboxUsed(sandboxId);
           return portUnreachableResponse({
             port,
@@ -1354,6 +1409,11 @@ export async function forwardToSandbox(
             origin,
             incomingHeaders,
             reason: 'sandbox port unreachable',
+            // The provider edge answered — it reached the box and found the
+            // port shut. So the hop is whatever lives on that port: the runtime
+            // (8000/4096/4097) or the user's own process.
+            hop: portFailureHop(upstreamPort),
+            upstreamStatus: upstream.status,
           });
         }
       }
@@ -1391,6 +1451,7 @@ export async function forwardToSandbox(
           continue;
         }
         // Not a Daytona stopped error — pass through.
+        await abandonTurnLifecycle();
         const errHeaders = clientResponseHeaders(upstream.headers, origin);
         return new Response(bodyText, {
           status: upstream.status,
@@ -1401,21 +1462,17 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
-      // A successful OpenCode response proves the prompt reached the agent
-      // runtime. Upgrade the short delivery grace to the full active-turn
-      // window only now. A failed env sync, connect attempt, or upstream 5xx
-      // never receives the four-hour grant.
-      if (
-        upstream.ok &&
-        !sandboxAuthored &&
-        isTurnStartRequest(upstreamPort, method, remainingPath)
-      ) {
-        void extendSandboxDeadline({ externalId: sandboxId }, turnGrantMs()).catch((err) =>
-          console.warn(
-            `[deadline] accepted-turn extend failed for sandbox ${sandboxId}:`,
-            err instanceof Error ? err.message : err,
-          ),
-        );
+      // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
+      // OpenCode may hold the message even though the response was lost. Both
+      // cases must preserve the turn. A definitive 4xx abandons delivery.
+      if (upstream.ok || (turnIdentity && upstream.status >= 500)) {
+        await acceptTurnLifecycle();
+      } else {
+        await abandonTurnLifecycle();
+      }
+      if (promptDelivery) {
+        ptl.mark('turn-accept');
+        ptl.log({ path: remainingPath, status: upstream.status });
       }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
@@ -1445,6 +1502,14 @@ export async function forwardToSandbox(
         );
       }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
+      if (effectiveMessageId) {
+        respHeaders.set(EFFECTIVE_MESSAGE_ID_HEADER, effectiveMessageId);
+        const exposed = respHeaders.get('Access-Control-Expose-Headers');
+        respHeaders.set(
+          'Access-Control-Expose-Headers',
+          exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
+        );
+      }
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -1473,17 +1538,18 @@ export async function forwardToSandbox(
         break;
       }
 
-      // A prompt-delivery POST must NOT be blindly retried on an ambiguous
-      // failure: a timeout / abort / connection reset can mean the sandbox
-      // already received and accepted the message, so re-POSTing would enqueue
-      // it twice. Only retry when the error PROVES nothing reached the box (the
-      // upstream refused the connection). Any other error stops here and returns
-      // the friendly unreachable response below. (The Daytona "no IP / no runner"
-      // 400 branch — a rejection before opencode — retries in the response path
-      // above, which is safe.)
+      // A prompt-delivery or upload POST must NOT be blindly retried on an
+      // ambiguous failure: a timeout / abort / connection reset can mean the
+      // sandbox already received and accepted the body, so re-POSTing would
+      // enqueue the message twice or write the file twice. Only retry when the
+      // error PROVES nothing reached the box (the upstream refused the
+      // connection). Any other error stops here and returns the friendly
+      // unreachable response below. (The Daytona "no IP / no runner" 400 branch —
+      // a rejection before opencode — retries in the response path above, which
+      // is safe.)
       if (
         promptDeliveryMayHaveReachedUpstream &&
-        promptDelivery &&
+        nonReplayableWrite &&
         !isConnectionRefusedError(err)
       ) {
         // Ambiguous: the box may already hold the message. Keep the dedupe
@@ -1504,6 +1570,7 @@ export async function forwardToSandbox(
   }
 
   if (sawLongTurnTimeout) {
+    await acceptTurnLifecycle();
     return longTurnTimeoutResponse(origin);
   }
 
@@ -1524,12 +1591,17 @@ export async function forwardToSandbox(
   if (promptDedupeKey && !promptDeliveryMaybeAccepted) {
     releasePromptDelivery(promptDedupeKey);
   }
+  if (promptDeliveryMaybeAccepted) await acceptTurnLifecycle();
+  else await abandonTurnLifecycle();
   return portUnreachableResponse({
     port,
     status: 502,
     origin,
     incomingHeaders,
     reason: 'sandbox upstream unreachable',
+    // No upstream STATUS exists here — every attempt threw (refused, reset,
+    // connect timeout), so there is nothing to report but which hop we got to.
+    hop: lastAttemptHop,
   });
 }
 
@@ -1549,12 +1621,16 @@ export async function resolvePreviewWsUpstream(opts: {
   /** The caller's own session when the credential is bound to one, or null for a
    *  principal that is not session-bound. REQUIRED — fail closed, never default. */
   callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding. Only the trigger-session manager
+   *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
+  boundCredentialSessionId: string | null;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
   const callerSessionId = opts.callerSessionId;
+  const boundCredentialSessionId = opts.boundCredentialSessionId;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
@@ -1582,6 +1658,7 @@ export async function resolvePreviewWsUpstream(opts: {
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
     }))
   ) {
     return {
@@ -1621,6 +1698,11 @@ export async function resolvePreviewWsUpstream(opts: {
   return { ok: true, url: upstreamUrl.toString(), headers };
 }
 
+// The largest body the proxy will accept, matching Bun's own default socket
+// ceiling (128 MiB). Declared here so the limit is a stated number the client is
+// told about, rather than an implicit runtime default it discovers by failing.
+export const MAX_PROXY_BODY_BYTES = 128 * 1024 * 1024;
+
 // === Route handlers: ALL /:sandboxId/:port(/*) ===
 //
 // Thin wrappers around forwardToSandbox — extract params from the Hono context.
@@ -1637,6 +1719,37 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   const userId = c.get('userId') as string;
 
   const method = c.req.method;
+
+  // Refuse an over-large body BEFORE reading it, and say so in a response the
+  // client can actually read.
+  //
+  // Neither Bun.serve call sets `maxRequestBodySize`, so the effective ceiling is
+  // Bun's 128 MiB default, enforced at the SOCKET. That returns a bare 413 with
+  // an EMPTY body and no CORS headers, so a cross-origin browser upload surfaces
+  // as an opaque network/CORS failure rather than "your file is too big", and the
+  // SDK can only render `Upload failed (413): Request Entity Too Large` — no
+  // filename, no stated limit. Checking Content-Length here gets in front of the
+  // socket and returns a real JSON body through `jsonProxyError`, which attaches
+  // the CORS headers every other proxy response carries.
+  //
+  // Content-Length is client-supplied and absent on a chunked body, so this is
+  // the friendly path, not the enforcement boundary. The socket limit remains the
+  // hard stop.
+  const contentLength = Number(c.req.header('content-length') ?? '');
+  if (Number.isFinite(contentLength) && contentLength > MAX_PROXY_BODY_BYTES) {
+    return jsonProxyError(
+      {
+        error: `Request body is ${Math.round(contentLength / 1_048_576)} MB, over the ${Math.round(MAX_PROXY_BODY_BYTES / 1_048_576)} MB limit.`,
+        message: `Request body is ${Math.round(contentLength / 1_048_576)} MB, over the ${Math.round(MAX_PROXY_BODY_BYTES / 1_048_576)} MB limit.`,
+        code: 'UPLOAD_TOO_LARGE',
+        max_bytes: MAX_PROXY_BODY_BYTES,
+        received_bytes: contentLength,
+      },
+      413,
+      c.req.header('Origin') || '',
+    );
+  }
+
   let body: ArrayBuffer | undefined;
   if (method !== 'GET' && method !== 'HEAD') {
     body = await c.req.raw.clone().arrayBuffer();
@@ -1667,6 +1780,11 @@ preview.all('/:sandboxId/:port/*', async (c) => {
       kind: 'principal',
       userId,
       callerSessionId: c.get('sessionId') ?? null,
+      // The manager-override gate needs the AGENT binding, so it reads the
+      // helper — same reason `sandboxAuthored` below does. The raw context var
+      // is the SUPABASE login session id for a human on the network-fallback
+      // branch, which would strip managers of the override.
+      boundCredentialSessionId: callerKortixSessionId(c),
       // `callerKortixSessionId`, NEVER the raw context var. `combinedAuth`'s
       // local JWT fast path leaves `sessionId` unset for a browser, but its
       // NETWORK-FALLBACK branch (taken whenever JWKS has not warmed, and

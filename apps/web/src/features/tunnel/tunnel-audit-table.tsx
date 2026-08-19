@@ -23,6 +23,15 @@ interface TunnelAuditTableProps {
   tunnelId: string;
 }
 
+// Hoisted so render does not rebuild a formatter per row. Options mirror the
+// spec defaults of `Date.prototype.toLocaleTimeString()` (numeric time), so
+// output is byte-identical to the previous inline call.
+const TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
 export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [page, setPage] = useState(1);
@@ -83,7 +92,7 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
 
             {/* Timestamp */}
             <span className="text-muted-foreground shrink-0 text-xs">
-              {new Date(log.createdAt).toLocaleTimeString()}
+              {TIME_FORMAT.format(new Date(log.createdAt))}
             </span>
           </div>
         ))}

@@ -110,7 +110,13 @@ function promptAs(userId: string, agent: string): Promise<Response> {
   return forwardToSandbox(
     'sbx-1',
     8000,
-    { kind: 'principal', userId, callerSessionId: null, sandboxAuthored: false },
+    {
+      kind: 'principal',
+      userId,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      sandboxAuthored: false,
+    },
     'POST',
     '/session/ses_1/prompt_async',
     '',
@@ -122,7 +128,7 @@ function promptAs(userId: string, agent: string): Promise<Response> {
 
 async function seedMember(
   accountRole: 'owner' | 'member',
-  projectRole?: 'editor',
+  projectRole?: 'manager',
 ): Promise<string> {
   const userId = crypto.randomUUID();
   await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole });
@@ -146,8 +152,8 @@ beforeAll(async () => {
     name: 'p',
     repoUrl: 'https://example.com/p.git',
   });
-  scopedIn = await seedMember('member', 'editor');
-  scopedOut = await seedMember('member', 'editor');
+  scopedIn = await seedMember('member', 'manager');
+  scopedOut = await seedMember('member', 'manager');
   owner = await seedMember('owner');
   // Scope the agent to ONE member. An unscoped agent stays project-wide, so this
   // grant row is what makes `scopedOut` a non-principal for it.

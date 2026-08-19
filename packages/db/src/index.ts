@@ -32,6 +32,7 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewayOtelConfigs,
   // Kortix tables
   projects,
   projectGitConnections,
@@ -46,7 +47,10 @@ export {
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
   projectTriggerRuntime,
+  projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
+  projectMonitorEvents,
+  projectMonitorBoxes,
   sessionLifecycleCommands,
   chatChannelBindings,
   chatInstalls,
@@ -73,6 +77,7 @@ export {
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
+  sessionTurns,
   providerEvents,
   sandboxes,
   sandboxMembers,
@@ -169,6 +174,16 @@ export {
   iamResourceGrants,
   iamRolesRelations,
   iamRoleActionsRelations,
+  // Canonical RBAC (PR2). `permissions` is the action catalog, `roleAssignments`
+  // the ONE grant table, `objectPolicies` the per-object-type unscoped default.
+  // The canonical NAMES kortix.roles / kortix.role_permissions /
+  // kortix.group_members are write-through views over iamRoles /
+  // iamRoleActions / accountGroupMembers until the cutover migration swaps
+  // which side is physical — so those three keep their existing exports.
+  permissions,
+  objectPolicies,
+  roleAssignments,
+  roleAssignmentsRelations,
   // SCIM
   scimTokens,
   // Audit webhooks

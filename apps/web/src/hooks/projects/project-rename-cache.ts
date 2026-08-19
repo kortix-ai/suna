@@ -8,8 +8,8 @@ import {
 
 /**
  * The `onMutate`/`onError`/`onSettled` trio a project-rename mutation wires
- * into its own `useMutation` — today just `settings-view.tsx`'s
- * `GeneralProjectCard`.
+ * into its own `useMutation` — today just `features/workspace/settings/tabs/
+ * general-tab.tsx`'s `GeneralWorkspaceCard`.
  *
  * Originally shared between that card and `edit-project-modal.tsx`'s
  * `EditProjectModal` so the two call sites could not drift the way the old

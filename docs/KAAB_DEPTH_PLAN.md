@@ -151,8 +151,9 @@ Remaining, in order of what teaches the most:
   no longer pulls the whole project to find one customer — and the demo scopes
   its list to the signed-in end-user rather than showing everyone's.
 - **Mid-session agent switch re-mints the token grant.** Connectors and Kortix
-  CLI actions now follow the agent that actually runs; secrets keep refusing the
-  switch, for the reason that difference exists (secrets are already in the box).
+  CLI actions now follow the agent that actually runs. Secrets are re-scoped
+  forward only: nothing refuses the switch, because the previous agent's secrets
+  are already in the box and no refusal can retract them.
 - **Connector tokens are revoked when their sandbox is gone.** They had no
   expiry and were exempt from idle-revoke, so every session ever run left a live
   bearer behind.

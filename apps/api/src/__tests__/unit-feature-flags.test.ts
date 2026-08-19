@@ -95,16 +95,35 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('apps is explicit opt-in', () => {
+  test('apps is a STABLE flag and still explicit opt-in', () => {
+    // Apps is no longer labelled experimental on any surface. Stability is a
+    // badge, not a gate: the flag stays off until a project opts in, exactly
+    // as before. `experimental` here is the metadata STORAGE key, which the
+    // registry pins as a stable storage detail.
     expect(resolveFeatureFlag({}, 'apps')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { apps: true } }, 'apps')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { apps: false } }, 'apps')).toBe(false);
     expect(findCatalogFlag('apps')).toMatchObject({
       name: 'Apps',
-      stability: 'experimental',
+      stability: 'stable',
       available: true,
       enabled: false,
     });
+  });
+
+  test('monitors is explicit opt-in and gated on Platinum availability', () => {
+    const available = Boolean(config.PLATINUM_API_KEY);
+    expect(findCatalogFlag('monitors')).toMatchObject({
+      name: 'Monitors',
+      stability: 'experimental',
+      available,
+      enabled: false,
+    });
+    // Off by default everywhere; a project's explicit opt-in wins only where
+    // the platform can actually run a persistent box (Platinum configured).
+    expect(resolveFeatureFlag({}, 'monitors')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { monitors: true } }, 'monitors')).toBe(available);
+    expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
   });
 
   test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {

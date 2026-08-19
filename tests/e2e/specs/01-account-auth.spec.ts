@@ -4,6 +4,7 @@ import { queryDatabaseRows, runDatabaseSql } from "../helpers/database";
 import {
   type AuthEmailAction,
   createDisposableInbox,
+  emailProviderStatus,
 } from "../helpers/inbox";
 import { deleteAuthUser } from "../helpers/session-auth";
 
@@ -72,6 +73,11 @@ async function completeEmailAuthentication(page: Page, action: AuthEmailAction) 
 
 test.describe("01 - Account authentication", () => {
   test.setTimeout(180_000);
+
+  test.beforeEach(async () => {
+    const { available, reason } = await emailProviderStatus();
+    test.skip(!available, `email provider unavailable: ${reason}`);
+  });
 
   test("a new user creates an account from the delivered email, clears the session, and logs in again", async ({
     page,

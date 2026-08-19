@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { createHmac, randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -15,6 +15,7 @@ import {
 } from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
+const SERVICE_ACCOUNT_ID = '00000000-0000-4000-a000-000000000002';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const MANIFEST_PATH = 'kortix.yaml';
@@ -109,7 +110,15 @@ function sign(rawBody: string, secret: string) {
 
 mockIamEngineAllowAll();
 
+// The hermetic db shim models the legacy tables; the read models project from
+// those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
 mockIamMembershipSyncNoop();
+
+mock.module('../projects/session-lifecycle/actor', () => ({
+  resolveProjectAutomationActor: async () => USER_ID,
+  resolveAgentRunAttribution: async () => SERVICE_ACCOUNT_ID,
+}));
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
@@ -368,6 +377,7 @@ const triggerDbMock: any = {
       from: (table: unknown) => ({
         where: () => {
           const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
+          (result as any).for = () => result;
           result.orderBy = () => {
             const rows =
               table === sessionLifecycleCommands
@@ -405,6 +415,7 @@ const triggerDbMock: any = {
             }
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
+            if (table === projectSessions) return sessionRows.slice(0, 1);
             if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
             // `getGitTriggerRuntime` does a bare `.select().from(projectTriggerRuntime)
             // .where(...).limit(1)` (no `orderBy`, no field projection) — without this
@@ -572,6 +583,17 @@ const triggerDbMock: any = {
           then: (resolve: (rows: any[]) => unknown) => {
             if (table === sessionLifecycleCommands) {
               lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+            }
+            if (table === projectSessions) {
+              sessionRows = sessionRows.map((row) => ({
+                ...row,
+                ...(typeof setValues.createdBy === 'string'
+                  ? { createdBy: setValues.createdBy }
+                  : {}),
+                ...(typeof setValues.visibility === 'string'
+                  ? { visibility: setValues.visibility }
+                  : {}),
+              }));
             }
             return resolve([]);
           },
@@ -1239,6 +1261,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toMatch(/Run at \d{4}-\d{2}-\d{2}T/);
+    expect(sessionRows.at(-1)?.visibility).toBe('private');
+    expect(sessionRows.at(-1)?.createdBy).toBe(SERVICE_ACCOUNT_ID);
     // Runtime row was upserted with last_fired_at.
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.slug).toBe('daily');

@@ -17,8 +17,14 @@ import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
 import { contract, type ModelKey, qk } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
-export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
-  return tab === 'providers' ? 'catalog' : tab;
+/**
+ * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'
+ * | 'models'). JAY-510 merged the modal's 'catalog' and 'connected' tabs into
+ * one `providers` surface, so both of those now resolve to it; only 'models'
+ * still names a distinct tab.
+ */
+export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
+  return tab === 'models' ? 'models' : 'providers';
 }
 
 /**
@@ -86,18 +92,25 @@ export function useModelConnectionGate(
     }).allowed === true;
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
+  const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
 
   const baseModels = useMemo(
     () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
     [models, llmGatewayEnabled],
   );
+  // `project.secret.read` is manager-tier, so for a project `member` this query
+  // was a guaranteed 403 on every project-home render — a permission check
+  // performed by asking the server to refuse. Gate it on the leaf instead.
+  // `allowed === true` also holds the query while the probe is still loading,
+  // so it fires once, when the answer is known, or not at all.
+  const canReadSecrets =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_SECRET_READ, {
+      accountId: projectDetailQuery.data?.project.account_id,
+    }).allowed === true;
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
+    enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
     ...contract('config'),
   });
   const { isPending: accountStatePending } = useAccountState();

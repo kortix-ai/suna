@@ -1,16 +1,25 @@
 'use client';
 
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+
 import { Button } from '@/components/ui/button';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { FlagIcon } from '@phosphor-icons/react';
 
 /**
  * The one screen a flag-gated surface shows when its feature is OFF.
  *
  * It never offers to enable the feature. Activation happens in exactly one
- * place — Customize → Feature flags — so there is a single control, a single
- * permission leaf (`project.customize.write`), and no per-feature switch to
- * hunt for. The button here just takes you there.
+ * place — Customize → Settings → Feature flags — so there is a single
+ * control, a single permission leaf (`project.customize.write`), and no
+ * per-feature switch to hunt for. The button here just takes you there.
+ *
+ * The destination has moved twice and the content never has: the legacy
+ * Customize overlay's `feature-flags` section, then the settings overlay's
+ * Experimental tab, and now `/projects/<id>/config?section=feature-flags`.
+ * A real `<Link>`, because it is a route now — middle-click and copy-link
+ * both work, and the page prefetches.
  *
  * Only reachable surfaces render this. A gated NAV entry, palette action, or
  * rail item must be absent entirely when its flag is off; this is for the case
@@ -25,7 +34,8 @@ export function FeatureGateScreen({
   /** One sentence: what turning it on would give this project. */
   description: string;
 }) {
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const params = useParams<{ id: string }>();
+  const projectId = params?.id;
 
   return (
     <div className="bg-popover rounded-md border px-4 py-5">
@@ -41,14 +51,11 @@ export function FeatureGateScreen({
             <p className="text-muted-foreground max-w-xl text-xs text-pretty">{description}</p>
           </div>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="shrink-0"
-          onClick={() => openCustomize('feature-flags')}
-        >
-          Feature flags
-        </Button>
+        {projectId ? (
+          <Button asChild size="sm" variant="secondary" className="shrink-0">
+            <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>Feature flags</Link>
+          </Button>
+        ) : null}
       </div>
     </div>
   );

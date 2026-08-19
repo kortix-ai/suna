@@ -26,6 +26,10 @@ export function IdentityIntro({ accountId }: { accountId: string }) {
   // While loading, render nothing — a flash-in/flash-out explainer is worse
   // than none. Configured accounts (either surface) skip it entirely.
   if (providerQuery.isLoading || tokensQuery.isLoading) return null;
+  // A failed fetch is NOT "nothing is configured": rendering the first-contact
+  // explainer above two cards that are themselves showing an error state reads
+  // as if the account were unconfigured. Stay hidden until we actually know.
+  if (providerQuery.isError || tokensQuery.isError) return null;
   if (providerQuery.data || (tokensQuery.data ?? []).length > 0) return null;
 
   return (

@@ -1,5 +1,4 @@
-// What the PROXY treats as an observation that a sandbox is still wanted, and
-// what it does when the box has burned its whole 24-hour stretch.
+// What the proxy treats as lifecycle authority for a sandbox.
 //
 // Three defects review found in the first cut of the deadline model, all of them
 // user-visible:
@@ -8,11 +7,7 @@
 //     NOTHING, so the live preview died 15 minutes after the last AGENT turn
 //     while the user was still using it — a worse regression than the zombie
 //     boxes the model exists to kill.
-//  2. At the absolute run cap the extend clamps into the past, so the prompt was
-//     ACCEPTED and the reaper stopped the box seconds later, mid-work, with the
-//     user's message swallowed. Accepting work you are about to kill is worse
-//     than refusing it.
-//  3. Passive traffic on the session-data ports must STILL not count — that
+//  2. Passive traffic on the session-data ports must STILL not count — that
 //     resurrection is what produced 1,597 phantom-active compute rows.
 //
 // `mock.module` is process-global in bun, so this lives in its own file.
@@ -35,15 +30,24 @@ const ACTIVE_RECORD = {
 
 /** Every deadline write the proxy attempts, with the grant it asked for. */
 let extends_: Array<{ target: unknown; grantMs: number | undefined }> = [];
-/** What observeTurnStart answers — the box's remaining stretch, in effect. */
-let turnStartObservation: 'granted' | 'at_cap' | 'no_box' = 'granted';
-let observeCalls: Array<{ target: unknown; grantMs: number | undefined }> = [];
-let parkCalls: unknown[] = [];
+let turnStartObservation: 'granted' | 'no_box' = 'granted';
+
+let begunTurns: Array<{ target: unknown; turn: Record<string, unknown> }> = [];
+let acceptedTurns: Array<{ target: unknown; token: string }> = [];
+let abandonedTurns: Array<{ target: unknown; token: string }> = [];
+let turnBeginError: Error | null = null;
+let turnAcceptError: Error | null = null;
+let turnAbandonError: Error | null = null;
 
 let upstreamPort = 3000;
 
 mock.module('../../config', () => ({
-  config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false },
+  config: {},
+}));
+// Importing the real lifecycle export surface must not initialize the actual
+// database module. The route under test replaces every lifecycle write below.
+mock.module('../../shared/db', () => ({
+  db: { execute: async () => [] },
 }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
@@ -79,15 +83,12 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
+mock.module('../../projects/session-activity', () => ({
+  recordSessionActivity: async () => {},
+}));
 mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
-mock.module('../../projects/reaping/stop-box', () => ({
-  parkBoxAtRunCap: async (row: unknown) => {
-    parkCalls.push(row);
-  },
-}));
-
 // The deadline module is stubbed only where it TALKS TO THE DATABASE. The
 // classifiers (isTurnStartRequest / isPreviewUseObservation / isSandboxAuthored)
 // and the grant sizes are the REAL ones, because the thing under test here is
@@ -98,9 +99,24 @@ mock.module('../../projects/sandbox-deadline', () => ({
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extends_.push({ target, grantMs });
   },
-  observeTurnStart: async (target: unknown, grantMs?: number) => {
-    observeCalls.push({ target, grantMs });
+}));
+const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  extractTurnIdentity: () => ({ opencodeSessionId: 'sess-1', messageId: 'msg-turn-1' }),
+  beginSandboxTurn: async (target: unknown, turn: Record<string, unknown>) => {
+    begunTurns.push({ target, turn });
+    if (turnBeginError) throw turnBeginError;
     return turnStartObservation;
+  },
+  acceptSandboxTurn: async (target: unknown, token: string) => {
+    acceptedTurns.push({ target, token });
+    if (turnAcceptError) throw turnAcceptError;
+    return true;
+  },
+  abandonSandboxTurn: async (target: unknown, token: string) => {
+    abandonedTurns.push({ target, token });
+    if (turnAbandonError) throw turnAbandonError;
   },
 }));
 
@@ -130,12 +146,14 @@ const HUMAN = {
   kind: 'principal',
   userId: 'u1',
   callerSessionId: null,
+  boundCredentialSessionId: null,
   sandboxAuthored: false,
 } as const;
 const BOX_ITSELF = {
   kind: 'principal',
   userId: 'u1',
   callerSessionId: 'sess-1',
+  boundCredentialSessionId: 'sess-1',
   sandboxAuthored: true,
 } as const;
 const SHARE = { kind: 'public_share' } as const;
@@ -184,8 +202,12 @@ function prompt(access: typeof HUMAN | typeof BOX_ITSELF) {
 beforeEach(() => {
   __resetPromptDedupe();
   extends_ = [];
-  observeCalls = [];
-  parkCalls = [];
+  begunTurns = [];
+  acceptedTurns = [];
+  abandonedTurns = [];
+  turnBeginError = null;
+  turnAcceptError = null;
+  turnAbandonError = null;
   turnStartObservation = 'granted';
   upstreamPort = 3000;
   boxCounter += 1;
@@ -246,67 +268,67 @@ describe('a human using the live preview keeps the box alive', () => {
   });
 });
 
-describe('a turn start is observed BEFORE the prompt is relayed', () => {
+describe('turn lifecycle authority is persisted before the prompt is relayed', () => {
   test('a live box is granted its turn and the prompt goes through', async () => {
     turnStartObservation = 'granted';
 
     const res = await prompt(HUMAN);
 
-    expect(observeCalls).toEqual([
-      { target: { externalId }, grantMs: realDeadline.turnDeliveryGraceMs() },
-    ]);
     expect(res.status).toBe(200);
-    expect(extends_).toEqual([{ target: { externalId }, grantMs: realDeadline.turnGrantMs() }]);
-    expect(parkCalls).toEqual([]);
-  });
-
-  // ═══ THE DEFECT ═══ the observation used to happen AFTER the response, so a
-  // box at its cap accepted the prompt and was stopped by the reaper seconds
-  // later — mid-work, message swallowed.
-  test('REGRESSION: a box at its 24h cap REFUSES the prompt instead of eating it', async () => {
-    turnStartObservation = 'at_cap';
-
-    const res = await prompt(HUMAN);
-
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { code?: string; retry?: boolean };
-    expect(body.code).toBe('sandbox_run_cap_reached');
-    expect(body.retry).toBe(true);
-  });
-
-  test('the refused box is PARKED, so the very next prompt re-anchors a fresh stretch', async () => {
-    turnStartObservation = 'at_cap';
-
-    await prompt(HUMAN);
-    // The park is scheduled through a dynamic import; let the microtasks drain.
-    await Bun.sleep(5);
-
-    expect(parkCalls).toHaveLength(1);
-    expect(parkCalls[0]).toMatchObject({
-      sandboxId: 'sb-1',
-      sessionId: 'sess-1',
-      externalId: 'ext-1',
-      provider: 'daytona',
+    expect(begunTurns).toHaveLength(1);
+    expect(begunTurns[0].target).toEqual({ externalId });
+    expect(begunTurns[0].turn).toMatchObject({
+      opencodeSessionId: 'sess-1',
+      messageId: 'msg-turn-1',
     });
+    expect(acceptedTurns).toHaveLength(1);
+    expect(acceptedTurns[0].token).toBe(String(begunTurns[0].turn.token));
+    expect(extends_).toEqual([]);
+    expect(abandonedTurns).toEqual([]);
   });
 
-  test('the refusal does NOT reach the sandbox at all', async () => {
-    turnStartObservation = 'at_cap';
+  test('a missing lifecycle row refuses delivery and releases the retry claim', async () => {
+    turnStartObservation = 'no_box';
     let fetched = 0;
     (globalThis as { fetch: unknown }).fetch = async () => {
       fetched += 1;
       return new Response('ok', { status: 200 });
     };
 
-    await prompt(HUMAN);
+    const refused = await prompt(HUMAN);
+    expect(refused.status).toBe(503);
+    expect((await refused.json()) as unknown).toMatchObject({
+      code: 'sandbox_lifecycle_unavailable',
+      retry: true,
+    });
+    expect(fetched).toBe(0);
 
+    turnStartObservation = 'granted';
+    expect((await prompt(HUMAN)).status).toBe(200);
+  });
+
+  test('a database failure refuses delivery before any upstream byte', async () => {
+    turnBeginError = new Error('database unavailable');
+    let fetched = 0;
+    (globalThis as { fetch: unknown }).fetch = async () => {
+      fetched += 1;
+      return new Response('ok', { status: 200 });
+    };
+
+    const refused = await prompt(HUMAN);
+
+    expect(refused.status).toBe(503);
+    expect((await refused.json()) as unknown).toMatchObject({
+      code: 'sandbox_lifecycle_unavailable',
+      retry: true,
+    });
     expect(fetched).toBe(0);
   });
 
   // A refusal must not consume the caller's idempotency claim, or their retry
   // short-circuits to a bogus 200 "duplicate" and the message is lost forever.
   test('a refusal leaves the prompt-dedupe claim free for the retry', async () => {
-    turnStartObservation = 'at_cap';
+    turnStartObservation = 'no_box';
     await prompt(HUMAN);
 
     turnStartObservation = 'granted';
@@ -318,18 +340,48 @@ describe('a turn start is observed BEFORE the prompt is relayed', () => {
   test('the BOX cannot observe its own turn start', async () => {
     await prompt(BOX_ITSELF);
 
-    expect(observeCalls).toEqual([]);
+    expect(begunTurns).toEqual([]);
   });
 
-  test('a failed upstream prompt receives no full active-turn grant', async () => {
+  test('an ambiguous upstream 5xx preserves the turn because OpenCode may have accepted it', async () => {
     respondWith(new Response('upstream failed', { status: 502 }));
 
     const res = await prompt(HUMAN);
 
     expect(res.status).toBe(502);
-    expect(observeCalls).toEqual([
-      { target: { externalId }, grantMs: realDeadline.turnDeliveryGraceMs() },
-    ]);
+    expect(acceptedTurns).toHaveLength(1);
+    expect(abandonedTurns).toEqual([]);
     expect(extends_).toEqual([]);
+  });
+
+  test('a post-delivery database failure preserves the delivering record for reaper recovery', async () => {
+    turnAcceptError = new Error('database unavailable after OpenCode accepted the prompt');
+
+    const res = await prompt(HUMAN);
+
+    expect(res.status).toBe(200);
+    expect(acceptedTurns).toHaveLength(1);
+    expect(abandonedTurns).toEqual([]);
+  });
+
+  test('a definitive upstream 4xx abandons the delivery record', async () => {
+    respondWith(new Response('invalid prompt', { status: 400 }));
+
+    const res = await prompt(HUMAN);
+
+    expect(res.status).toBe(400);
+    expect(acceptedTurns).toEqual([]);
+    expect(abandonedTurns).toHaveLength(1);
+  });
+
+  test('a delivery cleanup failure preserves the definitive upstream response', async () => {
+    turnAbandonError = new Error('database unavailable during cleanup');
+    respondWith(new Response('invalid prompt', { status: 400 }));
+
+    const response = await prompt(HUMAN);
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('invalid prompt');
+    expect(abandonedTurns).toHaveLength(1);
   });
 });

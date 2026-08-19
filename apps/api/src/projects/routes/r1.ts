@@ -1,5 +1,6 @@
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
-import { deriveRequestContext } from '../../iam/cache';
+import { projectRoleGrants } from '../../iam/read-models';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessible } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
@@ -20,7 +21,7 @@ import { buildProvisionContext, runProvision } from '../provision-core';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
+import { accountGithubInstallations, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
@@ -199,43 +200,28 @@ projectsApp.openapi(
   const scope = await resolveProjectAccount(c);
   // Reach through `any` for non-typed context keys set by the auth
   // middleware (the AppEnv only types userId/userEmail).
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-      | string
-      | undefined) ?? undefined;
-  const requestCtx = deriveRequestContext(c);
-
-  // Ask the IAM engine which projects the caller can READ. V2 returns
-  // one of: { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
+  // Ask the engine which projects the caller can READ. It returns one of:
+  // { mode: 'all' } | { mode: 'none' } | { mode: 'allow_only' }.
   // 'all' = account admin/owner (manager on every project); 'allow_only'
-  // = enumerated project IDs from direct project_members + group grants;
-  // 'none' = no access.
-  const accessible = await listAccessibleResources(
-    scope.userId,
-    scope.accountId,
+  // = enumerated project ids from the caller's own assignments plus every
+  // group they belong to; 'none' = no access.
+  const accessible = await listAccessible(
+    await actorOf(c, scope.accountId),
     'project.read',
     'project',
-    actingTokenId,
-    requestCtx,
   );
 
   if (accessible.mode === 'none') return c.json([]);
 
-  // Build the project rows + per-row project_members metadata used by
-  // the UI to label effective_role. We still consult project_members
-  // because the IAM engine bridges it into authorize() but doesn't
-  // hand the per-row role back here — and the UI wants the original
-  // manager/editor/viewer label, not just "allowed".
-  const grants = await db
-    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(
-      eq(projectMembers.accountId, scope.accountId),
-      eq(projectMembers.userId, scope.userId),
-    ));
-  const roleByProject = new Map(
-    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
-  );
+  // Build the project rows + the per-row role label the UI renders. The engine
+  // answers yes/no, not "at what tier", so the caller's own direct project
+  // assignments are read here — from `role_assignments`, the same store the
+  // verdict above came from.
+  const grants = await projectRoleGrants({
+    accountId: scope.accountId,
+    userId: scope.userId,
+  });
+  const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole]));
 
   const baseWhere = and(
     eq(projects.accountId, scope.accountId),
@@ -295,7 +281,7 @@ projectsApp.openapi(
   const scope = await resolveProjectAccount(c, body);
   // IAM-gated. Engine consults super-admin bypass, direct + group
   // policies, and legacy owner/admin bridges (in non-strict mode).
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   let repoUrl: string | null;
   try {
@@ -416,7 +402,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const ctx = await buildProvisionContext(c);
-  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+  if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -471,7 +457,7 @@ projectsApp.openapi(
   // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that
   // then carries an error frame; a 200 status has to mean "authorized", or
   // clients learn to keep reading a 200 body to find out whether they were.
-  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+  if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -633,7 +619,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Inviting a git collaborator grants a human standing access to the repo —
-  // membership-tier, not plain write. Gate on members.manage so an editor (or a
+  // membership-tier, not plain write. Gate on members.manage so a member (or a
   // scoped agent via the fold) can't add external collaborators.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -679,10 +665,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
+  const canManageGit = (await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
@@ -715,10 +701,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
+  const canManageGit = (await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
   const installUrl = canManageGit
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
@@ -804,7 +790,7 @@ projectsApp.openapi(
   async (c: any) => {
     const body = await readBody(c);
     const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const githubUserToken = normalizeString(body.github_user_token ?? body.githubUserToken);
     if (!githubUserToken) {
@@ -868,7 +854,7 @@ projectsApp.openapi(
   async (c: any) => {
     const body = await readBody(c);
     const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const installationId = normalizeString(body.installation_id ?? body.installationId);
     if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
@@ -951,7 +937,7 @@ projectsApp.openapi(
   }
 
   const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const installationId = normalizeString(body.installation_id ?? body.installationId);
   if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
@@ -1028,7 +1014,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
 
   await db
@@ -1062,7 +1048,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const installationId = c.req.param('installationId');
 
   await db

@@ -7,7 +7,7 @@ import { CatalogGridSkeleton } from '@/features/workspace/capabilities/shared/ca
  * skills) while their page resolves.
  *
  * Shared by `(capabilities)/loading.tsx` (the navigation Suspense boundary),
- * so the sidebar's `<Link prefetch>` on ProjectSettingsNavItem has something
+ * so the sidebar's `<Link prefetch>` on ProjectCustomizeNavItem has something
  * to cache — same reason `project-files-skeleton.tsx` exists for the Files
  * entry.
  *

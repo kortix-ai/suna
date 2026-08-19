@@ -126,12 +126,14 @@ export async function downloadFile(filePath: string, fileName?: string): Promise
 /** Recursively collect absolute file paths under a directory. */
 async function listAllFilesRecursive(dirPath: string): Promise<string[]> {
   const entries = await listFiles(dirPath);
-  const results: string[] = [];
-  for (const entry of entries) {
-    if (entry.type === 'file') results.push(entry.path);
-    else if (entry.type === 'directory') results.push(...(await listAllFilesRecursive(entry.path)));
-  }
-  return results;
+  const results = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.type === 'file') return [entry.path];
+      if (entry.type === 'directory') return listAllFilesRecursive(entry.path);
+      return [];
+    }),
+  );
+  return results.flat();
 }
 
 /** Characters Windows Explorer's extractor (and NTFS itself) refuses in a
@@ -195,14 +197,16 @@ export async function downloadDirectory(
     zip.file('.gitkeep', '');
   } else {
     let done = 0;
-    for (const filePath of allFiles) {
-      const relativePath = filePath.startsWith(dirPath + '/')
-        ? filePath.slice(dirPath.length + 1)
-        : filePath.split('/').pop() || filePath;
-      zip.file(relativePath, await readRuntimeFileWithRetry(filePath, () => readBlob(filePath)));
-      done++;
-      onProgress?.(done / allFiles.length);
-    }
+    await Promise.all(
+      allFiles.map(async (filePath) => {
+        const relativePath = filePath.startsWith(dirPath + '/')
+          ? filePath.slice(dirPath.length + 1)
+          : filePath.split('/').pop() || filePath;
+        zip.file(relativePath, await readRuntimeFileWithRetry(filePath, () => readBlob(filePath)));
+        done++;
+        onProgress?.(done / allFiles.length);
+      }),
+    );
   }
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });

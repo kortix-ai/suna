@@ -501,15 +501,43 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       setDetailContent: (sessionId: string, has: boolean | null) => {
         const map = get()._detailContentBySession;
+
+        // An open detail panel may never outlive the content that justified
+        // it. `setActiveSession` already lands every session change closed,
+        // but it returns early when the id is UNCHANGED — and unchanged is
+        // exactly the case that broke: leave a session for /connectors or
+        // /skills and come back, and it is the same session id, so none of
+        // that reset runs. What did run is this provider's unmount cleanup
+        // (`setDetailContent(sessionId, null)`), so the content went away
+        // while `detailOpen` stayed true. The panel came back open, over a
+        // provider with nothing in it, and rendered blank.
+        //
+        // Enforcing it HERE rather than at the navigation makes it an
+        // invariant instead of a patch: this is the single point where
+        // "does this session have detail content" changes, so there is no
+        // second route into the broken state to remember later.
+        const losingDetail = has === null || has === false;
+        const isActive = get()._activeSessionId === sessionId;
+        const closeDetail = losingDetail && isActive && get().detailOpen;
+
         if (has === null) {
-          if (!(sessionId in map)) return;
+          if (!(sessionId in map)) {
+            if (closeDetail) set({ detailOpen: false });
+            return;
+          }
           const next = { ...map };
           delete next[sessionId];
-          set({ _detailContentBySession: next });
+          set({ _detailContentBySession: next, ...(closeDetail ? { detailOpen: false } : {}) });
           return;
         }
-        if (map[sessionId] === has) return;
-        set({ _detailContentBySession: { ...map, [sessionId]: has } });
+        if (map[sessionId] === has) {
+          if (closeDetail) set({ detailOpen: false });
+          return;
+        }
+        set({
+          _detailContentBySession: { ...map, [sessionId]: has },
+          ...(closeDetail ? { detailOpen: false } : {}),
+        });
       },
 
 
@@ -611,6 +639,33 @@ export const useKortixComputerStore = create<KortixComputerState>()(
     }),
     {
       name: 'kortix-computer-store',
+      /**
+       * Persist the ONE durable preference and nothing else.
+       *
+       * There was no `partialize`, so zustand wrote the whole state to
+       * localStorage — including `detailOpen`, `isSidePanelOpen`,
+       * `_activeSessionId`, `_detailContentBySession`, `focusedToolCallId`
+       * and the one-shot flags. On the next load the panel reopened against a
+       * session whose provider had not mounted yet and had nothing to show:
+       * an open, blank panel, restored from disk.
+       *
+       * None of it deserved persisting. `setActiveSession` already resets
+       * `panelSplit`, `panelAspect`, `isExpanded` and `detailOpen` on every
+       * session change, so persisting them could only ever restore a value
+       * that the next session change throws away. The `_`-prefixed fields are
+       * internal bookkeeping about what is mounted RIGHT NOW, which is the
+       * one kind of state that must never survive the process that observed
+       * it. `pendingQuickView`, `readyChip`, `pendingToolNavIndex`,
+       * `focusedToolCallId` and `skipNextExpandAnimation` are one-shot
+       * intents; a stale one firing on load is a request the user made in
+       * another session, possibly days ago.
+       *
+       * `activeView` survives because it is a genuine preference — which tab
+       * of the panel you like — and it is content-independent: it decides
+       * what the panel shows once something opens it, never whether anything
+       * opens.
+       */
+      partialize: (state: KortixComputerState) => ({ activeView: state.activeView }),
     },
   ),
 );

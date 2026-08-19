@@ -16,7 +16,11 @@ import {
   sandboxSlugFromSessionMetadata,
   workspaceModeFromSessionMetadata,
 } from '../lib/session-sandbox-metadata';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import {
+  buildSessionSandboxEnvVars,
+  sandboxCallbackDeadTunnelReason,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../routes/shared';
 import { invalidateProviderCache } from '../../sandbox-proxy';
@@ -29,6 +33,7 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { prepareInPlaceRestartMetadata } from './readiness-clocks';
 
 export async function deleteSession(input: {
@@ -168,7 +173,8 @@ export async function restartSession(input: {
     };
   }
 
-  const restartUnreachable = sandboxCallbackUnreachableReason();
+  const restartUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
   if (restartUnreachable) {
     return {
       status: 503,
@@ -188,6 +194,7 @@ export async function restartSession(input: {
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
         : null;
+    const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
     const opencodeModel =
       typeof session.metadata?.opencode_model === 'string'
         ? (session.metadata.opencode_model as string)
@@ -216,6 +223,7 @@ export async function restartSession(input: {
       agentName: session.agentName ?? 'default',
       sandboxSlug: sandboxSlugFromSessionMetadata(session.metadata),
       runtimeMetadata,
+      initialTurn,
       sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
       buildEnvVars: () =>
         buildSessionSandboxEnvVars({
@@ -227,6 +235,7 @@ export async function restartSession(input: {
           baseRef: session.baseRef ?? loaded.row.defaultBranch,
           agentName: session.agentName ?? 'default',
           initialPrompt,
+          initialTurn,
           opencodeModel,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,

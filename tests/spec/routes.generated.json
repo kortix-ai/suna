@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 577,
+  "count": 592,
   "routes": [
     {
       "method": "GET",
@@ -224,6 +224,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/assignments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/assignments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/assignments/:assignmentId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/enterprise-demo"
     },
     {
@@ -308,6 +320,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/permissions"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/policies"
     },
     {
@@ -329,6 +345,10 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/resource-grants"
     },
     {
       "method": "GET",
@@ -593,6 +613,10 @@
     {
       "method": "GET",
       "path": "/v1/approval-links/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/apps/edge/tls-check"
     },
     {
       "method": "POST",
@@ -1077,6 +1101,14 @@
     {
       "method": "POST",
       "path": "/v1/platform/github-app/manifest-start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/oauth/authorize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/oauth/callback"
     },
     {
       "method": "POST",
@@ -1679,6 +1711,10 @@
       "path": "/v1/projects/:projectId/model-picker"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/monitors/ingest"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/oauth"
     },
@@ -1856,6 +1892,26 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/hold"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares"
     },
     {
@@ -1909,6 +1965,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
     },
     {
       "method": "GET",

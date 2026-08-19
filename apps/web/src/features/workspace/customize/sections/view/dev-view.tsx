@@ -250,8 +250,8 @@ function CommandBlock({ lines }: { lines: string[] }) {
     <div className="group border-border bg-muted relative overflow-hidden rounded-md border">
       <pre className="scrollbar-hide overflow-x-auto px-3.5 py-3 pr-12 text-sm leading-relaxed">
         <code className="text-foreground font-mono">
-          {lines.map((line, i) => (
-            <div key={i} className="flex">
+          {lines.map((line) => (
+            <div key={line} className="flex">
               <span className="min-w-0 break-all">{line}</span>
             </div>
           ))}

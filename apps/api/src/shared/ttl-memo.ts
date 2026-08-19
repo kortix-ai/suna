@@ -38,8 +38,10 @@ export function ttlMemo<A extends unknown[], T>(opts: {
   ttlMs: number;
   keyFn: (...args: A) => string;
   loader: (...args: A) => Promise<T>;
-  /** Return false to skip caching this resolved value. Default: cache all. */
-  shouldCache?: (value: T) => boolean;
+  /** Return false to skip caching this resolved value. Receives the loader
+   *  args too, so a memo can decide per key (e.g. "never cache an empty
+   *  result for this resource type"). Default: cache all. */
+  shouldCache?: (value: T, ...args: A) => boolean;
   /** Hard cap on entries; oldest-inserted are evicted past it. Default 10k. */
   maxEntries?: number;
   /** Caching is bypassed under `bun test` (NODE_ENV=test) so unit tests
@@ -64,7 +66,7 @@ export function ttlMemo<A extends unknown[], T>(opts: {
 
     const value = loader(...args).then(
       (resolved) => {
-        if (shouldCache && !shouldCache(resolved)) cache.delete(key);
+        if (shouldCache && !shouldCache(resolved, ...args)) cache.delete(key);
         return resolved;
       },
       (err) => {

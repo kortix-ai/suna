@@ -11,7 +11,7 @@ import { mockConfigModule } from './reaping/test-support/mock-config';
 mock.module('../config', () => mockConfigModule());
 
 const {
-  ABSOLUTE_RUN_CAP_MS,
+  NON_TURN_DEADLINE_CAP_MS,
   createExtendThrottle,
   idleGraceMs,
   isPreviewUseObservation,
@@ -72,7 +72,7 @@ describe('the grants', () => {
     expect(warmPoolGrantMs()).toBeGreaterThan(15 * 60_000);
     // Bounded, not exempt: the unbounded exemption it replaces let warm boxes
     // hold for hours as pure billed dead time.
-    expect(warmPoolGrantMs()).toBeLessThan(ABSOLUTE_RUN_CAP_MS);
+    expect(warmPoolGrantMs()).toBeLessThan(NON_TURN_DEADLINE_CAP_MS);
   });
 
   test('the idle tail reuses KORTIX_SANDBOX_AUTOSTOP_MINUTES, already 15 in prod', () => {
@@ -93,7 +93,7 @@ describe('the grants', () => {
     expect(warmPoolGrantMs()).toBe(5 * 60_000);
   });
 
-  test('every grant stays inside the absolute cap at its default', () => {
+  test('every default grant stays inside the non-turn deadline cap', () => {
     for (const grant of [
       turnGrantMs(),
       llmActivityGrantMs(),
@@ -101,7 +101,7 @@ describe('the grants', () => {
       turnDeliveryGraceMs(),
       warmPoolGrantMs(),
     ]) {
-      expect(grant).toBeLessThanOrEqual(ABSOLUTE_RUN_CAP_MS);
+      expect(grant).toBeLessThanOrEqual(NON_TURN_DEADLINE_CAP_MS);
     }
   });
 });

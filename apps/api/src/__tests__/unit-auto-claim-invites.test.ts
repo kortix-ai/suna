@@ -66,7 +66,24 @@ mock.module('drizzle-orm', () => ({
   count: (column?: unknown) => ({ op: 'count', column }),
 }));
 
-mock.module('@kortix/db', () => ({ accounts, accountMembers, accountInvitations }));
+// Wholesale replacement — declare every table this file's graph reaches, now
+// that membership is read from `role_assignments` and written through
+// `assignRole` (which also writes an audit event).
+mock.module('@kortix/db', () => ({
+  accounts,
+  accountMembers,
+  accountInvitations,
+  roleAssignments: {},
+  iamRoles: {},
+  iamRoleActions: {},
+  auditEvents: {},
+  serviceAccounts: {},
+  accountTokens: {},
+  accountGroups: {},
+  accountGroupMembers: {},
+  objectPolicies: {},
+  permissions: {},
+}));
 mock.module('../shared/db', () => ({ db: fakeDb }));
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
@@ -116,7 +133,7 @@ describe('autoClaimPendingInvites', () => {
   });
 
   test('does NOT claim a project invite (carries bootstrap grants): stays pending', async () => {
-    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'editor' }] })];
+    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'manager' }] })];
 
     await autoClaimPendingInvites('user-1', 'invitee@example.com');
 

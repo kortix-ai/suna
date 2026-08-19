@@ -12,7 +12,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from "../helpers/session-auth";
-import { selectAccountForUi } from "../helpers/ui";
+import { featureFlagRow, selectAccountForUi } from "../helpers/ui";
 
 const apiBase = process.env.E2E_API_URL || "http://localhost:13738/v1";
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://localhost:13740";
@@ -22,7 +22,7 @@ const password = "E2eFeatureFlagsUi123!";
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
-/** The badge each stability renders as (feature-flags-view.tsx STABILITY_BADGE). */
+/** The badge each stability renders as (experimental-tab.tsx STABILITY_BADGE). */
 const STABILITY_BADGE: Record<string, string> = {
   experimental: "Experimental",
   beta: "Beta",
@@ -81,35 +81,32 @@ async function dismissOnboarding(page: Page): Promise<void> {
 }
 
 /**
- * Customize → Manage → Feature flags, driven exactly as a user does it: the
- * sidebar's Settings row opens the Customize overlay (a full-screen modal),
- * then the rail's "Feature flags" item selects the section.
+ * Feature flags graduated out of the Settings overlay's Experimental tab a
+ * second time, onto the Customize bar's Settings tab
+ * (`/projects/[id]/config?section=feature-flags`, `settings-tabs.ts`
+ * GRADUATED map: `experimental` -> `feature-flags`). The pane's own copy
+ * reverted to "Feature flags" at the new location
+ * (`project-settings-sections.ts`'s `FEATURE_FLAGS_SECTION`), so the page
+ * title is that, not "Experimental" any more. Navigate straight there.
  */
-async function openFeatureFlags(page: Page): Promise<Locator> {
-  const settings = page
-    .locator('[data-slot="sidebar"]')
-    .getByRole("button", { name: "Settings" });
-  await expect(settings).toBeVisible({ timeout: 60_000 });
-  await settings.click();
-  const panel = page.getByRole("dialog");
-  await expect(panel).toBeVisible();
-  await panel.getByRole("button", { name: "Feature flags" }).click();
+async function openFeatureFlags(page: Page, projectId: string): Promise<Locator> {
+  await page.goto(`/projects/${projectId}/config?section=feature-flags`, {
+    waitUntil: "domcontentloaded",
+  });
   await expect(
-    panel.getByRole("heading", { name: "Feature flags", exact: true }),
-  ).toBeVisible();
-  return panel;
+    page.getByRole("heading", { name: "Feature flags", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  return page.locator("body");
 }
 
-/** The `<li>` that owns one flag, identified by its switch's accessible name
- *  (`aria-label={flag.name}`) — never by DOM order, which is registry order and
- *  changes when a flag is added. */
+/** The row that owns one flag — never DOM order, which is registry order and
+ *  changes when a flag is added. See `featureFlagRow` for why the row is
+ *  pinned by the flag name instead of the switch's accessible name. */
 function flagRow(panel: Locator, page: Page, name: string): Locator {
-  return panel
-    .getByRole("listitem")
-    .filter({ has: page.getByRole("switch", { name, exact: true }) });
+  return featureFlagRow(panel, page, name);
 }
 
-/** The origin line under a flag (`originLabel` in feature-flags-view.tsx). */
+/** The origin line under a flag (`originLabel` in experimental-tab.tsx). */
 function originLabel(flag: FeatureFlagView): string {
   if (flag.overridden) return "Overridden for this project";
   return flag.enabled ? "Default on" : "Default off";
@@ -120,8 +117,8 @@ test.describe("19 — Feature flags UI", () => {
   // project.customize.write sees the switches disabled) is NOT covered here.
   // It needs a second auth user, an account invite, and a custom project role
   // seeded per run — heavier than the rest of this spec put together. The
-  // capability gate itself is unit-covered by the `canWrite` fail-closed logic
-  // in feature-flags-view.tsx and enforced server-side by
+  // capability gate itself is unit-covered by the `canEdit` fail-closed logic
+  // in experimental-tab.tsx and enforced server-side by
   // `assertProjectCapability(PROJECT_CUSTOMIZE_WRITE)` on
   // `PATCH /projects/:id/features` (apps/api/src/projects/routes/r6.ts).
   test("lists every available flag, toggles one through PATCH /features, and persists it", async ({
@@ -204,7 +201,7 @@ test.describe("19 — Feature flags UI", () => {
 
       // (b) every available flag renders a row with a stability badge and an
       //     origin line.
-      const panel = await openFeatureFlags(page);
+      const panel = await openFeatureFlags(page, project.id);
       await expect(panel.getByRole("switch")).toHaveCount(flags.length);
       for (const flag of flags) {
         const row = flagRow(panel, page, flag.name);
@@ -216,9 +213,10 @@ test.describe("19 — Feature flags UI", () => {
         await expect(
           row.getByText(originLabel(flag), { exact: true }),
         ).toBeVisible();
-        await expect(
-          panel.getByRole("switch", { name: flag.name, exact: true }),
-        ).toHaveAttribute("aria-checked", String(flag.enabled));
+        await expect(row.getByRole("switch")).toHaveAttribute(
+          "aria-checked",
+          String(flag.enabled),
+        );
       }
 
       // (c) toggling one flag issues the canonical PATCH and persists.
@@ -232,16 +230,14 @@ test.describe("19 — Feature flags UI", () => {
           response.request().method() === "PATCH" &&
           response.url().endsWith(`/v1/projects/${project.id}/features`),
       );
-      await panel
-        .getByRole("switch", { name: target.name, exact: true })
-        .click();
+      await flagRow(panel, page, target.name).getByRole("switch").click();
       expect((await patchRequest).postDataJSON()).toEqual({
         feature: target.key,
         enabled: true,
       });
       expect((await patchResponse).status()).toBe(200);
       await expect(
-        panel.getByRole("switch", { name: target.name, exact: true }),
+        flagRow(panel, page, target.name).getByRole("switch"),
       ).toHaveAttribute("aria-checked", "true");
 
       // The API is the source of truth for persistence, not the optimistic
@@ -258,11 +254,15 @@ test.describe("19 — Feature flags UI", () => {
 
       await page.reload({ waitUntil: "domcontentloaded" });
       await dismissOnboarding(page);
-      const reopened = await openFeatureFlags(page);
-      const targetRow = flagRow(reopened, page, target.name);
       await expect(
-        reopened.getByRole("switch", { name: target.name, exact: true }),
-      ).toHaveAttribute("aria-checked", "true");
+        page.getByRole("heading", { name: "Feature flags", exact: true }),
+      ).toBeVisible({ timeout: 30_000 });
+      const reopened = page.locator("body");
+      const targetRow = flagRow(reopened, page, target.name);
+      await expect(targetRow.getByRole("switch")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
       await expect(
         targetRow.getByText("Overridden for this project", { exact: true }),
       ).toBeVisible();

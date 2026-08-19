@@ -94,8 +94,34 @@ const KNOWN_TEST_NOISE_MESSAGES = [
 ] as const;
 
 const KNOWN_DOM_MUTATION_NOISE_MESSAGES = [
+  // V8/Chromium (Chrome/Edge) wording — the canonical DOM mutation error
+  // surfaced when React's reconciler or a portal tries to mutate a DOM node
+  // that has been moved/removed by an extension or the browser itself.
   "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
   "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+  // Gecko/Firefox wording for the SAME DOM mutation class — a
+  // `HierarchyRequestError` surfaced when Next.js's live-feedback/HMR module
+  // (`_next-live/feedback/…`) manipulates a node whose ancestor changed
+  // (extension DOM rewrite, devtools overlay, or a React portal moved mid-
+  // commit). The `InvalidNodeTypeError` type + "The supplied node is
+  // incorrect or has an incorrect ancestor for this operation." message is
+  // Gecko's canonical DOM-API phrasing for the same `insertBefore`/
+  // `removeChild` race the V8 entries above cover. Better Stack pattern
+  // 9e6a70ffdb26ba2ab9f821fe8772f51b082d6a9b0e2c9f50b2130cde0c3e6438
+  // (Kortix Frontend prod, application_id 2346967): `InvalidNodeTypeError`,
+  // 2 occurrences / 0 identified users, last 2026-08-11 16:37:15 UTC,
+  // release `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), call
+  // site function `te` in chunk
+  // `app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_…`
+  // (Next.js live feedback), request URL a co-worker session page, Firefox
+  // 153 on macOS, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The existing V8/JSC patterns (covering only the
+  // `insertBefore`/`removeChild` wording) did NOT match the Firefox wording,
+  // so this sibling leaked to Better Stack. Adding the Gecko string to the
+  // existing array (no matcher change — `containsKnownPattern` matches it the
+  // same way as the V8 entries) is the simplest, lowest-risk fix.
+  "The supplied node is incorrect or has an incorrect ancestor for this operation.",
 ] as const;
 
 const KNOWN_HYDRATION_NOISE_MESSAGES = [
@@ -1520,6 +1546,130 @@ export function isUserscriptManagerNoise(input: {
     ...(input.frames ?? []).map((frame) => frame?.filename),
   ];
   return sources.some(isUserscriptManagerInjectedSource);
+}
+
+// OneTrust cookie-consent SDK JSON-parse noise. OneTrust
+// (`https://onetrust.com`) is a third-party cookie-consent / IAB TCF banner
+// vendors inject into pages via a small bootstrap stub
+// (`otSDKStub.js?did=<domainId>`) that XHR-fetches the consent configuration
+// for the site's domain. When the SDK is misconfigured / the domain ID is
+// `undefined` / the consent endpoint returns an empty or truncated body
+// (a CORS preflight failure, a 5xx, a network abort, or the page is loaded
+// in a stripped-down browser — an old iOS Safari that cannot complete the
+// XHR), the stub's `XMLHttpRequest` `onload` handler calls `JSON.parse()` on
+// the empty/truncated response and throws the canonical V8/JSC
+// `SyntaxError: Unexpected end of JSON input`. The throw originates INSIDE
+// the OneTrust SDK's own `otSDKStub.js` script (function `r.onload`), never
+// in first-party Kortix code: the `did=undefined` query param is the SDK's
+// OWN misconfiguration signal (the domain ID never resolved), and the
+// `app:///scripttemplates/otSDKStub.js` source is OneTrust's synthetic
+// injected-script origin (the same `app:///` empty-host origin shape as the
+// other injected/extension sources — distinct from a first-party
+// `app:///_next/…` bundle frame and a de-minified `apps/web/src/…` source
+// path). Sentry's `BrowserApiErrors` integration auto-wraps
+// `XMLHttpRequest.onload` and captures the throw as `handled:false`
+// (UNCAUGHT — never reached a React error boundary), so it leaks to Better
+// Stack.
+//
+// Better Stack pattern
+// aa1efd3fb7a9f6840d4eb25b881d2b12ac2e6f3c8dfe3158fbd3e9fc753a0526
+// (Kortix Frontend prod, application_id 2346967): `SyntaxError`, message
+// `Unexpected end of JSON input`, 1 occurrence / 0 identified users, last
+// 2026-08-11 23:03:30 UTC, release
+// `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), request URL
+// `https://kortix.com/auth` (auth page — the consent banner loads there
+// before the user is signed in), browser Safari on iOS 13.2.3 (iPhone — a
+// very old iOS whose XHR/JSON paths are quirkier), mechanism
+// `auto.browser.browserapierrors.xhr.onload` (UNCAUGHT, `handled:false`).
+// Stack frames (3, all `in_app:true`):
+//   1. `app:///_next/static/immutable/chunks/1zqaq83quwhm5.js` fn
+//      `XMLHttpRequest.r` (the Next.js webpack runtime chunk that
+//      `XMLHttpRequest` was monkey-patched through — the SCHEDULING frame,
+//      NOT the throw site).
+//   2. `app:///scripttemplates/otSDKStub.js?did=undefined` fn `r.onload`
+//      (THROW SITE — the OneTrust SDK's `onload` handler where the
+//      `JSON.parse` runs; `did=undefined` is the SDK's own misconfiguration
+//      marker).
+//   3. `<anonymous>` fn `JSON.parse` (the actual `JSON.parse` call the
+//      OneTrust SDK makes on the empty body).
+// NO first-party `apps/web/src/…` frame — the throw is in the OneTrust SDK's
+// own injected script, never in our code.
+//
+// The `Unexpected end of JSON input` message is the GENERIC V8/JSC wording
+// for `JSON.parse('')` / `JSON.parse(<truncated>)` — a real first-party
+// `JSON.parse(truncatedApiResponse)` regression in our own code would throw
+// the SAME wording, so matching on the message alone would swallow real app
+// JSON-parsing bugs. Require BOTH the exact message AND a frame whose
+// filename is the OneTrust SDK's `otSDKStub.js` source (the `app:///scripttemplates/otSDKStub.js?did=…`
+// synthetic injected-script origin — the `otSDKStub.js` token is OneTrust's
+// canonical bootstrap filename, never a first-party source path), so a real
+// first-party `JSON.parse` SyntaxError keeps reporting. A NEGATIVE guard
+// preserves any event whose stack carries a resolved first-party
+// `apps/web/src/…` frame (our own code called `JSON.parse` on a bad body
+// while a OneTrust frame happened to be in the stack → actionable). Returns
+// false when there is no `otSDKStub.js` frame (can't confirm the OneTrust
+// origin — keep reporting rather than swallow a possible first-party
+// `JSON.parse` bug). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `JSON.parse` SyntaxError the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const ONETRUST_SDK_FRAME_PATTERN = /otSDKStub\.js/;
+const ONETRUST_JSON_PARSE_NOISE_MESSAGE = /^Unexpected end of JSON input$/;
+
+function isOneTrustSdkFrame(filename: unknown): boolean {
+  return ONETRUST_SDK_FRAME_PATTERN.test(normalizeString(filename));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the OneTrust cookie-consent SDK
+ * JSON-parse noise class: OneTrust's `otSDKStub.js?did=<domainId>` bootstrap
+ * stub XHR-fetches the site's consent config, and when the domain ID is
+ * `undefined` / the endpoint returns an empty or truncated body (old iOS
+ * Safari, CORS preflight failure, 5xx, network abort), the stub's
+ * `XMLHttpRequest.onload` handler calls `JSON.parse()` on the bad body and
+ * throws the canonical `SyntaxError: Unexpected end of JSON input`. The
+ * throw is in the OneTrust SDK's own injected `otSDKStub.js` script, never
+ * first-party code (`did=undefined` is the SDK's own misconfiguration
+ * signal). Requires BOTH the EXACT `Unexpected end of JSON input` message
+ * AND a frame whose filename contains `otSDKStub.js` (the OneTrust SDK's
+ * canonical bootstrap filename — the `app:///scripttemplates/otSDKStub.js?did=…`
+ * synthetic injected-script origin), with a NEGATIVE guard: if any frame
+ * resolves to a de-minified first-party `apps/web/src/…` source path, the
+ * event keeps reporting (a real first-party `JSON.parse(truncatedApiResponse)`
+ * regression de-minifies to `apps/web/src/…` and must not be hidden).
+ * Returns false when there is no `otSDKStub.js` frame (can't confirm the
+ * OneTrust origin — keep reporting rather than swallow a possible first-
+ * party `JSON.parse` bug). See `ONETRUST_JSON_PARSE_NOISE_MESSAGE` for the
+ * full rationale and Better Stack pattern `aa1efd3fb…`.
+ */
+export function isOneTrustJsonParseNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!ONETRUST_JSON_PARSE_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code called `JSON.parse` on a bad body while a OneTrust frame
+  // happened to be in the stack → actionable regression; keep reporting so
+  // the call site can be found + fixed. (Mirrors `isInpageJsNoErrorMessageNoise`
+  // / `isConnectionClosedNoise`'s negative guards.)
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame (or the window.onerror `filename`)
+  // is the OneTrust SDK's `otSDKStub.js` source. Without an `otSDKStub.js`
+  // frame we cannot confirm the OneTrust origin — keep reporting rather
+  // than swallow a possible first-party `JSON.parse` bug.
+  return sources.some(isOneTrustSdkFrame);
 }
 
 /**
@@ -3563,6 +3713,137 @@ export function isConnectionClosedNoise(input: {
   return true;
 }
 
+// Transient WebSocket `postMessage` "Failed to send message" transport
+// noise — a SIBLING of `isConnectionClosedNoise` (the `Connection closed.`
+// transport-close class) but a DIFFERENT throw. The co-worker session page
+// (`/projects/:id/sessions/:sessionId`) holds a WebSocket connection to the
+// sandbox runtime; when the sandbox tears the connection down mid-flight
+// (a deploy / restart / idle-timeout recycle / sandbox park / network
+// blip / the user closing the tab), a fire-and-forget `ws.send(...)` on the
+// already-closed socket rejects with the canonical
+// `Failed to send message` (the WebSocket spec's `InvalidStateError`
+// message — `ReadyState is not OPEN`). The throw fires from a react-query
+// mutation's `mutationFn` (a minified `Object.x [as mutationFn]` in a
+// `_next/static/immutable/chunks/…` bundle), is caught by an error
+// boundary (`handled:true`, mechanism `generic` — NOT an UNCAUGHT global
+// rejection; the boundary showed the user an error state instead of a
+// blank page), and Sentry captures it as an exception with ONE minified
+// chunk frame — NO resolved first-party `apps/web/src/…` source.
+//
+// This is the same transient-transport class as
+// `isConnectionClosedNoise` (PR for BS `ecac86df…`) and the broader
+// `isFramelessNetworkErrorNoise` family — a WebSocket/SSE transport
+// teardown that is EXPECTED (the sandbox closing is not a product bug),
+// self-healing-on-reconnect, and surfaces only as a transient transport
+// error. The `handled:true` means the error boundary already showed the
+// user a controlled error state (not a blank page), so it is doubly not
+// actionable — the user saw a controlled state, and the connection
+// recovers on the next session switch.
+//
+// Better Stack pattern
+// 824577dd315c08f227a1f31c74e2eb90be209b1ffd129e18923907aa3068afd2
+// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// `Failed to send message`, 1 occurrence / 0 identified users, last
+// 2026-08-11 14:47:00 UTC, release
+// `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), call site
+// function `Object.x [as mutationFn]`, call site file
+// `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` (minified — NO
+// resolved first-party source), request URL a co-worker session page
+// (`https://kortix.com/projects/834686a1-…/sessions/54f7abe9-…`), browser
+// Chrome on macOS, mechanism `generic` with `handled:true` (CAUGHT by an
+// error boundary — NOT an uncaught global rejection). Stack frames (1,
+// `in_app:true`):
+//   1. `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` fn
+//      `Object.x [as mutationFn]` (the react-query mutation that called
+//      `ws.send(...)` on the closed socket — a minified bundle chunk, NOT a
+//      resolved first-party source path).
+// NO first-party `apps/web/src/…` frame.
+//
+// The `Failed to send message` wording is the WebSocket spec's canonical
+// `InvalidStateError` message for `ws.send(...)` on a closed socket — it
+// is GENERIC enough that a real first-party sender regression (our own
+// `ws.send` on a closed socket, surfacing from a de-minified
+// `apps/web/src/…` call site) would throw the SAME wording. Because the
+// event is `handled:true` (caught by an error boundary — the user saw a
+// controlled error state, not a blank page), a first-party sender IS
+// actionable: if our own code is the sender, the boundary's error state
+// is showing the user a defect we should fix. So this matcher anchors on
+// BOTH the EXACT message AND a NEGATIVE guard: if ANY frame (or the
+// window.onerror `filename`) resolves to a de-minified first-party
+// `apps/web/src/…` source path, the event KEEPS reporting — our own code
+// is the `ws.send` caller and a real first-party transport regression is
+// actionable to fix. Only events with NO resolved first-party frame (the
+// production noise shape: a minified `_next/static/immutable/chunks/…`
+// frame, or frameless) are dropped. A frameless capture with this exact
+// message still classifies as noise — the message alone is the WebSocket
+// spec's canonical transport-failure wording and is specific enough
+// (the `Failed to send message` string paired with the
+// `ws.send`-on-closed-socket context pins this single transport class),
+// mirroring `isConnectionClosedNoise`'s frameless handling. Deliberately
+// NOT added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate
+// has no frame context, so a bare-string match there would swallow a real
+// first-party `ws.send` regression the negative guard exists to preserve;
+// the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const FAILED_TO_SEND_MESSAGE_NOISE_PATTERN = /^Failed to send message$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient WebSocket
+ * `postMessage` "Failed to send message" transport-noise class: a co-worker
+ * session page's WebSocket `ws.send(...)` rejected with the canonical
+ * WebSocket `InvalidStateError` message (`Failed to send message` — the
+ * spec's wording for `ws.send` on a closed socket) when the sandbox tore
+ * the connection down mid-flight (deploy / restart / idle-timeout recycle /
+ * sandbox park / network blip / tab close). This is a SIBLING of
+ * `isConnectionClosedNoise` (the `Connection closed.` transport-close
+ * class) but a DIFFERENT throw — a `ws.send` rejection on an already-closed
+ * socket, NOT a library close event. The connection closing during a
+ * deploy/recycle is EXPECTED, not a product bug; the event is
+ * `handled:true` (caught by an error boundary — the user saw a controlled
+ * error state, not a blank page).
+ *
+ * Requires the EXACT message `Failed to send message` (case-sensitive, the
+ * WebSocket spec's canonical `InvalidStateError` wording) AND a NEGATIVE
+ * guard: if ANY frame (or the window.onerror `filename`) resolves to a
+ * de-minified first-party `apps/web/src/…` source path, the event KEEPS
+ * reporting — our own code is the `ws.send` caller and a real first-party
+ * transport regression is actionable (the boundary already showed the user
+ * a controlled error state, so we should fix the sender). Only events with
+ * NO resolved first-party frame (the production noise shape: a minified
+ * `_next/static/immutable/chunks/…` frame, or frameless) are dropped. A
+ * frameless capture with this exact message still classifies as noise.
+ * See `FAILED_TO_SEND_MESSAGE_NOISE_PATTERN` for the full rationale and
+ * Better Stack pattern `824577dd…`.
+ */
+export function isFailedToSendMessageNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message))
+    .replace(/^Error: /, '');
+  if (!FAILED_TO_SEND_MESSAGE_NOISE_PATTERN.test(stripped)) {
+    return false;
+  }
+  // Collect every source location — the window.onerror `filename` (runtime
+  // gate) and any stacktrace frames (Sentry gate) — for the first-party
+  // negative guard.
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code is the `ws.send` caller on a closed socket → a real first-party
+  // transport regression (the boundary already showed the user an error
+  // state); keep reporting so the call site can be found + fixed. A real
+  // first-party `ws.send` regression de-minifies to `apps/web/src/…` and is
+  // never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 // Third-party editor-library document-state race noise. A ProseMirror/TipTap-
 // based editor library (`@tiptap/*` deps in `apps/web/package.json`) holds an
 // internal document-state map keyed by document id. When the editor is
@@ -3781,6 +4062,301 @@ export function isFramelessNetworkErrorNoise(input: {
   return true;
 }
 
+// Safari third-party-script "undefined variable" ReferenceError noise — the
+// `Can't find variable: <Name>` wording is Safari/JavaScriptCore's canonical
+// ReferenceError for a variable reference that resolved to an undeclared
+// binding (Chrome/V8 says `<Name> is not defined`). When a THIRD-PARTY script
+// loaded on the marketing homepage (a charting/finance library such as
+// TradingView / lightweight-charts, or any vendor script that defines a
+// top-level constant like `EmptyRanges`) fails to load or initialize on iOS
+// Safari — a network abort, a parse failure, a CSP block, a script-load race
+// — the referencing code dereferences the now-undefined global and Safari's
+// `window.onerror` captures a FRAMELESS `ReferenceError`: the engine could
+// not produce a stack because the throw originated in script text that never
+// evaluated, so `call_site_file` is the literal `"undefined"` placeholder and
+// there are NO stack frames. The variable name (`EmptyRanges`, …) belongs to
+// the third-party script, NEVER to first-party `apps/web/src/…` code (grep
+// confirms `EmptyRanges` is absent from the codebase).
+//
+// Better Stack pattern
+// 304f7345eea41d488225ebf2dd238fa05ca073187fd0e2ffc61071ac99f40408
+// (Kortix Frontend prod, application_id 2346967): `ReferenceError`, message
+// `Can't find variable: EmptyRanges`, 5 occurrences / 0 identified users,
+// first 2026-08-13 06:24:03 UTC, release
+// `1f8409e2bedf441343eb12086a2131ff69397c37` (v0.12.8 prod),
+// call_site_function `?`, call_site_file `undefined` (the literal
+// placeholder — NO resolvable source location), request URL
+// `https://kortix.com/` (marketing homepage), browser iPhone iOS 18.7 Safari
+// (Safari 26), mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT
+// global `onerror`, `handled:false` — never reached a React error
+// boundary). Frames: `undefined` — no stack frames at all.
+//
+// Same family as the prior frameless Safari / browser-internal noise matchers
+// — `isUnresolvableStackOverflowNoise` (Safari frameless `onerror` stack
+// overflow), `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), and `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`) — a frameless global-handler capture dropped by a precise
+// message matcher with two negative guards preserving any first-party or
+// resolvable frame.
+//
+// `Can't find variable: <Name>` is Safari's GENERIC ReferenceError wording —
+// a REAL first-party `ReferenceError` (e.g. a typo referencing an undeclared
+// variable in our own code, `Can't find variable: myHelper`) would surface
+// with the SAME wording, so the matcher requires BOTH:
+//   1. The Safari ReferenceError PREFIX `/^Can't find variable: /`
+//      (case-sensitive). The variable name (`EmptyRanges`, `WebAssembly`, …)
+//      varies per third-party script, so a prefix (not exact) match is
+//      required. Chrome/V8's `<Name> is not defined` wording is a DIFFERENT
+//      surface and is deliberately NOT matched, so a Chromium first-party
+//      ReferenceError keeps reporting.
+//   2. The FRAMELESS shape as a positive guard: no resolvable frame location
+//      at all (every frame's `filename` is empty or the literal `"undefined"`
+//      placeholder, and the window.onerror `filename` is empty/`undefined`)
+//      — mirroring `isNonErrorUndefinedRejectionNoise` /
+//      `isOperationErrorPopErrorScopeNoise` / `isUnresolvableStackOverflowNoise`.
+// Plus two negative guards: (a) any resolved first-party `apps/web/src/…`
+// frame → keep reporting (our own ReferenceError with a stack is preserved —
+// a real first-party Safari `ReferenceError` de-minifies to `apps/web/src/…`);
+// (b) ANY resolvable frame location (real chunk/URL/named file) → keep
+// reporting (a reference error with a stack frame is from traceable code,
+// first-party OR a third-party script that DID load and threw a resolvable
+// ReferenceError). Only the frameless capture (the production noise pattern:
+// a third-party script that failed to load entirely, leaving no stack) is
+// dropped. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-prefix
+// match there would swallow a real first-party Safari ReferenceError the
+// negative guards exist to preserve; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const UNDEFINED_VARIABLE_NOISE_PATTERN = /^Can't find variable: /;
+
+/**
+ * Whether a Sentry / window.onerror event is the Safari third-party-script
+ * "undefined variable" ReferenceError noise class: a `Can't find variable:
+ * <Name>` `ReferenceError` (Safari/JavaScriptCore's canonical wording for an
+ * undeclared variable reference — Chrome/V8 says `<Name> is not defined`)
+ * captured by the global `onerror` handler with NO resolvable source
+ * location (the throw originated in a third-party script that failed to load,
+ * so the engine produced no stack and `call_site_file` is the literal
+ * `"undefined"` placeholder). The variable name belongs to the third-party
+ * script (e.g. `EmptyRanges` from a charting/finance library), never to
+ * first-party `apps/web/src/…` code. Requires BOTH the Safari ReferenceError
+ * prefix AND the frameless shape (positive guard), plus two negative guards:
+ * any resolved first-party `apps/web/src/…` frame → keep reporting (our own
+ * ReferenceError with a stack is preserved); any resolvable frame location →
+ * keep reporting (a reference error with a stack frame is from traceable
+ * code). Only the frameless capture is dropped. See
+ * `UNDEFINED_VARIABLE_NOISE_PATTERN` for the full rationale and Better Stack
+ * pattern `304f7345…`.
+ */
+export function isUndefinedVariableThirdPartyNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!UNDEFINED_VARIABLE_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code referenced an undeclared variable → a real first-party
+  // ReferenceError with a stack; keep reporting so the call site can be found
+  // + fixed. A real first-party Safari `ReferenceError` de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable ReferenceError with a real stack (first-party OR a
+  // third-party script that DID load and threw a resolvable ReferenceError);
+  // keep reporting. Only the frameless capture (the production noise pattern:
+  // a third-party script that failed to load entirely, leaving no stack)
+  // remains → drop it.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
+
+// Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+// noise. A headless-browser or automation tool (Selenium, Puppeteer, Playwright,
+// or a scraper) injects a script that attempts
+// `Object.defineProperty(navigator, 'webdriver', { get: () => undefined })` to
+// hide its automation footprint from bot-detection on the page it is crawling.
+// In some Chrome builds `navigator.webdriver` is a NON-configurable property,
+// so the `defineProperty` trap throws `TypeError: Cannot redefine property:
+// webdriver`. The throw originates in the injected automation/anti-detection
+// script — NEVER in first-party Kortix code — and surfaces as an UNCAUGHT global
+// `onerror` (mechanism `auto.browser.global_handlers.onerror`, `handled:false`
+// — never reaches a React error boundary). Better Stack pattern
+// ee14e84d1a150ae094e20722e619083499d8b29206445a2ef349ff42db6d0f7f
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `Cannot redefine property: webdriver`, call site function
+// `Object.defineProperty`, call site file `<anonymous>`, 1 occurrence / 0
+// identified users, first 2026-08-12 07:49:16 UTC, request URL
+// `https://kortix.com/projects/61df2bc0-…` (project page), browser Chrome on
+// Windows 10. Stack: 3 frames, ALL `<anonymous>` (functions `?`, `?`,
+// `Object.defineProperty`) — NO resolved first-party `apps/web/src/…` frame
+// and NO chunk frame at all. This is bot/scanner noise, NOT a product bug: a
+// real first-party `Object.defineProperty` call that redefined a non-
+// configurable property would de-minify to `apps/web/src/…` frames (Sentry
+// uploads sourcemaps), and `navigator.webdriver` is never touched by
+// first-party app code.
+//
+// The EXACT message `Cannot redefine property: webdriver` is the V8/Chrome
+// canonical `TypeError` for a `defineProperty` on a non-configurable property
+// (the property name `webdriver` pins it to `navigator.webdriver` specifically,
+// never a coincidental app-logic `defineProperty` regression). BUT the matcher
+// carries a NEGATIVE guard: if ANY frame (or the window.onerror `filename`)
+// resolves to a de-minified first-party `apps/web/src/…` source path, the event
+// keeps reporting — a real first-party `defineProperty` regression
+// de-minifies to `apps/web/src/…` and must not be hidden. The production event
+// carries only `<anonymous>` frames, so the negative guard does NOT fire for
+// it. A frameless capture with this exact message still classifies as noise
+// — the `webdriver` property name is the specific anchor (it is never a
+// first-party Kortix API surface). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `defineProperty` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const REDEFINE_WEBDRIVER_NOISE_MESSAGE = /^Cannot redefine property: webdriver$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the bot / automation-framework /
+ * scraper `Cannot redefine property: webdriver` noise class: an injected
+ * anti-detection script attempts
+ * `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+ * footprint, and Chrome throws a `TypeError` because `navigator.webdriver` is
+ * non-configurable in that build. The throw originates in the injected
+ * automation script, never first-party Kortix code. Requires the EXACT message
+ * (case-sensitive; the `webdriver` property name pins it to
+ * `navigator.webdriver` specifically) AND a NEGATIVE guard: if any frame (or
+ * the window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting (a real first-party
+ * `defineProperty` regression de-minifies to `apps/web/src/…` and must not be
+ * hidden). The production event carries only `<anonymous>` frames, so the
+ * negative guard does NOT fire for it. A frameless capture with this exact
+ * message still classifies as noise — the `webdriver` property name is the
+ * specific anchor. See `REDEFINE_WEBDRIVER_NOISE_MESSAGE` for the full
+ * rationale and Better Stack pattern `ee14e84d…`.
+ */
+export function isRedefineWebdriverNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!REDEFINE_WEBDRIVER_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code called `defineProperty` on a
+  // non-configurable property → a real first-party regression; keep reporting
+  // so the call site can be found + fixed. A real first-party `defineProperty`
+  // regression de-minifies to `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
+// Transient fetch-abort `signal timed out` noise — the Bun / native
+// `TimeoutError` raised by `AbortSignal.timeout()` when a client-side fetch
+// exceeds its 30s deadline. This is the SAME transient-timeout class as the
+// prior API pattern `c672fb5e…` which was fixed by PR #4709 (API-side
+// `SENTRY_IGNORE_ERRORS` filter for `'The operation timed out.'`). The existing
+// API-side filter covers `'The operation timed out.'` but NOT the frontend's
+// `'signal timed out'` wording. The SDK's `makeRequest` aborts on its 30s
+// deadline and the abort surfaces as `TimeoutError: signal timed out` in the
+// frontend's `onunhandledrejection` handler (the rejection reaches Sentry
+// through a fire-and-forget path that bypasses `handleApiError`'s timeout
+// guard). The SDK already has a bounded retry for transient gateway statuses
+// (#4609) and the API already filters its own timeout (#4709), but the
+// frontend rejection still reaches Sentry.
+//
+// Better Stack pattern
+// 73e683c3aad440ccf4cc817f0484366cc66ba26b9435517fc8c86d4f7d258d60
+// (Kortix Frontend prod, application_id 2346967): `TimeoutError`, message
+// `signal timed out`, 24 occurrences / 0 identified users, first 2026-05-16
+// (recurring), last 2026-08-12 04:08:45 UTC, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`), request URL
+// `https://kortix.com/projects/…/sessions/…` (session pages), browser Chrome
+// on macOS, tags `DOMException.code: 23` (InvalidStateError — the network
+// abort). Stack: NONE — the exception value has NO `stacktrace` key at all
+// (frameless capture). A transient network/timeout error, not a code bug.
+//
+// The EXACT message `signal timed out` is the canonical `TimeoutError` message
+// from `AbortSignal.timeout()` — it is specific enough to anchor on without a
+// frame guard (a real first-party `throw new Error('signal timed out')` would
+// be unusual). For conservativism, the matcher carries an OPTIONAL negative
+// guard: if ANY frame (or the window.onerror `filename`) resolves to a
+// de-minified first-party `apps/web/src/…` source path, the event keeps
+// reporting (a real first-party `signal timed out` throw de-minifies to
+// `apps/web/src/…` and must not be hidden). The production event has NO frames
+// at all, so the negative guard does NOT fire for it. A frameless capture
+// with this exact message classifies as noise — the message is the canonical
+// `AbortSignal.timeout()` wording. Sibling to `isClientRequestTimeoutMessage`
+// (the SDK's typed `Request timed out after <N>s:` wording, #4531) — this is
+// the NATIVE `TimeoutError` wording the bare `AbortSignal.timeout()` promise
+// rejection surfaces with, distinct from the SDK's wrapped `ApiError`
+// message. Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors`
+// list — that gate has no frame context; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the safe gate.
+const SIGNAL_TIMEOUT_NOISE_MESSAGE = /^signal timed out$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient fetch-abort
+ * `signal timed out` noise class: the native `TimeoutError` raised by
+ * `AbortSignal.timeout()` when a client-side fetch exceeds its 30s deadline.
+ * The SDK's `makeRequest` aborts on its 30s deadline and the abort surfaces as
+ * `TimeoutError: signal timed out` in the frontend's `onunhandledrejection`
+ * handler; it reaches Sentry through a fire-and-forget path that bypasses
+ * `handleApiError`'s timeout guard. A transient network/timeout error, not a
+ * code bug. Requires the EXACT message (case-sensitive; the canonical
+ * `AbortSignal.timeout()` `TimeoutError` wording) AND a NEGATIVE guard: if
+ * any frame (or the window.onerror `filename`) resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `signal timed out` throw de-minifies to `apps/web/src/…` and
+ * must not be hidden). The production event has NO frames at all, so the
+ * negative guard does NOT fire for it. A frameless capture with this exact
+ * message classifies as noise. Sibling of `isClientRequestTimeoutMessage` (the
+ * SDK's typed `Request timed out after <N>s:` wording). See
+ * `SIGNAL_TIMEOUT_NOISE_MESSAGE` for the full rationale and Better Stack
+ * pattern `73e683c3…`.
+ */
+export function isSignalTimeoutNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!SIGNAL_TIMEOUT_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code threw `signal timed out` →
+  // a real first-party regression; keep reporting so the call site can be
+  // found + fixed. A real first-party `signal timed out` throw de-minifies to
+  // `apps/web/src/…` and is never hidden. The production event has NO frames,
+  // so this guard does NOT fire for it.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -3825,29 +4401,43 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   // Transient WebSocket / SSE transport-close noise — a client-side
-  // websocket/SSE library threw the canonical `Connection closed.` message when
-  // the server closed a background realtime connection during a deploy / idle-
-   // timeout recycle / session end. The connection closing is EXPECTED, not a
-   // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
-   // guard so a real first-party `throw new Error('Connection closed.')`
-   // regression keeps reporting. See `isConnectionClosedNoise`.
-   if (isConnectionClosedNoise({ message, filename: input.filename })) {
-     return true;
-   }
+   // websocket/SSE library threw the canonical `Connection closed.` message when
+   // the server closed a background realtime connection during a deploy / idle-
+    // timeout recycle / session end. The connection closing is EXPECTED, not a
+    // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
+    // guard so a real first-party `throw new Error('Connection closed.')`
+    // regression keeps reporting. See `isConnectionClosedNoise`.
+    if (isConnectionClosedNoise({ message, filename: input.filename })) {
+      return true;
+    }
 
-   // Third-party editor-library (ProseMirror/TipTap-based) document-state
-   // race noise — the library's own internal `getDocumentStateOrThrow` /
-   // `getDocumentState` helpers threw
-   // `<Interaction|Selection> state not found for document: <docId>` when the
-   // editor was unmounted / the document closed while an async interaction or
-   // selection was still in flight (a race in the library's async interaction
-   // handling, triggered by WebKit's async timing). Requires the canonical
-   // message prefix AND a NEGATIVE guard: any resolved first-party
-   // `apps/web/src/…` frame → keep reporting. See
-   // `isDocumentStateNotFoundNoise`.
-   if (isDocumentStateNotFoundNoise({ message, filename: input.filename })) {
-     return true;
-   }
+   // Transient WebSocket `postMessage` `Failed to send message` transport
+   // noise — a co-worker session page's `ws.send(...)` rejected with the
+   // canonical WebSocket `InvalidStateError` message when the sandbox tore
+   // the connection down mid-flight (deploy / recycle / park / network
+   // blip). Sibling of `isConnectionClosedNoise` but a different throw (a
+   // `ws.send` rejection on a closed socket, not a library close event).
+   // The event is `handled:true` (caught by an error boundary), so a
+   // first-party sender IS actionable — the negative guard preserves any
+   // resolved first-party `apps/web/src/…` frame. See
+   // `isFailedToSendMessageNoise`.
+    if (isFailedToSendMessageNoise({ message, filename: input.filename })) {
+      return true;
+    }
+
+    // Third-party editor-library (ProseMirror/TipTap-based) document-state
+    // race noise — the library's own internal `getDocumentStateOrThrow` /
+    // `getDocumentState` helpers threw
+    // `<Interaction|Selection> state not found for document: <docId>` when the
+    // editor was unmounted / the document closed while an async interaction or
+    // selection was still in flight (a race in the library's async interaction
+    // handling, triggered by WebKit's async timing). Requires the canonical
+    // message prefix AND a NEGATIVE guard: any resolved first-party
+    // `apps/web/src/…` frame → keep reporting. See
+    // `isDocumentStateNotFoundNoise`.
+    if (isDocumentStateNotFoundNoise({ message, filename: input.filename })) {
+      return true;
+    }
 
 
    // Browser-native <img> / next/image load failures can surface as this exact
@@ -4042,6 +4632,19 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // OneTrust cookie-consent SDK JSON-parse noise — the third-party
+  // `otSDKStub.js?did=undefined` bootstrap stub's `XMLHttpRequest.onload`
+  // handler calls `JSON.parse()` on an empty/truncated consent-config
+  // response (old iOS Safari, CORS preflight failure, 5xx, network abort)
+  // and throws the canonical `SyntaxError: Unexpected end of JSON input`.
+  // The throw is in the OneTrust SDK's own injected script, never first-
+  // party code. Requires BOTH the exact message AND an `otSDKStub.js`
+  // frame, with a negative guard preserving any resolved first-party
+  // `apps/web/src/…` frame. See `isOneTrustJsonParseNoise`.
+  if (isOneTrustJsonParseNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Browser-extension injectedScript.bundle.js `sendMessage` noise — a
   // browser extension injects `app:///injectedScript.bundle.js` that calls
   // `chrome.runtime.sendMessage` / `browser.runtime.sendMessage` on a
@@ -4107,6 +4710,63 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // carries a chunk/source frame keeps reporting. See
   // `isUnresolvableStackOverflowNoise`.
   if (isUnresolvableStackOverflowNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Safari third-party-script "undefined variable" ReferenceError noise —
+  // `Can't find variable: <Name>` (Safari/JavaScriptCore's ReferenceError
+  // wording for an undeclared variable; Chrome/V8 says `<Name> is not
+  // defined`) captured by the global `onerror` handler with NO resolvable
+  // source location. A third-party script (e.g. a charting/finance library
+  // defining a constant like `EmptyRanges`) failed to load on iOS Safari,
+  // leaving the referenced global undefined and the engine with no stack
+  // (`call_site_file` is the literal `"undefined"` placeholder). Requires
+  // BOTH the Safari ReferenceError prefix AND the frameless shape, plus two
+  // negative guards: any resolved first-party `apps/web/src/…` frame → keep
+  // reporting; any resolvable frame location → keep reporting. See
+  // `isUndefinedVariableThirdPartyNoise`.
+  if (
+    isUndefinedVariableThirdPartyNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
+    return true;
+  }
+
+  // Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+  // noise — an injected anti-detection script attempts
+  // `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+  // footprint, and Chrome throws a `TypeError` because `navigator.webdriver`
+  // is non-configurable in that build. The throw is in the injected
+  // automation script, never first-party code. Requires the EXACT message AND
+  // a NEGATIVE guard: a resolved first-party `apps/web/src/…` filename means
+  // our own code called `defineProperty` on a non-configurable property → a
+  // real first-party regression; keep reporting. The production event has
+  // only `<anonymous>` frames, so the negative guard does NOT fire for it. A
+  // frameless window.onerror capture with the exact message + no first-party
+  // filename drops. See `isRedefineWebdriverNoise` and Better Stack pattern
+  // `ee14e84d…`.
+  if (isRedefineWebdriverNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
+  // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
+  // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
+  // surfaces as `TimeoutError: signal timed out` in the frontend's
+  // `onunhandledrejection`; it reaches the runtime gate through a fire-and-
+  // forget path. The API already filters its OWN timeout wording
+  // (`The operation timed out.`, #4709), but the frontend's `signal timed out`
+  // wording is NOT covered. A transient network/timeout error, not a code
+  // bug. Requires the EXACT message AND a NEGATIVE guard: a resolved
+  // first-party `apps/web/src/…` filename means our own code threw
+  // `signal timed out` → a real first-party regression; keep reporting. The
+  // production event has NO frames, so the negative guard does NOT fire for
+  // it. A frameless window.onerror capture with the exact message + no
+  // first-party filename drops. See `isSignalTimeoutNoise` and Better Stack
+  // pattern `73e683c3…`.
+  if (isSignalTimeoutNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -4432,6 +5092,21 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // OneTrust cookie-consent SDK JSON-parse noise — the third-party
+  // `otSDKStub.js?did=undefined` bootstrap stub's `XMLHttpRequest.onload`
+  // handler calls `JSON.parse()` on an empty/truncated consent-config
+  // response (old iOS Safari, CORS preflight failure, 5xx, network abort)
+  // and throws the canonical `SyntaxError: Unexpected end of JSON input`.
+  // The throw is in the OneTrust SDK's own injected script (frame
+  // `app:///scripttemplates/otSDKStub.js?did=undefined` function `r.onload`),
+  // never first-party code. Requires BOTH the exact message AND an
+  // `otSDKStub.js` frame, with a negative guard preserving any resolved
+  // first-party `apps/web/src/…` frame. See `isOneTrustJsonParseNoise` and
+  // the production pattern `aa1efd3fb…`.
+  if (isOneTrustJsonParseNoise({ message, frames })) {
+    return true;
+  }
+
   // Browser-extension injectedScript.bundle.js `sendMessage` noise — a
   // browser extension (wallet / adblocker / privacy) injects
   // `app:///injectedScript.bundle.js` that calls `chrome.runtime.sendMessage`
@@ -4548,6 +5223,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isUnresolvableStackOverflowNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isUnresolvableStackOverflowNoise({ message, frames })) {
+    return true;
+  }
+
+  // Safari third-party-script "undefined variable" ReferenceError noise —
+  // `Can't find variable: <Name>` (Safari/JavaScriptCore's ReferenceError
+  // wording for an undeclared variable; Chrome/V8 says `<Name> is not
+  // defined`) captured by the global `onerror` handler with NO resolvable
+  // source location (`call_site_file` is the literal `"undefined"`
+  // placeholder, no stack frames). A third-party script (e.g. a
+  // charting/finance library defining a constant like `EmptyRanges`) failed
+  // to load on iOS Safari, leaving the referenced global undefined. Requires
+  // BOTH the Safari ReferenceError prefix AND the frameless shape (positive
+  // guard), plus two negative guards: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting; any resolvable frame location →
+  // keep reporting. Only the frameless capture (the production noise pattern)
+  // is dropped. NOT in `ignoreErrors` (no frame context there). See
+  // `isUndefinedVariableThirdPartyNoise` and Better Stack pattern
+  // `304f7345…`.
+  if (isUndefinedVariableThirdPartyNoise({ message, frames })) {
     return true;
   }
 
@@ -4734,6 +5428,24 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Transient WebSocket `postMessage` `Failed to send message` transport
+  // noise — a co-worker session page's `ws.send(...)` rejected with the
+  // canonical WebSocket `InvalidStateError` message when the sandbox tore
+  // the connection down mid-flight (deploy / recycle / park / network
+  // blip). Sibling of `isConnectionClosedNoise` (the `Connection closed.`
+  // transport-close class) but a DIFFERENT throw (a `ws.send` rejection on
+  // an already-closed socket). The prod event is `handled:true`
+  // (mechanism `generic` — caught by an error boundary, NOT an uncaught
+  // global rejection), so a first-party sender IS actionable — the
+  // negative guard preserves any resolved first-party `apps/web/src/…`
+  // frame. The prod event carries only a minified `_next/static/immutable/
+  // chunks/…` frame, so the negative guard does not fire for it. NOT in
+  // `ignoreErrors` (no frame context there). See
+  // `isFailedToSendMessageNoise` and Better Stack pattern `824577dd…`.
+  if (isFailedToSendMessageNoise({ message, frames })) {
+    return true;
+  }
+
   // Third-party editor-library (ProseMirror/TipTap-based) document-state
   // race noise — the library's own internal `getDocumentStateOrThrow` /
   // `getDocumentState` helpers threw
@@ -4750,6 +5462,45 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // negative guard does not fire for them. NOT in `ignoreErrors` (no frame
   // context there). See `isDocumentStateNotFoundNoise`.
   if (isDocumentStateNotFoundNoise({ message, frames })) {
+    return true;
+  }
+
+  // Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+  // noise — an injected anti-detection script attempts
+  // `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+  // footprint, and Chrome throws a `TypeError` because `navigator.webdriver`
+  // is non-configurable in that build. The throw is in the injected
+  // automation script, never first-party code. Requires the EXACT message AND
+  // a NEGATIVE guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code called `defineProperty` on a non-configurable property → a real
+  // first-party regression; keep reporting. The production event carries only
+  // `<anonymous>` frames, so the negative guard does NOT fire for it. A
+  // frameless capture with this exact message still classifies as noise (the
+  // `webdriver` property name is the specific anchor). NOT in `ignoreErrors`
+  // (no frame context there). See `isRedefineWebdriverNoise` and Better Stack
+  // pattern `ee14e84d…`.
+  if (isRedefineWebdriverNoise({ message, frames })) {
+    return true;
+  }
+
+  // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
+  // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
+  // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
+  // surfaces as `TimeoutError: signal timed out` in the frontend's
+  // `onunhandledrejection`; it reaches Sentry through a fire-and-forget path
+  // that bypasses `handleApiError`'s timeout guard. The API already filters
+  // its OWN timeout wording (`The operation timed out.`, #4709), but the
+  // frontend's `signal timed out` wording is NOT covered. A transient
+  // network/timeout error, not a code bug. Requires the EXACT message AND a
+  // NEGATIVE guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw `signal timed out` → a real first-party regression; keep
+  // reporting. The production event has NO frames at all, so the negative
+  // guard does NOT fire for it. A frameless capture with this exact message
+  // classifies as noise. Sibling of `isClientRequestTimeoutMessage` (the SDK's
+  // typed `Request timed out after <N>s:` wording). NOT in `ignoreErrors` (no
+  // frame context there). See `isSignalTimeoutNoise` and Better Stack pattern
+  // `73e683c3…`.
+  if (isSignalTimeoutNoise({ message, frames })) {
     return true;
   }
 

@@ -67,6 +67,7 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  writeFile,
 } from './core/files/client';
 export type * from './core/files/types';
 
@@ -378,6 +379,7 @@ export {
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
+export * from './core/http/abort-error';
 export * from './core/http/api-client';
 export * from './core/http/auth';
 export * from './core/http/config';

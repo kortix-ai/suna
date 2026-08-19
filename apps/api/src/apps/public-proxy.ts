@@ -8,10 +8,15 @@ import {
 } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
-import { AppBudgetExceededError, assertAppBudgetAvailable } from './budget';
+import { AppBudgetExceededError } from './budget';
+import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { AppHostingProvider } from './hosting';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
+import { resolveAppHost, type ResolvedAppHost } from './hostnames';
+import { validateAccountToken } from '../repositories/account-tokens';
+import { validateServiceAccountToken } from '../repositories/service-accounts';
+import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import {
   appAccessCookie,
   appAccessCookieName,
@@ -29,8 +34,43 @@ const EDGE_SIGNATURE_HEADER = 'x-kortix-app-signature';
 const EDGE_MAX_SKEW_MS = 5 * 60_000;
 const WAKE_LEASE_MS = 2 * 60_000;
 const ACTIVITY_LEASE_MS = 60_000;
-const APP_FRAME_ANCESTORS =
-  "frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*";
+// The `frame-ancestors` directive for App responses. It decides which origins
+// may embed an App in an iframe — the dashboard's App preview does exactly this.
+// Managed cloud embeds from kortix.com; a SELF-HOST box embeds from the
+// operator's OWN frontend origin (e.g. https://essentia.kortix.cloud), which is
+// NOT kortix.com, so the browser would block the preview. Build the allowlist
+// dynamically to ALWAYS include the configured frontend origin (config.FRONTEND_URL)
+// plus a wildcard for its domain, so the preview frames reliably on any
+// self-host domain. Falls back to the managed base list if FRONTEND_URL is
+// unset/invalid.
+function appFrameAncestors(): string {
+  const parts = new Set<string>([
+    "'self'",
+    'https://kortix.com',
+    'https://*.kortix.com',
+    'http://localhost:*',
+    'http://127.0.0.1:*',
+  ]);
+  try {
+    const u = new URL(config.FRONTEND_URL);
+    const host = u.hostname.toLowerCase();
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    // localhost/127.0.0.1 are already covered by the wildcard entries above; only
+    // a real self-host domain needs adding.
+    if ((u.protocol === 'https:' || u.protocol === 'http:') && !isLocal) {
+      parts.add(u.origin);
+      // Also allow any sibling subdomain of the operator's registrable-ish
+      // domain (drop the leftmost label): essentia.kortix.cloud -> *.kortix.cloud.
+      const labels = host.split('.');
+      if (labels.length >= 3 && !/^\d+$/.test(labels[labels.length - 1])) {
+        parts.add(`${u.protocol}//*.${labels.slice(1).join('.')}`);
+      }
+    }
+  } catch {
+    // FRONTEND_URL missing/invalid — the managed base list above still applies.
+  }
+  return 'frame-ancestors ' + [...parts].join(' ');
+}
 
 function appWakeSupersededResponse(): Response {
   return Response.json({
@@ -49,7 +89,13 @@ type PublicDeploymentStatus =
   | 'failed'
   | 'cancelled';
 
-type PublicAppStatus = PublicDeploymentStatus | 'waiting' | 'starting' | 'budget';
+type PublicAppStatus =
+  | PublicDeploymentStatus
+  | 'waiting'
+  | 'starting'
+  | 'budget'
+  | 'unfunded'
+  | 'capacity';
 
 const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   title: string;
@@ -113,6 +159,20 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
     progress: false,
     httpStatus: 402,
   },
+  unfunded: {
+    title: 'App paused',
+    message: 'This Kortix account cannot start compute right now. The owner can restore it in Billing.',
+    code: 'app_account_unfunded',
+    progress: false,
+    httpStatus: 402,
+  },
+  capacity: {
+    title: 'App paused',
+    message: 'This account is already running its maximum number of Apps. The owner can stop one in Kortix Apps.',
+    code: 'app_concurrency_limit',
+    progress: false,
+    httpStatus: 429,
+  },
   failed: {
     title: 'Deployment failed',
     message: 'Open Kortix Apps or run kortix apps logs to inspect the deployment.',
@@ -169,7 +229,7 @@ export function appPublicStatusResponse(
   const headers = new Headers({
     'cache-control': 'no-store',
     'content-security-policy':
-      "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self' https://kortix.com https://*.kortix.com http://localhost:* http://127.0.0.1:*",
+      `default-src 'none'; style-src 'unsafe-inline'; ${appFrameAncestors()}`,
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
   });
@@ -228,14 +288,42 @@ export function appColdStartUpstreamResponse(
     : null;
 }
 
+/**
+ * Does this upstream answer mean the runtime is gone rather than the App being
+ * broken?
+ *
+ * A provider edge answers for a sandbox it can still see, so a dead runtime
+ * arrives as an ORDINARY RESPONSE rather than as a connection error — which is
+ * why this check exists at all, and why the shape of it matters per provider.
+ *
+ * E2B was missing. A sandbox whose service has gone answers
+ * `502 {"message":"The sandbox is running but port is not open","port":8080}`,
+ * and because the only recovery paths were a thrown fetch and a Daytona 400,
+ * nothing recovered it: every request was proxied to a runtime the control
+ * plane still believed was `running`, and the App served that 502 — or an empty
+ * 200 through the outer proxy — until a human rolled back to force a new
+ * runtime. An App can sit dead for hours that way, with `desired_state:
+ * running` and a `ready` deployment the whole time.
+ */
 export function appProviderStoppedResponse(
   provider: SandboxProviderName,
   status: number,
   body: string,
 ): boolean {
-  return provider === 'daytona' && status === 400 && (
-    body.includes('no IP address found') || body.includes('failed to get runner info')
-  );
+  if (provider === 'daytona') {
+    return status === 400 && (
+      body.includes('no IP address found') || body.includes('failed to get runner info')
+    );
+  }
+  if (provider === 'e2b') {
+    // 502 is the edge reporting the sandbox is up but nothing is listening;
+    // 503/504 is it being unable to reach the sandbox at all. Both mean the
+    // runtime needs replacing, not that the App returned an error.
+    if (status !== 502 && status !== 503 && status !== 504) return false;
+    return /port is not open|connection refused|sandbox (?:is )?(?:not found|stopped|paused)/i
+      .test(body);
+  }
+  return false;
 }
 
 export function appPublicBudgetResponse(
@@ -265,7 +353,11 @@ type AppAccessRow = {
   updatedAt: Date;
 };
 
-type AppUserAccessVerifier = (app: AppAccessRow, userId: string) => Promise<boolean>;
+type AppUserAccessVerifier = (
+  app: AppAccessRow,
+  userId: string,
+  actingTokenId?: string,
+) => Promise<boolean>;
 
 async function accessTokenAuthorizesRequest(
   token: ReturnType<typeof verifyAppAccessToken>,
@@ -307,11 +399,73 @@ function appAccessResponse(
     headers: {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
-      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; ${APP_FRAME_ANCESTORS}`,
+      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; ${appFrameAncestors()}`,
       'referrer-policy': 'no-referrer',
       'x-content-type-options': 'nosniff',
     },
   });
+}
+
+
+/**
+ * A Kortix credential presented as a bearer token, resolved to the identity it
+ * carries — or null when there is no usable one.
+ *
+ * WHY THE GATEWAY NEEDS THIS
+ *
+ * Every other way into a non-public App is a browser flow: a five-minute
+ * exchange URL, an eight-hour cookie, an HTML password form. That makes
+ * `project` access and programmatic access mutually exclusive, and the two are
+ * wanted together constantly — an agent publishing to its own App, a connector
+ * built from the App's OpenAPI document, CI checking a deploy. The only way to
+ * have both was to make the App `public` and re-implement authorization inside
+ * it, which is exactly the thing an access mode is supposed to save you from.
+ *
+ * A PAT already carries the minting user's identity and a service-account token
+ * its own principal, and both are exactly what the App access policy is written
+ * in terms of — so the decision below is the SAME `verifyUserAccess` the cookie
+ * path uses. This adds a way to present an identity, not a way to skip one.
+ *
+ * `password` mode is deliberately excluded: there the secret IS the password,
+ * and a Kortix credential is not it.
+ */
+interface AppBearerPrincipal {
+  userId: string;
+  /**
+   * The token the caller presented. Carried through to `authorize` so the
+   * decision sees the credential's OWN limits — project binding, agent grant —
+   * and not just the identity behind it. Reducing a PAT to a bare user id here
+   * let a project-scoped token from project A open a non-public App in project
+   * B, because token-scope is only evaluated when this id is supplied.
+   */
+  actingTokenId: string;
+}
+
+async function kortixCredentialUser(request: Request): Promise<AppBearerPrincipal | null> {
+  const header = request.headers.get('authorization') ?? '';
+  if (!/^bearer /i.test(header)) return null;
+  const token = header.slice(7).trim();
+  if (!token) return null;
+
+  try {
+    if (isServiceAccountToken(token)) {
+      const account = await validateServiceAccountToken(token);
+      // A direct service-account bearer has no `account_tokens` row; its own
+      // id is the acting id, and the engine scopes it by its policies.
+      return account.isValid && account.serviceAccountId
+        ? { userId: account.serviceAccountId, actingTokenId: account.serviceAccountId }
+        : null;
+    }
+    if (isAccountToken(token)) {
+      const pat = await validateAccountToken(token);
+      return pat.isValid && pat.userId && pat.tokenId
+        ? { userId: pat.userId, actingTokenId: pat.tokenId }
+        : null;
+    }
+  } catch {
+    // A malformed or revoked credential is "no identity", not a 500.
+  }
+  return null;
 }
 
 export async function authorizeAppRequest(
@@ -355,6 +509,17 @@ export async function authorizeAppRequest(
   ) {
     return null;
   }
+  // A Kortix credential, for callers that are not browsers. Checked after the
+  // cookie so the common path stays one HMAC verification with no database
+  // work, and before the challenge so an API client gets its answer instead of
+  // an HTML login page it cannot read.
+  if (app.accessMode !== 'password') {
+    const principal = await kortixCredentialUser(request);
+    if (principal && await verifyUserAccess(app, principal.userId, principal.actingTokenId)) {
+      return null;
+    }
+  }
+
   if (app.accessMode === 'password' && request.method === 'POST' && url.pathname === '/_kortix/access/password') {
     const form = await request.formData().catch(() => null);
     const password = String(form?.get('password') ?? '');
@@ -384,34 +549,39 @@ export async function authorizeAppRequest(
   return appAccessResponse(request, app);
 }
 
-export interface ResolvedAppHost {
-  routeKey: string;
-  local: boolean;
-}
+export type { ResolvedAppHost } from './hostnames';
+export { resolveAppHost } from './hostnames';
 
 export interface ResolvedAppRequest extends ResolvedAppHost {
   publicHost: string;
 }
 
-export function resolveAppHost(hostname: string): ResolvedAppHost | null {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
-  const local = /^([a-f0-9]{16})\.apps\.localhost$/.exec(host);
-  if (local) return { routeKey: local[1]!, local: true };
-  const domain = (process.env.KORTIX_APPS_BASE_DOMAIN || 'apps.kortix.com')
-    .toLowerCase()
-    .replace(/^\.+|\.+$/g, '');
-  if (!host.endsWith(`.${domain}`)) return null;
-  const label = host.slice(0, -(domain.length + 1));
-  if (label.includes('.')) return null;
-  const match = /^(dev|staging|prod|preview)-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-([a-f0-9]{16})$/.exec(label);
-  if (!match || match[1] !== config.INTERNAL_KORTIX_ENV) return null;
-  return { routeKey: match[2]!, local: false };
+/**
+ * Direct-edge mode: no Cloudflare Apps Worker fronts this deployment, so the
+ * operator's own reverse proxy is the trust boundary and requests arrive
+ * unsigned. See verifyAppEdgeRequest.
+ */
+function appDirectEdgeMode(): boolean {
+  return process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE === 'true';
 }
 
+/**
+ * The public hostname a request targets.
+ *
+ * `x-kortix-app-host` is an EDGE-SIGNED field: the Apps Worker sets it and the
+ * HMAC verifyAppEdgeRequest checks covers it, which is what binds the header to
+ * a real edge. It is therefore only trustworthy where that signature is also
+ * verified.
+ *
+ * In direct-edge mode nothing verifies a signature, so trusting the header
+ * would let ANY caller who can reach the public API origin name any App —
+ * `x-kortix-app-host: <env>-<slug>-<route-key>.apps.<domain>` — and have the
+ * API proxy them into it, past the App's own access policy. There, only the
+ * real Host header decides which App (if any) a request is for.
+ */
 export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
-  const publicHost = (request.headers.get(EDGE_HOST_HEADER) || url.hostname)
-    .toLowerCase()
-    .replace(/\.$/, '');
+  const claimedHost = appDirectEdgeMode() ? null : request.headers.get(EDGE_HOST_HEADER);
+  const publicHost = (claimedHost || url.hostname).toLowerCase().replace(/\.$/, '');
   const matched = resolveAppHost(publicHost);
   return matched ? { ...matched, publicHost } : null;
 }
@@ -445,7 +615,10 @@ export function verifyAppEdgeRequest(
   publicHost = url.hostname,
 ): boolean {
   if (local && (process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE !== 'false')) return true;
-  if (process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE === 'true') return true;
+  // Unsigned by design — the operator's reverse proxy is the trust boundary.
+  // resolveAppRequest refuses the caller-supplied host header in this mode, so
+  // the App being served is the one the real Host header names.
+  if (appDirectEdgeMode()) return true;
   const host = request.headers.get(EDGE_HOST_HEADER);
   const timestamp = request.headers.get(EDGE_TIMESTAMP_HEADER);
   const signature = request.headers.get(EDGE_SIGNATURE_HEADER);
@@ -548,7 +721,11 @@ export async function ensureAppRuntimeRunning(
   if (loaded.runtime.status === 'deleted') {
     throw new Error('App runtime cannot wake from deleted');
   }
-  await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd));
+  // Account entitlement, account App-concurrency, then this App's own monthly
+  // budget. The runtime being woken is excluded from the concurrency count —
+  // it already holds its own live row, and counting it would stop an account at
+  // exactly the cap from waking the very App it owns.
+  await assertAppComputeAllowed(app, { excludeRuntimeId: loaded.runtime.runtimeId });
 
   const owner = `${config.INTERNAL_KORTIX_ENV}:${process.pid}:${randomUUID()}`;
   const now = new Date();
@@ -624,10 +801,13 @@ export async function ensureAppRuntimeRunning(
       sandboxId: running.runtimeId,
       accountId: running.accountId,
       provider,
+      // The machine the provider really allocates — see hosting.effectiveMachine.
       spec: {
-        cpuCores: app.cpuCores,
-        memoryGb: app.memoryGb,
-        diskGb: app.diskGb,
+        ...hosting.effectiveMachine(provider, {
+          cpuCores: app.cpuCores,
+          memoryGb: app.memoryGb,
+          diskGb: app.diskGb,
+        }),
         gpuCount: 0,
       },
       workloadType: 'app',
@@ -688,7 +868,7 @@ export function appPublicResponseHeaders(upstreamHeaders: Headers): Headers {
   headers.delete('x-frame-options');
 
   const enforced = withoutFrameAncestors(headers.get('content-security-policy') || '');
-  headers.set('content-security-policy', [...enforced, APP_FRAME_ANCESTORS].join('; '));
+  headers.set('content-security-policy', [...enforced, appFrameAncestors()].join('; '));
 
   const reportOnlyKey = 'content-security-policy-report-only';
   const reportOnly = headers.get(reportOnlyKey);
@@ -732,6 +912,14 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     runtime = await ensureAppRuntimeRunning(loaded, hosting);
   } catch (error) {
     if (error instanceof AppBudgetExceededError) return appPublicBudgetResponse(request, state.app);
+    // An unfunded account or an account at its App-concurrency cap is a paused
+    // App, not a broken one. Say so instead of showing an endless spinner.
+    if (error instanceof AppAccountUnfundedError) {
+      return appPublicStatusResponse(request, state.app, { status: 'unfunded' });
+    }
+    if (error instanceof AppLimitError && error.code === 'app_concurrency_limit') {
+      return appPublicStatusResponse(request, state.app, { status: 'capacity' });
+    }
     return appPublicUnavailableResponse(request, state.app);
   }
   const now = new Date();
@@ -790,7 +978,9 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
     }
   }
 
-  if (upstream.status === 400) {
+  // 400 was Daytona's shape. E2B reports a dead runtime as 5xx, so the check has
+  // to see those statuses or the recovery below can never run for it.
+  if (upstream.status === 400 || upstream.status >= 502) {
     const body = await upstream.clone().text().catch(() => '');
     if (appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, body)) {
       await upstream.body?.cancel().catch(() => {});
@@ -803,7 +993,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
       } catch {
         return startingResponse();
       }
-      if (upstream.status === 400) {
+      if (upstream.status === 400 || upstream.status >= 502) {
         const retryBody = await upstream.clone().text().catch(() => '');
         if (appProviderStoppedResponse(runtime.provider as SandboxProviderName, upstream.status, retryBody)) {
           await upstream.body?.cancel().catch(() => {});

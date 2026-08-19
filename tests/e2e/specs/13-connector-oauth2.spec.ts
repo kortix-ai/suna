@@ -84,14 +84,27 @@ test.describe("13 — Custom connector OAuth2", () => {
     });
     await dismissOnboarding(page);
 
-    // A user opens the standalone Connectors surface from the sidebar. This is
-    // a real link, so navigation also works before client hydration completes.
-    const connectorsLink = page.getByRole("link", { name: /^Customize$/i });
-    await expect(connectorsLink).toHaveAttribute(
+    // A user opens the Customize index from the sidebar. This is a real
+    // link, so navigation also works before client hydration completes.
+    // The row lands on the index (Jay, 2026-08-17: "even with the index
+    // thing it should just be the home page") rather than jumping straight
+    // into a tab, so reaching Connectors specifically is a second real-link
+    // hop, off the index's own card grid.
+    const customizeLink = page.getByRole("link", { name: /^Customize$/i });
+    await expect(customizeLink).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/customize`,
+    );
+    await customizeLink.click();
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${projectId}/customize$`),
+    );
+    const connectorsCard = page.getByRole("link", { name: /^Connectors/i });
+    await expect(connectorsCard).toHaveAttribute(
       "href",
       `/projects/${projectId}/connectors`,
     );
-    await connectorsLink.click();
+    await connectorsCard.click();
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/connectors$`),
     );

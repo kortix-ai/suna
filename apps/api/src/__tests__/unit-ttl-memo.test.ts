@@ -93,6 +93,29 @@ describe('ttlMemo', () => {
     expect(c.calls).toBe(2);
   });
 
+  it('passes the loader args to shouldCache so a memo can decide per key', async () => {
+    // resource-grants: an EMPTY grant map is cached for open-by-default types
+    // (skill) but never for closed-by-default ones (agent), so a fresh agent
+    // grant is visible on every replica within one request instead of one TTL.
+    let loads = 0;
+    const memo = ttlMemo({
+      ttlMs: 60_000,
+      keyFn: (projectId: string, resourceType: string) => `${projectId}|${resourceType}`,
+      loader: async (_projectId: string, _resourceType: string) => {
+        loads += 1;
+        return new Map<string, string[]>();
+      },
+      shouldCache: (map, _projectId, resourceType) => map.size > 0 || resourceType !== 'agent',
+      enableInTests: true,
+    });
+    await memo('p1', 'agent');
+    await memo('p1', 'agent');
+    expect(loads).toBe(2); // empty agent map: never cached
+    await memo('p1', 'skill');
+    await memo('p1', 'skill');
+    expect(loads).toBe(3); // empty skill map: cached
+  });
+
   it('ttlMs <= 0 disables caching entirely', async () => {
     const c = counter((n) => n);
     const memo = ttlMemo({ ttlMs: 0, keyFn: (k: string) => k, loader: c.loader, enableInTests: true });

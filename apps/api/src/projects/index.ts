@@ -27,7 +27,15 @@ import './routes/r4';
 import './routes/oauth2-connectors';
 import './routes/r5';
 import './routes/r6';
-import './routes/r7';
+import './routes/group-grants';
+import './routes/warm-sessions';
+import './routes/project-sessions';
+import './routes/session-transcripts';
+import './routes/project-audit';
+import './routes/approvals';
+import './routes/resource-grants';
+import './routes/session-scope';
+import './routes/session-config';
 import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';
@@ -37,6 +45,7 @@ import './routes/agent-scope';
 import './routes/agent-config';
 import './routes/gateway';
 import './routes/channel-bindings';
+import './routes/monitors';
 import '../apps/routes';
 
 // The wired Hono app instances (all routes registered above via side-effect).

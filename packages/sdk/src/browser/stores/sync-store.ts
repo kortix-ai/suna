@@ -11,16 +11,50 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
 
+import {
+	commitSessionRewind,
+	isWithinRewindWindow,
+	stageSessionRewind,
+} from "../../core/session/rewind";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { writeStreamCache } from "./sync-store/stream-cache";
-import type { FileDiff, MessageError, MessageWithParts } from "./sync-store/types";
+import type {
+	FileDiff,
+	MessageError,
+	MessageWithParts,
+	SessionRewindState,
+} from "./sync-store/types";
 
 // Re-export moved helpers/types so the public surface stays byte-identical:
 // `Binary`, `ascendingId`, and the `MessageWithParts` type remain importable
 // from this module exactly as before.
 export { ascendingId, Binary };
-export type { MessageError, MessageWithParts };
+export type { MessageError, MessageWithParts, SessionRewindState };
+
+/**
+ * Do two `SessionStatus` values say the same thing?
+ *
+ * NOT a deep equality: it compares `type` plus exactly the fields the retry
+ * readers actually read — `getRetryInfo` / `getRetryMessage` in
+ * `core/turns/state.ts` take `attempt`, `message` and `next`. A blanket
+ * deep-equal would also compare `action`, which nothing reads, and would then
+ * mint a new observation for a change no surface can render.
+ *
+ * The point of the comparison is object identity, not the boolean: a status
+ * frame is an OBSERVATION, and `useSessionWorking` dates it by the identity of
+ * the object in the store. Two equal values are one observation.
+ */
+export function sameSessionStatus(
+	a: SessionStatus | undefined,
+	b: SessionStatus | undefined,
+): boolean {
+	if (a === b) return true;
+	if (!a || !b) return false;
+	if (a.type !== b.type) return false;
+	if (a.type !== "retry" || b.type !== "retry") return true;
+	return a.attempt === b.attempt && a.message === b.message && a.next === b.next;
+}
 
 /** The two `Part` variants that carry streaming `.text` (vs. tool/file/etc.
  *  parts, which don't). Narrows a `Part` down so `.text` is safe to read
@@ -42,6 +76,35 @@ interface SyncState {
 	sessionStatus: Record<string, SessionStatus>;
 	diffs: Record<string, FileDiff[]>;
 	todos: Record<string, Todo[]>;
+	/**
+	 * T22 — the client's mirror of the server's staged/committed session
+	 * revert, per session. `null` means "no revert pointer" (either never
+	 * staged, or observed cleared/committed-and-deleted). Absent from the
+	 * record entirely (`undefined` via plain lookup) means the same thing as
+	 * `null` — no session has ever had one tracked.
+	 *
+	 * Driven by three independent sources that must all converge on the same
+	 * shape: a local `rewind()` REST call (`useSession`), the wire events
+	 * `session.next.revert.staged/.cleared/.committed` (below, via
+	 * `applyEvent`), and a `Session.revert` field read off `session.created`/
+	 * `session.updated` (`syncSessionRevertFromInfo`, called from
+	 * `use-opencode-events/handle-event.ts` — the reload/cross-tab recovery
+	 * path, since a hard reload observes neither of the other two).
+	 */
+	sessionRevert: Record<string, SessionRewindState | null>;
+	/**
+	 * F2 — set when a `session.next.revert.committed` event arrives for a
+	 * session with NO tracked local `sessionRevert` record (a fresh mount, or
+	 * a second tab that never observed `.staged`). The store deliberately
+	 * does not guess a watermark and delete a range in that case — see
+	 * `markSessionRevertNeedsTailReconcile`'s doc comment for why — so this
+	 * is the signal a consumer (the sync controller / `use-opencode-events`)
+	 * reads to know it must fetch the session's real transcript instead of
+	 * trusting local messages. `true` means "reconcile owed"; absent or
+	 * `false` means nothing is owed. Cleared by
+	 * `clearSessionRevertNeedsTailReconcile` once a consumer has acted on it.
+	 */
+	sessionRevertNeedsTailReconcile: Record<string, boolean>;
 
 	// ---- Actions ----
 	applyEvent: (event: OpenCodeEvent) => void;
@@ -79,6 +142,14 @@ interface SyncState {
 	 * it technically part of the published surface, so an out-of-repo consumer
 	 * calling it directly would fail to compile — that needs a semver-relevant
 	 * callout in the next release notes.
+	 *
+	 * `eventID` (T14): the wire's own `message.part.delta` event id
+	 * (`event.id`, not `event.properties.id` — see `deltaEventTails` above for
+	 * why this is the correct duplicate-delivery key). Optional and additive:
+	 * omitting it reproduces this function's exact pre-existing behavior, so
+	 * the one in-repo caller change (`applyEvent`) is the only place this
+	 * matters, and appending a trailing optional param is not a breaking
+	 * arity change.
 	 */
 	applyPartDelta: (
 		sessionID: string,
@@ -86,10 +157,77 @@ interface SyncState {
 		partID: string,
 		field: string,
 		delta: string,
+		eventID?: string,
 	) => void;
 	setStatus: (sessionID: string, status: SessionStatus) => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
+	/**
+	 * Stage a rewind's local hide window. Idempotent per boundary id: calling
+	 * this again for the SAME `messageID` while already staged is a no-op —
+	 * whichever caller stages first freezes the watermark, and a redundant
+	 * echo (the local REST caller AND the wire's `.staged` confirmation both
+	 * call this for the same action) must never widen it after messages have
+	 * moved on. A DIFFERENT `messageID` replaces the record with a fresh
+	 * watermark computed from the CURRENTLY known message list.
+	 */
+	stageSessionRevert: (sessionId: string, messageId: string) => void;
+	/** Mark a staged rewind committed (Restore stops being offered) without
+	 *  dropping its hide window — see `commitSessionRewind`'s doc comment.
+	 *  No-op when nothing is tracked for this session. */
+	commitSessionRevert: (sessionId: string) => void;
+	/** Drop the local revert record entirely — `unrevert` succeeded, or a
+	 *  `session.next.revert.cleared` wire event says the server dropped it.
+	 *  The window was only ever HIDDEN while staged, never deleted, so
+	 *  clearing alone is enough to make every row visible again. */
+	clearSessionRevert: (sessionId: string) => void;
+	/**
+	 * The `.committed` event's actual cleanup: delete every message (and its
+	 * parts) inside `[boundaryId, watermark]` and drop the revert record. The
+	 * first explicit deletion this store performs for rewind — `hydrate`
+	 * never deletes (see its own doc comment), by design; this is a
+	 * dedicated, separately tested action instead of a weakening of that
+	 * invariant. A session with no local messages (or nothing in range)
+	 * safely clears the record and does nothing else.
+	 */
+	applyCommittedRevert: (sessionId: string, boundaryId: string, watermark: string) => void;
+	/**
+	 * F2 — mark `sessionId` as owing a tail reconcile: a
+	 * `session.next.revert.committed` event arrived with no tracked local
+	 * `sessionRevert` record to source a trustworthy watermark from. The
+	 * REMOVED fallback (`newestMessageId(local messages)`) could be the
+	 * user's own REPLACEMENT prompt — if its `message.updated` happened to
+	 * arrive before this `.committed` event, that fallback deleted the
+	 * replacement and its answer along with the abandoned range. Deliberately
+	 * does NOT touch `messages`/`parts`/`sessionRevert` — the server's own
+	 * transcript (fetched by whatever the flagged consumer's reconcile reads)
+	 * is the only trustworthy source of the real truncation here, not a
+	 * local guess.
+	 */
+	markSessionRevertNeedsTailReconcile: (sessionId: string) => void;
+	/** Consumer-side ack for {@link markSessionRevertNeedsTailReconcile} — call
+	 *  once the flagged session's tail has actually been reconciled against
+	 *  the server. */
+	clearSessionRevertNeedsTailReconcile: (sessionId: string) => void;
+	/**
+	 * Reconcile the local revert record against a `Session.revert` field read
+	 * off a `session.created`/`session.updated` event's `info` — the reload
+	 * and cross-tab recovery path. A hard page reload observes neither a
+	 * fresh `rewind()` call nor a `.staged` wire transition (that already
+	 * happened, possibly in a different tab or before this tab existed), so
+	 * this is the only way a reload can rediscover an already-staged revert.
+	 *
+	 * Deliberately asymmetric: a PRESENT `revert.messageID` seeds a fresh
+	 * local record (via `stageSessionRevert`, so the same idempotency and
+	 * watermark-freezing rules apply) — but an ABSENT one never clears an
+	 * existing record. The three wire events are the sole authority for
+	 * transitions; a stale or momentarily-absent `Session.revert` snapshot
+	 * must never race ahead of (or override) them.
+	 */
+	syncSessionRevertFromInfo: (
+		sessionId: string,
+		revert: { messageID: string } | null | undefined,
+	) => void;
 	optimisticAdd: (
 		sessionID: string,
 		message: Message,
@@ -108,7 +246,28 @@ interface SyncState {
 	 * part-id correlation still supersedes their messages normally.
 	 */
 	markOptimisticDispatched: (sessionID: string, messageID: string) => void;
+	/**
+	 * Mark an optimistic message as held DURABLY by the control plane — its
+	 * prompt-inbox row landed (the POST returned). From here the message is not
+	 * "unconfirmed": the server has it and will deliver it, so the local idle
+	 * sweep ({@link SyncState.clearOptimisticMessages}) must not delete it. It
+	 * leaves the transcript only by the runtime's echo (same id, or a re-minted
+	 * one — see {@link SyncState.optimisticEchoOf}), by
+	 * {@link SyncState.optimisticRemove}, or with the session.
+	 */
+	markOptimisticInboxBacked: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	/**
+	 * The runtime's id for an optimistic message that was superseded under a
+	 * DIFFERENT id (the control plane re-mints a wire id that would sort below
+	 * the transcript tip). Lets a host keep ONE identity for the prompt across
+	 * the swap — a React key, an inbox row's `message_id` — instead of seeing
+	 * two. Undefined for a message confirmed under its own id or never
+	 * superseded.
+	 */
+	optimisticEchoOf: (sessionID: string, optimisticID: string) => string | undefined;
+	/** The inverse of {@link SyncState.optimisticEchoOf}. */
+	optimisticOriginOf: (sessionID: string, echoID: string) => string | undefined;
 	/** True when the session's message list still holds an unconfirmed optimistic
 	 *  message — lets the SSE reconciler avoid idling+clearing a brand-new session
 	 *  whose first prompt the server hasn't registered yet. */
@@ -201,6 +360,34 @@ const optimisticIds = new Map<string, Set<string>>();
 // match: the server has not been told it exists, so nothing the server returns
 // can be a copy of it.
 const dispatchedOptimisticIds = new Map<string, Set<string>>();
+// Optimistic ids whose prompt-inbox row LANDED (see `markOptimisticInboxBacked`).
+// The idle sweep skips these: the control plane holds the message durably and
+// will deliver it, so "the session went idle and this was never echoed" is
+// not evidence it was lost.
+const inboxBackedOptimisticIds = new Map<string, Set<string>>();
+// optimistic id → the runtime id that superseded it, and the inverse. Written
+// at supersede time (SSE and hydrate), so a host can keep one identity for a
+// prompt across the swap. Bounded by the number of prompts sent from this tab
+// per session; released with the session.
+const optimisticEchoes = new Map<string, Map<string, string>>();
+const optimisticOrigins = new Map<string, Map<string, string>>();
+
+function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
+	if (optimisticID === echoID) return;
+	let fwd = optimisticEchoes.get(sessionID);
+	if (!fwd) optimisticEchoes.set(sessionID, (fwd = new Map()));
+	fwd.set(optimisticID, echoID);
+	let rev = optimisticOrigins.get(sessionID);
+	if (!rev) optimisticOrigins.set(sessionID, (rev = new Map()));
+	rev.set(echoID, optimisticID);
+}
+
+/** Forget every optimistic mark for one id — confirmed, superseded, or removed. */
+function releaseOptimisticId(sessionID: string, id: string): void {
+	untrackId(optimisticIds, sessionID, id);
+	untrackId(dispatchedOptimisticIds, sessionID, id);
+	untrackId(inboxBackedOptimisticIds, sessionID, id);
+}
 
 function trackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
@@ -228,6 +415,9 @@ function hasTrackedId(
 function forgetSessionIds(sessionID: string): void {
 	optimisticIds.delete(sessionID);
 	dispatchedOptimisticIds.delete(sessionID);
+	inboxBackedOptimisticIds.delete(sessionID);
+	optimisticEchoes.delete(sessionID);
+	optimisticOrigins.delete(sessionID);
 	// The joined rows hold the very message and part arrays this session's
 	// data is being dropped from. Left behind, they keep the transcript
 	// reachable and the drop achieves nothing.
@@ -244,6 +434,9 @@ function forgetSessionIds(sessionID: string): void {
 	// bridge-clearing branch fired for it too, wiping every part already
 	// stored under it. See bridgedPartIds below.
 	bridgedPartIds.delete(sessionID);
+	// Same leak class, on the two T14 + T16 maps above.
+	deltaEventTails.delete(sessionID);
+	stubAssistantIds.delete(sessionID);
 }
 
 const isOptimistic = (sessionID: string, messageID: string) =>
@@ -279,6 +472,59 @@ const bridgedPartIds = new Map<string, Set<string>>();
 // delta-accumulated text. Keying by session and releasing only the ending
 // session's bucket fixes it.
 const deltaActiveParts = new Map<string, Set<string>>();
+
+// ---------------------------------------------------------------------------
+// Part-delta idempotency (T14).
+//
+// `applyPartDelta` used to be `existing + delta` with nothing consulted for
+// identity — a duplicate delivery of the SAME `message.part.delta` doubled
+// the streamed text. Realistic duplicate sources: the vendor SSE client's
+// retry loop briefly stacking a second live connection before
+// `event-stream.ts`'s own single-live-stream invariant (or the `sseMaxRetryAttempts:
+// 1` pin) catches up, or a second mounted subscriber replaying the same
+// stream.
+//
+// The wire's own `EventMessagePartDelta` (`@opencode-ai/sdk`'s
+// `v2/gen/types.gen.d.ts`) carries a top-level `id: string` on every event —
+// NOT inside `properties`, so `applyEvent`'s `message.part.delta` case now
+// threads `event.id` through as `applyPartDelta`'s new optional trailing
+// `eventID` param. Two independently-broadcast SSE readers of the SAME
+// published event (a stacked connection, a second subscriber) both receive
+// the identical event object and therefore the identical `id` — which makes
+// event identity the correct dedupe key, not delta CONTENT: content-based
+// dedupe (e.g. "reject a delta whose text matches the last one applied at
+// this length") would false-positive on legitimately-repeated content, such
+// as streaming "..." one identical character at a time.
+//
+// Keyed by session (same shape/reason as the maps above), then by
+// `${messageID}:${partID}:${field}` (a part could in principle accumulate
+// more than one delta-bearing field) to the SET of event ids already applied
+// for that key. A stacked duplicate connection can redeliver a whole tail of
+// the stream, not just the single most-recent event — "replay the last N
+// deltas again" is exactly what a reconnect-and-resume does — so every
+// applied id for the key is kept, not just the last one; a Set lookup stays
+// O(1) either way. Bounded by the per-session clears below, so this never
+// grows across an entire session's lifetime, only within one streaming turn.
+// A delta that arrives with no `eventID` (a caller predating this change, or
+// a hand-built synthetic delta) gets NO protection — identical to this
+// function's behavior before this change — rather than risk a content-based
+// false positive (see the module comment above for why content isn't used).
+//
+// Cleared per-session on `session.idle`/`session.error` (a new turn's deltas
+// use brand-new part ids anyway, so nothing realistic is lost) and released
+// wholesale by `forgetSessionIds`/`reset()`, matching `deltaActiveParts`.
+const deltaEventTails = new Map<string, Map<string, Set<string>>>();
+
+/** Session-scoped tracking for `session.error`'s stub assistant message (see
+ *  the handler below) — same shape/reason as the maps above. A stub only
+ *  ever stands in for a real assistant message that has not arrived yet;
+ *  `hydrate` reconciles (drops) it the moment the server's own transcript
+ *  contains a real one for this session, which is the promise the stub's own
+ *  creation comment made but that nothing previously fulfilled. Released
+ *  wholesale by `forgetSessionIds`/`reset()`; NOT cleared on idle/error — the
+ *  stub message it names still lives in `messages[sessionID]` until hydrate
+ *  reconciles it or the session itself ends. */
+const stubAssistantIds = new Map<string, Set<string>>();
 
 // ---------------------------------------------------------------------------
 // Session retention — how a transcript ever LEAVES memory again.
@@ -522,6 +768,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	sessionStatus: {},
 	diffs: {},
 	todos: {},
+	sessionRevert: {},
+	sessionRevertNeedsTailReconcile: {},
 
 	// Compat alias
 	get statuses() {
@@ -585,22 +833,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			let list: Part[];
 			let bridgeCleared = false;
 			if (hasTrackedId(bridgedPartIds, partSessionID, messageID)) {
-				// Only retire the optimistic/bridged user text once a REAL text
-				// part with actual content arrives. A stray non-text part — or an
-				// empty text snapshot — must NOT wipe the bridge, otherwise the
-				// user's message renders as an empty bubble.
-				const incoming = part as { type?: string; text?: unknown };
-				const incomingIsRealText =
-					incoming?.type === "text" &&
-					typeof incoming.text === "string" &&
-					incoming.text.length > 0;
-				if (incomingIsRealText) {
-					untrackId(bridgedPartIds, partSessionID, messageID);
-					list = [];
-					bridgeCleared = true;
-				} else {
-					list = s.parts[messageID] ?? [];
-				}
+				// T16 — retire the bridge on ANY real part arrival for this
+				// message: text, non-text (tool/file/step/…), or an empty-text
+				// snapshot. This used to retire ONLY on a non-empty text part, so a
+				// message whose first real part was a tool call (or an empty text
+				// snapshot before content streamed in) kept the optimistic bridge
+				// alongside the real parts — duplicating the user's text bubble.
+				// The server has started sending this message's real parts either
+				// way, so the bridge's job — standing in until real data exists —
+				// is done the moment ANY of them arrives.
+				untrackId(bridgedPartIds, partSessionID, messageID);
+				list = [];
+				bridgeCleared = true;
 			} else {
 				list = s.parts[messageID] ?? [];
 			}
@@ -681,13 +925,39 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (sessionID, messageID, partID, field, delta) => {
+	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
 		trackId(deltaActiveParts, sessionID, partID);
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
 			const result = Binary.search(list, partID, (p) => p.id);
 			if (!result.found) return s;
+			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
+			// when the caller supplied an event id (every real wire delta does);
+			// a delta with no id gets no protection here, same as before this
+			// change. Checked and RECORDED here, inside the actual-apply
+			// branch (after the list/found checks above), not before `set()`
+			// runs at all: recording it earlier marked an event id "applied"
+			// even on the not-found path — a delta whose target part doesn't
+			// exist yet (or was dropped) — which then permanently blocked a
+			// later LEGITIMATE redelivery of that same event once the part
+			// did exist. See "a delta that finds no target part does not
+			// consume the event id" in the test file.
+			if (eventID) {
+				const tailKey = `${messageID}:${partID}:${field}`;
+				let sessionTails = deltaEventTails.get(sessionID);
+				if (!sessionTails) {
+					sessionTails = new Map();
+					deltaEventTails.set(sessionID, sessionTails);
+				}
+				let appliedIds = sessionTails.get(tailKey);
+				if (appliedIds?.has(eventID)) return s;
+				if (!appliedIds) {
+					appliedIds = new Set();
+					sessionTails.set(tailKey, appliedIds);
+				}
+				appliedIds.add(eventID);
+			}
 			const next = [...list];
 			const part = { ...next[result.index] };
 			const existing = (part as Record<string, unknown>)[field] as
@@ -700,9 +970,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	setStatus: (sessionID, status) =>
-		set((s) => ({
-			sessionStatus: { ...s.sessionStatus, [sessionID]: status },
-		})),
+		set((s) => {
+			// A value that did not change is not news. `useSessionWorking` stamps
+			// its stream observation from this object's IDENTITY, so an
+			// equal-valued rewrite that minted a new object re-started
+			// `STREAM_OBSERVATION_MAX_MS` from zero on every write — the bound
+			// that stops a dead stream from deciding was never reached. See
+			// `sameSessionStatus`.
+			if (sameSessionStatus(s.sessionStatus[sessionID], status)) return s;
+			return { sessionStatus: { ...s.sessionStatus, [sessionID]: status } };
+		}),
 
 	setDiff: (sessionID, diffs) =>
 		set((s) => ({
@@ -713,6 +990,93 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		set((s) => ({
 			todos: { ...s.todos, [sessionID]: todos },
 		})),
+
+	stageSessionRevert: (sessionId, messageId) =>
+		set((s) => {
+			const current = s.sessionRevert[sessionId];
+			if (current?.staged && current.messageId === messageId) return s;
+			return {
+				sessionRevert: {
+					...s.sessionRevert,
+					[sessionId]: stageSessionRewind(get().getMessages(sessionId), messageId),
+				},
+			};
+		}),
+
+	commitSessionRevert: (sessionId) =>
+		set((s) => {
+			const current = s.sessionRevert[sessionId] ?? null;
+			const next = commitSessionRewind(current);
+			if (next === current) return s;
+			return { sessionRevert: { ...s.sessionRevert, [sessionId]: next } };
+		}),
+
+	clearSessionRevert: (sessionId) =>
+		set((s) => {
+			if (!s.sessionRevert[sessionId]) return s;
+			return { sessionRevert: { ...s.sessionRevert, [sessionId]: null } };
+		}),
+
+	applyCommittedRevert: (sessionId, boundaryId, watermark) =>
+		set((s) => {
+			const list = s.messages[sessionId];
+			if (!list || list.length === 0) {
+				return { sessionRevert: { ...s.sessionRevert, [sessionId]: null } };
+			}
+			const rewind: SessionRewindState = { messageId: boundaryId, watermark, staged: false };
+			const removedIds: string[] = [];
+			const kept = list.filter((m) => {
+				if (isWithinRewindWindow(m.id, rewind)) {
+					removedIds.push(m.id);
+					return false;
+				}
+				return true;
+			});
+			const nextParts = { ...s.parts };
+			for (const id of removedIds) delete nextParts[id];
+			return {
+				messages: { ...s.messages, [sessionId]: kept },
+				parts: nextParts,
+				sessionRevert: { ...s.sessionRevert, [sessionId]: null },
+			};
+		}),
+
+	markSessionRevertNeedsTailReconcile: (sessionId) =>
+		set((s) => {
+			if (s.sessionRevertNeedsTailReconcile[sessionId]) return s;
+			return {
+				sessionRevertNeedsTailReconcile: {
+					...s.sessionRevertNeedsTailReconcile,
+					[sessionId]: true,
+				},
+			};
+		}),
+
+	clearSessionRevertNeedsTailReconcile: (sessionId) =>
+		set((s) => {
+			if (!s.sessionRevertNeedsTailReconcile[sessionId]) return s;
+			const { [sessionId]: _, ...rest } = s.sessionRevertNeedsTailReconcile;
+			return { sessionRevertNeedsTailReconcile: rest };
+		}),
+
+	syncSessionRevertFromInfo: (sessionId, revert) => {
+		if (!revert?.messageID) return;
+		const current = get().sessionRevert[sessionId];
+		// F3 review finding: `null` is a deliberate tombstone — this store's
+		// own record of "committed or cleared, on purpose" (set by
+		// `applyCommittedRevert`/`clearSessionRevert`) — distinct from
+		// `undefined` ("nothing ever tracked here"). A `session.updated` that
+		// raced one of those two events can still carry the OLD `info.revert`
+		// pointer; re-staging off it here would hide every post-rewind
+		// message behind a phantom Restore. The tombstone wins until a
+		// genuinely fresh revert arrives through the real `.staged` wire
+		// event (`stageSessionRevert`, called directly, which overwrites
+		// unconditionally and so clears the tombstone normally) — never
+		// through this best-effort info-snapshot recovery path.
+		if (current === null) return;
+		if (current?.messageId === revert.messageID) return;
+		get().stageSessionRevert(sessionId, revert.messageID);
+	},
 
 	optimisticAdd: (sessionID, message, messageParts) => {
 		trackId(optimisticIds, sessionID, message.id);
@@ -746,9 +1110,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			trackId(dispatchedOptimisticIds, sessionID, messageID);
 	},
 
+	markOptimisticInboxBacked: (sessionID, messageID) => {
+		if (isOptimistic(sessionID, messageID))
+			trackId(inboxBackedOptimisticIds, sessionID, messageID);
+	},
+
+	optimisticEchoOf: (sessionID, optimisticID) =>
+		optimisticEchoes.get(sessionID)?.get(optimisticID),
+
+	optimisticOriginOf: (sessionID, echoID) => optimisticOrigins.get(sessionID)?.get(echoID),
+
 	optimisticRemove: (sessionID, messageID) => {
-		untrackId(optimisticIds, sessionID, messageID);
-		untrackId(dispatchedOptimisticIds, sessionID, messageID);
+		// Only an OPTIMISTIC message can be removed this way. One the runtime has
+		// confirmed (same-id echo, or the store never tracked it) is the
+		// transcript's; a host that removes its inbox row must not take the
+		// persisted message with it.
+		if (!isOptimistic(sessionID, messageID)) return;
+		releaseOptimisticId(sessionID, messageID);
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
@@ -770,14 +1148,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
+			// An inbox-backed message is held by the control plane and will be
+			// delivered; a local idle is not evidence it was lost. It stays.
 			const optIds = list
-				.filter((m) => isOptimistic(sessionID, m.id))
+				.filter(
+					(m) =>
+						isOptimistic(sessionID, m.id) &&
+						!hasTrackedId(inboxBackedOptimisticIds, sessionID, m.id),
+				)
 				.map((m) => m.id);
 			if (optIds.length === 0) return s;
-			for (const id of optIds) {
-				untrackId(optimisticIds, sessionID, id);
-				untrackId(dispatchedOptimisticIds, sessionID, id);
-			}
+			for (const id of optIds) releaseOptimisticId(sessionID, id);
 			const filtered = list.filter((m) => !optIds.includes(m.id));
 			const newParts = { ...s.parts };
 			for (const id of optIds) delete newParts[id];
@@ -806,6 +1187,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
+				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
+				sessionRevertNeedsTailReconcile: (() => {
+					const { [sessionID]: _, ...rest } = s.sessionRevertNeedsTailReconcile;
+					return rest;
+				})(),
 			};
 		}),
 
@@ -896,6 +1282,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				.map((m) => m.info)
 				.sort((a, b) => cmp(a.id, b.id));
 
+			// T16 — reconcile a `session.error` stub assistant message
+			// (see `stubAssistantIds` and the `session.error` handler above). The
+			// stub only ever stood in for a real assistant message that had not
+			// arrived yet, sorted BELOW every server id (`ascendingId('msg')`) —
+			// wrong once real data exists. The moment the server's OWN transcript
+			// contains a real assistant message for this session, every
+			// currently-tracked stub for it is stale and is dropped below rather
+			// than kept alongside the real one at the wrong position. If the
+			// incoming snapshot has no assistant message at all yet, nothing has
+			// arrived to reconcile against, so the stub is left untouched.
+			const trackedStubIds = stubAssistantIds.get(sessionID);
+			const reconcileStubs =
+				!!trackedStubIds &&
+				trackedStubIds.size > 0 &&
+				incoming.some((m) => m.role === "assistant");
+			if (reconcileStubs) stubAssistantIds.delete(sessionID);
+
 			// Merge incoming messages with existing ones — never delete messages
 			// that exist in the sync store but are missing from the fetch (they may
 			// be from a newer turn that the server hasn't persisted yet).
@@ -917,6 +1320,21 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			//
 			// The rule is now identity-based, in two passes.
 			const existingIds = new Set(existing.map((m) => m.id));
+
+			// The echo may arrive under the optimistic message's OWN id: the host
+			// minted the wire id and painted the bubble with it. That is a
+			// confirmation, not a duplicate — release the marks so the message is
+			// ordinary from here (the sweep leaves it alone, real parts win), and
+			// bridge its optimistic parts until real ones land.
+			for (const m of incoming) {
+				if (m.role !== "user" || !isOptimistic(sessionID, m.id)) continue;
+				releaseOptimisticId(sessionID, m.id);
+				const optimisticParts = s.parts[m.id];
+				const entry = msgs.find((x) => x.info.id === m.id);
+				if ((entry?.parts?.length ?? 0) === 0 && optimisticParts?.length) {
+					trackId(bridgedPartIds, sessionID, m.id);
+				}
+			}
 
 			// Pass 0 — candidate echoes. A real user message we have NEVER seen
 			// before may be the server's copy of something still in flight. One we
@@ -957,6 +1375,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const unmatchedOptimisticUsers: typeof existing = [];
 			for (const m of existing) {
 				if (!seen.has(m.id)) {
+					if (reconcileStubs && trackedStubIds!.has(m.id)) {
+						// Superseded by a real assistant message this same hydrate
+						// snapshot introduced — drop it, don't reinsert it below the
+						// real data at its stale `ascendingId` position.
+						continue;
+					}
 					if (isOptimistic(sessionID, m.id)) {
 						if (m.role !== "user") {
 							deferredOptimistic.push(m);
@@ -1002,10 +1426,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 			}
 
-			// Clean up superseded optimistic IDs
+			// Clean up superseded optimistic IDs, remembering which runtime id
+			// each one became.
 			for (const id of supersededOptimistic) {
-				untrackId(optimisticIds, sessionID, id);
-				untrackId(dispatchedOptimisticIds, sessionID, id);
+				releaseOptimisticId(sessionID, id);
+				const echoId = supersededBy.get(id);
+				if (echoId) recordOptimisticEcho(sessionID, id, echoId);
 			}
 			// Append surviving optimistic messages at the end
 			for (const m of deferredOptimistic) {
@@ -1083,7 +1509,39 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 					return inP;
 				});
-				for (const ep of extras) {
+				// T16 — dedupe extras by content identity. An "extra" is an
+				// existing part whose id the incoming snapshot no longer has — the
+				// server may simply not have persisted it yet (kept, as before), OR
+				// the server RE-ISSUED the same content under a NEW part id (a real
+				// defect: the old SSE-accumulated twin stayed in `exParts` forever,
+				// duplicating the text inside this one message). Distinguish the two
+				// conservatively: drop an extra only when it is text-like AND its own
+				// accumulated text is a PREFIX of (or equal to) some incoming
+				// text-like part of the SAME type — i.e. the incoming copy confidently
+				// re-issues it, not merely resembles it. Non-text-like extras (tool,
+				// permission, file, step, …) are never dropped by content — they carry
+				// distinct identity per id and a coincidental text match doesn't apply
+				// to them at all.
+				//
+				// F1 review finding: an extra still tracked in `deltaActiveParts` (this
+				// session is actively applying deltas to it right now) is EXEMPT from
+				// this filter regardless of what it prefixes. The heuristic above
+				// assumes a text-prefix match means the server re-issued the SAME
+				// content under a new id and the extra is an abandoned twin — but a
+				// live streaming target is never abandoned, and dropping it here also
+				// permanently blocks its later deltas (their event ids would already
+				// be recorded as applied — see `applyPartDelta`'s not-found path).
+				const survivingExtras = extras.filter((extra) => {
+					if (hasTrackedId(deltaActiveParts, sessionID, extra.id)) return true;
+					if (!isTextLikePart(extra) || extra.text.length === 0) return true;
+					return !inParts.some(
+						(inP) =>
+							inP.type === extra.type &&
+							isTextLikePart(inP) &&
+							inP.text.startsWith(extra.text),
+					);
+				});
+				for (const ep of survivingExtras) {
 					const r = Binary.search(reconciled, ep.id, (p) => p.id);
 					if (!r.found) reconciled.splice(r.index, 0, ep);
 				}
@@ -1098,8 +1556,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	reset: () => {
 		optimisticIds.clear();
 		dispatchedOptimisticIds.clear();
+		inboxBackedOptimisticIds.clear();
+		optimisticEchoes.clear();
+		optimisticOrigins.clear();
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
+		deltaEventTails.clear();
+		stubAssistantIds.clear();
 		// The data these holds protected is gone, so the holds are too —
 		// otherwise a late unmount could free a session the next page opened.
 		sessionConsumers.clear();
@@ -1112,6 +1575,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			sessionStatus: {},
 			diffs: {},
 			todos: {},
+			sessionRevert: {},
+			sessionRevertNeedsTailReconcile: {},
 		});
 	},
 
@@ -1145,6 +1610,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// optimistic message(s) in a SINGLE atomic set() call.
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
+				if (info.role === "user" && isOptimistic(info.sessionID, info.id)) {
+					// The echo under the optimistic message's OWN id (the host minted
+					// the wire id and painted with it): confirmed in place. Release the
+					// marks — it is an ordinary message from here — and bridge the
+					// optimistic parts until the real ones arrive, so the bubble never
+					// blinks empty and never shows both.
+					releaseOptimisticId(info.sessionID, info.id);
+					if (get().parts[info.id]?.length) {
+						trackId(bridgedPartIds, info.sessionID, info.id);
+					}
+					store.upsertMessage(info.sessionID, info);
+					return;
+				}
 				if (info.role === "user" && !isOptimistic(info.sessionID, info.id)) {
 					const msgs = get().messages[info.sessionID];
 					if (msgs) {
@@ -1200,10 +1678,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 							byPartId ?? optimisticUsers.find((m) => isDispatched(info.sessionID, m.id));
 						const optIds = matched ? [matched.id] : [];
 						if (optIds.length > 0) {
-							// Clean up optimistic tracking
+							// Clean up optimistic tracking, remembering the runtime id
+							// each superseded message became.
 							for (const id of optIds) {
-								untrackId(optimisticIds, info.sessionID, id);
-								untrackId(dispatchedOptimisticIds, info.sessionID, id);
+								releaseOptimisticId(info.sessionID, id);
+								recordOptimisticEcho(info.sessionID, id, info.id);
 							}
 							// Atomic: remove optimistic + insert real in one set()
 							set((s) => {
@@ -1367,12 +1846,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					} as unknown as Part);
 				}
 
+				// `event.id` is a top-level field of every wire event (see
+				// `deltaEventTails` above) — never inside `properties`, so it is
+				// read directly off `event`, not `props`.
 				store.applyPartDelta(
 					props.sessionID,
 					props.messageID,
 					props.partID,
 					props.field,
 					props.delta,
+					event.id,
 				);
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(
@@ -1410,6 +1893,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// accepted normally. Never the whole map: another session may
 			// still be streaming (see comment above deltaActiveParts).
 			if (sessionID) deltaActiveParts.delete(sessionID);
+			// Same reasoning for the delta event-id tails (T14): a new
+			// turn's deltas use brand-new part ids anyway, so nothing realistic
+			// is lost by dropping this session's tracking here.
+			if (sessionID) deltaEventTails.delete(sessionID);
 			return;
 		}
 		case "session.error": {
@@ -1422,6 +1909,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);
+			deltaEventTails.delete(sid);
 
 			// Patch the error onto the last assistant message in the sync store.
 			// If no assistant message exists yet, create a temporary one so the
@@ -1446,8 +1934,15 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 
 				// No assistant message yet — create a stub so the error shows.
-				// Mark it as a client-side stub so hydrate can replace it.
+				// Tracked in `stubAssistantIds` (T16) so `hydrate` can
+				// reconcile it away once a real assistant message for this
+				// session lands — see that map's doc comment and the
+				// reconciliation in `hydrate` below. `ascendingId('msg')` sorts
+				// BELOW every server id, which is fine as a placeholder position
+				// but wrong once real data exists; that is exactly what the
+				// reconciliation fixes.
 				const stubId = ascendingId("msg");
+				trackId(stubAssistantIds, sid, stubId);
 				const stubMsg: Message = {
 					id: stubId,
 					sessionID: sid,
@@ -1460,6 +1955,44 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			});
 			return;
 		}
+			case "session.next.revert.staged": {
+				const props = event.properties as {
+					sessionID: string;
+					revert: { messageID: string };
+				};
+				if (props.sessionID && props.revert?.messageID) {
+					store.stageSessionRevert(props.sessionID, props.revert.messageID);
+				}
+				return;
+			}
+			case "session.next.revert.cleared": {
+				const props = event.properties as { sessionID: string };
+				if (props.sessionID) store.clearSessionRevert(props.sessionID);
+				return;
+			}
+			case "session.next.revert.committed": {
+				const props = event.properties as { sessionID: string; messageID: string };
+				if (props.sessionID && props.messageID) {
+					const tracked = get().sessionRevert[props.sessionID];
+					if (tracked) {
+						store.applyCommittedRevert(props.sessionID, props.messageID, tracked.watermark);
+					} else {
+						// F2 — no tracked local record (fresh mount / second tab that
+						// never saw `.staged`). The REMOVED fallback guessed a
+						// watermark from `newestMessageId(local messages)`, which can
+						// be the user's own REPLACEMENT prompt if its
+						// `message.updated` arrived before this `.committed` event —
+						// deleting the replacement and its answer. Do not guess: flag
+						// this session for a tail reconcile (see
+						// `markSessionRevertNeedsTailReconcile`'s doc comment) and
+						// leave messages alone. The server's actual (already-
+						// truncated) transcript arrives through whatever reads that
+						// flag.
+						store.markSessionRevertNeedsTailReconcile(props.sessionID);
+					}
+				}
+				return;
+			}
 			case "session.diff": {
 				const props = event.properties as {
 					sessionID: string;

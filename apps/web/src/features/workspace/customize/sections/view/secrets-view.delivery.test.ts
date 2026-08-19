@@ -49,7 +49,7 @@ describe('SecretsView gates network-boundary delivery on the ACTIVE provider', (
   test('the dialog receives the availability and forwards it to the option builder', () => {
     expect(code).toContain('networkBoundary={networkBoundary}');
     expect(code).toContain('networkBoundary: NetworkBoundaryAvailability;');
-    expect(sliceBetween('secretDeliveryOptions(', ');')).toContain('networkBoundary,');
+    expect(sliceBetween('secretDeliveryOptions(', ');')).toContain('networkBoundary)');
   });
 
   test('the disabled option states its own reason instead of one fixed sentence', () => {
@@ -186,6 +186,40 @@ describe('SecretsView reports a save that did not reach the running sessions', (
 describe('SecretsView states the cost of an empty header template', () => {
   test('both template fields name the 401 consequence', () => {
     expect(code.match(/reject with 401\./g)).toHaveLength(2);
+  });
+});
+
+/**
+ * The panel is the last surface before someone tests the boundary by hand. The
+ * text has to come from the helper, because a hardcoded copy here drifts from
+ * the hosts the user typed and stops naming a host they can actually probe.
+ */
+describe('SecretsView states the echo caveat in the boundary panel', () => {
+  const panel = sliceBetween(
+    "{strategy === 'egress' && (",
+    "{strategy === 'broker' && access !== 'llm_gateway' && (",
+  );
+
+  test('the scan found the network-boundary panel', () => {
+    expect(panel.length).toBeGreaterThan(0);
+  });
+
+  test('the caveat is derived from the declared hosts and the live mechanism, not hardcoded', () => {
+    // The mechanism is an argument, not a default, because the two answer the
+    // same working request oppositely: the provider edge cuts an echoing
+    // response, the in-guest shim returns 200 with the value replaced. Passing
+    // a literal here would hand half the projects the other one's symptom.
+    expect(code).toContain(
+      "const echoNotice = networkBoundaryEchoNotice(brokerHosts, boundaryMode ?? 'in-guest-shim');",
+    );
+    expect(panel).toContain('title={echoNotice.title}');
+    expect(panel).toContain('{echoNotice.body}');
+    expect(panel).toContain('{echoNotice.probe}');
+    expect(panel).toContain('href={echoNotice.docsHref}');
+  });
+
+  test('the old sentence that never said what the block looks like is gone', () => {
+    expect(code).not.toContain('Secret values echoed by an upstream response are blocked');
   });
 });
 

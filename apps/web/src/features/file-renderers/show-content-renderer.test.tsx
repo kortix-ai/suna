@@ -1,8 +1,35 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+// Image/video reach their render branch only once `useBinaryBlob` has a blob
+// URL. The real hook is a react-query fetch against the sandbox, which never
+// resolves under `renderToStaticMarkup` (one synchronous, effect-free pass), so
+// the branch under test is unreachable without this stub. `mock.module`
+// replaces the module for every import in this file — the same technique
+// show-tool.test.tsx uses for `show-availability`.
+mock.module('@/features/files/hooks/use-binary-blob', () => ({
+  binaryBlobKeys: {
+    all: ['runtime-files', 'binary-blob'],
+    file: (serverUrl: string, filePath: string) => [
+      'runtime-files',
+      'binary-blob',
+      serverUrl,
+      filePath,
+    ],
+  },
+  useBinaryBlob: (filePath: string | null) =>
+    filePath
+      ? {
+          blobUrl: 'blob:show-content-renderer-test',
+          blob: new Blob(['x']),
+          isLoading: false,
+          error: null,
+        }
+      : { blobUrl: null, blob: null, isLoading: false, error: null },
+}));
 
 import { ShowContentRenderer } from './show-content-renderer';
 
@@ -72,5 +99,50 @@ describe('ShowContentRenderer — the HTML preview blob URL is minted in an effe
     expect(html).not.toContain('<iframe');
     expect(html).toContain('data-component="html-preview"');
     expect(html).not.toContain('&lt;h1&gt;');
+  });
+});
+
+// `ViewerFrame`'s header row, copied verbatim from viewer-frame.tsx. Matching
+// the whole class string (not just `bg-secondary`, which several unrelated
+// surfaces use) is what makes its presence/absence a real discriminator.
+const VIEWER_FRAME_HEADER =
+  'bg-secondary flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2';
+
+describe('ShowContentRenderer — inline image/video are framed like every other viewer', () => {
+  // Image and video returned a bare `<div>` on both surfaces while CSV, PPTX,
+  // XLSX, DOCX, PDF and the plain-text viewer all went through `framed()`. The
+  // inline card therefore had no file-name row above a picture, and the
+  // `toolbarActions` slot `ViewerFrame` exists to carry had no host on those
+  // two types.
+  test('an inline image renders inside ViewerFrame, labelled with the file name', () => {
+    const html = renderToStaticMarkup(
+      withProviders(<ShowContentRenderer type="image" path="/workspace/photo.png" />),
+    );
+
+    expect(html).toContain(VIEWER_FRAME_HEADER);
+    expect(html).toContain('photo.png');
+  });
+
+  test('an inline video renders inside ViewerFrame, labelled with the file name', () => {
+    const html = renderToStaticMarkup(
+      withProviders(<ShowContentRenderer type="video" path="/workspace/clip.mp4" />),
+    );
+
+    expect(html).toContain(VIEWER_FRAME_HEADER);
+    expect(html).toContain('clip.mp4');
+  });
+
+  // `framed()` is a no-op under `fill`: on the panel surface the host already
+  // draws the one header, so wrapping there would stack a second one.
+  test('the panel surface leaves image and video unwrapped — it owns the header', () => {
+    const image = renderToStaticMarkup(
+      withProviders(<ShowContentRenderer type="image" path="/workspace/photo.png" fill />),
+    );
+    const video = renderToStaticMarkup(
+      withProviders(<ShowContentRenderer type="video" path="/workspace/clip.mp4" fill />),
+    );
+
+    expect(image).not.toContain(VIEWER_FRAME_HEADER);
+    expect(video).not.toContain(VIEWER_FRAME_HEADER);
   });
 });

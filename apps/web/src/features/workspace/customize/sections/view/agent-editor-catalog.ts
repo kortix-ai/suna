@@ -208,6 +208,11 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
     actions: ['project.gitops.read', 'project.gitops.push', 'project.gitops.merge'],
   },
   { group: 'Secrets', actions: ['project.secret.read', 'project.secret.write'] },
+  // Minting a project credential (a project CLI token, or a project-scoped PAT).
+  // Its own leaf because a credential OUTLIVES the request that minted it; the
+  // two credential routes refuse an agent-session token outright, so granting it
+  // here is a manifest statement, not an escape hatch.
+  { group: 'Credentials', actions: ['project.credentials.issue'] },
   {
     group: 'Connectors',
     actions: [
@@ -215,6 +220,10 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
       'project.connector.write',
       'project.connector.connections.manage',
     ],
+  },
+  {
+    group: 'Apps',
+    actions: ['project.app.read', 'project.app.write', 'project.app.deploy'],
   },
   {
     group: 'Review',

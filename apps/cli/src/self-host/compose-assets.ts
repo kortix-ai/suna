@@ -80,14 +80,110 @@ export const officialSupabaseDockerAssets: Readonly<Record<string, string>> = {
  * The Caddyfile + updater script mounted into their respective services.
  * These are plain runtime assets (no secrets) written next to the compose
  * file and .env, same as the Supabase vendor assets.
+ *
+ * `Caddyfile` is the BASE reverse proxy — the api/gateway/frontend site blocks
+ * only. The optional wildcard *.<apps base domain> App-serving block is added
+ * at write time by renderCaddyfile() when Apps hosting is configured; it is
+ * intentionally absent here so a stack without Apps hosting is byte-for-byte
+ * this base file and the existing asserts stay stable.
  */
 export const kortixRuntimeAssets: Readonly<Record<string, string>> = {
   Caddyfile: kortixCaddyfile,
   'updater.sh': kortixUpdaterScript,
 };
 
-export function writeKortixRuntimeAssets(root: string): void {
-  writeAssets(root, kortixRuntimeAssets);
+/**
+ * The internal URL Caddy's on_demand_tls `ask` calls before issuing a per-App
+ * certificate. It resolves to kortix-api over the Compose network and returns
+ * 200 only for a real, resolvable App public host (see apps/edge in the API),
+ * which is what bounds ACME issuance so a random hostname pointed at this box
+ * cannot mint unbounded certificates.
+ */
+const APPS_TLS_CHECK_URL = 'http://kortix-api:8008/v1/apps/edge/tls-check';
+
+/**
+ * The exact substring of the base Caddyfile global options block that closes it.
+ * on_demand_tls is a GLOBAL-only Caddy option, and Caddy allows exactly one
+ * global block, so the `ask` directive is injected here rather than appended as
+ * a second block. Kept as an explicit marker so a change to the base file's
+ * global block fails loudly instead of silently dropping on_demand_tls.
+ */
+const CADDY_GLOBAL_CLOSE = 'email {$KORTIX_ACME_EMAIL}\n}';
+
+/**
+ * The wildcard App-serving site block. Every deployed App publishes on
+ * <env>-<slug>-<route-key>.{$KORTIX_APPS_BASE_DOMAIN}; the API matches the real
+ * Host header (KORTIX_APPS_ALLOW_DIRECT_EDGE=true — see resolveAppHost in
+ * apps/hostnames.ts) and resolves it to exactly one App. A 2nd-level wildcard
+ * certificate is impractical, so TLS is issued PER-APP on first request via
+ * ACME HTTP-01 (`on_demand`). kortix-api is reached the SAME way as the
+ * api/gateway blocks (dynamic a upstream re-resolved every refresh + an active
+ * health check). Caddy's reverse_proxy preserves the inbound Host header and
+ * sets X-Forwarded-Proto by default (both verified with `caddy validate` —
+ * adding an explicit `header_up X-Forwarded-Proto` warns "Unnecessary"), so
+ * resolveAppHost(Host) still names the right App on the API side without any
+ * header_up override.
+ */
+const APPS_SITE_BLOCK = `# *.<apps base domain>: every deployed Kortix App, served over per-App
+# on-demand TLS. Only present when KORTIX_APPS_BASE_DOMAIN is configured — see
+# renderCaddyfile() in compose-assets.ts. The global on_demand_tls \`ask\` above
+# bounds certificate issuance to real App hosts. The inbound Host header is
+# preserved (Caddy's reverse_proxy default) so the API's resolveAppHost(Host)
+# names the right App.
+*.{$KORTIX_APPS_BASE_DOMAIN} {
+	header Strict-Transport-Security "max-age=2592000"
+
+	tls {
+		on_demand
+	}
+
+	reverse_proxy {
+		dynamic a {
+			name kortix-api
+			port 8008
+			refresh 5s
+		}
+		lb_policy round_robin
+		fail_duration 10s
+		health_uri /v1/health
+		health_interval 10s
+		health_timeout 5s
+	}
+}`;
+
+export interface RenderCaddyfileOptions {
+  /**
+   * Whether Apps hosting is configured (KORTIX_APPS_BASE_DOMAIN is set). When
+   * true, renderCaddyfile injects the global on_demand_tls `ask` and appends the
+   * wildcard *.<apps base domain> App-serving block. When false (the default),
+   * the base Caddyfile is returned unchanged, so a stack without Apps hosting
+   * never emits an empty `*.` site address or an unbounded on_demand_tls.
+   */
+  appsHostingConfigured?: boolean;
+}
+
+/**
+ * The Caddyfile actually written for an instance: the base reverse proxy, plus
+ * the wildcard App-serving block + on_demand_tls `ask` when Apps hosting is
+ * configured.
+ */
+export function renderCaddyfile(options: RenderCaddyfileOptions = {}): string {
+  if (!options.appsHostingConfigured) return kortixCaddyfile;
+  if (!kortixCaddyfile.includes(CADDY_GLOBAL_CLOSE)) {
+    throw new Error('Caddyfile global options block changed; cannot inject on_demand_tls');
+  }
+  const withOnDemand = kortixCaddyfile.replace(
+    CADDY_GLOBAL_CLOSE,
+    `email {$KORTIX_ACME_EMAIL}\n\n\ton_demand_tls {\n\t\task ${APPS_TLS_CHECK_URL}\n\t}\n}`,
+  );
+  return `${withOnDemand.trimEnd()}\n\n${APPS_SITE_BLOCK}\n`;
+}
+
+export function writeKortixRuntimeAssets(root: string, options: RenderCaddyfileOptions = {}): void {
+  writeAssets(root, {
+    ...kortixRuntimeAssets,
+    Caddyfile: renderCaddyfile(options),
+  });
 }
 
 export interface RenderComposeOptions {
@@ -447,7 +543,12 @@ interface MemSpec {
 const MEM_LIMITS: Readonly<Record<string, MemSpec>> = {
   'supabase-db': { limit: '1280m', reservation: '512m', oomScoreAdj: -900 },
   'kortix-api': { limit: '${KORTIX_API_MEMORY_LIMIT:-640m}', reservation: '256m' },
-  'llm-gateway': { limit: '512m', reservation: '128m' },
+  // Headroom for large multimodal requests: the gateway buffers the raw request
+  // body (image-heavy agent turns run tens of MiB — see DEFAULT_MAX_REQUEST_BYTES),
+  // so 512m was far too tight once the body ceiling was raised. Give it a generous
+  // 2 GiB default so a big image-heavy turn never OOM-kills the gateway; small
+  // boxes can dial it back via KORTIX_GATEWAY_MEMORY_LIMIT.
+  'llm-gateway': { limit: '${KORTIX_GATEWAY_MEMORY_LIMIT:-2048m}', reservation: '256m' },
   frontend: { limit: '512m', reservation: '128m' },
   'kortix-migrate': { limit: '512m', reservation: '128m' },
   'kortix-updater': { limit: '256m', reservation: '64m' },

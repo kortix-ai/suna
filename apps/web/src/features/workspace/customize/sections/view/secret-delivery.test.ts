@@ -1,33 +1,103 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  brokerConsumerForSecret,
   buildBrokerPolicy,
   buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
+  defaultSecretAccess,
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
+  networkBoundaryEchoNotice,
+  networkBoundaryMode,
+  parseBoundaryHosts,
   readSecretDeliverySync,
+  secretAccessChoice,
+  secretAccessIsSystemManaged,
+  secretAccessTarget,
   secretDeliveryBlockedReason,
+  secretDeliveryLegend,
+  secretDeliveryOptionGroups,
   secretDeliveryOptions,
   secretDeliveryPresentation,
   secretDeliverySyncWarning,
   shouldWarnMissingAgentGrant,
 } from './secret-delivery';
 
-describe('brokerConsumerForSecret', () => {
-  test('keeps canonical consumers unchanged', () => {
-    expect(brokerConsumerForSecret('llm_gateway')).toBe('llm_gateway');
-    expect(brokerConsumerForSecret('connector')).toBe('connector');
-    expect(brokerConsumerForSecret('http_broker')).toBe('http_broker');
+describe('secretAccessChoice / secretAccessTarget', () => {
+  test('round-trips every choice through its stored strategy+consumer pair', () => {
+    const choices = [
+      'sandbox',
+      'network_boundary',
+      'http_broker',
+      'llm_gateway',
+      'connector',
+      'disabled',
+    ] as const;
+    for (const choice of choices) {
+      const target = secretAccessTarget(choice);
+      expect(secretAccessChoice(target.strategy, target.consumer)).toBe(choice);
+    }
   });
 
-  test('defaults unsupported consumers to the HTTPS broker', () => {
-    expect(brokerConsumerForSecret(null)).toBe('http_broker');
-    expect(brokerConsumerForSecret('sandbox')).toBe('http_broker');
+  test('a git_proxy row resolves to http_broker as a fallback, never to a real choice', () => {
+    expect(secretAccessChoice('broker', 'git_proxy')).toBe('http_broker');
+  });
+});
+
+describe('secretAccessIsSystemManaged', () => {
+  test('is true only for a git-connection-assigned row', () => {
+    expect(secretAccessIsSystemManaged('git_proxy')).toBe(true);
+    expect(secretAccessIsSystemManaged('sandbox')).toBe(false);
+    expect(secretAccessIsSystemManaged(null)).toBe(false);
+    expect(secretAccessIsSystemManaged(undefined)).toBe(false);
+  });
+});
+
+describe('defaultSecretAccess', () => {
+  test('an existing row opens on the value it has, including one the picker does not offer', () => {
+    expect(defaultSecretAccess({ strategy: 'broker', consumer: 'git_proxy' }, 'available')).toBe(
+      'http_broker',
+    );
+    expect(defaultSecretAccess({ strategy: 'runtime', consumer: 'sandbox' }, 'unsupported')).toBe(
+      'sandbox',
+    );
+  });
+
+  test('a new secret defaults to Network boundary where the project can deliver it', () => {
+    expect(defaultSecretAccess(null, 'available')).toBe('network_boundary');
+  });
+
+  test('a new secret defaults to Sandbox everywhere else', () => {
+    expect(defaultSecretAccess(null, 'unsupported')).toBe('sandbox');
+    expect(defaultSecretAccess(null, 'project_not_pinned')).toBe('sandbox');
+    expect(defaultSecretAccess(undefined, 'unsupported')).toBe('sandbox');
+  });
+});
+
+describe('secretDeliveryLegend', () => {
+  test('lists exactly the five pickable values, in picker order', () => {
+    expect(secretDeliveryLegend().map((entry) => entry.choice)).toEqual([
+      'sandbox',
+      'network_boundary',
+      'http_broker',
+      'llm_gateway',
+      'connector',
+      'disabled',
+    ]);
+  });
+
+  test('the wording matches secretDeliveryPresentation exactly — one source of truth', () => {
+    for (const entry of secretDeliveryLegend()) {
+      const target = secretAccessTarget(entry.choice);
+      expect(secretDeliveryPresentation(target.strategy, target.consumer)).toEqual({
+        label: entry.label,
+        description: entry.description,
+        tone: entry.tone,
+      });
+    }
   });
 });
 
@@ -49,8 +119,10 @@ describe('secretDeliveryPresentation', () => {
   });
 
   test('describes broker and egress without claiming sandbox access', () => {
+    // A 'broker' strategy with no recognized consumer falls back to the
+    // HTTPS broker presentation — see secretAccessChoice's default case.
     expect(secretDeliveryPresentation('broker').description).toBe(
-      'Used by an approved Kortix service without entering the sandbox.',
+      'Added only to an approved HTTPS request outside the sandbox.',
     );
     expect(secretDeliveryPresentation('egress').description).toBe(
       'Added to approved outbound requests at the network boundary.',
@@ -77,6 +149,15 @@ describe('secretDeliveryPresentation', () => {
   });
 });
 
+/** The two fix sentences, pinned once. They are user-facing copy, so the exact
+ *  wording is the assertion — a helper that stopped naming the flag would still
+ *  return a non-empty string. The flag name has to match the
+ *  `network_boundary_shim` entry in the API's feature-flag registry, which is
+ *  the label the Experimental screen renders. */
+const SHIM_FIX = 'Turn on "Network boundary in-guest shim" in Feature flags → Experimental.';
+const PIN_FIX =
+  'Turn on "Network boundary in-guest shim" in Feature flags → Experimental, or pin this project to Platinum in Feature flags → Runtime → Sandbox provider.';
+
 describe('networkBoundaryAvailability', () => {
   test('requires the project itself to run on Platinum', () => {
     expect(
@@ -102,6 +183,12 @@ describe('networkBoundaryAvailability', () => {
         default_sandbox_provider: 'daytona',
       }),
     ).toBe('project_not_pinned');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'e2b', 'platinum'],
+        default_sandbox_provider: 'e2b',
+      }),
+    ).toBe('project_not_pinned');
   });
 
   test('reports a deployment without Platinum as unsupported', () => {
@@ -111,57 +198,199 @@ describe('networkBoundaryAvailability', () => {
         default_sandbox_provider: 'daytona',
       }),
     ).toBe('unsupported');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'e2b'],
+        default_sandbox_provider: 'e2b',
+      }),
+    ).toBe('unsupported');
     expect(networkBoundaryAvailability(undefined)).toBe('unsupported');
     expect(networkBoundaryAvailability(null)).toBe('unsupported');
+  });
+
+  test('the shim flag makes it available on a project with no Platinum at all', () => {
+    // The second mechanism does not run at a provider edge, so the provider the
+    // project is pinned to stops mattering — the shim is guest-side code and is
+    // the same code on every provider that runs it.
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona'],
+        default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('available');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['e2b'],
+        default_sandbox_provider: 'e2b',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('available');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('available');
+  });
+
+  test('an off or absent flag leaves the provider verdict untouched', () => {
+    // The flag is opt-in only: it can grant availability, never remove it.
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona'],
+        default_sandbox_provider: 'daytona',
+        experimental: { network_boundary_shim: false },
+      }),
+    ).toBe('unsupported');
+    expect(
+      networkBoundaryAvailability({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+        experimental: { network_boundary_shim: false },
+      }),
+    ).toBe('available');
+  });
+});
+
+describe('networkBoundaryMode', () => {
+  test('a project pinned to Platinum is served by the provider edge', () => {
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+      }),
+    ).toBe('provider-edge');
+  });
+
+  test('the edge wins over the flag when both would serve', () => {
+    // Mirrors the API's precedence: the edge needs nothing in the guest and
+    // injects for every client, so it is what the session actually gets.
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'platinum',
+        experimental: { network_boundary_shim: true },
+      }),
+    ).toBe('provider-edge');
+  });
+
+  test('every non-Platinum provider is served by the same in-guest shim', () => {
+    for (const provider of ['daytona', 'e2b']) {
+      expect(
+        networkBoundaryMode({
+          available_sandbox_providers: [provider, 'platinum'],
+          default_sandbox_provider: provider,
+          experimental: { network_boundary_shim: true },
+        }),
+      ).toBe('in-guest-shim');
+    }
+  });
+
+  test('reports no mechanism when neither half is in place', () => {
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['e2b'],
+        default_sandbox_provider: 'e2b',
+      }),
+    ).toBeNull();
+    // Platinum offered but not pinned is the state that used to read as
+    // "available": nothing injects until a session actually runs there.
+    expect(
+      networkBoundaryMode({
+        available_sandbox_providers: ['daytona', 'platinum'],
+        default_sandbox_provider: 'daytona',
+      }),
+    ).toBeNull();
+    expect(networkBoundaryMode(undefined)).toBeNull();
+    expect(networkBoundaryMode(null)).toBeNull();
   });
 });
 
 describe('networkBoundaryBlockedReason', () => {
-  test('names the exact fix for an unpinned project', () => {
-    expect(networkBoundaryBlockedReason('project_not_pinned')).toBe(
-      'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
-    );
+  test('leads with the flag on an unpinned project and keeps the pin as the alternative', () => {
+    const reason = networkBoundaryBlockedReason('project_not_pinned') ?? '';
+    expect(reason).toBe(PIN_FIX);
+    // The order is the assertion. Turning the flag on fixes this project;
+    // re-pinning moves every session in it onto another provider.
+    expect(reason.indexOf('Experimental')).toBeLessThan(reason.indexOf('Sandbox provider'));
   });
 
-  test('keeps the deployment wording, and says nothing when delivery works', () => {
-    expect(networkBoundaryBlockedReason('unsupported')).toBe('Not available in this deployment.');
+  test('a deployment without Platinum is now fixable, so it says how', () => {
+    // It used to read "Not available in this deployment.", which is no longer
+    // true — the shim needs no Platinum, so the state is an opt-in away.
+    expect(networkBoundaryBlockedReason('unsupported')).toBe(SHIM_FIX);
+    expect(networkBoundaryBlockedReason('unsupported')).not.toContain('Not available');
     expect(networkBoundaryBlockedReason('available')).toBeNull();
+  });
+
+  test('names the flag by its mechanism, not by the provider it does without', () => {
+    expect(networkBoundaryBlockedReason('unsupported')).toContain('in-guest shim');
+    expect(networkBoundaryBlockedReason('project_not_pinned')).not.toContain('without Platinum');
   });
 });
 
 describe('secretDeliveryOptions', () => {
-  test('offers the HTTPS broker and enables network delivery when the project runs on Platinum', () => {
-    const options = secretDeliveryOptions('runtime', 'available', 'available');
-    expect(options.map(({ strategy, disabled }) => ({ strategy, disabled }))).toEqual([
-      { strategy: 'runtime', disabled: false },
-      { strategy: 'broker', disabled: false },
-      { strategy: 'egress', disabled: false },
-      { strategy: 'denied', disabled: false },
+  test('offers all five values, network boundary enabled when the project runs on Platinum', () => {
+    const options = secretDeliveryOptions('sandbox', 'available', 'available');
+    expect(options.map(({ choice, disabled }) => ({ choice, disabled }))).toEqual([
+      { choice: 'sandbox', disabled: false },
+      { choice: 'network_boundary', disabled: false },
+      { choice: 'http_broker', disabled: false },
+      { choice: 'llm_gateway', disabled: false },
+      { choice: 'connector', disabled: false },
+      { choice: 'disabled', disabled: false },
     ]);
-    expect(options[2]?.disabledReason).toBeNull();
+    expect(options[1]?.disabledReason).toBeNull();
   });
 
-  test('keeps network delivery disabled when Platinum is unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'available', 'unsupported')[1]?.disabled).toBe(false);
-    expect(secretDeliveryOptions('egress', 'available', 'unsupported')[2]).toMatchObject({
+  test('keeps network boundary disabled when Platinum is unavailable', () => {
+    expect(secretDeliveryOptions('http_broker', 'available', 'unsupported')[2]?.disabled).toBe(
+      false,
+    );
+    expect(secretDeliveryOptions('sandbox', 'available', 'unsupported')[1]).toMatchObject({
+      disabled: true,
+      disabledReason: SHIM_FIX,
+    });
+  });
+
+  test('disables network boundary on an unpinned project and states the fix', () => {
+    expect(secretDeliveryOptions('sandbox', 'available', 'project_not_pinned')[1]).toMatchObject({
+      disabled: true,
+      disabledReason: PIN_FIX,
+    });
+  });
+
+  test('disables a selected broker value when the server marks it unavailable', () => {
+    expect(secretDeliveryOptions('http_broker', 'unavailable', 'available')[2]).toMatchObject({
       disabled: true,
       disabledReason: 'Not available in this deployment.',
     });
   });
 
-  test('disables network delivery on an unpinned project and states the fix', () => {
-    expect(secretDeliveryOptions('runtime', 'available', 'project_not_pinned')[2]).toMatchObject({
-      disabled: true,
-      disabledReason:
-        'This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider.',
+  test('leaves an unselected broker value enabled even when the server marks it unavailable', () => {
+    // `status` describes the SELECTED strategy's own deployment; it must not
+    // leak into a sibling broker value the dialog is not currently showing.
+    expect(secretDeliveryOptions('llm_gateway', 'unavailable', 'available')[2]).toMatchObject({
+      disabled: false,
+      disabledReason: null,
     });
   });
+});
 
-  test('disables a selected non-runtime policy when the server marks it unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'unavailable', 'available')[1]).toMatchObject({
-      disabled: true,
-      disabledReason: 'Not available in this deployment.',
-    });
+describe('secretDeliveryOptionGroups', () => {
+  test('buckets the flat list into "for your agent" then "for a Kortix service", in order', () => {
+    const groups = secretDeliveryOptionGroups(secretDeliveryOptions('sandbox', 'available', 'available'));
+    expect(groups.map((g) => ({ group: g.group, label: g.label, choices: g.options.map((o) => o.choice) }))).toEqual([
+      {
+        group: 'agent',
+        label: "For your agent's own code",
+        choices: ['sandbox', 'network_boundary', 'http_broker'],
+      },
+      { group: 'service', label: 'For a Kortix service', choices: ['llm_gateway', 'connector'] },
+      { group: 'none', label: null, choices: ['disabled'] },
+    ]);
   });
 });
 
@@ -551,5 +780,82 @@ describe('buildNetworkBoundaryPolicy', () => {
     expect(buildNetworkBoundaryPolicy({ ...base, hosts: 'https://api.example.com' })).toBeNull();
     expect(buildNetworkBoundaryPolicy({ ...base, injectionTarget: 'bad header' })).toBeNull();
     expect(buildNetworkBoundaryPolicy({ ...base, template: 'Bearer token' })).toBeNull();
+  });
+});
+
+describe('parseBoundaryHosts', () => {
+  test('lowercases, splits on commas and newlines, and drops duplicates', () => {
+    expect(parseBoundaryHosts('API.Example.com, api.example.com\nuploads.example.com  ')).toEqual([
+      'api.example.com',
+      'uploads.example.com',
+    ]);
+  });
+
+  test('reads an empty field as no hosts', () => {
+    expect(parseBoundaryHosts('   \n , ')).toEqual([]);
+  });
+});
+
+/**
+ * The incident this text exists for: an agent probed an echo endpoint, read the
+ * cut connection as a dead host, and invented a TLS explanation. Nothing in the
+ * product said the boundary was there.
+ *
+ * The mode argument exists for the mirror-image failure. The shim never cuts a
+ * response, so telling a shim-backed project to expect an empty reply describes
+ * a working boundary as a broken one — and a genuinely dead host as success.
+ */
+describe('networkBoundaryEchoNotice', () => {
+  test('names the provider edge symptom and denies the wrong conclusion', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com', 'provider-edge');
+    expect(notice.body).toContain('curl: (52) Empty reply from server');
+    expect(notice.body).toContain('the boundary working, not the host being down');
+  });
+
+  test('the shim returns a redacted 200, so its notice says that instead', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com', 'in-guest-shim');
+    expect(notice.title).toContain('[REDACTED]');
+    expect(notice.body).toContain('[REDACTED]');
+    // The exact symptom the edge calls success is a real failure here, so the
+    // shim copy must not carry it.
+    expect(notice.body).not.toContain('curl: (52) Empty reply from server');
+    expect(notice.body).toContain('a real failure here');
+  });
+
+  test('probes the first declared host with a credential-consuming request', () => {
+    const notice = networkBoundaryEchoNotice('API.Stripe.com\nuploads.stripe.com', 'provider-edge');
+    expect(notice.probe).toContain('https://api.stripe.com/');
+    expect(notice.probe).toContain('never one that echoes headers');
+    expect(notice.probe).toContain('200 = the header arrived. 401 = it did not.');
+  });
+
+  test('probes the same way under both mechanisms', () => {
+    // An endpoint that spends the credential answers 200 or 401 either way,
+    // which is why it is the probe worth pasting.
+    expect(networkBoundaryEchoNotice('api.stripe.com', 'in-guest-shim').probe).toBe(
+      networkBoundaryEchoNotice('api.stripe.com', 'provider-edge').probe,
+    );
+  });
+
+  test('falls back to a placeholder host before anything is typed', () => {
+    expect(networkBoundaryEchoNotice('', 'in-guest-shim').probe).toContain(
+      'https://api.example.com/',
+    );
+  });
+
+  test('points at the two-probe procedure in the docs', () => {
+    const notice = networkBoundaryEchoNotice('api.stripe.com', 'provider-edge');
+    expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
+    expect(notice.docsLabel).toBe('Verify it with two probes');
+  });
+
+  test('never suggests looking for the value in the sandbox', () => {
+    for (const mode of ['provider-edge', 'in-guest-shim'] as const) {
+      const notice = networkBoundaryEchoNotice('api.stripe.com', mode);
+      const text = `${notice.title} ${notice.body} ${notice.probe}`;
+      expect(text).not.toContain('env ');
+      expect(text).not.toContain('{{secret}}');
+      expect(text.toLowerCase()).not.toContain('authorization:');
+    }
   });
 });

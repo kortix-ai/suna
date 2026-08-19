@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
@@ -14,6 +14,7 @@ import {
   scheduleHistoryBackfill,
 } from './git'
 import { logger } from './logger'
+import { MonitorRunner, parseMonitorSpecs } from './monitor-runner'
 import {
   catalogIsDegraded,
   createOpencodeSupervisor,
@@ -38,6 +39,7 @@ import { scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
+import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   OPENCODE_SESSION_PIN_PATH,
   resolveOpenCodeAuditSpoolPath,
@@ -45,6 +47,7 @@ import {
   writeOpenCodeSessionPin,
 } from './runtime-state'
 import { createProjectEnvStore } from './project-env'
+import { startEgressShim } from './egress-shim'
 import { startProxy } from './proxy'
 import {
   startLlmProxy,
@@ -59,6 +62,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
+import { opencodeDeliveryInFlight } from './opencode-turn-state'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -106,6 +110,14 @@ async function main() {
     return
   }
 
+  // Monitor box (docs/specs/2026-08-12-monitors.md D4). Same daemon, same
+  // image, same repo checkout — but it supervises the project's monitor
+  // processes instead of opencode, and never starts an LLM at all.
+  if (cfg.workload === 'monitor') {
+    await runMonitorMode(cfg, bootTime, bootState, bootMark, staticWeb)
+    return
+  }
+
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
   } catch (err) {
@@ -140,6 +152,13 @@ async function main() {
   if (!agentEnvDirIsTmpfs()) {
     logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
   }
+  // Network-boundary secrets on a provider with no credential edge. Started
+  // BEFORE the first writeAgentEnvFile below, because that file is how the
+  // proxy + CA variables reach the agent's shells — and before opencode spawns,
+  // because the shim's port has to be listening by the time anything can make a
+  // request. Returns null for the ordinary session that holds no boundary
+  // secret; see src/egress-shim/index.ts.
+  await startEgressShim()
   if (!writeAgentEnvFile(projectEnv)) {
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
   }
@@ -450,6 +469,35 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  let initialTurnAcceptanceSettled = false
+  let initialTurnAcceptanceInFlight = false
+  const reconcileInitialTurnAcceptance = async () => {
+    if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
+    const opencodeSessionId = bootState.initialOpenCodeSessionId
+    const turnToken = process.env.KORTIX_INITIAL_TURN_TOKEN?.trim()
+    const messageId = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID?.trim()
+    if (!opencodeSessionId || !turnToken || !messageId) return
+    initialTurnAcceptanceInFlight = true
+    try {
+      const result = await reconcileInitialTurnAcceptanceToApi(
+        opencode.getInternalUrl(),
+        cfg.workspace,
+        opencodeSessionId,
+        messageId,
+        turnToken,
+      )
+      // `unknown` grants no authority. Retry it on the next 30-second
+      // reconciliation tick. `inactive` means the exact message is absent or
+      // terminal, so an older prompt on a reused root cannot promote this token.
+      initialTurnAcceptanceSettled = result !== 'unknown'
+    } catch (err) {
+      logger.warn('[opencode-events] initial turn acceptance relay failed', {
+        err: (err as Error).message,
+      })
+    } finally {
+      initialTurnAcceptanceInFlight = false
+    }
+  }
   // On (re)subscribe, reconcile the pinned root's last turn: if it already
   // COMPLETED (idle) before this subscription was live — the fast-boot race,
   // where a trivial first turn finishes inside the prompt→subscribe gap — relay
@@ -458,11 +506,19 @@ async function startSessionRuntime(
   // and this reconcile collapse to a single finalize; a reconnect after the turn
   // relayed is a no-op.
   const onConnected = () => {
+    void reconcileInitialTurnAcceptance()
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onEvent, onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = {
+    onEvent,
+    onQuestionAsked,
+    onSessionIdle,
+    onSessionError,
+    onConnected,
+    onReconcile: onConnected,
+  }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -473,14 +529,20 @@ async function startSessionRuntime(
     // backstop for any residual gap.
     const loop = startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    await maybeCreateInitialOpencodeSession(opencode, bootState, bootMark, loop.connected).catch((err) => {
-      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
-      logger.warn('[boot] initial opencode session setup failed', err)
-    })
+    await maybeCreateInitialOpencodeSession(opencode, bootState, bootMark, loop.connected).catch(
+      (err) => {
+        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        logger.warn('[boot] initial opencode session setup failed', err)
+      },
+    )
     if (bootState.initialOpenCodeSessionId) {
+      await reconcileInitialTurnAcceptance()
       opencode.markReady()
       bootMark('opencode-ready')
-      logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
+      logger.info('[boot] opencode ready via initial session', {
+        opencodePid: opencode.getPid(),
+        timeline: bootState.timeline,
+      })
       // Persist the in-guest timeline now that this boot is complete — see
       // boot-timeline-relay.ts. Fire-and-forget and once-guarded.
       relayBootTimelineToApi(bootState.timeline)
@@ -555,6 +617,104 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   writeFileSync(file, body, { mode: 0o600 })
   process.env.KORTIX_LLM_CATALOG_FILE = file
   logger.info('[seed] baked full model catalog for seed', { file, models: count })
+}
+
+/**
+ * Monitor mode — the box that watches things 24/7
+ * (docs/specs/2026-08-12-monitors.md D4).
+ *
+ * It shares the session boot exactly up to the repo checkout, because monitor
+ * commands ARE repo code and need the same working tree an agent gets. From
+ * there it diverges completely: no opencode, no LLM, no session. The proxy
+ * still binds so /kortix/health answers (the box is otherwise invisible while
+ * it is healthy), and MonitorRunner owns everything after that.
+ *
+ * The repo is checked out at the project's DEFAULT branch: the API omits
+ * KORTIX_BRANCH_NAME for a monitor box, so materializeRepo leaves the checkout
+ * on default-branch HEAD instead of minting a session branch. A monitor watches
+ * what is shipped, not what some session is working on.
+ */
+async function runMonitorMode(
+  cfg: Config,
+  bootTime: number,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+  staticWeb: ReturnType<typeof startStaticWebServer>,
+): Promise<void> {
+  const projectEnv = createProjectEnvStore()
+  // Monitor processes inherit this process's env (the provider injected the
+  // project's runtime secrets there), and the agent env file keeps the same
+  // shell contract a session shell has.
+  writeAgentEnvFile(projectEnv)
+
+  try {
+    await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
+    await configureGitCredentialHelper(cfg, OPENCODE_HOME)
+  } catch (err) {
+    logger.warn('[monitor] git setup failed', { err: err instanceof Error ? err.message : String(err) })
+  }
+  bootMark('git-identity')
+
+  // The supervisor is constructed but NEVER started — it exists only because
+  // the proxy's route table is built around it. /kortix/health answers without
+  // touching opencode; every opencode route cleanly 503s, which is the honest
+  // answer for a box that has no agent.
+  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv, {
+    onStartupMark: bootMark,
+  })
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
+  bootMark('proxy-up')
+
+  if (cfg.autoClone) {
+    await materializeRepo(cfg).catch((err) => {
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+      logger.error('[monitor] repo materialization failed', err)
+    })
+  }
+  bootMark('repo-materialized')
+
+  const specs = parseMonitorSpecs(cfg.monitorsJson)
+  // Fail LOUD and INERT, never crash-loop: the reconciler would just re-create
+  // a box that exits, so a misconfigured box stays up, answers health, and says
+  // exactly what is wrong.
+  if (!cfg.projectId || !cfg.apiUrl || !cfg.sandboxToken) {
+    logger.error('[monitor] missing project/API/token env; no monitor will run', {
+      hasProjectId: !!cfg.projectId,
+      hasApiUrl: !!cfg.apiUrl,
+      hasToken: !!cfg.sandboxToken,
+    })
+    return
+  }
+  if (!cfg.monitorBoxEpoch) {
+    // Without the epoch the server rejects every batch with 409. Running the
+    // monitors anyway would burn the box's CPU producing events nothing can
+    // accept, so don't.
+    logger.error('[monitor] KORTIX_MONITOR_BOX_EPOCH is unset; refusing to run monitors')
+    return
+  }
+  if (specs.length === 0) {
+    logger.warn('[monitor] no monitors to run; the box is idle')
+    return
+  }
+
+  const runner = new MonitorRunner({
+    apiUrl: cfg.apiUrl,
+    projectId: cfg.projectId,
+    token: cfg.sandboxToken,
+    boxEpoch: cfg.monitorBoxEpoch,
+    monitors: specs,
+    cwd: cfg.projectTarget,
+  })
+  runner.start()
+  bootMark('monitors-started')
+  // Best-effort drain on shutdown: a SIGTERM'd box should deliver the lines it
+  // already captured rather than take them to the grave.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      void runner.stop()
+    })
+  }
 }
 
 async function runWarmSeedMode(
@@ -698,6 +858,19 @@ async function runWarmSeedMode(
     void (async () => {
       const t0 = Date.now()
       reloadSessionEnv()
+      // The fork's REAL session env has just landed. A warm seed never started
+      // an egress shim (runWarmSeedMode returns long before the boot path that
+      // does), so a forked session holding a network-boundary secret would
+      // otherwise get none — its requests would leave uncredentialed and the
+      // upstream 401 would look like a bad secret. Start it here, BEFORE
+      // writeAgentEnvFile, because that file is how the proxy + CA variables
+      // reach the agent's shells.
+      //
+      // Deliberately after reloadSessionEnv(): starting earlier would arm the
+      // shim with the DERIVING session's token and project id — the same class
+      // of bug as the 2026-06-10 incident where forks answered health on main
+      // with the deriving session's credentials.
+      await startEgressShim()
       writeAgentEnvFile(createProjectEnvStore())
       const cfg2 = loadConfig()
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted
@@ -833,6 +1006,28 @@ async function runWarmSeedMode(
 //      messages yet) — never re-running a task whose side effects already ran.
 // It also reports the canonical root to apps/api so the durable DB pin is set
 // server-side at bootstrap, with no dependency on a browser ever opening it.
+//
+// T12: (1) and (3) above both trusted a message-list read that can
+// itself fail — non-2xx, or the 5s timeout a cold post-resume opencode
+// routinely hits — collapsing "could not tell" into "no messages", which
+// re-delivers `prompt` into a live conversation. `RootInspection.known` closes
+// that: an unconfirmed read never delivers and never counts as orphaned (see
+// `initialPromptAlreadyDelivered`, `isTurnStillOrphaned`). Separately, a
+// `waitForRootList` timeout with a prior pin no longer falls through to
+// creating (and pinning) a brand-new root — see `resolveExistingRoot`'s
+// `defer` outcome — which was the SAME spinner-incident shape one layer up:
+// timeout read as "no roots" instead of "opencode is just slow".
+//
+// T22: `hasMessages` alone is not enough. OpenCode's `session.revert` is a
+// STAGED pointer — nothing is deleted until the next prompt, from ANY
+// producer, commits the truncation. A commit can truncate the reused root
+// all the way back to zero messages, and `initialPromptAlreadyDelivered`
+// reads that exactly like "never delivered" — re-running `prompt` (the
+// original task kickoff) into a session the user was mid-rewind on. A prior
+// pin for this sandbox is stronger evidence than message count: it proves
+// `maybeCreateInitialOpencodeSession` already ran to a delivery decision on
+// this box before, so an empty transcript behind an existing pin means
+// truncation, not "never delivered". See the `priorPin` check below.
 async function maybeCreateInitialOpencodeSession(
   opencode: Opencode,
   bootState: SandboxBootState,
@@ -861,8 +1056,30 @@ async function maybeCreateInitialOpencodeSession(
   //   opencode-session-created (existing) → first prompt delivered
   // A big opencode-answering means the fix is in the image (pre-booted
   // opencode); a big root-ready means it's our bootstrap.
-  let existing = await resolveExistingRoot(baseUrl, workspace)
+  // Captured BEFORE this boot writes its own pin below, so it reflects only
+  // what a PRIOR boot of this sandbox left behind — see the T22 note above.
+  const priorPin = readPinnedOpencodeSessionId()
+  // F1: likewise captured BEFORE this boot could possibly write its own
+  // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
+  // boot's successful delivery, never this one's own pending write.
+  const priorDeliveredMarker = readInitialPromptDeliveredMarker()
+  const resolved = await resolveExistingRoot(baseUrl, workspace, priorPin)
   bootMark('opencode-answering')
+  if (resolved.status === 'defer') {
+    // opencode never answered the root list within the deadline, and a prior
+    // root IS pinned — see `resolveExistingRoot`'s `defer` outcome. Creating
+    // (and pinning) a fresh root here would risk orphaning that conversation
+    // under a competing one — the exact 2026-06-15 spinner-incident shape (see
+    // the comment above this function). Leave `bootState.initialOpenCodeSessionId`
+    // unset and return: boot falls through to the `waitForOpencodeReady`
+    // fallback path below instead of the initial-session fast path, and
+    // nothing here touches the existing root or delivers `prompt` anywhere.
+    logger.warn(
+      '[boot] deferring initial opencode session setup — opencode did not answer in time and a prior root is pinned',
+    )
+    return
+  }
+  let existing = resolved.status === 'found' ? resolved.root : null
   // Warm-fork de-collision: a CoW-forked sandbox inherits the snapshot's single
   // pinned root, so `existing` here is the SHARED seed root — every fork would
   // otherwise resolve the same opencode session id and their chats bleed together
@@ -879,16 +1096,22 @@ async function maybeCreateInitialOpencodeSession(
   let alreadyDelivered = false
   if (existing) {
     sessionId = existing.id
-    alreadyDelivered = existing.hasMessages
+    alreadyDelivered = reusedRootAlreadyDelivered(existing, priorPin, priorDeliveredMarker)
     logger.info('[boot] reusing existing opencode root', {
       sessionId,
       alreadyDelivered,
+      priorPin: priorPin !== null,
+      known: existing.known,
       lastTurnIncomplete: existing.lastTurnIncomplete,
+      lastTurnHasError: existing.lastTurnHasError,
     })
     // A turn interrupted by the restart left a part stuck "running"; finalize it
-    // so a client streaming this root sees the turn end instead of spinning.
+    // so a client streaming this root sees the turn end instead of spinning. A
+    // turn that already carries `info.error` was already finalized by a prior
+    // abort (see `isTurnStillOrphaned`) — re-aborting it here is exactly the
+    // repeated-abort-on-every-boot bug this guard exists to prevent.
     if (
-      existing.lastTurnIncomplete &&
+      isTurnStillOrphaned(existing) &&
       (await confirmTurnOrphaned(baseUrl, workspace, sessionId, existing))
     ) {
       await abortOpencodeTurn(baseUrl, workspace, sessionId)
@@ -916,7 +1139,6 @@ async function maybeCreateInitialOpencodeSession(
       void deleteOpencodeSession(baseUrl, workspace, seedBakedId)
     }
   }
-  bootState.initialOpenCodeSessionId = sessionId
   bootMark('opencode-root-ready')
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
@@ -933,24 +1155,48 @@ async function maybeCreateInitialOpencodeSession(
       let timer: ReturnType<typeof setTimeout> | undefined
       await Promise.race([
         eventLoopConnected,
-        new Promise<void>((r) => { timer = setTimeout(r, 10_000) }),
+        new Promise<void>((r) => {
+          timer = setTimeout(r, 10_000)
+        }),
       ])
       if (timer) clearTimeout(timer)
       bootMark('event-loop-connected')
     }
-    await deliverInitialOpenCodePrompt(
-      opencode,
-      sessionId,
-      workspace,
-      buildInitialPromptBody(prompt),
+    await publishInitialOpenCodeSessionAfterPrompt(bootState, sessionId, () =>
+      deliverInitialOpenCodePrompt(opencode, sessionId, workspace, buildInitialPromptBody(prompt)),
     )
+    // F1: written ONLY after delivery actually succeeded (an exception above
+    // skips this line) — the durable receipt `reusedRootAlreadyDelivered`
+    // trusts unconditionally on every later boot of this sandbox.
+    markInitialPromptDelivered()
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
-    logger.info('[boot] initial prompt already delivered to reused root; not re-running', { sessionId })
+    bootState.initialOpenCodeSessionId = sessionId
+    logger.info('[boot] initial prompt already delivered to reused root; not re-running', {
+      sessionId,
+    })
   } else {
+    bootState.initialOpenCodeSessionId = sessionId
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
+}
+
+/**
+ * Publish the boot root only after OpenCode accepts the initial prompt.
+ *
+ * The event-loop reconciliation timer reads `initialOpenCodeSessionId` as its
+ * acceptance gate. Publishing the id before `prompt_async` returns lets that
+ * timer promote a `delivering` database record while the request is still in
+ * flight, including before OpenCode has received one byte.
+ */
+export async function publishInitialOpenCodeSessionAfterPrompt(
+  bootState: SandboxBootState,
+  sessionId: string,
+  deliver: () => Promise<void>,
+): Promise<void> {
+  await deliver()
+  bootState.initialOpenCodeSessionId = sessionId
 }
 
 /**
@@ -975,7 +1221,17 @@ export async function finalizeOrphanedTurn(
   sessionId: string,
 ): Promise<boolean> {
   const inspection = await inspectRoot(baseUrl, workspace, sessionId)
-  if (!inspection.lastTurnIncomplete) return false
+  if (!inspection.known) {
+    // Could not read this root's message state at all — see
+    // `RootInspection.known`. Never treat "could not tell" as orphaned.
+    logger.warn('[boot] could not read root message state; not treating turn as orphaned', { sessionId })
+    return false
+  }
+  // Covers both "the turn already finished" and "the turn already carries an
+  // error from a prior finalize" — see `isTurnStillOrphaned`. The latter is
+  // what makes this idempotent across repeated boots/respawns over the same
+  // stuck turn: an already-errored turn is never re-aborted.
+  if (!isTurnStillOrphaned(inspection)) return false
   // Never abort a turn that is merely still being written — see
   // confirmTurnOrphaned. This is the difference between closing a turn its
   // opencode took to the grave and interrupting one that was about to finish.
@@ -991,6 +1247,45 @@ function pinOpencodeSessionFile(sessionId: string): void {
     writeOpenCodeSessionPin(sessionId)
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
+  }
+}
+
+/**
+ * F1: durable proof that `deliverInitialOpenCodePrompt` actually SUCCEEDED —
+ * not just that boot intended to deliver it. `OPENCODE_SESSION_PIN_PATH` is
+ * written BEFORE delivery (see `pinOpencodeSessionFile` above, called ahead
+ * of the delivery call at this function's call site), with an up-to-10s
+ * `eventLoopConnected` wait in between. A daemon crash in that window leaves
+ * the pin behind but never delivers — a bare-pin check alone would then read
+ * every future boot as "already delivered" and silence the session forever
+ * (see `reusedRootAlreadyDelivered`). This marker is written ONLY after
+ * `deliverInitialOpenCodePrompt` returns successfully, right next to the pin,
+ * so its mere existence is the delivery receipt the pin alone can't provide.
+ */
+const OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH = join(
+  dirname(OPENCODE_SESSION_PIN_PATH),
+  'opencode-initial-prompt-delivered',
+)
+
+/** Best-effort read of the F1 delivery marker. False (never true-by-accident)
+ *  on any read failure — the same "unknown reads never skip delivery" bias as
+ *  the rest of this gate; see `reusedRootAlreadyDelivered`. */
+function readInitialPromptDeliveredMarker(): boolean {
+  try {
+    return existsSync(OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH)
+  } catch {
+    return false
+  }
+}
+
+/** Best-effort write of the F1 delivery marker. Directory already exists by
+ *  the time this runs — `pinOpencodeSessionFile` (called earlier in the same
+ *  boot) already created it. */
+function markInitialPromptDelivered(): void {
+  try {
+    writeFileSync(OPENCODE_INITIAL_PROMPT_DELIVERED_PIN_PATH, '1', { encoding: 'utf8', mode: 0o600 })
+  } catch (err) {
+    logger.warn('[boot] failed to write initial-prompt-delivered marker', err)
   }
 }
 
@@ -1043,35 +1338,96 @@ interface ExistingRoot {
   id: string
   hasMessages: boolean
   lastTurnIncomplete: boolean
+  /** See `RootInspection.lastTurnHasError` — an errored turn is already
+   *  finalized and must not be re-aborted. */
+  lastTurnHasError: boolean
   /** Carried through so the orphan re-check can tell the same unfinished turn
    *  from a different one that started since. */
   lastMessageId: string | null
+  /** See `RootInspection.known` — false when the read that produced the rest
+   *  of this shape failed. `hasMessages`/`lastTurnIncomplete`/`lastTurnHasError`
+   *  are meaningless in that case (all defaulted `false`); callers must branch
+   *  on `known` before trusting them. */
+  known: boolean
 }
+
+/** What `resolveExistingRoot` learned, and what the caller may safely do about
+ *  it — see the function doc for the three outcomes. Exported for tests. */
+export type ExistingRootResult =
+  | { status: 'found'; root: ExistingRoot }
+  | { status: 'create' }
+  | { status: 'defer' }
 
 /**
  * Resolve a usable existing canonical root for this workspace so a restart
  * reuses it instead of creating a duplicate. Prefers the pinned id (if it still
- * exists as a root), else the most-recently-active root. Returns null when
- * opencode is unreachable or holds no root yet (the caller then creates one).
+ * exists as a root), else the most-recently-active root.
+ *
+ * Three outcomes:
+ *   - `found`  — a root exists. `root.known` says whether its message state
+ *     could actually be read (see `ExistingRoot.known`).
+ *   - `create` — opencode answered and genuinely holds no root, OR opencode
+ *     never answered within the deadline AND nothing is pinned (a pinless
+ *     cold boot — there is no conversation to orphan). Safe to create the
+ *     first root, same as before.
+ *   - `defer`  — opencode never answered the root list within the deadline
+ *     AND a prior root IS pinned. Creating (and pinning) a fresh root here
+ *     would risk orphaning that conversation under a competing one — opencode
+ *     may just be slow (a cold post-resume opencode routinely takes longer
+ *     than this deadline). The caller must not create or pin anything; see
+ *     the 2026-06-15 spinner-incident comment above
+ *     `maybeCreateInitialOpencodeSession`. T12.
+ *
+ * `priorPin`/`rootListDeadlineMs` default to the real pin file / 20s deadline
+ * in production and are overridable so tests can exercise the `defer` branch
+ * without a 20s wait or a real pin file — same pattern as
+ * `opencodeTurnInFlight` in opencode-turn-state.ts.
  */
-async function resolveExistingRoot(baseUrl: string, workspace: string): Promise<ExistingRoot | null> {
+async function resolveExistingRoot(
+  baseUrl: string,
+  workspace: string,
+  priorPin: string | null = readPinnedOpencodeSessionId(),
+  rootListDeadlineMs = 20_000,
+): Promise<ExistingRootResult> {
   // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
   // boot as "no roots" would create a duplicate on restart — the exact bug we're
   // killing — so only conclude "create a fresh root" once opencode has actually
-  // answered with an empty list (or never answers within the deadline).
-  const roots = await waitForRootList(baseUrl, workspace)
-  if (!roots || roots.length === 0) return null
-  const pinned = readPinnedOpencodeSessionId()
-  const chosen = (pinned && roots.find((r) => r.id === pinned)) || pickMostRecentRoot(roots)
-  if (!chosen) return null
+  // answered with an empty list (or never answers within the deadline, and
+  // there is no prior pin to protect — see `defer` above).
+  const roots = await waitForRootList(baseUrl, workspace, rootListDeadlineMs)
+  if (!roots) {
+    if (priorPin) {
+      logger.warn(
+        '[boot] opencode did not answer the root list within the deadline; a prior root is pinned — deferring instead of creating a competing root',
+        { priorPin },
+      )
+      return { status: 'defer' }
+    }
+    return { status: 'create' }
+  }
+  if (roots.length === 0) return { status: 'create' }
+  const pinned = priorPin ? roots.find((r) => r.id === priorPin) : undefined
+  const chosen = pinned || pickMostRecentRoot(roots)
+  if (!chosen) return { status: 'create' }
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
   return {
-    id: chosen.id,
-    hasMessages: inspection.hasMessages,
-    lastTurnIncomplete: inspection.lastTurnIncomplete,
-    lastMessageId: inspection.lastMessageId,
+    status: 'found',
+    root: {
+      id: chosen.id,
+      hasMessages: inspection.hasMessages,
+      lastTurnIncomplete: inspection.lastTurnIncomplete,
+      lastTurnHasError: inspection.lastTurnHasError,
+      lastMessageId: inspection.lastMessageId,
+      known: inspection.known,
+    },
   }
 }
+// Exported (via a trailing statement, not an inline `export` keyword) so the
+// text `async function resolveExistingRoot(` stays intact for
+// orphan-finalize-error-idempotent.test.ts's source-text assertion, which
+// locates `maybeCreateInitialOpencodeSession`'s body by searching for exactly
+// that string.
+export { resolveExistingRoot }
 
 interface RootLite { id: string; created: number; updated: number }
 
@@ -1079,8 +1435,12 @@ interface RootLite { id: string; created: number; updated: number }
  *  returning the roots it holds (possibly `[]`). Null only if opencode never
  *  became reachable within the deadline — so the caller never mistakes a slow
  *  boot for an empty workspace and creates a duplicate root. */
-async function waitForRootList(baseUrl: string, workspace: string): Promise<RootLite[] | null> {
-  const deadline = Date.now() + 20_000
+async function waitForRootList(
+  baseUrl: string,
+  workspace: string,
+  deadlineMs = 20_000,
+): Promise<RootLite[] | null> {
+  const deadline = Date.now() + deadlineMs
   while (Date.now() < deadline) {
     const roots = await listOpencodeRoots(baseUrl, workspace)
     if (roots !== null) return roots
@@ -1130,9 +1490,105 @@ function pickMostRecentRoot(roots: RootLite[]): RootLite | null {
 interface RootInspection {
   hasMessages: boolean
   lastTurnIncomplete: boolean
+  /** `info.error` is present on the last message. A prior `/abort` (or opencode
+   *  itself) already stamped this turn with an AbortError/MessageAbortedError
+   *  without ever stamping `time.completed` — so it is already finalized, not
+   *  orphaned. Re-aborting it would only re-emit the same `message.updated`/
+   *  `session.error` to every client watching, re-rendering "Interrupted" for a
+   *  turn that already ended. See `isTurnStillOrphaned`. */
+  lastTurnHasError: boolean
   /** Identity of the last message, so a re-check can tell "same turn, still
    *  unfinished" from "a different turn has since started". */
   lastMessageId: string | null
+  /**
+   * False when the read failed — opencode unreachable, non-2xx, the 5s
+   * timeout a cold post-resume opencode routinely hits, or an unparseable
+   * response. Mirrors `RootInspection.known` in opencode-turn-state.ts (same
+   * shape, same reason): without it, "genuinely no messages" and "could not
+   * tell" are indistinguishable. Collapsing the second into the first either
+   * re-delivers the initial prompt into a live conversation (boot's
+   * reused-root path) or re-aborts a turn nobody actually confirmed was dead
+   * (`finalizeOrphanedTurn`). Every other field on this shape is meaningless
+   * when `known` is false — callers must check `known` first. See T12.
+   */
+  known: boolean
+}
+
+/**
+ * Single source of truth for "is this turn still eligible to be aborted as
+ * orphaned?" — incomplete AND not already carrying an error. Every finalize
+ * path (boot's reused-root check, `finalizeOrphanedTurn`'s unplanned-respawn
+ * check, and the settle re-check inside `confirmTurnOrphaned`) must route
+ * through this instead of reading `lastTurnIncomplete` directly, so the error
+ * guard cannot drift out of sync between them.
+ *
+ * `known: false` (the read failed) is never orphaned. We could not confirm
+ * anything, so we must not abort a turn that might still be running — the
+ * gate every caller here relies on. See `RootInspection.known`.
+ */
+function isTurnStillOrphaned(inspection: {
+  lastTurnIncomplete: boolean
+  lastTurnHasError: boolean
+  known: boolean
+}): boolean {
+  if (!inspection.known) return false
+  return inspection.lastTurnIncomplete && !inspection.lastTurnHasError
+}
+
+/**
+ * Has the initial prompt already reached this root — or must we assume so?
+ *
+ * `known: false` means the read that would answer this failed (see
+ * `RootInspection.known`). Treating that as "no messages" — the bug this
+ * closes — reads as "never delivered" and re-delivers `prompt` into a
+ * conversation that may already have it. Assuming delivered instead costs at
+ * most one skipped bootstrap prompt on a root that turns out to be genuinely
+ * empty, which is always safe to retry from outside: nothing observable ran
+ * yet to redo. See T12.
+ */
+export function initialPromptAlreadyDelivered(existing: { known: boolean; hasMessages: boolean }): boolean {
+  if (!existing.known) return true
+  return existing.hasMessages
+}
+
+/**
+ * T22/F1 — the initial-prompt gate for a REUSED root, one layer above
+ * `initialPromptAlreadyDelivered`. OpenCode's `session.revert` is a STAGED
+ * pointer; nothing is deleted until the next prompt — from ANY producer —
+ * commits the truncation. A commit can truncate the reused root all the way
+ * back to zero messages, and `initialPromptAlreadyDelivered` reads that
+ * exactly like "never delivered" — re-running `prompt` (the original task
+ * kickoff) into a session the user was mid-rewind on.
+ *
+ * F1: a bare prior pin is NOT proof of delivery — the pin is written BEFORE
+ * `deliverInitialOpenCodePrompt` runs (see the call site), so a crash in that
+ * window leaves a pin behind with nothing ever delivered. Treating any prior
+ * pin as proof (the old T22 rule) then silences the session forever: every
+ * later boot sees the pin and skips delivery. The durable delivery marker
+ * (`readInitialPromptDeliveredMarker`, written only AFTER a successful
+ * delivery) is the only unconditional proof. Short of that, a prior pin is
+ * trusted ONLY when it also matches the root we actually reused AND that
+ * root's transcript is confirmed non-empty — i.e. genuine reuse of a root
+ * that plainly already has the conversation, not merely "some pin exists".
+ *
+ * `priorPin` must be read BEFORE this boot writes its own pin (see the call
+ * site) so it reflects only what a PRIOR boot left behind — never this one's
+ * own pending write. `deliveredMarkerExists` must likewise be read before
+ * this boot's own (possible) marker write.
+ *
+ * Falls through to `initialPromptAlreadyDelivered`'s message-count read
+ * (unchanged from T12) whenever neither the marker nor the matching-pin case
+ * applies — covering both the pinless cold-reuse case and the crash-window
+ * case (pin present, no marker, transcript confirmed empty: deliver).
+ */
+export function reusedRootAlreadyDelivered(
+  existing: { id: string; known: boolean; hasMessages: boolean },
+  priorPin: string | null,
+  deliveredMarkerExists: boolean,
+): boolean {
+  if (deliveredMarkerExists) return true
+  if (priorPin !== null && existing.id === priorPin && existing.known && existing.hasMessages) return true
+  return initialPromptAlreadyDelivered(existing)
 }
 
 /**
@@ -1160,22 +1616,35 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
       { signal: AbortSignal.timeout(5_000) },
     )
-    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    // Non-2xx (opencode answering but unhappy — e.g. mid-restart) is a read
+    // failure, not "no messages": `known: false`.
+    if (!res.ok) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    }
     const msgs = (await res.json()) as Array<{
-      info?: { id?: string; role?: string; time?: { completed?: number } }
+      info?: { id?: string; role?: string; error?: unknown; time?: { completed?: number } }
     }>
-    if (!Array.isArray(msgs) || msgs.length === 0) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    // An unparseable shape is also a read failure, not a genuinely empty root
+    // — only an actual `[]` counts as a confirmed-empty root.
+    if (!Array.isArray(msgs)) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    }
+    if (msgs.length === 0) {
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: true }
     }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
     return {
       hasMessages: true,
       lastTurnIncomplete: Boolean(incomplete),
+      lastTurnHasError: Boolean(last?.info?.error),
       lastMessageId: last?.info?.id ?? null,
+      known: true,
     }
   } catch {
-    return { hasMessages: false, lastTurnIncomplete: false, lastMessageId: null }
+    // Unreachable, or the 5s AbortSignal.timeout above fired — the exact "cold
+    // post-resume opencode" hazard this whole tri-state exists for.
+    return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
   }
 }
 
@@ -1197,8 +1666,23 @@ async function confirmTurnOrphaned(
 ): Promise<boolean> {
   await new Promise((r) => setTimeout(r, ORPHAN_SETTLE_MS))
   const second = await inspectRoot(baseUrl, workspace, sessionId)
+  if (!second.known) {
+    // The settle re-check itself could not read the root. Do NOT abort on the
+    // strength of the FIRST read alone — that would abort turns we can no
+    // longer confirm are still incomplete now.
+    logger.warn('[boot] could not confirm turn state during settle re-check; not aborting', { sessionId })
+    return false
+  }
   if (!second.lastTurnIncomplete) {
     logger.info('[boot] turn completed on its own; not aborting', { sessionId })
+    return false
+  }
+  if (second.lastTurnHasError) {
+    // A prior abort (or opencode itself) already stamped this turn with an
+    // error without ever stamping `time.completed`. It is already finalized —
+    // re-aborting it would only re-emit the same message.updated/session.error
+    // to every client watching, re-rendering "Interrupted" on every boot.
+    logger.info('[boot] turn already carries an error; already finalized, not aborting', { sessionId })
     return false
   }
   if (first.lastMessageId && second.lastMessageId !== first.lastMessageId) {
@@ -1292,6 +1776,110 @@ export async function deliverInitialOpenCodePrompt(
   if (!response.ok) {
     throw new Error(`opencode prompt failed: ${response.status} ${await response.text()}`)
   }
+}
+
+/**
+ * Promote only the initial-turn authority that apps/api created before the
+ * sandbox existed. The daemon cannot mint a token, create a lifecycle record,
+ * or revive a record removed by terminal evidence.
+ */
+export async function relayInitialTurnAcceptedToApi(
+  opencodeSessionId: string,
+  messageId: string,
+  turnToken: string,
+): Promise<boolean> {
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const sandboxToken = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
+    throw new Error('initial turn acceptance relay context is unavailable')
+  }
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sandboxToken}`,
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      kind: 'turn_accepted',
+      opencode_session_id: opencodeSessionId,
+      turn_message_id: messageId,
+      turn_token: turnToken,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(`initial turn acceptance rejected: ${response.status} ${body.slice(0, 200)}`)
+  }
+  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
+  return body.ok === true
+}
+
+/** Remove only a pre-created initial-turn record that OpenCode never accepted. */
+export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const sandboxToken = (process.env.KORTIX_SANDBOX_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !sandboxToken || !apiUrl) {
+    throw new Error('initial turn abandonment relay context is unavailable')
+  }
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sandboxToken}`,
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      kind: 'turn_abandoned',
+      turn_token: turnToken,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(`initial turn abandonment rejected: ${response.status} ${body.slice(0, 200)}`)
+  }
+  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
+  return body.ok === true
+}
+
+export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
+
+/**
+ * Promote daemon-delivered authority only after OpenCode exposes the exact
+ * client-minted user message as queued or running.
+ *
+ * A restart can reuse a root that already contains an older prompt. Root-level
+ * `hasMessages` evidence is therefore insufficient: it would promote a new
+ * token for work that the daemon deliberately did not rerun.
+ */
+export async function reconcileInitialTurnAcceptanceToApi(
+  opencodeBaseUrl: string,
+  workspace: string,
+  opencodeSessionId: string,
+  messageId: string,
+  turnToken: string,
+): Promise<InitialTurnAcceptanceReconciliation> {
+  const inFlight = await opencodeDeliveryInFlight(
+    opencodeBaseUrl,
+    workspace,
+    opencodeSessionId,
+    messageId,
+  )
+  if (inFlight === null) return 'unknown'
+  if (!inFlight) {
+    await relayInitialTurnAbandonedToApi(turnToken)
+    return 'inactive'
+  }
+  await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+  return 'accepted'
 }
 
 /**
@@ -1539,20 +2127,55 @@ export async function relayTurnEndToApi(
 ): Promise<void> {
   const ctx = sandboxRelayContext()
   if (!ctx) return
-  // Only the root turn closes channel output and shortens the idle deadline. A
-  // subagent can become idle while the root turn still runs. Detect the root by
-  // parentID, not by a session pin that can change after an OpenCode restart.
-  if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
   // Resolve the turn's error + completed signature in one read. session.error
   // already hands us the error; an idle end (e.g. retries exhausted, then idle)
-  // carries none, so read the root turn's last assistant message — exactly what
+  // carries none, so read the session's last assistant message — exactly what
   // the web UI shows — and upgrade idle→error when it failed. This is what turns
   // a blank "ended without a reply" in Slack into "out of credits" / rate-limit /
   // the real error. The completed timestamp doubles as the per-turn dedup key.
+  //
+  // Read BEFORE the root filter, because the runaway guard below must see EVERY
+  // session's completions: the 2026-08-18 Essentia incident was a CHILD session
+  // re-answering the same standing prompt indefinitely, and with the guard
+  // placed after the root filter it never saw a single one of those repeats.
   const turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
   const error = eventError ?? turn.error
   const effectiveStatus = error ? 'error' : status
+  const isRoot = await isRootOpencodeSession(opencodeSessionId, opencode, cfg)
+
+  // A genuinely new, non-duplicate `idle` completion — check it isn't the SAME
+  // standing prompt answering itself again with no new user message in between
+  // (see `runaway-turn-guard.ts`). Per opencode session id, ROOT AND CHILDREN:
+  // the abort targets the session that is looping. Scoped to `idle` only: an
+  // `error` completion repeating is `turn-auto-resume.ts`'s concern.
+  const runawayCheck = (): void => {
+    if (effectiveStatus !== 'idle') return
+    void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
+      try {
+        await fetch(
+          `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/abort?directory=${encodeURIComponent(cfg.workspace)}`,
+          { method: 'POST', signal: AbortSignal.timeout(10_000) },
+        )
+      } catch (err) {
+        logger.warn('[runaway-turn-guard] abort call failed', { opencodeSessionId, err: (err as Error).message })
+      }
+    })
+  }
+
+  // Only the root turn closes channel output and shortens the idle deadline. A
+  // subagent can become idle while the root turn still runs. Detect the root by
+  // parentID, not by a session pin that can change after an OpenCode restart.
+  // A child's completion is still guarded above — but a child has no per-turn
+  // relay dedup signature of its own, so it steps the guard on every idle it
+  // reports. Under a real loop those are distinct completions; a duplicate
+  // observation of one child completion costs at most one extra tolerated
+  // repeat (MAX_CONSECUTIVE_REPEATS absorbs it), never a false abort of a
+  // healthy child.
+  if (!isRoot) {
+    runawayCheck()
+    return
+  }
 
   // Exactly-once per completed turn: an idle turn (natural OR reconciled on
   // subscribe) relays a single time. The signature is only RECORDED after a
@@ -1569,6 +2192,10 @@ export async function relayTurnEndToApi(
     return
   }
 
+  // Root: past the turn-end dedup, so a duplicate observation of one real
+  // reply never reads as a repeat.
+  runawayCheck()
+
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
   const payload = JSON.stringify({
@@ -1576,6 +2203,7 @@ export async function relayTurnEndToApi(
     kind: 'end',
     status: effectiveStatus,
     opencode_session_id: opencodeSessionId,
+    turn_message_id: turn.parentMessageId ?? undefined,
     ...(error
       ? {
           error_name: error.name,
@@ -1624,6 +2252,9 @@ interface RootTurnState {
    *  identity, used as the exactly-once dedup key. null while the turn is still
    *  running (assistant message present but not completed) or before any reply. */
   completedAt: number | null
+  /** The user message this assistant turn answers. This is the stable identity
+   *  minted by the client and recorded by apps/api before prompt delivery. */
+  parentMessageId: string | null
 }
 
 // Read the ROOT turn's outcome from its last assistant message — the same
@@ -1643,18 +2274,24 @@ async function readRootTurnState(
   try {
     const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-    if (!res.ok) return { completedAt: null }
+    if (!res.ok) return { completedAt: null, parentMessageId: null }
     const rows = (await res.json()) as Array<{
       info?: {
         role?: string
+        parentID?: string
         time?: { completed?: number }
         error?: {
           name?: string
-          data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+          data?: {
+            message?: string
+            statusCode?: number
+            isRetryable?: boolean
+            providerID?: string
+          }
         }
       }
     }>
-    if (!Array.isArray(rows)) return { completedAt: null }
+    if (!Array.isArray(rows)) return { completedAt: null, parentMessageId: null }
     // The most recent assistant message decides the turn's outcome. Crucially,
     // stop at the turn boundary: if a USER message is the newest row (a pending or
     // follow-up turn that hasn't produced an assistant reply yet), treat the run
@@ -1662,16 +2299,17 @@ async function readRootTurnState(
     // error and relay it as this turn's failure.
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
-      if (info?.role === 'user') return { completedAt: null }
+      if (info?.role === 'user') return { completedAt: null, parentMessageId: null }
       if (info?.role !== 'assistant') continue
       return {
         error: info.error ? flattenOpencodeError(info.error) : undefined,
         completedAt: info.time?.completed ?? null,
+        parentMessageId: info.parentID ?? null,
       }
     }
-    return { completedAt: null }
+    return { completedAt: null, parentMessageId: null }
   } catch {
-    return { completedAt: null }
+    return { completedAt: null, parentMessageId: null }
   }
 }
 
@@ -1749,6 +2387,7 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
 
 /** Build the first-turn request from the session-bound runtime environment. */
 export function buildInitialPromptBody(prompt: string): {
+  messageID?: string
   parts: Array<{ type: 'text'; text: string }>
   model?: { providerID: string; modelID: string }
   agent?: string
@@ -1756,7 +2395,9 @@ export function buildInitialPromptBody(prompt: string): {
   const model = resolveOpencodeModel()
   const agentName = (process.env.KORTIX_AGENT_NAME ?? '').trim()
   const agent = agentName && agentName !== 'default' ? agentName : undefined
+  const messageID = process.env.KORTIX_INITIAL_TURN_MESSAGE_ID?.trim() || undefined
   return {
+    ...(messageID ? { messageID } : {}),
     parts: [{ type: 'text', text: prompt }],
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),

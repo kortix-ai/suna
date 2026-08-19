@@ -195,11 +195,21 @@ describe('web ECS migration', () => {
     expect(workflow).toMatch(/frontend-auth-proof:\s*\n\s*name:[^\n]*\n\s*needs: \[[^\]]*deploy-web-vercel\]/);
   });
 
-  it('uses Basic auth credentials in QA instead of Vercel bypass headers', () => {
+  it('carries both Basic auth credentials and the Vercel SSO bypass in QA', () => {
     const config = read('tests/playwright.config.ts');
     expect(config).toContain('WEB_PROTECTION_PASSWORD');
     expect(config).toContain("username: 'kortix'");
-    expect(config).not.toContain('x-vercel-protection-bypass');
+    // Two different protections guard two different deployed targets, so the
+    // config carries both. Basic auth covers password-protected environments.
+    // Staging/preview use Vercel SSO protection instead, which httpCredentials
+    // cannot satisfy — only `x-vercel-protection-bypass` gets past it, and
+    // `x-vercel-set-bypass-cookie` keeps the bypass alive across the app's
+    // client-side navigations and fetches. Both headers are no-ops locally.
+    // Dropping either one silently 302s the browser lane to vercel.com/sso-api.
+    expect(config).toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
+    expect(config).toContain("'x-vercel-protection-bypass': vercelBypass");
+    expect(config).toContain("'x-vercel-set-bypass-cookie': 'samesitenone'");
+    expect(config).toContain('extraHTTPHeaders: vercelBypassHeaders');
     expect(existsSync(resolve(root, 'tests/visual/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/accessibility/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/e2e/examples/playwright.config.ts'))).toBe(false);

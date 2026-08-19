@@ -6,7 +6,7 @@
  * provider-neutral behaviour: create repo → mint push token → register project.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
@@ -130,6 +130,13 @@ mock.module('../middleware/auth', () => ({
 // verifying provision/delete behavior, not the access-control engine itself.
 mockIamEngineAllowAll();
 
+// The read models answer from the same `canonicalMembership` switch the db shim
+// uses for `account_members`, so the "no membership in that account" case still
+// reaches the 403 it asserts.
+mockIamReadModels({
+  members: () =>
+    canonicalMembership ? [{ userId: USER_ID, accountId: ACCOUNT_ID, accountRole: 'owner' }] : [],
+});
 // grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
 // lightweight db mock doesn't model).
 mockIamMembershipSyncNoop();

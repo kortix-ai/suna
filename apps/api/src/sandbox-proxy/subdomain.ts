@@ -282,6 +282,11 @@ export async function handleSubdomainRequest(
             kind: 'principal',
             userId: authed.userId,
             callerSessionId: authed.callerSessionId,
+            // On this path `callerSessionId` is only ever the SANDBOX's own
+            // token binding — a Supabase login never reaches it (see
+            // authenticatePreviewPrincipal above) — so it is also the correct
+            // agent binding for the manager-override gate.
+            boundCredentialSessionId: authed.callerSessionId,
             sandboxAuthored: authed.sandboxAuthored,
           }
         : { kind: 'public_share' },

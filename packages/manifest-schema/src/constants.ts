@@ -17,7 +17,118 @@ export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
-export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
+/**
+ * Env-var names the runtime owns, which a manifest may therefore not set.
+ *
+ * WHY THIS LIVES IN THE MANIFEST SCHEMA
+ *
+ * The API refuses these when it builds a deployment's environment
+ * (`resolveAppRuntimeEnvironment` → `assertDestination`). For a long time the
+ * manifest validator did not, so `kortix validate` passed on a manifest that
+ * could never deploy, and the author found out from a failed deploy instead of
+ * from the tool whose entire job is to tell them first.
+ *
+ * That is not a hypothetical: a `kortix.yaml` setting `KORTIX_API_KEY`
+ * validated clean and failed at deploy, and the App that eventually shipped
+ * without those variables did not error at all — the feature depending on them
+ * simply rendered nothing.
+ *
+ * So the rule lives here, in the contract package both sides already depend
+ * on, and `apps/api` imports it rather than restating it.
+ */
+export const RESERVED_ENV_NAME_PREFIXES = ['KORTIX_', 'OPENCODE_'] as const;
+
+/** Process-level names the sandbox sets itself; overriding them breaks boot. */
+export const RESERVED_ENV_NAMES: ReadonlySet<string> = new Set([
+  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
+  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+]);
+
+/**
+ * Secrets the platform holds but must never hand to a runtime, because an
+ * agent reachable by prompt injection would then be holding them too.
+ */
+export const NEVER_DELIVERED_ENV_NAMES: ReadonlySet<string> = new Set([
+  'SLACK_SIGNING_SECRET',
+  'SLACK_BOT_TOKEN',
+]);
+
+/** Is this name one the runtime owns? Used by both `validate` and deploy. */
+export function isReservedEnvName(name: string): boolean {
+  return (
+    RESERVED_ENV_NAMES.has(name) ||
+    NEVER_DELIVERED_ENV_NAMES.has(name) ||
+    RESERVED_ENV_NAME_PREFIXES.some((prefix) => name.startsWith(prefix))
+  );
+}
+
+/** Why a name is refused, phrased for the person who wrote the manifest. */
+export function reservedEnvNameReason(name: string): string | null {
+  const prefix = RESERVED_ENV_NAME_PREFIXES.find((candidate) => name.startsWith(candidate));
+  if (prefix) {
+    return `is reserved: the \`${prefix}\` prefix belongs to the platform. Rename it (for example \`MYAPP_${name.slice(prefix.length)}\`) and read it under the new name.`;
+  }
+  if (NEVER_DELIVERED_ENV_NAMES.has(name)) {
+    return 'is reserved: the platform never delivers this secret to a runtime.';
+  }
+  if (RESERVED_ENV_NAMES.has(name)) {
+    return 'is reserved: the runtime sets this itself, and overriding it breaks the sandbox.';
+  }
+  return null;
+}
+
+export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
+
+/**
+ * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
+ * exits; `stream` runs it once and keeps it alive. Both emit events as stdout
+ * lines — downstream (filter → prompt → session_mode) cannot tell them apart.
+ * See docs/specs/2026-08-12-monitors.md §"The monitor contract (v1)".
+ */
+export const MONITOR_MODES = ['poll', 'stream'] as const;
+
+/** Floor for `interval` on a `mode: poll` monitor — the platform bound. */
+export const MONITOR_MIN_INTERVAL_SECONDS = 30;
+/** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
+export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
+export const MONITOR_RUN_MAX_LENGTH = 1024;
+
+/**
+ * Duration literal accepted by `interval` / `expect_event_within`: a positive
+ * integer plus one unit suffix (`30s`, `5m`, `24h`, `7d`). Deliberately not a
+ * bare number — "60" reads as either seconds or minutes depending on the
+ * reader, and the manifest is a human-review surface.
+ */
+export const DURATION_RE = /^([1-9][0-9]*)(s|m|h|d)$/;
+
+const DURATION_UNIT_SECONDS: Readonly<Record<string, number>> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+};
+
+/** Parse a {@link DURATION_RE} literal to whole seconds. Null when malformed. */
+export function parseDurationSeconds(raw: string): number | null {
+  const match = DURATION_RE.exec(raw.trim());
+  if (!match) return null;
+  return Number(match[1]) * DURATION_UNIT_SECONDS[match[2]!]!;
+}
+
+/**
+ * Inverse of {@link parseDurationSeconds}, in the largest unit that divides
+ * evenly (`60` → `"1m"`, `86400` → `"1d"`). Canonical, so a spec that
+ * round-trips through the CRUD write path emits one stable form — the same
+ * normalization `run_at` already gets (parsed, then re-emitted as ISO-8601).
+ */
+export function formatDurationSeconds(seconds: number): string {
+  if (!Number.isInteger(seconds) || seconds <= 0) return `${seconds}s`;
+  if (seconds % 86400 === 0) return `${seconds / 86400}d`;
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
 // Providers a kortix.yaml may declare. `channel` is included because the
 // platform itself writes a `connectors:` entry with `provider: channel` into the
 // manifest when a Slack/email channel is connected (see connector/channel-manifest.ts), so
@@ -128,9 +239,18 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.connector.read',
   'project.connector.connections.manage',
   'project.connector.write',
+  'project.app.read',
+  'project.app.write',
+  'project.app.deploy',
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+  // Minting a project credential. Grantable so a manifest CAN hand it to an
+  // agent explicitly, but note the two credential routes refuse an
+  // agent-session token outright (projects/routes/r3.ts) — an agent that could
+  // mint a fresh, grant-less project token would escape its own ceiling. The
+  // leaf exists so a CUSTOM ROLE can withhold it from humans.
+  'project.credentials.issue',
 ];
 
 /**

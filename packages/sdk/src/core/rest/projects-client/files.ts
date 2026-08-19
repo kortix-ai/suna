@@ -16,7 +16,7 @@ export async function listProjectFiles(
   return unwrap(
     await backendApi.get<ProjectFileEntry[]>(
       `/projects/${projectId}/files${query}`,
-      // project.file.read is editor-tier — a member deep-linking to the files
+      // project.file.read is manager-tier — a member deep-linking to the files
       // page legitimately 403s. The files view renders its own error state.
       { showErrors: false },
     ),
@@ -65,7 +65,7 @@ export async function readProjectFile(
   return unwrap(
     await backendApi.get<{ path: string; ref: string; content: string }>(
       `/projects/${projectId}/files/content?${params.toString()}`,
-      // Same editor-tier gate as listProjectFiles above: project.file.read
+      // Same manager-tier gate as listProjectFiles above: project.file.read
       // legitimately 403s for a plain member reading one file (e.g. a
       // skill/command detail modal, or the git-ref file explorer). Every
       // caller already renders its own inline error state, so the global

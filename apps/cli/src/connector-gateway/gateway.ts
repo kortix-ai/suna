@@ -132,6 +132,56 @@ export async function mintSecretLink(opts: {
   });
 }
 
+export type BrokerMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+
+export interface BrokerCallResult {
+  status: number;
+  headers: Record<string, string>;
+  body_base64: string;
+}
+
+/**
+ * Make one HTTPS request with a project secret injected SERVER-SIDE.
+ *
+ * The sandbox never receives the credential: the API resolves it, applies the
+ * secret's own host/method/injection policy, performs the request, and returns
+ * only the upstream response. Same route the `kortix secrets call` CLI uses
+ * (`POST /projects/:id/secrets/:identifier/broker`); this is its MCP face.
+ */
+export async function brokerSecretRequest(opts: {
+  identifier: string;
+  url: string;
+  method?: BrokerMethod;
+  headers?: Record<string, string>;
+  body?: string;
+  projectOverride?: string;
+}): Promise<BrokerCallResult> {
+  if (!opts.identifier) throw new CliError('secret identifier is required', 'USAGE');
+  let parsed: URL;
+  try {
+    parsed = new URL(opts.url);
+  } catch {
+    throw new CliError(`not a valid URL: ${opts.url}`, 'USAGE');
+  }
+  // Fail here rather than at the API: a plaintext hop would expose the
+  // injected credential on the wire, so it is never a retryable condition.
+  if (parsed.protocol !== 'https:') {
+    throw new CliError('broker URL must be HTTPS', 'USAGE');
+  }
+  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  return client.post<BrokerCallResult>(
+    `/projects/${projectId}/secrets/${encodeURIComponent(opts.identifier)}/broker`,
+    {
+      url: opts.url,
+      ...(opts.method ? { method: opts.method } : {}),
+      ...(opts.headers && Object.keys(opts.headers).length ? { headers: opts.headers } : {}),
+      ...(opts.body !== undefined
+        ? { body_base64: Buffer.from(opts.body, 'utf8').toString('base64') }
+        : {}),
+    },
+  );
+}
+
 /**
  * Add (or update) a connector on the project NOW — committed to kortix.yaml on
  * main + synced server-side, exactly like the dashboard's "Add app". No change

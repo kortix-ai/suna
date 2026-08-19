@@ -49,23 +49,45 @@ function bandVarPx(name: string, scope: 'macos' | 'other'): number {
   return Number(match[1]);
 }
 
-describe('driveHeaderClass', () => {
-  test('indents the standalone page header past the collapsed-sidebar toggle', () => {
-    const className = driveHeaderClass(true, true);
-    expect(className).toContain('md:pl-14');
-    expect(className).toContain('pt-14');
-    expect(className).toContain('md:pt-3');
+const headerSource = readFileSync(join(import.meta.dir, 'drive-header.tsx'), 'utf8');
+const headerCode = headerSource
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
+
+describe('standalone Files header sidebar opener', () => {
+  // ProjectShell draws a web opener only on the desktop shell. On the web
+  // each view owns its own, gated by useShowPageSidebarOpener(). DriveHeader
+  // used to only pad for a toggle the shell never rendered.
+  test('visibility comes from the shared gate, not overlay padding', () => {
+    expect(headerSource).toContain('useShowPageSidebarOpener()');
+    expect(headerSource).toContain('sidebarOpenerLabel');
+    expect(headerSource).toContain('peekEnter');
+    expect(headerSource).toContain('peekLeave');
   });
 
-  test('drops the left indent once the sidebar covers the toggle', () => {
-    expect(driveHeaderClass(true, false)).not.toContain('md:pl-14');
+  test('the opener sits in flow with the title, not absolute over it', () => {
+    const toggleStart = headerCode.indexOf('function FilesSidebarToggle');
+    const toggleEnd = headerCode.indexOf('export function DriveHeader');
+    expect(toggleStart).toBeGreaterThan(-1);
+    const toggle = headerCode.slice(toggleStart, toggleEnd);
+    expect(toggle).not.toContain('absolute');
+    expect(toggle).not.toContain('pl-14');
+    expect(toggle).toContain('toggleSidebar');
+  });
+});
+
+describe('driveHeaderClass', () => {
+  test('standalone header does not reserve overlay space for a missing toggle', () => {
+    const className = driveHeaderClass(true, true);
+    expect(className).not.toContain('md:pl-14');
+    expect(className).not.toContain('pt-14');
   });
 
   test('opts the embedded session view out of the title-bar offsets entirely', () => {
     const className = driveHeaderClass(false, true);
     expect(className).not.toContain(FILES_HEADER_DESKTOP_CLASS);
     expect(className).not.toContain('md:pl-14');
-    expect(className).toContain('pt-5');
+    expect(className).toContain('py-2');
   });
 
   test('tags every standalone header with the desktop title-bar hook', () => {

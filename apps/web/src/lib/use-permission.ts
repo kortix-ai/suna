@@ -1,141 +1,99 @@
 'use client';
 
-// usePermission — single source of truth for whether the CURRENT user can
-// perform an IAM action against the API. UI gates should call this instead
-// of branching on `account.role` directly, otherwise a member granted access
-// via an explicit IAM policy still sees buttons disabled.
-//
-// Implementation: react-query around probeEffectivePermission(). One query
-// per (accountId, userId, action, resourceType, resourceId) tuple, cached
-// for the React tree's lifetime so multiple components asking for the same
-// permission collapse to a single network call.
+/**
+ * The client-side authorization probe — **the only one**. Gates ask the engine
+ * for the LEAF a route asserts (`project.gitops.push`, `member.update`), never
+ * for a role label: a member holding a custom role that grants
+ * `project.members.manage` is invisible to `effective_project_role === 'manager'`,
+ * and that gap is exactly what the canonical model deletes.
+ *
+ * The implementation lives in `@kortix/sdk/react` (`use-can.ts`). This module is
+ * the host binding: it injects the logged-in user from the web auth provider so
+ * the SDK does not have to know about it, and re-exports the legacy hook names
+ * the app already calls.
+ *
+ * NOT a security boundary — the API re-checks every mutating route. This decides
+ * what to show and enable.
+ *
+ * **Cache contract.** A verdict is cached 5 minutes. Every write that changes an
+ * assignment MUST call `invalidatePermissionProbes` — see `access-dialog.tsx`.
+ */
 
 import { useAuth } from '@/features/providers/auth-provider';
+import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
 import {
-  probeEffectivePermission,
-  probeEffectivePermissions,
-  type PermissionProbeInput,
-  type PermissionProbeTarget,
-} from '@/lib/iam-client';
-import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+  useCan as useSdkCan,
+  useCans as useSdkCans,
+  usePermissionsFor as useSdkPermissionsFor,
+  invalidatePermissionProbes,
+  type CanResult,
+  type CanTarget,
+} from '@kortix/sdk/react';
 
+export type { CanResult, CanTarget };
+export { invalidatePermissionProbes };
+
+/** @deprecated Name kept for the existing call sites. Use `CanResult`. */
+export type UsePermissionResult = CanResult;
 export type UsePermissionTarget = PermissionProbeTarget;
 
-export interface UsePermissionResult {
-  /** True only when the probe has resolved AND the API said yes.
-   * While loading or on error, this is false — UI defaults to hidden/disabled. */
-  allowed: boolean;
-  /** Engine's verdict reason: super_admin, policy, legacy_account_role,
-   *  legacy_project_role, explicit_deny, no_matching_policy, not_a_member.
-   *  Useful for "why does Alice have this?" tooltips on the capabilities panel. */
-  reason: string | null;
-  isLoading: boolean;
-  isError: boolean;
+/** Can the CURRENT user perform `action` on this target?
+ *  `{ accountId }` for an account action, `{ projectId }` for a project one. */
+export function useCan(target: CanTarget, action: string): CanResult {
+  const { user } = useAuth();
+  return useSdkCan(target, action, { userId: user?.id });
 }
 
-/** Shared query factory used by both the current-user and explicit-user
- * variants. Identical queryKey shape so the cache dedupes when the same
- * (user, action, target) is asked from multiple places. */
-function useProbeQuery(
-  accountId: string | undefined,
-  userId: string | undefined,
-  action: string,
-  target?: UsePermissionTarget,
-): UsePermissionResult {
-  const query = useQuery({
-    queryKey: [
-      'iam-permission',
-      accountId,
-      userId,
-      action,
-      target?.resourceType ?? null,
-      target?.resourceId ?? null,
-    ],
-    queryFn: () =>
-      probeEffectivePermission(accountId!, userId!, target ? { action, ...target } : { action }),
-    enabled: !!accountId && !!userId,
-    staleTime: 5 * 60_000,
-  });
-
-  return {
-    allowed: query.data?.allowed === true,
-    reason: query.data?.reason ?? null,
-    isLoading: query.isLoading,
-    isError: query.isError,
-  };
+/** Batch variant — ONE roundtrip, answers keyed by action. `actions` must be
+ *  stable across renders (module-level or memoized). */
+export function useCans(target: CanTarget, actions: readonly string[]): Record<string, CanResult> {
+  const { user } = useAuth();
+  return useSdkCans(target, actions, { userId: user?.id });
 }
 
-/** Probe "can the CURRENT user perform this action?" — drives UI gating. */
+/** Account-scoped single probe. Thin alias of `useCan({ accountId }, action)`. */
 export function usePermission(
   accountId: string | undefined,
   action: string,
   target?: UsePermissionTarget,
-): UsePermissionResult {
+): CanResult {
   const { user } = useAuth();
-  return useProbeQuery(accountId, user?.id, action, target);
+  const resource =
+    target && target.resourceType !== 'account'
+      ? { type: target.resourceType, id: target.resourceId as string }
+      : undefined;
+  return useSdkCan({ accountId, resource }, action, { userId: user?.id });
 }
 
-/** Probe "can THIS member perform this action?" — drives admin views like
- *  the "what can this user actually do" capability panel. Caller must have
- *  member.read on the account (enforced by the backend probe endpoint). */
+/** Probe on behalf of ANOTHER member — "what can this person actually do".
+ *  Caller needs `member.read`; the server enforces it. */
 export function usePermissionFor(
   accountId: string | undefined,
   memberUserId: string | undefined,
   action: string,
   target?: UsePermissionTarget,
-): UsePermissionResult {
-  return useProbeQuery(accountId, memberUserId, action, target);
+): CanResult {
+  const resource =
+    target && target.resourceType !== 'account'
+      ? { type: target.resourceType, id: target.resourceId as string }
+      : undefined;
+  return useSdkCan({ accountId, resource }, action, { userId: memberUserId });
 }
 
-/**
- * Batch variant — one HTTP roundtrip for N probes. Use when a single
- * component needs more than 3 answers (capability grid, mass button gating
- * on the same screen). Returns one UsePermissionResult per input, in order.
- *
- * The query is keyed by the FULL probe list so adding or removing a probe
- * triggers a refetch. Most callers should keep the probe list stable across
- * renders (declare outside the component or wrap in useMemo).
- */
+/** Batch probe for another member. Answers come back in input order. */
 export function usePermissionsFor(
   accountId: string | undefined,
   memberUserId: string | undefined,
   probes: PermissionProbeInput[],
-): UsePermissionResult[] {
-  const query = useQuery({
-    queryKey: [
-      'iam-permission-batch',
-      accountId,
-      memberUserId,
-      // Stable key: action + scope per probe, joined. Avoids serializing
-      // unrelated object identity that React refs swap each render.
-      probes.map((p) => `${p.action}|${p.resourceType ?? ''}|${p.resourceId ?? ''}`).join(','),
-    ],
-    queryFn: () => probeEffectivePermissions(accountId!, memberUserId!, probes),
-    enabled: !!accountId && !!memberUserId && probes.length > 0,
-    staleTime: 5 * 60_000,
-  });
-
-  return useMemo(() => {
-    const data = query.data;
-    return probes.map((_, i) => {
-      const hit = data?.[i];
-      return {
-        allowed: hit?.allowed === true,
-        reason: hit?.reason ?? null,
-        isLoading: query.isLoading,
-        isError: query.isError,
-      };
-    });
-  }, [probes, query.data, query.isLoading, query.isError]);
+): CanResult[] {
+  return useSdkPermissionsFor(accountId, memberUserId, probes);
 }
 
-/** Current-user variant of the batch hook — same shape, derives the user
- *  from auth context. */
+/** Current-user batch probe, probe-shaped. Prefer `useCans` for a single target. */
 export function usePermissions(
   accountId: string | undefined,
   probes: PermissionProbeInput[],
-): UsePermissionResult[] {
+): CanResult[] {
   const { user } = useAuth();
-  return usePermissionsFor(accountId, user?.id, probes);
+  return useSdkPermissionsFor(accountId, user?.id, probes);
 }

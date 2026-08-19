@@ -7,7 +7,9 @@ import type { Capabilities, Env } from './env';
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = 'user' | 'editor' | 'manager';
+// Two assignable project roles. `user` is the legacy spelling of `member`
+// (still folded server-side); `editor` was removed on 2026-08-18 and now 400s.
+export type ProjectRole = 'user' | 'member' | 'manager';
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {

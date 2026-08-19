@@ -176,7 +176,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: building a sandbox template provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
@@ -266,10 +266,12 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'credentials');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above,
-  // which routes through the IAM engine (project.write).
+  // Authorization is enforced by loadProjectForUser(... 'credentials') above:
+  // `project.credentials.issue`, its own leaf. It used to be 'manage', which
+  // mapped to project.write — so anyone who could edit the project could mint a
+  // long-lived project credential (routes.md §5.2).
 
   // Privilege-escalation guard: an agent-session token is itself a project
   // account token carrying a (possibly narrow) AgentGrant. If it could mint a
@@ -335,9 +337,9 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const tokenId = c.req.param('tokenId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'credentials');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above.
+  // Authorization is enforced by loadProjectForUser(... 'credentials') above.
   // Token management is a human/manage operation: an agent-session token must
   // not revoke project tokens (it could knock out its own siblings / the human
   // CLI token as a DoS). Symmetric with the mint guard above.
@@ -615,7 +617,13 @@ projectsApp.openapi(
   // standing agent grant remains the enumeration ceiling for agent tokens.
   const agentGrant = getAgentGrant(c);
 
-  const items = (await loadSecretViewsForUser(projectId, loaded.userId, canManageShared, agentGrants))
+  const items = (await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared,
+    projectMetadata: loaded.row.metadata,
+    agentGrants,
+  }))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
@@ -765,10 +773,11 @@ projectsApp.openapi(
           400,
         );
       }
-      if (!networkBoundaryDeliveryAvailable()) {
+      if (!networkBoundaryDeliveryAvailable(loaded.row.metadata)) {
         return c.json(
           {
-            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            error:
+              'Network-boundary delivery needs Platinum, or the "Network boundary in-guest shim" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,
@@ -919,7 +928,12 @@ projectsApp.openapi(
     });
   }
 
-  const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+  const views = await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared: true,
+    projectMetadata: loaded.row.metadata,
+  });
   const view = views.find((v) => v.identifier === identifier);
   if (!view) {
     throw new Error(`Secret view not found after upsert: ${identifier}`);
@@ -1040,10 +1054,11 @@ projectsApp.openapi(
       return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
     }
     if (parsed.data.strategy === 'egress') {
-      if (!networkBoundaryDeliveryAvailable()) {
+      if (!networkBoundaryDeliveryAvailable(loaded.row.metadata)) {
         return c.json(
           {
-            error: 'Network-boundary delivery requires the Platinum sandbox provider',
+            error:
+              'Network-boundary delivery needs Platinum, or the "Network boundary in-guest shim" project feature flag',
             code: 'secret_delivery_unavailable',
           },
           409,
@@ -1197,7 +1212,12 @@ projectsApp.openapi(
       );
     }
 
-    const views = await loadSecretViewsForUser(projectId, loaded.userId, true);
+    const views = await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared: true,
+    projectMetadata: loaded.row.metadata,
+  });
     const view = views.find((item) => item.identifier === identifier);
     if (!view) return c.json({ error: 'Not found' }, 404);
 
@@ -1246,8 +1266,11 @@ async function writeCodexAuthSecret(input: {
   userId: string;
   value: string;
   sharing?: ReturnType<typeof parseSharingIntent>;
+  /** The loaded project's `metadata` column. This helper has no project row of
+   *  its own, so its caller supplies it — see `buildSecretView`. */
+  projectMetadata: unknown;
 }) {
-  const { projectId, accountId, userId, value, sharing } = input;
+  const { projectId, accountId, userId, value, sharing, projectMetadata } = input;
   const now = new Date();
   let secretId: string;
 
@@ -1338,7 +1361,12 @@ async function writeCodexAuthSecret(input: {
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
 
-  const views = await loadSecretViewsForUser(projectId, userId, true);
+  const views = await loadSecretViewsForUser({
+    projectId,
+    userId,
+    canManageShared: true,
+    projectMetadata,
+  });
   return views.find((v) => v.identifier === CODEX_AUTH_JSON_SECRET_NAME)
     ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
 }
@@ -1504,6 +1532,7 @@ projectsApp.openapi(
     userId: loaded.userId,
     value: result.authJson,
     sharing,
+    projectMetadata: loaded.row.metadata,
   });
 
   return c.json({
@@ -1823,7 +1852,12 @@ projectsApp.openapi(
 
   void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
-  const views = await loadSecretViewsForUser(projectId, loaded.userId, roleAllows(loaded.effectiveRole, 'manage'));
+  const views = await loadSecretViewsForUser({
+    projectId,
+    userId: loaded.userId,
+    canManageShared: roleAllows(loaded.effectiveRole, 'manage'),
+    projectMetadata: loaded.row.metadata,
+  });
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
 },
 );

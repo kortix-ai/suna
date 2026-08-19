@@ -331,6 +331,7 @@ jobs:
         env:
           WORKER_NAME: staging-api-kortix-router
           WORKER_ROUTE: staging-api.kortix.com/*
+          CF_WORKER_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
         run: |
           set -euo pipefail
           if [ -n "${CLOUDFLARE_GLOBAL_API_KEY:-}" ] && [ -n "${CLOUDFLARE_EMAIL:-}" ]; then
@@ -344,15 +345,28 @@ jobs:
 
           # This REST deploy replaces all staging Worker bindings. The API
           # and gateway both use ECS Fargate. EKS was decommissioned 2026-08-02.
-          metadata="$(jq -cn '{
+          #
+          # CI_PASSTHROUGH_SECRET lets a trusted release-gate run see the TRUE
+          # origin status instead of the synthetic MAINTENANCE_MODE 503 (see
+          # worker.mjs isTrustedCiPassthrough). It is bound only when the
+          # repository secret exists; without it the Worker's passthrough branch
+          # is unreachable and staging behaves exactly as before.
+          ci_binding='[]'
+          if [ -n "${CF_WORKER_CI_PASSTHROUGH_SECRET:-}" ]; then
+            ci_binding="$(jq -cn --arg secret "${CF_WORKER_CI_PASSTHROUGH_SECRET}" \
+              '[{type:"secret_text", name:"CI_PASSTHROUGH_SECRET", text:$secret}]')"
+          else
+            echo "::notice::CF_WORKER_CI_PASSTHROUGH_SECRET unset — deploying staging Worker without the CI passthrough binding."
+          fi
+          metadata="$(jq -cn --argjson ci "$ci_binding" '{
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
-            bindings: [
+            bindings: ([
               {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
-            ]
+            ] + $ci)
           }')"
           curl -fsS -X PUT \
             "${auth_headers[@]}" \

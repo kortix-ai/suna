@@ -40,6 +40,14 @@ mock.module('../projects/lib/access', () => ({
 mock.module('../iam', () => ({
   authorize: async () => ({ allowed: authorizeAllowed }),
 }));
+// Reviewers (account managers + project managers) now come from
+// `role_assignments` via iam/read-models, so they are mocked at that seam
+// instead of as two more FIFO db results.
+mock.module('../iam/read-models', () => ({
+  accountRoleMap: async () => new Map([['admin-1', 'admin']]),
+  projectRoleGrants: async () => [],
+  isAccountManagerRole: (role: string | null | undefined) => role === 'owner' || role === 'admin',
+}));
 mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
@@ -188,9 +196,6 @@ describe('notifyAdminsOfAccessRequest', () => {
   test('links admins directly to the project Members review surface', async () => {
     dbResults = [
       [{ name: 'Slack Auth' }], // email notification project lookup
-      [{ userId: 'admin-1' }], // email notification account managers
-      [], // email notification explicit project managers
-      [{ userId: 'admin-1' }], // Slack DM account admins
       [{ slackUserId: 'UADMIN' }], // lookupSlackUserIdForKortixUser
     ];
 

@@ -17,7 +17,8 @@ import { cn } from '@/lib/utils';
 const SourceContext = React.createContext<{ href: string }>({ href: '' });
 
 export function Source({ href, children }: { href: string; children?: React.ReactNode }) {
-  return <SourceContext.Provider value={{ href }}>{children}</SourceContext.Provider>;
+  const value = React.useMemo(() => ({ href }), [href]);
+  return <SourceContext.Provider value={value}>{children}</SourceContext.Provider>;
 }
 
 function hostOf(href: string): string {

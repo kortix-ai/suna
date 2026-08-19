@@ -36,6 +36,7 @@ import {
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { capitalizeWords } from '@kortix/shared';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -247,7 +248,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         {filtered.map((agent) => (
           <CatalogCard
             key={agent.path}
-            title={agent.name}
+            title={capitalizeWords(agent.name)}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             onClick={() => setSelectedPath(agent.path)}
@@ -386,7 +387,7 @@ function DefaultAgentSelector({
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
-      successToast(`${result.default_agent} is now the project default`);
+      successToast(`${capitalizeWords(result.default_agent)} is now the project default`);
       // One invalidation, not two: the project CONFIG is a `select` projection
       // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
       // its own fetch. The retired standalone `['project-config', id]` slot no
@@ -413,7 +414,7 @@ function DefaultAgentSelector({
         <SelectContent align="end">
           {availableAgents.map((agent) => (
             <SelectItem key={agent.name} value={agent.name}>
-              {agent.name}
+              {capitalizeWords(agent.name)}
             </SelectItem>
           ))}
         </SelectContent>

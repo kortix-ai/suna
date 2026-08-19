@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 /** Intrinsic pixel dimensions of a document, as decoded/measured by a renderer. */
 export interface IntrinsicSize {
@@ -61,9 +61,13 @@ export function PreviewFitProvider({
   // through the ref, so the identity below only depends on the ref itself,
   // which never changes.
   const onMeasureRef = useRef(onMeasure);
-  onMeasureRef.current = onMeasure;
+  useEffect(() => {
+    onMeasureRef.current = onMeasure;
+  }, [onMeasure]);
   const onUnmeasurableRef = useRef(onUnmeasurable);
-  onUnmeasurableRef.current = onUnmeasurable;
+  useEffect(() => {
+    onUnmeasurableRef.current = onUnmeasurable;
+  }, [onUnmeasurable]);
 
   const value = useMemo<PreviewFit>(
     () => ({

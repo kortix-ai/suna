@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -101,12 +101,29 @@ function resetState() {
   rejectedBranch = null;
 }
 
-// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher. Mirror the legacy role gate against
-// the test's mocked membership rows so viewer/non-member denial is still
-// exercised after the IAM-engine switch.
-mock.module('../iam/dispatcher', () => {
+// The engine module itself is the seam now — `../iam` re-exports it, and every
+// route calls it with the structured `Actor`. Mirror the role gate against the
+// test's mocked membership rows so viewer/non-member denial is still exercised.
+// The read models project from THIS suite's own row state — `account_members`
+// and `project_members` are what its db shim models, and the mirror trigger is
+// what would have derived the assignments from them on a real database.
+mockIamReadModels({
+  members: () =>
+    dbState.accountMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: r.accountId,
+      accountRole: r.accountRole,
+    })),
+  projectMembers: () =>
+    dbState.projectMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: ACCOUNT_ID,
+      projectId: r.projectId,
+      projectRole: r.projectRole,
+    })),
+});
+
+mock.module('../iam/authorize', () => {
   const isManager = (userId: string): boolean => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -117,20 +134,24 @@ mock.module('../iam/dispatcher', () => {
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'member' || pr === 'manager';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor' || pr === 'manager';
-    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
+    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'manager';
+    if (action === 'project.write') return pr === 'manager';
     return pr === 'manager';
   };
   return {
-    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
-    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
-      if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
+    authorize: async (actor: { userId: string }, action: string) => ({
+      allowed: decide(actor.userId, action),
+      reason: 'role',
+    }),
+    assertAuthorized: async (actor: { userId: string }, action: string) => {
+      if (!decide(actor.userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
     },
     // Account managers see every project ('all'); members see only the projects
     // they hold an explicit grant on ('allow_only'); outsiders see none.
-    listAccessibleResources: async (userId: string) => {
+    listAccessible: async (actor: { userId: string }) => {
+      const userId = actor.userId;
       const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
       if (!am) return { mode: 'none', allowed: new Set<string>() };
       if (isManager(userId)) return { mode: 'all', allowed: new Set<string>() };
@@ -141,7 +162,18 @@ mock.module('../iam/dispatcher', () => {
         ? { mode: 'none', allowed }
         : { mode: 'allow_only', allowed };
     },
-    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+    filterAccessibleObjects: async (
+      _actor: unknown,
+      _p: string,
+      _t: string,
+      ids: readonly string[],
+    ) => [...ids],
+    // `mock.module` replaces the module wholesale: agent-access imports this
+    // memo for its candidate list, so a stub that omits it is a SyntaxError
+    // in every other importer. Empty = this project scopes no agent.
+    loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    clearAuthorizeCaches: () => {},
+    isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
 });
 
@@ -746,30 +778,60 @@ describe('projects API contract', () => {
     const grant = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'editor' }),
+      body: JSON.stringify({ role: 'manager' }),
     });
     expect(grant.status).toBe(200);
     expect(await grant.json()).toMatchObject({
       user_id: MEMBER_ID,
       account_role: 'member',
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
     expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'editor',
+      projectRole: 'manager',
     }));
 
     access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
     body = await access.json();
     const memberRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
     expect(memberRow).toMatchObject({
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
+
+    // The removed `editor` role is rejected on write, never folded to manager.
+    const rejected = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'editor' }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain('manager|member');
+
+    // …and a row that ALREADY says `editor` — what a pre-removal replica can
+    // still write mid-rollout, and what every un-migrated environment holds —
+    // is FOLDED to manager on read. The access list must never emit a role the
+    // API would reject on write.
+    const stored = dbState.projectMemberRows.find(
+      (r: any) => r.projectId === PROJECT_ID && r.userId === MEMBER_ID,
+    );
+    expect(stored).toBeDefined();
+    // Cast: the type no longer admits `editor`; the DB enum still can.
+    (stored as { projectRole: string }).projectRole = 'editor';
+
+    access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    body = await access.json();
+    const foldedRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
+    expect(foldedRow).toMatchObject({
+      project_role: 'manager',
+      effective_project_role: 'manager',
+    });
+
+    stored!.projectRole = 'manager';
 
     const ownerGrant = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
       method: 'PUT',

@@ -71,15 +71,14 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
   });
 });
 
-// Two of the four observations are single fire-and-forget lines whose BEHAVIOUR is
-// unit-tested but whose WIRING was not: both could be deleted outright and the
-// whole 4,800-test suite stayed green. Deleting either silently removes a grant
-// nothing else provides — the warm-pool grant IS the only life a warm box gets,
-// and the turn-end shorten is the only thing that ever pulls a deadline IN.
+// Two observations are single call sites whose BEHAVIOUR is unit-tested but whose
+// WIRING was not. Deleting either silently removes lifecycle authority nothing
+// else provides. The warm-pool grant is the only life a warm box gets. The
+// token-scoped completion is the only event that removes terminal turn authority.
 describe('the fire-and-forget deadline wirings are actually wired', () => {
   for (const [file, call] of [
     ['platform/services/session-sandbox.ts', 'grantWarmPoolLifetime('],
-    ['projects/routes/r4.ts', 'shortenSandboxDeadlineOnTurnEnd('],
+    ['projects/routes/r4.ts', 'completeSandboxTurn('],
   ] as const) {
     test(`${file} still calls ${call})`, async () => {
       const source = await Bun.file(join(API_SRC, file)).text();

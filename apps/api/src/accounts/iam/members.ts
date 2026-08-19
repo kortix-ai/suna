@@ -1,14 +1,14 @@
 // IAM V2 routes: super-admin promotion + per-member views (group
 // memberships, effective project access, single + batch permission probes).
 
+import type { Context } from 'hono';
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, inArray } from 'drizzle-orm';
 import {
   accountGroupMembers,
+  accountGroups,
   accountMembers,
-  projectGroupGrants,
-  projectMembers,
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -19,9 +19,18 @@ import {
   assertAuthorized,
   authorize,
   resourceTypeForAction,
+  type Obj,
 } from '../../iam';
+import { actorForUser, actorOf, type Actor } from '../../iam/actor';
 import { resolveBatchProbes } from './batch-probes';
 import { listGroupsForMember } from '../../repositories/iam';
+import {
+  accountRoleFor,
+  customRoleBindings,
+  groupProjectGrants,
+  isAccountManagerRole,
+  projectRoleGrants,
+} from '../../iam/read-models';
 import {
   iamRouter,
   MemberParams,
@@ -32,6 +41,41 @@ import {
   isResourceType,
 } from './app';
 import { auditIam, readBody } from './helpers';
+
+/**
+ * WHICH principal `/effective` answers about, and with WHICH credential.
+ *
+ * Probing YOURSELF returns the verdict of the real gate — same Actor, same
+ * credential, so an agent session's probe now folds its `kortix_cli` grant and
+ * its token's project scope exactly like the route it is asking about. That
+ * divergence (`authorize(targetUserId, accountId, action, target)` with the
+ * acting token dropped) is why the UI could offer a control the API then 403'd.
+ *
+ * Probing SOMEONE ELSE is a different question — "what does this member's role
+ * allow" — and there is no credential of theirs to fold, so it answers on the
+ * role alone. `member.read` already gates reaching this branch.
+ */
+async function probeActor(
+  c: Context,
+  callerId: string,
+  targetUserId: string,
+  accountId: string,
+): Promise<Actor> {
+  if (callerId === targetUserId) return actorOf(c, accountId);
+  return actorForUser(targetUserId, accountId);
+}
+
+/**
+ * The probe's object. Only `project` is a real scope in the canonical model;
+ * `sandbox` / `trigger` / `channel` / `member` / `group` were decorative — the
+ * engine routed every one of those actions to the account branch, which ignores
+ * the target. Keeping the query-parameter enum intact preserves the request
+ * contract; collapsing them here preserves the answer.
+ */
+function probeObject(scope: unknown, id: unknown): Obj {
+  if (scope === 'project' && typeof id === 'string' && id) return { type: 'project', id };
+  return { type: 'account' };
+}
 
 // ─── Super-admin promotion ─────────────────────────────────────────────────
 
@@ -52,7 +96,7 @@ iamRouter.openapi(
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
-  await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
 
   const body = await readBody(c);
   // Accept camelCase or snake_case, but the field MUST be present and an
@@ -144,7 +188,7 @@ iamRouter.openapi(
   // Users can always see their own group memberships; otherwise gate on
   // member.read (same rule as the effective-permission probe).
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   const rows = await listGroupsForMember(accountId, targetUserId);
@@ -185,15 +229,12 @@ iamRouter.openapi(
   const targetUserId = c.req.param('userId');
 
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
-  type Role = 'manager' | 'editor' | 'member';
-  const rank: Record<Role, number> = { member: 1, editor: 2, manager: 3 };
+  type Role = 'manager' | 'member';
+  const rank: Record<Role, number> = { member: 1, manager: 2 };
   const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
-  // Fold the retired `viewer` and `user` tiers into `member` at the DB-read boundary.
-  const asRole = (raw: string): Role =>
-    raw === 'viewer' || raw === 'user' ? 'member' : (raw as Role);
 
   // Project info we'll need for every row in the response.
   const allProjects = await db
@@ -206,47 +247,28 @@ iamRouter.openapi(
     .where(eq(projects.accountId, accountId));
   const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
 
-  // 1) implicit manager via account_role
-  const [membership] = await db
-    .select({ accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, accountId),
-        eq(accountMembers.userId, targetUserId),
-      ),
-    )
-    .limit(1);
-  if (!membership) {
-    return c.json({ projects: [] });
+  // 1) implicit manager via the account-scope assignment. Membership IS that
+  // assignment now — no account role, no access, and nothing to report.
+  const accountRole = await accountRoleFor(accountId, targetUserId);
+  if (!accountRole) {
+    return c.json({ projects: [], account_wide_policies: [] });
   }
 
   const byProject = new Map<
     string,
     { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
   >();
-  if (membership.accountRole === 'owner' || membership.accountRole === 'admin') {
+  if (isAccountManagerRole(accountRole)) {
     for (const p of allProjects) {
       if (p.status !== 'active') continue;
       byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
     }
   }
 
-  // 2) direct project_members rows
-  const directRows = await db
-    .select({
-      projectId: projectMembers.projectId,
-      role: projectMembers.projectRole,
-    })
-    .from(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.accountId, accountId),
-        eq(projectMembers.userId, targetUserId),
-      ),
-    );
+  // 2) direct project assignments
+  const directRows = await projectRoleGrants({ accountId, userId: targetUserId });
   for (const r of directRows) {
-    const role = asRole(r.role);
+    const role = r.projectRole;
     const cur = byProject.get(r.projectId);
     if (cur) {
       cur.role = max(cur.role, role);
@@ -263,20 +285,9 @@ iamRouter.openapi(
     .where(eq(accountGroupMembers.userId, targetUserId));
   const groupIds = groupMembershipRows.map((g) => g.groupId);
   if (groupIds.length > 0) {
-    const grantRows = await db
-      .select({
-        projectId: projectGroupGrants.projectId,
-        role: projectGroupGrants.role,
-      })
-      .from(projectGroupGrants)
-      .where(
-        and(
-          eq(projectGroupGrants.accountId, accountId),
-          inArray(projectGroupGrants.groupId, groupIds),
-        ),
-      );
+    const grantRows = await groupProjectGrants({ accountId, groupIds });
     for (const r of grantRows) {
-      const role = asRole(r.role);
+      const role = r.role;
       const cur = byProject.get(r.projectId);
       if (cur) {
         cur.role = max(cur.role, role);
@@ -287,11 +298,74 @@ iamRouter.openapi(
     }
   }
 
+  // 4) custom-role iam_policies bound directly to this member, or to any
+  // group in `groupIds` (same array source 3 uses). These are DB-driven
+  // custom roles (see iam_policies / iam_roles in kortix.ts) — a wholly
+  // separate mechanism from the built-in manager/member tiers folded
+  // above, so they are surfaced as their own fields instead of being folded
+  // into `role`/`sources`. project-scoped policies (scope_type='project')
+  // attach to the matching entry already in `byProject`; account-scoped
+  // policies (scope_type='account') apply to every project and are
+  // reported once, top-level, instead of duplicated onto each entry.
+  type PolicySource = 'direct' | 'group';
+  interface CustomRolePolicy {
+    policy_id: string;
+    role_id: string;
+    role_key: string;
+    role_name: string;
+    source: PolicySource;
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  }
+
+  const groupNameById = new Map<string, string>();
+  if (groupIds.length > 0) {
+    const groupNameRows = await db
+      .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+      .from(accountGroups)
+      .where(inArray(accountGroups.groupId, groupIds));
+    for (const g of groupNameRows) groupNameById.set(g.groupId, g.name);
+  }
+
+  const policyRows = await customRoleBindings({
+    accountId,
+    principals: [
+      { type: 'member', id: targetUserId },
+      ...groupIds.map((id) => ({ type: 'group' as const, id })),
+    ],
+  });
+
+  const customPolicyByProject = new Map<string, CustomRolePolicy[]>();
+  const accountWidePolicies: CustomRolePolicy[] = [];
+  for (const r of policyRows) {
+    const source: PolicySource = r.principalType === 'group' ? 'group' : 'direct';
+    const groupId = source === 'group' ? r.principalId : null;
+    const entry: CustomRolePolicy = {
+      policy_id: r.policyId,
+      role_id: r.roleId,
+      role_key: r.roleKey,
+      role_name: r.roleName,
+      source,
+      group_id: groupId,
+      group_name: groupId ? (groupNameById.get(groupId) ?? null) : null,
+      expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
+    };
+    if (r.scopeType === 'account') {
+      accountWidePolicies.push(entry);
+    } else if (r.scopeType === 'project' && r.scopeId) {
+      const list = customPolicyByProject.get(r.scopeId);
+      if (list) list.push(entry);
+      else customPolicyByProject.set(r.scopeId, [entry]);
+    }
+  }
+
   const out: Array<{
     project_id: string;
     project_name: string;
     role: Role;
     sources: ('implicit' | 'direct' | 'group')[];
+    custom_role_policies: CustomRolePolicy[];
   }> = [];
   for (const [projectId, info] of byProject) {
     const meta = projectMeta.get(projectId);
@@ -301,10 +375,11 @@ iamRouter.openapi(
       project_name: meta.name,
       role: info.role,
       sources: info.sources,
+      custom_role_policies: customPolicyByProject.get(projectId) ?? [],
     });
   }
   out.sort((a, b) => a.project_name.localeCompare(b.project_name));
-  return c.json({ projects: out });
+  return c.json({ projects: out, account_wide_policies: accountWidePolicies });
   },
 );
 
@@ -331,7 +406,7 @@ iamRouter.openapi(
 
   // Anyone with member.read can probe anyone; users can always probe themselves.
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   const action = c.req.query('action');
@@ -342,15 +417,12 @@ iamRouter.openapi(
   const scope = c.req.query('resourceType');
   const id = c.req.query('resourceId');
 
-  let target: Parameters<typeof authorize>[3];
-  if (scope && isResourceType(scope) && scope !== 'account') {
-    if (!id) return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
-    target = { type: scope, id } as Parameters<typeof authorize>[3];
-  } else {
-    target = { type: 'account' };
+  if (scope && isResourceType(scope) && scope !== 'account' && !id) {
+    return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
   }
+  const target = probeObject(scope, id);
 
-  const result = await authorize(targetUserId, accountId, action, target);
+  const result = await authorize(await probeActor(c, callerId, targetUserId, accountId), action, target);
   return c.json({
     allowed: result.allowed,
     reason: result.reason ?? null,
@@ -386,7 +458,7 @@ iamRouter.openapi(
   const targetUserId = c.req.param('userId');
 
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   const body = await readBody(c);
@@ -409,7 +481,7 @@ iamRouter.openapi(
   // get partial results that look successful at first glance.
   type ParsedProbe = {
     action: string;
-    target: Parameters<typeof authorize>[3];
+    target: Obj | undefined;
   };
   const parsed: ParsedProbe[] = [];
   for (let i = 0; i < rawProbes.length; i++) {
@@ -427,7 +499,7 @@ iamRouter.openapi(
     const id =
       (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
       (p as { resource_id?: unknown }).resource_id;
-    let target: Parameters<typeof authorize>[3];
+    let target: Obj | undefined;
     if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
       if (typeof id !== 'string' || !id) {
         return c.json(
@@ -435,7 +507,7 @@ iamRouter.openapi(
           400,
         );
       }
-      target = { type: scope, id } as Parameters<typeof authorize>[3];
+      target = probeObject(scope, id);
     } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
       // Caller passed something for resourceType but it's not a valid enum.
       return c.json(
@@ -456,7 +528,7 @@ iamRouter.openapi(
   const results = await resolveBatchProbes(
     parsed,
     authorize,
-    targetUserId,
+    await probeActor(c, callerId, targetUserId, accountId),
     accountId,
     (ctx) =>
       logger.error(

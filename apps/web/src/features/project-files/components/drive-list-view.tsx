@@ -39,6 +39,7 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState } from 'react';
+import { rowDragIntent } from '../upload-batch';
 import { FileDriveMenuItems, FolderDriveMenuItems } from './drive-grid-view';
 import { getFileIcon } from './file-icon';
 
@@ -76,6 +77,8 @@ interface ListRowProps {
   onCopy?: (node: FileNode) => void;
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
+  /** External files dropped onto THIS folder row. Absent = read-only source. */
+  onDropUpload?: (files: File[], targetDirPath: string) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
@@ -92,6 +95,7 @@ function ListRow({
   onCopy,
   onCut,
   onDropMove,
+  onDropUpload,
   isDownloadingItem,
   isCut,
 }: ListRowProps) {
@@ -117,23 +121,36 @@ function ListRow({
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
 
+  /** `move` (internal drag), `upload` (external files), or null (ignore). */
+  const intentOf = useCallback(
+    (e: React.DragEvent) =>
+      rowDragIntent(Array.from(e.dataTransfer.types), {
+        isDirectory: isDir,
+        canMove: Boolean(onDropMove),
+        canUpload: Boolean(onDropUpload),
+        moveMime: DRAG_MIME,
+      }),
+    [isDir, onDropMove, onDropUpload],
+  );
+
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
-      if (!isDir || !e.dataTransfer.types.includes(DRAG_MIME)) return;
+      const intent = intentOf(e);
+      if (!intent) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = intent === 'upload' ? 'copy' : 'move';
     },
-    [isDir],
+    [intentOf],
   );
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
-      if (!isDir || !e.dataTransfer.types.includes(DRAG_MIME)) return;
+      if (!intentOf(e)) return;
       e.preventDefault();
       dragCounterRef.current++;
       setIsDragOver(true);
     },
-    [isDir],
+    [intentOf],
   );
 
   const handleDragLeave = useCallback(() => {
@@ -147,16 +164,25 @@ function ListRow({
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
-      if (!isDir) return;
+      const intent = intentOf(e);
+      if (!intent) return;
       e.preventDefault();
       e.stopPropagation();
       dragCounterRef.current = 0;
       setIsDragOver(false);
+
+      if (intent === 'upload') {
+        // Always notify, even for an empty transfer: this drop is stopped
+        // before the page handler, which owns the drop overlay's reset.
+        onDropUpload?.(Array.from(e.dataTransfer.files ?? []), node.path);
+        return;
+      }
+
       const sourcePath = e.dataTransfer.getData(DRAG_MIME);
       if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
       onDropMove?.(sourcePath, node.path);
     },
-    [isDir, node.path, onDropMove],
+    [intentOf, node.path, onDropMove, onDropUpload],
   );
 
   const startRenaming = useCallback(() => {
@@ -265,7 +291,10 @@ function ListRow({
                   value={renameName}
                   onChange={(e) => setRenameName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') confirmRename();
+                    if (e.key === 'Enter') {
+                      if (e.nativeEvent.isComposing) return;
+                      confirmRename();
+                    }
                     if (e.key === 'Escape') setIsRenaming(false);
                   }}
                   onBlur={confirmRename}
@@ -385,6 +414,8 @@ interface DriveListViewProps {
   onCopy: (node: FileNode) => void;
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
+  /** External files dropped onto a folder row upload into THAT folder. */
+  onDropUpload?: (files: File[], targetDirPath: string) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
@@ -407,6 +438,7 @@ export function DriveListView({
   onCopy: rawOnCopy,
   onCut: rawOnCut,
   onDropMove: rawOnDropMove,
+  onDropUpload: rawOnDropUpload,
   gitStatusMap,
   clipboardPath,
   clipboardOperation,
@@ -419,6 +451,7 @@ export function DriveListView({
   const onCopy = readOnly ? undefined : rawOnCopy;
   const onCut = readOnly ? undefined : rawOnCut;
   const onDropMove = readOnly ? undefined : rawOnDropMove;
+  const onDropUpload = readOnly ? undefined : rawOnDropUpload;
   const sortBy = useFilesStore((s) => s.sortBy);
   const sortOrder = useFilesStore((s) => s.sortOrder);
   const setSortBy = useFilesStore((s) => s.setSortBy);
@@ -488,6 +521,7 @@ export function DriveListView({
               onCopy={onCopy}
               onCut={onCut}
               onDropMove={onDropMove}
+              onDropUpload={onDropUpload}
               isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
             />
           ))}

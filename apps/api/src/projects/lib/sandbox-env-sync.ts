@@ -17,6 +17,7 @@ import {
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
@@ -91,6 +92,113 @@ export function __resetNetworkBoundaryArmCacheForTests(): void {
 }
 
 /**
+ * Per-sandbox record of the last `refreshModels`-relevant payload this process
+ * delivered to the daemon on the PER-PROMPT hot path (`syncSandboxEnvForPrompt`).
+ *
+ * T3: every `/prompt_async|/message|/command` used to post
+ * `refreshModels: true` unconditionally. The daemon's `/kortix/env` already
+ * gates the actual reload on a value DELTA (`routes/env.ts`'s
+ * `result.changed || opencodeEnvChanged`), so a byte-identical resend never
+ * disposes/respawns OpenCode by itself — but it still pays for the comparison
+ * on every turn, and it is the only signal the daemon has: this cache lets the
+ * API stop asking at all once nothing config-affecting has moved, so a client
+ * bug or a future daemon change can't turn a no-op post into a live reload.
+ *
+ * In-process on purpose, same reasoning as `armedNetworkBoundaries`: it is a
+ * cost optimization, not state anyone reads for a decision. A fresh API
+ * replica (deploy, scale-out, restart) misses and sends `refreshModels: true`
+ * once for that sandbox — never less correct, only a single extra no-op
+ * comparison on the daemon.
+ */
+const lastPromptModelSignature = new Map<string, string>();
+/**
+ * When each box last had its env pushed successfully. Together with the
+ * signature above this is the "nothing to say" short-circuit: a prompt whose
+ * whole env set is byte-identical to what THIS process pushed to THIS box
+ * within `PROMPT_ENV_PUSH_TTL_MS` skips the daemon round-trip entirely. That
+ * round-trip was ~1s of dead air on every send in a queue burst and every
+ * back-to-back turn, for a push the daemon itself would no-op. Bounded by a
+ * TTL because the box can respawn its daemon underneath us; the next prompt
+ * past the TTL re-pushes, and any signature change re-pushes at once.
+ */
+const lastPromptEnvPushAt = new Map<string, number>();
+export const PROMPT_ENV_PUSH_TTL_MS = 2 * 60_000;
+/** Entries are ~200 bytes; the process is long-lived and external ids are
+ *  never reused, so this must be bounded the same way `armedNetworkBoundaries`
+ *  is. No TTL: unlike the boundary arm this is not self-healing drift, it is a
+ *  pure memo of "what did we last tell this box", so eviction on capacity
+ *  (oldest-write-first, same as the boundary cache) is enough. */
+const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
+
+/** Test seam: drop every remembered per-prompt signature. */
+export function __resetPromptModelSignatureCacheForTests(): void {
+  lastPromptModelSignature.clear();
+  lastPromptEnvPushAt.clear();
+}
+
+/**
+ * Digest of EVERY value `syncSandboxEnvForPrompt` sends that can move the
+ * daemon's `result.changed || opencodeEnvChanged` gate (`routes/env.ts:196`):
+ *
+ *   - `snapshot.revision` — a sha256 of the full granted project-secrets env
+ *     (`projectSecretsRevision`), so any secret add/remove/rotation changes it.
+ *     This is NOT limited to "model-relevant" secrets on purpose: a project
+ *     secret delta is the daemon's ONLY signal to respawn opencode so its
+ *     process env picks the new value up (see the comment on
+ *     `pushSessionScopeToSandbox`), and the per-turn sync is sometimes the
+ *     only path that ever re-delivers it (see `runPrePromptEnvSync`'s comment
+ *     on `/command` self-heal). Narrowing this to a "model tokens" subset
+ *     would silently stop propagating an unrelated secret rotation.
+ *   - `snapshot.capabilitiesJson` — pushed as `KORTIX_SECRET_CAPABILITIES`,
+ *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
+ *   - the LLM-gateway triple (`enabled`, `baseUrl`, `denyEnv`) — the daemon
+ *     maps these onto `KORTIX_LLM_API_KEY` / `KORTIX_LLM_BASE_URL` /
+ *     `KORTIX_OPENCODE_DENY_ENV`, the model/token/key values the task calls
+ *     out by name.
+ *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
+ *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
+ *     see `continueSession`/engine.ts). Omitting it would silently drop that
+ *     caller's request to apply its own change.
+ *
+ * Keys of `opencodeEnv` are sorted so caller-side object literal order never
+ * produces a spurious digest change.
+ */
+function promptModelSignature(input: {
+  revision: string;
+  capabilitiesJson: string;
+  llmGatewayEnabled: boolean;
+  llmGatewayBaseUrl?: string;
+  llmGatewayDenyEnv?: string;
+  opencodeEnv?: Record<string, string | null>;
+}): string {
+  const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return JSON.stringify([
+    input.revision,
+    input.capabilitiesJson,
+    input.llmGatewayEnabled,
+    input.llmGatewayBaseUrl ?? '',
+    input.llmGatewayDenyEnv ?? '',
+    opencodeEnvEntries,
+  ]);
+}
+
+function rememberPromptModelSignature(externalId: string, signature: string): void {
+  lastPromptEnvPushAt.set(externalId, Date.now());
+  if (lastPromptEnvPushAt.size > PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
+    const oldest = lastPromptEnvPushAt.keys().next();
+    if (!oldest.done) lastPromptEnvPushAt.delete(oldest.value);
+  }
+  lastPromptModelSignature.delete(externalId);
+  if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
+    const oldest = lastPromptModelSignature.keys().next();
+    if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
+  }
+  lastPromptModelSignature.set(externalId, signature);
+}
+
+/**
  * Identity AND material of the binding set, as the provider edge sees it.
  *
  * Keyed on everything a re-arm would change at the edge — the replica identity
@@ -142,6 +250,7 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
 }
 
 function startNetworkBoundaryArm(
+  projectId: string,
   providerName: ProviderName,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
@@ -157,6 +266,22 @@ function startNetworkBoundaryArm(
     .then(async () => {
       const provider = getProvider(providerName);
       if (!provider.syncNetworkBoundary) {
+        // No provider edge to arm. That is not a failure when the shim path is
+        // available: on those providers the credential is injected by the
+        // broker route at request time, so there is nothing to register ahead
+        // of time and nothing to wait for. The binding still reaches the guest
+        // — as host->identifier rules in the sandbox env, carrying no value.
+        //
+        // Until the shim existed this threw, which is why creating a session on
+        // Daytona with a boundary secret failed provisioning outright.
+        if (await projectFeatureFlagEnabled(projectId, 'network_boundary_shim')) {
+          rememberNetworkBoundaryArm(
+            externalId,
+            digest,
+            bindings.map((binding) => binding.secretId),
+          );
+          return;
+        }
         throw new Error(
           `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
         );
@@ -195,6 +320,7 @@ function startNetworkBoundaryArm(
  * the secret fan-out does — to wait for the real result and report a failure.
  */
 async function syncProviderNetworkBoundary(
+  projectId: string,
   providerName: ProviderName,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
@@ -207,7 +333,7 @@ async function syncProviderNetworkBoundary(
     return 'skipped';
   }
 
-  const attempt = startNetworkBoundaryArm(providerName, externalId, bindings, digest);
+  const attempt = startNetworkBoundaryArm(projectId, providerName, externalId, bindings, digest);
   const maxWaitMs = opts?.maxWaitMs;
   if (!maxWaitMs) {
     await attempt;
@@ -294,12 +420,10 @@ async function resolveOwnerRawEnv(
   // NOT necessarily `row.agentName`: in-session agent switching is allowed and
   // nothing ever updates that column. Resolving from the stale column let a
   // session created under a broad agent run a narrow one while still being
-  // re-pushed the broad agent's full env on every turn. A switch that would
-  // change the grant now throws AgentSecretGrantMismatchError (→ 409) rather
-  // than quietly re-scoping, because a later narrowing cannot un-read what the
-  // previous agent already pulled into the box when the optional strict lock
-  // is enabled. By default, the hot push replaces the env with the running
-  // agent's grant before the prompt is forwarded.
+  // re-pushed the broad agent's full env on every turn. The hot push replaces
+  // the env with the RUNNING agent's grant before the prompt is forwarded. A
+  // switch is never refused — see secret-grant.ts for why refusing protected
+  // nothing that was still protectable.
   const [project] = await db
     .select({
       repoUrl: projects.repoUrl,
@@ -317,7 +441,6 @@ async function resolveOwnerRawEnv(
     manifestPath: project?.manifestPath,
     sessionAgent: row.agentName ?? DEFAULT_AGENT_SENTINEL,
     requestedAgent,
-    enforceGrantLock: config.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   });
 
   // THE CLOBBER FIX: apply the SAME per-session secrets narrowing as boot
@@ -519,22 +642,35 @@ export async function syncSandboxEnvForPrompt(args: {
   opencodeEnv?: Record<string, string | null>;
 }): Promise<void> {
   if (!args.serviceKey) return;
+  const t0 = performance.now();
+  const timing: Record<string, number> = {};
+  const lap = (label: string) => {
+    timing[label] = Math.round(performance.now() - t0 - Object.values(timing).reduce((a, b) => a + b, 0));
+  };
   const snapshot = await resolveSandboxEnvSnapshot(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
   );
+  lap('snapshot');
   if (!snapshot) return;
   // Resolving the bindings stays FAIL-CLOSED: it re-reads the agent's grant, and
   // an unresolvable grant must refuse the prompt (the caller maps
-  // SecretGrantResolutionError / AgentSecretGrantMismatchError to its own
-  // response). In practice `resolveSandboxEnvSnapshot` above already resolved the
-  // same grant and threw first — this line cannot silently widen anything.
+  // SecretGrantResolutionError to its own 503).
+  //
+  // This line used to be justified with "resolveSandboxEnvSnapshot above already
+  // resolved the same grant and threw first". That was false, and it is how the
+  // removed grant lock kept 409-ing real switches while its config flag was off:
+  // the call above passed the flag explicitly (false, so it did NOT throw) while
+  // this leg omitted it and landed on the resolver's `?? true` default, so THIS
+  // was the line that threw. The parameter is gone, so the two legs can no
+  // longer disagree about policy — they share one resolver with one behavior.
   const networkBoundary = await resolveSessionNetworkBoundary(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
   );
+  lap('boundary');
   // Sampled BEFORE the attempt, because a failed arm forgets its record. `true`
   // means this process already armed a DIFFERENT set on this sandbox (an
   // unchanged set never reaches the provider at all), so a failure below leaves
@@ -570,6 +706,7 @@ export async function syncSandboxEnvForPrompt(args: {
     // provision path in platform/services/session-sandbox.ts — a session that
     // cannot arm its boundary should still fail to provision, loudly.
     const armState = await syncProviderNetworkBoundary(
+      args.projectId,
       args.providerName,
       args.externalId,
       networkBoundary,
@@ -599,18 +736,60 @@ export async function syncSandboxEnvForPrompt(args: {
         `${err instanceof Error ? err.message : String(err)}`,
     );
   }
+  lap('arm');
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
+  lap('gateway-flag');
+  const llmGatewayBaseUrl = llmGatewayEnabled
+    ? llmGatewayBaseUrlForProvider(args.providerName)
+    : undefined;
+  const llmGatewayDenyEnv = llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '';
+  // Only ask the daemon to reload when something that could move ITS
+  // `result.changed || opencodeEnvChanged` gate has actually changed since the
+  // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
+  // byte-identical push (see routes/env.ts), but every prompt used to ask
+  // anyway — this stops the ask itself, so a future daemon change can't turn a
+  // steady-state prompt into a live reload just because `refreshModels` was
+  // unconditionally true. See `promptModelSignature` for exactly what is
+  // covered (it is NOT limited to "model" fields — project-secret deltas ride
+  // the same gate and must never be silently skipped).
+  const signature = promptModelSignature({
+    revision: snapshot.revision,
+    capabilitiesJson: snapshot.capabilitiesJson,
+    llmGatewayEnabled,
+    llmGatewayBaseUrl,
+    llmGatewayDenyEnv,
+    opencodeEnv: args.opencodeEnv,
+  });
+  const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
+  const pushedAt = lastPromptEnvPushAt.get(args.externalId);
+  if (
+    !refreshModels &&
+    pushedAt !== undefined &&
+    Date.now() - pushedAt < PROMPT_ENV_PUSH_TTL_MS
+  ) {
+    // Byte-identical to what this process pushed to this box moments ago:
+    // nothing to say, and the daemon would no-op it. Skip the round-trip.
+    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
+    lap('mark');
+    console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
+    return;
+  }
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
-    refreshModels: true,
+    refreshModels,
     opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
-    llmGatewayBaseUrl: llmGatewayEnabled ? llmGatewayBaseUrlForProvider(args.providerName) : undefined,
-    llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
+    llmGatewayBaseUrl,
+    llmGatewayDenyEnv,
   });
+  // Remember only AFTER a successful push. A throw below (network/HTTP
+  // failure) must leave the memo alone so the next prompt retries with
+  // `refreshModels: true` again instead of assuming the failed attempt landed.
+  rememberPromptModelSignature(args.externalId, signature);
+  lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
   // is forwarded the instant this returns, so block until opencode is serving —
   // otherwise the forward hits the restart window and 503s "opencode not ready",
@@ -628,6 +807,8 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
+  lap('mark');
+  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
 }
 
 export async function propagateProjectSecretsToActiveSandboxes(
@@ -709,7 +890,7 @@ export async function propagateProjectSecretsToActiveSandboxes(
         // caller reports the per-sandbox outcome to the author who just saved the
         // secret. An arming failure has to be visible there, so it stays a
         // `status: 'failed'` row rather than a warning nobody reads.
-        await syncProviderNetworkBoundary(providerName, row.externalId, networkBoundary);
+        await syncProviderNetworkBoundary(projectId, providerName, row.externalId, networkBoundary);
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         const proof = await postEnvToDaemon({
           previewUrl: url,

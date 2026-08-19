@@ -283,6 +283,41 @@ describe("gateway.chatCompletions", () => {
     expect(t.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
+  // Regression coverage for the removed 256 KiB "preview" cap: a request or
+  // response log must show exactly what was sent/received, in full, no matter
+  // how large — never a `{truncated, bytes, preview}` stand-in for it.
+  test("200 success records the FULL request and response body, well past the old 256 KiB cap", async () => {
+    const bigContent = "x".repeat(400 * 1024); // 400 KiB — over the removed cap
+    const { hooks, traces } = makeHooks();
+    const fetchImpl = okFetch({
+      model: "kortix/x",
+      choices: [{ message: { content: bigContent } }],
+      usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.01 },
+    });
+    const rawBody = JSON.stringify({
+      model: "kortix/x",
+      messages: [{ role: "user", content: bigContent }],
+    });
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl },
+    ).chatCompletions({ authorization: "Bearer good", rawBody });
+    expect(res.status).toBe(200);
+    await flush();
+
+    expect(traces).toHaveLength(1);
+    const t = traces[0];
+    const request = t.request as { messages: Array<{ content: string }> };
+    const response = t.response as { choices: Array<{ message: { content: string } }> };
+    // Not the old truncation wrapper.
+    expect(request).not.toHaveProperty("truncated");
+    expect(request).not.toHaveProperty("preview");
+    expect(request.messages[0].content).toBe(bigContent);
+    expect(request.messages[0].content.length).toBe(bigContent.length);
+    expect(response.choices[0].message.content).toBe(bigContent);
+  });
+
   test('BYOK billingMode "none" records zero final cost', async () => {
     const byok: UpstreamDescriptor = {
       ...managed,
@@ -876,7 +911,15 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
   });
 
-  test("streaming model fallback bypasses a primary that opens but produces no bytes", async () => {
+  // Reversed deliberately. This used to assert that a primary which stays
+  // silent past the probe deadline is bypassed in favour of the fallback. That
+  // is precisely the behaviour that killed healthy large-context turns: a model
+  // still prefilling a multi-megabyte prompt is indistinguishable from a stalled
+  // one, and cancelling it silently downgraded the user to a different model —
+  // or, with no fallback configured, failed the turn outright with
+  // `upstream stream probe timeout exceeded (90000ms with no bytes)`.
+  // A slow candidate is now COMMITTED and relayed, not replaced.
+  test("streaming commits a primary that is slow to first byte instead of failing over", async () => {
     const calls: string[] = [];
     const { hooks, traces } = makeHooks({
       resolveRoute: async (_principal, input) => ({
@@ -895,10 +938,26 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     const fetchImpl: FetchImpl = async (url) => {
       calls.push(String(url));
       if (String(url).includes("primary.test")) {
-        return new Response(new ReadableStream<Uint8Array>(), {
-          status: 200,
-          headers: { "content-type": "text/event-stream" },
-        });
+        // Silent well past the 20ms probe deadline, then real output — the
+        // shape of a long prefill / thinking phase.
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              setTimeout(() => {
+                const enc = new TextEncoder();
+                controller.enqueue(
+                  enc.encode('data: {"choices":[{"delta":{"content":"primary ok"}}]}\n\n'),
+                );
+                controller.enqueue(
+                  enc.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'),
+                );
+                controller.enqueue(enc.encode("data: [DONE]\n\n"));
+                controller.close();
+              }, 120);
+            },
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
       }
       return new Response(
         'data: {"choices":[{"delta":{"content":"fallback ok"}}]}\n\n' +
@@ -917,13 +976,18 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("fallback ok");
-    expect(calls).toHaveLength(2);
+    const body = await res.text();
+    // The slow primary's own output is delivered — including the chunk that
+    // arrived on the read left in flight when the deadline expired.
+    expect(body).toContain("primary ok");
+    expect(body).not.toContain("fallback ok");
+    // The fallback was never dialled at all.
+    expect(calls).toHaveLength(1);
     await flush();
     expect(traces.at(-1)?.metadata.gatewayRouting).toEqual({
       policy: "test-stalled-stream",
       models: ["primary", "fallback"],
-      selected: "fallback",
+      selected: "primary",
     });
   });
 
@@ -1793,7 +1857,11 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     });
   });
 
-  test('streaming: preserves the Codex context rejection and fallback probe timeout as one failure chain', async () => {
+  // The fallback's failure mode here used to be a probe timeout. A probe
+  // timeout is no longer a failure at all (it commits the stream), so the
+  // second link in the chain is now the nearest still-terminal outcome: a
+  // stream that closes cleanly without producing anything.
+  test('streaming: preserves the Codex context rejection and fallback empty completion as one failure chain', async () => {
     const codex: UpstreamDescriptor = {
       ...managed,
       provider: 'openai-codex',
@@ -1834,10 +1902,14 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
           { status: 400, headers: { 'content-type': 'application/json' } },
         );
       }
-      return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-      });
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
     };
 
     const res = await createGateway(
@@ -1850,7 +1922,11 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
         '{"model":"codex/gpt-5.6-sol","stream":true,"messages":[{"role":"user","content":"large prompt"}]}',
     });
 
-    expect(res.status).toBe(502);
+    // 400, not 502: a cleanly-closed empty fallback stream contributes no error
+    // frame of its own, so the Codex context rejection remains the last frame
+    // seen and its status is the one surfaced. That is the more accurate answer
+    // for this chain — the request really was rejected for its size.
+    expect(res.status).toBe(400);
     const body = await res.json();
     // OpenCode 1.17.11 parseAPICallError() recognizes this exact nested code
     // and converts the failed turn into ContextOverflowError. The processor
@@ -1866,52 +1942,63 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(body.message).toContain('HTTP 400');
     expect(body.message).toContain('context_length_exceeded');
     expect(body.message).toContain('aster');
-    expect(body.message).toContain('stream_probe_timeout');
-    expect(body.attempt_failures).toEqual([
-      {
-        attempt: 1,
-        provider: 'openai-codex',
-        route_model: 'codex/gpt-5.6-sol',
-        resolved_model: 'gpt-5.6-sol',
-        stage: 'stream_error',
-        status: 400,
-        code: 'context_length_exceeded',
-        message: 'Your input exceeds the context window of this model.',
-      },
-      {
-        attempt: 2,
+    expect(body.message).toContain('empty_completion');
+    expect(body.attempt_failures[0]).toEqual({
+      attempt: 1,
+      provider: 'openai-codex',
+      route_model: 'codex/gpt-5.6-sol',
+      resolved_model: 'gpt-5.6-sol',
+      stage: 'stream_error',
+      status: 400,
+      code: 'context_length_exceeded',
+      message: 'Your input exceeds the context window of this model.',
+    });
+    // An empty completion is same-candidate retryable (unlike the terminal
+    // rejection above), so the fallback contributes one entry per retry. What
+    // matters for this test is that every one of them is the fallback's empty
+    // completion and that none of them displaces the code in `body.code`.
+    expect(body.attempt_failures.length).toBeGreaterThan(1);
+    for (const failure of body.attempt_failures.slice(1)) {
+      expect(failure).toMatchObject({
         provider: 'aster',
         route_model: 'glm-5.2',
         resolved_model: 'glm-5.2',
-        stage: 'stream_probe',
-        code: 'stream_probe_timeout',
-        message: 'upstream stream probe timeout exceeded (10ms with no bytes)',
-      },
-    ]);
+        stage: 'completion_validation',
+        code: 'empty_completion',
+        message: 'Upstream stream closed before producing usable content',
+      });
+    }
     expect(body.error.attempt_failures).toEqual(body.attempt_failures);
 
     await flush();
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({
       ok: false,
-      status: 502,
-      attempts: 2,
+      status: 400,
       provider: 'aster',
       resolvedModel: 'glm-5.2',
-      candidatesTried: ['openai-codex', 'aster'],
-      attemptFailures: [
-        { provider: 'openai-codex', code: 'context_length_exceeded', status: 400 },
-        { provider: 'aster', code: 'stream_probe_timeout' },
-      ],
       errorCode: 'context_length_exceeded',
     });
+    // Codex first, then the fallback — repeated once per same-candidate
+    // empty-completion retry.
+    expect(traces[0].candidatesTried?.[0]).toBe('openai-codex');
+    expect(new Set(traces[0].candidatesTried)).toEqual(new Set(['openai-codex', 'aster']));
+    expect(traces[0].attemptFailures?.[0]).toMatchObject({
+      provider: 'openai-codex',
+      code: 'context_length_exceeded',
+      status: 400,
+    });
+    // The overflow code must survive every later attempt in the trace too —
+    // that is what drives opencode's automatic compaction.
     expect(traces[0].metadata).toMatchObject({
       gatewayFailure: {
-        attemptCount: 2,
         fallbackRecovered: false,
-        codes: ['context_length_exceeded', 'stream_probe_timeout'],
+        contextRejected: true,
       },
     });
+    expect((traces[0].metadata.gatewayFailure as { codes: string[] }).codes[0]).toBe(
+      'context_length_exceeded',
+    );
   });
 });
 

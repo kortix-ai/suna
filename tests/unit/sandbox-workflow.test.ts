@@ -72,11 +72,45 @@ describe('sandbox test workflow', () => {
   test('release tests prove every deployed staging flow and browser journey', () => {
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
 
+    // The gate is sharded into parallel api/browser matrix jobs. Branch
+    // protection on `prod` requires exactly one context — this job name — so an
+    // aggregator job keeps it while the shards do the work. Renaming it breaks
+    // the required check silently.
     expect(release).toContain('name: full suite + quality gates');
-    expect(release).toContain('pnpm test -- --target-full');
+    expect(release).toContain('needs: [api, browser]');
+    expect(release).toContain('pnpm test -- --target-api-full --api-shard=');
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=');
+    expect(release).toContain('fail-fast: false');
+    // Cleanup-on-cancel: a cancelled job never reaches the runner's `finally`
+    // teardown, so the sweep must be wired pre-run and `if: always()` post-run.
+    expect(release).toContain('bun tests/bin/ke2e.ts gc --older-than 2h');
+    expect(release).toContain('bun tests/bin/ke2e.ts gc --run-id');
+    // The pre-run sweep is a janitor, never a gate. On run 32226539107 its
+    // 15-minute JOB cap fired mid-delete, GitHub recorded the job as
+    // `cancelled` (which continue-on-error does not absorb), and every
+    // dependent shard was skipped. Two guards, both required: the gc STEP is
+    // bounded (a step timeout is a job *failure*), and the shard jobs run
+    // unless the whole workflow was cancelled.
+    const sweepBefore = release.slice(release.indexOf('  sweep-before:'), release.indexOf('  api:'));
+    expect(sweepBefore).toContain('continue-on-error: true');
+    expect(sweepBefore).toMatch(/- name: Reclaim test accounts older than 2h\n\s+timeout-minutes: 12/);
+    for (const job of ['  api:', '  browser:']) {
+      const start = release.indexOf(job);
+      const block = release.slice(start, release.indexOf('runs-on:', start));
+      expect(block, `${job.trim()} must not depend on the janitor's result`).toContain('if: ${{ !cancelled() }}');
+    }
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
-    expect(release).not.toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
+    // Staging sits behind Vercel SSO deployment protection, which Basic-auth
+    // httpCredentials cannot satisfy — every authenticated page 302s to
+    // vercel.com/sso-api. The release job must therefore export the automation
+    // bypass secret that playwright.config turns into
+    // `x-vercel-protection-bypass`. It was missing when tests-release replaced
+    // the old qa-release gate, so the browser lane never reached the app and
+    // the "proves every browser journey" claim was hollow. Restored in #6415.
+    expect(release).toContain(
+      'VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}',
+    );
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
   });
@@ -112,12 +146,19 @@ describe('sandbox test workflow', () => {
         source.includes('uses: ./.github/workflows/tests.yml'),
       ),
     ).toHaveLength(1);
+    // deploy-preview drives ONE sandbox origin from one job, so it keeps the
+    // combined `--target-full` command. The release gate splits the same two
+    // lanes across parallel GitHub jobs, so it calls the per-lane commands.
     const targetFullCallers = workflows.filter(({ source }) =>
       source.includes('pnpm test -- --target-full'),
     );
-    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual([
-      'deploy-preview.yml',
-      'tests-release.yml',
-    ]);
+    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual(['deploy-preview.yml']);
+
+    const shardedTargetCallers = workflows.filter(
+      ({ source }) =>
+        source.includes('pnpm test -- --target-api-full') &&
+        source.includes('pnpm test -- --target-browser-full'),
+    );
+    expect(shardedTargetCallers.map(({ name }) => name).sort()).toEqual(['tests-release.yml']);
   });
 });

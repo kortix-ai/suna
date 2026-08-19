@@ -28,5 +28,6 @@ export * from './lib/git';
 export * from './lib/supabase';
 export * from './lib/migrate';
 export * from './lib/launch-env';
+export * from './lib/prune';
 export * from './lib/services';
 export * from './lib/deps';

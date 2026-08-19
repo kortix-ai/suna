@@ -16,6 +16,7 @@ import {
   isExpectedCompactionNoModelMessage,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
+  isFailedToSendMessageNoise,
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
   isInjectedAppSource,
@@ -24,24 +25,29 @@ import {
   isInpageWalletStreamNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
+  isLikelyDomMutationNoise,
   isModelNotServableNoise,
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
   isOldBrowserDomNullDerefNoise,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
+  isOneTrustJsonParseNoise,
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
+  isSignalTimeoutNoise,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   isStorageSecurityErrorNoise,
   isSupabaseTokenExpiredNoise,
   isThirdPartyReactUpdateDepthNoise,
   isTronLinkProxyNoise,
+  isUndefinedVariableThirdPartyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
   shouldIgnoreBrowserRuntimeNoise,
@@ -8748,4 +8754,1888 @@ test('does NOT suppress a non-OOM RangeError (over-match guard on the RangeError
       `expected "${message}" to keep reporting`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// Firefox DOM-mutation "supplied node incorrect" noise — the Gecko/Firefox
+// sibling of the V8/JSC DOM-mutation class already covered by
+// `KNOWN_DOM_MUTATION_NOISE_MESSAGES` (Better Stack pattern
+// 9e6a70ffdb26ba2ab9f821fe8772f51b082d6a9b0e2c9f50b2130cde0c3e6438, Kortix
+// Frontend prod, application_id 2346967). `InvalidNodeTypeError`, message
+// `The supplied node is incorrect or has an incorrect ancestor for this
+// operation.`, 2 occurrences / 0 identified users, last 2026-08-11 16:37:15
+// UTC, release `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod),
+// call site function `te` in chunk
+// `app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_…`
+// (Next.js live feedback), request URL a co-worker session page, Firefox 153
+// on macOS, mechanism `auto.browser.global_handlers.onunhandledrejection`
+// (UNCAUGHT, `handled:false`). The existing V8/JSC patterns (covering only
+// the `insertBefore`/`removeChild` wording) did NOT match the Firefox
+// wording, so this sibling leaked to Better Stack. The fix just adds the
+// Gecko string to the existing `KNOWN_DOM_MUTATION_NOISE_MESSAGES` array.
+// ---------------------------------------------------------------------------
+
+test('classifies the Firefox "supplied node is incorrect" DOM mutation wording as noise', () => {
+  // The Gecko/Firefox wording for the same DOM-mutation class the V8/JSC
+  // `insertBefore`/`removeChild` entries cover. Anchored as an EXACT string
+  // in `KNOWN_DOM_MUTATION_NOISE_MESSAGES`, matched by `containsKnownPattern`
+  // the same way as the V8 entries.
+  const message =
+    'The supplied node is incorrect or has an incorrect ancestor for this operation.'
+  assert.equal(
+    isLikelyDomMutationNoise(message),
+    true,
+    `expected Firefox DOM-mutation wording to be noise`,
+  )
+  assert.equal(
+    isLikelyDomMutationNoise(`Error: ${message}`),
+    true,
+    `expected "Error: "-prefixed Firefox DOM-mutation wording to be noise`,
+  )
+})
+
+test('still classifies the existing V8 insertBefore/removeChild DOM mutation wording as noise (no regression)', () => {
+  // Regression guard: the Firefox entry must NOT shadow the existing V8
+  // entries — both wording families must continue to classify as noise.
+  for (const message of [
+    "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+    "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+  ]) {
+    assert.equal(
+      isLikelyDomMutationNoise(message),
+      true,
+      `expected V8 DOM-mutation wording "${message}" to still be noise`,
+    )
+  }
+})
+
+test('suppresses the Firefox DOM-mutation prod event via the Sentry beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern 9e6a70ff…, release
+  // v0.12.8, request URL a co-worker session page, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // handled:false), call site function `te` in the Next.js live feedback
+  // chunk, Firefox 153 on macOS.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/be079cac-091c-4857-8b3f-f7982027b27c/sessions/f3d44320-846b-4dd3-be26-18d9ca05c931',
+      },
+      exception: {
+        values: [
+          {
+            value:
+              'The supplied node is incorrect or has an incorrect ancestor for this operation.',
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: {
+              frames: [
+                {
+                  filename:
+                    'app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_zKXse3p1ftNZs62ELRA6sCjzQUJK',
+                  function: 'te',
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Firefox DOM-mutation noise via the Sentry beforeSend gate (with capture-path wrappers)', () => {
+  // `isLikelyDomMutationNoise` is wired into `shouldIgnoreSentryBrowserNoise`
+  // (the Sentry `beforeSend` gate). It uses `containsKnownPattern` (a
+  // `.includes()` match), so the bare message AND the `Error: `-prefixed /
+  // `Unhandled promise rejection: `-wrapped forms all drop — the wrapper
+  // does not break the substring anchor. (NOTE: the matcher is intentionally
+  // NOT wired into `shouldIgnoreBrowserRuntimeNoise` — the runtime gate's
+  // other DOM-mutation-specific matchers handle their own classes; the
+  // hydration/DOM-mutation class is Sentry-gate-only, mirroring the existing
+  // V8 `insertBefore`/`removeChild` entries' wiring.)
+  for (const message of [
+    'The supplied node is incorrect or has an incorrect ancestor for this operation.',
+    `Error: The supplied node is incorrect or has an incorrect ancestor for this operation.`,
+    `Unhandled promise rejection: Error: The supplied node is incorrect or has an incorrect ancestor for this operation.`,
+  ]) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: [
+                  {
+                    filename:
+                      'app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_zKXse3p1ftNZs62ELRA6sCjzQUJK',
+                    function: 'te',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress Firefox DOM-mutation "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded Firefox DOM message (over-match guard)', () => {
+  // `isLikelyDomMutationNoise` uses `containsKnownPattern` (a `.includes()`
+  // match), the SAME contract as the existing V8 `insertBefore`/`removeChild`
+  // entries. So a DIFFERENT Gecko DOM message (a different DOMException
+  // wording that does NOT contain the canonical noise string as a
+  // substring) keeps reporting. (A message that merely EXTENDS the noise
+  // string — e.g. `<noise>. Please file a bug.` — is intentionally matched,
+  // matching the V8 entries' behavior; that is the documented contract, not
+  // an over-match bug.)
+  for (const message of [
+    // A different Gecko DOM message (a different DOMException) — does NOT
+    // contain the canonical noise string.
+    'The supplied node does not belong to this document.',
+    // A different Gecko `HierarchyRequestError` wording.
+    'The new child contains the parent.',
+    // A near-worded first-party throw without the canonical wrapper.
+    'supplied node is incorrect',
+    // A completely different DOMException type.
+    'NotFoundError: The node was not found.',
+  ]) {
+    assert.equal(
+      isLikelyDomMutationNoise(message),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// OneTrust cookie-consent SDK JSON-parse noise (Better Stack pattern
+// aa1efd3fb7a9f6840d4eb25b881d2b12ac2e6f3c8dfe3158fbd3e9fc753a0526, Kortix
+// Frontend prod, application_id 2346967). The OneTrust cookie-consent SDK's
+// `otSDKStub.js?did=undefined` bootstrap stub XHR-fetches the site's consent
+// config, and when the domain ID is `undefined` / the endpoint returns an
+// empty or truncated body (old iOS Safari, CORS preflight failure, 5xx,
+// network abort), the stub's `XMLHttpRequest.onload` handler calls
+// `JSON.parse()` on the bad body and throws the canonical
+// `SyntaxError: Unexpected end of JSON input`. The throw is in the OneTrust
+// SDK's own injected script (frame
+// `app:///scripttemplates/otSDKStub.js?did=undefined` function `r.onload`),
+// never first-party code. 1 occurrence / 0 identified users, last
+// 2026-08-11 23:03:30 UTC, release
+// `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), request URL
+// `https://kortix.com/auth` (auth page), Safari on iOS 13.2.3 (iPhone),
+// mechanism `auto.browser.browserapierrors.xhr.onload` (UNCAUGHT,
+// handled:false). Stack frames (3, all in_app:true):
+//   1. `app:///_next/static/immutable/chunks/1zqaq83quwhm5.js` fn
+//      `XMLHttpRequest.r` (the Next.js webpack runtime chunk that XHR was
+//      monkey-patched through — the SCHEDULING frame, NOT the throw site).
+//   2. `app:///scripttemplates/otSDKStub.js?did=undefined` fn `r.onload`
+//      (THROW SITE — the OneTrust SDK's `onload` handler where the
+//      `JSON.parse` runs; `did=undefined` is the SDK's own misconfiguration
+//      marker).
+//   3. `<anonymous>` fn `JSON.parse` (the actual `JSON.parse` call the
+//      OneTrust SDK makes on the empty body).
+// NO first-party `apps/web/src/…` frame. The new matcher anchors on BOTH
+// the EXACT `Unexpected end of JSON input` message AND a frame whose
+// filename contains `otSDKStub.js`, with a first-party negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const ONETRUST_JSON_PARSE_MESSAGE = 'Unexpected end of JSON input'
+
+// The OneTrust SDK's canonical bootstrap filename (the `app:///scripttemplates/otSDKStub.js?did=…`
+// synthetic injected-script origin). `did=undefined` is the SDK's own
+// misconfiguration marker.
+const ONETRUST_SDK_FRAME =
+  'app:///scripttemplates/otSDKStub.js?did=undefined'
+
+// The three production stack frames (all in_app:true): the Next.js webpack
+// runtime chunk (XHR monkey-patch scheduling frame) → the OneTrust SDK
+// `onload` (throw site) → the `<anonymous>` `JSON.parse` call. NO first-party
+// `apps/web/src/…` frame, so the negative guard does not fire.
+const ONETRUST_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/1zqaq83quwhm5.js',
+    function: 'XMLHttpRequest.r',
+  },
+  { filename: ONETRUST_SDK_FRAME, function: 'r.onload' },
+  { filename: '<anonymous>', function: 'JSON.parse' },
+]
+
+test('classifies the OneTrust JSON-parse prod event as noise (exact message + otSDKStub.js frame)', () => {
+  // Exact production shape: the `Unexpected end of JSON input` message + the
+  // three prod frames. The OneTrust `otSDKStub.js` frame is the positive
+  // anchor; no first-party `apps/web/src/…` frame, so the negative guard
+  // does not fire.
+  assert.equal(
+    isOneTrustJsonParseNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      frames: ONETRUST_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('suppresses the OneTrust JSON-parse Sentry event via the beforeSend gate', () => {
+  // Reproduces the exact production Sentry event: mechanism
+  // `auto.browser.browserapierrors.xhr.onload` (UNCAUGHT, handled:false),
+  // request URL `https://kortix.com/auth` (auth page), Safari on iOS 13.2.3.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: ONETRUST_JSON_PARSE_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.browserapierrors.xhr.onload',
+              handled: false,
+            },
+            stacktrace: { frames: ONETRUST_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the OneTrust JSON-parse noise through the SyntaxError wrapper', () => {
+  // `stripErrorWrappers` strips the `SyntaxError: ` prefix before matching
+  // the anchored message, so the `SyntaxError: Unexpected end of JSON input`
+  // form (the typical Sentry exception value) classifies as noise.
+  for (const message of [
+    ONETRUST_JSON_PARSE_MESSAGE,
+    `SyntaxError: ${ONETRUST_JSON_PARSE_MESSAGE}`,
+    `Unhandled promise rejection: SyntaxError: ${ONETRUST_JSON_PARSE_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message,
+        frames: ONETRUST_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be OneTrust JSON-parse noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: ONETRUST_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be suppressed`,
+    )
+  }
+})
+
+test('classifies the OneTrust JSON-parse noise from a filename alone (window.onerror)', () => {
+  // The runtime gate (window.onerror) sees the `filename` directly — the
+  // throw originates from the OneTrust SDK's injected script source.
+  assert.equal(
+    isOneTrustJsonParseNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      filename: ONETRUST_SDK_FRAME,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      filename: ONETRUST_SDK_FRAME,
+    }),
+    true,
+  )
+})
+
+test('classifies a OneTrust SDK frame with a different did query param as noise', () => {
+  // The matcher anchors on the `otSDKStub.js` filename token, NOT the
+  // `did=` value — a properly-configured OneTrust stub (`did=<real-id>`)
+  // whose consent endpoint still returns an empty body throws the same
+  // `Unexpected end of JSON input` and must also classify as noise. The
+  // `did=undefined` form is just the most-common misconfiguration shape.
+  const configuredOneTrustFrame =
+    'app:///scripttemplates/otSDKStub.js?did=abc123-real-domain-id'
+  assert.equal(
+    isOneTrustJsonParseNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      frames: [{ filename: configuredOneTrustFrame, function: 'r.onload' }],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the OneTrust JSON-parse event when a first-party apps/web/src frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `JSON.parse` on a bad body while a OneTrust frame happened to be in the
+  // stack (e.g. a first-party fetch wrapper that runs alongside the consent
+  // banner) → still actionable; the negative guard MUST preserve it so the
+  // call site can be found + fixed.
+  for (const frames of [
+    [
+      { filename: ONETRUST_SDK_FRAME, function: 'r.onload' },
+      { filename: 'apps/web/src/lib/api/client.ts', function: 'parseResponse' },
+    ],
+    [
+      { filename: ONETRUST_SDK_FRAME, function: 'r.onload' },
+      { filename: 'app:///apps/web/src/features/auth/use-session.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message: ONETRUST_JSON_PARSE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party OneTrust-prefixed event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: ONETRUST_JSON_PARSE_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party OneTrust-prefixed event from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: ONETRUST_JSON_PARSE_MESSAGE,
+      filename: 'apps/web/src/lib/api/client.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the OneTrust JSON-parse event with NO otSDKStub.js frame (conservative — keep reporting)', () => {
+  // No `otSDKStub.js` frame → can't confirm the OneTrust origin; a real
+  // first-party `JSON.parse(truncatedApiResponse)` regression would throw
+  // the same `Unexpected end of JSON input` wording, so keep reporting.
+  for (const frames of [
+    [],
+    [{ filename: 'app:///_next/static/chunks/main.js', function: 'f' }],
+    [{ filename: 'apps/web/src/lib/foo.ts', function: 'bar' }],
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message: ONETRUST_JSON_PARSE_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected "${ONETRUST_JSON_PARSE_MESSAGE}" event from ${JSON.stringify(frames)} (no otSDKStub.js frame) to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-Unexpected-end-of-JSON-input message even with otSDKStub.js frames', () => {
+  // Only the EXACT `Unexpected end of JSON input` message is noise — a
+  // different `JSON.parse` SyntaxError (e.g. `Unexpected token < in JSON`,
+  // a different malformed-body wording) from the same OneTrust source is a
+  // different class and must keep reporting. (The OneTrust stub is known to
+  // throw only the empty-body `Unexpected end of JSON input` form; a
+  // different `JSON.parse` wording signals a different failure mode worth
+  // triaging.)
+  for (const message of [
+    'Unexpected token < in JSON at position 0',
+    'Unexpected token u in JSON at position 0',
+    'JSON.parse: unexpected end of data',
+    'Unexpected end of input',
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message,
+        frames: ONETRUST_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" with otSDKStub.js frames to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: message, stacktrace: { frames: ONETRUST_PROD_FRAMES } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry event "${message}" with otSDKStub.js frames to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a same-worded message from a near-miss otSDKStub filename', () => {
+  // The matcher anchors on the `otSDKStub.js` filename token — a
+  // near-identical filename (a typo, or a different consent SDK that
+  // happens to ship a similarly-named script) must NOT be swallowed by
+  // this guard. Only a frame whose filename literally contains
+  // `otSDKStub.js` is the OneTrust SDK.
+  for (const filename of [
+    'app:///scripttemplates/otOtherStub.js',
+    'app:///scripttemplates/ot-sdk-stub.js',
+    'app:///onetrust/otSDKStub.ts',
+    'app:///_next/static/chunks/otSDKStub.js.map',
+  ]) {
+    assert.equal(
+      isOneTrustJsonParseNoise({
+        message: ONETRUST_JSON_PARSE_MESSAGE,
+        frames: [{ filename, function: 'r.onload' }],
+      }),
+      // `otSDKStub.js.map` is the only one that contains the `otSDKStub.js`
+      // substring; it classifies as noise (the anchor is a substring match,
+      // so a sourcemap file with the same basename is still the OneTrust
+      // SDK's own artifact). The other three must keep reporting.
+      filename.endsWith('.map') ? true : false,
+      `expected filename "${filename}" to be ${filename.endsWith('.map') ? 'noise' : 'kept'}`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Transient WebSocket `postMessage` "Failed to send message" transport noise
+// (Better Stack pattern
+// 824577dd315c08f227a1f31c74e2eb90be209b1ffd129e18923907aa3068afd2, Kortix
+// Frontend prod, application_id 2346967). A co-worker session page's WebSocket
+// `ws.send(...)` rejected with the canonical WebSocket `InvalidStateError`
+// message `Failed to send message` (the spec's wording for `ws.send` on a
+// closed socket) when the sandbox tore the connection down mid-flight
+// (deploy / restart / idle-timeout recycle / sandbox park / network blip /
+// tab close). 1 occurrence / 0 identified users, last 2026-08-11 14:47:00
+// UTC, release `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod),
+// call site function `Object.x [as mutationFn]` in chunk
+// `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` (minified — NO
+// resolved first-party source), request URL a co-worker session page,
+// browser Chrome on macOS, mechanism `generic` with `handled:true` (CAUGHT
+// by an error boundary — NOT an uncaught global rejection). Stack frames
+// (1, in_app:true): the minified react-query mutation chunk. NO first-party
+// `apps/web/src/…` frame. Sibling of `isConnectionClosedNoise` (the
+// `Connection closed.` transport-close class) but a different throw (a
+// `ws.send` rejection on a closed socket).
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const FAILED_TO_SEND_MESSAGE = 'Failed to send message'
+
+// The single production stack frame: the minified react-query mutation
+// chunk `3n0z0jtixhg6r.js` function `Object.x [as mutationFn]` (the
+// mutation that called `ws.send(...)` on the closed socket). No resolved
+// first-party `apps/web/src/…` source, so the negative guard does NOT fire.
+const FAILED_TO_SEND_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js',
+    function: 'Object.x [as mutationFn]',
+  },
+]
+
+test('classifies the production Failed to send message transport noise (exact prod frame)', () => {
+  // Exact production shape: the canonical WebSocket `InvalidStateError`
+  // message + the single minified mutation-chunk frame. The chunk frame is
+  // NOT a first-party `apps/web/src/…` frame, so the negative guard does
+  // not fire.
+  assert.equal(
+    isFailedToSendMessageNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      frames: FAILED_TO_SEND_PROD_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/834686a1-bf0c-4bd5-87ea-b2679288e191/sessions/54f7abe9-cad8-4b46-bd04-de8f1723dfd1',
+      },
+      exception: {
+        values: [
+          {
+            value: FAILED_TO_SEND_MESSAGE,
+            // The prod event is `handled:true` (caught by an error
+            // boundary — NOT an uncaught global rejection), mechanism
+            // `generic`. The matcher is message+frame-anchored and does NOT
+            // branch on `handled`; this test pins the prod shape exactly.
+            mechanism: { type: 'generic', handled: true },
+            stacktrace: { frames: FAILED_TO_SEND_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Failed to send message noise through the Error wrapper', () => {
+  // The matcher strips the leading `Error: ` prefix before anchoring, so
+  // the `Error: Failed to send message` form (an `onunhandledrejection` of
+  // an `Error` instance) and the stacked `Unhandled promise rejection:
+  // Error: Failed to send message` form both classify as noise regardless
+  // of which capture path delivered it.
+  for (const message of [
+    FAILED_TO_SEND_MESSAGE,
+    `Error: ${FAILED_TO_SEND_MESSAGE}`,
+    `Unhandled promise rejection: ${FAILED_TO_SEND_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${FAILED_TO_SEND_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isFailedToSendMessageNoise({
+        message,
+        frames: FAILED_TO_SEND_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be Failed-to-send-message noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: message, stacktrace: { frames: FAILED_TO_SEND_PROD_FRAMES } },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be suppressed`,
+    )
+  }
+})
+
+test('classifies the frameless Failed to send message variant as noise (message alone is specific)', () => {
+  // A frameless capture with this exact message still classifies as noise
+  // — the message is the WebSocket spec's canonical transport-failure
+  // wording and is specific enough (mirrors `isConnectionClosedNoise`'s
+  // frameless handling).
+  assert.equal(
+    isFailedToSendMessageNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/x/sessions/y',
+      },
+      exception: {
+        values: [{ value: FAILED_TO_SEND_MESSAGE, stacktrace: { frames: [] } }],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: FAILED_TO_SEND_MESSAGE }] },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Failed to send message noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate sees the `message` directly; a frameless window.onerror
+  // capture with the exact message drops.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ message: FAILED_TO_SEND_MESSAGE }),
+    true,
+  )
+  // A runtime capture with a minified chunk `filename` (no first-party
+  // source) also drops.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      filename: 'app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Failed to send message throw when a first-party frame is present (real regression)', () => {
+  // The prod event is `handled:true` (caught by an error boundary — the
+  // user saw a controlled error state, not a blank page). When our own code
+  // is the `ws.send` caller, the boundary's error state is showing the
+  // user a defect we should fix → actionable. The negative guard MUST
+  // preserve any resolved first-party `apps/web/src/…` frame so the call
+  // site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/features/session/websocket.ts', function: 'sendMessage' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/session/session-chat.tsx', function: 'pushMessage' },
+    ],
+  ]) {
+    assert.equal(
+      isFailedToSendMessageNoise({
+        message: FAILED_TO_SEND_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party Failed-to-send-message throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: FAILED_TO_SEND_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party Failed-to-send-message throw from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      filename: 'apps/web/src/features/session/websocket.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a near-worded message (over-match guard)', () => {
+  // Only the EXACT `Failed to send message` string is noise. A near-worded
+  // message (e.g. a different transport-failure wording, or a first-party
+  // throw with extra context) keeps reporting so the matcher does not
+  // over-match a real first-party transport regression.
+  for (const message of [
+    'Failed to send message.',
+    'Failed to send a message',
+    'Failed to send messages',
+    'failed to send message',
+    'Failed to send message: WebSocket is not open',
+    'Could not send message',
+    'Message failed to send',
+  ]) {
+    assert.equal(
+      isFailedToSendMessageNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event for near-worded "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the Connection closed. message under the Failed-to-send-message matcher (and vice versa)', () => {
+  // The two sibling matchers are message-specific: a `Connection closed.`
+  // event must not be swallowed by the `Failed to send message` guard, and
+  // a `Failed to send message` event must not be swallowed by the
+  // `Connection closed.` guard (which would also keep reporting because it
+  // has no first-party frame but the wrong message).
+  assert.equal(
+    isFailedToSendMessageNoise({
+      message: 'Connection closed.',
+      frames: [],
+    }),
+    false,
+    'Failed-to-send-message matcher must not swallow the Connection closed. message',
+  )
+  assert.equal(
+    isConnectionClosedNoise({
+      message: FAILED_TO_SEND_MESSAGE,
+      frames: [],
+    }),
+    false,
+    'Connection-closed matcher must not swallow the Failed to send message',
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Bot / automation-framework `Cannot redefine property: webdriver` noise
+// (BS ee14e84d…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const REDEFINE_WEBDRIVER_MESSAGE = 'Cannot redefine property: webdriver'
+
+// The three production stack frames — ALL `<anonymous>` (functions `?`, `?`,
+// `Object.defineProperty`), with NO resolved first-party `apps/web/src/…`
+// source. The call_site_file Better Stack surfaces is `<anonymous>` and the
+// call_site_function is `Object.defineProperty`.
+const REDEFINE_WEBDRIVER_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: '<anonymous>', function: 'Object.defineProperty' },
+  { filename: '<anonymous>', function: '?' },
+  { filename: '<anonymous>', function: '?' },
+]
+
+// The canonical capture-path forms: raw, `TypeError:` prefix, and stacked
+// `Unhandled promise rejection: TypeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const REDEFINE_WEBDRIVER_CAPTURE_FORMS = [
+  REDEFINE_WEBDRIVER_MESSAGE,
+  `TypeError: ${REDEFINE_WEBDRIVER_MESSAGE}`,
+  `Unhandled promise rejection: ${REDEFINE_WEBDRIVER_MESSAGE}`,
+  `Unhandled promise rejection: TypeError: ${REDEFINE_WEBDRIVER_MESSAGE}`,
+]
+
+test('classifies the production Cannot redefine property: webdriver noise (exact prod frames, all <anonymous>)', () => {
+  // Exact production shape: the canonical message + the three `<anonymous>`
+  // frames (all unresolved — NO first-party `apps/web/src/…` source), so the
+  // negative guard does NOT fire.
+  assert.equal(
+    isRedefineWebdriverNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      frames: REDEFINE_WEBDRIVER_PROD_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WEBDRIVER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WEBDRIVER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Cannot redefine property: webdriver noise through all capture-path wrappers', () => {
+  // The matcher strips the canonical `TypeError: ` / `Unhandled promise
+  // rejection: ` (and stacked) wrappers before anchoring, so the SAME
+  // underlying message classifies as noise regardless of which capture path
+  // delivered it (window.onerror, onunhandledrejection, Sentry exception).
+  for (const message of REDEFINE_WEBDRIVER_CAPTURE_FORMS) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message,
+        frames: REDEFINE_WEBDRIVER_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: REDEFINE_WEBDRIVER_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the frameless Cannot redefine property: webdriver variant as noise (webdriver property name is the specific anchor)', () => {
+  // A frameless capture with this exact message still classifies as noise —
+  // the `webdriver` property name pins it to `navigator.webdriver` (never a
+  // first-party Kortix API surface), so a frameless capture is safe to drop.
+  assert.equal(
+    isRedefineWebdriverNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      exception: {
+        values: [{ value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames: [] } }],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      exception: {
+        values: [{ value: REDEFINE_WEBDRIVER_MESSAGE }],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Cannot redefine property: webdriver noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate (window.onerror) sees the message + the `<anonymous>`
+  // filename; both classify as noise because no first-party `apps/web/src/…`
+  // source is present.
+  for (const message of REDEFINE_WEBDRIVER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: '<anonymous>',
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" from an <anonymous> filename`,
+    )
+  }
+})
+
+test('does NOT suppress the Cannot redefine property: webdriver throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `Object.defineProperty` on a non-configurable property → a real first-party
+  // regression; the negative guard MUST preserve it so the call site can be
+  // found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/bot-detection.ts', function: 'hideWebdriver' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/navigator-guard.ts', function: 'patchNavigator' },
+    ],
+  ]) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message: REDEFINE_WEBDRIVER_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party defineProperty throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party defineProperty throw from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of REDEFINE_WEBDRIVER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/bot-detection.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message without the webdriver property name (over-match guard)', () => {
+  // The `webdriver` property name is part of the anchor — a different
+  // `Cannot redefine property: <X>` (a real first-party `defineProperty` on a
+  // different non-configurable property) must keep reporting so the matcher
+  // does not over-match a real app regression.
+  for (const message of [
+    'Cannot redefine property: foo',
+    'Cannot redefine property: __proto__',
+    'Cannot redefine property: constructor',
+    'Cannot redefine property: webdriver (configurable)',
+    'Cannot redefine webdriver',
+    'Cannot set property: webdriver',
+  ]) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a non-webdriver TypeError (over-match guard on the TypeError type)', () => {
+  // The matcher anchors on the EXACT `Cannot redefine property: webdriver`
+  // message, NOT on the `TypeError` type. A generic `TypeError` keeps
+  // reporting unless it matches the exact webdriver wording.
+  for (const message of [
+    'Cannot read properties of null (reading "webdriver")',
+    "TypeError: 'defineProperty' on proxy: trap returned falsish for property 'webdriver'",
+    'Cannot redefine property: webdriver_extra',
+  ]) {
+    assert.equal(
+      isRedefineWebdriverNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress Cannot redefine property: webdriver when a first-party frame is mixed with <anonymous> frames (negative guard is any-frame)', () => {
+  // The negative guard fires if ANY frame resolves to a first-party
+  // `apps/web/src/…` source — even when mixed with the production
+  // `<anonymous>` frames. A real first-party `defineProperty` regression
+  // surfaces with at least one resolved first-party frame in the stack, so the
+  // any-frame negative guard preserves it.
+  const mixedFrames: Array<{ filename: unknown; function?: unknown }> = [
+    { filename: '<anonymous>', function: 'Object.defineProperty' },
+    { filename: '<anonymous>', function: '?' },
+    { filename: 'app:///apps/web/src/lib/bot-detection.ts', function: 'hideWebdriver' },
+  ]
+  assert.equal(
+    isRedefineWebdriverNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      frames: mixedFrames,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames: mixedFrames } },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('classifies the Cannot redefine property: webdriver noise via the runtime gate with an empty <anonymous> filename', () => {
+  // The runtime gate (window.onerror) can deliver an empty-string filename
+  // (the `<anonymous>` call site has no resolvable source). An empty filename
+  // is never a first-party `apps/web/src/…` source, so the noise classifies.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      filename: '',
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WEBDRIVER_MESSAGE,
+      filename: '<anonymous>',
+    }),
+    true,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Transient fetch-abort `signal timed out` noise (BS 73e683c3…)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const SIGNAL_TIMEOUT_MESSAGE = 'signal timed out'
+
+// The canonical capture-path forms: raw, `TimeoutError:` prefix, and stacked
+// `Unhandled promise rejection: TimeoutError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const SIGNAL_TIMEOUT_CAPTURE_FORMS = [
+  SIGNAL_TIMEOUT_MESSAGE,
+  `TimeoutError: ${SIGNAL_TIMEOUT_MESSAGE}`,
+  `Unhandled promise rejection: ${SIGNAL_TIMEOUT_MESSAGE}`,
+  `Unhandled promise rejection: TimeoutError: ${SIGNAL_TIMEOUT_MESSAGE}`,
+]
+
+test('classifies the production signal timed out noise (frameless, exact prod shape)', () => {
+  // Exact production shape: the canonical message with NO stacktrace frames
+  // (the production event's exception value has no `stacktrace` key at all —
+  // a frameless `TimeoutError` from `AbortSignal.timeout()`). The negative
+  // guard does NOT fire because there are no frames.
+  assert.equal(
+    isSignalTimeoutNoise({
+      message: SIGNAL_TIMEOUT_MESSAGE,
+      frames: [],
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+      },
+      exception: {
+        values: [
+          {
+            type: 'TimeoutError',
+            value: SIGNAL_TIMEOUT_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  // Also when the stacktrace key is omitted entirely (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: {
+        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+      },
+      exception: {
+        values: [
+          {
+            type: 'TimeoutError',
+            value: SIGNAL_TIMEOUT_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the signal timed out noise through all capture-path wrappers', () => {
+  // The matcher strips the canonical `TimeoutError: ` / `Unhandled promise
+  // rejection: ` (and stacked) wrappers before anchoring, so the SAME
+  // underlying message classifies as noise regardless of which capture path
+  // delivered it (window.onerror, onunhandledrejection, Sentry exception).
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      isSignalTimeoutNoise({
+        message,
+        frames: [],
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: [] } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the signal timed out noise even when a minified SDK chunk frame is present (no first-party source)', () => {
+  // A minified SDK chunk frame (NOT a resolved first-party `apps/web/src/…`
+  // source) does NOT trip the negative guard — the production `signal timed
+  // out` throw originates from the SDK's `makeRequest` abort path, which
+  // de-minifies to a chunk frame, never to first-party `apps/web/src/…`.
+  const chunkFrames = [
+    {
+      filename:
+        'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+      function: 't',
+    },
+  ]
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      isSignalTimeoutNoise({ message, frames: chunkFrames }),
+      true,
+      `expected "${message}" from a chunk frame to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: chunkFrames } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" from a chunk frame to be noise`,
+    )
+  }
+})
+
+test('suppresses the signal timed out noise via the runtime (window.onerror) gate', () => {
+  // The runtime gate (window.onerror) sees the message; it classifies as
+  // noise because no first-party `apps/web/src/…` source is present.
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'app:///_next/static/chunks/66499-652b83425f671b38.js',
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress the signal timed out throw when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw
+  // `signal timed out` → a real first-party regression; the negative guard
+  // MUST preserve it so the call site can be found + fixed.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api-client.ts', function: 'fetchWithTimeout' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/request.ts', function: 'abortOnTimeout' },
+    ],
+  ]) {
+    assert.equal(
+      isSignalTimeoutNoise({
+        message: SIGNAL_TIMEOUT_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party signal timed out throw from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            { value: SIGNAL_TIMEOUT_MESSAGE, stacktrace: { frames } },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party signal timed out throw from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of SIGNAL_TIMEOUT_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/api-client.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a near-worded message (over-match guard on the exact signal timed out message)', () => {
+  // Only the EXACT `signal timed out` message is matched by `isSignalTimeoutNoise`;
+  // a near-worded message (the SDK's typed `Request timed out after <N>s:` —
+  // handled by the separate `isClientRequestTimeoutMessage` matcher — or a
+  // different timeout wording) is NOT matched by THIS matcher. The matcher-level
+  // check is the over-match guard; the Sentry-gate check is only asserted for
+  // messages no OTHER matcher handles (so we don't conflate this matcher's
+  // selectivity with the SDK typed-timeout matcher's coverage).
+  for (const message of [
+    'signal timed out: fetch failed',
+    'Upload failed: signal timed out',
+    'AbortError: signal aborted',
+    'signal timeout',
+    'Signal timed out',
+    'signal timed out.',
+    'The operation timed out.',
+  ]) {
+    assert.equal(
+      isSignalTimeoutNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    )
+  }
+  // The SDK's typed `Request timed out after <N>s:` wording is matched by the
+  // SEPARATE `isClientRequestTimeoutMessage` matcher (wired earlier in the
+  // gate), so the Sentry gate DOES suppress it — but `isSignalTimeoutNoise`
+  // itself must NOT match it (it's a different wording/surface). This is the
+  // disjointness assertion at the matcher level.
+  assert.equal(
+    isSignalTimeoutNoise(
+      { message: 'Request timed out after 30s: /v1/projects', frames: [] },
+    ),
+    false,
+  )
+})
+
+test('does NOT suppress signal timed out when a first-party frame is mixed with chunk frames (negative guard is any-frame)', () => {
+  // The negative guard fires if ANY frame resolves to a first-party
+  // `apps/web/src/…` source — even when mixed with minified SDK chunk frames.
+  // A real first-party `signal timed out` throw surfaces with at least one
+  // resolved first-party frame, so the any-frame negative guard preserves it.
+  const mixedFrames: Array<{ filename: unknown; function?: unknown }> = [
+    {
+      filename:
+        'app:///_next/static/chunks/66499-652b83425f671b38.js?dpl=dpl_FWCk2e9rGNxkUxaBwBGi2iMZDfno',
+      function: 't',
+    },
+    { filename: 'apps/web/src/lib/api-client.ts', function: 'fetchWithTimeout' },
+  ]
+  assert.equal(
+    isSignalTimeoutNoise({
+      message: SIGNAL_TIMEOUT_MESSAGE,
+      frames: mixedFrames,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: SIGNAL_TIMEOUT_MESSAGE, stacktrace: { frames: mixedFrames } },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('classifies the signal timed out noise via the runtime gate with an empty filename', () => {
+  // The runtime gate (window.onerror) can deliver an empty-string filename
+  // (the frameless `TimeoutError` has no resolvable source). An empty filename
+  // is never a first-party `apps/web/src/…` source, so the noise classifies.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: SIGNAL_TIMEOUT_MESSAGE,
+      filename: '',
+    }),
+    true,
+  )
+})
+
+test('the two new noise matchers do not shadow each other (disjoint message anchors)', () => {
+  // `isRedefineWebdriverNoise` (`Cannot redefine property: webdriver`) and
+  // `isSignalTimeoutNoise` (`signal timed out`) anchor on disjoint exact
+  // messages, so neither matcher matches the other's message.
+  assert.equal(
+    isRedefineWebdriverNoise({ message: 'signal timed out', frames: [] }),
+    false,
+  )
+  assert.equal(
+    isSignalTimeoutNoise({
+      message: 'Cannot redefine property: webdriver',
+      frames: [],
+    }),
+    false,
+  )
+})
+
+test('the new noise matchers handle non-string message values gracefully (no crash, no match)', () => {
+  // A non-string `message` (undefined / null / number / object) must not crash
+  // either matcher; `normalizeString` coerces to `''`, which never matches the
+  // anchored regex.
+  for (const message of [undefined, null, 42, {}, [], true]) {
+    assert.equal(
+      isRedefineWebdriverNoise({ message, frames: [] }),
+      false,
+    )
+    assert.equal(
+      isSignalTimeoutNoise({ message, frames: [] }),
+      false,
+    )
+  }
+})
+
+test('the new noise matchers handle non-string frame filenames gracefully (no crash, negative guard still works)', () => {
+  // A non-string `filename` (undefined / null / number / object) must not
+  // crash either matcher; `normalizeString` coerces to `''`, which is never a
+  // first-party `apps/web/src/…` source, so the negative guard does NOT fire
+  // and the message-only anchor classifies the noise.
+  for (const filename of [undefined, null, 42, {}, true]) {
+    assert.equal(
+      isRedefineWebdriverNoise({
+        message: REDEFINE_WEBDRIVER_MESSAGE,
+        filename,
+      }),
+      true,
+    )
+    assert.equal(
+      isSignalTimeoutNoise({ message: SIGNAL_TIMEOUT_MESSAGE, filename }),
+      true,
+    )
+  }
+})
+
+test('the two new noise matchers are disjoint from the SDK typed-timeout matcher', () => {
+  // `isSignalTimeoutNoise` (bare `signal timed out`) and
+  // `isClientRequestTimeoutMessage` (`Request timed out after <N>s:`) cover
+  // DIFFERENT surfaces and must not shadow each other. The bare native
+  // `TimeoutError` wording is distinct from the SDK's wrapped `ApiError`
+  // message.
+  assert.equal(
+    isSignalTimeoutNoise({ message: 'signal timed out', frames: [] }),
+    true,
+  )
+  assert.equal(
+    isClientRequestTimeoutMessage('signal timed out'),
+    false,
+  )
+  assert.equal(
+    isSignalTimeoutNoise(
+      { message: 'Request timed out after 30s: /v1/projects', frames: [] },
+    ),
+    false,
+  )
+  assert.equal(
+    isClientRequestTimeoutMessage('Request timed out after 30s: /v1/projects'),
+    true,
+  )
+})
+
+test('both new matchers classify the production wrappers with a non-default mechanism (onunhandledrejection) as noise', () => {
+  // The production events both use `auto.browser.global_handlers.onerror` /
+  // `auto.browser.global_handlers.onunhandledrejection` mechanisms. Neither
+  // matcher gates on the mechanism — both are message + frame anchored — so
+  // the SAME noise classifies regardless of the capture mechanism.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WEBDRIVER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WEBDRIVER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            type: 'TimeoutError',
+            value: SIGNAL_TIMEOUT_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: [] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+
+// ---------------------------------------------------------------------------
+// Safari third-party-script "undefined variable" ReferenceError noise (Better
+// Stack pattern 304f7345eea41d488225ebf2dd238fa05ca073187fd0e2ffc61071ac99f40408,
+// Kortix Frontend prod, application_id 2346967). `Can't find variable: <Name>`
+// is Safari/JavaScriptCore's canonical `ReferenceError` wording for an
+// undeclared variable reference (Chrome/V8 says `<Name> is not defined`). A
+// THIRD-PARTY script loaded on the marketing homepage (a charting/finance
+// library such as TradingView / lightweight-charts, or any vendor script
+// that defines a top-level constant like `EmptyRanges`) failed to load or
+// initialize on iOS Safari — a network abort, a parse failure, a CSP block, a
+// script-load race — so the referencing code dereferenced the now-undefined
+// global and Safari's `window.onerror` captured a FRAMELESS `ReferenceError`
+// (the engine could not produce a stack because the throw originated in script
+// text that never evaluated, so `call_site_file` is the literal `"undefined"`
+// placeholder and there are NO stack frames). 5 occurrences / 0 identified
+// users, first 2026-08-13 06:24:03 UTC, release
+// `1f8409e2bedf441343eb12086a2131ff69397c37` (v0.12.8 prod),
+// call_site_function `?`, call_site_file `undefined` (the literal
+// placeholder — NO resolvable source location), request URL
+// `https://kortix.com/` (marketing homepage), browser iPhone iOS 18.7 Safari
+// (Safari 26), mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT
+// global `onerror`, `handled:false` — never reached a React error boundary).
+// Frames: `undefined` — no stack frames at all. The variable `EmptyRanges` is
+// NOT in the Kortix codebase (grep-confirmed) — it belongs to the third-party
+// script.
+//
+// Same family as the prior frameless Safari / browser-internal noise matchers
+// — `isUnresolvableStackOverflowNoise` (Safari frameless `onerror` stack
+// overflow), `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), and `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`) — a frameless global-handler capture dropped by a precise
+// message matcher with two negative guards preserving any first-party or
+// resolvable frame.
+//
+// `Can't find variable: <Name>` is Safari's GENERIC ReferenceError wording — a
+// REAL first-party `ReferenceError` (e.g. a typo referencing an undeclared
+// variable in our own code) would surface with the SAME wording, so the
+// matcher requires BOTH the Safari ReferenceError PREFIX
+// `/^Can't find variable: /` (the variable name varies per third-party
+// script, so a prefix — not exact — match is required; Chrome/V8's
+// `<Name> is not defined` wording is a DIFFERENT surface and is deliberately
+// NOT matched) AND the frameless shape (positive guard), plus two negative
+// guards: any resolved first-party `apps/web/src/…` frame → keep reporting;
+// any resolvable frame location → keep reporting. Only the frameless capture
+// (the production noise pattern) is dropped.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event.
+const EMPTY_RANGES_REFERENCE_ERROR = "Can't find variable: EmptyRanges"
+
+// The single synthetic frame shape Safari's global `onerror` produces when
+// the engine cannot build a stack: `{ filename: 'undefined' }` (the literal
+// placeholder string, NOT a missing key). The matcher treats this as NOT
+// resolvable (so the frameless positive guard fires), and the first-party
+// negative guard does not fire (it is not an `apps/web/src/…` path).
+const EMPTY_RANGES_PROD_FRAMES = [{ filename: 'undefined', function: '?' }]
+
+test('classifies the frameless Safari undefined-variable ReferenceError noise', () => {
+  // Exact production shape: the Safari `Can't find variable: EmptyRanges`
+  // message, the synthetic `{ filename: 'undefined' }` placeholder frame
+  // (NO resolvable source location).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: EMPTY_RANGES_PROD_FRAMES,
+    }),
+    true,
+  )
+})
+
+test('classifies the frameless Safari undefined-variable noise with NO frames at all', () => {
+  // A frameless `onerror` capture may also arrive with an empty frames array
+  // (Sentry omits the stacktrace key when there is nothing to serialize).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('classifies the frameless Safari undefined-variable noise via the window.onerror filename', () => {
+  // The runtime gate receives the `window.onerror` filename (Safari sets it
+  // to the literal `"undefined"` placeholder). The matcher must treat it as
+  // NOT resolvable so the frameless positive guard fires.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'undefined',
+      frames: [],
+    }),
+    true,
+  )
+})
+
+test('suppresses the assigned Safari undefined-variable ReferenceError Sentry event via the beforeSend gate', () => {
+  // Exact shape of the production event: type `ReferenceError`, mechanism
+  // `auto.browser.global_handlers.onerror` (uncaught global `onerror` —
+  // never reached a React error boundary, `handled:false`), the synthetic
+  // `{ filename: 'undefined' }` placeholder frame (NO resolvable source
+  // location), request URL `https://kortix.com/` (marketing homepage).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: EMPTY_RANGES_REFERENCE_ERROR,
+            stacktrace: { frames: EMPTY_RANGES_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Safari undefined-variable noise when frames are absent entirely (no stacktrace key)', () => {
+  // The production event may omit the stacktrace key entirely when there is
+  // nothing to serialize. The gate must still drop it (frames default to []).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: EMPTY_RANGES_REFERENCE_ERROR }],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the Safari undefined-variable noise via the runtime onerror gate', () => {
+  // The runtime `window.onerror` gate sees the `message` + the `window.onerror`
+  // `filename` (Safari sets the latter to the literal `"undefined"` placeholder
+  // — NOT a resolvable source location).
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'undefined',
+    }),
+    true,
+  )
+})
+
+test('suppresses the Safari undefined-variable noise via the runtime gate when the filename is absent', () => {
+  // A frameless `onerror` capture may also arrive with no filename at all.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the Safari undefined-variable ReferenceError when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame means our OWN code referenced an
+  // undeclared variable (a real first-party Safari `ReferenceError`, e.g. a
+  // typo) → actionable; the negative guard MUST preserve it so the call site
+  // can be found + fixed. This is the whole reason the matcher is frame-aware
+  // (the `Can't find variable:` prefix is generic).
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/features/workspace/index.ts', function: 'loadConfig' },
+    ],
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message: EMPTY_RANGES_REFERENCE_ERROR,
+        frames,
+      }),
+      false,
+      `expected first-party undefined-variable ReferenceError from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: EMPTY_RANGES_REFERENCE_ERROR, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party undefined-variable ReferenceError from ${JSON.stringify(frames)}`,
+    )
+  }
+})
+
+test('does NOT suppress the Safari undefined-variable ReferenceError when a first-party window.onerror filename is present', () => {
+  // The runtime gate receives the `window.onerror` `filename`. A de-minified
+  // first-party `apps/web/src/…` filename means our own code is the culprit →
+  // actionable; keep reporting.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'apps/web/src/features/marketing/hero.tsx',
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'apps/web/src/features/marketing/hero.tsx',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the Safari undefined-variable ReferenceError when any resolvable (non-first-party) frame is present', () => {
+  // Any resolvable source location (real chunk / URL / named file) means the
+  // ReferenceError is attributable — a real first-party OR a third-party
+  // script that DID load and threw a resolvable `ReferenceError` with a stack
+  // we can trace. Keep reporting; only the frameless capture (the production
+  // noise pattern: a third-party script that failed to load entirely) is
+  // dropped.
+  for (const frames of [
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/chart-lib.js', function: 'init' }],
+    [{ filename: 'app:///inpage.js', function: 'emit' }],
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message: EMPTY_RANGES_REFERENCE_ERROR,
+        frames,
+      }),
+      false,
+      `expected attributable undefined-variable ReferenceError from ${JSON.stringify(frames)} to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress the Chrome/V8 "is not defined" wording (over-match guard)', () => {
+  // Chrome/V8 says `<Name> is not defined` for the SAME undeclared-variable
+  // ReferenceError — a DIFFERENT surface that is deliberately NOT matched, so
+  // a Chromium first-party `ReferenceError` keeps reporting. Frameless here on
+  // purpose (to prove the wording alone — not the frameless shape — is what
+  // keeps it reporting).
+  const message = 'EmptyRanges is not defined'
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message,
+      frames: [],
+    }),
+    false,
+    `expected Chrome/V8 wording "${message}" to keep reporting`,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+    }),
+    false,
+    `expected Sentry event for Chrome/V8 wording "${message}" to keep reporting`,
+  )
+})
+
+test('does NOT suppress a near-worded message (over-match guard)', () => {
+  // Only messages starting with the EXACT `Can't find variable: ` prefix are
+  // noise. A near-worded message (different prefix, or the prefix embedded in
+  // a longer first-party throw) keeps reporting so the matcher does not
+  // over-match a real first-party ReferenceError.
+  for (const message of [
+    "Can't find variable EmptyRanges", // missing the `: `
+    "Can't find variables: EmptyRanges", // plural + colon
+    "Can not find variable: EmptyRanges", // different modal wording
+    "Could not find variable: EmptyRanges",
+    "Error: Can't find variable: EmptyRanges (extra context)",
+    "Can't find variable", // bare prefix with no name — too short to be a real throw
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected near-worded "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a frameless rejection with a different message', () => {
+  // A frameless rejection carrying a DIFFERENT message is a different class —
+  // the matcher must not over-match it. This test pins the DIRECT matcher
+  // (other noise classes — the bare-`undefined` non-Error rejection and the
+  // `OperationError` class — have their own dedicated matchers + tests that
+  // legitimately drop their messages through the full Sentry gate, so they
+  // are not routed through `shouldIgnoreSentryBrowserNoise` here).
+  for (const message of [
+    'Something else entirely',
+    'ReferenceError: a different reference error',
+    'Non-Error promise rejection captured with value: undefined',
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: [],
+      }),
+      false,
+      `expected frameless "${message}" to keep reporting under the undefined-variable matcher`,
+    )
+  }
+  // A genuinely-non-noise message (no other matcher drops it) must keep
+  // reporting through the full Sentry gate too.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          { value: 'Something else entirely', stacktrace: { frames: [] } },
+        ],
+      },
+    }),
+    false,
+    'expected Sentry event for a non-noise frameless message to keep reporting',
+  )
+})
+
+test('matches other third-party undefined-variable names (the prefix, not the specific name, is the anchor)', () => {
+  // The variable name belongs to the third-party script and varies per vendor
+  // (e.g. `EmptyRanges` from a charting lib, `WebAssembly` from a runtime
+  // detector). The matcher anchors on the Safari `Can't find variable: `
+  // PREFIX, so any third-party variable name classifies as noise when the
+  // frameless shape holds. The `WebAssembly` case is a documented real-world
+  // Safari throw from a feature-detect script (see
+  // `apps/web/src/components/markdown/unified-markdown-utils.ts`).
+  for (const message of [
+    "Can't find variable: WebAssembly",
+    "Can't find variable: SomeChartingConstant",
+    "Can't find variable: __third_party_init__",
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: EMPTY_RANGES_PROD_FRAMES,
+      }),
+      true,
+      `expected frameless "${message}" to be noise`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [{ value: message, stacktrace: { frames: EMPTY_RANGES_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry gate to drop frameless "${message}"`,
+    )
+  }
+})
+
+test('strips the ReferenceError wrapper before matching (capture-path consistency)', () => {
+  // `stripErrorWrappers` strips `ReferenceError: ` and
+  // `Unhandled promise rejection: ` (and stacked) prefixes before the
+  // anchored prefix is matched, so all capture paths (window.onerror,
+  // onunhandledrejection, Sentry exception) classify consistently.
+  for (const message of [
+    `ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+    `Unhandled promise rejection: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+    `Unhandled promise rejection: ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message,
+        frames: EMPTY_RANGES_PROD_FRAMES,
+      }),
+      true,
+      `expected wrapped "${message}" to be noise`,
+    )
+  }
+})
+
+test('classifies the noise when the only frame is a non-resolvable placeholder', () => {
+  // Safari's global `onerror` can produce a few non-resolvable placeholder
+  // shapes when the engine cannot build a stack. The matcher treats an empty
+  // string OR the literal `"undefined"` placeholder as NOT resolvable, so the
+  // frameless positive guard fires for any of them. (A resolvable chunk /
+  // URL / `apps/web/src/…` filename would trip a negative guard instead.)
+  for (const frames of [
+    [{ filename: 'undefined', function: '?' }],
+    [{ filename: '', function: '?' }],
+    [{ filename: 'undefined' }],
+  ]) {
+    assert.equal(
+      isUndefinedVariableThirdPartyNoise({
+        message: EMPTY_RANGES_REFERENCE_ERROR,
+        frames,
+      }),
+      true,
+      `expected non-resolvable placeholder frame ${JSON.stringify(frames)} to classify as noise`,
+    )
+  }
+})
+
+test('does NOT suppress when the resolvable frame is an empty-but-present array (negative-guard sanity)', () => {
+  // Sanity: a frame array containing a resolvable chunk filename must keep
+  // reporting even when the message matches — the resolvable-frame negative
+  // guard #2 fires. (Distinct from the empty-`filename` placeholder above,
+  // which is NOT resolvable.)
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: [{ filename: 'app:///_next/static/chunks/main.js', function: 'f' }],
+    }),
+    false,
+  )
+})
+
+test('the empty `undefined` placeholder filename does NOT shadow the first-party negative guard', () => {
+  // When BOTH a non-resolvable placeholder frame AND a resolved first-party
+  // `apps/web/src/…` frame are present, the first-party negative guard #1
+  // fires (our own code is the culprit) → keep reporting. The placeholder
+  // frame does NOT change that.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      frames: [
+        { filename: 'undefined', function: '?' },
+        { filename: 'apps/web/src/lib/api/client.ts', function: 'fetchProject' },
+      ],
+    }),
+    false,
+  )
+})
+
+test('suppresses the wrapped undefined-variable noise via the runtime onunhandledrejection gate', () => {
+  // An `onunhandledrejection` of an `Error` serializes to
+  // `Unhandled promise rejection: <message>`. The runtime gate extracts the
+  // message from `reason`/`error` too, and `stripErrorWrappers` strips the
+  // wrapper, so the wrapped form still classifies as noise.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: `Unhandled promise rejection: ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}`,
+      filename: 'undefined',
+    }),
+    true,
+  )
+})
+
+test('suppresses the wrapped undefined-variable noise via the runtime gate when the reason carries it', () => {
+  // The runtime `onunhandledrejection` gate also reads `reason.message`. A
+  // real `Error` reason carrying the Safari ReferenceError wording (frameless)
+  // classifies as noise.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      filename: 'undefined',
+      reason: { message: `ReferenceError: ${EMPTY_RANGES_REFERENCE_ERROR}` },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress when a non-first-party resolvable filename is the window.onerror source', () => {
+  // The runtime gate's window.onerror `filename` can be a real third-party
+  // script URL (the charting lib that DID load but threw a resolvable
+  // ReferenceError). That is attributable → keep reporting; only the
+  // frameless `undefined` placeholder filename drops.
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'https://cdn.example.com/chart-lib.js',
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: EMPTY_RANGES_REFERENCE_ERROR,
+      filename: 'https://cdn.example.com/chart-lib.js',
+    }),
+    false,
+  )
+})
+
+test('a bare prefix with no variable name is NOT matched (over-match guard)', () => {
+  // The matcher anchors on the PREFIX `/^Can't find variable: ` (note the
+  // trailing space after the colon). `stripErrorWrappers` trims the message
+  // first, so a bare `"Can't find variable: "` (no variable name) loses its
+  // trailing space → `"Can't find variable:"`, which does NOT match the
+  // anchored prefix. This is the correct over-match guard: Safari always
+  // appends the variable name, so a bare prefix is never a real throw, and
+  // keeping it reporting means a degenerate / adversarial message is not
+  // silently swallowed. A real first-party throw WITH a stack keeps reporting
+  // regardless (covered by the negative-guard tests above).
+  assert.equal(
+    isUndefinedVariableThirdPartyNoise({
+      message: "Can't find variable: ",
+      frames: EMPTY_RANGES_PROD_FRAMES,
+    }),
+    false,
+    'expected the bare prefix (no variable name) to keep reporting',
+  )
 })

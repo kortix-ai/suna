@@ -1,6 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import {
+  permissions,
+  objectPolicies,
+  roleAssignments,
+  iamRoles,
   kortixSchema,
   sandboxStatusEnum,
   sandboxProviderEnum,
@@ -111,9 +115,11 @@ describe('kortix enums', () => {
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
-  test('project_role enum carries manager, editor, member, and the deprecated viewer', () => {
-    // `viewer` is retired (folded into `member`) but remains in the enum because
-    // Postgres can't drop an enum member — nothing reads or writes it.
+  test('project_role enum keeps the retired `editor` and `viewer` values it cannot drop', () => {
+    // Only `manager` and `member` are assignable. `viewer` folds into `member`
+    // and `editor` folds into `manager` (removed 2026-08-18, rows rewritten by
+    // 20260818120000000_project_role_editor_to_manager). Both remain in the
+    // enum because Postgres can't drop an enum member — nothing writes either.
     expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'member', 'viewer']);
   });
 
@@ -349,19 +355,19 @@ describe('Kortix Apps schema', () => {
   });
 });
 
-describe('warm project session uniqueness', () => {
-  test('allows one available warm session per project and creator', () => {
+describe('warm project sessions', () => {
+  // `idx_project_sessions_one_available_warm` used to arbitrate a warm-session
+  // create race. A warm session is now an ordinary session and a duplicate costs
+  // one extra box, bounded by the reserved concurrent-session slot, so the index
+  // was dropped (migrations/20260813203000000_drop_one_available_warm_index).
+  // Re-declaring it would make `db:generate` emit a CREATE against a dropped
+  // index, so the schema must stay free of it.
+  test('declares no partial unique index on the warm marker', () => {
     const index = getTableConfig(projectSessions).indexes.find(
       (candidate) => candidate.config.name === 'idx_project_sessions_one_available_warm',
     );
 
-    expect(index).toBeDefined();
-    expect(index?.config.unique).toBe(true);
-    expect(index?.config.columns.map((column: any) => column.name)).toEqual([
-      'project_id',
-      'created_by',
-    ]);
-    expect(index?.config.where).toBeDefined();
+    expect(index).toBeUndefined();
   });
 });
 
@@ -632,5 +638,103 @@ describe('accountSsoProviders table', () => {
     expect(col).toBeDefined();
     expect(col?.notNull).toBe(true);
     expect(col?.default).toBe(false);
+  });
+});
+
+describe('canonical RBAC tables (PR2)', () => {
+  test('permissions is keyed by the action string itself', () => {
+    // The catalog IS the set of legal action strings, so the PK is the action
+    // and role_permissions.action can carry a real foreign key to it — the first
+    // time in this system's history that a role's action list is checked against
+    // anything but a JS Set at write time.
+    const cfg = getTableConfig(permissions);
+    const action = cfg.columns.find((c) => c.name === 'action');
+    expect(action?.primary).toBe(true);
+    expect(cfg.columns.map((c) => c.name).sort()).toEqual(
+      [
+        'action',
+        'area',
+        'created_at',
+        'delegable',
+        'description',
+        'implies',
+        'level',
+        'resource_type',
+        'scope_type',
+        'updated_at',
+      ].sort(),
+    );
+  });
+
+  test('permissions.delegable defaults to true', () => {
+    // false is the escalation ceiling (the old NON_DELEGABLE_ACTIONS Set), so a
+    // new permission must be delegable unless someone says otherwise.
+    const col = getTableConfig(permissions).columns.find((c) => c.name === 'delegable');
+    expect(col?.notNull).toBe(true);
+    expect(col?.default).toBe(true);
+  });
+
+  test('object_policies is one row per object TYPE', () => {
+    // Deny-by-default for agents is a property of the object type, not of the
+    // caller's tier — that was the `managerTier` argument threaded through
+    // isProjectResourceUsableByMember.
+    const cfg = getTableConfig(objectPolicies);
+    const key = cfg.columns.find((c) => c.name === 'object_type');
+    expect(key?.primary).toBe(true);
+    const dflt = cfg.columns.find((c) => c.name === 'unscoped_default_for_member');
+    expect(dflt?.notNull).toBe(true);
+  });
+
+  test('role_assignments carries every column the five legacy stores did', () => {
+    const cfg = getTableConfig(roleAssignments);
+    const names = cfg.columns.map((c) => c.name);
+    for (const required of [
+      'assignment_id',
+      'account_id',
+      'principal_type',
+      'principal_id',
+      'role_id',
+      'scope_type',
+      'scope_id',
+      'object_type',
+      'object_id',
+      'expires_at',
+      'granted_by',
+      'source',
+    ]) {
+      expect(names).toContain(required);
+    }
+    // object_id is TEXT, not uuid: an agent name / skill slug is a git-manifest
+    // key, exactly as iam_resource_grants.resource_id was.
+    const objectId = cfg.columns.find((c) => c.name === 'object_id');
+    expect(objectId?.getSQLType()).toBe('text');
+    expect(objectId?.notNull).toBe(false);
+  });
+
+  test('role_assignments indexes the four lookups the engine makes', () => {
+    const cfg = getTableConfig(roleAssignments);
+    const names = cfg.indexes.map((i) => i.config.name);
+    expect(names).toContain('idx_role_assignments_principal');
+    expect(names).toContain('idx_role_assignments_scope');
+    expect(names).toContain('idx_role_assignments_role');
+    expect(names).toContain('idx_role_assignments_account');
+  });
+
+  test('iam_roles.account_id is nullable so a system role can be one row', () => {
+    // NULL = a seeded system role shared by every account. Every legacy read
+    // filters account_id = :id, so those rows are invisible to old code.
+    const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
+    expect(col?.notNull).toBe(false);
+  });
+
+  test('project_members finally has a primary key', () => {
+    // It shipped with only idx_project_members_project_user, which is also every
+    // upsert's ON CONFLICT target — the one index guaranteeing correctness was
+    // the one a cleanup was most likely to drop (42P10, the account_members
+    // incident). The unique index is deliberately kept alongside the PK.
+    const cfg = getTableConfig(projectMembers);
+    const pk = cfg.primaryKeys[0];
+    expect(pk?.columns.map((c) => c.name)).toEqual(['project_id', 'user_id']);
+    expect(cfg.indexes.some((i) => i.config.name === 'idx_project_members_project_user')).toBe(true);
   });
 });

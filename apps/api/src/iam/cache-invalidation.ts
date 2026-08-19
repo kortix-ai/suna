@@ -19,7 +19,7 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { accountGroupMembers, accountMembers, iamPolicies } from '@kortix/db';
+import { accountGroupMembers, accountMembers, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
 
 interface PrincipalScopedMemo {
@@ -104,22 +104,29 @@ export async function invalidateIamCacheForAccount(accountId: string | null | un
 }
 
 /**
- * A custom role's action set changed — bust every principal that holds it via an
- * iam_policy. Member principals bust directly; group principals fan out to their
- * members. Best-effort. Call after editing iam_role_actions or deleting a role.
+ * A custom role's action set changed — bust every principal ASSIGNED it. Group
+ * principals fan out to their members; a user and a service account are each
+ * their own principal id. Best-effort. Call after editing a role's permissions
+ * or deleting a role.
+ *
+ * Reads `role_assignments`, not `iam_policies`: a binding written through
+ * `assignRole()` has no legacy row, so the old lookup would silently miss it and
+ * the holder would keep the stale action set for a whole TTL window.
  */
 export async function invalidateIamCacheForRole(roleId: string | null | undefined): Promise<void> {
   if (!roleId) return;
   try {
-    const policies = await db
-      .select({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId })
-      .from(iamPolicies)
-      .where(eq(iamPolicies.roleId, roleId));
-    for (const p of policies) {
+    const holders = await db
+      .selectDistinct({
+        principalType: roleAssignments.principalType,
+        principalId: roleAssignments.principalId,
+      })
+      .from(roleAssignments)
+      .where(eq(roleAssignments.roleId, roleId));
+    for (const p of holders) {
       if (p.principalType === 'group') {
         await invalidateIamCacheForGroup(p.principalId);
       } else {
-        // 'member' (user) or 'token' (service account = its own principal id).
         invalidateIamCacheForUser(p.principalId);
       }
     }

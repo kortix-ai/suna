@@ -170,6 +170,60 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   };
 
   /**
+   * Identity and access — the canonical RBAC surface.
+   *
+   * One vocabulary: a PRINCIPAL (user, group, service account, pending invitee)
+   * holds a ROLE at a SCOPE (the account, or one project), optionally narrowed
+   * to one OBJECT, as one ASSIGNMENT row. A role is a set of PERMISSIONS.
+   *
+   * `assignments` is the only grant store — it replaced the account-role column,
+   * the project-role column, group grants, policies and resource grants. There is
+   * no second way to grant anything, and `can`/`canBatch` is the only way to ask.
+   */
+  const iam = {
+    /** The grant table. One row per (principal, role, scope, object). */
+    assignments: {
+      list: P.listAssignments,
+      create: P.createAssignment,
+      revoke: P.revokeAssignment,
+    },
+    /** The permission catalog as data — action, scope, delegability, implications. */
+    permissions: {
+      list: P.listPermissions,
+      /** The leaves one role carries. */
+      forRole: P.getRolePermissions,
+    },
+    roles: {
+      list: P.listRoles,
+      create: P.createRole,
+      update: P.updateRole,
+      setPermissions: P.updateRolePermissions,
+      remove: P.deleteRole,
+      usage: P.getRoleUsage,
+    },
+    groups: {
+      list: P.listGroups,
+      get: P.getGroup,
+      create: P.createGroup,
+      update: P.updateGroup,
+      remove: P.deleteGroup,
+      members: {
+        list: P.listGroupMembers,
+        add: P.addGroupMembers,
+        remove: P.removeGroupMember,
+      },
+    },
+    /** Auto-provisioned agent identities — the principal picker for binding a
+     *  role to an agent. */
+    agentIdentities: P.listAgentIdentities,
+    /** Ask the engine. This is the ONLY authorization read a client should make:
+     *  probe the LEAF a route asserts, never a role label. */
+    can: P.probeEffectivePermission,
+    /** Batch probe — one roundtrip for N leaves. */
+    canBatch: P.probeEffectivePermissions,
+  };
+
+  /**
    * Billing read surface — credits, subscription, tier, and transaction
    * history for entitlement-gating + a billing/usage UI. Checkout/portal/
    * credit-purchase/subscription MUTATIONS stay app-owned (Stripe flows) —
@@ -587,7 +641,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.listProjectSessions(projectId, options),
         create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
           P.createProjectSession(projectId, input),
+        /** Pre-create the session a present user is about to start. Ordinary session; ignore failures. */
         ensureWarm: () => P.ensureWarmProjectSession(projectId),
+        /** @deprecated Navigate to `ensureWarm()`'s session and prompt it. Removed in the next major. */
         claimWarm: (input: Parameters<typeof P.claimWarmProjectSession>[1]) =>
           P.claimWarmProjectSession(projectId, input),
       },
@@ -976,6 +1032,22 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** Which turns are running right now, and how did the last one end?
+       *  Server truth from the control plane's lifecycle authority, independent
+       *  of the live stream. */
+      turn: () => P.getSessionTurn(projectId, sessionId),
+      /** This session's SERVER-SIDE prompt inbox: the prompts it still owes the
+       *  user. Durable, so it survives a closed tab and is the same list on
+       *  every device. */
+      prompts: {
+        create: (input: P.CreateSessionPromptInput) =>
+          P.createSessionPrompt(projectId, sessionId, input),
+        list: () => P.listSessionPrompts(projectId, sessionId),
+        remove: (promptId: string) => P.deleteSessionPrompt(projectId, sessionId, promptId),
+        retry: (promptId: string) => P.retrySessionPrompt(projectId, sessionId, promptId),
+        /** Hold (or release) the whole queue — what the Stop button writes. */
+        hold: (held: boolean) => P.holdSessionPrompts(projectId, sessionId, held),
+      },
       /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
       voiceTranscript: (options?: Parameters<typeof P.getVoiceTranscript>[2]) =>
         P.getVoiceTranscript(projectId, sessionId, options),
@@ -1159,6 +1231,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         findText: async (pattern: string) => F.findText(pattern, (await ensureReady()).runtimeUrl),
         upload: async (file: File | Blob, targetPath?: string, filename?: string) =>
           F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl),
+        /**
+         * Overwrite `filePath` in place. The daemon's upload endpoint never
+         * overwrites (it uniquifies a colliding name), so a plain `upload` over
+         * an existing path silently writes a DIFFERENT file — see `writeFile`.
+         */
+        write: async (filePath: string, content: Blob | File) =>
+          F.writeFile(filePath, content, (await ensureReady()).runtimeUrl),
         create: async (filePath: string) =>
           F.createFile(filePath, (await ensureReady()).runtimeUrl),
         copy: async (sourcePath: string, destPath: string) =>
@@ -1176,6 +1255,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** The platform config in effect (for diagnostics). */
     config,
     accounts,
+    /** Identity and access — assignments, roles, permissions, groups, probes. */
+    iam,
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
     accountInvites,
     projects,

@@ -121,6 +121,26 @@ function resolveAppUrl() {
   return readUrlOverride() || appBaseUrl();
 }
 
+/**
+ * Is this auth challenge coming from the exact origin we load the app from?
+ * Anything else — an iframe, a sandbox preview, an attacker page returning 401
+ * Basic — must never be answered with our shared credential.
+ * @param {{ host?: string, port?: number }} authInfo
+ */
+function isAppOriginChallenge(authInfo) {
+  let target;
+  try {
+    target = new URL(resolveAppUrl());
+  } catch {
+    return false;
+  }
+  if (!authInfo.host || authInfo.host !== target.hostname) return false;
+  const targetPort = Number(
+    target.port || (target.protocol === 'https:' ? 443 : 80),
+  );
+  return !authInfo.port || authInfo.port === targetPort;
+}
+
 /* ─── Maximized-state persistence ─────────────────────────────────────────
    Like Tauri we persist ONLY the maximized flag — never size/position, which
    have stranded windows off-screen or restored a tiny window. Every launch
@@ -696,6 +716,40 @@ if (!gotLock) {
 } else {
   // A kortix:// link that arrives before the window exists (macOS cold start).
   let pendingDeepLink = null;
+
+  // HTTP Basic challenges (dev/staging sit behind one shared credential — see
+  // apps/web/src/middleware.ts, which answers 401 "Authentication required.").
+  //
+  // Chrome shows its own username/password dialog for these. Electron does NOT:
+  // if nothing handles 'login' the request is simply cancelled, so the window
+  // renders the bare 401 body with no way to get past it. That is exactly what
+  // a dev build pointed at dev.kortix.com looks like.
+  //
+  // The credential is answered ONLY for the configured app origin. Untrusted
+  // in-app content (sandbox previews, iframes) can point at any host, and a
+  // 401 Basic challenge is all an attacker host would need to harvest it.
+  app.on('login', (event, _webContents, _details, authInfo, callback) => {
+    if (!authInfo.isProxy && authInfo.scheme === 'basic') {
+      if (!isAppOriginChallenge(authInfo)) {
+        console.warn(
+          `[kortix] ignoring HTTP Basic challenge from ${authInfo.host} — not the app origin.`,
+        );
+        event.preventDefault();
+        callback();
+        return;
+      }
+      const password = process.env.KORTIX_DESKTOP_BASIC_PASSWORD;
+      if (password) {
+        event.preventDefault();
+        callback(process.env.KORTIX_DESKTOP_BASIC_USER || 'kortix', password);
+        return;
+      }
+      console.warn(
+        `[kortix] ${authInfo.host} requires HTTP Basic auth and no credential is set. ` +
+          `Re-run with KORTIX_DESKTOP_BASIC_PASSWORD=… (user defaults to "kortix").`,
+      );
+    }
+  });
 
   app.on('second-instance', (_event, argv) => {
     const deepLink = argv.find((a) => a.startsWith(`${URL_SCHEME}://`));

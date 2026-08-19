@@ -32,8 +32,15 @@ mock.module('../shared/db', () => ({
             limit: async () => [],
           }),
         }),
+        // The monitor-event retention sweep selects straight off one table
+        // (no join) before deleting the batch it found.
+        where: () => ({
+          orderBy: () => ({ limit: async () => [] }),
+          limit: async () => [],
+        }),
       }),
     }),
+    selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
   },
 }));
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
@@ -78,7 +85,7 @@ mock.module('./session-lifecycle/undelivered-prompts', () => ({
 }));
 
 mock.module('./session-lifecycle/runtime-wake-maintenance', () => ({
-  reconcileRuntimeWakeFences: async () => ({ checked: 0, stopped: 0, errors: 0 }),
+  reconcileRuntimeWakeFences: async () => ({ checked: 0, stopped: 0, removed: 0, errors: 0 }),
 }));
 
 mock.module('./sandbox-reaper', () => ({

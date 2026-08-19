@@ -208,6 +208,29 @@ export function scopedModelSelectionKey(
 }
 
 /**
+ * The `modelStore.selectedModel` slot that holds "the model this composer is
+ * pointed at", scoped by provider mode and by agent.
+ *
+ * `agentName === undefined` is a REAL, reachable state, not an error: a project
+ * `member` is deny-by-default on agents (`resource-grants.ts`), so the composer
+ * roster is empty until an explicit grant names them. It gets its own stable
+ * agent-less slot instead of no slot at all.
+ *
+ * Returning `undefined` here (the shape `scopedModelSelectionKey` uses) is what
+ * broke the picker for exactly that member: `setModel` skipped the only durable
+ * write it had — the project-home composer carries no `sessionId`, so the
+ * per-session slot is absent too — and every click in a fully populated model
+ * list silently resolved back to the server default. Read and write must use
+ * THIS one function so they can never disagree about where the pick lives.
+ */
+export function agentScopedModelSelectionKey(
+  mode: ModelProviderMode,
+  agentName: string | undefined,
+): string {
+  return `${mode}:${agentName ?? ''}`;
+}
+
+/**
  * Resolve the current agent name with a priority chain:
  *   1. Per-session slot (`sessionAgentName`) — sticky for THIS session once the
  *      user (or a replayed stash) has picked one.
@@ -374,6 +397,14 @@ export function useOpenCodeLocal({
     return visibleAgents[0];
   }, [visibleAgents, currentAgentName]);
 
+  // Where THIS composer's model pick is persisted. One key for the read below
+  // and the write in `setModel`, defined once so an agent-less composer (a
+  // member with no agent grant) still has somewhere to put the pick.
+  const agentModelSlotKey = useMemo(
+    () => agentScopedModelSelectionKey(providerMode, currentAgent?.name),
+    [providerMode, currentAgent?.name],
+  );
+
   // ---- Per-agent model overrides (persisted to localStorage so selection survives refresh/new tabs) ----
 
   // ---- Fallback model (matching SolidJS local.tsx:94-126) ----
@@ -428,14 +459,19 @@ export function useOpenCodeLocal({
           scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
         // Back-compat: the old unscoped slot, only if valid in the current mode.
         () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
-        // Per-agent model (persisted across sessions for this agent)
-        () =>
-          currentAgent
-            ? modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`)
-            : undefined,
+        // Per-agent model (persisted across sessions for this agent, or in the
+        // agent-less slot when the caller has access to no agent at all).
+        () => modelStore.getSelectedModel(agentModelSlotKey),
         () => (currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined),
       ),
-    [currentAgent, sessionId, scopedSessionModelKey, providerMode, modelStore, getFirstValidModel],
+    [
+      currentAgent,
+      agentModelSlotKey,
+      sessionId,
+      scopedSessionModelKey,
+      modelStore,
+      getFirstValidModel,
+    ],
   );
 
   // The gateway-configured default for the current agent (agent -> project ->
@@ -502,8 +538,13 @@ export function useOpenCodeLocal({
       }
 
       const next = model ?? fallbackModel;
-      if (currentAgent && next) {
-        modelStore.setSelectedModel(`${providerMode}:${currentAgent.name}`, next);
+      // Persist unconditionally into the composer's slot. This was gated on
+      // `currentAgent`, which made the whole picker inert for a project member
+      // holding no agent grant: no agent AND no sessionId (project-home
+      // composer) meant NEITHER write ran, so the pick vanished on the next
+      // render and the trigger snapped back to the server default.
+      if (next) {
+        modelStore.setSelectedModel(agentModelSlotKey, next);
       }
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
@@ -517,7 +558,7 @@ export function useOpenCodeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [currentAgent, scopedSessionModelKey, providerMode, fallbackModel, modelStore, isModelValid],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----

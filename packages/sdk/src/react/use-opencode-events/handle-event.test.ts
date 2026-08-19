@@ -58,6 +58,18 @@ mock.module('../../platform/ui', () => ({
   },
 }));
 
+// `session.compacted` calls the REAL runtime-client singleton
+// (`core/runtime/client`'s `getClient()`) directly — not the `client` this
+// harness injects via `createEventHandler` (that one only backs the default
+// `reconcileSessionTail` closure). Mock the singleton so `getImpl` overrides
+// below can actually reach it, and so the unmocked default (a real sandbox
+// URL never being configured in this test process) doesn't throw
+// `RuntimeNotReadyError` before the code under test even runs.
+let singletonSessionGetImpl: () => Promise<{ data?: unknown }> = async () => ({ data: undefined });
+mock.module('../../core/runtime/client', () => ({
+  getClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
+}));
+
 const { createEventHandler } = await import('./handle-event');
 const { qk } = await import('../query-keys');
 const { useSyncStore } = await import('../../browser/stores/sync-store');
@@ -85,6 +97,8 @@ function buildHandler(
     messagesImpl?: () => Promise<{ data?: unknown }>;
     getImpl?: () => Promise<{ data?: unknown }>;
     projectId?: string;
+    reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
+    userPartsGraceMs?: number;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -105,6 +119,10 @@ function buildHandler(
   // the very same event (`applySyncEvent` runs BEFORE the switch statement).
   const applySyncEvent = makeCalls<[unknown]>();
 
+  // `session.compacted`'s targeted refetch reads the RUNTIME-CLIENT SINGLETON
+  // (mocked at module scope above), not this injected `client` — set both so
+  // a test only has to pass `getImpl` once.
+  singletonSessionGetImpl = overrides.getImpl ?? (async () => ({ data: undefined }));
   const client = {
     session: {
       messages: overrides.messagesImpl ?? (async () => ({ data: [] })),
@@ -125,6 +143,8 @@ function buildHandler(
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
+    reconcileSessionTail: overrides.reconcileSessionTail,
+    userPartsGraceMs: overrides.userPartsGraceMs,
   });
 
   return {
@@ -187,6 +207,7 @@ beforeEach(() => {
   useDiagnosticsStore.getState().clearAll();
   toasts = [];
   notifications = [];
+  singletonSessionGetImpl = async () => ({ data: undefined });
 });
 
 afterEach(() => {
@@ -388,6 +409,179 @@ describe('session lifecycle cache mutations', () => {
       'ses_b',
     ]);
     expect(queryClient.getQueryData(opencodeKeys.runtimeSession('ses_a'))).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// session.compacted — the targeted refetch that is supposed to clear
+// `time.compacting` off `opencodeKeys.runtimeSession`. This ad hoc
+// `client.session.get()` call used to have NO retry and a `.catch(() => {})`
+// that swallowed any failure, leaving `time.compacting` stale forever
+// (`useOpenCodeSession` reads it with `staleTime: Infinity`, so nothing else
+// ever refetches it). On failure it must now route through
+// `queryClient.invalidateQueries` — the SAME query `useOpenCodeSession`
+// registers, with its own retry/backoff — instead of failing silently once.
+// ============================================================================
+
+describe('session.compacted', () => {
+  test('success: patches the runtime-session cache AND the session-list mirror directly', async () => {
+    const { handleEvent, queryClient, stopCompaction } = buildHandler({
+      getImpl: async () => ({ data: session('ses_a', { time: { created: 1, updated: 9 } }) }),
+    });
+    queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_a', { title: 'Old' })]);
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    expect(stopCompaction.calls.map((c) => c[0])).toEqual(['ses_a']);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      queryClient.getQueryData<Session>(opencodeKeys.runtimeSession('ses_a'))?.time.compacting,
+    ).toBeUndefined();
+    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].time.compacting).toBeUndefined();
+  });
+
+  test('failure: a rejected refetch invalidates the runtime-session query instead of leaving it stale forever', async () => {
+    const { handleEvent, queryClient } = buildHandler({
+      getImpl: async () => {
+        throw new Error('sandbox proxy 502');
+      },
+    });
+    // Seed a cache entry so `invalidateQueries` has something to mark.
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+    let invalidatedRuntimeSession = 0;
+    const orig = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+        invalidatedRuntimeSession++;
+      return orig(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invalidatedRuntimeSession).toBe(1);
+  });
+
+  test('no data returned (not a throw either): still invalidates rather than leaving the row untouched', async () => {
+    const { handleEvent, queryClient } = buildHandler({
+      getImpl: async () => ({ data: undefined }),
+    });
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+    let invalidatedRuntimeSession = 0;
+    const orig = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+        invalidatedRuntimeSession++;
+      return orig(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invalidatedRuntimeSession).toBe(1);
+  });
+});
+
+// ============================================================================
+// T22 — session.created / session.updated seed the sync store's revert
+// mirror off `Session.revert` (the reload/cross-tab recovery path — see
+// `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment). `applySyncEvent`
+// is a spy in this harness (see the note above), so this reads the REAL
+// `useSyncStore` directly, exactly like the existing session.error tests do.
+// ============================================================================
+
+describe('session.created / session.updated — revert mirror (T22)', () => {
+  test('session.created with a revert field stages it, watermark off currently known messages', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().hydrate('ses_new', [
+      { info: userMessage('msg_1'), parts: [] },
+      { info: userMessage('msg_2'), parts: [] },
+    ]);
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: {
+        sessionID: 'ses_new',
+        info: session('ses_new', { revert: { messageID: 'msg_2' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_new).toEqual({
+      messageId: 'msg_2',
+      watermark: 'msg_2',
+      staged: true,
+    });
+  });
+
+  test('session.updated with a revert field seeds it too', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: {
+        sessionID: 'ses_a',
+        info: session('ses_a', { revert: { messageID: 'msg_1' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).toEqual({
+      messageId: 'msg_1',
+      watermark: 'msg_1',
+      staged: true,
+    });
+  });
+
+  test('an ordinary update with no revert field never clears an already-tracked one', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().stageSessionRevert('ses_a', 'msg_1');
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: { sessionID: 'ses_a', info: session('ses_a') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).not.toBeNull();
+  });
+
+  test('session.created / session.updated with no revert field never fabricates one', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: { sessionID: 'ses_b', info: session('ses_b') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_b).toBeUndefined();
   });
 });
 
@@ -649,7 +843,7 @@ describe('session.error', () => {
     useSyncStore.getState().optimisticAdd('ses_1', userMessage('msg_optimistic'), []);
 
     // A real `session.error` event's `error.name` is restricted to the SDK's
-    // typed union — but `looksLikeAbortError` (see `helpers.ts`) exists
+    // typed union — but `isAbortError` (see `core/http/abort-error.ts`) exists
     // precisely because some servers emit a differently-shaped abort error.
     // Bypass the strict type here (as the real synthetic-abort call site in
     // `use-event-stream-refs.ts` also must) to exercise that defensive path.
@@ -926,5 +1120,88 @@ describe('remaining event kinds — smoke coverage', () => {
       properties: { serverID: 'srv_1', path: 'src/app.ts' },
     });
     expect(fetchLspDiagnosticsDebounced.calls.length).toBe(1);
+  });
+});
+
+describe('a USER message.updated whose parts never arrive is re-read from the server', () => {
+  // Seen live: the runtime persists a user message and emits `message.updated`
+  // (info only) then `message.part.updated` (the text). When the part frame is
+  // lost — a stream reconnect during the boot hand-off — the transcript holds
+  // a user message with NO parts: an empty bubble, forever, until a reload.
+  // The tail is re-read after a short grace when that happens.
+  test('no parts after the grace → one tail reconcile with reason sse-gap', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+      userPartsGraceMs: 0,
+    });
+    // `applySyncEvent` is a spy here; the message lands in the store as it
+    // would have via the real one.
+    useSyncStore.getState().upsertMessage('ses_up', { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } as never);
+    handleEvent({
+      id: 'evt_u',
+      type: 'message.updated',
+      properties: { sessionID: 'ses_up', info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } },
+    } as never);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([['ses_up', 'sse-gap']]);
+  });
+
+  test('parts present by then → nothing is fetched', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+      userPartsGraceMs: 0,
+    });
+    useSyncStore.getState().upsertPart('msg_user_p', { id: 'prt_1', messageID: 'msg_user_p', sessionID: 'ses_up2', type: 'text', text: 'hi' } as never, 'ses_up2');
+    handleEvent({
+      id: 'evt_u2',
+      type: 'message.updated',
+      properties: { sessionID: 'ses_up2', info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } } },
+    } as never);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)', () => {
+  // The store's applyEvent refuses to guess-delete when this tab never saw
+  // the staging and raises `sessionRevertNeedsTailReconcile` instead.
+  // handle-event is the one consumer: it must fetch the server's truncated
+  // tail and clear the flag. applySyncEvent is a spy in this harness, so the
+  // flag is seeded directly — exactly the state the store leaves behind.
+  test('consumes the needs-reconcile flag: fetches the tail, clears the flag', () => {
+    useSyncStore.getState().markSessionRevertNeedsTailReconcile('ses_rw');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([['ses_rw', 'manual']]);
+    expect(useSyncStore.getState().sessionRevertNeedsTailReconcile['ses_rw']).toBeUndefined();
+  });
+
+  test('no flag (tracked-revert tab) → no reconcile fetch', () => {
+    useSyncStore.getState().clearSessionRevertNeedsTailReconcile('ses_rw2');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([]);
   });
 });

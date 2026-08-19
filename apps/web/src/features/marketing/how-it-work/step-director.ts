@@ -76,7 +76,9 @@ export function useCliMovie<S extends object>(initial: S, stages: Stage<S>[]): C
   // renders — but it is a fresh array each time, and the movie must not restart
   // on every parent render.
   const scriptRef = useRef({ initial, stages });
-  scriptRef.current = { initial, stages };
+  useEffect(() => {
+    scriptRef.current = { initial, stages };
+  });
 
   useEffect(() => {
     if (!reduced) return;

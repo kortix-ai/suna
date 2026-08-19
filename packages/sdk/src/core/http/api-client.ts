@@ -293,9 +293,19 @@ async function makeRequest<T = any>(
 
       try {
         errorData = await response.json();
-        if (typeof errorData.reason === 'string') {
-          errorMessage = errorData.reason;
-        } else if (typeof errorData.message === 'string') {
+        // ORDER MATTERS, and `reason` is LAST on purpose.
+        //
+        // A Kortix error body pairs a machine slug with the sentence written for
+        // the user, e.g. the 409 from `POST /sessions/:id/restart`:
+        //   { error: "The original sandbox is unavailable. …",
+        //     code: "SESSION_RUNTIME_IDENTITY_UNAVAILABLE",
+        //     reason: "runtime_identity_unavailable" }
+        // `reason` used to be read first, so that customer saw the bare slug
+        // `runtime_identity_unavailable` as the card detail AND the toast.
+        // Not one `reason` value in the API is a sentence — they are all
+        // snake_case slugs — so preferring it could only ever downgrade the
+        // message. Branch on `code` (kept below); render the human field.
+        if (typeof errorData.message === 'string') {
           errorMessage = errorData.message;
         } else if (errorData.error && typeof errorData.error === 'string') {
           errorMessage = errorData.error;
@@ -304,6 +314,10 @@ async function makeRequest<T = any>(
           errorMessage = errorData.detail;
         } else if (typeof errorData.detail?.message === 'string') {
           errorMessage = errorData.detail.message;
+        } else if (typeof errorData.reason === 'string') {
+          // Last resort: a body with no prose at all still says something more
+          // useful than `HTTP 409: Conflict`.
+          errorMessage = errorData.reason;
         }
       } catch {}
 

@@ -115,11 +115,17 @@ export const providerTransitionStatusEnum = kortixSchema.enum('provider_transiti
   'cancelled',
 ]);
 
-// `member` is the floor project role (renamed from `user`, see the
-// project_role_member_rename migration). `user` and the older `viewer` are
-// DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
-// and are no longer assignable. `viewer` lingers because Postgres can't drop an
-// enum member; `user` was renamed in place. Nothing reads or writes either.
+// TWO assignable project roles: `member` (read + run) and `manager`
+// (everything). Every other value in this enum is a retired tier Postgres
+// cannot drop:
+//   - `viewer` / `user` → fold into `member` (`user` was renamed in place by
+//     the project_role_member_rename migration).
+//   - `editor` → REMOVED 2026-08-18; every row was rewritten to `manager` by
+//     `20260818120000000_project_role_editor_to_manager.concurrent.ts`. It
+//     still folds to `manager` on read (see normalizeProjectRole) so a row
+//     written by a pre-removal replica mid-rollout keeps working, and it is
+//     rejected on write (parseAssignableProjectRole → 400).
+// Nothing writes any retired value.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -225,16 +231,16 @@ export const accountInvitations = kortixSchema.table(
     initialRole: accountRoleEnum('initial_role').default('member').notNull(),
     /** Optional list of project grants to apply when the invite is
      *  accepted. Lets a project admin invite a non-Kortix user "into
-     *  project X as Editor" in one step — the system creates an
+     *  project X as Manager" in one step — the system creates an
      *  account invite + records the project grant here; on accept,
      *  the user joins the org as a member AND gets the project role
      *  in the same transaction. Shape:
-     *    [{ project_id: uuid, role: 'manager'|'editor'|'member',
+     *    [{ project_id: uuid, role: 'manager'|'member',
      *       expires_at?: iso }]
      *  Multiple grants are allowed — the same email could be invited
      *  to several projects at once via repeated calls (they upsert).
-     *  Legacy rows may carry the retired 'user'/'viewer' role; readers
-     *  fold both into 'member' via parseProjectRole.
+     *  Legacy rows may carry a retired role: 'user'/'viewer' fold into
+     *  'member' and 'editor' folds into 'manager' via normalizeProjectRole.
      *  Also carries `{ group_id }` entries: a SCIM Group membership pushed for a
      *  user who hasn't logged in yet (a pending invite, no user row) is parked
      *  here and materialized into account_group_members on acceptance — same
@@ -244,7 +250,7 @@ export const accountInvitations = kortixSchema.table(
         Array<
           | {
               project_id: string;
-              role: 'manager' | 'editor' | 'member';
+              role: 'manager' | 'member';
               expires_at?: string | null;
             }
           | { group_id: string }
@@ -462,6 +468,12 @@ export const projectMembers = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    // Real PRIMARY KEY (canonical-RBAC PR2). The table shipped with only
+    // `idx_project_members_project_user UNIQUE` — which is also every upsert's
+    // ON CONFLICT target, so dropping it in the wrong order 42P10s every write
+    // path (the failure account_members already hit). The PK builds its own
+    // index (`project_members_pkey`) and leaves that unique index untouched.
+    primaryKey({ columns: [table.projectId, table.userId] }),
     index('idx_project_members_account_user').on(table.accountId, table.userId),
     index('idx_project_members_project').on(table.projectId),
     uniqueIndex('idx_project_members_project_user').on(table.projectId, table.userId),
@@ -788,13 +800,12 @@ export const projectSessions = kortixSchema.table(
       table.projectId,
       table.sessionId,
     ),
-    uniqueIndex('idx_project_sessions_one_available_warm')
-      .on(table.projectId, table.createdBy)
-      .where(
-        sql`${table.createdBy} is not null
-          and ${table.metadata}->'warm_session'->>'state' = 'available'
-          and coalesce(${table.metadata}->>'deletedAt', '') = ''`,
-      ),
+    // NOTE: `idx_project_sessions_one_available_warm` (one `available` warm
+    // session per project+creator) USED to be declared here. It arbitrated a
+    // create race that no longer exists: a warm session is now an ordinary
+    // session and a duplicate costs one extra box, bounded by the reserved
+    // concurrent-session slot. Dropped by
+    // migrations/20260813203000000_drop_one_available_warm_index.concurrent.ts.
     // NOTE: a plain btree `idx_project_sessions_created_at` (created_at) ALSO
     // exists — created by migrations/20260807202731277_admin_analytics_time_indexes.concurrent.ts
     // so the admin activity dashboard's global `created_at >= $1` window scan
@@ -1131,6 +1142,9 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // Account-local sharing policy for sessions created by this trigger. The
+    // portable manifest cannot contain member/group ids from one account.
+    sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
     // The project member this trigger's automated sessions provision AS (the
     // "owner") — the secret-visibility subject and provisioning actor for
     // cron/webhook/manual fires. NULL = fall back to the account owner
@@ -1160,12 +1174,163 @@ export const projectTriggerRuntime = kortixSchema.table(
     scheduleSpec: jsonb('schedule_spec').$type<Record<string, unknown>>(),
     nextFireAt: timestamp('next_fire_at', { withTimezone: true }),
     lastScheduledFor: timestamp('last_scheduled_for', { withTimezone: true }),
+    // Monitor state (trigger_type = 'monitor'). Nullable/defaulted so a
+    // mixed-version deploy reads them safely on rows written by older code.
+    // `last_event_at` advances on every observed monitor event, fired or not.
+    lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+    // Set to now()+10m when the monitor breaches its event-rate bound; events
+    // arriving inside the window are stored `suppressed` instead of firing.
+    suppressedUntil: timestamp('suppressed_until', { withTimezone: true }),
+    // Suppression episodes in the trailing 24 h. Three ⇒ the monitor is
+    // auto-disabled with a `last_error` (spec bounds table).
+    suppressionCount: integer('suppression_count').default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/** Member/group allow-list for a trigger's future and prior created sessions. */
+export const projectTriggerSessionAccessGrants = kortixSchema.table(
+  'project_trigger_session_access_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
+    principalId: uuid('principal_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId, table.slug],
+      foreignColumns: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      name: 'project_trigger_session_access_grants_trigger_fk',
+    }).onDelete('cascade'),
+    index('idx_trigger_session_access_grants_trigger').on(table.projectId, table.slug),
+    uniqueIndex('idx_trigger_session_access_grants_unique').on(
+      table.projectId,
+      table.slug,
+      table.principalType,
+      table.principalId,
+    ),
+  ],
+);
+
+/**
+ * Append-only monitor event log — the contract AND the fire queue
+ * (docs/specs/2026-08-12-monitors.md D2).
+ *
+ * The monitor runner in the project's monitor box POSTs stdout lines here
+ * through the sandbox-token-only ingest route; the leader-elected observer
+ * drains `pending` rows into `fireGitTrigger`. One table, because
+ * `fireGitTrigger` already lands in the durable session-lifecycle queue —
+ * a second execution table would only duplicate that durability.
+ *
+ * `(project_id, slug, box_epoch, seq)` is unique: the runner assigns `seq`
+ * per epoch, so an at-least-once POST retry deduplicates on insert instead of
+ * firing the agent twice.
+ */
+export const projectMonitorEvents = kortixSchema.table(
+  'project_monitor_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    /** Identifies one boot of the monitor box; `seq` restarts per epoch. */
+    boxEpoch: varchar('box_epoch', { length: 64 }).notNull(),
+    seq: bigint('seq', { mode: 'number' }).notNull(),
+    /** `event` = a monitor stdout line. `lifecycle` = platform-synthesized
+     *  (exited / restart_budget_exhausted / silent / suppressed), which
+     *  bypasses the user filter and uses a platform-rendered prompt. */
+    kind: varchar('kind', { length: 16 }).notNull(),
+    /** The parsed line (or `{ raw: "…" }`), truncated at 8 KiB with a marker. */
+    line: jsonb('line').notNull().$type<Record<string, unknown>>(),
+    emittedAt: timestamp('emitted_at', { withTimezone: true }).notNull(),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true }).defaultNow().notNull(),
+    status: varchar('status', { length: 16 }).default('pending').notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    sessionId: text('session_id'),
+    lastError: text('last_error'),
+    firedAt: timestamp('fired_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'project_monitor_events_kind_check',
+      sql`${table.kind} IN ('event', 'lifecycle')`,
+    ),
+    check(
+      'project_monitor_events_status_check',
+      sql`${table.status} IN ('pending', 'fired', 'skipped', 'suppressed', 'failed')`,
+    ),
+    // Ingest dedup — an at-least-once POST retry lands on the same key.
+    uniqueIndex('project_monitor_events_dedup_idx').on(
+      table.projectId,
+      table.slug,
+      table.boxEpoch,
+      table.seq,
+    ),
+    // Observer drain: the pending queue, oldest first.
+    index('project_monitor_events_drain_idx').on(table.status, table.ingestedAt),
+    // Per-monitor reads (rate-limit window, log view) and retention sweeps.
+    index('project_monitor_events_monitor_idx').on(
+      table.projectId,
+      table.slug,
+      table.ingestedAt.desc(),
+    ),
+  ],
+);
+
+/**
+ * The persistent per-project monitor box (spec D3) — one microVM that runs
+ * every enabled monitor, modeled on `app_runtimes`: provider + external id,
+ * a status CHECK, a wake lease, and a partial unique index that admits only
+ * one live box per project.
+ *
+ * The reconciler that provisions and converges these rows ships in a later
+ * stage; the ingest route already authenticates the box's sandbox token
+ * against this table, so a project with no live box cannot ingest.
+ */
+export const projectMonitorBoxes = kortixSchema.table(
+  'project_monitor_boxes',
+  {
+    boxId: uuid('box_id').defaultRandom().primaryKey().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** The provider's sandbox id. Null until the create call returns. */
+    externalId: text('external_id'),
+    status: varchar('status', { length: 20 }).default('provisioning').notNull(),
+    /** Stamped on every (re)boot; the runner echoes it on ingest so events
+     *  from a superseded boot are rejected instead of firing. */
+    boxEpoch: varchar('box_epoch', { length: 64 }).notNull(),
+    /** Manifest revision the box is running. Drift ⇒ the reconciler restarts it. */
+    manifestRevision: text('manifest_revision'),
+    wakeLeaseOwner: text('wake_lease_owner'),
+    wakeLeaseUntil: timestamp('wake_lease_until', { withTimezone: true }),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    metadata: jsonb('metadata').default({}).notNull().$type<Record<string, unknown>>(),
+  },
+  (table) => [
+    check(
+      'project_monitor_boxes_status_check',
+      sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping', 'stopped', 'error', 'deleted')`,
+    ),
+    index('project_monitor_boxes_external_idx').on(table.provider, table.externalId),
+    uniqueIndex('project_monitor_boxes_one_live_per_project')
+      .on(table.projectId)
+      .where(sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping')`),
   ],
 );
 
@@ -1628,17 +1793,14 @@ export const sessionSandboxes = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    // Start of this box's CURRENT continuous running stretch, and the anchor
-    // operand of the 24h cap. Assigned ONLY by the DB trigger
-    // kortix.session_sandboxes_anchor_guard(), which carries it forward on EVERY
-    // application UPDATE in EVERY status and re-anchors a new stretch only when
-    // resuming a park it witnessed itself. Never write this from TypeScript — a
-    // constraint on a difference whose left operand a caller can slide forward
-    // is a suggestion, not a bound.
+    // Start of this box's CURRENT continuous running stretch. The DB trigger
+    // kortix.session_sandboxes_anchor_guard() carries it through every update
+    // and re-anchors it only after a park the trigger witnessed itself.
     activeSince: timestamp('active_since', { withTimezone: true }).defaultNow().notNull(),
-    // When the control plane stops this box. Single TS writer:
-    // apps/api/src/projects/sandbox-deadline.ts. Bounded by a DB CHECK at
-    // active_since + 24h.
+    // When the control plane stops this box. Writers:
+    // apps/api/src/projects/sandbox-deadline.ts and
+    // apps/api/src/projects/sandbox-turn-lifecycle.ts. Active turns renew this
+    // value only after fresh control-plane observation.
     deadlineAt: timestamp('deadline_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1649,6 +1811,69 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
+  ],
+);
+
+/**
+ * Durable per-turn ledger.
+ *
+ * `session_sandboxes.metadata.activeTurns` is the LIFECYCLE authority: the
+ * reaper's deadline math reads it and nothing else, and it is deliberately
+ * erased the moment a turn ends. That makes it unable to answer the question a
+ * client actually asks — "is a turn running, and if not, how did the last one
+ * end?". A cleared record and a turn that never existed are indistinguishable.
+ *
+ * This table is the append-and-settle history beside it. Terminal rows are
+ * RETAINED on purpose: `end_reason` is the only place "the runtime went away
+ * mid-turn" is ever written down. Nothing here is read by the reaper.
+ *
+ * No foreign keys — `session_sandboxes` has none either, and a ledger row must
+ * survive the session row it describes.
+ */
+export const sessionTurns = kortixSchema.table(
+  'session_turns',
+  {
+    // The opaque delivery token minted by the control plane. Text, not uuid:
+    // ledger writes are best-effort and must never throw on a token shape the
+    // lifecycle authority happily accepted.
+    turnToken: text('turn_token').primaryKey().notNull(),
+    sessionId: text('session_id').notNull(),
+    sandboxId: uuid('sandbox_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // OpenCode root this turn runs in. Null until the daemon reports it.
+    opencodeSessionId: text('opencode_session_id'),
+    // Client-minted OpenCode user message id. Null for command turns.
+    messageId: text('message_id'),
+    state: varchar('state', { length: 16 }).default('delivering').notNull(),
+    endReason: text('end_reason'),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('session_turns_state_check', sql`${table.state} IN ('delivering', 'active', 'ended')`),
+    check(
+      'session_turns_end_reason_check',
+      // Every value here is written by a real call site: 'completed' by a
+      // daemon-confirmed end, 'failed' by a terminal model error, 'abandoned'
+      // by a delivery that never reached OpenCode, 'runtime_gone' by the stop
+      // writer and by the reaper's deadline expiry, 'unknown' by an observer
+      // that proved the turn is over but could not say how. A value no caller
+      // writes teaches a reader a distinction the data does not carry.
+      sql`${table.endReason} IS NULL OR ${table.endReason} IN ('completed', 'runtime_gone', 'failed', 'abandoned', 'unknown')`,
+    ),
+    index('session_turns_session_idx').on(table.sessionId, table.startedAt.desc()),
+    // The stop writer settles every unsettled row of one sandbox in the same
+    // transaction that erases its lifecycle authority. PARTIAL, on the exact
+    // predicate that query uses: terminal rows are retained forever, so an
+    // index over all of them would grow without bound to answer a question
+    // only ever asked about the handful that are still open.
+    index('session_turns_open_idx')
+      .on(table.sandboxId)
+      .where(sql`${table.state} <> 'ended'`),
   ],
 );
 
@@ -2691,6 +2916,29 @@ export const gatewayBudgets = kortixSchema.table(
   ],
 );
 
+/**
+ * Per-project OTLP trace-export config — "connect any tool" for the gateway's
+ * gen_ai.* spans (Langfuse/Datadog/Honeycomb/Braintrust/etc, anything OTLP).
+ * One row per project (PK = project_id, upsert-only, mirrors
+ * project_llm_routing_policies). `headersEnc` holds the auth header(s) in the
+ * same `key1=value1,key2=value2` shape as OTEL_EXPORTER_OTLP_HEADERS, AES-GCM
+ * encrypted with the project's derived key (see projects/secrets.ts) — never
+ * stored or returned in plaintext. `endpoint` is a destination URL, not a
+ * secret, so it stays plaintext (consistent with how webhook URLs are stored
+ * elsewhere).
+ */
+export const gatewayOtelConfigs = kortixSchema.table('gateway_otel_configs', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').default(false).notNull(),
+  endpoint: text('endpoint'),
+  headersEnc: text('headers_enc'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ─── Billing / Credits ─────────────────────────────────────────────────────
 
 export const billingCustomers = kortixSchema.table(
@@ -2987,7 +3235,9 @@ export const sandboxComputeSessions = kortixSchema.table(
   (table) => [
     check(
       'sandbox_compute_sessions_workload_type_check',
-      sql`${table.workloadType} IN ('session', 'app')`,
+      // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
+      // `project_monitor_boxes.box_id`; it needs no dedicated join column.
+      sql`${table.workloadType} IN ('session', 'app', 'monitor')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
@@ -3993,7 +4243,7 @@ export const accountGroupMembersRelations = relations(accountGroupMembers, ({ on
 }));
 
 // ─── IAM v1 — DB-driven custom roles + policies ────────────────────────────
-// The built-in roles (owner/admin/member, manager/editor/user) stay as
+// The built-in roles (owner/admin/member, manager/member) stay as
 // frozen Sets in apps/api/src/iam/role-perms.ts and keep their in-memory fast
 // path. These tables add ACCOUNT-scoped CUSTOM roles and the policies that bind
 // a principal (member/group/token) to a custom role at a scope. The engine
@@ -4006,17 +4256,27 @@ export const iamRoles = kortixSchema.table(
   'iam_roles',
   {
     roleId: uuid('role_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    /** Machine key, unique per account (e.g. 'marketing_operator'). */
+    /**
+     * NULL = a SYSTEM role (owner/admin/member, manager/member, agent-user),
+     * seeded once by the canonical-RBAC migration and shared by every account.
+     * Non-null = an account's own custom role, exactly as before. Every legacy
+     * read filters `account_id = :id`, so system rows are invisible to them.
+     */
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Machine key, unique per account (e.g. 'marketing_operator'). System roles
+     *  are unique on (key, scope_type) — see uq_roles_system_key (SQL-only,
+     *  partial index on account_id IS NULL). */
     key: varchar('key', { length: 64 }).notNull(),
     name: varchar('name', { length: 128 }).notNull(),
     description: text('description'),
     /** Where the role's actions apply: 'account' | 'project'. Plain text +
      *  app-level validation (mirrors resourceTypeForAction's vocabulary). */
     scopeType: varchar('scope_type', { length: 16 }).default('project').notNull(),
-    /** Reserved: v1 only creates custom roles; built-ins remain code-defined. */
+    /** `is_system` in the canonical model: true for the seeded built-in roles
+     *  (account_id IS NULL), false for every account-authored custom role. The
+     *  physical column keeps its `is_builtin` name for one release so no live
+     *  table is renamed mid-rollout; the `kortix.roles` view exposes it as
+     *  `is_system`. */
     isBuiltin: boolean('is_builtin').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4157,6 +4417,156 @@ export const iamResourceGrants = kortixSchema.table(
     index('idx_iam_resource_grants_account').on(table.accountId),
   ],
 );
+
+// ─── Canonical RBAC (NIST RBAC1 + object scoping) ──────────────────────────
+//
+// Three new tables replace five encodings of the same idea. They are ADDITIVE
+// in this release: every legacy store keeps its rows and its writers, the
+// backfill copies them into `role_assignments`, and the canonical NAMES
+// (`kortix.roles`, `kortix.role_permissions`, `kortix.group_members`) are
+// write-through views over the legacy tables until the cutover PR swaps which
+// side is physical. Nothing here renames a live table mid-rollout.
+//
+//   permissions       the action catalog, in data instead of actions.ts
+//   role_assignments  ONE table for account_members.account_role,
+//                     project_members.project_role, project_group_grants,
+//                     iam_policies, iam_resource_grants and an invite's
+//                     bootstrap_grants
+//   object_policies   what "nobody scoped this object" means, per object TYPE
+
+/**
+ * The permission catalog. Previously `apps/api/src/iam/actions.ts` +
+ * `role-perms.ts` + `role-presets.ts NON_DELEGABLE_ACTIONS`, i.e. three code
+ * constants with no database representation and no foreign key.
+ *
+ * `scope_type` is the ONE classifier (it replaces both `scopeForActionV2` and
+ * `resourceTypeForAction`). `delegable=false` is the escalation ceiling that
+ * `NON_DELEGABLE_ACTIONS` used to hold. `area` / `level` / `implies` are the
+ * display + implication model the role-capability matrix hard-codes in the
+ * browser today, moved server-side so the two cannot drift.
+ */
+export const permissions = kortixSchema.table(
+  'permissions',
+  {
+    /** Dotted leaf, e.g. `project.gitops.push`. Primary key: the catalog IS
+     *  the set of legal action strings, and role_permissions.action FKs to it. */
+    action: varchar('action', { length: 96 }).primaryKey(),
+    /** 'account' | 'project' — the scope a role must be assigned at to grant it. */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** 'account' | 'project' — the object type the action is performed on. */
+    resourceType: varchar('resource_type', { length: 16 }).notNull(),
+    /** false = may NEVER appear in an account-authored custom role (privilege
+     *  escalation). Replaces NON_DELEGABLE_ACTIONS. */
+    delegable: boolean('delegable').default(true).notNull(),
+    description: text('description').default('').notNull(),
+    /** UI grouping key: `project`, `sessions`, `files`, `customize`, … */
+    area: varchar('area', { length: 32 }).notNull(),
+    /** 'view' | 'edit' | 'admin'. view/edit are the two matrix columns; `admin`
+     *  leaves have no cell and render in the matrix's Advanced disclosure. */
+    level: varchar('level', { length: 16 }).notNull(),
+    /** DIRECT implications: holding this action requires holding these. The
+     *  client takes the transitive closure. */
+    implies: text('implies').array().default(sql`'{}'::text[]`).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_permissions_scope_area').on(table.scopeType, table.area)],
+);
+
+/**
+ * What "no object grant exists for this object at all" means, per OBJECT TYPE.
+ *
+ * The deny-by-default rule for agents used to be a property of the CALLER
+ * (`isProjectResourceUsableByMember`'s `managerTier` argument). It is a
+ * property of the object type: an unscoped AGENT is closed to the member tier,
+ * an unscoped skill/secret/app/trigger is open. One row per type, so adding a
+ * new scopable object type is data, not a branch.
+ */
+export const objectPolicies = kortixSchema.table('object_policies', {
+  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger'. */
+  objectType: varchar('object_type', { length: 16 }).primaryKey(),
+  /** 'closed' | 'open' — what a member-tier caller gets when the object has NO
+   *  grant rows at all. Manager tier always gets the open default. */
+  unscopedDefaultForMember: varchar('unscoped_default_for_member', { length: 8 }).notNull(),
+  description: text('description').default('').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * THE assignment table. One row = "this principal holds this role at this
+ * scope (optionally narrowed to one object) until this time".
+ *
+ * Replaces, in one shape:
+ *   account_members.account_role        → (user, owner|admin|member, account)
+ *   project_members.project_role        → (user, manager|member, project:id)
+ *   project_group_grants.role           → (group, manager|member, project:id)
+ *   iam_policies                        → (user|group|service_account, custom
+ *                                          role, account|project)
+ *   iam_resource_grants                 → (user|group, agent-user, project:id,
+ *                                          object=(agent, name))
+ *   account_invitations.bootstrap_grants → (pending, …) keyed by invitee email
+ *
+ * `expires_at` is filtered in SQL by every read, so a revoke is instant and the
+ * sweeper stays audit-only — the contract engine-v2 already had.
+ */
+export const roleAssignments = kortixSchema.table(
+  'role_assignments',
+  {
+    assignmentId: uuid('assignment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** 'user' (auth uid) | 'group' (account_groups.group_id) |
+     *  'service_account' (service_accounts.service_account_id) |
+     *  'pending' (uuid5 of the lower-cased invitee email). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — polymorphic across the four principal kinds, same choice
+     *  the legacy iam_policies.principal_id made. */
+    principalId: uuid('principal_id').notNull(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** 'account' (every project in the account) | 'project' (scope_id only). */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** project_id when scope_type='project'; NULL at account scope. No FK — a
+     *  project delete is handled by the cascade on account_id plus the engine's
+     *  own project lookup, and the column is polymorphic by design. */
+    scopeId: uuid('scope_id'),
+    /** NULL = the whole scope. Otherwise the object TYPE this assignment is
+     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger'). */
+    objectType: varchar('object_type', { length: 16 }),
+    /** TEXT, not uuid: an agent name / skill slug from the git manifest, or an
+     *  uppercased secret identifier. */
+    objectId: text('object_id'),
+    /** Optional auto-revoke. Filtered in SQL on every read. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    /** 'manual' | 'scim' | 'sso' | 'invite' | 'system' — who wrote the row.
+     *  SCIM and SSO JIT keep bypassing user-authz by design, but no longer
+     *  bypass the store or the audit event. */
+    source: varchar('source', { length: 16 }).default('manual').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_role_assignments_principal').on(table.principalType, table.principalId),
+    index('idx_role_assignments_scope').on(table.scopeType, table.scopeId),
+    index('idx_role_assignments_role').on(table.roleId),
+    index('idx_role_assignments_account').on(table.accountId),
+  ],
+);
+
+export const roleAssignmentsRelations = relations(roleAssignments, ({ one }) => ({
+  account: one(accounts, {
+    fields: [roleAssignments.accountId],
+    references: [accounts.accountId],
+  }),
+  role: one(iamRoles, {
+    fields: [roleAssignments.roleId],
+    references: [iamRoles.roleId],
+  }),
+}));
 
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
 // Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to

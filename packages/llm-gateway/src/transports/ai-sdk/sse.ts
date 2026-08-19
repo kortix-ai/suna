@@ -102,6 +102,18 @@ function sse(obj: unknown): Uint8Array {
   return enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
+// SSE comment line — ignored by every SSE/OpenAI client (and by the gateway's
+// own probe, which only parses `data:` lines), so it is invisible payload.
+//
+// Emitted the moment the AI SDK reports the upstream stream has started. Before
+// this, the bridge produced its first byte only on the first `text-delta` /
+// `reasoning-delta`: `start` and `start-step` fell through the switch silently,
+// so the entire prefill window looked byte-identical to a dead upstream. On a
+// large context that window routinely outran the probe's deadline and a healthy
+// turn was cancelled. One byte at stream-open is all it takes to tell the two
+// apart.
+const STREAM_OPEN_FRAME = enc.encode(': keep-alive\n\n');
+
 interface StreamCtx {
   model: string;
   provider: string;
@@ -162,6 +174,14 @@ export function openAiSseFromFullStream(
           if (next.done) break;
           const part = next.value;
           switch (part.type) {
+            case 'start':
+            case 'start-step': {
+              // Liveness only — carries no model output, so it must not open a
+              // `data:` frame (that would make the probe treat a prefilling
+              // stream as having produced content).
+              emit(STREAM_OPEN_FRAME);
+              break;
+            }
             case 'text-delta': {
               if (!roleSent) {
                 emit(delta({ role: 'assistant', content: '' }));

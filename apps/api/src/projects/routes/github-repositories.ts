@@ -1,4 +1,5 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
@@ -49,7 +50,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const scope = await resolveProjectAccount(c);
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
     const installationId = normalizeString(
       c.req.query('installation_id') ?? c.req.query('installationId'),
@@ -151,7 +152,7 @@ projectsApp.openapi(
   }),
   async (c) => {
     const scope = await resolveProjectAccount(c);
-    await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
     const installationId = c.req.valid('query').installation_id;
     const repoFullName = c.req.valid('query').repo_full_name;

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { accountMembers, chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
 import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage, respondViaUrl, sessionWebUrl } from './util';
 import {
@@ -18,7 +19,8 @@ import { buildSlackLoginUrl } from './login';
 import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
-import { filterAccessibleProjectResources, unscopedResourceIds } from '../../iam';
+import { filterAccessibleObjects, unscopedResourceIds } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
@@ -609,16 +611,7 @@ async function canManageSlackPolicy(ctx: SlashCtx, projectId: string): Promise<b
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!project) return false;
-  const [member] = await db
-    .select({ role: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(
-      eq(accountMembers.accountId, project.accountId),
-      eq(accountMembers.userId, identity.userId),
-      inArray(accountMembers.accountRole, ['owner', 'admin']),
-    ))
-    .limit(1);
-  return !!member;
+  return isAccountManagerRole(await accountRoleFor(project.accountId, identity.userId));
 }
 
 async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
@@ -862,7 +855,12 @@ export async function loadScopedChannelAgents(input: {
         .where(eq(projects.projectId, input.projectId))
         .limit(1);
       allowedNames = proj
-        ? await filterAccessibleProjectResources(identity.userId, proj.accountId, input.projectId, 'agent', names)
+        ? await filterAccessibleObjects(
+            actorForUser(identity.userId, proj.accountId),
+            input.projectId,
+            'agent',
+            names,
+          )
         : await unscopedResourceIds(input.projectId, 'agent', names);
     } else {
       allowedNames = await unscopedResourceIds(input.projectId, 'agent', names);

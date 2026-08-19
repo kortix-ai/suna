@@ -1,9 +1,20 @@
 /**
+ * @deprecated since 0.12.9 — Kortix owns prompt ordering server-side
+ * (`POST /v1/projects/:projectId/sessions/:sessionId/prompts`). This module is
+ * retained ONLY so `@kortix/sdk/message-queue`, published in 0.12.8, keeps
+ * resolving for external consumers. It is not used by any Kortix host and will
+ * be removed in the next major.
+ *
  * The rules a message queue obeys, as pure functions.
  *
  * A message typed while the agent is mid-run is held until the turn ends. That
- * much is easy. What is not easy — and what three previous implementations got
- * wrong — is *when* it is released and *how many times*.
+ * much is easy. What is not easy — and what four implementations got wrong — is
+ * *when* it is released and *how many times*. The answer this module could
+ * never reach is that a browser tab does not know: it reads one guess at the
+ * session's state, a second tab reads another, and a closed tab loses the queue
+ * outright. The durable inbox above decides admission from the same turn
+ * authority `GET .../turn` serves from, so there is one queue per session
+ * rather than one per tab.
  *
  * The failures this module exists to make impossible:
  *
@@ -19,16 +30,23 @@
  *   - **A queued message sending under the wrong model.** `agent`, `model`, and
  *     `variant` are captured at enqueue and carried verbatim.
  *
- * The claimed item stays at `pending[0]` while it is in flight rather than
- * being spliced out. That makes `inFlightId` a real lock (one field to check),
- * makes "reorder cannot cross the in-flight slot" an index clamp rather than a
- * special case, and means a crash between claim and dispatch leaves the message
- * visible in the queue instead of silently gone.
+ * Claimed items stay at the head of `pending` while they are in flight rather
+ * than being spliced out. That makes the in-flight ids a real lock (one field
+ * to check), makes "reorder cannot cross what is sending" an index clamp rather
+ * than a special case, and means a crash between claim and dispatch leaves the
+ * messages visible in the queue instead of silently gone.
  *
  * Framework-free, storage-free, and timer-free by construction. There is no
  * `Date.now()` and no `crypto` here: ids and timestamps are inputs, so every
  * transition is deterministic and testable without fakes. Persistence and the
  * decision of *when* the turn ended belong to the host.
+ *
+ * **The export list is frozen at what 0.12.8 published.** `claimBatch` and
+ * `inFlightIdsOf` were added after that release, drove the browser batch drain
+ * that no longer exists, and are absent from the published `.d.ts` — so they
+ * are gone rather than deprecated. Nothing new may be added here either: an
+ * addition would be a new promise made by a module that exists only to keep an
+ * old one.
  */
 
 /** What a host hands in when the user queues a message. */
@@ -47,6 +65,26 @@ export interface QueuedMessageInput<TFile = unknown, TMention = unknown> {
   agent?: string | null;
   model?: { providerID: string; modelID: string } | null;
   variant?: string | null;
+  /**
+   * A `/` slash command, when this entry runs one instead of sending `text`.
+   *
+   * The queue held only prompts, so a host with a command to send had nowhere
+   * to put it and ran it immediately — straight past a busy agent, ahead of
+   * everything already waiting. Ordering is the queue's entire purpose, and a
+   * command is a turn like any other; the only difference is which call puts it
+   * on the wire, which is the host's business at dispatch time.
+   *
+   * `name`, not a resolved command object: entries are serialized to survive a
+   * reload, and the command list is re-read when the entry actually runs, so a
+   * queued command can never go stale against a list that changed underneath
+   * it. `text` still carries the arguments, so an entry stays renderable and
+   * editable with no special case.
+   */
+  command?: {
+    name: string;
+    /** Where the chip sat in `text`, for display. See the host's serializer. */
+    split?: { before: string; after: string };
+  };
   createdAt: number;
 }
 
@@ -61,19 +99,56 @@ export interface QueuedMessage<TFile = unknown, TMention = unknown>
 
 /** One session's queue. */
 export interface SessionQueue<TFile = unknown, TMention = unknown> {
-  /** Waiting to send, oldest first. `pending[0]` is in flight when claimed. */
+  /** Waiting to send, oldest first. The leading run is in flight when claimed. */
   pending: QueuedMessage<TFile, TMention>[];
   /** Gave up. Never blocks `pending`; a host offers these a retry. */
   failed: QueuedMessage<TFile, TMention>[];
-  /** The id of the item currently on the wire, or null. This is the lock. */
+  /**
+   * The head of what is on the wire, or null.
+   *
+   * Kept because it is published API and because most readers only ever want
+   * "is something sending, and which row is it". `inFlightIds[0]` and this
+   * field are the same value by construction — every transition writes both.
+   */
   inFlightId: string | null;
+  /**
+   * Every id on the wire right now, oldest first. Empty when idle.
+   *
+   * A batch claim puts more than one message on a single prompt, so the lock
+   * has to name all of them: a row the user can still edit, remove or reorder
+   * is a row that is not being sent, and `inFlightId` alone could only ever
+   * protect the first.
+   *
+   * Optional because it was added after this type shipped, and requiring it
+   * would stop a consumer's hand-built `SessionQueue` literal from compiling.
+   * Every transition in this module writes it, and `createSessionQueue()`
+   * returns it, so it is absent only on a state that predates it — which is
+   * why every read goes through `inFlight` below rather than `?? []`.
+   */
+  inFlightIds?: string[];
 }
 
 export function createSessionQueue<TFile = unknown, TMention = unknown>(): SessionQueue<
   TFile,
   TMention
 > {
-  return { pending: [], failed: [], inFlightId: null };
+  return { pending: [], failed: [], inFlightId: null, inFlightIds: [] };
+}
+
+/**
+ * Everything on the wire, oldest first. Empty when the queue is idle.
+ *
+ * Module-private since 0.12.9. It was exported as `inFlightIdsOf` only for the
+ * browser drain that read the batch lock, and that drain is gone; 0.12.8 never
+ * published the name, so nothing external can be holding it.
+ *
+ * Tolerates a state that predates `inFlightIds` — a queue rehydrated from a
+ * host that persisted the older shape has only `inFlightId`, and reading
+ * through here means no call site has to know that.
+ */
+function inFlight<TFile, TMention>(state: SessionQueue<TFile, TMention>): string[] {
+  if (state.inFlightIds?.length) return state.inFlightIds;
+  return state.inFlightId ? [state.inFlightId] : [];
 }
 
 /**
@@ -100,7 +175,7 @@ export function enqueue<TFile, TMention>(
 export function claimNext<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
 ): { state: SessionQueue<TFile, TMention>; claimed?: QueuedMessage<TFile, TMention> } {
-  if (state.inFlightId !== null) return { state };
+  if (inFlight(state).length > 0) return { state };
   const head = state.pending[0];
   if (!head) return { state };
 
@@ -110,20 +185,23 @@ export function claimNext<TFile, TMention>(
       ...state,
       pending: [claimed, ...state.pending.slice(1)],
       inFlightId: claimed.id,
+      inFlightIds: [claimed.id],
     },
     claimed,
   };
 }
 
-/** The send landed. Drop the item and free the queue. */
+/** The send landed. Drop everything it carried and free the queue. */
 export function completeInFlight<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
 ): SessionQueue<TFile, TMention> {
-  if (state.inFlightId === null) return state;
+  const sending = inFlight(state);
+  if (sending.length === 0) return state;
   return {
     ...state,
-    pending: state.pending.filter((m) => m.id !== state.inFlightId),
+    pending: state.pending.filter((m) => !sending.includes(m.id)),
     inFlightId: null,
+    inFlightIds: [],
   };
 }
 
@@ -138,14 +216,20 @@ export function failInFlight<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   error: string,
 ): SessionQueue<TFile, TMention> {
-  if (state.inFlightId === null) return state;
-  const item = state.pending.find((m) => m.id === state.inFlightId);
-  if (!item) return { ...state, inFlightId: null };
+  const sending = inFlight(state);
+  if (sending.length === 0) return state;
+  // A list, not a single id: `claimNext` only ever locks one, but a state
+  // rehydrated from a host that claimed several still carries them, and one
+  // send failing is all of their failure. They land as separate rows so the
+  // user can retry the message that matters instead of re-sending three.
+  const items = state.pending.filter((m) => sending.includes(m.id));
+  if (items.length === 0) return { ...state, inFlightId: null, inFlightIds: [] };
 
   return {
-    pending: state.pending.filter((m) => m.id !== state.inFlightId),
-    failed: [...state.failed, { ...item, lastError: error }],
+    pending: state.pending.filter((m) => !sending.includes(m.id)),
+    failed: [...state.failed, ...items.map((item) => ({ ...item, lastError: error }))],
     inFlightId: null,
+    inFlightIds: [],
   };
 }
 
@@ -165,12 +249,12 @@ export function retryFailed<TFile, TMention>(
   };
 }
 
-/** Drop a message. Refuses the in-flight item — it is already on the wire. */
+/** Drop a message. Refuses anything in flight — it is already on the wire. */
 export function removeQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
 ): SessionQueue<TFile, TMention> {
-  if (id === state.inFlightId) return state;
+  if (inFlight(state).includes(id)) return state;
   if (state.pending.some((m) => m.id === id)) {
     return { ...state, pending: state.pending.filter((m) => m.id !== id) };
   }
@@ -180,13 +264,13 @@ export function removeQueued<TFile, TMention>(
   return state;
 }
 
-/** Rewrite a queued message. Refuses the in-flight item. */
+/** Rewrite a queued message. Refuses anything in flight. */
 export function editQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
   text: string,
 ): SessionQueue<TFile, TMention> {
-  if (id === state.inFlightId) return state;
+  if (inFlight(state).includes(id)) return state;
   if (!state.pending.some((m) => m.id === id)) return state;
 
   return {
@@ -198,20 +282,23 @@ export function editQueued<TFile, TMention>(
 /**
  * Move a pending message to `toIndex`.
  *
- * `toIndex` is clamped to the movable range. While something is in flight that
- * range starts at 1, so nothing can be reordered into or past the slot that is
- * already sending — and the in-flight item itself cannot move at all.
+ * `toIndex` is clamped to the movable range. That range starts after whatever
+ * is in flight, so nothing can be reordered into or past a message already on
+ * the wire — and an in-flight message cannot move at all. That is one slot for
+ * a `claimNext` lock, and several for a state rehydrated from a host that
+ * claimed a batch.
  */
 export function reorderQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
   toIndex: number,
 ): SessionQueue<TFile, TMention> {
-  if (id === state.inFlightId) return state;
+  const sending = inFlight(state);
+  if (sending.includes(id)) return state;
   const from = state.pending.findIndex((m) => m.id === id);
   if (from === -1) return state;
 
-  const first = state.inFlightId === null ? 0 : 1;
+  const first = sending.length;
   const to = Math.min(Math.max(toIndex, first), state.pending.length - 1);
   if (to === from) return state;
 

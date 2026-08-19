@@ -2,9 +2,16 @@
 // Registers onto the shared scimRouter via side effect.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers } from '@kortix/db';
+import { accountInvitations, accountMembers, roleAssignments } from '@kortix/db';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
+import { accountRoleFor, countAccountOwners } from '../iam/read-models';
+import {
+  assignRole,
+  auditAssignmentRevoked,
+  listAssignments,
+  SYSTEM_ACTOR,
+} from '../iam/assignments';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
@@ -60,17 +67,23 @@ type MemberRow = {
 };
 
 async function getMember(accountId: string, userId: string): Promise<MemberRow | null> {
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      accountRole: accountMembers.accountRole,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
-  return member ?? null;
+  // Identity from `account_members`, ROLE from `role_assignments` — the store
+  // the engine reads. A SCIM `active` toggle that went through `assignRole()`
+  // leaves the legacy column stale on purpose, so serializing it here would
+  // report a role the IdP's own write did not produce.
+  const [[member], accountRole] = await Promise.all([
+    db
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1),
+    accountRoleFor(accountId, userId),
+  ]);
+  return member ? { ...member, accountRole: accountRole ?? 'member' } : null;
 }
 
 /**
@@ -90,12 +103,76 @@ async function shadowMemberForInvite(
 }
 
 /**
+ * SCIM's half of the ONE write path.
+ *
+ * Both helpers are best-effort by construction: the mirror trigger on
+ * `account_members` already wrote (or removed) the same canonical row inside the
+ * caller's own statement, so a failure here costs the AUDIT EVENT, never the
+ * grant. Failing a provisioning call because an audit insert hiccuped would take
+ * an enterprise's IdP sync down for a bookkeeping problem.
+ */
+async function assignScimMembership(accountId: string, userId: string): Promise<void> {
+  try {
+    await assignRole(SYSTEM_ACTOR, accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: 'member',
+      scope: { type: 'account' },
+      source: 'scim',
+    });
+  } catch (err) {
+    console.warn('[scim] canonical membership assignment failed', {
+      accountId,
+      userId,
+      err: (err as Error)?.message,
+    });
+  }
+}
+
+/**
+ * Remove every canonical assignment this principal holds in the account.
+ *
+ * Deliberately NOT `revokeAssignment` per row: that would run the last-owner
+ * guard, and SCIM's callers run their own `isLastOwner` check first (scim/
+ * users.ts) — routing through the guard here would turn a legitimate,
+ * already-guarded offboarding into a 409 for the second-to-last owner. The audit
+ * event is emitted per row so the trail is identical.
+ */
+async function revokeScimMembership(accountId: string, userId: string): Promise<void> {
+  try {
+    const rows = await listAssignments({
+      accountId,
+      principal: { type: 'user', id: userId },
+      liveOnly: false,
+    });
+    if (rows.length === 0) return;
+    await db.delete(roleAssignments).where(
+      and(
+        eq(roleAssignments.accountId, accountId),
+        eq(roleAssignments.principalType, 'user'),
+        eq(roleAssignments.principalId, userId),
+      ),
+    );
+    for (const row of rows) await auditAssignmentRevoked(SYSTEM_ACTOR, accountId, row);
+  } catch (err) {
+    console.warn('[scim] canonical membership revoke failed', {
+      accountId,
+      userId,
+      err: (err as Error)?.message,
+    });
+  }
+}
+
+/**
  * Deprovision a live member: remove the membership, bust the IAM cache, and
  * revoke PATs + live sandbox tokens. Callers must run the last-owner guard
  * BEFORE calling. Returns the token-revocation error message (if any) for the
  * audit event; the membership removal itself always proceeds.
  */
 async function deprovisionMember(accountId: string, userId: string): Promise<string | null> {
+  // Revoke the canonical assignments FIRST, while the membership row still
+  // exists to describe them: `revokeAssignment` is the only revoke path that
+  // audits, and the audit event has to name what was taken away.
+  await revokeScimMembership(accountId, userId);
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
@@ -134,11 +211,7 @@ async function deprovisionMember(accountId: string, userId: string): Promise<str
 /** Last-owner guard shared by every deprovision path. */
 async function isLastOwner(accountId: string, member: MemberRow): Promise<boolean> {
   if (member.accountRole !== 'owner') return false;
-  const owners = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
-  return owners.length <= 1;
+  return (await countAccountOwners(accountId)) <= 1;
 }
 
 scimRouter.openapi(
@@ -369,6 +442,12 @@ scimRouter.openapi(
         accountRole: 'member',
         scimExternalId: externalId,
       });
+      // …and the canonical grant, through the ONE write path. SCIM keeps
+      // bypassing user-authz by design (an IdP bearer token is not a member),
+      // but it no longer bypasses the audit trail: `source: 'scim'` records that
+      // the IdP created this membership, and `iam.assignment.granted` is the
+      // first audit event SCIM provisioning has ever emitted for a grant.
+      await assignScimMembership(accountId, existingUserId);
       invalidateIamCacheForUser(existingUserId);
     }
 

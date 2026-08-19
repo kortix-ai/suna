@@ -1,15 +1,16 @@
+// No runtime imports beyond @kortix/shared: `projects/agents.ts` resolves the
+// coordinator's grant from here, and `projects/git/config.ts` imports that —
+// which `e2e-project-session-branch-git` loads in a `bun --eval` subprocess and
+// parses stdout from. Pulling `feature-flags/registry` (and through it the
+// config module, which banners on stdout) into that chain breaks it. The
+// per-project opt-in is read at its two call sites with the canonical
+// `resolveFeatureFlag(metadata, 'meta_agent')`.
 import {
   META_AGENT_NAME,
   META_SANDBOX_SLUG,
 } from '@kortix/shared';
 import type { AgentGrant } from '@kortix/db';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import type { ProjectConfigSummary } from '../git/types';
-
-/** Per-project opt-in for the platform coordinator (Settings → Feature flags). */
-export function projectMetaAgentEnabled(metadata: unknown): boolean {
-  return resolveFeatureFlag(metadata, 'meta_agent');
-}
 
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
   return {

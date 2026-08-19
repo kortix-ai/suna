@@ -11,6 +11,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody } from './helpers';
@@ -31,7 +32,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
   const [row] = await db
     .select({ mfaRequired: accounts.mfaRequired })
@@ -64,7 +65,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
   // Pull all members and the count of their verified MFA factors in one
   // round-trip. LEFT JOIN so members with zero factors still appear.
@@ -150,7 +151,7 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   // Gate on account.write — same level as renaming the account or
   // flipping strict mode. Avoids inventing a new role action.
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
   // `enabled` is REQUIRED (not optional): the old `z.boolean().optional()` +

@@ -130,8 +130,8 @@ const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
 
 Restarting the runtime is how the change takes effect, so an in-flight turn ends.
 `applied_live` is `true` when a running session took it now, `false` when it
-applies at the next start. Only the session owner or a project manager may change
-the model; anyone else gets `403`.
+applies at the next start. Only the session owner, or a caller with project-manager
+permissions, may change the model; anyone else gets `403`.
 
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.
@@ -339,26 +339,36 @@ The OpenCode `sessionID` here is not the session ID you pass to
 
 ## Warm a project session
 
-Use the server-owned warm-session operations when a project landing page needs
-one empty runtime before the first prompt.
+Call `ensureWarm()` when a project landing page needs one runtime ready before
+the first prompt.
 
 ```ts
 const project = kortix.project(projectId);
 const warm = await project.sessions.ensureWarm();
 
-await kortix.session(projectId, warm.session.session_id).ensureReady();
-
-const claimed = await project.sessions.claimWarm({
-  session_id: warm.session.session_id,
-  agent_name: selectedAgent,
-  sandbox_slug: selectedSandbox,
-});
+// An ORDINARY session. Prompt it like any other.
+await kortix.session(projectId, warm.session.session_id).send("Build me a widget");
 ```
 
-`ensureWarm()` creates or reuses one available session for the current user.
-`claimWarm()` atomically reserves that session before navigation or prompt
-delivery. A `409` response means another client claimed it or the selected
-agent or sandbox differs.
+`ensureWarm()` creates, or returns, one unused session for the current user. It
+is the same create `sessions.create()` runs, with the project's defaults: same
+billing gate, same concurrent-session cap, same connector requirements. The only
+difference is `metadata.warm`, which hides the session from
+`sessions.list()` until its first prompt lands.
+
+Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the account has
+no concurrent-session headroom to spare or the project cannot be warmed right
+now — fall through to `sessions.create()`, which reports the real reason.
+
+The warm session carries the project's DEFAULT agent and sandbox. If the user
+picks a different one, abandon it and call `sessions.create()`: an unused warm
+session is hidden and reaped on its own.
+
+<Callout type="warn">
+`claimWarm()` is deprecated. A warm session is an ordinary session, so there is
+nothing to claim — navigate to it and prompt it. The call still works for
+consumers pinned to the older shape and is removed in the next major.
+</Callout>
 
 ## Handling errors
 

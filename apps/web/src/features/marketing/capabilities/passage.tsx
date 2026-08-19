@@ -52,22 +52,31 @@ const MONO =
   /(\{\{ [a-z._*]+ \}\}|kortix\.yaml|kortix init|kortix ship|SKILL\.md|\/workspace|git revert|AES-256-GCM|HMAC-SHA256|\bgrep\b|\bmain\b)/g;
 
 function withMono(text: string): ReactNode[] {
-  return text.split(MONO).map((part, i) =>
-    i % 2 === 1 ? (
+  // Key each part by its source offset — content-derived and unique even when
+  // the same token appears twice. Split output strictly alternates prose
+  // (even, may be empty) and captured token (odd, never empty), so the
+  // tok/txt prefix keeps a leading empty prose part from colliding with the
+  // token that shares its offset.
+  let offset = 0;
+  return text.split(MONO).map((part, i) => {
+    const isToken = i % 2 === 1;
+    const key = `${isToken ? 'tok' : 'txt'}-${offset}`;
+    offset += part.length;
+    return isToken ? (
       /* `whitespace-nowrap` matters: without it `AES-256-GCM` breaks at its own
          hyphens and `{{ cron.scheduled_for }}` splits across two lines at its
          braces, which reads as a typo rather than a token. Every token in the
          list above fits the 390px measure whole, so nothing can overflow. */
       <code
-        key={i}
+        key={key}
         className="text-foreground font-mono text-[0.85em] tracking-tight whitespace-nowrap"
       >
         {part}
       </code>
     ) : (
-      <span key={i}>{part}</span>
-    ),
-  );
+      <span key={key}>{part}</span>
+    );
+  });
 }
 
 /**

@@ -298,6 +298,10 @@ describe('page-level sidebar openers all use the shared gate', () => {
       repoRoot,
       'apps/web/src/features/session/header/session-site-header.tsx',
     ),
+    'drive-header.tsx': join(
+      repoRoot,
+      'apps/web/src/features/project-files/components/drive-header.tsx',
+    ),
   };
 
   for (const [name, path] of Object.entries(views)) {

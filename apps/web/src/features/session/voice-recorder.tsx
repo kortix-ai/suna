@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Loading from '@/components/ui/loading';
 import { useTranscription } from '@/hooks/transcription/use-transcription';
 import { cn } from '@/lib/utils';
 import { MicrophoneIcon as Mic, SquareIcon as Square } from '@phosphor-icons/react';
@@ -26,7 +25,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRe
 
   const transcriptionMutation = useTranscription();
 
-  // Auto-stop recording after 15 minutes
   useEffect(() => {
     if (state === 'recording') {
       recordingStartTimeRef.current = Date.now();
@@ -136,49 +134,30 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRe
     }
   };
 
-  const getButtonClass = () => {
-    if (state === 'recording') return 'text-red-500 hover:text-red-600';
-    return '';
-  };
-
   const getIcon = () => {
     switch (state) {
       case 'recording':
-        return <Square className="h-4 w-4" />;
+        return <Square weight="fill" className="size-4 shrink-0 rounded-sm" />;
       case 'processing':
-        return <KortixLoader size="small" />;
+        return <Loading className="size-4 shrink-0" />;
       default:
-        return <Mic className="h-4 w-4" />;
+        return <Mic className="size-4 shrink-0" />;
     }
   };
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleClick}
-          onContextMenu={handleRightClick}
-          disabled={disabled || state === 'processing'}
-          className={cn(
-            'text-muted-foreground hover:text-foreground hover:bg-muted/50 flex h-8 w-8 items-center justify-center border-none bg-transparent p-0 transition-colors',
-            getButtonClass(),
-          )}
-        >
-          {getIcon()}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="text-xs">
-        <p>
-          {state === 'recording'
-            ? 'Click to stop recording'
-            : state === 'processing'
-              ? 'Processing...'
-              : 'Record voice message'}
-        </p>
-      </TooltipContent>
-    </Tooltip>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-base"
+      onClick={handleClick}
+      onContextMenu={handleRightClick}
+      disabled={disabled || state === 'processing'}
+      className={cn(
+        'hit-area-1 shrink-0 p-0 duration-300 ease-out active:scale-[0.96] active:duration-150',
+      )}
+    >
+      {getIcon()}
+    </Button>
   );
 });

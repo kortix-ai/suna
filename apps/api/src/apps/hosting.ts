@@ -1,6 +1,8 @@
 import { createHash, createHmac } from 'node:crypto';
 import { config, type SandboxProviderName } from '../config';
+import { logger } from '../lib/logger';
 import {
+  effectiveAppMachine,
   getProvider,
   type ProvisionResult,
   type ResolvedSandboxIngress,
@@ -150,6 +152,14 @@ export class AppHostingProvider {
     };
   }
 
+  /**
+   * The machine this provider will really allocate. Billing meters this, not
+   * the requested specification — see effectiveAppMachine.
+   */
+  effectiveMachine(provider: SandboxProviderName, machine: AppMachineSpec): AppMachineSpec {
+    return effectiveAppMachine(this.dependencies.runtimeProvider(provider), machine);
+  }
+
   async start(provider: SandboxProviderName, externalId: string): Promise<void> {
     const runtimeProvider = this.dependencies.runtimeProvider(provider);
     try {
@@ -187,8 +197,29 @@ export class AppHostingProvider {
     throw new Error(`App provider runtime ${externalId} did not become running within ${APP_PROVIDER_WAKE_TIMEOUT_MS}ms`);
   }
 
+  /**
+   * Resolve the runtime provider for a teardown operation, tolerating a
+   * provider this deployment can no longer construct. A legacy runtime can name
+   * a provider that has since been disabled (its API key is unset) or retired;
+   * the remote sandbox is then unreachable regardless. Returning null lets stop
+   * and remove complete as a no-op success instead of throwing a 500/502 that
+   * blocks App delete, idle-reap, and deploy supersede.
+   */
+  private resolveRuntimeProvider(provider: SandboxProviderName): SandboxProvider | null {
+    try {
+      return this.dependencies.runtimeProvider(provider);
+    } catch (error) {
+      logger.warn('[apps] teardown skipped: sandbox provider is not resolvable', {
+        provider,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   async stop(provider: SandboxProviderName, externalId: string): Promise<void> {
-    const runtimeProvider = this.dependencies.runtimeProvider(provider);
+    const runtimeProvider = this.resolveRuntimeProvider(provider);
+    if (!runtimeProvider) return;
     try {
       await runtimeProvider.stop(externalId);
     } catch (error) {
@@ -203,7 +234,9 @@ export class AppHostingProvider {
   }
 
   async remove(provider: SandboxProviderName, externalId: string): Promise<void> {
-    await this.dependencies.runtimeProvider(provider).remove(externalId);
+    const runtimeProvider = this.resolveRuntimeProvider(provider);
+    if (!runtimeProvider) return;
+    await runtimeProvider.remove(externalId);
   }
 
   async ingress(

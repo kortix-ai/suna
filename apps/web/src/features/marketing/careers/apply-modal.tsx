@@ -101,10 +101,10 @@ export function ApplyModal({
       errorToast('Could not send your application', {
         description: 'Write to marko@kortix.com instead.',
       });
-      setSubmitting(false);
       return;
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
     setStep('done');
   }, [area, email, link, name, owned]);
 

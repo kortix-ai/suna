@@ -38,8 +38,8 @@ export function DocsSearchButton() {
       <Search className="text-sidebar-foreground shrink-0" />
       <span className="flex-1 text-left">Search</span>
       <KbdGroup className="ml-auto opacity-0 transition-opacity duration-150 group-hover/row:opacity-100">
-        {hotKey.map((k, i) => (
-          <Kbd key={i}>{k.display}</Kbd>
+        {hotKey.map((k) => (
+          <Kbd key={String(k.display)}>{k.display}</Kbd>
         ))}
       </KbdGroup>
     </Button>
