@@ -55,13 +55,28 @@ export interface RunOptions {
 
 const FLOWS_DIR = resolve(import.meta.dir, "../flows");
 
+// Idempotent on purpose. `flow(...)` registers at module-evaluation time and
+// ES module imports are cached per process, so a SECOND discoverFlows() that
+// clears the registry and re-imports gets nothing back — the flow files never
+// re-execute — and the registry ends up empty. That is exactly what happened
+// on the first sharded release-gate run: `--shard` resolves its ids via
+// discoverFlows(), then runSuite() discovered again → "no flows matched the
+// selected filters" on every API shard (run 32222342409). Discover once.
+let discovered = false;
 export async function discoverFlows(): Promise<void> {
+  if (discovered) return;
   clearRegistry();
   const glob = new Glob("*.flow.ts");
   const files: string[] = [];
   for await (const f of glob.scan({ cwd: FLOWS_DIR, absolute: true })) files.push(f);
   files.sort();
   for (const f of files) await import(f);
+  discovered = true;
+}
+
+/** Test-only: allow a fresh discovery in a process that already discovered. */
+export function __resetDiscoveryForTest(): void {
+  discovered = false;
 }
 
 function selected(f: RegisteredFlow, o: RunOptions): boolean {

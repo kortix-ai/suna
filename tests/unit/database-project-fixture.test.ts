@@ -274,6 +274,6 @@ describe("managed Git fixture selection", () => {
     // The sweep now takes the domain list too, so it can also see the browser
     // suite's accounts — see gc-sweep.test.ts.
     expect(gc).toContain("if (env.databaseUrl) return listTestUsersViaDb(env, domains)");
-    expect(gc).toContain("ssl: local ? false : true");
+    expect(gc).toContain("ssl: local ? false : { rejectUnauthorized: false }");
   });
 });
