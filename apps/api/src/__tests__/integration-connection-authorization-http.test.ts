@@ -25,7 +25,12 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { completeAuthorizationCodeSession } from '../connectors/oauth2-store';
+import {
+  completeAuthorizationCodeSession,
+  discoverConnectionOAuth2Resource,
+  loadOAuth2Application,
+  registerConnectionOAuth2Client,
+} from '../connectors/oauth2-store';
 import { PROJECT_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
@@ -734,6 +739,179 @@ describe('connection owner authorization over HTTP', () => {
         .set({ authorizationStrategy: 'user' })
         .where(eq(connectors.connectorId, USER_CONNECTOR));
     }
+  });
+
+  test('MCP authorization discovery + dynamic client registration for a connection', async () => {
+    const alice = await mint(ALICE);
+    const bob = await mint(BOB);
+    // Another member cannot discover or register for Alice's personal connection.
+    const foreignDiscover = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/discover-resource`,
+      bob,
+      {},
+    );
+    expect(foreignDiscover.status).toBe(404);
+    // Egress is guarded: a loopback resource/registration endpoint is refused.
+    const ssrfDiscover = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/discover-resource`,
+      alice,
+      { resource_url: 'https://127.0.0.1/mcp' },
+    );
+    expect(ssrfDiscover.status).toBe(400);
+    const ssrfRegister = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/register`,
+      alice,
+      {
+        registration_endpoint: 'https://127.0.0.1/oauth/register',
+        token_url: 'https://identity.example.test/token',
+      },
+    );
+    expect(ssrfRegister.status).toBe(400);
+    const badRegister = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/register`,
+      alice,
+      { registration_endpoint: 'https://identity.example.test/register' },
+    );
+    expect(badRegister.status).toBe(400);
+    expect(((await badRegister.json()) as { error: string }).error).toContain('token_url');
+
+    // The chain itself, against a scripted provider (the connector's base URL
+    // is the protected resource; the store resolves it from the connection).
+    const calls: string[] = [];
+    const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url === 'https://example.test') {
+        return new Response('', {
+          status: 401,
+          headers: {
+            'www-authenticate':
+              'Bearer resource_metadata="https://example.test/.well-known/oauth-protected-resource"',
+          },
+        });
+      }
+      if (url === 'https://example.test/.well-known/oauth-protected-resource') {
+        return Response.json({
+          resource: 'https://example.test',
+          authorization_servers: ['https://authn.example.test'],
+          scopes_supported: ['mcp:execute', 'offline_access'],
+        });
+      }
+      if (url === 'https://authn.example.test/.well-known/oauth-authorization-server') {
+        return Response.json({
+          issuer: 'https://authn.example.test',
+          authorization_endpoint: 'https://authn.example.test/oauth2/auth',
+          token_endpoint: 'https://authn.example.test/oauth2/token',
+          registration_endpoint: 'https://authn.example.test/oauth2/register',
+          token_endpoint_auth_methods_supported: ['client_secret_basic', 'none'],
+          code_challenge_methods_supported: ['S256'],
+        });
+      }
+      if (url === 'https://authn.example.test/oauth2/register') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.redirect_uris).toEqual([
+          'https://api.example.test/v1/connectors/oauth2/callback',
+        ]);
+        expect(body.token_endpoint_auth_method).toBe('client_secret_basic');
+        return Response.json(
+          {
+            client_id: 'dyn-client',
+            client_secret: 'dyn-secret',
+            token_endpoint_auth_method: 'client_secret_basic',
+            registration_access_token: 'dyn-rat',
+            registration_client_uri: 'https://authn.example.test/oauth2/register/dyn-client',
+          },
+          { status: 201 },
+        );
+      }
+      return new Response('not found', { status: 404 });
+    };
+    const discovery = await discoverConnectionOAuth2Resource(
+      { connectionId: ALICE_CONNECTION },
+      { fetchImpl },
+    );
+    expect(discovery).toMatchObject({
+      resource_url: 'https://example.test',
+      requires_authorization: true,
+      resource: 'https://example.test',
+      authorization_server: 'https://authn.example.test',
+      registration_endpoint: 'https://authn.example.test/oauth2/register',
+      scopes: ['mcp:execute', 'offline_access'],
+    });
+    expect(discovery.metadata).toMatchObject({
+      authorization_url: 'https://authn.example.test/oauth2/auth',
+      token_url: 'https://authn.example.test/oauth2/token',
+      resource: 'https://example.test',
+    });
+
+    const application = await registerConnectionOAuth2Client(
+      {
+        identity: {
+          accountId: ACCOUNT,
+          projectId: PROJECT,
+          connectorId: USER_CONNECTOR,
+          connectionId: ALICE_CONNECTION,
+        },
+        registration: {
+          registration_endpoint: discovery.registration_endpoint!,
+          token_endpoint_auth_methods_supported: discovery.token_endpoint_auth_methods_supported,
+          ...discovery.metadata,
+          scopes: discovery.scopes,
+        },
+        callbackUrl: 'https://api.example.test/v1/connectors/oauth2/callback',
+        createdBy: ALICE,
+      },
+      { fetchImpl },
+    );
+    expect(application.client_id).toBe('dyn-client');
+    expect(calls.at(-1)).toBe('POST https://authn.example.test/oauth2/register');
+
+    // Persisted encrypted; read back redacted over HTTP (no secret, no RAT).
+    const loaded = await loadOAuth2Application(ALICE_CONNECTION);
+    expect(loaded?.application).toMatchObject({
+      client_id: 'dyn-client',
+      client_secret: 'dyn-secret',
+      token_endpoint_auth_method: 'client_secret_basic',
+      registration_access_token: 'dyn-rat',
+      resource: 'https://example.test',
+      scopes: ['mcp:execute', 'offline_access'],
+    });
+    const view = await request(
+      'GET',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/application`,
+      alice,
+    );
+    expect(view.status).toBe(200);
+    const body = (await view.json()) as { application: Record<string, unknown> };
+    expect(body.application.client_id).toBe('dyn-client');
+    expect(body.application.has_client_secret).toBe(true);
+    expect(body.application.registration_client_uri).toBe(
+      'https://authn.example.test/oauth2/register/dyn-client',
+    );
+    expect('client_secret' in body.application).toBe(false);
+    expect('registration_access_token' in body.application).toBe(false);
+
+    // The authorization request now carries the public callback and resource.
+    const started = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/authorize`,
+      alice,
+      {},
+    );
+    expect(started.status).toBe(200);
+    const authorizationUrl = new URL(
+      ((await started.json()) as { authorization_url: string }).authorization_url,
+    );
+    expect(authorizationUrl.origin).toBe('https://authn.example.test');
+    expect(authorizationUrl.searchParams.get('client_id')).toBe('dyn-client');
+    expect(authorizationUrl.searchParams.get('resource')).toBe('https://example.test');
+    expect(authorizationUrl.searchParams.get('redirect_uri')).toBe(
+      `${(process.env.KORTIX_URL ?? 'http://localhost').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1/connectors/oauth2/callback`,
+    );
   });
 
   test('personal-connection sessions reject project sharing and public links', async () => {

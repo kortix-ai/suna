@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 592,
+  "count": 594,
   "routes": [
     {
       "method": "GET",
@@ -1509,6 +1509,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/register"
     },
     {
       "method": "GET",

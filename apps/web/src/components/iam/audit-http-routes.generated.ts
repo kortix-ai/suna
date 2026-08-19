@@ -379,6 +379,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|connections|:connectionId|oauth2|device",
   "POST|v1|projects|:projectId|connections|:connectionId|oauth2|device|:sessionId",
   "POST|v1|projects|:projectId|connections|:connectionId|oauth2|discover",
+  "POST|v1|projects|:projectId|connections|:connectionId|oauth2|discover-resource",
+  "POST|v1|projects|:projectId|connections|:connectionId|oauth2|register",
   "GET|v1|projects|:projectId|connections|:connectionId|oauth2|status",
   "PUT|v1|projects|:projectId|connections|:connectionId|revoke",
   "GET|v1|projects|:projectId|connections|all",

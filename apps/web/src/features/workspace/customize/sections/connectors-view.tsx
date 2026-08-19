@@ -110,6 +110,7 @@ import {
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
+  discoverConnectionOAuth2Resource,
   discoverConnectorAuth,
   ensureProjectConnectorConnection,
   getConnectorConfig,
@@ -122,6 +123,7 @@ import {
   listPipedreamApps,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
+  type OAuth2ResourceDiscovery,
   pipedreamConnect,
   pipedreamConnectConnection,
   pipedreamFinalize,
@@ -130,6 +132,7 @@ import {
   putConnectionOAuth2Application,
   reconcileConnection,
   reconcileMemberConnection,
+  registerConnectionOAuth2Client,
   revokeConnection,
   setConnectorAuthorizationStrategy,
   setConnectorCredential,
@@ -155,6 +158,11 @@ import {
   type OAuth2CredentialForm,
   oauth2CredentialFormValid,
 } from './connector-oauth2';
+import {
+  autoConnectPlan,
+  buildClientRegistrationInput,
+  mergeResourceDiscoveryIntoForm,
+} from './connector-oauth2-auto';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import {
@@ -2739,26 +2747,17 @@ export function ConnectionSection({
                     <p className="text-sm font-medium">Credential</p>
                     <p className="text-muted-foreground text-xs">
                       {connector.secretSet
-                        ? 'Stored and in use. Setting a new value replaces it.'
-                        : 'Not set yet — the agent and your triggers cannot call this connector.'}
+                        ? 'Kortix holds this credential and attaches it to every call.'
+                        : 'Not connected yet — the agent and your triggers cannot call this connector.'}
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
-                      {connector.secretSet ? 'Set' : 'Not set'}
-                    </Badge>
-                    {canWrite && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        onClick={onSetCredential}
-                      >
-                        <KeyRound className="size-3.5" />
-                        {connector.secretSet ? 'Replace' : 'Set credential'}
-                      </Button>
-                    )}
-                  </div>
+                  {/* One credential action per connector, and it lives in the
+                      header ("Add credential" / "Replace credential",
+                      connector-modal.tsx). A second button here read as a
+                      different action and gave the same modal a third label. */}
+                  <Badge variant={connector.secretSet ? 'secondary' : 'outline'}>
+                    {connector.secretSet ? 'Connected' : 'Not connected'}
+                  </Badge>
                 </div>
               )}
             {canWrite && (
@@ -4717,7 +4716,14 @@ export function SetCredentialModal({
   onSaved: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [credentialType, setCredentialType] = useState<'static' | 'oauth2'>('static');
+  /**
+   * `null` until the user picks a tab. The effective tab is then derived from
+   * discovery, so a server that supports one-click OAuth opens on OAuth and a
+   * plain API needs no detour through a grant selector.
+   */
+  const [credentialTypeChoice, setCredentialTypeChoice] = useState<'static' | 'oauth2' | null>(
+    null,
+  );
   const [value, setValue] = useState('');
   const [oauth2, setOauth2] = useState<OAuth2CredentialForm>(EMPTY_OAUTH2_CREDENTIAL_FORM);
   const [application, setApplication] = useState<OAuth2ApplicationForm>(
@@ -4765,10 +4771,7 @@ export function SetCredentialModal({
   })();
   const [device, setDevice] = useState<OAuth2DeviceAuthorizationStartResult | null>(null);
   const [deviceConnectionId, setDeviceConnectionId] = useState<string | null>(null);
-  const oauth2Valid =
-    application.grant === 'client_credentials'
-      ? oauth2CredentialFormValid(oauth2)
-      : oauth2ApplicationFormValid(application);
+  const [manualSetup, setManualSetup] = useState(false);
   useEffect(() => {
     if (!device || !deviceConnectionId) return;
     let stopped = false;
@@ -4818,6 +4821,93 @@ export function SetCredentialModal({
     }
     return (await ensureProjectConnectorConnection(projectId, connector!.slug)).connection_id;
   };
+  /**
+   * The MCP authorization chain — `WWW-Authenticate` → protected resource
+   * metadata → authorization server metadata → registration endpoint. Run once
+   * when the OAuth 2.0 tab opens so a server that publishes its own metadata
+   * needs one click and zero fields. Discovery is connection-scoped, so this
+   * resolves (or creates) the connection first.
+   */
+  const discoveryQuery = useQuery({
+    queryKey: qk.project.connectorOAuth2Discovery(projectId, connector?.slug ?? ''),
+    queryFn: async () => {
+      const activeConnectionId = await resolveConnectionId();
+      const result = await discoverConnectionOAuth2Resource(projectId, activeConnectionId);
+      return { connectionId: activeConnectionId, discovery: result.discovery };
+    },
+    // Runs as soon as the modal OPENS, not when the OAuth tab is clicked: the
+    // answer decides which tab the user should land on, so it has to be known
+    // before they choose. A connector with no server URL 400s here and simply
+    // leaves the modal on its static-credential default.
+    enabled: open && Boolean(connector),
+    retry: false,
+    // Same tier as the connector config it sits beside: provider metadata
+    // changes on the provider's schedule, not on ours (FRESHNESS
+    // .connectorOAuth2Discovery).
+    ...contract('config'),
+  });
+  const discovery = discoveryQuery.data?.discovery ?? null;
+  const discoveryError = discoveryQuery.isError
+    ? ((discoveryQuery.error as Error)?.message ?? 'Discovery failed')
+    : null;
+  const discoveryPending = discoveryQuery.isFetching && !discovery;
+  const plan = autoConnectPlan(discovery);
+  /**
+   * Discovery prefills the manual form at render time rather than through a
+   * setState: the merge keeps anything the user typed, so applying it on every
+   * render is idempotent and there is no effect to keep in sync.
+   */
+  const effectiveApplication = discovery
+    ? mergeResourceDiscoveryIntoForm(application, discovery)
+    : application;
+  /**
+   * The endpoint/client fields only appear when automatic setup cannot finish
+   * the job: the user asked for their own app, or the server publishes nothing
+   * Kortix can act on. `unknown` (discovery still running or not started) keeps
+   * them visible so the modal is never empty.
+   */
+  /**
+   * The tab the user is on. Discovery decides the default: a server that
+   * publishes OAuth metadata opens on OAuth 2.0, everything else on the static
+   * credential. An explicit tab click always wins.
+   */
+  const credentialType: 'static' | 'oauth2' =
+    credentialTypeChoice ??
+    (plan.kind === 'register' || plan.kind === 'client_id_required' ? 'oauth2' : 'static');
+  const showManualOAuth2Fields =
+    manualSetup || plan.kind === 'unknown' || plan.kind === 'client_id_required';
+  const oauth2Valid =
+    application.grant === 'client_credentials'
+      ? oauth2CredentialFormValid(oauth2)
+      : oauth2ApplicationFormValid(effectiveApplication);
+  /**
+   * One click: register Kortix with the authorization server (RFC 7591), then
+   * start Authorization Code + PKCE. No client id, no secret, no endpoints.
+   */
+  const autoConnect = useMutation({
+    mutationFn: async () => {
+      if (!discovery) throw new Error('Discovery has not completed');
+      const activeConnectionId =
+        discoveryQuery.data?.connectionId ?? (await resolveConnectionId());
+      await registerConnectionOAuth2Client(
+        projectId,
+        activeConnectionId,
+        buildClientRegistrationInput(discovery),
+      );
+      const redirect = new URL(window.location.href);
+      redirect.searchParams.delete('oauth2');
+      redirect.searchParams.delete('oauth2_error');
+      const result = await startConnectionOAuth2Authorization(projectId, activeConnectionId, {
+        ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
+        success_redirect_uri: redirect.toString(),
+        error_redirect_uri: redirect.toString(),
+      });
+      window.location.assign(result.authorization_url);
+      return result;
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to connect'),
+  });
+
   const save = useMutation({
     mutationFn: async () => {
       if (credentialType === 'static') {
@@ -4840,16 +4930,16 @@ export function SetCredentialModal({
         return setConnectorCredential(projectId, connector!.slug, oauth2Input);
       }
       const activeConnectionId = await resolveConnectionId();
-      const resolvedApplication = application.discoveryUrl
+      const resolvedApplication = effectiveApplication.discoveryUrl
         ? mergeOAuth2DiscoveryMetadata(
-            application,
+            effectiveApplication,
             (
               await discoverConnectionOAuth2(projectId, activeConnectionId, {
-                discovery_url: application.discoveryUrl,
+                discovery_url: effectiveApplication.discoveryUrl,
               })
             ).metadata,
           )
-        : application;
+        : effectiveApplication;
       await putConnectionOAuth2Application(
         projectId,
         activeConnectionId,
@@ -4894,7 +4984,12 @@ export function SetCredentialModal({
     <Modal
       open={open}
       onOpenChange={(o) => {
-        if (!save.isPending) onOpenChange(o);
+        if (save.isPending) return;
+        if (!o) {
+          setManualSetup(false);
+          setCredentialTypeChoice(null);
+        }
+        onOpenChange(o);
       }}
     >
       <ModalContent className="lg:max-w-3xl">
@@ -4924,7 +5019,7 @@ export function SetCredentialModal({
           <ModalBody>
             <Tabs
               value={credentialType}
-              onValueChange={(next) => setCredentialType(next as 'static' | 'oauth2')}
+              onValueChange={(next) => setCredentialTypeChoice(next as 'static' | 'oauth2')}
               className="gap-4"
             >
               <TabsList>
@@ -4964,10 +5059,79 @@ export function SetCredentialModal({
                 </Field>
               </TabsContent>
               <TabsContent value="oauth2" className="space-y-4">
-                <InfoBanner tone="info">
-                  Kortix stores the application configuration, rotates refresh tokens, and revokes
-                  the connection when you disconnect it.
-                </InfoBanner>
+                {discoveryPending ? (
+                  <InfoBanner tone="neutral" title="Checking how this server authorizes">
+                    Kortix is reading the server's OAuth 2.0 metadata.
+                  </InfoBanner>
+                ) : plan.kind === 'no_authorization' ? (
+                  <InfoBanner tone="neutral" title="No authorization needed">
+                    This server answered without credentials. It does not need an OAuth
+                    connection.
+                  </InfoBanner>
+                ) : plan.kind === 'register' && !manualSetup ? (
+                  <div className="space-y-3">
+                    <InfoBanner tone="neutral" title="One-click OAuth 2.1 available">
+                      This server publishes its authorization metadata. Kortix registers itself as
+                      an OAuth client, so there is no client ID or secret to create.
+                      {plan.scopes.length ? ` Scopes: ${plan.scopes.join(', ')}.` : ''}
+                    </InfoBanner>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={autoConnect.isPending}
+                        onClick={() => autoConnect.mutate()}
+                      >
+                        {autoConnect.isPending && <Loading className="size-4 shrink-0" />}
+                        {plan.label}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline-ghost"
+                        onClick={() => setManualSetup(true)}
+                      >
+                        Use my own OAuth app
+                      </Button>
+                    </div>
+                  </div>
+                ) : plan.kind === 'client_id_required' ? (
+                  <InfoBanner tone="neutral" title="This server needs a pre-registered OAuth app">
+                    Kortix discovered its endpoints and scopes, but the server does not support
+                    dynamic client registration. Create an app there and paste its client ID
+                    below.
+                  </InfoBanner>
+                ) : plan.kind === 'manual' && !manualSetup ? (
+                  <InfoBanner
+                    tone="neutral"
+                    title="Automatic setup unavailable"
+                    action={
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setManualSetup(true)}
+                      >
+                        Configure manually
+                      </Button>
+                    }
+                  >
+                    {plan.reason}
+                  </InfoBanner>
+                ) : (
+                  <InfoBanner tone="info">
+                    Kortix stores the application configuration, rotates refresh tokens, and
+                    revokes the connection when you disconnect it.
+                  </InfoBanner>
+                )}
+                {discoveryError && (
+                  <InfoBanner tone="neutral" title="Could not read the server's metadata">
+                    {discoveryError}
+                  </InfoBanner>
+                )}
+                {showManualOAuth2Fields && (
+                <>
                 <Field>
                   <FieldLabel htmlFor="connector-oauth2-grant">Grant</FieldLabel>
                   <Select
@@ -5000,10 +5164,12 @@ export function SetCredentialModal({
                   />
                 ) : (
                   <OAuth2ApplicationFields
-                    value={application}
+                    value={effectiveApplication}
                     onChange={setApplication}
                     idPrefix="connector-oauth2-application"
                   />
+                )}
+                </>
                 )}
                 {device && (
                   <InfoBanner

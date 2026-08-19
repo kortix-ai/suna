@@ -1,21 +1,26 @@
 import {
   OAuth2ApplicationInputSchema,
   OAuth2AuthorizationStartInputSchema,
+  OAuth2ClientRegistrationInputSchema,
   OAuth2DeviceAuthorizationStartInputSchema,
   OAuth2DiscoveryInputSchema,
+  OAuth2ResourceDiscoveryInputSchema,
 } from '@kortix/api-contract';
 import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { ensureDefaultConnection } from '../../connectors/credentials';
+import { nativeOAuth2CallbackUrl } from '../../connectors/oauth2-callback-url';
 import {
   createAuthorizationCodeSession,
   createDeviceAuthorizationSession,
   discoverConfiguredOAuth2Application,
+  discoverConnectionOAuth2Resource,
   loadOAuth2Application,
   oauth2ConnectionStatus,
   pollDeviceAuthorizationSession,
   redactOAuth2Application,
+  registerConnectionOAuth2Client,
   saveOAuth2Application,
 } from '../../connectors/oauth2-store';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -29,7 +34,7 @@ import {
 import { readBody } from '../lib/serializers';
 
 function callbackUrl(requestUrl: string): string {
-  return new URL('/v1/connectors/oauth2/callback', requestUrl).href;
+  return nativeOAuth2CallbackUrl(requestUrl, config.KORTIX_URL);
 }
 
 function allowedRedirectUri(value: string | undefined, projectId: string): string | undefined {
@@ -204,6 +209,61 @@ projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async 
     return c.json({
       metadata: await discoverConfiguredOAuth2Application(parsed.data.discovery_url),
     });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 400);
+  }
+});
+
+/**
+ * MCP authorization discovery: probe the connector's server, follow
+ * `WWW-Authenticate resource_metadata` → RFC 9728 → RFC 8414/OIDC, and return
+ * the endpoints plus the dynamic-registration endpoint when one exists.
+ */
+projectsApp.post(
+  '/:projectId/connections/:connectionId/oauth2/discover-resource',
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const connectionId = c.req.param('connectionId');
+    if (!(await loadMutableConnection(c, projectId, connectionId))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
+    const parsed = OAuth2ResourceDiscoveryInputSchema.safeParse((await readBody(c)) ?? {});
+    if (!parsed.success) return c.json({ error: 'invalid resource URL' }, 400);
+    try {
+      return c.json({
+        discovery: await discoverConnectionOAuth2Resource({
+          connectionId,
+          resourceUrl: parsed.data.resource_url,
+        }),
+      });
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+  },
+);
+
+/** RFC 7591: register Kortix with the authorization server and save the
+ * issued client as this connection's OAuth2 application. */
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/register', async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const connectionId = c.req.param('connectionId');
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
+  if (!mutable) return c.json({ error: 'Not found' }, 404);
+  const parsed = OAuth2ClientRegistrationInputSchema.safeParse(await readBody(c));
+  if (!parsed.success) {
+    return c.json(
+      { error: parsed.error.issues[0]?.message ?? 'invalid client registration input' },
+      400,
+    );
+  }
+  try {
+    const application = await registerConnectionOAuth2Client({
+      identity: mutable.connection,
+      registration: parsed.data,
+      callbackUrl: callbackUrl(c.req.url),
+      createdBy: mutable.loaded.userId,
+    });
+    return c.json({ application: redactOAuth2Application(application) });
   } catch (error) {
     return c.json({ error: (error as Error).message }, 400);
   }

@@ -71,6 +71,7 @@ describe('qk.project', () => {
       qk.project.sessionSandbox(id, 'sess_1'),
       qk.project.connectors(id),
       qk.project.connectorConfig(id, 'slack'),
+      qk.project.connectorOAuth2Discovery(id, 'slack'),
       qk.project.access(id),
       qk.project.accessRequests(id),
       qk.project.pendingInvites(id),

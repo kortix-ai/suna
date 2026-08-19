@@ -493,7 +493,10 @@ const nodeFetch: FetchImpl = async (url, init) => {
     body: init.body,
     ...(init.tls ? { tls: init.tls } : {}),
   } as RequestInit);
-  return { status: res.status, ok: res.ok, text: () => res.text() };
+  // `headers` is what carries `Mcp-Session-Id` back to the MCP session
+  // handshake in call.ts. Without it every MCP call to a stateful server
+  // re-initializes.
+  return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
 };
 
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
