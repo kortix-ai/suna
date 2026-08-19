@@ -164,7 +164,7 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
 
 export function useGatewayOtelConfig(projectId: string | undefined) {
   return useQuery({
-    queryKey: ['project-gateway-otel', projectId],
+    queryKey: qk.project.gatewayOtel(projectId ?? ''),
     queryFn: () => getGatewayOtelConfig(projectId!),
     enabled: !!projectId,
     staleTime: 15_000,
@@ -175,7 +175,7 @@ export function useSetGatewayOtelConfig(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: SetGatewayOtelConfigInput) => setGatewayOtelConfig(projectId!, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-otel', projectId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayOtel(projectId ?? '') }),
   });
 }
 
@@ -183,6 +183,6 @@ export function useDeleteGatewayOtelConfig(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => deleteGatewayOtelConfig(projectId!),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-otel', projectId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayOtel(projectId ?? '') }),
   });
 }

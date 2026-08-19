@@ -102,6 +102,7 @@ describe('qk.project', () => {
       qk.project.gatewayLog(id, 'log_1'),
       qk.project.gatewayBudgets(id),
       qk.project.gatewayKeys(id),
+      qk.project.gatewayOtel(id),
     ];
     for (const key of scoped) {
       expect(startsWith(key, scope)).toBe(true);

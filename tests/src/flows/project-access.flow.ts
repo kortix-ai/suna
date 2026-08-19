@@ -372,6 +372,10 @@ flow(
       'GET /v1/projects/:projectId/resource-grants',
       'POST /v1/projects/:projectId/resource-grants',
       'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+      // The account-wide rollup of the same rows: "across every project in
+      // this account, what has this principal been granted?" — read-only,
+      // gated on member.read (apps/api/src/accounts/iam/resource-grants.ts).
+      'GET /v1/accounts/:accountId/iam/resource-grants',
     ],
   },
   async (ctx) => {
@@ -476,6 +480,32 @@ flow(
         });
       // If a real grant was created+deleted above, re-deleting it is 404 too.
       r.status(404);
+    });
+
+    // ── The account-wide rollup over the same table ──
+    await ctx.step('OWNER reads the account-wide resource-grant footprint → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
+      r.status(200).body().exists('$.grants');
+      const grants = r.json<any>()?.grants;
+      if (!Array.isArray(grants)) throw new Error('account resource-grant rollup is not an array');
+    });
+
+    await ctx.step('the principalType filter is validated, not trusted → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/resource-grants?principalType=nonsense', {
+          params: { accountId: team.id },
+        });
+      r.status(200).body().exists('$.grants');
+    });
+
+    await ctx.step('ANON cannot read the account-wide rollup → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
+      r.status(401);
     });
   },
 );

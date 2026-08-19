@@ -1,6 +1,11 @@
 'use client';
 
-import { Plus, Radio, Trash2, X } from 'lucide-react';
+import {
+  PlusIcon as Plus,
+  RadioIcon as Radio,
+  TrashIcon as Trash2,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

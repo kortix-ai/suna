@@ -22,10 +22,11 @@
  * section is plain local state and renders as the shell's `children`, so the
  * shell's scroll container is the page's only one.
  *
- * ## Seven tabs
+ * ## Eight tabs
  *
  * Order follows the work: bring a key in, choose models, add your own provider,
- * hand a key out, shape the routing, then watch what it costs and what it did.
+ * hand a key out, shape the routing, watch what it costs and what it did, then
+ * ship those same spans to whatever you already use.
  *
  *  - **Providers** (was "API keys") is now ONLY the provider list. The gateway
  *    key and its reference moved out — see `gateway-access-tab.tsx` for why the
@@ -39,6 +40,11 @@
  *    called (`POST /gateway/playground`) still exists and is untouched.
  *  - **Budgets folded into Costs.** The cap belongs under the number it caps —
  *    see `gateway-budgets.tsx`.
+ *  - **Observability** is the only tab that writes OUT of Kortix: it points the
+ *    per-call `gen_ai.*` OTel spans at the project's own OTLP backend
+ *    (Langfuse / Datadog / Honeycomb / Braintrust / anything OTLP). Writing it
+ *    is its own IAM leaf, `project.gateway.otel.manage` — see
+ *    `gateway-observability.tsx`.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
  * Customize rail. Deep-links / `openCustomize('llm-providers')` set the hosting

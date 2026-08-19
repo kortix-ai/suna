@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 586,
+  "count": 590,
   "routes": [
     {
       "method": "GET",
@@ -329,6 +329,10 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/resource-grants"
     },
     {
       "method": "GET",
@@ -1581,6 +1585,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/gateway/logs/:logId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/gateway/otel"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/otel"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/gateway/otel"
     },
     {
       "method": "GET",

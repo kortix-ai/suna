@@ -11316,3 +11316,45 @@ assistant-turn-open 10 pass / 0 fail; `tsc --noEmit` 15 lines, all the known
 on both touched web files.
 
 **Shippable to production: YES.**
+
+---
+
+### 2026-08-19 — session `gateway-otel-observability` (rebase + completion)
+
+Rebase of the July `gateway-otel-observability` branch (PR #4987) onto `main`.
+The SDK half is unchanged in intent: three REST functions in
+`core/rest/projects-client/gateway.ts` — `getGatewayOtelConfig`,
+`setGatewayOtelConfig`, `deleteGatewayOtelConfig` — plus the `GatewayOtelConfig`
+/ `SetGatewayOtelConfigInput` types, for the gateway's per-project OTLP
+trace-export config (the Observability tab: Langfuse / Datadog / Honeycomb /
+Braintrust / anything OTLP). The file moved from `platform/projects-client/`
+to `core/rest/projects-client/` on `main` while the branch sat; the merge
+followed the move, nothing else changed.
+
+One NEW export this rebase added: `qk.project.gatewayOtel(id)` in
+`react/query-keys.ts`. `apps/web`'s `useGatewayOtelConfig` hand-typed
+`['project-gateway-otel', projectId]`, which the repo's `no-restricted-syntax`
+ESLint rule rejects — query keys come from `qk`, never hand-typed. The key is
+`[...qk.project.gateway(id), 'otel']`, so it inherits the project scope prefix
+and is invalidated by any `qk.project.gateway(id)`-prefixed reset.
+
+**TDD:** the RED test came first — added `qk.project.gatewayOtel(id)` to
+`query-keys.test.ts`'s "every project-scoped key is prefixed by scope" list and
+watched it fail with `TypeError: qk.project.gatewayOtel is not a function`
+(48 pass / 1 fail), then implemented, then 49 pass / 0 fail.
+
+**Final SDK gates (2026-08-19, merged tree):**
+`pnpm --filter @kortix/sdk typecheck` exited 0.
+`pnpm --filter @kortix/sdk test` → **2269 pass / 2 skip / 0 fail** across 156
+files, 8007 assertions (both public-surface snapshots already carried the three
+additive function names and the two type names; no export was removed or
+renamed).
+`pnpm --filter @kortix/sdk run smoke:install` → "install smoke test passed".
+
+The `version` field was not touched.
+
+**Shippable to production: YES** for the SDK surface. The API routes
+(`GET/PUT/DELETE /projects/:id/gateway/otel`), the encrypted storage, the IAM
+leaf `project.gateway.otel.manage`, and the `apps/web` Observability tab ship in
+the same PR — see the PR description for their own verification, including a
+real span landing on a real OTLP receiver.
