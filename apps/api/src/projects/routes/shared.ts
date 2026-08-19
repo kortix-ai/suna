@@ -828,8 +828,15 @@ export async function openSession(args: {
           externalId: row.externalId,
           metadata: row.metadata as Record<string, unknown> | null,
         },
-        // Already read one line above — do not buy it twice.
-        stoppedProviderStatus,
+        // Already read one line above — do not buy it twice. Withheld for
+        // 'removed': that status makes the wake fail INSTEAD of starting, and
+        // the fence is detached (`void`), so without its own `getStatus` await
+        // to defer it the failure write races — and beats — the row re-read
+        // three lines below. The caller would then serve the terminal cooldown
+        // payload for a box whose wake had only just been claimed, instead of
+        // `runtime_waking`. A removed box is a rare terminal path where one
+        // extra provider round trip buys nothing worth that.
+        stoppedProviderStatus === 'removed' ? null : stoppedProviderStatus,
       );
       const [resumed] = await db
         .select()
