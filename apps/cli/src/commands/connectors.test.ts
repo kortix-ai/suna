@@ -51,6 +51,7 @@ describe('oauth2AuthorizeSteps', () => {
     expect(oauth2AuthorizeSteps(DISCOVERY_WITH_DCR, {})).toEqual({
       register: {
         registration_endpoint: 'https://api.read.ai/oauth/register',
+        issuer: 'https://authn.read.ai/',
         discovery_url: 'https://authn.read.ai/.well-known/oauth-authorization-server',
         authorization_url: 'https://authn.read.ai/oauth2/auth',
         token_url: 'https://authn.read.ai/oauth2/token',
@@ -74,6 +75,7 @@ describe('oauth2AuthorizeSteps', () => {
     const { registration_endpoint: _drop, ...noDcr } = DISCOVERY_WITH_DCR;
     expect(oauth2AuthorizeSteps(noDcr, { clientId: 'my-client', clientSecret: 'shh' })).toEqual({
       application: {
+        issuer: 'https://authn.read.ai/',
         discovery_url: 'https://authn.read.ai/.well-known/oauth-authorization-server',
         authorization_url: 'https://authn.read.ai/oauth2/auth',
         token_url: 'https://authn.read.ai/oauth2/token',

@@ -622,6 +622,12 @@ const OAuth2ApplicationFields = {
   // RFC 7591/7592: present when Kortix registered this client dynamically.
   registration_client_uri: OAuth2HttpsUrlSchema.optional(),
   registration_access_token: z.string().min(1).max(65536).optional(),
+  /**
+   * The authorization server that issued this client (RFC 8414 `issuer`).
+   * Recorded so the callback can validate RFC 9207 `iss`, and so credentials
+   * stay bound to the server that minted them (MCP SEP-2352).
+   */
+  issuer: OAuth2HttpsUrlSchema.optional(),
 };
 
 export const OAuth2ApplicationInputSchema = z
@@ -703,6 +709,8 @@ export type OAuth2ResourceDiscovery = z.infer<typeof OAuth2ResourceDiscoverySche
 export const OAuth2ClientRegistrationInputSchema = z
   .object({
     registration_endpoint: OAuth2HttpsUrlSchema,
+    /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
+    issuer: OAuth2HttpsUrlSchema.optional(),
     client_name: z.string().trim().min(1).max(128).optional(),
     token_endpoint_auth_methods_supported: z.array(z.string().max(64)).max(16).optional(),
     discovery_url: OAuth2HttpsUrlSchema.optional(),

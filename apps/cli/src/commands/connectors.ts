@@ -967,6 +967,7 @@ export function oauth2AuthorizeSteps(
     return {
       register: {
         registration_endpoint: discovery.registration_endpoint,
+        ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
         ...endpoints,
         ...(discovery.token_endpoint_auth_methods_supported?.length
           ? {
@@ -994,6 +995,7 @@ export function oauth2AuthorizeSteps(
     : 'none';
   return {
     application: {
+      ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
       ...endpoints,
       client_id: opts.clientId,
       ...(opts.clientSecret ? { client_secret: opts.clientSecret } : {}),

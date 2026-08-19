@@ -71,6 +71,9 @@ export function buildClientRegistrationInput(
   const metadata = discovery.metadata ?? {};
   return {
     registration_endpoint: discovery.registration_endpoint,
+    // Bind the issued client to the server that issued it, so the callback can
+    // validate RFC 9207 `iss` (MCP SEP-2468 / SEP-2352).
+    ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
     ...(metadata.discovery_url ? { discovery_url: metadata.discovery_url } : {}),
     ...(metadata.authorization_url ? { authorization_url: metadata.authorization_url } : {}),
     ...(metadata.token_url ? { token_url: metadata.token_url } : {}),

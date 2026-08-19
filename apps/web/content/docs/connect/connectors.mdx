@@ -151,7 +151,12 @@ every field.
 
 Kortix keeps the MCP session: it runs `initialize` and
 `notifications/initialized` on demand, then sends `Mcp-Session-Id` on later
-calls.
+calls. A server that answers without a session never sees the handshake.
+
+Kortix binds each connection to the authorization server that issued it. When
+the callback carries an `iss` parameter (RFC 9207), Kortix rejects it unless it
+matches the recorded issuer — a code minted by a different server is refused
+before it is redeemed.
 
 ### Authorize from the CLI
 

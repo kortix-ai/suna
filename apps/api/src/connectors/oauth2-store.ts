@@ -35,6 +35,7 @@ import {
   revokeOAuth2Token,
   startOAuth2DeviceAuthorization,
 } from './oauth2-lifecycle';
+import { validateAuthorizationIssuer } from './oauth2-issuer';
 import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
 import { registerOAuth2Client } from './oauth2-registration';
 import {
@@ -276,6 +277,7 @@ export async function registerConnectionOAuth2Client(
     runtime,
   );
   const application: OAuth2ApplicationInput = {
+    ...(registration.issuer ? { issuer: registration.issuer } : {}),
     ...(registration.discovery_url ? { discovery_url: registration.discovery_url } : {}),
     ...(registration.authorization_url
       ? { authorization_url: registration.authorization_url }
@@ -344,6 +346,8 @@ export async function completeAuthorizationCodeSession(input: {
   code?: string;
   providerError?: string;
   callbackUrl: string;
+  /** RFC 9207 `iss` from the authorization response, when the server sent one. */
+  issuer?: string;
 }): Promise<{ redirectUri: string | null; ok: boolean; errorCode?: string }> {
   const claimed = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -389,6 +393,24 @@ export async function completeAuthorizationCodeSession(input: {
   try {
     const loaded = await loadOAuth2Application(claimed.connectionId);
     if (!loaded || !claimed.pkceVerifierEnc) throw new Error('OAuth2 session is incomplete');
+    // RFC 9207 / SEP-2468: reject a code minted by a different authorization
+    // server BEFORE redeeming it. This is the authorization-code-injection
+    // defence and it has to happen ahead of the token request.
+    const issuerVerdict = validateAuthorizationIssuer({
+      received: input.issuer,
+      recorded: loaded.application.issuer,
+    });
+    if (!issuerVerdict.ok) {
+      await db
+        .update(connectorConnections)
+        .set({ status: 'error', updatedAt: new Date() })
+        .where(eq(connectorConnections.connectionId, claimed.connectionId));
+      return {
+        redirectUri: claimed.errorRedirectUri,
+        ok: false,
+        errorCode: issuerVerdict.errorCode,
+      };
+    }
     const token = await exchangeOAuth2AuthorizationCode(
       loaded.application,
       {
@@ -620,6 +642,7 @@ export async function handleNativeOAuth2Callback(requestUrl: string) {
     code: url.searchParams.get('code') ?? undefined,
     providerError: url.searchParams.get('error') ?? undefined,
     callbackUrl: callback,
+    issuer: url.searchParams.get('iss') ?? undefined,
   });
   if (!result.redirectUri) {
     return { status: 400 as const, body: 'OAuth2 authorization failed' };

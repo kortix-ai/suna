@@ -410,6 +410,11 @@ export interface OAuth2ApplicationInput {
   registration_client_uri?: string;
   /** RFC 7592 management token. Never returned by the API. */
   registration_access_token?: string;
+  /**
+   * The authorization server that issued this client. Recorded so the callback
+   * can validate RFC 9207 `iss` and reject a code minted elsewhere.
+   */
+  issuer?: string;
 }
 
 export interface OAuth2ApplicationView
@@ -450,6 +455,8 @@ export interface OAuth2ResourceDiscoveryInput {
 
 export interface OAuth2ClientRegistrationInput {
   registration_endpoint: string;
+  /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
+  issuer?: string;
   client_name?: string;
   token_endpoint_auth_methods_supported?: string[];
   discovery_url?: string;

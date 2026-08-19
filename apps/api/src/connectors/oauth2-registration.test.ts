@@ -57,6 +57,7 @@ describe('registerOAuth2Client — RFC 7591 dynamic client registration', () => 
       redirect_uris: ['https://api.kortix.com/v1/connectors/oauth2/callback'],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
+      application_type: 'web',
       token_endpoint_auth_method: 'client_secret_basic',
       scope: 'openid offline_access mcp:execute',
     });
@@ -67,6 +68,25 @@ describe('registerOAuth2Client — RFC 7591 dynamic client registration', () => 
       registration_access_token: 'reg-token',
       registration_client_uri: 'https://authn.example.com/oauth2/register/issued-client',
     });
+  });
+
+  test('a loopback callback registers as a native client (SEP-837)', async () => {
+    let body: Record<string, unknown> = {};
+    await registerOAuth2Client(
+      {
+        registrationEndpoint: 'https://api.example.com/oauth/register',
+        // A self-hosted Kortix on loopback. Registered as `web`, an
+        // OIDC-based server rejects the redirect URI outright.
+        redirectUri: 'http://localhost:8008/v1/connectors/oauth2/callback',
+      },
+      {
+        fetchImpl: async (_url, init) => {
+          body = JSON.parse(String(init?.body));
+          return Response.json({ client_id: 'x', client_secret: 'y' });
+        },
+      },
+    );
+    expect(body.application_type).toBe('native');
   });
 
   test('accepts HTTP 200 and a public client (no secret, method none)', async () => {

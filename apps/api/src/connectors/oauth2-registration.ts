@@ -6,6 +6,7 @@
  * connection's OAuth2 application.
  */
 import type { OAuth2TokenEndpointAuthMethod } from '@kortix/api-contract';
+import { oauth2ApplicationTypeFor } from './oauth2-issuer';
 import {
   type OAuth2LifecycleRuntime,
   boundedJson,
@@ -61,6 +62,9 @@ export async function registerOAuth2Client(
     redirect_uris: [input.redirectUri],
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
+    // SEP-837: without this an OIDC-based server rejects a loopback redirect
+    // URI, which is exactly the self-hosted Kortix case.
+    application_type: oauth2ApplicationTypeFor(input.redirectUri),
     token_endpoint_auth_method: requested,
     ...(input.scopes?.length ? { scope: input.scopes.join(' ') } : {}),
   };

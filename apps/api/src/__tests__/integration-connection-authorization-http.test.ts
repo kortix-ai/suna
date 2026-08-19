@@ -914,6 +914,58 @@ describe('connection owner authorization over HTTP', () => {
     );
   });
 
+  test('a callback from a different issuer is refused before the code is redeemed', async () => {
+    const alice = await mint(ALICE);
+    // Record the issuer this connection is bound to (RFC 9207 / SEP-2352).
+    const saved = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/application`,
+      alice,
+      {
+        issuer: 'https://authn.example.test',
+        authorization_url: 'https://authn.example.test/authorize',
+        token_url: 'https://authn.example.test/token',
+        client_id: 'issuer-bound-client',
+        token_endpoint_auth_method: 'none',
+      },
+    );
+    expect(saved.status).toBe(200);
+
+    const startFlow = async () => {
+      const started = await request(
+        'POST',
+        `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}/oauth2/authorize`,
+        alice,
+        {},
+      );
+      expect(started.status).toBe(200);
+      const url = new URL(((await started.json()) as { authorization_url: string }).authorization_url);
+      const state = url.searchParams.get('state');
+      if (!state) throw new Error('authorization state is missing');
+      return createHash('sha256').update(state).digest('hex');
+    };
+
+    // A code minted by a hostile authorization server, replayed at our callback.
+    const injected = await completeAuthorizationCodeSession({
+      stateHash: await startFlow(),
+      code: 'code-from-the-wrong-server',
+      callbackUrl: 'https://api.example.test/v1/connectors/oauth2/callback',
+      issuer: 'https://evil.example.test',
+    });
+    expect(injected).toMatchObject({ ok: false, errorCode: 'issuer_mismatch' });
+
+    // The honest issuer still gets through the check — it fails later, at the
+    // token request, because no such server exists in this test.
+    const honest = await completeAuthorizationCodeSession({
+      stateHash: await startFlow(),
+      code: 'code-from-the-right-server',
+      callbackUrl: 'https://api.example.test/v1/connectors/oauth2/callback',
+      issuer: 'https://authn.example.test/',
+    });
+    expect(honest.ok).toBe(false);
+    expect(honest.errorCode).not.toBe('issuer_mismatch');
+  });
+
   test('personal-connection sessions reject project sharing and public links', async () => {
     const alice = await mint(ALICE);
     const shared = await request(
