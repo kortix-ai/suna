@@ -9,6 +9,7 @@ import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/c
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { db } from '../shared/db';
+import { deleteGroup } from '../repositories/iam';
 import {
   ScimResource,
   buildGroup,
@@ -729,11 +730,19 @@ scimRouter.openapi(
         .where(eq(accountGroupMembers.groupId, groupId))
     ).map((r) => r.userId);
 
-    const rows = await db
-      .delete(accountGroups)
+    // Name first, for the audit event: the delete below takes the row with it.
+    const [existing] = await db
+      .select({ name: accountGroups.name })
+      .from(accountGroups)
       .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-      .returning({ groupId: accountGroups.groupId, name: accountGroups.name });
-    if (rows.length === 0) return c.body(null, 204);
+      .limit(1);
+    if (!existing) return c.body(null, 204);
+    // `deleteGroup`, not a bare delete: it also drops the group's assignments in
+    // the same transaction. `role_assignments.principal_id` is polymorphic, so
+    // there is no FK for Postgres to cascade, and the grants would outlive the
+    // group they belonged to.
+    if (!(await deleteGroup(accountId, groupId))) return c.body(null, 204);
+    const rows = [{ groupId, name: existing.name }];
     invalidateIamCacheForUsers(memberIds);
 
     await scimAudit(c, {

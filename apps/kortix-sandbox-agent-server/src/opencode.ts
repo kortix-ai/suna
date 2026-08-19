@@ -338,10 +338,18 @@ export async function buildOpencodeConfigContent(
     // baked catalog forever (templates are not rebuilt on a catalog change).
     // On 2026-08-19 that made OpenCode answer `ModelNotFound: kortix/grok-4.6`
     // for two live managed models. So the sandbox LEARNS the managed set from
-    // the API it talks to on every boot. This await consumes a prefetch started
-    // at boot (startManagedModelsPrefetch, main.ts) — it never starts a fetch
-    // itself, so the "boot path touches no network" rule still holds.
-    const managedOverlay = await awaitManagedModelsOverlay()
+    // the API it talks to — but NEVER on this path.
+    //
+    // This read is SYNCHRONOUS and non-blocking by hard rule. Waiting on the
+    // in-flight fetch here cost 1.6s of a 6.5s dev boot (config-deps 114ms →
+    // runtime-config-ready 1727ms, measured on a Platinum guest 2026-08-19):
+    // `opencode serve` cannot bind its port until this config is written, so
+    // anything awaited here is dead time on EVERY session boot. Cold boot uses
+    // whatever is already known (bundled managed table, or a cache filled by an
+    // earlier fetch on this box); a managed model that only the live set knows
+    // is picked up by the post-spawn reconcile in main.ts, off the critical
+    // path.
+    const managedOverlay = cachedManagedModels()
     const kortixProvider = buildKortixProvider({
       // In proxy mode opencode talks to the localhost proxy with a placeholder
       // key; the proxy injects the real per-session token upstream. In direct
@@ -412,6 +420,12 @@ type KortixProviderOpts = {
 
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
   const catalog = withModelLimits(withManagedOverlay(loadGatewayCatalog(opts), opts.managedOverlay))
+  // Remember the exact id set this config registers. Every spawn writes its
+  // config immediately before exec (see spawnOpencode → writeKortixOpencodeConfig),
+  // so this is the provider map the RUNNING OpenCode holds — the post-spawn
+  // reconcile diffs the live managed set against it to decide whether one
+  // controlled restart is warranted.
+  lastConfiguredProviderModelIds = new Set(Object.keys(catalog))
   const models = Object.fromEntries(
     Object.entries(catalog).map(([id, model]) => {
       // The gateway catalog's string `provider` is UI metadata describing the
@@ -762,20 +776,20 @@ async function fetchGatewayModels(
 // process start — then answers `ModelNotFound: kortix/<id>` for it (prod
 // incident 2026-08-19: grok-4.6, deepseek-v4-pro-0813).
 //
-// Fix: every boot fetches the compact managed listing (~3KB) from the same
-// gateway the session bills against and overlays it on whatever catalog is on
-// disk. Same principle as the runtime-assets reconcile — the box learns the
-// current truth from the API it talks to.
+// Fix, in two halves that never block each other:
+//   1. BOOT reads only what it already knows (cachedManagedModels) — the
+//      bundled managed table on a cold box. Zero network, zero wait, because
+//      `opencode serve` cannot bind its port until that config is written.
+//   2. AFTER the spawn, the prefetch started at proxy-up is settled and diffed
+//      against the provider map OpenCode actually booted with. Only a genuinely
+//      missing managed id costs one controlled restart (main.ts,
+//      reconcileManagedModels). The bundled table ships with every release, so
+//      the miss is rare by construction.
+// Same principle as the runtime-assets reconcile — the box learns the current
+// truth from the API it talks to, without paying for it on the hot path.
 const MANAGED_MODELS_TIMEOUT_MS = 2_000
 const MANAGED_MODELS_TOTAL_BUDGET_MS = 5_000
 const MANAGED_MODELS_ATTEMPTS = 3
-// How long buildOpencodeConfigContent may wait on an in-flight prefetch. The
-// prefetch starts at proxy-up and the repo clone runs in front of the config
-// build, so this is normally already resolved and costs 0ms. The cap exists so
-// a degraded gateway can never push the OpenCode spawn out by the full budget:
-// the BUNDLED managed set (below) is the correctness floor, the live fetch is
-// the upgrade.
-const MANAGED_OVERLAY_AWAIT_CAP_MS = 2_500
 // Re-fetch rather than reuse a cache older than this (a warm seed can sit for
 // hours between capture and adoption).
 const MANAGED_CACHE_TTL_MS = 10 * 60_000
@@ -783,6 +797,9 @@ const MANAGED_CACHE_TTL_MS = 10 * 60_000
 let managedPrefetch: Promise<Record<string, KortixGatewayModel> | null> | null = null
 let managedCache: Record<string, KortixGatewayModel> | null = null
 let managedCacheAt = 0
+/** The kortix-provider model ids the most recently WRITTEN config registers.
+ *  Written on every spawn, so it is what the running OpenCode holds. */
+let lastConfiguredProviderModelIds: Set<string> | null = null
 
 /**
  * Compose the catalog OpenCode boots with: disk catalog first, managed set on
@@ -885,29 +902,82 @@ export function rememberManagedModels(models: Record<string, KortixGatewayModel>
   managedCacheAt = Date.now()
 }
 
-/** The overlay for the config being built now: the cached live set, else an
- *  in-flight prefetch (bounded), else null (→ bundled managed set). Never
- *  starts a fetch — the boot path stays network-free by construction. */
-export async function awaitManagedModelsOverlay(): Promise<Record<string, KortixGatewayModel> | null> {
+/**
+ * The live managed set IF it is already known — synchronous, never a wait.
+ *
+ * Returns the cache when it is fresh (an earlier fetch on this box: a prior
+ * OpenCode restart, a warm-fork adoption, or the post-spawn reconcile), else
+ * null so the caller falls back to the bundled managed table. It deliberately
+ * does NOT consult the in-flight prefetch: the config build is what gates
+ * OpenCode's port bind, and awaiting the fetch there measured 1.6s of dead
+ * boot time on a real dev guest.
+ */
+export function cachedManagedModels(): Record<string, KortixGatewayModel> | null {
   if (managedCache && Date.now() - managedCacheAt < MANAGED_CACHE_TTL_MS) return managedCache
-  const pending = managedPrefetch
-  if (!pending) return managedCache
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const capped = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), MANAGED_OVERLAY_AWAIT_CAP_MS)
-  })
-  try {
-    return (await Promise.race([pending, capped])) ?? managedCache
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
+  return null
 }
 
-/** Test seam: drop prefetch/cache state between cases. */
+/**
+ * Settle the boot prefetch, for the POST-SPAWN reconcile only.
+ *
+ * Bounded by the prefetch's own ≤5s budget, which started at proxy-up — by the
+ * time OpenCode is spawned it is normally already resolved, so this returns
+ * immediately. Never call it from a path that gates the spawn.
+ */
+export async function settleManagedModelsPrefetch(): Promise<Record<
+  string,
+  KortixGatewayModel
+> | null> {
+  const pending = managedPrefetch
+  if (pending) await pending.catch(() => null)
+  return cachedManagedModels()
+}
+
+/** The kortix model ids the running OpenCode's provider map holds (i.e. the ids
+ *  in the config written by the last spawn), or null before any config build. */
+export function configuredProviderModelIds(): Set<string> | null {
+  return lastConfiguredProviderModelIds
+}
+
+/**
+ * Managed ids the live gateway serves that the running OpenCode does NOT have.
+ *
+ * Each one is a model the picker offers and the runtime answers `ModelNotFound`
+ * for — the 2026-08-19 outage, exactly. An empty result means the boot config
+ * was already complete and nothing has to be restarted.
+ */
+export function missingManagedModelIds(live: Record<string, KortixGatewayModel> | null): string[] {
+  if (!live) return []
+  const configured = lastConfiguredProviderModelIds
+  if (!configured) return []
+  return Object.keys(live).filter((id) => !configured.has(id))
+}
+
+/**
+ * Persist the managed overlay so the NEXT OpenCode start (the reconcile's
+ * restart, and any later restart on this box) registers it from disk, not just
+ * from this process's cache. Returns the file OpenCode should read, or null
+ * when nothing usable could be composed.
+ */
+export function writeManagedOverlayCatalogFile(opts: {
+  currentCatalogFile: string
+  targetCatalogFile: string
+  managed: Record<string, KortixGatewayModel>
+}): string | null {
+  const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? MINIMAL_FALLBACK_MODELS, opts.managed))
+  if (!composed) return null
+  mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
+  writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: composed }), { mode: 0o600 })
+  return opts.targetCatalogFile
+}
+
+/** Test seam: drop prefetch/cache/config state between cases. */
 export function resetManagedModelsStateForTests(): void {
   managedPrefetch = null
   managedCache = null
   managedCacheAt = 0
+  lastConfiguredProviderModelIds = null
 }
 
 export type GatewayCatalogRefreshResult = {

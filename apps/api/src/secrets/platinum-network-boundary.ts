@@ -13,7 +13,7 @@ type PlatinumSecret = {
   on_echo: 'block' | 'redact';
 };
 
-type PlatinumSandboxSecrets = {
+export type PlatinumSandboxSecrets = {
   sandbox_id: string;
   state: 'armed' | 'arming' | 'unavailable';
   secrets: Array<{ secret_id: string; state: 'armed' | 'arming' | 'unavailable' }>;
@@ -221,6 +221,46 @@ async function waitUntilArmed(
   }
 }
 
+export interface PlatinumPreparedNetworkBoundary {
+  secrets: Array<{ secret: string; alias: string; header: string }>;
+}
+
+export async function preparePlatinumNetworkBoundary(
+  replicaOwnerId: string,
+  bindings: NetworkBoundarySecretBinding[],
+  context: PlatinumNetworkBoundaryContext,
+): Promise<PlatinumPreparedNetworkBoundary> {
+  const desired = await Promise.all(
+    bindings.map(async (binding) => ({
+      binding,
+      secret: await ensureSecret(replicaOwnerId, binding, context),
+    })),
+  );
+  return {
+    secrets: desired.map(({ binding, secret }) => ({
+      secret: secret.id,
+      alias: binding.alias,
+      header: binding.header,
+    })),
+  };
+}
+
+export async function waitForPlatinumNetworkBoundary(
+  externalId: string,
+  initial?: PlatinumSandboxSecrets,
+  options?: { armTimeoutMs?: number },
+): Promise<{ state: 'armed'; attached: number }> {
+  const current = initial ?? await platinumJson<PlatinumSandboxSecrets>(
+    `/v1/sandboxes/${encodeURIComponent(externalId)}/secrets`,
+  );
+  const armed = await waitUntilArmed(
+    externalId,
+    current,
+    options?.armTimeoutMs ?? ARM_TIMEOUT_MS,
+  );
+  return { state: 'armed', attached: armed.secrets.length };
+}
+
 /**
  * Make the provider edge hold exactly `bindings` for this sandbox.
  *
@@ -237,14 +277,14 @@ export async function syncPlatinumNetworkBoundary(
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
   context: PlatinumNetworkBoundaryContext,
-  options?: { armTimeoutMs?: number },
+  options?: { armTimeoutMs?: number; replicaOwnerId?: string },
 ): Promise<{ state: 'armed'; attached: number }> {
   const sandboxPath = `/v1/sandboxes/${encodeURIComponent(externalId)}/secrets`;
   const before = await platinumJson<PlatinumSandboxSecrets>(sandboxPath);
   const desired = await Promise.all(
     bindings.map(async (binding) => ({
       binding,
-      secret: await ensureSecret(externalId, binding, context),
+      secret: await ensureSecret(options?.replicaOwnerId ?? externalId, binding, context),
     })),
   );
   const updated = await platinumJson<PlatinumSandboxSecrets>(sandboxPath, {

@@ -371,27 +371,32 @@ flow(
 );
 
 /**
- * SESS-14 — public share access boundary. `canManageSharing = isOwner (the
- * session creator) || canManageProject (manage role: manager/owner/admin)` —
- * projects/lib/access.ts `loadSessionForSharing()`. So a project EDITOR who
- * did NOT create the session is denied (403, the sharing-specific message),
- * while a project MANAGER who did NOT create it is allowed (200) via the OR.
- * NONMEMBER is denied earlier, by the account-membership gate in
- * `loadProjectForUser` (throws 403 before the sharing check is ever reached).
- * ANON never reaches the handler (401, `supabaseAuth`).
+ * SESS-14 — public-share access boundary. `loadSessionForSharing()` returns TWO
+ * verdicts and the three routes deliberately do not share one:
+ *
+ *   canManageLifecycle = isOwner || canManageProject   → LIST + REVOKE
+ *   canManageSharing   = mayManageSessionSharing(...)  → MINT
+ *
+ * Revoking only ever REMOVES access, so a project manager must be able to kill
+ * a leaking link on a session they did not create. Minting is the opposite: a
+ * public share link is UNAUTHENTICATED, and a manager cannot read another
+ * human's private session (isProjectSessionVisibleTo grants the manager
+ * override to TRIGGER-created sessions only), so letting a manager mint one
+ * would hand them the content the visibility gate had just refused. That is
+ * the escalation the split closes, and it is what this flow pins.
+ *
+ * A plain project MEMBER who did not create the session is denied on all three
+ * (403 — a real permission denial, not a 404: they are a legitimate member of
+ * the project the session lives in). NONMEMBER is denied earlier by the
+ * account-membership gate in `loadProjectForUser`. ANON never reaches the
+ * handler (401, `supabaseAuth`).
  *
  * `loadSessionForSharing` is deliberately NOT `loadVisibleSession` (the
- * content-visibility gate used for reading a session's transcript): the
- * public-shares routes used to call `loadVisibleSession`, whose
- * `isSessionVisibleTo` check hides a default-`private` session from everyone
- * but its creator — including a project manager with no adminBypass. That
- * made the `canManageProject` half of the OR unreachable: the route 404'd on
- * the visibility gate before ever computing `canManageSharing`, and a plain
- * editor got the same 404 instead of the informative 403 this spec expects.
- * `loadSessionForSharing` loads the same row but only computes
- * isOwner/canManageProject — no content-visibility check — since managing
- * share links is a project-management action, not a "can you read this
- * conversation" one.
+ * content-visibility gate used for reading a transcript): the public-shares
+ * routes used to call it, and its `isSessionVisibleTo` check hides a
+ * default-`private` session from everyone but its creator — so the route 404'd
+ * before any permission check ran, even for a real project manager, and a
+ * plain member got that same 404 instead of the informative 403.
  */
 flow(
   'SESS-14',
@@ -409,8 +414,8 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const p = await team.project({ seed: true });
-    const editor = await team.addMember('member');
-    await team.grantProjectRole(p.id, editor.userId!, 'manager');
+    const plainMember = await team.addMember('member');
+    await team.grantProjectRole(p.id, plainMember.userId!, 'member');
     const manager = await team.addMember('member');
     await team.grantProjectRole(p.id, manager.userId!, 'manager');
 
@@ -439,10 +444,10 @@ flow(
     });
 
     await ctx.step(
-      'a project EDITOR who did not create the session cannot list shares → 403',
+      'a plain project MEMBER who did not create the session cannot list shares → 403',
       async () => {
         const r = await ctx.client
-          .as(editor)
+          .as(plainMember)
           .get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
             params: { projectId: p.id, sessionId },
           });
@@ -450,10 +455,10 @@ flow(
       },
     );
     await ctx.step(
-      "a project EDITOR cannot create a share on someone else's session → 403",
+      "a plain project MEMBER cannot create a share on someone else's session → 403",
       async () => {
         const r = await ctx.client
-          .as(editor)
+          .as(plainMember)
           .post(
             '/v1/projects/:projectId/sessions/:sessionId/public-shares',
             { preview: { port: 3000 } },
@@ -462,9 +467,9 @@ flow(
         r.status(403);
       },
     );
-    await ctx.step("a project EDITOR cannot revoke someone else's share → 403", async () => {
+    await ctx.step("a plain project MEMBER cannot revoke someone else's share → 403", async () => {
       const r = await ctx.client
-        .as(editor)
+        .as(plainMember)
         .del('/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId', {
           params: { projectId: p.id, sessionId, shareId },
         });
@@ -472,7 +477,7 @@ flow(
     });
 
     await ctx.step(
-      'a project MANAGER (not the creator) CAN list shares → 200 (isOwner || canManageProject)',
+      'a project MANAGER (not the creator) CAN list shares → 200 (canManageLifecycle)',
       async () => {
         const r = await ctx.client
           .as(manager)
@@ -480,6 +485,37 @@ flow(
             params: { projectId: p.id, sessionId },
           });
         r.status(200).body().has('$.shares[0].share_id', shareId);
+      },
+    );
+
+    await ctx.step(
+      'a project MANAGER (not the creator) CANNOT mint a public link → 403 (canManageSharing)',
+      async () => {
+        // The escalation: the manager cannot read this private session, so a
+        // link they minted and then opened anonymously would be a read the
+        // visibility gate refused them.
+        const r = await ctx.client
+          .as(manager)
+          .post(
+            '/v1/projects/:projectId/sessions/:sessionId/public-shares',
+            { preview: { port: 3000 } },
+            { params: { projectId: p.id, sessionId } },
+          );
+        r.status(403)
+          .body()
+          .has('$.error', 'Only the session owner can create a public link to this session');
+      },
+    );
+
+    await ctx.step(
+      'a project MANAGER CAN revoke a link they did not mint → 200 (revoking only removes access)',
+      async () => {
+        const r = await ctx.client
+          .as(manager)
+          .del('/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId', {
+            params: { projectId: p.id, sessionId, shareId },
+          });
+        r.status(200).body().exists('$.share.revoked_at');
       },
     );
 
@@ -497,6 +533,160 @@ flow(
         .get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
           params: { projectId: p.id, sessionId },
         });
+      r.status(401);
+    });
+  },
+);
+
+/**
+ * SESS-26 — the session sharing POLICY is the owner's, not the project
+ * manager's. Same `mayManageSessionSharing` predicate SESS-14 pins on minting a
+ * public link, applied to `PUT .../sharing`.
+ *
+ * This route sits BEHIND the content-visibility gate, so a manager never
+ * reaches another human's still-private session (404). The reachable defect was
+ * the session that HAD been shared with them: a manager could rewrite the
+ * owner's policy wholesale and revoke everyone, the owner included. Sharing a
+ * session with a manager is not handing them its access list.
+ *
+ * Also pinned: `private` means "the OWNER only", never "only the person
+ * editing". A non-owner who saved it lost the session for good, because undoing
+ * it needs the read the save had just revoked. The route now refuses any change
+ * that would strip the EDITOR's own access.
+ */
+flow(
+  'SESS-26',
+  {
+    domain: 'sessions',
+    requires: ['daytona', 'funded'],
+    timeoutMs: 300_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ seed: true });
+    const manager = await team.addMember('member');
+    await team.grantProjectRole(p.id, manager.userId!, 'manager');
+    const plainMember = await team.addMember('member');
+    await team.grantProjectRole(p.id, plainMember.userId!, 'member');
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let sessionId = '';
+    await ctx.step('OWNER creates the session — the human owner of its policy', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions',
+        { initial_prompt: 'noop' },
+        { params: { projectId: p.id } },
+      );
+      r.status(201);
+      sessionId = r.json<any>()?.session_id ?? r.json<any>()?.id;
+      ctx.track('session', sessionId, { projectId: p.id });
+    });
+
+    await ctx.step('the session reports the creator as owner and sharing manager', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId: p.id, sessionId },
+      });
+      r.status(200)
+        .body()
+        .has('$.is_owner', true)
+        .has('$.can_manage_sharing', true)
+        .has('$.can_manage_lifecycle', true)
+        .has('$.visibility', 'private');
+    });
+
+    await ctx.step(
+      'a project MANAGER cannot even see the still-private session → 404 (visibility gate first)',
+      async () => {
+        const r = await ctx.client
+          .as(manager)
+          .put(
+            '/v1/projects/:projectId/sessions/:sessionId/sharing',
+            { mode: 'project' },
+            { params: { projectId: p.id, sessionId } },
+          );
+        r.status(404);
+      },
+    );
+
+    await ctx.step('a plain project MEMBER cannot change sharing either → 404 or 403', async () => {
+      // A private session is invisible to a plain member, so `loadVisibleSession`
+      // hides it with 404 before the permission check. Either answer is a
+      // refusal; what must never happen is a 200.
+      const r = await ctx.client
+        .as(plainMember)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/sharing',
+          { mode: 'project' },
+          { params: { projectId: p.id, sessionId } },
+        );
+      r.status([403, 404]);
+    });
+
+    await ctx.step('the OWNER shares it with the whole project → 200', async () => {
+      const r = await owner.put(
+        '/v1/projects/:projectId/sessions/:sessionId/sharing',
+        { mode: 'project' },
+        { params: { projectId: p.id, sessionId } },
+      );
+      r.status(200);
+    });
+
+    await ctx.step(
+      'the manager can now READ it, and still cannot change its sharing → 403',
+      async () => {
+        const read = await ctx.client
+          .as(manager)
+          .get('/v1/projects/:projectId/sessions/:sessionId', {
+            params: { projectId: p.id, sessionId },
+          });
+        // Reading a project-wide session is the whole point of sharing it.
+        // Managing its policy is still not the reader's to do.
+        read
+          .status(200)
+          .body()
+          .has('$.is_owner', false)
+          .has('$.can_manage_sharing', false)
+          .has('$.can_manage_lifecycle', true);
+
+        // The reachable defect: before this rule the manager could set it back
+        // to `private` and revoke everyone, the OWNER included, on a session
+        // they had merely been shown.
+        const write = await ctx.client
+          .as(manager)
+          .put(
+            '/v1/projects/:projectId/sessions/:sessionId/sharing',
+            { mode: 'private' },
+            { params: { projectId: p.id, sessionId } },
+          );
+        write
+          .status(403)
+          .body()
+          .has('$.error', 'Only the session owner can change who opens this session');
+      },
+    );
+
+    await ctx.step('the OWNER may still set it back to private — every mode keeps the owner', async () => {
+      const r = await owner.put(
+        '/v1/projects/:projectId/sessions/:sessionId/sharing',
+        { mode: 'private' },
+        { params: { projectId: p.id, sessionId } },
+      );
+      r.status(200).body().has('$.visibility', 'private');
+    });
+
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .put(
+          '/v1/projects/:projectId/sessions/:sessionId/sharing',
+          { mode: 'project' },
+          { params: { projectId: p.id, sessionId } },
+        );
       r.status(401);
     });
   },

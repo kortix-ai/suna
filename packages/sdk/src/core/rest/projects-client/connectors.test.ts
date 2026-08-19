@@ -5,6 +5,7 @@ import {
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
+  discoverConnectionOAuth2Resource,
   discoverConnectorAuth,
   ensureProjectConnectorConnection,
   getConnectStatus,
@@ -25,6 +26,7 @@ import {
   pipedreamFinalize,
   pipedreamFinalizeConnection,
   pollConnectionOAuth2DeviceAuthorization,
+  registerConnectionOAuth2Client,
   putConnectionOAuth2Application,
   reconcileConnection,
   reconcileMemberConnection,
@@ -168,6 +170,67 @@ test('native OAuth2 lifecycle methods use connection-scoped generic routes', asy
   nextResponse = { status: 200, body: { status: 'active', scopes: ['read'] } };
   await getConnectionOAuth2Status('P1', 'connection-1');
   expect(last().url).toContain('/oauth2/status');
+});
+
+test('MCP authorization discovery and dynamic client registration', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      discovery: {
+        resource_url: 'https://api.read.ai/mcp',
+        requires_authorization: true,
+        resource: 'https://api.read.ai/mcp',
+        resource_name: 'Read AI MCP Server',
+        protected_resource_metadata_url:
+          'https://api.read.ai/.well-known/oauth-protected-resource/mcp',
+        authorization_server: 'https://authn.read.ai/',
+        metadata: {
+          discovery_url: 'https://authn.read.ai/.well-known/oauth-authorization-server',
+          authorization_url: 'https://authn.read.ai/oauth2/auth',
+          token_url: 'https://authn.read.ai/oauth2/token',
+          resource: 'https://api.read.ai/mcp',
+        },
+        registration_endpoint: 'https://api.read.ai/oauth/register',
+        token_endpoint_auth_methods_supported: ['client_secret_basic'],
+        code_challenge_methods_supported: ['S256'],
+        scopes: ['openid', 'offline_access', 'mcp:execute'],
+        warnings: [],
+      },
+    },
+  };
+  const discovered = await discoverConnectionOAuth2Resource('P1', 'connection-1');
+  expect(last()).toMatchObject({ method: 'POST', body: {} });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/discover-resource');
+  expect(discovered.discovery.registration_endpoint).toBe('https://api.read.ai/oauth/register');
+  expect(discovered.discovery.scopes).toEqual(['openid', 'offline_access', 'mcp:execute']);
+
+  await discoverConnectionOAuth2Resource('P1', 'connection-1', {
+    resource_url: 'https://api.read.ai/mcp',
+  });
+  expect(last().body).toEqual({ resource_url: 'https://api.read.ai/mcp' });
+
+  nextResponse = {
+    status: 200,
+    body: {
+      application: {
+        client_id: 'issued-client',
+        token_endpoint_auth_method: 'client_secret_basic',
+        has_client_secret: true,
+        has_private_key: false,
+      },
+    },
+  };
+  const registration = {
+    registration_endpoint: 'https://api.read.ai/oauth/register',
+    token_url: 'https://authn.read.ai/oauth2/token',
+    authorization_url: 'https://authn.read.ai/oauth2/auth',
+    scopes: ['openid', 'mcp:execute'],
+    resource: 'https://api.read.ai/mcp',
+  };
+  const registered = await registerConnectionOAuth2Client('P1', 'connection-1', registration);
+  expect(last()).toMatchObject({ method: 'POST', body: registration });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/register');
+  expect(registered.application.client_id).toBe('issued-client');
 });
 
 test('connection methods use the canonical connection route contract', async () => {

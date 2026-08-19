@@ -16,7 +16,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -530,7 +530,6 @@ mockIamEngineAllowAll((action) => {
   }
 });
 
-mockIamMembershipSyncNoop();
 // The hermetic db shim models the legacy tables; the read models project from
 // those rows rather than from `role_assignments`. See mockIamReadModels.
 mockIamReadModels();

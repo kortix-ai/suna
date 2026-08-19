@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMembers, accounts, projects } from "@kortix/db";
+import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
@@ -196,27 +196,21 @@ export function registerAccountRoutes(): void {
 
       const [account] = await db.insert(accounts).values({ name }).returning();
 
-      await db.insert(accountMembers).values({
+      // IDENTITY, then the OWNER role. `SYSTEM_ACTOR`: nobody holds a
+      // permission in an account that did not exist a statement ago, so there is
+      // no writer to authorize — creating it is the authorization.
+      await db.insert(accountMemberships).values({
         userId,
         accountId: account.accountId,
-        accountRole: 'owner',
         isSuperAdmin: true,
       });
-      // …and the canonical owner assignment. `SYSTEM_ACTOR`: nobody holds a
-      // permission in an account that did not exist a statement ago, so there
-      // is no writer to authorize — creating it is the authorization.
-      // Best-effort: the mirror trigger already wrote the same row inside the
-      // INSERT above, so a failure costs the audit event, not the account.
-      try {
-        await assignRole(SYSTEM_ACTOR, account.accountId, {
-          principal: { type: 'user', id: userId },
-          roleKey: 'owner',
-          scope: { type: 'account' },
-          source: 'system',
-        });
-      } catch (err) {
-        console.warn('[accounts] canonical owner assignment failed', err);
-      }
+      await assignRole(SYSTEM_ACTOR, account.accountId, {
+        principal: { type: 'user', id: userId },
+        roleKey: 'owner',
+        scope: { type: 'account' },
+        source: 'system',
+        exclusive: true,
+      });
 
       return c.json(
         {

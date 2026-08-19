@@ -56,10 +56,43 @@ pushes survives; everything else does not.
 Every session uses OpenCode REST. Kortix stores the selected OpenCode agent and
 model when the session starts. Restart and resume keep the same session runtime.
 
+## Session access
+
+A session is private to the person who created it. The owner opens **Session
+access** and picks one of 3 options.
+
+| Option | Who can open the session |
+|---|---|
+| Only you | The owner alone. This is the default. |
+| Specific people | The owner, plus the members and groups the owner picks. |
+| Whole project | Every member of the project. |
+
+Everyone with access reads the conversation and continues it.
+
+**Only the owner changes this.** A project manager who did not create the
+session can open it once it is shared with them, and can stop, restart, or
+delete it. They cannot rewrite who else can open it. Sharing a session with a
+manager is not handing them its access list.
+
+One kind of session has no human owner: the ones a trigger creates, which run
+under the trigger agent's identity. Project managers govern those. Set the
+policy for all of them on the trigger itself, under **Session access** on the
+trigger — saving there also updates the sessions that trigger already created.
+
+<Callout type="warn" title="A session keeps its owner">
+Removing someone from the account does not move their sessions to anyone else.
+Their access policy freezes as it was. A project manager can still stop or
+delete those sessions — deleting is the way to revoke a session nobody owns any
+more.
+</Callout>
+
 ## Sharing a preview
 
 You can share a session's live preview with a public link, in view-only or
-interactive mode.
+interactive mode. Minting that link is the session owner's call, for the same
+reason: the link is unauthenticated, so anyone holding the URL reads the
+session without signing in. A project manager can list and revoke a session's
+links without owning it — revoking only ever removes access.
 
 ## Providers
 

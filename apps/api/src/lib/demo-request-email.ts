@@ -85,6 +85,26 @@ function renderHtml(lead: DemoRequestLead): string {
 </html>`.trim();
 }
 
+/** Plain-text alternative, built from the same fields as the HTML table. */
+function renderPlainText(lead: DemoRequestLead): string {
+  const fields: Array<[string, unknown]> = [
+    ['Name', lead.name],
+    ['Email', lead.email],
+    ['Company', lead.company_name],
+    ['Company size', lead.company_size],
+    ['Goal', lead.goal],
+    ['Qualified', lead.qualified],
+    ['Source', lead.source],
+  ];
+  const lines = ['New demo request', ''];
+  for (const [label, value] of fields) {
+    const text = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value ?? '').trim();
+    if (text) lines.push(`${label}: ${text}`);
+  }
+  lines.push('', 'Kortix — automated lead notification');
+  return lines.join('\n');
+}
+
 /**
  * Send the internal "new demo request" notification. Never throws — returns a
  * result the caller can log. Recipients come from config.DEMO_LEAD_NOTIFY_EMAIL,
@@ -108,6 +128,7 @@ export async function sendDemoRequestNotification(
     to: recipients,
     subject: `New demo request — ${who}`,
     html: renderHtml(lead),
+    text: renderPlainText(lead),
     category: 'demo-request',
     from: {
       email: config.DEMO_LEAD_FROM_EMAIL || config.MAILTRAP_FROM_EMAIL,

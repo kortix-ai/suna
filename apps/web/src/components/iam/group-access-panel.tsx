@@ -122,6 +122,14 @@ export interface GroupAccessPanelProps {
    *  `rbac` entitlement. Defaults to true so an unresolved tier is never
    *  silently downgraded. */
   rbacEnabled?: boolean;
+  /** `role.read` — the leaf `GET .../iam/roles` asserts. PERMISSION, a
+   *  different axis from the `rbacEnabled` ENTITLEMENT above. Required, not
+   *  optional-with-a-default: a default of `true` reinstates the background
+   *  403 for every caller that forgets it. The hub already holds this verdict
+   *  in its batched probe — pass it down, do not re-probe. */
+  canReadRoles: boolean;
+  /** `policy.read` — the leaf `GET .../iam/policies` asserts. Same rules. */
+  canReadPolicies: boolean;
   /** Back to the groups list — the hub drops the `?group=` param. */
   onBack: () => void;
 }
@@ -130,6 +138,8 @@ export function GroupAccessPanel({
   accountId,
   groupId,
   rbacEnabled = true,
+  canReadRoles,
+  canReadPolicies,
   onBack,
 }: GroupAccessPanelProps) {
   const queryClient = useQueryClient();
@@ -260,6 +270,8 @@ export function GroupAccessPanel({
             canManage={canManageMembers}
             rbacEnabled={rbacEnabled}
             canManageRoles={canManageRoles}
+            canReadRoles={canReadRoles}
+            canReadPolicies={canReadPolicies}
           />
         </>
       ) : null}
@@ -634,6 +646,8 @@ function GroupProjectAccessCard({
   canManage,
   rbacEnabled,
   canManageRoles,
+  canReadRoles,
+  canReadPolicies,
 }: {
   accountId: string;
   groupId: string;
@@ -645,6 +659,11 @@ function GroupProjectAccessCard({
   canManage: boolean;
   rbacEnabled: boolean;
   canManageRoles: boolean;
+  /** `role.read` / `policy.read`. This card, not its parent, owns the two IAM
+   *  reads — so the verdicts have to reach it. Required, not
+   *  optional-with-a-default, for the reason stated on `GroupAccessPanelProps`. */
+  canReadRoles: boolean;
+  canReadPolicies: boolean;
 }) {
   const queryClient = useQueryClient();
   const grantsKey = ['group-project-grants', accountId, groupId];
@@ -677,12 +696,25 @@ function GroupProjectAccessCard({
   // row layered on the built-in grant above. The row shows the custom
   // role's name instead of the built-in one, and `AccessDialog` needs the
   // policy id to switch away from it.
-  const rolesQuery = useAccountRoles(accountId);
+  //
+  // Two axes, both required. ENTITLEMENT (`rbacEnabled`): without `rbac` there
+  // are no custom roles and no policies to resolve. PERMISSION
+  // (`canReadRoles` / `canReadPolicies`): `GET .../iam/roles` asserts
+  // `role.read` and `GET .../iam/policies` asserts `policy.read`, and both
+  // leaves sit in ADMIN_EXTRAS, never in the member baseline
+  // (`apps/api/src/iam/role-perms.ts`). The roles read had NO gate at all and
+  // the policies read had none either, so a plain member — who holds
+  // `group.read` and can therefore open this panel from `?tab=groups&group=<id>`
+  // — took two background 403s on every drill-down. `=== true`, not
+  // `!== false`: `CanResult.allowed` reads `false` while the probe is in
+  // flight, so an optimistic gate fires the very request it exists to suppress.
+  const rolesQuery = useAccountRoles(accountId, rbacEnabled && canReadRoles === true);
   const policiesQuery = useQuery({
     // Prefixed by ['iam-policies', accountId] so AccessDialog's invalidation
     // reaches this query too.
     queryKey: ['iam-policies', accountId, 'group', groupId],
     queryFn: () => listPolicies(accountId, { principalType: 'group', principalId: groupId }),
+    enabled: rbacEnabled && canReadPolicies === true,
     staleTime: 30_000,
   });
   const policyByProjectId = useMemo(() => {

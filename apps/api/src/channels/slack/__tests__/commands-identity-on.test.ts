@@ -13,6 +13,7 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));
 mock.module('../identity', () => ({
   lookupSlackIdentity: async () => null,
+  linkSlackIdentity: async () => {},
   revokeSlackIdentity: async () => true,
 }));
 mock.module('../../../accounts/core/app', () => ({

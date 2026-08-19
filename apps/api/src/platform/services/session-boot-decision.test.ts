@@ -23,7 +23,6 @@ const {
   decideSessionBoot,
   fastColdBootEnabled,
   sessionBootByTemplateIdEnabled,
-  useFastColdBootImage,
 } = await import('./session-sandbox');
 
 const pinned = { activeProvider: 'platinum', activeExternalTemplateId: 'tpl_pinned' };
@@ -136,20 +135,14 @@ describe('fast cold boot kill-switch', () => {
     expect(fastColdBootEnabled()).toBe(false);
   });
 
-  test.each(['1', 'on', 'true', 'yes', 'TRUE'])('%p enables the fast image', (value) => {
+  test.each(['1', 'on', 'true', 'yes', 'TRUE'])('%p enables the experiment', (value) => {
     process.env.KORTIX_FAST_COLD_BOOT_ENABLED = value;
     expect(fastColdBootEnabled()).toBe(true);
   });
 
-  test.each(['0', 'off', 'false', 'no', 'unexpected'])('%p keeps the standard image', (value) => {
+  test.each(['0', 'off', 'false', 'no', 'unexpected'])('%p disables the experiment', (value) => {
     process.env.KORTIX_FAST_COLD_BOOT_ENABLED = value;
     expect(fastColdBootEnabled()).toBe(false);
   });
 
-  test('only changes the shared default image', () => {
-    expect(useFastColdBootImage(true, 'default')).toBe(true);
-    expect(useFastColdBootImage(true, 'custom')).toBe(false);
-    expect(useFastColdBootImage(true, 'meta')).toBe(false);
-    expect(useFastColdBootImage(false, 'default')).toBe(false);
-  });
 });

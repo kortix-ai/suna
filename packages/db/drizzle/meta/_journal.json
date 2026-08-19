@@ -372,6 +372,20 @@
       "when": 1787112452646,
       "tag": "20260819040732_rbac_canonical_model",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787151312427,
+      "tag": "20260819145512_rbac_cutover_drop_dead_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787151328313,
+      "tag": "20260819145528_rbac_cutover_account_memberships",
+      "breakpoints": true
     }
   ]
 }

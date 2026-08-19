@@ -252,6 +252,7 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
 function startNetworkBoundaryArm(
   projectId: string,
   providerName: ProviderName,
+  replicaOwnerId: string,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
   digest: string,
@@ -287,7 +288,7 @@ function startNetworkBoundaryArm(
         );
       }
       try {
-        await provider.syncNetworkBoundary(externalId, bindings);
+        await provider.syncNetworkBoundary(externalId, bindings, { replicaOwnerId });
         rememberNetworkBoundaryArm(
           externalId,
           digest,
@@ -322,6 +323,7 @@ function startNetworkBoundaryArm(
 async function syncProviderNetworkBoundary(
   projectId: string,
   providerName: ProviderName,
+  replicaOwnerId: string,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
   opts?: { maxWaitMs?: number },
@@ -333,7 +335,14 @@ async function syncProviderNetworkBoundary(
     return 'skipped';
   }
 
-  const attempt = startNetworkBoundaryArm(projectId, providerName, externalId, bindings, digest);
+  const attempt = startNetworkBoundaryArm(
+    projectId,
+    providerName,
+    replicaOwnerId,
+    externalId,
+    bindings,
+    digest,
+  );
   const maxWaitMs = opts?.maxWaitMs;
   if (!maxWaitMs) {
     await attempt;
@@ -708,6 +717,7 @@ export async function syncSandboxEnvForPrompt(args: {
     const armState = await syncProviderNetworkBoundary(
       args.projectId,
       args.providerName,
+      args.sessionId,
       args.externalId,
       networkBoundary,
       { maxWaitMs: PROMPT_BOUNDARY_ARM_WAIT_MS },
@@ -890,7 +900,13 @@ export async function propagateProjectSecretsToActiveSandboxes(
         // caller reports the per-sandbox outcome to the author who just saved the
         // secret. An arming failure has to be visible there, so it stays a
         // `status: 'failed'` row rather than a warning nobody reads.
-        await syncProviderNetworkBoundary(projectId, providerName, row.externalId, networkBoundary);
+        await syncProviderNetworkBoundary(
+          projectId,
+          providerName,
+          row.sessionId,
+          row.externalId,
+          networkBoundary,
+        );
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         const proof = await postEnvToDaemon({
           previewUrl: url,

@@ -133,6 +133,21 @@ export interface MemberAccessPanelProps {
   canRemove: boolean;
   rbacEnabled?: boolean;
   canManageRoles?: boolean;
+  /** `policy.read` — the leaf `GET .../iam/policies` asserts. PERMISSION, a
+   *  different axis from the `rbacEnabled` ENTITLEMENT above, and required
+   *  (not optional-with-a-default) on purpose: a default of `true` reinstates
+   *  the background 403 for every caller that forgets it, and a default of
+   *  `false` silently blanks the custom-role line. The compiler should make a
+   *  new call site answer the question. The hub already has the verdict in its
+   *  batched probe — pass it down, do not re-probe. */
+  canReadPolicies: boolean;
+  /** `role.read` — asserted by `GET .../iam/permissions`, the CATALOG read
+   *  behind "What they can do" and "View as this member"
+   *  (`apps/api/src/accounts/iam/assignments.ts`, the `/iam/permissions`
+   *  route). Without it the catalog comes back 403 and both surfaces can only
+   *  ever render empty, so they are not rendered at all — the same rule the
+   *  hub's left rail follows. Required, for the reason above. */
+  canReadRoles: boolean;
   /** Back to the members list — the hub drops the `?member=` param. */
   onBack: () => void;
   /** Opens a group in the hub's Groups pane (`?tab=groups&group=<id>`). */
@@ -148,6 +163,8 @@ export function MemberAccessPanel({
   canRemove,
   rbacEnabled = true,
   canManageRoles = false,
+  canReadPolicies,
+  canReadRoles,
   onBack,
   onOpenGroup,
 }: MemberAccessPanelProps) {
@@ -186,10 +203,20 @@ export function MemberAccessPanel({
   // The member's ACCOUNT role is one value: a built-in role, or a custom role
   // riding on the `member` baseline plus one account-scoped `iam_policies`
   // row. `AccessDialog`'s edit mode needs both the value and the policy id.
+  //
+  // Two axes, both required. ENTITLEMENT (`rbacEnabled`): without `rbac` there
+  // are no policies to resolve. PERMISSION (`canReadPolicies`): `GET
+  // .../iam/policies` asserts `policy.read`, which sits in ADMIN_EXTRAS and
+  // never in the member baseline (`apps/api/src/iam/role-perms.ts`). The
+  // entitlement alone was the gate, so a plain member — who holds `member.read`
+  // and can therefore open this panel from `?tab=members&member=<id>` — took a
+  // background 403 here on every drill-down. `=== true`, not `!== false`:
+  // `CanResult.allowed` reads `false` while the probe is in flight, so an
+  // optimistic gate fires the very request it exists to suppress.
   const policiesQuery = useQuery({
     queryKey: ['iam-policies', accountId, 'member', memberUserId],
     queryFn: () => listPolicies(accountId, { principalType: 'member', principalId: memberUserId }),
-    enabled: rbacEnabled,
+    enabled: rbacEnabled && canReadPolicies === true,
     staleTime: 30_000,
   });
   const accountPolicy: IamPolicy | undefined = useMemo(
@@ -317,10 +344,14 @@ export function MemberAccessPanel({
                   Edit access
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuItem onSelect={() => setViewAsOpen(true)} className="gap-2">
-                <Eye className="size-3.5" />
-                View as this member
-              </DropdownMenuItem>
+              {/* Reads the same `role.read` catalog as CapabilitiesCard —
+                  without the leaf the simulator has nothing to simulate. */}
+              {canReadRoles ? (
+                <DropdownMenuItem onSelect={() => setViewAsOpen(true)} className="gap-2">
+                  <Eye className="size-3.5" />
+                  View as this member
+                </DropdownMenuItem>
+              ) : null}
               {canPromoteSuperAdmin ? (
                 <>
                   <DropdownMenuSeparator />
@@ -392,7 +423,13 @@ export function MemberAccessPanel({
         />
       ) : null}
 
-      {member ? <CapabilitiesCard accountId={accountId} memberUserId={member.user_id} /> : null}
+      {/* The catalog read behind this card asserts `role.read`. A viewer
+          without it gets a 403 and an empty grid, so the card does not exist
+          for them — the hub's rail rule ("a pane that can only fail to load is
+          not a pane"), applied one level down. */}
+      {member && canReadRoles ? (
+        <CapabilitiesCard accountId={accountId} memberUserId={member.user_id} />
+      ) : null}
 
       {member && accountRoleValue ? (
         <AccessDialog
@@ -454,7 +491,7 @@ export function MemberAccessPanel({
         onConfirm={() => setSuperAdminMutation.mutate(false)}
       />
 
-      {member ? (
+      {member && canReadRoles ? (
         <ViewAsUserDialog
           open={viewAsOpen}
           onOpenChange={setViewAsOpen}

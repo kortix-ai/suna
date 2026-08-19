@@ -132,6 +132,8 @@ import {
 } from './projects/provider-transition/provider-transition-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
+import { authEmailHookApp } from './auth/send-email-hook';
+import { describeEmailChain } from './lib/email/transport';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditApiRequest } from './shared/audit';
@@ -906,6 +908,7 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
 
@@ -1477,10 +1480,15 @@ async function shutdown(signal: string) {
 // route table without starting the DB schema check, background workers, or
 // signal handlers. Does NOT change production boot — there, import.meta.main is true.
 if (import.meta.main) {
+  // One line an operator can grep for when email "does not work": which
+  // providers EMAIL_URL resolved to, and the address mail is sent from. Never
+  // prints credentials.
+  console.log(`[email] ${describeEmailChain()}`);
+
   ensureSchema()
     .then(async () => {
       schemaReady = true;
-      // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+      // Role permissions are rows (kortix.role_permissions), so the
       // boot-time system-role seed + membership-policy backfill from V1
       // are no longer needed. Permissions resolve directly from
       // account_members.account_role and project_members.project_role.
@@ -1509,19 +1517,17 @@ import {
 export default {
   port: config.PORT,
 
-  // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
-  // bytes by then gets its socket closed with an EMPTY reply — no status, no
-  // body — which clients report as a bare network error and Better Stack as a
-  // URL-only timeout. Raise it above the 25s request deadline so a genuinely
-  // stuck request surfaces as the middleware's clean 503 (with Retry-After)
-  // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
-  // server.timeout(req, 0) below.
-  // Must stay comfortably ABOVE the 25s request deadline. When this equalled
-  // the client's own 30s timeout, whichever fired first was a coin flip, and
-  // the socket-kill path returns an empty reply that the load balancer turns
-  // into a 502 with no CORS headers — surfacing in browsers as a bogus CORS
-  // error rather than a timeout.
-  idleTimeout: 45,
+  // idleTimeout DISABLED (0). Bun's default is 10s and its MAX is 255s, and Bun
+  // does NOT reset idleTimeout on server->client writes — so ANY fixed ceiling
+  // can kill a legitimately long request (e.g. project provisioning runs ~90s
+  // and was being cut at the previous 45s; see provisionProjectWithToken) or a
+  // long-poll/SSE surface, returning an EMPTY reply that the LB turns into a
+  // 502 with no CORS headers (a bogus browser CORS error). The 25s request
+  // deadline middleware remains the PRIMARY guard: a genuinely stuck request
+  // still surfaces as a clean 503 (with Retry-After) well before any socket
+  // concern. So 0 removes only the redundant backstop while letting legitimate
+  // long requests and streams run to completion.
+  idleTimeout: 0,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,

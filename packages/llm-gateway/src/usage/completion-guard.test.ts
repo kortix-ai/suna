@@ -50,6 +50,30 @@ describe('jsonHasContent', () => {
     expect(jsonHasContent('nope')).toBe(false);
     expect(jsonHasContent(undefined)).toBe(false);
   });
+
+  // A Claude refusal / content-filter turn is a REAL terminal answer, not the
+  // empty completion this guard exists to catch. Before this, a refusal (empty
+  // content + finish_reason:'content_filter') read as "empty", so the turn was
+  // classified empty_completion and retried 3× to a 502, losing the refusal.
+  test('true when finish_reason is content_filter and content is empty (a refusal is output)', () => {
+    expect(
+      jsonHasContent({
+        choices: [{ message: { content: '' }, finish_reason: 'content_filter' }],
+      }),
+    ).toBe(true);
+  });
+
+  test('true when message.refusal carries the refusal string (no content/tool_calls)', () => {
+    expect(
+      jsonHasContent({
+        choices: [{ message: { content: null, refusal: "I can't help with that." } }],
+      }),
+    ).toBe(true);
+  });
+
+  test('false for an empty refusal string with no other content', () => {
+    expect(jsonHasContent({ choices: [{ message: { content: '', refusal: '' } }] })).toBe(false);
+  });
 });
 
 describe('sseHasContent', () => {
@@ -75,6 +99,20 @@ describe('sseHasContent', () => {
 
   test('ignores malformed JSON lines instead of throwing', () => {
     expect(sseHasContent('data: {not json\n\n')).toBe(false);
+  });
+
+  // The exact terminal frame sse.ts emits for a Claude refusal: an empty delta
+  // plus finish_reason:'content_filter' on the CHOICE (not the delta). Must
+  // count as content so streaming.ts commits the turn instead of retrying it.
+  test('true for a lone content_filter finish frame with an empty delta (a refusal)', () => {
+    const buf =
+      'data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}\n\ndata: [DONE]\n\n';
+    expect(sseHasContent(buf)).toBe(true);
+  });
+
+  test('true for a refusal delta (delta.refusal populated, no content)', () => {
+    const buf = 'data: {"choices":[{"delta":{"refusal":"I can\'t help with that."}}]}\n\n';
+    expect(sseHasContent(buf)).toBe(true);
   });
 });
 

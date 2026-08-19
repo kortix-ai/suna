@@ -17,7 +17,7 @@ import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
-import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
+import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -69,10 +69,16 @@ export function serializeSession(
   ctx?: {
     /** The grants on this session (for restricted visibility). */
     grants?: SecretGrant[];
-    /** The viewing user, to compute is_owner / can_manage_sharing. */
+    /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
     canManageProject?: boolean;
+    /**
+     * True when `created_by` names a service account (a trigger/agent run) or
+     * nobody at all — the one case where a project manager, not the owner,
+     * governs sharing. See mayManageSessionSharing.
+     */
+    ownerIsMachine?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
@@ -149,7 +155,16 @@ export function serializeSession(
       ctx?.grants ?? [],
     ),
     is_owner: isOwner,
-    can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
+    // Two different questions, deliberately not one flag: changing WHO CAN OPEN
+    // a session is the owner's call, while stopping/restarting/deleting it
+    // stays manager-tier. Collapsing them let a manager rewrite the visibility
+    // of a private session they could not read.
+    can_manage_sharing: mayManageSessionSharing({
+      isOwner,
+      canManageProject: Boolean(ctx?.canManageProject),
+      ownerIsMachine: ctx?.ownerIsMachine ?? !row.createdBy,
+    }),
+    can_manage_lifecycle: isOwner || Boolean(ctx?.canManageProject),
     can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,

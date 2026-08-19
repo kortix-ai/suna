@@ -114,7 +114,7 @@ mock.module('../shared/platinum', () => ({
   },
 }));
 
-const { syncPlatinumNetworkBoundary } = await import('./platinum-network-boundary');
+const { preparePlatinumNetworkBoundary, syncPlatinumNetworkBoundary } = await import('./platinum-network-boundary');
 const context = { environment: 'test', rootSecret: 'network-boundary-test-root' };
 
 function binding(value = 'Bearer first-value'): NetworkBoundarySecretBinding {
@@ -138,6 +138,29 @@ beforeEach(() => {
 });
 
 describe('syncPlatinumNetworkBoundary', () => {
+  test('prepares create-time attachments without touching a sandbox', async () => {
+    const result = await preparePlatinumNetworkBoundary('logical-sandbox-1', [binding()], context);
+
+    expect(result).toEqual({
+      secrets: [{ secret: 'sec_1', alias: 'KORTIX_primary', header: 'authorization' }],
+    });
+    expect(calls.some((call) => call.path.startsWith('/v1/sandboxes/'))).toBe(false);
+  });
+
+  test('reuses the create-time replica during later synchronization', async () => {
+    const prepared = await preparePlatinumNetworkBoundary('logical-sandbox-1', [binding()], context);
+    attached.set('provider-sandbox-1', [prepared.secrets[0].secret]);
+    calls.length = 0;
+
+    await syncPlatinumNetworkBoundary('provider-sandbox-1', [binding()], context, {
+      replicaOwnerId: 'logical-sandbox-1',
+    });
+
+    expect(external.size).toBe(1);
+    expect(calls.some((call) => call.path.endsWith('/versions'))).toBe(false);
+    expect(attached.get('provider-sandbox-1')).toEqual(['sec_1']);
+  });
+
   test('creates a write-only provider secret and attaches the exact session set', async () => {
     const result = await syncPlatinumNetworkBoundary('sandbox-1', [binding()], context);
 

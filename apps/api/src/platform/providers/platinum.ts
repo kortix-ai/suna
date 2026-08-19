@@ -42,7 +42,12 @@
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
-import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
+import {
+  preparePlatinumNetworkBoundary,
+  syncPlatinumNetworkBoundary,
+  waitForPlatinumNetworkBoundary,
+  type PlatinumSandboxSecrets,
+} from '../../secrets/platinum-network-boundary';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -84,6 +89,7 @@ interface PlatinumSandbox {
   metadata?: Record<string, unknown>;
   created_at?: string | null;
   createdAt?: string | null;
+  secrets?: PlatinumSandboxSecrets;
 }
 
 /** `GET /v1/sandboxes?paginated=true` — Platinum's list envelope. */
@@ -197,6 +203,7 @@ function isNameTakenConflict(error: unknown): boolean {
 
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
+  readonly networkBoundaryAtCreate = true;
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
@@ -210,11 +217,12 @@ export class PlatinumProvider implements SandboxProvider {
   syncNetworkBoundary(
     externalId: string,
     bindings: NetworkBoundarySecretBinding[],
+    opts?: { replicaOwnerId?: string },
   ): Promise<{ state: 'armed'; attached: number }> {
     return syncPlatinumNetworkBoundary(externalId, bindings, {
       environment: config.INTERNAL_KORTIX_ENV,
       rootSecret: config.API_KEY_SECRET,
-    });
+    }, { replicaOwnerId: opts?.replicaOwnerId });
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
@@ -263,6 +271,7 @@ export class PlatinumProvider implements SandboxProvider {
     template: string,
     opts: CreateSandboxOpts,
   ): Promise<ProvisionResult> {
+    const _t0 = Date.now();
     const workloadType = sandboxWorkloadType(opts);
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
@@ -289,6 +298,17 @@ export class PlatinumProvider implements SandboxProvider {
     // box mid-work. See providerAutoStopBackstopMinutes(), which is now that
     // policy alone and no longer doubles as the billing clamp's grace.
     const autoStop = opts.autoStopInterval ?? providerAutoStopBackstopMinutes();
+    if (opts.networkBoundary?.length && !opts.sandboxId) {
+      throw new Error('[platinum] create-time network boundary requires sandboxId');
+    }
+    const _tBoundaryPrepare0 = Date.now();
+    const preparedNetworkBoundary = opts.networkBoundary?.length
+      ? await preparePlatinumNetworkBoundary(opts.sandboxId!, opts.networkBoundary, {
+          environment: config.INTERNAL_KORTIX_ENV,
+          rootSecret: config.API_KEY_SECRET,
+        })
+      : null;
+    const _boundaryPrepareMs = Date.now() - _tBoundaryPrepare0;
 
     // ── S1: create-side dedup identity (see module doc for the full design) ──
     // `attempt` is session-sandbox.ts's MONOTONIC, persisted counter — stable
@@ -327,6 +347,7 @@ export class PlatinumProvider implements SandboxProvider {
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
       },
+      ...(preparedNetworkBoundary ? { secrets: preparedNetworkBoundary.secrets } : {}),
     };
     if (dedup) {
       createBody.name = dedup.name;
@@ -345,7 +366,7 @@ export class PlatinumProvider implements SandboxProvider {
         ...(dedup ? { headers: { 'Idempotency-Key': dedup.idempotencyKey } } : {}),
       });
 
-    const _t0 = Date.now();
+    const _tCreate0 = Date.now();
     let sandbox: PlatinumSandbox;
     try {
       sandbox = await postCreate();
@@ -366,7 +387,12 @@ export class PlatinumProvider implements SandboxProvider {
         throw err;
       }
     }
-    const _vmMs = Date.now() - _t0;
+    const _vmMs = Date.now() - _tCreate0;
+    const _tBoundaryArm0 = Date.now();
+    if (preparedNetworkBoundary) {
+      await waitForPlatinumNetworkBoundary(sandbox.id, sandbox.secrets);
+    }
+    const _boundaryArmMs = Date.now() - _tBoundaryArm0;
 
     const externalId = sandbox.id;
 
@@ -441,7 +467,8 @@ export class PlatinumProvider implements SandboxProvider {
     // clone stall in the background while the FE waits, so the session still
     // becomes usable without any create-path hang.
     console.log(
-      `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
+      `[platinum-timing] ${externalId} boundary-prepare=${_boundaryPrepareMs}ms ` +
+        `vm-running=${_vmMs}ms boundary-arm=${_boundaryArmMs}ms expose=${_exposeMs}ms ` +
         `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)` +
         (sandbox.replayed ? ' [S1: Idempotency-Key replay — adopted an already-committed box]' : ''),
     );

@@ -1,67 +1,70 @@
 /**
- * Per-resource scoping — the pure engine helper (isResourceAccessible) that the
- * authorizeV2 fold and the list-filter both hang off. No DB: locks the exact
- * allow/deny semantics so the SQL/route layers can trust it.
+ * The object rule — `objectUsable` in `iam/authorize.ts`, the ONE place that
+ * decides what "nobody scoped this" means — plus the two type guards that decide
+ * which object kinds a grant may name at all.
  *
- * Semantics under test (resource-id-level activation):
- *  - a resource with NO grants is OPEN to everyone (unscoped = project-wide);
- *  - a resource WITH grants is closed to all but the granted member/groups;
- *  - group grants match if the user is in ANY of their groups.
+ * No DB in the cases below: `objectUsable` only reads `object_policies` for the
+ * unscoped branch at MEMBER tier, and every case here either has grant rows or
+ * asks at manager tier. The unscoped defaults themselves are pinned against the
+ * seed by integration-iam-role-catalog-parity and exercised end to end by
+ * integration-resource-grants.
+ *
+ * Semantics under test (object-id-level activation):
+ *  - an object WITH grants is closed to all but the named members/groups,
+ *    identically for both tiers;
+ *  - group grants match if the user is in ANY of their groups;
+ *  - an object with NO grants is open at manager tier, whatever its type.
+ *
+ * The principal vocabulary is the canonical one: `user` and `group`. The legacy
+ * `member` spelling survives only in the compatibility view's column.
  */
 import { describe, expect, test } from 'bun:test';
+import { objectUsable } from '../iam/authorize';
 import {
   CREATABLE_RESOURCE_GRANT_TYPES,
   isCreatableResourceType,
-  isResourceAccessible,
   isResourceType,
   RESOURCE_GRANT_TYPES,
 } from '../iam/resource-grants';
 
-const USER = 'user-1';
-const OTHER = 'user-2';
+const USER = crypto.randomUUID();
+const OTHER = crypto.randomUUID();
 
-describe('isResourceAccessible — unscoped resources stay project-wide', () => {
-  test('undefined grants (resource never scoped) → accessible', () => {
-    expect(isResourceAccessible(undefined, USER, [])).toBe(true);
+describe('objectUsable — a scoped object gates by principal', () => {
+  test('user grant → only that user passes, at either tier', async () => {
+    const grants = [{ principalType: 'user', principalId: USER }];
+    expect(await objectUsable('agent', grants, USER, [], false)).toBe(true);
+    expect(await objectUsable('agent', grants, OTHER, [], false)).toBe(false);
+    // a different user in some group still cannot reach a user-only grant
+    expect(await objectUsable('agent', grants, OTHER, ['g1', 'g2'], false)).toBe(false);
+    // …and a MANAGER is not exempt from an explicit grant either
+    expect(await objectUsable('agent', grants, OTHER, [], true)).toBe(false);
   });
-  test('empty grant list → accessible', () => {
-    expect(isResourceAccessible([], USER, ['g1'])).toBe(true);
+
+  test('group grant → any member of that group passes', async () => {
+    const grants = [{ principalType: 'group', principalId: 'marketing' }];
+    expect(await objectUsable('agent', grants, USER, ['marketing'], false)).toBe(true);
+    expect(await objectUsable('agent', grants, USER, ['eng', 'marketing', 'ops'], false)).toBe(true);
+    expect(await objectUsable('agent', grants, USER, ['eng'], false)).toBe(false);
+    expect(await objectUsable('agent', grants, USER, [], false)).toBe(false);
+  });
+
+  test('mixed user + group grants → union (either path grants access)', async () => {
+    const grants = [
+      { principalType: 'user', principalId: OTHER },
+      { principalType: 'group', principalId: 'marketing' },
+    ];
+    expect(await objectUsable('agent', grants, USER, ['marketing'], false)).toBe(true);
+    expect(await objectUsable('agent', grants, OTHER, [], false)).toBe(true);
+    expect(await objectUsable('agent', grants, crypto.randomUUID(), ['eng'], false)).toBe(false);
   });
 });
 
-describe('isResourceAccessible — scoped resources gate by principal', () => {
-  test('member grant → only that user passes', () => {
-    const grants = [{ principalType: 'member' as const, principalId: USER }];
-    expect(isResourceAccessible(grants, USER, [])).toBe(true);
-    expect(isResourceAccessible(grants, OTHER, [])).toBe(false);
-    // a different user in some group still can't see a member-only grant
-    expect(isResourceAccessible(grants, OTHER, ['g1', 'g2'])).toBe(false);
-  });
-
-  test('group grant → any member of that group passes', () => {
-    const grants = [{ principalType: 'group' as const, principalId: 'marketing' }];
-    expect(isResourceAccessible(grants, USER, ['marketing'])).toBe(true);
-    expect(isResourceAccessible(grants, USER, ['eng', 'marketing', 'ops'])).toBe(true);
-    expect(isResourceAccessible(grants, USER, ['eng'])).toBe(false);
-    expect(isResourceAccessible(grants, USER, [])).toBe(false);
-  });
-
-  test('mixed member + group grants → union (either path grants access)', () => {
-    const grants = [
-      { principalType: 'member' as const, principalId: OTHER },
-      { principalType: 'group' as const, principalId: 'marketing' },
-    ];
-    // USER is not the member, but is in the granted group
-    expect(isResourceAccessible(grants, USER, ['marketing'])).toBe(true);
-    // OTHER is the granted member directly
-    expect(isResourceAccessible(grants, OTHER, [])).toBe(true);
-    // a third user in neither → denied
-    expect(isResourceAccessible(grants, 'user-3', ['eng'])).toBe(false);
-  });
-
-  test('a scoped resource denies an empty-group anonymous-ish member', () => {
-    const grants = [{ principalType: 'group' as const, principalId: 'marketing' }];
-    expect(isResourceAccessible(grants, USER, [])).toBe(false);
+describe('objectUsable — an unscoped object at manager tier', () => {
+  test('no grant rows → open, whatever the object type', async () => {
+    expect(await objectUsable('agent', undefined, USER, [], true)).toBe(true);
+    expect(await objectUsable('agent', [], USER, ['g1'], true)).toBe(true);
+    expect(await objectUsable('skill', undefined, USER, [], true)).toBe(true);
   });
 });
 

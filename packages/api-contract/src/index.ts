@@ -619,6 +619,15 @@ const OAuth2ApplicationFields = {
   audience: z.string().trim().min(1).max(4096).optional(),
   authorization_params: z.record(z.string().max(4096)).optional(),
   token_params: z.record(z.string().max(4096)).optional(),
+  // RFC 7591/7592: present when Kortix registered this client dynamically.
+  registration_client_uri: OAuth2HttpsUrlSchema.optional(),
+  registration_access_token: z.string().min(1).max(65536).optional(),
+  /**
+   * The authorization server that issued this client (RFC 8414 `issuer`).
+   * Recorded so the callback can validate RFC 9207 `iss`, and so credentials
+   * stay bound to the server that minted them (MCP SEP-2352).
+   */
+  issuer: OAuth2HttpsUrlSchema.optional(),
 };
 
 export const OAuth2ApplicationInputSchema = z
@@ -659,12 +668,71 @@ export const OAuth2ApplicationViewSchema = z
   .omit({
     client_secret: true,
     private_key: true,
+    registration_access_token: true,
   })
   .extend({
     has_client_secret: z.boolean(),
     has_private_key: z.boolean(),
   });
 export type OAuth2ApplicationView = z.infer<typeof OAuth2ApplicationViewSchema>;
+
+export const OAuth2ResourceDiscoveryInputSchema = z
+  .object({
+    /** Defaults to the connector's own URL (MCP url / http base_url / graphql endpoint). */
+    resource_url: OAuth2HttpsUrlSchema.optional(),
+  })
+  .strict();
+export type OAuth2ResourceDiscoveryInput = z.infer<typeof OAuth2ResourceDiscoveryInputSchema>;
+
+export const OAuth2ResourceDiscoverySchema = z
+  .object({
+    resource_url: z.string(),
+    requires_authorization: z.boolean(),
+    resource: z.string().optional(),
+    resource_name: z.string().optional(),
+    protected_resource_metadata_url: z.string().optional(),
+    authorization_server: z.string().optional(),
+    metadata: OAuth2ApplicationViewSchema.partial()
+      .omit({ has_client_secret: true, has_private_key: true })
+      .optional(),
+    registration_endpoint: z.string().optional(),
+    token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+    code_challenge_methods_supported: z.array(z.string()).optional(),
+    scopes: z.array(z.string()),
+    warnings: z.array(z.string()),
+  })
+  .strict();
+export type OAuth2ResourceDiscovery = z.infer<typeof OAuth2ResourceDiscoverySchema>;
+
+/** Register Kortix as a client (RFC 7591) and save the issued client as the
+ * connection's OAuth2 application. Endpoint fields come from discovery. */
+export const OAuth2ClientRegistrationInputSchema = z
+  .object({
+    registration_endpoint: OAuth2HttpsUrlSchema,
+    /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
+    issuer: OAuth2HttpsUrlSchema.optional(),
+    client_name: z.string().trim().min(1).max(128).optional(),
+    token_endpoint_auth_methods_supported: z.array(z.string().max(64)).max(16).optional(),
+    discovery_url: OAuth2HttpsUrlSchema.optional(),
+    authorization_url: OAuth2HttpsUrlSchema.optional(),
+    token_url: OAuth2HttpsUrlSchema.optional(),
+    device_authorization_url: OAuth2HttpsUrlSchema.optional(),
+    revocation_url: OAuth2HttpsUrlSchema.optional(),
+    scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
+    resource: z.string().trim().min(1).max(4096).optional(),
+    audience: z.string().trim().min(1).max(4096).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (!value.discovery_url && !value.token_url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token_url'],
+        message: 'token_url or discovery_url is required',
+      });
+    }
+  });
+export type OAuth2ClientRegistrationInput = z.infer<typeof OAuth2ClientRegistrationInputSchema>;
 
 export const OAuth2DiscoveryInputSchema = z
   .object({ discovery_url: OAuth2HttpsUrlSchema })
@@ -872,7 +940,10 @@ export const ProjectSessionSchema = z.object({
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,
   is_owner: z.boolean(),
+  /** May change WHO CAN OPEN this session — the owner's call, not a manager's. */
   can_manage_sharing: z.boolean(),
+  /** May stop / restart / delete it and change its model — owner or project manager. */
+  can_manage_lifecycle: z.boolean().optional(),
   can_access: z.boolean().optional(),
   runtime_status: z
     .enum(['provisioning', 'active', 'stopped', 'error', 'archived'])

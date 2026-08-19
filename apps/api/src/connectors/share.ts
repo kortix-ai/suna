@@ -355,3 +355,88 @@ export async function setSessionSharing(sessionId: string, intent: SharingIntent
     );
   }
 }
+
+/**
+ * Who may CHANGE a session's sharing policy — a strictly narrower question than
+ * `canManageLifecycle` (stop / restart / delete / model), which stays
+ * manager-tier.
+ *
+ * Sharing is the owner's decision. Two distinct writes ask this, and each had
+ * its own defect:
+ *
+ *  1. `PUT .../sharing`. It runs behind the content-visibility gate, so a
+ *     manager never reaches another human's PRIVATE session (that 404s). What
+ *     they did reach is a session shared WITH them — project-wide or on the
+ *     allow-list — where they could rewrite the owner's policy wholesale and
+ *     revoke everyone, the owner included. Sharing something with a manager is
+ *     not handing them its access list.
+ *  2. `POST .../public-shares`. It deliberately runs in FRONT of the
+ *     visibility gate (see loadSessionForSharing), and a public link is
+ *     unauthenticated. A manager could therefore mint a link against a private
+ *     session they cannot read and open it anonymously — the read the
+ *     visibility gate had just refused. That one is a real escalation.
+ *
+ * `private` also means "the OWNER only", never "only the person editing", so a
+ * non-owner who saves it revokes their own access with no undo. That specific
+ * trap is `sharingChangeKeepsEditorAccess` below.
+ *
+ * The one exception is a session NOBODY owns: a trigger/agent run is stamped
+ * with the agent's service-account id, so there is no human owner to defend and
+ * an owner-only rule would make the policy permanently unchangeable. A project
+ * manager governs those. A `created_by` that is neither (a removed user) stays
+ * owner-only — fail closed; the manager's remedy is deleting the session.
+ */
+export function mayManageSessionSharing(input: {
+  isOwner: boolean;
+  canManageProject: boolean;
+  /** True when `created_by` names a service account, or names nobody at all. */
+  ownerIsMachine: boolean;
+}): boolean {
+  if (input.isOwner) return true;
+  return input.canManageProject && input.ownerIsMachine;
+}
+
+/**
+ * The denial wording for the two owner-governed sharing writes. Exported so the
+ * routes, the flow contracts and the spec quote ONE string each.
+ *
+ * Phrased "only the session owner" with no manager escape hatch, because that
+ * is true for every caller who can actually reach it: a manager is refused only
+ * on a session a human owns, and a machine-owned session admits the manager
+ * instead of producing this message.
+ */
+export const SESSION_SHARING_OWNER_ONLY_ERROR =
+  'Only the session owner can change who opens this session';
+export const PUBLIC_SHARE_OWNER_ONLY_ERROR =
+  'Only the session owner can create a public link to this session';
+
+/**
+ * A sharing change must never remove the editor's own access.
+ *
+ * The concrete bug: a manager opens someone else's session, picks "Only you",
+ * and is locked out on save — because `private` means "the OWNER only", and the
+ * owner is somebody else. The undo needs the read the save just revoked, so the
+ * session is gone for good. Owners are structurally safe (every mode keeps the
+ * owner), so after `mayManageSessionSharing` this only ever fires for a
+ * machine-owned session being edited by a project manager.
+ */
+export function sharingChangeKeepsEditorAccess(input: {
+  isOwner: boolean;
+  visibility: SessionVisibility;
+  grants: SecretGrant[];
+  subject: ShareSubject;
+}): boolean {
+  if (input.isOwner) return true;
+  if (input.visibility === 'project') return true;
+  if (input.visibility === 'restricted') {
+    return input.grants.some(
+      (grant) =>
+        (grant.principalType === 'member' && grant.principalId === input.subject.userId) ||
+        (grant.principalType === 'group' && input.subject.groupIds.includes(grant.principalId)),
+    );
+  }
+  return false;
+}
+
+export const SHARING_SELF_LOCKOUT_ERROR =
+  'That would remove your own access to this session. Add yourself, or share it with the whole project.';

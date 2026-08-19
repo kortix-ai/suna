@@ -54,9 +54,10 @@ box.
   (the default) or [Platinum](https://www.platinum.dev/), Kortix's own microVM
   sandbox provider. [E2B](https://e2b.dev/) is also supported. Any of these
   need an API key, settable after first boot with `kortix self-host configure`.
-- **Not required to get started:** SMTP. A fresh install auto-confirms email
+- **Not required to get started:** email. A fresh install auto-confirms email
   signups and leads with password auth, so the first account works with zero
-  email configuration. Configure SMTP later to enable magic-link sign-in.
+  email configuration. Set `EMAIL_URL` later to turn on invite email and
+  magic-link sign-in — one variable, see below.
 
 ## Reachability (required for agent sessions) — VPS-first
 
@@ -376,7 +377,7 @@ whether a newer release is available.
 > To get a release that hasn't been promoted to `:stable` yet, use
 > `--channel latest` or pin `--tag <version>`.
 
-## Configuring SMTP, Daytona, and other integrations later
+## Configuring email, Daytona, and other integrations later
 
 Everything is `kortix self-host env set KEY=VALUE …` followed by
 `kortix self-host start` (or the interactive `kortix self-host configure`),
@@ -389,11 +390,9 @@ kortix self-host env set DAYTONA_API_KEY=... DAYTONA_SERVER_URL=https://app.dayt
 # Managed git (required to create projects) — PAT or GitHub App
 kortix self-host env set MANAGED_GIT_PROVIDER=github MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=your-org
 
-# SMTP (optional — enables magic-link / email verification instead of the
-# password-only, auto-confirmed default)
-kortix self-host env set SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=... SMTP_PASS=... \
-  SMTP_ADMIN_EMAIL=admin@example.com SMTP_SENDER_NAME=Kortix
-kortix self-host env set ENABLE_EMAIL_AUTOCONFIRM=false KORTIX_PUBLIC_AUTH_METHODS=password,magic
+# Email (optional) — ONE connection string turns on BOTH invite/access-request
+# email and auth email (magic link, signup confirmation, password reset).
+kortix self-host env set EMAIL_URL=smtp://user:pass@smtp.example.com:587
 
 # Pipedream connectors (optional)
 kortix self-host env set CONNECTOR_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=... \
@@ -402,6 +401,55 @@ kortix self-host env set CONNECTOR_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=.
 
 `kortix self-host env ls` lists every key (secrets masked); `kortix self-host
 doctor` validates the rendered Compose config without applying anything.
+
+### Email: one variable
+
+`EMAIL_URL` is the only email setting. The scheme picks the transport:
+
+| `EMAIL_URL` | Transport |
+| --- | --- |
+| `smtp://user:pass@mail.example.com:587` | SMTP, STARTTLS |
+| `smtps://user:pass@mail.example.com:465` | SMTP, implicit TLS |
+| `resend://re_xxxxxxxx` | Resend HTTP API |
+| `ses://AKIA...:secret@us-east-2` | AWS SES (static credentials) |
+| `ses://us-east-2` | AWS SES (instance role) |
+| `mailtrap://<api-token>` | Mailtrap HTTP API |
+
+Comma-separate several for a fallback chain, tried left to right:
+
+```sh
+kortix self-host env set EMAIL_URL=ses://us-east-2,smtp://user:pass@backup.example.com:587
+```
+
+Setting it derives everything else, so there is nothing else to configure:
+
+- **Product email** (invites, project access requests) sends through it.
+- **Auth email** (magic link, signup confirmation, password reset, email
+  change) sends through it too: GoTrue stops sending mail itself and posts each
+  one to `kortix-api`'s send-email hook, which renders the Kortix template and
+  sends it through the same provider. That is why `resend://` and `ses://` work
+  for auth email even though GoTrue itself speaks only SMTP.
+- `AUTH_EMAIL_HOOK_SECRET` is generated once and shared with GoTrue.
+- `ENABLE_EMAIL_AUTOCONFIRM` flips to `false` and `KORTIX_PUBLIC_AUTH_METHODS`
+  becomes `password,magic` — but only on the transition into "email
+  configured". A later manual override of either is never overwritten.
+- `EMAIL_FROM` defaults to `Kortix <noreply@<your-domain>>`. Override it with
+  an address on a domain whose SPF/DKIM authorizes your relay:
+
+```sh
+kortix self-host env set EMAIL_FROM="Acme <no-reply@acme.com>"
+```
+
+Clearing `EMAIL_URL` reverses all of it, including restoring auto-confirmed
+signups — an instance that cannot send mail must not require email
+confirmation, or every new signup is stranded.
+
+Two extra flags for awkward relays: `?tls=off` (relay offers no STARTTLS) and
+`?insecure=1` (self-signed certificate). Credentials are never sent over an
+unencrypted connection unless `?tls=off` is set explicitly.
+
+`kortix self-host doctor` parses `EMAIL_URL` and reports the resolved provider
+chain, so a typo surfaces there instead of as a missing invite.
 
 ## SAML SSO + SCIM (Enterprise)
 

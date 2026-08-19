@@ -1,7 +1,7 @@
 // Request-context derivation shared by IAM callers.
 
 import type { Context } from 'hono';
-import type { RequestContext } from './engine';
+import type { RequestContext } from './actor';
 
 /**
  * Derive the request context (IP + MFA AAL) from a Hono Context. The IP

@@ -62,7 +62,21 @@ export interface ProjectSession {
   secrets_allowlist?: string[] | null;
   sharing?: ConnectorSharing | null;
   is_owner?: boolean;
+  /**
+   * May the viewer change WHO CAN OPEN this session? The session owner's call —
+   * a project manager who did not create it cannot rewrite the visibility of a
+   * session they are not allowed to read. The one exception is a session owned
+   * by a service account (a trigger or agent run), which a project manager
+   * governs because no human is there to.
+   */
   can_manage_sharing?: boolean;
+  /**
+   * May the viewer stop, restart, delete it, or change its model? Owner OR
+   * project manager. Deliberately separate from `can_manage_sharing`: a manager
+   * must be able to shut down a runaway session without gaining the right to
+   * re-share its contents.
+   */
+  can_manage_lifecycle?: boolean;
   /** Whether the current viewer may open/read this session. */
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */

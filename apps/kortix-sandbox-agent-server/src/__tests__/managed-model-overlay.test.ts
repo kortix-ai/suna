@@ -6,19 +6,27 @@ import { join } from 'node:path'
 import {
   BUNDLED_MANAGED_MODELS,
   buildOpencodeConfigContent,
+  configuredProviderModelIds,
   fetchManagedModels,
+  missingManagedModelIds,
   refreshGatewayCatalogFile,
   resetManagedModelsStateForTests,
+  settleManagedModelsPrefetch,
   startManagedModelsPrefetch,
   withManagedOverlay,
+  type Opencode,
 } from '../opencode'
+import { loadConfig } from '../config'
+import { reconcileManagedModels, resetManagedReconcileForTests } from '../main'
 
 // The 2026-08-19 outage in one sentence: the image-baked catalog is frozen at
 // template-build time, the managed lineup is deployment config, so a managed
 // model added after the last build was absent from OpenCode's provider map and
 // every turn on it died with `ModelNotFound: kortix/<id>` 2ms after the prompt.
-// These tests pin the fix — the sandbox learns the managed set from the API it
-// talks to, on every boot, and never falls below the bundled managed floor.
+// These tests pin the fix AND its cost model: the boot config never waits on
+// the network (waiting cost 1.6s of a 6.5s dev boot), and the live answer is
+// applied after the spawn — one controlled restart, only when a managed model
+// is genuinely missing.
 
 const GATEWAY = {
   KORTIX_WORKSPACE: '/workspace',
@@ -62,11 +70,13 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 
 beforeEach(() => {
   resetManagedModelsStateForTests()
+  resetManagedReconcileForTests()
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
+  resetManagedReconcileForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 
@@ -112,13 +122,16 @@ describe('managed listing fetch', () => {
 })
 
 describe('boot config composition', () => {
-  test('a stale baked catalog is overlaid with the LIVE managed set', async () => {
+  test('a stale baked catalog is overlaid with the LIVE managed set once it is known', async () => {
     globalThis.fetch = (async (input: string) => {
       expect(String(input)).toContain('scope=managed')
       return new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
     }) as unknown as typeof fetch
 
     startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    // Cached by the post-spawn reconcile; every later config build (the
+    // reconcile's own restart, any restart after it) reads it synchronously.
+    await settleManagedModelsPrefetch()
     const raw = await buildOpencodeConfigContent({
       ...GATEWAY,
       KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
@@ -153,26 +166,29 @@ describe('boot config composition', () => {
     expect(models['openai/gpt-5.5']).toBeDefined()
   })
 
-  test('a hanging gateway cannot hold the OpenCode spawn past the await cap', async () => {
+  // THE latency regression this design exists to prevent. `opencode serve`
+  // cannot bind its port until this config is written, so the build must never
+  // wait on a fetch — a hanging gateway has to cost ~0ms, not the fetch budget.
+  test('a hanging gateway costs the config build no time at all', async () => {
     globalThis.fetch = (async () => {
       await new Promise((r) => setTimeout(r, 60_000))
       return new Response('{}', { status: 200 })
     }) as unknown as typeof fetch
 
+    const file = await bakedCatalogFile()
     startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
     const started = Date.now()
     const raw = await buildOpencodeConfigContent({
       ...GATEWAY,
-      KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
+      KORTIX_LLM_CATALOG_FILE: file,
     } as NodeJS.ProcessEnv)
     const elapsed = Date.now() - started
     const models = providerModels(raw)
 
-    expect(elapsed).toBeLessThan(4_000)
-    // It waited for the in-flight answer rather than skipping it outright...
-    expect(elapsed).toBeGreaterThan(1_500)
-    // ...and fell back to the bundled floor instead of shipping a short picker.
+    expect(elapsed).toBeLessThan(50)
+    // The bundled floor still ships, so the picker is never short.
     expect(models['grok-4.6']).toBeDefined()
+    expect(models['openai/gpt-5.5']).toBeDefined()
   }, 15_000)
 
   test('with no prefetch started the boot path stays network-free', async () => {
@@ -290,4 +306,134 @@ describe('withManagedOverlay', () => {
     const out = withManagedOverlay({ 'legacy/model': { name: 'L' } }, { 'grok-4.6': { name: 'G' } })
     expect(out['legacy/model']).toBeDefined()
   })
+})
+
+describe('post-spawn managed reconcile', () => {
+  const REAL_CATALOG_ENV = process.env.KORTIX_LLM_CATALOG_FILE
+
+  afterEach(() => {
+    if (REAL_CATALOG_ENV === undefined) delete process.env.KORTIX_LLM_CATALOG_FILE
+    else process.env.KORTIX_LLM_CATALOG_FILE = REAL_CATALOG_ENV
+  })
+
+  function fakeOpencode(restarts: { n: number }): Opencode {
+    return {
+      getInternalUrl: () => 'http://127.0.0.1:65535',
+      // waitForOpencodeReady short-circuits on 'ok', so the fake never polls.
+      getState: () => 'ok',
+      markReady: () => {},
+      restart: async () => {
+        restarts.n++
+      },
+    } as unknown as Opencode
+  }
+
+  const cfg = loadConfig({ KORTIX_WORKSPACE: '/workspace' } as NodeJS.ProcessEnv)
+
+  async function targetPath(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'kortix-reconcile-'))
+    tempDirs.push(dir)
+    return join(dir, 'kortix-llm-catalog.session.json')
+  }
+
+  /** Boot exactly as production does: prefetch in flight, config built WITHOUT
+   *  waiting for it — so the running OpenCode has only the bundled managed set. */
+  async function bootWithLiveGateway(): Promise<void> {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    } as NodeJS.ProcessEnv)
+  }
+
+  test('restarts opencode EXACTLY ONCE when the live set has a model the boot config lacks', async () => {
+    await bootWithLiveGateway()
+    // The provider map OpenCode booted with does not know the new model.
+    expect(configuredProviderModelIds()?.has('new-managed-9.9')).toBe(false)
+
+    const restarts = { n: 0 }
+    const marks: string[] = []
+    const target = await targetPath()
+    const opts = { catalogTargetFile: target, turnProbe: async () => false }
+
+    await reconcileManagedModels(fakeOpencode(restarts), cfg, (m) => marks.push(m), opts)
+    // Single-flight: a second call must never buy a second restart.
+    await reconcileManagedModels(fakeOpencode(restarts), cfg, (m) => marks.push(m), opts)
+
+    expect(restarts.n).toBe(1)
+    expect(marks).toEqual(['managed-reconcile'])
+    // The overlay is on disk, and the next spawn reads it.
+    const written = JSON.parse(await readFile(target, 'utf8')) as {
+      models: Record<string, unknown>
+    }
+    expect(written.models['new-managed-9.9']).toBeDefined()
+    expect(written.models['openai/gpt-5.5']).toBeDefined()
+    expect(process.env.KORTIX_LLM_CATALOG_FILE).toBe(target)
+  })
+
+  test('does nothing when the boot config already has every managed model', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    await settleManagedModelsPrefetch()
+    await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    } as NodeJS.ProcessEnv)
+
+    const restarts = { n: 0 }
+    const marks: string[] = []
+    const target = await targetPath()
+    await reconcileManagedModels(fakeOpencode(restarts), cfg, (m) => marks.push(m), {
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+
+    expect(missingManagedModelIds(LIVE_MANAGED.models)).toEqual([])
+    expect(restarts.n).toBe(0)
+    expect(marks).toEqual(['managed-reconcile'])
+    expect(await readFile(target, 'utf8').catch(() => null)).toBeNull()
+  })
+
+  test('never restarts across a live turn — or one it cannot read', async () => {
+    for (const turnInFlight of [true, null] as const) {
+      resetManagedModelsStateForTests()
+      resetManagedReconcileForTests()
+      await bootWithLiveGateway()
+
+      const restarts = { n: 0 }
+      const target = await targetPath()
+      await reconcileManagedModels(fakeOpencode(restarts), cfg, () => {}, {
+        catalogTargetFile: target,
+        turnProbe: async () => turnInFlight,
+      })
+
+      expect(restarts.n).toBe(0)
+      expect(await readFile(target, 'utf8').catch(() => null)).toBeNull()
+    }
+  })
+
+  test('is a no-op when the gateway never answers (bundled managed set stands)', async () => {
+    globalThis.fetch = (async () =>
+      new Response('down', { status: 500 })) as unknown as typeof fetch
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    } as NodeJS.ProcessEnv)
+
+    const restarts = { n: 0 }
+    const target = await targetPath()
+    await reconcileManagedModels(fakeOpencode(restarts), cfg, () => {}, {
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+
+    expect(restarts.n).toBe(0)
+  }, 15_000)
 })

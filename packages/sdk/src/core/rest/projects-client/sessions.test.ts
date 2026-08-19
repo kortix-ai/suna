@@ -80,6 +80,29 @@ test('listProjectSessions requests the manager-only project inventory scope', as
   expect(last().method).toBe('GET');
 });
 
+test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apart', async () => {
+  // Two different verdicts. `can_manage_sharing` answers "may I change who can
+  // open this session" — the owner's call. `can_manage_lifecycle` answers "may
+  // I stop/restart/delete it" — owner or project manager. A project manager
+  // looking at somebody else's session gets false and true respectively, and a
+  // client that reads one for the other either hides a control it should show
+  // or shows one the API will 403.
+  nextResponse = {
+    status: 200,
+    body: [
+      {
+        session_id: 'S1',
+        is_owner: false,
+        can_manage_sharing: false,
+        can_manage_lifecycle: true,
+      },
+    ],
+  };
+  const [session] = await listProjectSessions('P1');
+  expect(session.can_manage_sharing).toBe(false);
+  expect(session.can_manage_lifecycle).toBe(true);
+});
+
 test('listProjectSessions throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listProjectSessions('P1')).rejects.toBeTruthy();

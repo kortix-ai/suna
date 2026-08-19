@@ -1,5 +1,5 @@
 /**
- * Integration test (real local DB) for the authorization ENGINE (authorizeV2).
+ * Integration test (real local DB) for the authorization ENGINE (authorize).
  *
  * Proves the model an enterprise (acme-inc) relies on, end to end against a
  * fully ISOLATED account + project seeded here and torn down after:
@@ -25,7 +25,8 @@ import {
   projects,
 } from '@kortix/db';
 import { db } from '../shared/db';
-import { authorizeV2 } from '../iam/engine-v2';
+import { authorize } from '../iam/authorize';
+import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 
@@ -36,7 +37,7 @@ const uid = () => crypto.randomUUID();
 
 const proj = (id: string) => ({ type: 'project' as const, id });
 const allow = async (userId: string, action: string, target: { type: 'project'; id: string }) =>
-  (await authorizeV2(userId, ACCOUNT, action, target)).allowed;
+  (await authorize(actorForUser(userId, ACCOUNT), action, target)).allowed;
 
 async function seedMember(role: 'owner' | 'admin' | 'member'): Promise<string> {
   const userId = uid();
@@ -65,12 +66,12 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT)); // cascades members/groups/roles/policies
 });
 
-describe('authorizeV2 — deny-by-default + built-in project roles', () => {
+describe('authorize — deny-by-default + built-in project roles', () => {
   test('a plain account member with NO project grant is denied everything on the project', async () => {
     const u = await seedMember('member');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).toBe(false);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false);
-    expect((await authorizeV2(u, ACCOUNT, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).reason).toBe(
+    expect((await authorize(actorForUser(u, ACCOUNT), PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).reason).toBe(
       'no_project_membership',
     );
   });
@@ -112,7 +113,7 @@ describe('authorizeV2 — deny-by-default + built-in project roles', () => {
   });
 });
 
-describe('authorizeV2 — account owner/admin are implicit Managers', () => {
+describe('authorize — account owner/admin are implicit Managers', () => {
   test('account owner manages any project with no explicit grant', async () => {
     const u = await seedMember('owner');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
@@ -123,7 +124,7 @@ describe('authorizeV2 — account owner/admin are implicit Managers', () => {
   });
 });
 
-describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', () => {
+describe('authorize — group → project role (the SCIM/SSO bulk channel)', () => {
   test('membership in a group granted a project role confers that role', async () => {
     const u = await seedMember('member');
     const g = await seedGroup(`eng-${uid().slice(0, 6)}`);
@@ -149,7 +150,7 @@ describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', (
   });
 });
 
-describe('authorizeV2 — DB custom role → policy binding (allow-only union)', () => {
+describe('authorize — DB custom role → policy binding (allow-only union)', () => {
   test('a project-scoped custom role grants an extra action on ONE project only', async () => {
     const u = await seedMember('member');
     await grantProject(u, 'member'); // baseline: cannot create triggers
@@ -170,7 +171,7 @@ describe('authorizeV2 — DB custom role → policy binding (allow-only union)',
   });
 });
 
-describe('authorizeV2 — revoke immediacy (cache invalidation)', () => {
+describe('authorize — revoke immediacy (cache invalidation)', () => {
   test('removing a project grant + invalidating denies on the very next check', async () => {
     const u = await seedMember('member');
     await grantProject(u, 'manager');

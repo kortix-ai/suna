@@ -38,7 +38,6 @@ import {
 } from './sandbox-init-state';
 import {
   ensureSandboxImage,
-  ensureFastSandboxImage,
   ensureMetaSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
@@ -212,11 +211,6 @@ export function fastColdBootEnabled(): boolean {
   return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes';
 }
 
-/** Custom and meta templates keep their declared runtime under the global flag. */
-export function useFastColdBootImage(enabled: boolean, slug: string): boolean {
-  return enabled && slug === DEFAULT_SANDBOX_SLUG;
-}
-
 /**
  * FIX-A: decide whether this boot should use the pinned EXACT template id. Pure
  * (no I/O) so the gate is unit-testable. Returns the id ONLY when every guard
@@ -349,8 +343,6 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
-      : useFastColdBootImage(fastColdBootEnabled(), slug)
-        ? ensureFastSandboxImage({ source: 'session-start', provider: targetProvider })
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,
@@ -678,6 +670,11 @@ export async function provisionSessionSandbox(opts: {
       const createFn = bootDecision.bootByTemplateId
         ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
         : undefined;
+      const attachNetworkBoundaryDuringCreate =
+        fastColdBootEnabled() && provider.networkBoundaryAtCreate === true;
+      providerCreateInput.networkBoundary = attachNetworkBoundaryDuringCreate
+        ? networkBoundary
+        : undefined;
       let result: ProvisionResult;
       let attempts: number;
       try {
@@ -756,15 +753,24 @@ export async function provisionSessionSandbox(opts: {
       // the method existed; now that a shim-backed provider gets past that
       // check, calling it unguarded would be a TypeError at provision time
       // rather than the clean skip this is.
-      if (networkBoundary.length > 0 && provider.syncNetworkBoundary) {
+      if (
+        networkBoundary.length > 0 &&
+        provider.syncNetworkBoundary &&
+        !attachNetworkBoundaryDuringCreate
+      ) {
         try {
-          await provider.syncNetworkBoundary(result.externalId, networkBoundary);
+          await provider.syncNetworkBoundary(result.externalId, networkBoundary, {
+            replicaOwnerId: sandbox.sandboxId,
+          });
           tl.mark(`network-secrets:${networkBoundary.length}`);
         } catch (error) {
           await provider.remove(result.externalId).catch(() => {});
           bgExternalId = null;
           throw error;
         }
+      }
+      if (networkBoundary.length > 0 && attachNetworkBoundaryDuringCreate) {
+        tl.mark(`network-secrets:create:${networkBoundary.length}`);
       }
       const timeline = tl.summary();
 

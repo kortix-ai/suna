@@ -266,6 +266,11 @@ export async function callUpstreamViaAiSdk(
     // it per-candidate from the catalog, so a failover onto a different upstream
     // carries ITS pin, not the previous candidate's.
     bodyExtras: descriptor.bodyExtras,
+    // The UPSTREAM model id — gates the bedrock adapter's Claude-Converse-only
+    // primitives (cachePoint, adaptive reasoningConfig). Same signal
+    // clampMaxOutputTokensForBedrock (below) keys the Nova clamp off of, so a
+    // non-Claude Bedrock model (global.openai.*, Nova) never gets Claude fields.
+    resolvedModel: descriptor.resolvedModel,
   });
   const clientWantsStream = body.stream === true;
   const ctx = {

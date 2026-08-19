@@ -4,10 +4,14 @@
  */
 
 import {
+  SESSION_SHARING_OWNER_ONLY_ERROR,
+  SHARING_SELF_LOCKOUT_ERROR,
   loadSessionGrants,
   parseSharingIntent,
   resolveShareSubject,
+  sessionIntentToVisibility,
   setSessionSharing,
+  sharingChangeKeepsEditorAccess,
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
@@ -308,6 +312,9 @@ projectsApp.openapi(
         grants: grantsBySession.get(row.sessionId) ?? [],
         viewerId: loaded.userId,
         canManageProject,
+        // Only a RESOLVED service account counts as machine-owned. 'unknown'
+        // (a stale principal) keeps the session owner-only — fail closed.
+        ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
         ownerEmail: owner?.email ?? null,
         ownerName: owner?.name ?? null,
         ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
@@ -364,6 +371,7 @@ projectsApp.openapi(
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
+    ownerIsMachine: visible.ownerIsMachine,
     ownerEmail,
   }));
 },
@@ -396,16 +404,31 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
+  // Owner-governed, NOT manager-tier — see mayManageSessionSharing. A manager
+  // cannot read another human's private session, so letting them rewrite its
+  // visibility would hand them the content the read gate just denied.
   if (!visible.canManageSharing) {
-      return c.json(
-        { error: 'Only the session owner or a project manager can change sharing' },
-        403,
-      );
+      return c.json({ error: SESSION_SHARING_OWNER_ONLY_ERROR }, 403);
   }
 
   const intent = parseSharingIntent(body, loaded.userId);
     if (!intent)
       return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+
+  // Reachable only for a machine-owned session a manager is editing: `private`
+  // means "the OWNER only", so saving it here would lock the editor out of a
+  // session they can no longer re-open to undo it.
+  const next = sessionIntentToVisibility(intent);
+  if (
+    !sharingChangeKeepsEditorAccess({
+      isOwner: visible.isOwner,
+      visibility: next.visibility,
+      grants: next.grants,
+      subject: visible.subject,
+    })
+  ) {
+    return c.json({ error: SHARING_SELF_LOCKOUT_ERROR }, 400);
+  }
 
   if (
     intent.mode !== 'private' &&
@@ -433,6 +456,7 @@ projectsApp.openapi(
     grants: fresh.grants,
     viewerId: loaded.userId,
     canManageProject: fresh.canManageProject,
+    ownerIsMachine: fresh.ownerIsMachine,
           })
         : { ok: true },
     );
@@ -562,6 +586,7 @@ projectsApp.openapi(
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
+    ownerIsMachine: visible.ownerIsMachine,
       }),
     );
 },
@@ -600,7 +625,7 @@ projectsApp.openapi(
   // Stopping a session is reserved for its owner or a project manager.
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
-  if (!visible.canManageSharing) {
+  if (!visible.canManageLifecycle) {
       return c.json(
         { error: 'Only the session owner or a project manager can stop this session' },
         403,

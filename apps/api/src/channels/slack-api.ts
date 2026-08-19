@@ -448,6 +448,31 @@ export async function publishHomeView(
   }
 }
 
+// Is this Slack principal an app/bot rather than a person?
+//
+// `link-bot` writes the (workspace, slack_user) -> kortix_user row that
+// resolveSlackActor treats as authoritative, so binding a HUMAN's id would make
+// that person's later Slack actions run as whoever linked them. Human and bot
+// ids are indistinguishable by shape (both U…/W…), so only Slack can answer.
+//
+// Returns null on ANY uncertainty — missing scope, transport error, unknown user
+// — and the caller refuses. Guessing "probably a bot" here is the impersonation.
+export async function isBotUser(token: string, userId: string): Promise<boolean | null> {
+  try {
+    const r = await slackApiCall(token, 'users.info', { user: userId });
+    if (!r.ok) {
+      console.warn('[slack-api] users.info failed', { error: r.error });
+      return null;
+    }
+    const u = r.user as { is_bot?: boolean; is_app_user?: boolean } | undefined;
+    if (!u) return null;
+    return Boolean(u.is_bot || u.is_app_user);
+  } catch (err) {
+    console.warn('[slack-api] users.info error', err);
+    return null;
+  }
+}
+
 export async function getChannelName(token: string, channel: string): Promise<string | null> {
   try {
     const r = await slackApiCall(token, 'conversations.info', { channel });

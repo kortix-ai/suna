@@ -12,6 +12,46 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-19 — session `rbac-cutover-client-leftovers` — BREAKING (field): `AccountDetail.iam_v2_enabled` removed — DONE
+
+**Files:** `core/rest/projects-client/accounts.ts` (−1 field, −3 comment lines),
+`core/rest/projects-client/accounts.test.ts` (+1 test).
+
+**What.** `accounts.iam_v2_enabled` was the per-account rollout flag that routed
+a caller between the V1 and V2 IAM engines. The canonical-RBAC cutover made
+`kortix.role_assignments` the only authorization store and
+`apps/api/src/iam/authorize.ts` the only engine, so the API no longer emits the
+field: `grep -rn iam_v2 apps/api/src packages/db` returns nothing. Removed from
+`AccountDetail`.
+
+**Breaking?** Technically yes — a consumer reading `detail.iam_v2_enabled` stops
+compiling. Deliberately **no `@deprecated` alias**, on the same reasoning as the
+sandbox-member deletion below: an alias preserves a read that can only ever
+yield `undefined`. An optional field the server never sends is worse than no
+field — it reads as a live switch and invites a host to branch on it. A build
+error is the better failure. Nothing in this repo read it (only two
+declarations existed, this one and `apps/mobile/lib/accounts/accounts-client.ts`,
+both now gone).
+
+**Surface snapshots did NOT move.** Both snapshot the export *names*
+(`public-surface.snapshot.json` runtime, `public-type-surface.snapshot.json`
+type-level); neither records a type's *members*. `AccountDetail` is still
+exported, so the removal is invisible to them — worth knowing, because it means
+a field deletion has no snapshot tripwire. The new `accounts.test.ts` case is
+that tripwire for this one field: it reads `accounts.ts` and asserts no line
+declares `iam_v2_enabled`. Seen RED first (`+ ["  iam_v2_enabled?: boolean;"]`).
+
+**Gates.**
+
+```
+pnpm --filter @kortix/sdk typecheck       → clean
+pnpm --filter @kortix/sdk test            → 2308 pass, 2 skip, 0 fail, 158 files
+                                            (baseline before this change: 2307 / 2 / 0, 158 files)
+pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
+```
+
+---
+
 ### 2026-08-19 — session `rbac-canonical` (P5) — BREAKING: the canonical assignment surface lands, the sandbox-member surface is deleted — DONE
 
 **Files:** `core/rest/projects-client/assignments.ts` + `assignments.test.ts`

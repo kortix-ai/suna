@@ -110,6 +110,11 @@ export interface CreateSandboxOpts {
    */
   createAttempt?: number;
   /**
+   * Network-boundary secrets a capable provider attaches atomically during
+   * sandbox creation. The values remain in the provider control plane.
+   */
+  networkBoundary?: NetworkBoundarySecretBinding[];
+  /**
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
    *
@@ -257,6 +262,8 @@ export interface SandboxProvider {
   readonly provisioning: ProvisioningTraits;
   /** Absent means the provider enforces the whole App machine specification. */
   readonly appMachineSupport?: AppMachineSupport;
+  /** The provider can attach `CreateSandboxOpts.networkBoundary` before first boot. */
+  readonly networkBoundaryAtCreate?: boolean;
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   /**
    * Ensure the Kortix App supervisor is running after create or resume.
@@ -324,6 +331,7 @@ export interface SandboxProvider {
   syncNetworkBoundary?(
     externalId: string,
     bindings: NetworkBoundarySecretBinding[],
+    opts?: { replicaOwnerId?: string },
   ): Promise<{ state: 'armed'; attached: number }>;
   /**
    * List the running boxes this deployment owns, for the orphan-box reaper

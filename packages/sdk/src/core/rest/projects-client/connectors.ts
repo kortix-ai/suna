@@ -406,12 +406,67 @@ export interface OAuth2ApplicationInput {
   audience?: string;
   authorization_params?: Record<string, string>;
   token_params?: Record<string, string>;
+  /** RFC 7592 management URI, present when Kortix registered this client. */
+  registration_client_uri?: string;
+  /** RFC 7592 management token. Never returned by the API. */
+  registration_access_token?: string;
+  /**
+   * The authorization server that issued this client. Recorded so the callback
+   * can validate RFC 9207 `iss` and reject a code minted elsewhere.
+   */
+  issuer?: string;
 }
 
 export interface OAuth2ApplicationView
-  extends Omit<OAuth2ApplicationInput, 'client_secret' | 'private_key'> {
+  extends Omit<
+    OAuth2ApplicationInput,
+    'client_secret' | 'private_key' | 'registration_access_token'
+  > {
   has_client_secret: boolean;
   has_private_key: boolean;
+}
+
+/**
+ * What the MCP authorization discovery chain found for one connector's server:
+ * whether it needs authorization at all, which authorization server governs it,
+ * the endpoints to use, and whether Kortix can register itself dynamically
+ * (RFC 7591) instead of the user creating an OAuth app by hand.
+ */
+export interface OAuth2ResourceDiscovery {
+  resource_url: string;
+  requires_authorization: boolean;
+  /** RFC 8707 resource indicator to bind tokens to. */
+  resource?: string;
+  resource_name?: string;
+  protected_resource_metadata_url?: string;
+  authorization_server?: string;
+  metadata?: Partial<Omit<OAuth2ApplicationView, 'has_client_secret' | 'has_private_key'>>;
+  registration_endpoint?: string;
+  token_endpoint_auth_methods_supported?: string[];
+  code_challenge_methods_supported?: string[];
+  scopes: string[];
+  warnings: string[];
+}
+
+export interface OAuth2ResourceDiscoveryInput {
+  /** Defaults to the connector's own server URL. */
+  resource_url?: string;
+}
+
+export interface OAuth2ClientRegistrationInput {
+  registration_endpoint: string;
+  /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
+  issuer?: string;
+  client_name?: string;
+  token_endpoint_auth_methods_supported?: string[];
+  discovery_url?: string;
+  authorization_url?: string;
+  token_url?: string;
+  device_authorization_url?: string;
+  revocation_url?: string;
+  scopes?: string[];
+  resource?: string;
+  audience?: string;
 }
 
 export interface OAuth2AuthorizationStartInput {
@@ -561,6 +616,43 @@ export async function discoverConnectionOAuth2(
   return unwrap(
     await backendApi.post<{ metadata: Partial<OAuth2ApplicationView> }>(
       connectionOAuth2Path(projectId, connectionId, 'discover'),
+      input,
+    ),
+  );
+}
+
+/**
+ * Discover how to authorize with a connector's server: the MCP chain
+ * (`WWW-Authenticate` → RFC 9728 protected resource metadata → RFC 8414/OIDC
+ * authorization server metadata). Returns endpoints, scopes, and the dynamic
+ * client registration endpoint when the server has one.
+ */
+export async function discoverConnectionOAuth2Resource(
+  projectId: string,
+  connectionId: string,
+  input: OAuth2ResourceDiscoveryInput = {},
+) {
+  return unwrap(
+    await backendApi.post<{ discovery: OAuth2ResourceDiscovery }>(
+      connectionOAuth2Path(projectId, connectionId, 'discover-resource'),
+      input,
+    ),
+  );
+}
+
+/**
+ * Register Kortix as an OAuth2 client with the authorization server (RFC 7591)
+ * and store the issued client as this connection's OAuth2 application. The
+ * caller never handles the client secret.
+ */
+export async function registerConnectionOAuth2Client(
+  projectId: string,
+  connectionId: string,
+  input: OAuth2ClientRegistrationInput,
+) {
+  return unwrap(
+    await backendApi.post<{ application: OAuth2ApplicationView }>(
+      connectionOAuth2Path(projectId, connectionId, 'register'),
       input,
     ),
   );

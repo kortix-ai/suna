@@ -81,7 +81,7 @@ async function applyClientAuthentication(
   }
 }
 
-async function providerFetch(
+export async function providerFetch(
   url: string,
   init: RequestInit,
   runtime: OAuth2LifecycleRuntime,
@@ -90,7 +90,7 @@ async function providerFetch(
   return safeEgressFetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(10_000) });
 }
 
-async function boundedJson(response: Response): Promise<Record<string, unknown>> {
+export async function boundedJson(response: Response): Promise<Record<string, unknown>> {
   const declared = Number(response.headers.get('content-length') ?? '0');
   if (declared > MAX_RESPONSE_BYTES) throw new Error('OAuth2 provider response is too large');
   const text = await response.text();
@@ -108,7 +108,7 @@ async function boundedJson(response: Response): Promise<Record<string, unknown>>
   }
 }
 
-function safeError(payload: Record<string, unknown>): string {
+export function safeError(payload: Record<string, unknown>): string {
   return typeof payload.error === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(payload.error)
     ? payload.error
     : 'provider_error';
@@ -205,6 +205,9 @@ export function buildOAuth2AuthorizationRequest(
   url.searchParams.set('code_challenge_method', 'S256');
   const scopes = input.scopes ?? application.scopes;
   if (scopes?.length) url.searchParams.set('scope', scopes.join(' '));
+  // RFC 8707: bind the grant to the protected resource. MCP requires it on the
+  // authorization request as well as on every token request.
+  if (application.resource) url.searchParams.set('resource', application.resource);
   for (const [key, value] of Object.entries(application.authorization_params ?? {})) {
     url.searchParams.set(key, value);
   }
@@ -345,7 +348,7 @@ export async function revokeOAuth2Token(
   }
 }
 
-function httpsMetadataUrl(value: unknown): string | undefined {
+export function httpsMetadataUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   try {
     return new URL(value).protocol === 'https:' ? value : undefined;
@@ -354,10 +357,29 @@ function httpsMetadataUrl(value: unknown): string | undefined {
   }
 }
 
-export async function discoverOAuth2Metadata(
+export interface AuthorizationServerMetadata {
+  issuer?: string;
+  application: Partial<OAuth2ApplicationInput>;
+  registration_endpoint?: string;
+  token_endpoint_auth_methods_supported?: string[];
+  code_challenge_methods_supported?: string[];
+  scopes_supported?: string[];
+}
+
+function stringList(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : undefined;
+}
+
+/**
+ * Fetch and normalize RFC 8414 / OIDC discovery metadata. Throws when the
+ * document is unreachable or carries no usable token endpoint.
+ */
+export async function fetchAuthorizationServerMetadata(
   discoveryUrl: string,
   runtime: OAuth2LifecycleRuntime = {},
-): Promise<Partial<OAuth2ApplicationInput>> {
+): Promise<AuthorizationServerMetadata> {
   const response = await providerFetch(
     discoveryUrl,
     { method: 'GET', headers: { accept: 'application/json' } },
@@ -367,14 +389,29 @@ export async function discoverOAuth2Metadata(
   if (!response.ok) {
     throw new Error(`OAuth2 discovery failed (${response.status}): ${safeError(payload)}`);
   }
+  const scopes = stringList(payload.scopes_supported);
   return {
-    discovery_url: discoveryUrl,
-    authorization_url: httpsMetadataUrl(payload.authorization_endpoint),
-    token_url: httpsMetadataUrl(payload.token_endpoint),
-    device_authorization_url: httpsMetadataUrl(payload.device_authorization_endpoint),
-    revocation_url: httpsMetadataUrl(payload.revocation_endpoint),
-    scopes: Array.isArray(payload.scopes_supported)
-      ? payload.scopes_supported.filter((scope): scope is string => typeof scope === 'string')
-      : undefined,
+    ...(typeof payload.issuer === 'string' ? { issuer: payload.issuer } : {}),
+    application: {
+      discovery_url: discoveryUrl,
+      authorization_url: httpsMetadataUrl(payload.authorization_endpoint),
+      token_url: httpsMetadataUrl(payload.token_endpoint),
+      device_authorization_url: httpsMetadataUrl(payload.device_authorization_endpoint),
+      revocation_url: httpsMetadataUrl(payload.revocation_endpoint),
+      scopes,
+    },
+    registration_endpoint: httpsMetadataUrl(payload.registration_endpoint),
+    token_endpoint_auth_methods_supported: stringList(
+      payload.token_endpoint_auth_methods_supported,
+    ),
+    code_challenge_methods_supported: stringList(payload.code_challenge_methods_supported),
+    scopes_supported: scopes,
   };
+}
+
+export async function discoverOAuth2Metadata(
+  discoveryUrl: string,
+  runtime: OAuth2LifecycleRuntime = {},
+): Promise<Partial<OAuth2ApplicationInput>> {
+  return (await fetchAuthorizationServerMetadata(discoveryUrl, runtime)).application;
 }

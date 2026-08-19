@@ -10,7 +10,8 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accountTokens, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { authorizeV2 } from '../iam/engine-v2';
+import { authorize } from '../iam/authorize';
+import { actorForToken, actorForUser } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
 
 const ACCOUNT = crypto.randomUUID();
@@ -44,20 +45,20 @@ afterAll(async () => {
 describe('token project-scope', () => {
   test('a project-bound token acts ONLY on its project — never another project or account actions', async () => {
     // In scope: its own project.
-    expect((await authorizeV2(OWNER, ACCOUNT, PROJECT_ACTIONS.PROJECT_READ, proj(P1), SCOPED_TOKEN)).allowed).toBe(true);
+    expect((await authorize(await actorForToken(OWNER, ACCOUNT, SCOPED_TOKEN), PROJECT_ACTIONS.PROJECT_READ, proj(P1))).allowed).toBe(true);
     // Another project → out of scope (even though the OWNER could otherwise).
-    const otherProj = await authorizeV2(OWNER, ACCOUNT, PROJECT_ACTIONS.PROJECT_READ, proj(P2), SCOPED_TOKEN);
+    const otherProj = await authorize(await actorForToken(OWNER, ACCOUNT, SCOPED_TOKEN), PROJECT_ACTIONS.PROJECT_READ, proj(P2));
     expect(otherProj.allowed).toBe(false);
     expect(otherProj.reason).toBe('token_out_of_scope');
     // Account-level action → out of scope.
-    const acct = await authorizeV2(OWNER, ACCOUNT, ACCOUNT_ACTIONS.MEMBER_READ, undefined, SCOPED_TOKEN);
+    const acct = await authorize(await actorForToken(OWNER, ACCOUNT, SCOPED_TOKEN), ACCOUNT_ACTIONS.MEMBER_READ);
     expect(acct.allowed).toBe(false);
     expect(acct.reason).toBe('token_out_of_scope');
   });
 
   test('an unscoped account PAT is not project-restricted', async () => {
-    expect((await authorizeV2(OWNER, ACCOUNT, PROJECT_ACTIONS.PROJECT_READ, proj(P2), UNSCOPED_TOKEN)).allowed).toBe(true);
-    expect((await authorizeV2(OWNER, ACCOUNT, ACCOUNT_ACTIONS.MEMBER_READ, undefined, UNSCOPED_TOKEN)).allowed).toBe(true);
+    expect((await authorize(await actorForToken(OWNER, ACCOUNT, UNSCOPED_TOKEN), PROJECT_ACTIONS.PROJECT_READ, proj(P2))).allowed).toBe(true);
+    expect((await authorize(await actorForToken(OWNER, ACCOUNT, UNSCOPED_TOKEN), ACCOUNT_ACTIONS.MEMBER_READ)).allowed).toBe(true);
   });
 });
 
@@ -69,7 +70,7 @@ describe('grant expiry (filtered at authorization time)', () => {
       accountId: ACCOUNT, projectId: P1, userId: expired, projectRole: 'manager',
       expiresAt: new Date(Date.now() - 60_000), // one minute ago
     });
-    expect((await authorizeV2(expired, ACCOUNT, PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(false);
+    expect((await authorize(actorForUser(expired, ACCOUNT), PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(false);
 
     const future = uid();
     await db.insert(accountMembers).values({ userId: future, accountId: ACCOUNT, accountRole: 'member' });
@@ -77,6 +78,6 @@ describe('grant expiry (filtered at authorization time)', () => {
       accountId: ACCOUNT, projectId: P1, userId: future, projectRole: 'manager',
       expiresAt: new Date(Date.now() + 3_600_000), // one hour out
     });
-    expect((await authorizeV2(future, ACCOUNT, PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(true);
+    expect((await authorize(actorForUser(future, ACCOUNT), PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(true);
   });
 });

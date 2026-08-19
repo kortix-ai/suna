@@ -583,6 +583,80 @@ function buildGraphqlRequest(opts: {
   return { url, method: 'POST', headers, body: JSON.stringify({ query }) };
 }
 
+/**
+ * MCP streamable-HTTP session handshake.
+ *
+ * A stateful MCP server (the default for servers built on the official SDKs)
+ * rejects any request that arrives without `Mcp-Session-Id` — HTTP 400, JSON-RPC
+ * "Server not initialized" / "Bad Request: Mcp-Session-Id header is required".
+ * The protocol's answer is `initialize` → `notifications/initialized`, keep the
+ * session id the server issues, and send it on every later request. Kortix has
+ * no long-lived MCP client process, so the session is established lazily on the
+ * first request that needs it and cached in-process.
+ *
+ * The cache key includes the credential: two principals with different tokens
+ * must never share one server session.
+ */
+const MCP_PROTOCOL_VERSION = '2025-06-18';
+const MCP_SESSION_HEADER = 'Mcp-Session-Id';
+const MCP_PROTOCOL_HEADER = 'MCP-Protocol-Version';
+const MCP_SESSION_TTL_MS = 10 * 60_000;
+const MCP_SESSION_CACHE_MAX = 500;
+
+interface McpSession {
+  sessionId: string;
+  protocolVersion: string;
+  expiresAt: number;
+}
+
+const mcpSessions = new Map<string, McpSession>();
+
+/** Test seam: drop every cached MCP session. */
+export function resetMcpSessionCache(): void {
+  mcpSessions.clear();
+}
+
+function mcpSessionKey(url: string, secret: string | null): string {
+  return `${url}\u0000${secret ? createHash('sha256').update(secret).digest('hex') : ''}`;
+}
+
+function readMcpSession(key: string, now: number): McpSession | null {
+  const session = mcpSessions.get(key);
+  if (!session) return null;
+  if (session.expiresAt <= now) {
+    mcpSessions.delete(key);
+    return null;
+  }
+  return session;
+}
+
+function writeMcpSession(key: string, session: McpSession): void {
+  if (mcpSessions.size >= MCP_SESSION_CACHE_MAX) {
+    const oldest = mcpSessions.keys().next();
+    if (!oldest.done) mcpSessions.delete(oldest.value);
+  }
+  mcpSessions.set(key, session);
+}
+
+/**
+ * True when the response says "this server wants an initialized session".
+ * 400 covers "not initialized" / "missing session id"; 404 covers a session the
+ * server has since forgotten (restart, eviction). 401/403 are NOT included —
+ * those are credential problems and must reach the caller untouched.
+ */
+function needsMcpSession(result: ExecResult): boolean {
+  if (result.status !== 400 && result.status !== 404) return false;
+  const data = result.data;
+  const message =
+    typeof data === 'string'
+      ? data
+      : data && typeof data === 'object' && 'error' in data
+        ? String((data as { error?: { message?: unknown } }).error?.message ?? '')
+        : '';
+  if (!message) return true;
+  return /session|not initialized|initialize/i.test(message) || result.status === 400;
+}
+
 /** Build one JSON-RPC request for an MCP streamable-HTTP connector. */
 function buildMcpJsonRpcRequest(opts: {
   url: string;
@@ -592,11 +666,18 @@ function buildMcpJsonRpcRequest(opts: {
   secret?: string | null;
   method: string;
   params: Record<string, unknown>;
+  /** Omitted for a JSON-RPC notification, which carries no id. */
+  notification?: boolean;
+  session?: McpSession | null;
 }): BuiltRequest {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
   };
+  if (opts.session) {
+    headers[MCP_SESSION_HEADER] = opts.session.sessionId;
+    headers[MCP_PROTOCOL_HEADER] = opts.session.protocolVersion;
+  }
   const query = new URLSearchParams();
   const auth = opts.auth ?? NO_AUTH;
   applyConnectorHeaders(headers, opts.headers, auth);
@@ -606,30 +687,11 @@ function buildMcpJsonRpcRequest(opts: {
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
   const body = JSON.stringify({
     jsonrpc: '2.0',
-    id: 1,
+    ...(opts.notification ? {} : { id: 1 }),
     method: opts.method,
     params: opts.params,
   });
   return { url, method: 'POST', headers, body };
-}
-
-/** Build a JSON-RPC `tools/call` request for an MCP (http transport) connector. */
-function buildMcpRequest(opts: {
-  url: string;
-  auth?: ConnectorAuth;
-  headers?: Record<string, string> | null;
-  secret?: string | null;
-  toolName: string;
-  args?: Record<string, unknown>;
-}): BuiltRequest {
-  return buildMcpJsonRpcRequest({
-    url: opts.url,
-    auth: opts.auth,
-    headers: opts.headers,
-    secret: opts.secret,
-    method: 'tools/call',
-    params: { name: opts.toolName, arguments: opts.args ?? {} },
-  });
 }
 
 export type FetchImpl = (
@@ -644,6 +706,12 @@ export type FetchImpl = (
   status: number;
   ok: boolean;
   text: () => Promise<string>;
+  /**
+   * Response headers. Optional so existing fetch adapters and tests keep
+   * compiling; the MCP session handshake reads `Mcp-Session-Id` from it and
+   * degrades to a stateless call when an adapter does not provide it.
+   */
+  headers?: { get: (name: string) => string | null };
 }>;
 
 /** Parse a response body: JSON, or SSE-framed JSON (MCP streamable-HTTP), else raw text. */
@@ -678,6 +746,16 @@ async function performRequest(
   secret: string | null,
   now: () => Date,
 ): Promise<ExecResult> {
+  return (await performRequestWithHeaders(req, fetchImpl, auth, secret, now)).result;
+}
+
+async function performRequestWithHeaders(
+  req: BuiltRequest,
+  fetchImpl: FetchImpl,
+  auth: ConnectorAuth,
+  secret: string | null,
+  now: () => Date,
+): Promise<{ result: ExecResult; header: (name: string) => string | null }> {
   applyAdvancedAuth(req, auth, secret, now);
   const res = await fetchImpl(req.url, {
     method: req.method,
@@ -686,7 +764,116 @@ async function performRequest(
     tls: req.tls,
   });
   const text = await res.text();
-  return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
+  return {
+    result: { status: res.status, ok: res.ok, data: parseResponseBody(text) },
+    header: (name: string) => res.headers?.get(name) ?? null,
+  };
+}
+
+interface McpExchange {
+  url: string;
+  auth: ConnectorAuth;
+  headers?: Record<string, string> | null;
+  secret?: string | null;
+  method: string;
+  params: Record<string, unknown>;
+  fetchImpl: FetchImpl;
+  now: () => Date;
+}
+
+/**
+ * `initialize` + `notifications/initialized`. Returns the negotiated session,
+ * or null when the server refuses to initialize — in which case the caller
+ * surfaces the original failure rather than a confusing handshake error.
+ */
+async function establishMcpSession(exchange: McpExchange): Promise<McpSession | null> {
+  const initialize = await performRequestWithHeaders(
+    buildMcpJsonRpcRequest({
+      url: exchange.url,
+      auth: exchange.auth,
+      headers: exchange.headers,
+      secret: exchange.secret,
+      method: 'initialize',
+      params: {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: 'kortix', version: '1' },
+      },
+    }),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  );
+  if (!initialize.result.ok) return null;
+  const payload = initialize.result.data;
+  const negotiated =
+    payload && typeof payload === 'object'
+      ? (payload as { result?: { protocolVersion?: unknown } }).result?.protocolVersion
+      : undefined;
+  const session: McpSession = {
+    sessionId: initialize.header(MCP_SESSION_HEADER) ?? '',
+    protocolVersion: typeof negotiated === 'string' ? negotiated : MCP_PROTOCOL_VERSION,
+    expiresAt: exchange.now().getTime() + MCP_SESSION_TTL_MS,
+  };
+  await performRequest(
+    buildMcpJsonRpcRequest({
+      url: exchange.url,
+      auth: exchange.auth,
+      headers: exchange.headers,
+      secret: exchange.secret,
+      method: 'notifications/initialized',
+      params: {},
+      notification: true,
+      session: session.sessionId ? session : null,
+    }),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  ).catch(() => undefined);
+  if (session.sessionId) {
+    writeMcpSession(mcpSessionKey(exchange.url, exchange.secret ?? null), session);
+  }
+  return session;
+}
+
+/**
+ * One MCP JSON-RPC exchange, with the streamable-HTTP session handshake folded
+ * in: use the cached session when there is one, and when the server answers
+ * "not initialized" / "session not found", initialize once and replay.
+ */
+async function performMcpExchange(exchange: McpExchange): Promise<ExecResult> {
+  const key = mcpSessionKey(exchange.url, exchange.secret ?? null);
+  const build = (session: McpSession | null) =>
+    buildMcpJsonRpcRequest({
+      url: exchange.url,
+      auth: exchange.auth,
+      headers: exchange.headers,
+      secret: exchange.secret,
+      method: exchange.method,
+      params: exchange.params,
+      session: session?.sessionId ? session : null,
+    });
+  const cached = readMcpSession(key, exchange.now().getTime());
+  const first = await performRequest(
+    build(cached),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  );
+  if (!needsMcpSession(first)) return first;
+  mcpSessions.delete(key);
+  const session = await establishMcpSession(exchange);
+  if (!session) return first;
+  return performRequest(
+    build(session),
+    exchange.fetchImpl,
+    exchange.auth,
+    exchange.secret ?? null,
+    exchange.now,
+  );
 }
 
 function redactExactValue(value: string, secret: string | null | undefined): string {
@@ -739,20 +926,16 @@ export async function listMcpTools(opts: {
   const auth = opts.auth ?? NO_AUTH;
   let result: ExecResult;
   try {
-    result = await performRequest(
-      buildMcpJsonRpcRequest({
-        url: opts.url,
-        auth,
-        headers: opts.headers,
-        secret: opts.secret,
-        method: 'tools/list',
-        params: {},
-      }),
-      opts.fetchImpl,
+    result = await performMcpExchange({
+      url: opts.url,
       auth,
-      opts.secret ?? null,
-      opts.now ?? (() => new Date()),
-    );
+      headers: opts.headers,
+      secret: opts.secret,
+      method: 'tools/list',
+      params: {},
+      fetchImpl: opts.fetchImpl,
+      now: opts.now ?? (() => new Date()),
+    });
   } catch {
     // Fetch implementations commonly include the full URL in thrown errors.
     // Query-auth credentials are part of that URL, so never persist or return
@@ -837,15 +1020,16 @@ export async function executeCall(opts: {
 
   if (binding.kind === 'mcp') {
     if (!opts.baseUrl) throw new Error('mcp connector has no url');
-    const req = buildMcpRequest({
+    return performMcpExchange({
       url: opts.baseUrl,
-      auth: opts.auth,
+      auth: opts.auth ?? NO_AUTH,
       headers: opts.headers,
       secret: opts.secret,
-      toolName: binding.tool,
-      args: opts.args,
+      method: 'tools/call',
+      params: { name: binding.tool, arguments: opts.args ?? {} },
+      fetchImpl: opts.fetchImpl,
+      now: opts.now ?? (() => new Date()),
     });
-    return performRequest(req, opts.fetchImpl, opts.auth ?? NO_AUTH, opts.secret ?? null, opts.now ?? (() => new Date()));
   }
 
   if (binding.kind === 'graphql') {

@@ -4,8 +4,8 @@ import {
   accountGroups,
   accountInvitations,
   accountMembers,
+  accountMemberships,
   accounts,
-  projectMembers,
   projects,
 } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
@@ -13,7 +13,7 @@ import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-mana
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
-import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
 import { grantProjectRole } from '../../projects/lib/access';
 import {
@@ -65,26 +65,20 @@ async function grantAccountRole(
   userId: string,
   role: AccountRole,
 ): Promise<void> {
-  // Best-effort, like every other canonical half in this PR: the mirror trigger
-  // on the `account_members` write has ALREADY produced the same row, so the
-  // engine is correct either way. What this adds is the audit event and the
-  // delegability ceiling — bookkeeping that must never fail a membership change
-  // the route already authorized.
-  try {
-    await assignRole(writer, accountId, {
-      principal: { type: 'user', id: userId },
-      roleKey: role,
-      scope: { type: 'account' },
-      source: 'system',
-    });
-  } catch (err) {
-    console.warn('[members] canonical account-role assignment failed', {
-      accountId,
-      userId,
-      role,
-      err: (err as Error)?.message,
-    });
-  }
+  // THE write. `account_members.account_role` is a derived view column as of the
+  // cutover — there is no second store to keep in step, so a failure here is a
+  // failure of the membership change and must propagate.
+  //
+  // `exclusive` reproduces what the single `account_role` COLUMN enforced: one
+  // system account role per member, so owner -> admin retracts the owner
+  // assignment instead of unioning with it.
+  await assignRole(writer, accountId, {
+    principal: { type: 'user', id: userId },
+    roleKey: role,
+    scope: { type: 'account' },
+    source: 'system',
+    exclusive: true,
+  });
 }
 
 /**
@@ -467,17 +461,13 @@ export function registerMemberRoutes(): void {
           return c.json({ error: 'Already a member' }, 409);
         }
 
-        await db.insert(accountMembers).values({
-          userId: targetUserId,
-          accountId,
-          accountRole: role,
-        });
-        // …and the canonical grant, through the ONE write path, so the new
-        // member's role carries an `iam.assignment.granted` audit event and the
-        // delegability ceiling is checked. The route already asserted
-        // member.invite; `assignRole` additionally asserts member.update, which
-        // owner and admin both hold and no custom role can (both are
-        // non-delegable).
+        // IDENTITY first, then the GRANT. Two stores, two writes: the row that
+        // says "this user belongs to this account" (and carries is_super_admin /
+        // scim_external_id) is kortix.account_memberships; the role is an
+        // account-scope assignment. The route already asserted member.invite;
+        // `assignRole` additionally asserts member.update, which owner and admin
+        // both hold and no custom role can (both are non-delegable).
+        await db.insert(accountMemberships).values({ userId: targetUserId, accountId });
         await grantAccountRole(await actorOf(c, accountId), accountId, targetUserId, role);
 
         // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
@@ -771,28 +761,25 @@ export function registerMemberRoutes(): void {
         }
       }
 
-      // Audit BEFORE the legacy deletes: the mirror triggers remove the
-      // canonical rows inside those statements, so afterwards there is nothing
-      // left to describe.
+      // Audit BEFORE the deletes, while the rows still exist to describe.
       const remover = await actorOf(c, accountId);
       await auditProjectAssignmentsRevoked(remover, accountId, targetUserId);
       await auditAccountRoleRevoked(remover, accountId, targetUserId);
 
-      await db
-        .delete(projectMembers)
-        .where(
-          and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)),
-        );
-
-      await db
-        .delete(accountMembers)
-        .where(
-          and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)),
-        );
-      // Belt and braces: an account-scope assignment written straight through
-      // `assignRole` has no `account_members` row behind it for the trigger to
-      // fire on, so removing membership must clear it explicitly.
+      // Membership is two facts now: the GRANTS in kortix.role_assignments and
+      // the IDENTITY row in kortix.account_memberships. Offboarding removes
+      // both. Grants first, so a failure between the two leaves the member
+      // without access rather than with access and no identity.
+      await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
+      await db
+        .delete(accountMemberships)
+        .where(
+          and(
+            eq(accountMemberships.accountId, accountId),
+            eq(accountMemberships.userId, targetUserId),
+          ),
+        );
       invalidateIamCacheForUser(targetUserId);
       // Offboarding is immediate: kill their PATs + live sandbox session tokens so a
       // removed member (and their running agents) can't keep acting on their bearer.
@@ -887,22 +874,12 @@ export function registerMemberRoutes(): void {
       const writer = await actorOf(c, accountId);
       await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
       await db
-        .update(accountMembers)
-        .set({ accountRole: newRole })
-        .where(
-          and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)),
-        );
       await grantAccountRole(writer, accountId, targetUserId, newRole);
 
       if (newRole === 'owner' || newRole === 'admin') {
         // Owners/admins get implicit Manager on every project; their direct
         // project assignments would shadow nothing useful, so clean them up.
         await auditProjectAssignmentsRevoked(writer, accountId, targetUserId);
-        await db
-          .delete(projectMembers)
-          .where(
-            and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)),
-          );
         await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
@@ -952,15 +929,13 @@ export function registerMemberRoutes(): void {
       await auditProjectAssignmentsRevoked(leaver, accountId, userId);
       await auditAccountRoleRevoked(leaver, accountId, userId);
 
-      await db
-        .delete(projectMembers)
-        .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, userId)));
-
-      await db
-        .delete(accountMembers)
-        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-      await deleteAccountScopeAssignments(accountId, userId);
       await deleteProjectScopeAssignments(accountId, userId);
+      await deleteAccountScopeAssignments(accountId, userId);
+      await db
+        .delete(accountMemberships)
+        .where(
+          and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)),
+        );
       invalidateIamCacheForUser(userId);
       // Leaving revokes your own tokens for this account (PATs + live sessions).
       // Never swallow a revocation failure — surface it so a stuck token is visible.

@@ -6,7 +6,7 @@
  * provider-neutral behaviour: create repo → mint push token → register project.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
@@ -137,9 +137,22 @@ mockIamReadModels({
   members: () =>
     canonicalMembership ? [{ userId: USER_ID, accountId: ACCOUNT_ID, accountRole: 'owner' }] : [],
 });
-// grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
-// lightweight db mock doesn't model).
-mockIamMembershipSyncNoop();
+// `grantProjectRole` IS one `assignRole` call now, and it is no longer
+// best-effort — it writes `role_assignments`, which this file's lightweight db
+// mock does not model. Bypass the write path; the provision behaviour under test
+// is unaffected by where the grant lands.
+mockIamAssignments({
+  onGrant: (input) => {
+    if (input.scope.type !== 'project') return;
+    grantedProjectRole = {
+      accountId: input.accountId,
+      projectId: input.scope.id,
+      userId: input.principal.id,
+      projectRole: input.roleKey,
+      grantedBy: (input as { grantedBy?: string | null }).grantedBy ?? null,
+    };
+  },
+});
 
 mock.module('../projects/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},

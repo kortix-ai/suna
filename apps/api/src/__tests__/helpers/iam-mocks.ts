@@ -1,7 +1,7 @@
-// Shared IAM test mocks. The real IAM engine + membership-sync hit
-// iam_roles/iam_policies/account_groups tables that the suites' lightweight db
-// mocks don't model, so authz-agnostic suites bypass them here instead of
-// re-declaring the same blocks in every file.
+// Shared IAM test mocks. The real engine and the real write path read
+// `role_assignments` / `roles` / `role_permissions` / `permissions`, which the
+// suites' lightweight db shims do not model, so authz-agnostic suites bypass
+// them here instead of re-declaring the same blocks in every file.
 //
 // Paths are relative to THIS file (src/__tests__/helpers/), so '../../iam/...'
 // resolves to src/iam/... — the same module the suites import as '../iam/...'.
@@ -18,14 +18,92 @@ const jwtActor = async (c: CtxLike, accountId: string) => ({
   ctx: {},
 });
 
-/** No-op the IAM policy-sync writes (project/member grant + revoke). */
-export function mockIamMembershipSyncNoop(): void {
-  mock.module('../../iam/membership-sync', () => ({
-    syncMemberAccountPolicy: async () => {},
-    removeMemberPolicies: async () => {},
-    removeProjectPoliciesForMember: async () => {},
-    syncProjectMemberPolicy: async () => {},
-    removeProjectMemberPolicy: async () => {},
+/**
+ * Bypass the ONE write path (`iam/assignments`).
+ *
+ * Every grant goes through `assignRole` now, and it is no longer best-effort:
+ * before the cutover a legacy INSERT made the grant and the canonical call only
+ * added the audit event, so a suite could let it throw. It IS the grant now, so
+ * a suite whose db shim does not model `role_assignments` has to bypass it or
+ * every provision / invite-accept / member-add 500s.
+ *
+ * `onGrant` lets a suite that DOES care about the resulting role project it back
+ * into its own in-memory rows — the same rows `mockIamReadModels` reads.
+ */
+export interface AssignmentMockHooks {
+  onGrant?: (input: {
+    accountId: string;
+    principal: { type: string; id: string };
+    roleKey?: string;
+    roleId?: string;
+    scope: { type: string; id?: string | null };
+  }) => void;
+  onRevoke?: (accountId: string, assignmentId: string) => void;
+  /** `revokeProjectRole(writer, accountId, projectId, principal)`. */
+  onRevokeProjectRole?: (
+    accountId: string,
+    projectId: string,
+    principal: { type: string; id: string },
+  ) => void;
+}
+
+export function mockIamAssignments(hooks: AssignmentMockHooks = {}): void {
+  const SYSTEM_ACTOR = Symbol.for('kortix.iam.system-actor');
+  let seq = 0;
+  mock.module('../../iam/assignments', () => ({
+    SYSTEM_ACTOR,
+    assignRole: async (_writer: unknown, accountId: string, input: any) => {
+      hooks.onGrant?.({ accountId, ...input });
+      seq += 1;
+      return {
+        assignmentId: `assignment-${seq}`,
+        accountId,
+        principalType: input.principal?.type ?? 'user',
+        principalId: input.principal?.id ?? '',
+        roleId: input.roleId ?? `role-${input.roleKey ?? 'member'}`,
+        roleKey: input.roleKey ?? 'member',
+        roleIsSystem: !input.roleId,
+        scopeType: input.scope?.type ?? 'account',
+        scopeId: input.scope?.id ?? null,
+        objectType: input.object?.type ?? null,
+        objectId: input.object?.id ?? null,
+        expiresAt: input.expiresAt ?? null,
+        grantedBy: input.grantedBy ?? null,
+        source: input.source ?? 'manual',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      };
+    },
+    updateAssignment: async () => {
+      throw new Error('updateAssignment is not modelled by mockIamAssignments');
+    },
+    revokeAssignment: async (_w: unknown, accountId: string, assignmentId: string) => {
+      hooks.onRevoke?.(accountId, assignmentId);
+      return null;
+    },
+    revokeProjectRole: async (
+      _w: unknown,
+      accountId: string,
+      projectId: string,
+      principal: { type: string; id: string },
+    ) => {
+      hooks.onRevokeProjectRole?.(accountId, projectId, principal);
+      return 1;
+    },
+    listAssignments: async () => [],
+    listAssignmentsByIds: async () => [],
+    assignmentsForProject: async () => [],
+    assignmentsForPrincipals: async () => [],
+    assignmentsForRoles: async () => [],
+    findExpiredAssignments: async () => [],
+    auditAssignmentExpired: async () => {},
+    auditAssignmentRevoked: async () => {},
+    groupPrincipalIds: async () => [],
+    deleteAccountScopeAssignments: async () => {},
+    deleteProjectScopeAssignments: async () => {},
+    assignPendingProjectRole: async () => {},
+    revokePendingAssignments: async () => {},
+    convertPendingAssignments: async () => {},
   }));
 }
 
@@ -112,16 +190,15 @@ export function mockIamEngineAllowAll(
 /**
  * Project the canonical read models from a suite's OWN in-memory rows.
  *
- * The hermetic contract suites model the legacy tables (`account_members`,
+ * The hermetic contract suites model the legacy shapes (`account_members`,
  * `project_members`, …) in a hand-rolled db shim keyed on drizzle table objects.
  * `iam/read-models` reads `role_assignments` with a join those shims answer with
  * `[]`, so a route asking "what role does this person hold" would get `member`
  * for an owner. Rather than teach seven shims a sixth table, the module is
- * mocked to project from the rows the suite already maintains — the SAME data
- * the mirror trigger would have derived the assignments from.
+ * mocked to project from the rows the suite already maintains.
  *
  * The canonical path itself is proved against a real database by
- * `integration-rbac-read-parity.test.ts` and `scripts/rbac-read-parity.ts`.
+ * `integration-iam-assignments.test.ts` and `integration-resource-grants.test.ts`.
  */
 export interface ReadModelRows {
   /** `account_members` equivalents: who is in which account, at what role. */

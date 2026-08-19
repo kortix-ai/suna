@@ -1616,10 +1616,7 @@ export function kickStartupPreBuild(): void {
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
   for (const providerId of templateBuildProviders()) {
-    const ensureSessionImage = config.KORTIX_FAST_COLD_BOOT_ENABLED
-      ? ensureFastSandboxImage
-      : ensurePlatformDefaultImage;
-    void ensureSessionImage({ source: 'startup', provider: providerId })
+    void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
       .then((r) =>
         console.log(
           `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,

@@ -1,83 +1,60 @@
-# Fast cold boot runtime
+# Platinum create-time secret arming
 
-Status: implemented but disabled. Dev, staging, and production use the standard image.
+Status: enabled on dev behind `KORTIX_FAST_COLD_BOOT_ENABLED`.
 
 ## Problem
 
-A clean dev session reaches runtime readiness in 25.3 seconds at p50.
-The current image contains browsers, LibreOffice, TeX, and the complete Python package floor.
-Every sandbox pays the image startup cost even when the first turn does not use those tools.
+Platinum used two sequential API operations for every session:
 
-Measured dev baseline on 2026-08-19, using five new default-template sessions:
+1. Create the sandbox.
+2. Attach and arm the network-boundary secrets.
 
-| Milestone | p50 | p90 |
-|---|---:|---:|
-| Runtime ready | 25,288 ms | 32,607 ms |
-| Sandbox row active | 19,288 ms | — |
-| Daemon reachable | 21,756 ms | — |
-| Repository materialized | 7,489 ms | 8,007 ms |
-| OpenCode answering | 5,308 ms | 6,908 ms |
+The second operation cost 18,261 ms at p50 across five measured boots.
+The sandbox could not become active during this operation.
 
 ## Design
 
-`KORTIX_FAST_COLD_BOOT_ENABLED=true` selects one shared, content-addressed fast image.
-It does not create or retain running sandboxes.
-The standard image remains available through the same flag.
+When `KORTIX_FAST_COLD_BOOT_ENABLED=true`, the API prepares the secret replicas first.
+It includes their IDs in Platinum's sandbox-create request.
+Platinum creates the VM and arms its network boundary in the same operation.
 
-The fast image contains the complete session-critical path:
+The API still waits for the returned secret state to become `armed`.
+It deletes the sandbox when arming fails.
+Raw secret values never enter the sandbox.
 
-- Ubuntu 24.04, matching the standard runtime's faster OpenCode startup path
-- Git and the baked scaffold repository
-- Node.js, npm, pnpm, Bun, uv, OpenCode, the Kortix daemon, and the Kortix CLI
-- OpenCode configuration dependencies, tool bundle cache, database migration, and instance warm-up
-- The model catalog, managed skills, and Slack or Teams CLI shims
+The flag does not change the sandbox image.
+It does not create or retain a sandbox pool.
+It does not change Daytona or E2B behavior.
 
-Large tools install once per sandbox on first use:
+Set `KORTIX_FAST_COLD_BOOT_ENABLED=false` and redeploy to restore post-create arming.
+This rollback does not require a database migration or sandbox cleanup.
 
-- `python` or `python3`: the pinned managed Python runtime
-- `make`, `gcc`, `g++`, `cc`, `c++`, or `pkg-config`: development pack
-- `agent-browser` or `chromium`: browser pack
-- Anydoc, document, PDF, OCR, media, and TeX commands: document pack
+## Local A/B result
 
-`kortix-toolpack development|browser|documents|all` installs a pack explicitly.
-An inter-process lock prevents two first-use commands from running `apt` concurrently.
+Both groups used the same API, Platinum account, project, standard image code, and Cloudflare tunnel.
+Each group contains five successful boots from 2026-08-19.
 
-Custom and meta templates do not change under the flag.
-Platinum cannot reuse the standard template ID for a fast-image session.
+| Milestone | Flag off p50 | Flag on p50 | Change |
+|---|---:|---:|---:|
+| Network secret phase | 18,261 ms | 0 ms | -18,261 ms |
+| Sandbox row active | 36,183 ms | 21,315 ms | -14,868 ms |
+| Provider create | 3,096 ms | 3,735 ms | +639 ms |
 
-## Rollout and rollback
+The row-active result includes normal provider and API variance.
+The measured p50 improvement is 41.1%.
 
-All environments default to `false`.
-Dev sets the flag explicitly in `.github/workflows/deploy-dev.yml`.
+The two groups used different per-project cache states after the first group triggered a warm-image bake.
+Runtime-ready time is therefore not a valid direct A/B metric in this sample.
+The host-side secret phase and row-active milestones remain directly measured.
 
-Set `KORTIX_FAST_COLD_BOOT_ENABLED=false` and redeploy to restore the standard image.
-Rollback does not require a database migration or sandbox cleanup.
-Existing sessions continue on the image that created them.
+## Next bottleneck
 
-## Acceptance gates
+The flag-on cold-image sample measured these p50 guest stages:
 
-The experiment can advance beyond dev only when all gates pass:
+| Stage | p50 |
+|---|---:|
+| Repository materialized | 12,265 ms |
+| OpenCode answering | 5,259 ms |
+| Configuration dependencies | 553 ms |
 
-1. Five clean dev boots complete without a provider or runtime failure.
-2. Runtime-ready p50 and p90 improve against the baseline above.
-3. A first prompt completes through OpenCode.
-4. Git, Kortix CLI, Python, development, browser, and document paths pass smoke tests.
-5. The fast image remains smaller than the standard runtime image.
-
-Disable the flag if runtime-ready p90 exceeds 32,607 ms or a lazy tool path fails.
-
-## Dev result
-
-Five clean Platinum boots on 2026-08-19 used `kortix-fast-dev-6ec80828f8659cfa`.
-The one-time 229,015 ms image build was excluded.
-
-| Milestone | Standard p50 | Fast p50 | Standard p90 | Fast p90 |
-|---|---:|---:|---:|---:|
-| Runtime ready | 25,288 ms | 30,773 ms | 32,607 ms | 35,816 ms |
-| Repository materialized | 7,489 ms | 7,050 ms | 8,007 ms | 7,944 ms |
-| Config dependencies | 542 ms | 18 ms | 580 ms | 19 ms |
-| OpenCode answering | 5,308 ms | 7,600 ms | 6,908 ms | 7,798 ms |
-
-The fast image failed the p50 and p90 acceptance gate.
-Dev therefore sets `KORTIX_FAST_COLD_BOOT_ENABLED=false`.
-The implementation remains available for more image and provider work behind the same flag.
+Git clone is the next isolated optimization target.

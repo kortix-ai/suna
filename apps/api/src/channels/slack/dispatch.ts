@@ -619,14 +619,18 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
       const slackUserId = event.user ?? '';
       const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
       if ('reason' in actor) {
-        await postIdentityPrompt({
-          projectId,
-          teamId,
-          channel: event.channel,
-          threadTs: event.thread_ts,
-          slackUserId,
-          reason: actor.reason,
-        });
+        // Same reason as the main path below: a bot cannot read a prompt
+        // addressed to it. See `<cmd> link-bot`.
+        if (!event.bot_id) {
+          await postIdentityPrompt({
+            projectId,
+            teamId,
+            channel: event.channel,
+            threadTs: event.thread_ts,
+            slackUserId,
+            reason: actor.reason,
+          });
+        }
         return;
       }
     }
@@ -671,18 +675,24 @@ export async function spawnAgentTurn(
     const slackUserId = event.user ?? '';
     const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
     if ('reason' in actor) {
-      await postIdentityPrompt({
-        projectId,
-        teamId,
-        channel: event.channel,
-        // Top-level ephemeral prompts should render beside the message. Passing
-        // the message ts as thread_ts hides the auth prompt in a new thread.
-        threadTs: event.thread_ts,
-        slackUserId,
-        reason: actor.reason,
-        envelope,
-        event,
-      });
+      // A BOT cannot act on this. postIdentityPrompt posts an ephemeral AND a DM
+      // to slackUserId, so for a bot sender both land where no human will ever
+      // see them, and the mention reads as "Kortix ignored it" — which is how
+      // this went undiagnosed. Link it with `<cmd> link-bot @TheBot` instead.
+      if (!event.bot_id) {
+        await postIdentityPrompt({
+          projectId,
+          teamId,
+          channel: event.channel,
+          // Top-level ephemeral prompts should render beside the message. Passing
+          // the message ts as thread_ts hides the auth prompt in a new thread.
+          threadTs: event.thread_ts,
+          slackUserId,
+          reason: actor.reason,
+          envelope,
+          event,
+        });
+      }
       return;
     }
     actorUserId = actor.userId;

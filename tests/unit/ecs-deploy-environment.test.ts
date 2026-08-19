@@ -55,9 +55,13 @@ describe('ECS task environment overrides', () => {
     ).toThrow();
   });
 
-  it('keeps fast cold boot disabled on the dev API deployment', () => {
+  it('enables create-time secret arming on the dev API deployment', () => {
     const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
     const deployScript = readFileSync(resolve(root, 'infra/scripts/ecs-deploy.sh'), 'utf8');
+    const snapshotBuilder = readFileSync(
+      resolve(root, 'apps/api/src/snapshots/builder.ts'),
+      'utf8',
+    );
     const apiDeploy = workflow.slice(
       workflow.indexOf('  deploy-api-ecs:'),
       workflow.indexOf('  deploy-apps-router:'),
@@ -68,7 +72,7 @@ describe('ECS task environment overrides', () => {
     );
 
     expect(apiDeploy).toContain(
-      `KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"false"}'`,
+      `KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"true"}'`,
     );
     const apiFilter = workflow.slice(
       workflow.indexOf('            api:'),
@@ -77,5 +81,11 @@ describe('ECS task environment overrides', () => {
     expect(apiFilter).toContain("- 'infra/scripts/ecs-deploy.sh'");
     expect(deployScript).toContain('--argjson environment "$MERGED_ENVIRONMENT_JSON"');
     expect(terraform).not.toContain('KORTIX_FAST_COLD_BOOT_ENABLED');
+    const startupPrebuild = snapshotBuilder.slice(
+      snapshotBuilder.indexOf('export function kickStartupPreBuild'),
+      snapshotBuilder.indexOf('// ─── Custom (toml / UI) templates'),
+    );
+    expect(startupPrebuild).toContain('ensurePlatformDefaultImage');
+    expect(startupPrebuild).not.toContain('ensureFastSandboxImage');
   });
 });

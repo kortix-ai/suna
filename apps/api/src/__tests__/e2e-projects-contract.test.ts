@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -123,6 +123,30 @@ mockIamReadModels({
     })),
 });
 
+// A project role is one `assignRole` call now, not an INSERT into
+// `project_members`. Project the grant back into this suite's own rows so the
+// read models and the engine mock below keep seeing one consistent picture.
+mockIamAssignments({
+  onRevokeProjectRole: (_accountId, projectId, principal) => {
+    dbState.projectMemberRows = dbState.projectMemberRows.filter(
+      (r) => !(r.userId === principal.id && r.projectId === projectId),
+    );
+  },
+  onGrant: ({ principal, roleKey, scope }) => {
+    if (scope.type !== 'project' || principal.type !== 'user' || !roleKey || !scope.id) return;
+    const existing = dbState.projectMemberRows.find(
+      (r) => r.userId === principal.id && r.projectId === scope.id,
+    );
+    if (existing) existing.projectRole = roleKey as typeof existing.projectRole;
+    else
+      dbState.projectMemberRows.push({
+        userId: principal.id,
+        projectId: scope.id,
+        projectRole: roleKey,
+      } as (typeof dbState.projectMemberRows)[number]);
+  },
+});
+
 mock.module('../iam/authorize', () => {
   const isManager = (userId: string): boolean => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
@@ -177,7 +201,6 @@ mock.module('../iam/authorize', () => {
   };
 });
 
-mockIamMembershipSyncNoop();
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({

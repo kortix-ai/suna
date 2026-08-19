@@ -16,7 +16,6 @@ import {
   apiKeyStatusEnum,
   apiKeyTypeEnum,
   accountRoleEnum,
-  scopeEffectEnum,
   tunnelStatusEnum,
   platformRoleEnum,
   changeRequestStatusEnum,
@@ -137,10 +136,6 @@ describe('kortix enums', () => {
 
   test('account_role enum is ordered owner, admin, member', () => {
     expect(accountRoleEnum.enumValues).toEqual(['owner', 'admin', 'member']);
-  });
-
-  test('scope_effect enum is grant or revoke', () => {
-    expect(scopeEffectEnum.enumValues).toEqual(['grant', 'revoke']);
   });
 
   test('platform_role enum is non-empty and named', () => {

@@ -616,10 +616,38 @@ const envSchema = z.object({
   SANDBOX_VERSION: optStr, // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN: optStr, // optional: authenticated GitHub API calls for changelog
 
-  // ── Transactional email (provider chain: SES → Resend → Mailtrap) ─────────
-  // Every provider is optional; the transport tries each configured one in
-  // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
-  EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
+  // ── Transactional email ───────────────────────────────────────────────────
+  // ONE connection string configures delivery for every email the platform
+  // sends, product and auth alike. The scheme picks the transport:
+  //   smtp://user:pass@host:587 · smtps://user:pass@host:465
+  //   resend://<api-key> · ses://<key>:<secret>@<region> · ses://<region>
+  //   mailtrap://<token> · mailpit://host:8025
+  // Comma-separate for a fallback chain. See lib/email/dsn.ts.
+  EMAIL_URL: optStr,
+  // Sender identity: `Name <address>` or a bare address.
+  EMAIL_FROM: optStr,
+  // Shared secret for the Supabase send-email hook (`v1,whsec_<base64>`), which
+  // routes GoTrue's magic-link / confirmation / recovery mail through this API
+  // so auth email uses the same provider and templates as product email.
+  // See auth/send-email-hook/.
+  AUTH_EMAIL_HOOK_SECRET: optStr,
+
+  // ── Transactional email: pre-EMAIL_URL variables (still supported) ────────
+  // Deployed Kortix runs on these today. They are used whenever EMAIL_URL is
+  // unset; setting EMAIL_URL overrides all of them.
+  // `smtp` is last but present by default: an existing self-host that
+  // configured SMTP_* for GoTrue before EMAIL_URL shipped starts sending
+  // product email (invites, access requests) through that same relay on
+  // upgrade, with no new setting. Cloud sets no SMTP_*, so nothing changes
+  // there.
+  EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap,smtp'),
+  // Discrete SMTP settings, as GoTrue consumes them. Shared with the API so a
+  // self-host that configures a relay for auth email also sends product email
+  // through it with no second setting.
+  SMTP_HOST: optStr,
+  SMTP_PORT: optStr,
+  SMTP_USER: optStr,
+  SMTP_PASS: optStr,
   // AWS SES (SigV4-signed SESv2 HTTP API). ECS uses its task role. Static
   // credentials remain optional for local and self-hosted deployments.
   AWS_SES_REGION: optStrDefault('us-east-2'),
@@ -1177,7 +1205,14 @@ export const config = {
   GITHUB_TOKEN: env.GITHUB_TOKEN,
 
   // ─── Transactional email (provider chain) ──────────────────────────────────
+  EMAIL_URL: env.EMAIL_URL,
+  EMAIL_FROM: env.EMAIL_FROM,
+  AUTH_EMAIL_HOOK_SECRET: env.AUTH_EMAIL_HOOK_SECRET,
   EMAIL_PROVIDER_ORDER: env.EMAIL_PROVIDER_ORDER,
+  SMTP_HOST: env.SMTP_HOST,
+  SMTP_PORT: env.SMTP_PORT,
+  SMTP_USER: env.SMTP_USER,
+  SMTP_PASS: env.SMTP_PASS,
   AWS_SES_REGION: env.AWS_SES_REGION,
   AWS_SES_ACCESS_KEY_ID: env.AWS_SES_ACCESS_KEY_ID,
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,

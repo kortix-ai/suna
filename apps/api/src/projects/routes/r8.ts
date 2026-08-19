@@ -61,6 +61,7 @@ import {
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -91,12 +92,18 @@ projectsApp.openapi(
     // Floor 'session' (= project.session.start) so the human gate matches
     // restart/stop and a custom role that withholds session.start is denied here
     // (was 'read', which let any project-reader start sessions).
+    // Every millisecond here is in front of the provider call, so a resume can
+    // never be faster than this prologue. Instrumented for the same reason
+    // provisioning is: without per-step marks, "start is slow" is unactionable.
+    const stl = new ProvisionTimeline(sessionId, 'session-start');
     const loaded = await loadProjectForUser(c, projectId, 'session');
+    stl.mark('project-loaded');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    stl.mark('session-loaded');
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
@@ -104,6 +111,7 @@ projectsApp.openapi(
     // may also be the `default` sentinel, which resolves here to the manifest
     // default rather than being waved through unchecked.
     await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    stl.mark('agent-authorized');
 
     // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
     // stops being speculative the instant a user's tab calls /start on it —
@@ -113,10 +121,12 @@ projectsApp.openapi(
     // resume that follows.
     if (isWarmProjectSession(visible.row.metadata)) {
       await dropWarmSessionMarkerOnAdopt(sessionId);
+      stl.mark('warm-adopted');
     }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
+    stl.mark('billing-checked');
     if (!billing.ok) {
       return c.json(
         {
@@ -148,6 +158,8 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
+    stl.mark(`open-session:${result.start.stage}`);
+    stl.log({ waitMs });
     return c.json(
       {
         ...result.start,
@@ -193,7 +205,7 @@ projectsApp.openapi(
     // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
+    if (!visible.canManageLifecycle) {
       return c.json(
         {
           error: 'Only the session owner or an account owner/admin can restart this session',
@@ -255,7 +267,7 @@ projectsApp.openapi(
     // as restart.
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
+    if (!visible.canManageLifecycle) {
       return c.json(
         { error: 'Only the session owner or an account owner/admin can stop this session' },
         403,
@@ -343,7 +355,7 @@ projectsApp.openapi(
 
     // A read, not a mutation: the 'read' tier plus the session-content leaf,
     // exactly like GET /sessions/:sessionId. No agent-scope assert and no
-    // canManageSharing check — an agent may ask whether its own turn is live,
+    // canManageLifecycle check — an agent may ask whether its own turn is live,
     // and a shared viewer may see that the session is busy.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -1098,8 +1110,12 @@ projectsApp.openapi(
     );
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
-    // Default-deny — a scoped agent must be granted project.cr.open.
-    assertAgentScope(c, 'project.cr.open');
+    // Default-deny — a scoped agent must be granted the leaf this route already
+    // gates the underlying commit on. `project.cr.open` was the SAME capability
+    // under a second name and is gone from the catalog (spec §2.4); a manifest
+    // still spelling it that way is rewritten on input by
+    // `canonicalizeGrantActions`, so the grant reaching here is always the leaf.
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const title = normalizeString(body.title);
     if (!title) return c.json({ error: 'title is required' }, 400);
@@ -1405,8 +1421,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Per-agent gate: editing a CR is part of the change-request capability.
-    assertAgentScope(c, 'project.cr.open');
+    // Per-agent gate: editing a CR is part of the change-request capability,
+    // which is `project.gitops.push` (see the create route above).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);

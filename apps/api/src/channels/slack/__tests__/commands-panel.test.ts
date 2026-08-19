@@ -65,6 +65,7 @@ mock.module('../participants', () => ({
 }));
 mock.module('../identity', () => ({
   lookupSlackIdentity: async () => null,
+  linkSlackIdentity: async () => {},
   revokeSlackIdentity: async () => true,
 }));
 mock.module('../../../accounts/core/app', () => ({ lookupEmailsByUserIds: async () => new Map() }));

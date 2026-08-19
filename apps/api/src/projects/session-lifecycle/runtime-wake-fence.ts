@@ -12,7 +12,18 @@ export const RUNTIME_WAKE_LEASE_MS = 240_000;
 export const RUNTIME_WAKE_CLEANUP_LEASE_MS = 180_000;
 export const RUNTIME_WAKE_RETRY_COOLDOWN_MS = 120_000;
 export const RUNTIME_WAKE_LATE_START_GUARD_MS = 15 * 60_000;
+// Wake-poll cadence. A Platinum CoW resume reaches `running` in ~1.9s
+// (measured 3/3: 1918/1906/2391ms), so a flat 1000ms poll spent up to a full
+// second sitting on an already-running VM. The ramp checks early where the
+// answer actually changes, then decays to the old flat second so a slow or
+// stuck wake costs no more provider calls than before across the 90s grace.
+const RUNTIME_WAKE_POLL_RAMP_MS = [150, 250, 400, 600] as const;
 const RUNTIME_WAKE_POLL_MS = 1_000;
+
+/** Delay before the (attempt+1)-th status re-check. */
+export function runtimeWakePollDelayMs(attempt: number, steadyMs: number = RUNTIME_WAKE_POLL_MS): number {
+  return RUNTIME_WAKE_POLL_RAMP_MS[attempt] ?? steadyMs;
+}
 
 export async function waitForRuntimeWakeRunning(
   getStatus: () => Promise<string>,
@@ -23,17 +34,28 @@ export async function waitForRuntimeWakeRunning(
   } = {},
 ): Promise<boolean> {
   const graceMs = Math.max(0, opts.graceMs ?? RUNTIME_WAKE_GRACE_MS);
-  const pollMs = Math.max(1, opts.pollMs ?? RUNTIME_WAKE_POLL_MS);
-  const attempts = Math.max(1, Math.ceil(graceMs / pollMs));
+  // An explicit pollMs pins the cadence flat (tests, and any caller that wants
+  // the old behaviour); otherwise the ramp above runs.
+  const steadyMs = Math.max(1, opts.pollMs ?? RUNTIME_WAKE_POLL_MS);
+  const ramped = opts.pollMs === undefined;
   const sleep = opts.sleep ?? Bun.sleep;
 
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+  // The budget counts the delays this loop ITSELF schedules, not wall-clock.
+  // With a variable delay an attempt count is no longer a stand-in for the
+  // grace, but reading a clock instead would make the loop spin under an
+  // injected no-op sleep. Accumulating the scheduled delay is deterministic
+  // under a fake sleep and reduces to the old `ceil(grace / poll)` attempt
+  // count exactly when the cadence is flat.
+  let scheduledMs = 0;
+  for (let attempt = 0; ; attempt += 1) {
     const status = await getStatus().catch(() => 'unknown');
     if (status === 'running') return true;
     if (status === 'removed') return false;
-    if (attempt + 1 < attempts) await sleep(pollMs);
+    const delay = ramped ? runtimeWakePollDelayMs(attempt, steadyMs) : steadyMs;
+    if (scheduledMs + delay >= graceMs) return false;
+    scheduledMs += delay;
+    await sleep(delay);
   }
-  return false;
 }
 
 export function runtimeWakeInProgress(
@@ -92,8 +114,23 @@ export async function executeClaimedRuntimeWake(input: {
   claimState: () => Promise<'owned' | 'delegated' | 'cancelled'>;
   isMissingError?: (error: unknown) => boolean;
   waitOptions?: Parameters<typeof waitForRuntimeWakeRunning>[1];
+  /**
+   * A provider status the caller ALREADY paid a round trip for, reused here
+   * instead of asking again.
+   *
+   * `openSession` reads `provider.getStatus()` immediately before claiming the
+   * wake (it has to: a `removed` box needs backup restoration, not a start).
+   * Re-reading it here cost a second full provider round trip on the critical
+   * path of every resume — measured ~0.5s against Platinum from the dev API,
+   * for an answer taken microseconds earlier. The status can only have gone
+   * stale in the caller's favour: a box that became `running` in that window is
+   * started again (idempotent, and the adapter already handles the 409), and a
+   * box that stopped harder is still started. Omit it and the pre-check runs as
+   * before.
+   */
+  knownStatus?: string | null;
 }): Promise<RuntimeWakeExecutionResult> {
-  let status = await input.getStatus().catch(() => 'unknown');
+  let status = input.knownStatus ?? (await input.getStatus().catch(() => 'unknown'));
   let startError: unknown = null;
 
   if (status !== 'running' && status !== 'removed') {

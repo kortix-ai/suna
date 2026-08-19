@@ -74,6 +74,7 @@ let recordedEvents: Array<{ outcome: string; marks?: Array<{ label: string }> }>
 let identityConflict = false;
 let recoveryPlaceholder = false;
 let providerCreateCalls = 0;
+let providerCreateOpts: Array<Record<string, unknown>> = [];
 let providerFallbackEnabled = false;
 let providerNamesRequested: string[] = [];
 let providerCreateErrors: Record<string, string | undefined> = {};
@@ -194,9 +195,11 @@ mock.module('../providers', () => ({
     providerNamesRequested.push(name);
     return {
       name,
+      networkBoundaryAtCreate: name === 'platinum',
       provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
-      create: async (_opts: unknown) => {
+      create: async (opts: Record<string, unknown>) => {
         providerCreateCalls += 1;
+        providerCreateOpts.push(opts);
         if (providerCreateErrors[name]) throw new Error(providerCreateErrors[name]);
         return {
           externalId: name === 'daytona' ? EXTERNAL_ID : `ext-${name}-1`,
@@ -364,6 +367,7 @@ beforeEach(() => {
   identityConflict = false;
   recoveryPlaceholder = false;
   providerCreateCalls = 0;
+  providerCreateOpts = [];
   providerFallbackEnabled = false;
   providerNamesRequested = [];
   providerCreateErrors = {};
@@ -453,7 +457,26 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(labels.indexOf('provider-create:1x')).toBeLessThan(labels.indexOf('network-secrets:1'));
   });
 
-  test('the fast flag selects the shared fast image without changing the project template', async () => {
+  test('the fast Platinum path attaches network-boundary secrets during create', async () => {
+    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
+    networkBoundaryBindings = [{ identifier: 'github', host: 'api.github.com' }];
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    expect(providerCreateOpts[0]?.networkBoundary).toEqual(networkBoundaryBindings);
+    expect(providerSyncCalls).toEqual([]);
+    const labels =
+      recordedEvents.find((event) => event.outcome === 'ok')?.marks?.map((mark) => mark.label) ??
+      [];
+    expect(labels).toContain('network-secrets:create:1');
+  });
+
+  test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
     process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -462,16 +485,15 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(fastImageRequests).toEqual([{ source: 'session-start', provider: 'daytona' }]);
-    expect(imageRequests).toEqual([]);
+    expect(fastImageRequests).toEqual([]);
+    expect(imageRequests).toHaveLength(1);
     const finishCall = updateCalls.find(
       (call) =>
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect(finishCall?.updates.metadata).toMatchObject({
       runtimeArtifact: {
-        providerArtifactRef: 'kortix-fast-dev-test',
-        runtimeProfile: 'fast',
+        providerArtifactRef: 'snap-test-1',
       },
     });
   });

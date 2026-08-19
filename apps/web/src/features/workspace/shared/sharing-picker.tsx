@@ -38,10 +38,12 @@ export function ShareOption({
   value,
   label,
   desc,
+  disabled = false,
 }: {
   value: string;
   label: string;
   desc: string;
+  disabled?: boolean;
   /** @deprecated Selection state comes from the parent `RadioGroup`. */
   current?: string;
 }) {
@@ -51,6 +53,7 @@ export function ShareOption({
       id={`share-option-${value}`}
       label={label}
       description={desc}
+      disabled={disabled}
       size="lg"
       variant="outline"
     />
@@ -64,12 +67,19 @@ export function SharingPicker({
   copy,
   showHeading = true,
   hideMembers = false,
+  disabledModes,
 }: {
   projectId: string;
   value: SharingSelection;
   onChange: (next: SharingSelection) => void;
   copy?: Partial<SharingCopy>;
   showHeading?: boolean;
+  /**
+   * Modes shown but not selectable. Used where one option would revoke the
+   * editor's own access — "Only you" on a session somebody else owns, where
+   * "you" names the owner and not the person editing.
+   */
+  disabledModes?: SharingMode[];
   /**
    * Pure-pyramid mode (secrets + connectors): drop the direct "specific
    * members/groups" option — targeted access comes ONLY through agent
@@ -88,6 +98,7 @@ export function SharingPicker({
   // (read-only-ish) so it isn't silently broken; the user migrates it to
   // Project-wide/Private or moves the people onto an agent.
   const legacyMembers = hideMembers && value.mode === 'members';
+  const isDisabled = (mode: SharingMode) => Boolean(disabledModes?.includes(mode));
 
   return (
     <div className="space-y-3">
@@ -97,10 +108,25 @@ export function SharingPicker({
         onValueChange={(v) => onChange({ ...value, mode: v as SharingMode })}
         className="space-y-2"
       >
-        <ShareOption value="project" label={c.project.label} desc={c.project.desc} />
-        <ShareOption value="private" label={c.private.label} desc={c.private.desc} />
+        <ShareOption
+          value="project"
+          label={c.project.label}
+          desc={c.project.desc}
+          disabled={isDisabled('project')}
+        />
+        <ShareOption
+          value="private"
+          label={c.private.label}
+          desc={c.private.desc}
+          disabled={isDisabled('private')}
+        />
         {!hideMembers && (
-          <ShareOption value="members" label={c.members.label} desc={c.members.desc} />
+          <ShareOption
+            value="members"
+            label={c.members.label}
+            desc={c.members.desc}
+            disabled={isDisabled('members')}
+          />
         )}
       </RadioGroup>
       {!hideMembers && value.mode === 'members' && (

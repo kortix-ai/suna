@@ -6,7 +6,7 @@ import { ACCOUNT_ACTIONS } from '../iam/actions';
 /**
  * Resolve the account a billing *write* targets AND assert the caller is
  * allowed to change billing for it (`billing.write` — owners only by default,
- * see iam/role-perms.ts).
+ * see the `owner` role in kortix.role_permissions).
  *
  * Every endpoint that creates or changes a subscription, initiates a charge,
  * or opens the Stripe customer portal MUST go through here instead of bare

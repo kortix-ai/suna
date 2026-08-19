@@ -1,52 +1,160 @@
-// Shared transactional-email transport with a provider fallback chain.
+// One transactional-email transport for the whole platform.
 //
-// Born out of the 2026-08-05 Mailtrap suspension: a single email vendor is a
-// single point of failure for invites, access requests, and lead
-// notifications, so every send now walks EMAIL_PROVIDER_ORDER (default
-// "ses,resend,mailtrap") and falls through to the next configured provider on
-// any failure. A provider is "configured" iff its credentials are present, so
-// each environment enables only what it has keys for.
+// Every email Kortix sends — account invites, project invites, access
+// requests, demo leads, and (via the Supabase send-email hook) magic links,
+// signup confirmations and password recovery — goes through sendEmail() here.
+// One sender identity, one provider chain, one place to add a provider.
 //
-// All three providers speak plain `fetch` — SES via a SigV4-signed SESv2
-// SendEmail call (node:crypto, no AWS SDK dependency) — which keeps this
-// module mockable with the same global-fetch pattern the existing email tests
-// use.
-import { createHash, createHmac } from 'node:crypto';
-import { defaultProvider } from '@aws-sdk/credential-provider-node';
-
+// Configuration is a single connection string, EMAIL_URL (see dsn.ts), plus
+// EMAIL_FROM for the sender identity. The per-provider env vars that predate
+// it (RESEND_API_KEY, AWS_SES_*, MAILTRAP_API_TOKEN, MAILPIT_API_URL,
+// EMAIL_PROVIDER_ORDER) still work unchanged and are used whenever EMAIL_URL
+// is unset, so deployed environments keep sending with no env change.
+//
+// The chain exists because a single vendor is a single point of failure: the
+// 2026-08-05 Mailtrap suspension took invites down. Any failure falls through
+// to the next configured provider.
 import { config } from '../../config';
+import { formatEmailAddress, parseEmailAddress } from './address';
+import { parseEmailTargets, type EmailTarget } from '@kortix/shared/email-url';
+import { sendViaMailpit, sendViaMailtrap, sendViaResend } from './providers/http';
+import { sendViaSes } from './providers/ses';
+import { sendViaSmtp } from './providers/smtp';
+import type {
+  EmailAddress,
+  EmailMessage,
+  EmailProvider,
+  EmailSendResult,
+  ResolvedEmailMessage,
+} from './types';
 
-export type EmailProvider = 'ses' | 'resend' | 'mailtrap' | 'mailpit';
+export type { EmailAddress, EmailMessage, EmailProvider, EmailSendResult } from './types';
+export { closeSmtpTransports } from './providers/smtp';
 
-export interface EmailMessage {
-  to: string[];
-  subject: string;
-  html: string;
-  // Provider-side label for the send (SES tag / Resend tag / Mailtrap
-  // category). Letters, numbers, dashes, underscores only.
-  category: string;
-  // Defaults to MAILTRAP_FROM_EMAIL / MAILTRAP_FROM_NAME.
-  from?: { email: string; name: string };
+const FALLBACK_FROM: EmailAddress = { email: 'noreply@kortix.com', name: 'Kortix' };
+
+let loggedUrlErrors = '';
+
+/**
+ * The ordered provider chain plus the sender identity, resolved fresh on every
+ * call: config is read lazily so tests (and a future hot-reload) see current
+ * values rather than a snapshot taken at import time.
+ */
+export function resolveEmailChain(): { targets: EmailTarget[]; from: EmailAddress } {
+  const from = resolveSender();
+
+  const raw = (config.EMAIL_URL || '').trim();
+  if (raw) {
+    const { targets, errors } = parseEmailTargets(raw);
+    if (errors.length) {
+      // Log each distinct fault once — a bad EMAIL_URL is a startup-class
+      // mistake and must not spam a line per send.
+      const fingerprint = errors.join('|');
+      if (fingerprint !== loggedUrlErrors) {
+        loggedUrlErrors = fingerprint;
+        for (const error of errors) console.error(`[email] ignoring EMAIL_URL entry: ${error}`);
+      }
+    }
+    return { targets, from };
+  }
+
+  return { targets: legacyTargets(), from };
 }
 
-export type EmailSendResult =
-  | { ok: true; provider: EmailProvider; status: number }
-  | { ok: false; skipped: true; reason: 'email_not_configured' }
-  | { ok: false; skipped?: false; provider: EmailProvider; status?: number; error: string };
+/**
+ * EMAIL_FROM wins. Without it the pre-EMAIL_FROM pair is used: the MAILTRAP_
+ * prefix is historical — those two have always set the global sender identity,
+ * whichever provider actually did the sending.
+ */
+function resolveSender(): EmailAddress {
+  const explicit = parseEmailAddress(config.EMAIL_FROM);
+  if (explicit) return explicit;
+  const legacy = (config.MAILTRAP_FROM_EMAIL || '').trim();
+  if (legacy) return { email: legacy, name: config.MAILTRAP_FROM_NAME || '' };
+  return FALLBACK_FROM;
+}
 
-const SEND_TIMEOUT_MS = 10_000;
+/**
+ * Build the chain from the pre-EMAIL_URL environment variables. Deployed Kortix
+ * (dev/staging/prod) still runs on these, so this path is load-bearing, not a
+ * deprecation shim.
+ */
+function legacyTargets(): EmailTarget[] {
+  const order = (config.EMAIL_PROVIDER_ORDER || 'ses,resend,mailtrap,smtp')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
 
-function isConfigured(provider: EmailProvider): boolean {
-  switch (provider) {
-    case 'ses':
-      return !!(config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY) || hasAwsWorkloadIdentity();
-    case 'resend':
-      return !!config.RESEND_API_KEY;
-    case 'mailtrap':
-      return !!config.MAILTRAP_API_TOKEN;
-    case 'mailpit':
-      return !!config.MAILPIT_API_URL;
+  const targets: EmailTarget[] = [];
+  for (const provider of order) {
+    switch (provider) {
+      case 'ses': {
+        const hasStatic = !!(config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY);
+        if (!hasStatic && !hasAwsWorkloadIdentity()) break;
+        targets.push({
+          kind: 'ses',
+          region: config.AWS_SES_REGION || 'us-east-2',
+          ...(hasStatic
+            ? {
+                accessKeyId: config.AWS_SES_ACCESS_KEY_ID,
+                secretAccessKey: config.AWS_SES_SECRET_ACCESS_KEY,
+              }
+            : {}),
+        });
+        break;
+      }
+      case 'resend':
+        if (config.RESEND_API_KEY) targets.push({ kind: 'resend', apiKey: config.RESEND_API_KEY });
+        break;
+      case 'mailtrap':
+        if (config.MAILTRAP_API_TOKEN) {
+          targets.push({ kind: 'mailtrap', token: config.MAILTRAP_API_TOKEN });
+        }
+        break;
+      case 'mailpit':
+        if (config.MAILPIT_API_URL) {
+          targets.push({ kind: 'mailpit', baseUrl: config.MAILPIT_API_URL });
+        }
+        break;
+      case 'smtp': {
+        const target = legacySmtpTarget();
+        if (target) targets.push(target);
+        break;
+      }
+      default:
+        break;
+    }
   }
+  return targets;
+}
+
+/**
+ * Discrete SMTP_* variables, as GoTrue consumes them. Self-host installs
+ * created before EMAIL_URL shipped carry a PLACEHOLDER quartet
+ * (`localhost` / `unused` / `unused`) written by `kortix self-host init` so
+ * GoTrue would boot with no relay. Treating that as a configured provider
+ * would turn a clean `email_not_configured` skip into a connection-refused
+ * failure on every invite, so it is explicitly not configured.
+ */
+function legacySmtpTarget(): EmailTarget | null {
+  const host = (config.SMTP_HOST || '').trim();
+  if (!host) return null;
+  const user = (config.SMTP_USER || '').trim();
+  const pass = (config.SMTP_PASS || '').trim();
+  if (host === 'localhost' && user === 'unused' && pass === 'unused') return null;
+
+  const port = Number(config.SMTP_PORT) || 587;
+  const secure = port === 465;
+  return {
+    kind: 'smtp',
+    host,
+    port,
+    secure,
+    requireTls: !secure && Boolean(user || pass),
+    rejectUnauthorized: true,
+    ...(user ? { user } : {}),
+    ...(pass ? { pass } : {}),
+  };
 }
 
 function hasAwsWorkloadIdentity(): boolean {
@@ -59,185 +167,50 @@ function hasAwsWorkloadIdentity(): boolean {
 
 /** Providers that will be attempted, in order. Empty = no email delivery. */
 export function configuredEmailProviders(): EmailProvider[] {
-  return (config.EMAIL_PROVIDER_ORDER || 'ses,resend,mailtrap')
-    .split(',')
-    .map((p) => p.trim().toLowerCase())
-    .filter(
-      (p): p is EmailProvider =>
-        p === 'ses' || p === 'resend' || p === 'mailtrap' || p === 'mailpit',
-    )
-    .filter(isConfigured);
+  return resolveEmailChain().targets.map((target) => target.kind);
 }
 
 export function isEmailConfigured(): boolean {
-  return configuredEmailProviders().length > 0;
+  return resolveEmailChain().targets.length > 0;
 }
 
-function resolveFrom(msg: EmailMessage): { email: string; name: string } {
-  return msg.from ?? { email: config.MAILTRAP_FROM_EMAIL, name: config.MAILTRAP_FROM_NAME };
+/** The address every email is sent from, after EMAIL_FROM / legacy fallback. */
+export function emailSender(): EmailAddress {
+  return resolveEmailChain().from;
 }
 
-// ── AWS SES (SESv2 SendEmail, SigV4) ─────────────────────────────────────────
-
-function hmac(key: Buffer | string, data: string): Buffer {
-  return createHmac('sha256', key).update(data, 'utf8').digest();
+/** Operator-facing description of the chain, safe to log (no credentials). */
+export function describeEmailChain(): string {
+  const { targets, from } = resolveEmailChain();
+  if (!targets.length) return 'email: not configured';
+  return `email: ${targets.map((t) => t.kind).join(' → ')} as ${formatEmailAddress(from)}`;
 }
 
-function sha256Hex(data: string): string {
-  return createHash('sha256').update(data, 'utf8').digest('hex');
+function resolve(msg: EmailMessage, from: EmailAddress): ResolvedEmailMessage {
+  return {
+    ...msg,
+    from: msg.from ?? from,
+    // Every Kortix template supplies its own plain-text alternative, rendered
+    // from the same structured content as the HTML (see template.ts). There is
+    // deliberately no HTML-to-text fallback.
+    text: msg.text ?? '',
+  };
 }
 
-async function sendViaSes(msg: EmailMessage): Promise<EmailSendResult> {
-  const region = config.AWS_SES_REGION || 'us-east-2';
-  const host = `email.${region}.amazonaws.com`;
-  const path = '/v2/email/outbound-emails';
-  const from = resolveFrom(msg);
-  const credentials =
-    config.AWS_SES_ACCESS_KEY_ID && config.AWS_SES_SECRET_ACCESS_KEY
-      ? {
-          accessKeyId: config.AWS_SES_ACCESS_KEY_ID,
-          secretAccessKey: config.AWS_SES_SECRET_ACCESS_KEY,
-        }
-      : await defaultProvider()();
-
-  const body = JSON.stringify({
-    FromEmailAddress: `${from.name} <${from.email}>`,
-    Destination: { ToAddresses: msg.to },
-    Content: {
-      Simple: {
-        Subject: { Data: msg.subject, Charset: 'UTF-8' },
-        Body: { Html: { Data: msg.html, Charset: 'UTF-8' } },
-      },
-    },
-    EmailTags: [{ Name: 'category', Value: msg.category }],
-  });
-
-  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, ''); // YYYYMMDDTHHMMSSZ
-  const dateStamp = amzDate.slice(0, 8);
-  const payloadHash = sha256Hex(body);
-  const securityTokenHeader = credentials.sessionToken
-    ? `x-amz-security-token:${credentials.sessionToken}\n`
-    : '';
-  const canonicalHeaders = `content-type:application/json\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n${securityTokenHeader}`;
-  const signedHeaders = credentials.sessionToken
-    ? 'content-type;host;x-amz-content-sha256;x-amz-date;x-amz-security-token'
-    : 'content-type;host;x-amz-content-sha256;x-amz-date';
-  const canonicalRequest = `POST\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-  const scope = `${dateStamp}/${region}/ses/aws4_request`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${sha256Hex(canonicalRequest)}`;
-  const signingKey = hmac(
-    hmac(hmac(hmac(`AWS4${credentials.secretAccessKey}`, dateStamp), region), 'ses'),
-    'aws4_request',
-  );
-  const signature = createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
-
-  const res = await fetch(`https://${host}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Amz-Content-Sha256': payloadHash,
-      'X-Amz-Date': amzDate,
-      ...(credentials.sessionToken ? { 'X-Amz-Security-Token': credentials.sessionToken } : {}),
-      Authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-    },
-    body,
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return { ok: false, provider: 'ses', status: res.status, error: text || res.statusText };
+function dispatch(msg: ResolvedEmailMessage, target: EmailTarget): Promise<EmailSendResult> {
+  switch (target.kind) {
+    case 'smtp':
+      return sendViaSmtp(msg, target);
+    case 'resend':
+      return sendViaResend(msg, target);
+    case 'ses':
+      return sendViaSes(msg, target);
+    case 'mailtrap':
+      return sendViaMailtrap(msg, target);
+    case 'mailpit':
+      return sendViaMailpit(msg, target);
   }
-  return { ok: true, provider: 'ses', status: res.status };
 }
-
-// ── Resend ───────────────────────────────────────────────────────────────────
-
-async function sendViaResend(msg: EmailMessage): Promise<EmailSendResult> {
-  const from = resolveFrom(msg);
-  // While the primary from-domain is not verified in the Resend team,
-  // RESEND_FROM_EMAIL substitutes a verified sender and keeps the intended
-  // address as Reply-To.
-  const fromEmail = config.RESEND_FROM_EMAIL || from.email;
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: `${from.name} <${fromEmail}>`,
-      to: msg.to,
-      subject: msg.subject,
-      html: msg.html,
-      ...(fromEmail !== from.email ? { reply_to: from.email } : {}),
-      tags: [{ name: 'category', value: msg.category }],
-    }),
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return { ok: false, provider: 'resend', status: res.status, error: text || res.statusText };
-  }
-  return { ok: true, provider: 'resend', status: res.status };
-}
-
-// ── Mailtrap ─────────────────────────────────────────────────────────────────
-
-async function sendViaMailtrap(msg: EmailMessage): Promise<EmailSendResult> {
-  const from = resolveFrom(msg);
-  const res = await fetch('https://send.api.mailtrap.io/api/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.MAILTRAP_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: { email: from.email, name: from.name },
-      to: msg.to.map((email) => ({ email })),
-      subject: msg.subject,
-      html: msg.html,
-      category: msg.category,
-    }),
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return { ok: false, provider: 'mailtrap', status: res.status, error: text || res.statusText };
-  }
-  return { ok: true, provider: 'mailtrap', status: res.status };
-}
-
-// ── Mailpit local capture ────────────────────────────────────────────────────
-
-async function sendViaMailpit(msg: EmailMessage): Promise<EmailSendResult> {
-  const from = resolveFrom(msg);
-  const baseUrl = config.MAILPIT_API_URL.replace(/\/+$/, '');
-  const res = await fetch(`${baseUrl}/api/v1/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      From: { Email: from.email, Name: from.name },
-      To: msg.to.map((email) => ({ Email: email })),
-      Subject: msg.subject,
-      HTML: msg.html,
-      Text: '',
-      Tags: [msg.category],
-    }),
-    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    return { ok: false, provider: 'mailpit', status: res.status, error: text || res.statusText };
-  }
-  return { ok: true, provider: 'mailpit', status: res.status };
-}
-
-const SENDERS: Record<EmailProvider, (msg: EmailMessage) => Promise<EmailSendResult>> = {
-  ses: sendViaSes,
-  resend: sendViaResend,
-  mailtrap: sendViaMailtrap,
-  mailpit: sendViaMailpit,
-};
 
 /**
  * Send one transactional email through the first provider in the configured
@@ -246,24 +219,52 @@ const SENDERS: Record<EmailProvider, (msg: EmailMessage) => Promise<EmailSendRes
  * whole chain is exhausted.
  */
 export async function sendEmail(msg: EmailMessage): Promise<EmailSendResult> {
-  const providers = configuredEmailProviders();
-  if (providers.length === 0) {
+  const { targets, from } = resolveEmailChain();
+  if (targets.length === 0) {
     return { ok: false, skipped: true, reason: 'email_not_configured' };
   }
 
+  const variants = applyLegacyResendSenderOverride(resolve(msg, from), targets);
+
   let lastFailure: EmailSendResult | null = null;
-  for (const provider of providers) {
+  for (const target of targets) {
+    const resolved = target.kind === 'resend' ? variants.resend : variants.default;
     let result: EmailSendResult;
     try {
-      result = await SENDERS[provider](msg);
+      result = await dispatch(resolved, target);
     } catch (err) {
-      result = { ok: false, provider, error: (err as Error).message };
+      result = { ok: false, provider: target.kind, error: (err as Error).message };
     }
     if (result.ok) return result;
     console.warn(
-      `[email] ${provider} send failed (${'status' in result && result.status ? result.status : 'network'}): ${'error' in result ? result.error : 'unknown'}`,
+      `[email] ${target.kind} send failed (${'status' in result && result.status ? result.status : 'network'}): ${'error' in result ? result.error : 'unknown'}`,
     );
     lastFailure = result;
   }
   return lastFailure as EmailSendResult;
+}
+
+/**
+ * RESEND_FROM_EMAIL substitutes a verified sender on the Resend leg only, while
+ * the intended address is preserved as Reply-To. It exists because the primary
+ * from-domain is not verified in the Resend team; it applies to no other
+ * provider, so the Resend variant of the message is built separately.
+ */
+function applyLegacyResendSenderOverride(
+  msg: ResolvedEmailMessage,
+  targets: EmailTarget[],
+): { default: ResolvedEmailMessage; resend: ResolvedEmailMessage } {
+  const override = (config.RESEND_FROM_EMAIL || '').trim();
+  const usesResend = targets.some((target) => target.kind === 'resend');
+  if (!override || !usesResend || override === msg.from.email) {
+    return { default: msg, resend: msg };
+  }
+  return {
+    default: msg,
+    resend: {
+      ...msg,
+      from: { email: override, name: msg.from.name },
+      replyTo: msg.replyTo ?? msg.from.email,
+    },
+  };
 }

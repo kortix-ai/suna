@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { createHmac, randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -113,7 +113,6 @@ mockIamEngineAllowAll();
 // The hermetic db shim models the legacy tables; the read models project from
 // those rows rather than from `role_assignments`. See mockIamReadModels.
 mockIamReadModels();
-mockIamMembershipSyncNoop();
 
 mock.module('../projects/session-lifecycle/actor', () => ({
   resolveProjectAutomationActor: async () => USER_ID,

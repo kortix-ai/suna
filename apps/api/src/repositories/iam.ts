@@ -3,7 +3,7 @@
 // in PR5d together with the V1 engine.
 // Pure CRUD; route handlers do their own assertAuthorized() calls.
 
-import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountMembers, roleAssignments } from '@kortix/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { invalidateIamCacheForUser, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { db } from '../shared/db';
@@ -111,12 +111,36 @@ export async function updateGroup(
   return { ...row, source: row.source as 'manual' | 'scim' };
 }
 
+/**
+ * Delete a group AND every grant it conferred, in one transaction.
+ *
+ * `role_assignments.principal_id` is polymorphic across
+ * user / group / service_account / pending, so it carries no FK to
+ * `account_groups` and Postgres cannot cascade for us. Before the cutover the
+ * cascade came for free from `project_group_grants.group_id -> account_groups
+ * ON DELETE CASCADE`; that table is a VIEW now, so deleting the group alone
+ * would strand every project role the group held — invisible in the UI (every
+ * read model joins the group) and live for the engine, which reads assignments
+ * by principal id.
+ */
 export async function deleteGroup(accountId: string, groupId: string): Promise<boolean> {
-  const rows = await db
-    .delete(accountGroups)
-    .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-    .returning({ groupId: accountGroups.groupId });
-  return rows.length > 0;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(accountGroups)
+      .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
+      .returning({ groupId: accountGroups.groupId });
+    if (rows.length === 0) return false;
+    await tx
+      .delete(roleAssignments)
+      .where(
+        and(
+          eq(roleAssignments.accountId, accountId),
+          eq(roleAssignments.principalType, 'group'),
+          eq(roleAssignments.principalId, groupId),
+        ),
+      );
+    return true;
+  });
 }
 
 // ─── Group members ─────────────────────────────────────────────────────────

@@ -218,6 +218,9 @@ importers:
       livekit-server-sdk:
         specifier: ^2.17.0
         version: 2.17.0
+      nodemailer:
+        specifier: ^9.0.5
+        version: 9.0.5
       oauth4webapi:
         specifier: ^3.8.7
         version: 3.8.7
@@ -255,6 +258,9 @@ importers:
       '@types/bun':
         specifier: ^1.3.12
         version: 1.3.14
+      '@types/nodemailer':
+        specifier: ^8.0.1
+        version: 8.0.1
       bun-types:
         specifier: ^1.3.12
         version: 1.3.14
@@ -13914,6 +13920,12 @@ packages:
       undici-types: 6.21.0
     dev: true
 
+  /@types/nodemailer@8.0.1:
+    resolution: {integrity: sha512-PxpaInm8V1JQDd4j0ds5HfvWQk8JupS1C0Picb96QJsrrRDjBH+DlK7L4ZdNSqNULhiZRQHc40nLVShaGxXAMw==}
+    dependencies:
+      '@types/node': 20.19.43
+    dev: true
+
   /@types/pako@2.0.4:
     resolution: {integrity: sha512-VWDCbrLeVXJM9fihYodcLiIv0ku+AlOa/TQ1SvYOaBuyrSKgEcro95LJyIsJ4vSo6BXIxOKxiJAat04CmST9Fw==}
     dev: false
@@ -23641,6 +23653,11 @@ packages:
   /node-releases@2.0.50:
     resolution: {integrity: sha512-J6l92tKHX6w8Jy5nO1Vuc01NoIiRGi/d6qBKVxh+IQ8Cr3b6HbVNfKiF8ZpFKufTwpwxMmce2W3iQZ861ZRyTg==}
     engines: {node: '>=18'}
+
+  /nodemailer@9.0.5:
+    resolution: {integrity: sha512-wvjiKvjczmsN7U/8006JOdXubgBk2XFAbioDMbT+sM7cPs0QrhJTa6KBRX7P5REGGkDcLUz/EarWidb8G8C1jQ==}
+    engines: {node: '>=6.0.0'}
+    dev: false
 
   /nopt@6.0.0:
     resolution: {integrity: sha512-ZwLpbTgdhuZUnZzjd7nb1ZV+4DoiC6/sfiVKok72ym/4Tlf+DFdlHYmT2JPmcNNWV6Pi3SDf1kT+A4r9RTuT9g==}
