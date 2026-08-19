@@ -146,8 +146,8 @@ describe('Models tab — the gate', () => {
   });
 });
 
-describe('Models page — the eight tabs', () => {
-  test('the bar is Providers → Observability, in work order', () => {
+describe('Models page — the seven tabs', () => {
+  test('the bar is Providers → Logs, in work order', () => {
     // Pinned as id+label PAIRS, not bare labels — a bare-label check could
     // pass against a comment or against the wrong tab.
     for (const pair of [
@@ -158,8 +158,6 @@ describe('Models page — the eight tabs', () => {
       "{ id: 'routing', label: 'Routing' }",
       "{ id: 'overview', label: 'Costs' }",
       "{ id: 'logs', label: 'Logs' }",
-      // The one tab that writes OUT of Kortix — the project's own OTLP export.
-      "{ id: 'observability', label: 'Observability' }",
     ]) {
       expect(gatewaySource).toContain(pair);
     }
@@ -171,7 +169,6 @@ describe('Models page — the eight tabs', () => {
       'routing',
       'overview',
       'logs',
-      'observability',
     ]);
     // "API keys" named a tab that held keys pointing in both directions. Two
     // tabs name their direction now, and neither reuses the old label.

@@ -22,11 +22,10 @@
  * section is plain local state and renders as the shell's `children`, so the
  * shell's scroll container is the page's only one.
  *
- * ## Eight tabs
+ * ## Seven tabs
  *
  * Order follows the work: bring a key in, choose models, add your own provider,
- * hand a key out, shape the routing, watch what it costs and what it did, then
- * ship those same spans to whatever you already use.
+ * hand a key out, shape the routing, then watch what it costs and what it did.
  *
  *  - **Providers** (was "API keys") is now ONLY the provider list. The gateway
  *    key and its reference moved out — see `gateway-access-tab.tsx` for why the
@@ -40,11 +39,6 @@
  *    called (`POST /gateway/playground`) still exists and is untouched.
  *  - **Budgets folded into Costs.** The cap belongs under the number it caps —
  *    see `gateway-budgets.tsx`.
- *  - **Observability** is the only tab that writes OUT of Kortix: it points the
- *    per-call `gen_ai.*` OTel spans at the project's own OTLP backend
- *    (Langfuse / Datadog / Honeycomb / Braintrust / anything OTLP). Writing it
- *    is its own IAM leaf, `project.gateway.otel.manage` — see
- *    `gateway-observability.tsx`.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
  * Customize rail. Deep-links / `openCustomize('llm-providers')` set the hosting
@@ -67,7 +61,6 @@ import { GatewayAccessTab } from '@/features/workspace/customize/sections/gatewa
 import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
 import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
-import { GatewayObservability } from '@/features/workspace/customize/sections/view/gateway/gateway-observability';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
@@ -79,15 +72,7 @@ import { useIsMutating } from '@tanstack/react-query';
 export const MODELS_PAGE_TITLE = 'Models';
 export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project can use.';
 
-type LlmTab =
-  | 'providers'
-  | 'models'
-  | 'custom'
-  | 'gateway'
-  | 'routing'
-  | 'overview'
-  | 'logs'
-  | 'observability';
+type LlmTab = 'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
 
 export const LLM_TABS: { id: LlmTab; label: string }[] = [
   // The keys you bring IN. Only the provider list — it was called "API keys"
@@ -109,9 +94,6 @@ export const LLM_TABS: { id: LlmTab; label: string }[] = [
   // file's own render switch keep working unchanged.
   { id: 'overview', label: 'Costs' },
   { id: 'logs', label: 'Logs' },
-  // Where this project's gateway spans go. The last gateway tab, and the
-  // only one that writes OUT of Kortix (OTLP export to your own backend).
-  { id: 'observability', label: 'Observability' },
 ];
 
 /**
@@ -281,9 +263,6 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
           used to live one tab over. */}
       {tab === 'overview' && <GatewayOverview projectId={projectId} canWrite={canWrite} />}
       {tab === 'logs' && <GatewayLogs projectId={projectId} />}
-      {tab === 'observability' && (
-        <GatewayObservability projectId={projectId} canWrite={canWrite} />
-      )}
     </CapabilityPageShell>
   );
 }

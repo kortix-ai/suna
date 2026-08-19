@@ -283,8 +283,6 @@ export const qk = {
       [...qk.project.gateway(id), 'log', logId] as const,
     gatewayBudgets: (id: string) => [...qk.project.gateway(id), 'budgets'] as const,
     gatewayKeys: (id: string) => [...qk.project.gateway(id), 'keys'] as const,
-    /** The project's OTLP trace-export config (Observability tab). */
-    gatewayOtel: (id: string) => [...qk.project.gateway(id), 'otel'] as const,
   },
 } as const;
 

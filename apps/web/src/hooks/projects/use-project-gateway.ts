@@ -4,23 +4,19 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 
 import {
   type SetGatewayBudgetInput,
-  type SetGatewayOtelConfigInput,
   createGatewayKey,
   deleteGatewayBudget,
-  deleteGatewayOtelConfig,
   getGatewayBreakdown,
   getGatewayBudgets,
   getGatewayErrors,
   getGatewayKeys,
   getGatewayLog,
-  getGatewayOtelConfig,
   getGatewayOverview,
   getGatewaySeries,
   getGatewaySessions,
   listGatewayLogs,
   revokeGatewayKey,
   setGatewayBudget,
-  setGatewayOtelConfig,
 } from '@/lib/projects-gateway-client';
 import { contract, qk } from '@kortix/sdk/react';
 
@@ -159,30 +155,3 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
 // the same thing with the real runtime behind it. The transport
 // (`runGatewayPlayground`) and the API route it calls are untouched; only this
 // unused React binding is gone.
-
-// ─── Observability / OTLP export ────────────────────────────────────────────
-
-export function useGatewayOtelConfig(projectId: string | undefined) {
-  return useQuery({
-    queryKey: qk.project.gatewayOtel(projectId ?? ''),
-    queryFn: () => getGatewayOtelConfig(projectId!),
-    enabled: !!projectId,
-    staleTime: 15_000,
-  });
-}
-
-export function useSetGatewayOtelConfig(projectId: string | undefined) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: SetGatewayOtelConfigInput) => setGatewayOtelConfig(projectId!, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayOtel(projectId ?? '') }),
-  });
-}
-
-export function useDeleteGatewayOtelConfig(projectId: string | undefined) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => deleteGatewayOtelConfig(projectId!),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayOtel(projectId ?? '') }),
-  });
-}

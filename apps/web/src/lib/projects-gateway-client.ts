@@ -18,9 +18,6 @@ export {
   createGatewayKey,
   revokeGatewayKey,
   runGatewayPlayground,
-  getGatewayOtelConfig,
-  setGatewayOtelConfig,
-  deleteGatewayOtelConfig,
   type GatewayLogRow,
   type GatewayLogDetail,
   type GatewayLogsResponse,
@@ -42,6 +39,4 @@ export {
   type GatewayPlaygroundResult,
   type GatewayPlaygroundResponse,
   type GatewayModelGenerationConfig,
-  type GatewayOtelConfig,
-  type SetGatewayOtelConfigInput,
 } from '@kortix/sdk';

@@ -43,7 +43,6 @@ const PROJECT_LEAVES = [
   'project.gateway.spend.read',
   'project.gateway.budget.set',
   'project.gateway.keys.manage',
-  'project.gateway.otel.manage',
   'project.agent.read',
   'project.agent.write',
   'project.skill.read',
@@ -168,7 +167,6 @@ const PROJECT_MANAGER = [
   'project.delete',
   'project.members.manage',
   'project.gateway.keys.manage',
-  'project.gateway.otel.manage',
   'project.session.bindings.write',
   'project.connector.connections.manage',
 ];
@@ -225,7 +223,7 @@ function sorted(set: Iterable<string>): string[] {
 
 describe('AREA_TABLES covers the catalog', () => {
   test('the catalog copy still matches the API (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(45);
+    expect(PROJECT_LEAVES.length).toBe(44);
     expect(ACCOUNT_LEAVES.length).toBe(27);
     expect(new Set(PROJECT_LEAVES).size).toBe(PROJECT_LEAVES.length);
     expect(new Set(ACCOUNT_LEAVES).size).toBe(ACCOUNT_LEAVES.length);
@@ -280,14 +278,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(45);
+    expect(fold.totalCount).toBe(44);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(45);
+    expect(fold.selectedCount).toBe(44);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

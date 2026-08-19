@@ -142,11 +142,7 @@ const PROJECT_AREAS: readonly AreaDef[] = [
     label: 'Spend & gateway',
     hint: 'Model spend, request logs, budgets and BYOK keys.',
     view: ['project.gateway.spend.read', 'project.gateway.logs.read'],
-    edit: [
-      'project.gateway.budget.set',
-      'project.gateway.keys.manage',
-      'project.gateway.otel.manage',
-    ],
+    edit: ['project.gateway.budget.set', 'project.gateway.keys.manage'],
   },
   {
     key: 'members',

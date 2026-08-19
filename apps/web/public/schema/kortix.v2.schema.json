@@ -141,7 +141,6 @@
                     "project.gateway.spend.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
-                    "project.gateway.otel.manage",
                     "project.agent.read",
                     "project.agent.write",
                     "project.skill.read",

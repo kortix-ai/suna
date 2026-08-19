@@ -12,14 +12,13 @@ import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { logger } from '../lib/logger';
-import { emitOtelSpan, isOtelTraceExporterConfigured, type OtelExporterOverride } from '../lib/otel';
+import { emitOtelSpan, isOtelTraceExporterConfigured } from '../lib/otel';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
   llmActivityGrantMs,
 } from '../projects/sandbox-deadline';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { peekCachedProjectOtelExporter } from '../repositories/gateway-otel-config';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
@@ -322,24 +321,14 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
 /**
  * Build + fire a standard OTel `gen_ai.*` span for one gateway call.
  *
- * Best-effort telemetry only: gated on isOtelTraceExporterConfigured() — env
- * OR this project's own configured OTLP endpoint (Observability tab) — so we
- * skip building the attributes object entirely when neither is set (the
- * common self-host case), fire-and-forget (never awaited by the caller), and
- * guarded so a span-emission failure can never throw into — or block — trace
- * persistence or billing.
- *
- * The per-project lookup (`peekCachedProjectOtelExporter`) is a SYNCHRONOUS
- * cache read — it never awaits a DB call on this hot path. See its doc
- * comment in repositories/gateway-otel-config.ts for the cold-cache tradeoff.
+ * Best-effort telemetry only: gated on isOtelTraceExporterConfigured() so we
+ * skip building the attributes object entirely when no OTLP endpoint is
+ * configured (the common self-host case), fire-and-forget (never awaited by
+ * the caller), and guarded so a span-emission failure can never throw into —
+ * or block — trace persistence or billing.
  */
 export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
-  const projectExporter = trace.projectId ? peekCachedProjectOtelExporter(trace.projectId) : null;
-  const override: OtelExporterOverride | null =
-    projectExporter?.enabled && projectExporter.endpoint
-      ? { endpoint: projectExporter.endpoint, headers: projectExporter.headers }
-      : null;
-  if (!isOtelTraceExporterConfigured(override)) return;
+  if (!isOtelTraceExporterConfigured()) return;
   try {
     const attemptFailures = trace.attemptFailures ?? [];
     const failureCodes = attemptFailures.map((failure) => String(failure.code));
@@ -379,7 +368,7 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.fallback_recovered': trace.ok && attemptFailures.length > 0,
         ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
       },
-    }, override).catch((error) => {
+    }).catch((error) => {
       console.warn(
         '[otel] gen_ai span emit failed:',
         error instanceof Error ? error.message : error,

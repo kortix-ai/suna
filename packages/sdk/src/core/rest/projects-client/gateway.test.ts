@@ -9,16 +9,13 @@ import type {
 import {
   createGatewayKey,
   deleteGatewayBudget,
-  deleteGatewayOtelConfig,
   getGatewayBudgets,
   getGatewayKeys,
-  getGatewayOtelConfig,
   getGatewayOverview,
   listGatewayLogs,
   revokeGatewayKey,
   runGatewayPlayground,
   setGatewayBudget,
-  setGatewayOtelConfig,
   verifyGatewayProvider,
 } from './gateway';
 
@@ -218,49 +215,4 @@ test('verifyGatewayProvider URL-encodes the provider id', async () => {
   };
   await verifyGatewayProvider('P1', 'weird/id');
   expect(last().url).toContain('/projects/P1/gateway/providers/weird%2Fid/verify');
-});
-
-test('getGatewayOtelConfig reads the project OTLP export config', async () => {
-  nextResponse = {
-    status: 200,
-    body: { enabled: true, endpoint: 'https://otel.example.com/v1/traces', has_headers: true, updated_at: '2026-07-18T00:00:00.000Z' },
-  };
-  const result = await getGatewayOtelConfig('P1');
-  expect(last().url).toContain('/projects/P1/gateway/otel');
-  expect(last().method).toBe('GET');
-  expect(result.enabled).toBe(true);
-  expect(result.endpoint).toBe('https://otel.example.com/v1/traces');
-  expect(result.has_headers).toBe(true);
-});
-
-test('setGatewayOtelConfig PUTs enabled/endpoint/headers', async () => {
-  nextResponse = {
-    status: 200,
-    body: { enabled: true, endpoint: 'https://otel.example.com/v1/traces', has_headers: true, updated_at: '2026-07-18T00:00:00.000Z' },
-  };
-  await setGatewayOtelConfig('P1', {
-    enabled: true,
-    endpoint: 'https://otel.example.com/v1/traces',
-    headers: { Authorization: 'Bearer tok' },
-  });
-  expect(last().url).toContain('/projects/P1/gateway/otel');
-  expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({
-    enabled: true,
-    endpoint: 'https://otel.example.com/v1/traces',
-    headers: { Authorization: 'Bearer tok' },
-  });
-});
-
-test('setGatewayOtelConfig omits headers from the body when not provided (leave-untouched)', async () => {
-  nextResponse = { status: 200, body: { enabled: false, endpoint: null, has_headers: false, updated_at: null } };
-  await setGatewayOtelConfig('P1', { enabled: false, endpoint: null });
-  expect(last().body).toEqual({ enabled: false, endpoint: null });
-});
-
-test('deleteGatewayOtelConfig deletes the project OTLP export config', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  await deleteGatewayOtelConfig('P1');
-  expect(last().url).toContain('/projects/P1/gateway/otel');
-  expect(last().method).toBe('DELETE');
 });

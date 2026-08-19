@@ -186,7 +186,6 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
       'project.gateway.spend.read',
       'project.gateway.budget.set',
       'project.gateway.keys.manage',
-      'project.gateway.otel.manage',
     ],
   },
   {

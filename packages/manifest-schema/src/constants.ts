@@ -220,7 +220,6 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.gateway.spend.read',
   'project.gateway.budget.set',
   'project.gateway.keys.manage',
-  'project.gateway.otel.manage',
   // IAM v1 per-capability leaves.
   'project.agent.read',
   'project.agent.write',
