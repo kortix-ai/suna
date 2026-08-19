@@ -12,6 +12,21 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-19 — session `sandbox-waking` — additive: `isSandboxNotReadyError` classifier + `formatOpenCodeRuntimeError` covers every readiness phrase — IN PROGRESS
+
+**Files:** `core/http/opencode-errors.ts` + `opencode-errors.test.ts`, surface snapshots.
+
+**Why.** The web file viewer (and terminal panel, drive explorer, public share)
+render the proxy's `sandbox not ready (status: stopped)` 503 as a terminal red
+error. The proxy emits several readiness phrases (`sandbox not ready`,
+`Sandbox is not ready`, `Sandbox is not running`, `opencode not ready`,
+`sandbox_lifecycle_unavailable`); only the exact `(status: stopped)` string is
+classified today, and only by `formatOpenCodeRuntimeError`. Hosts need one
+boolean classifier so every surface can show "waking up" + retry instead of an
+error card.
+
+---
+
 ### 2026-08-19 — session `rbac-cutover-client-leftovers` — BREAKING (field): `AccountDetail.iam_v2_enabled` removed — DONE
 
 **Files:** `core/rest/projects-client/accounts.ts` (−1 field, −3 comment lines),
