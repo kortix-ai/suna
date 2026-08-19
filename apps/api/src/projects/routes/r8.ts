@@ -61,6 +61,7 @@ import {
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -91,12 +92,18 @@ projectsApp.openapi(
     // Floor 'session' (= project.session.start) so the human gate matches
     // restart/stop and a custom role that withholds session.start is denied here
     // (was 'read', which let any project-reader start sessions).
+    // Every millisecond here is in front of the provider call, so a resume can
+    // never be faster than this prologue. Instrumented for the same reason
+    // provisioning is: without per-step marks, "start is slow" is unactionable.
+    const stl = new ProvisionTimeline(sessionId, 'session-start');
     const loaded = await loadProjectForUser(c, projectId, 'session');
+    stl.mark('project-loaded');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    stl.mark('session-loaded');
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
@@ -104,6 +111,7 @@ projectsApp.openapi(
     // may also be the `default` sentinel, which resolves here to the manifest
     // default rather than being waved through unchecked.
     await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    stl.mark('agent-authorized');
 
     // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
     // stops being speculative the instant a user's tab calls /start on it —
@@ -113,10 +121,12 @@ projectsApp.openapi(
     // resume that follows.
     if (isWarmProjectSession(visible.row.metadata)) {
       await dropWarmSessionMarkerOnAdopt(sessionId);
+      stl.mark('warm-adopted');
     }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
+    stl.mark('billing-checked');
     if (!billing.ok) {
       return c.json(
         {
@@ -148,6 +158,8 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
+    stl.mark(`open-session:${result.start.stage}`);
+    stl.log({ waitMs });
     return c.json(
       {
         ...result.start,
