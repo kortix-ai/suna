@@ -125,11 +125,21 @@ them first (and confirm the override fires) with:
 
 ```sql
 -- role_permissions rows the catalog no longer names (would fail the VALIDATE
--- without the runtime override):
-SELECT rp.role_id, rp.action
+-- without the runtime override), split by what the override DOES to them:
+--   REMAP  = intent-preserving rename onto the surviving leaf (cr.* -> gitops.*)
+--   PURGE  = dropped. By construction these can only be the dead trigger.*
+--            family (never asserted by any route, so removing them changes no
+--            behaviour) — writes were always validated against VALID_ACTIONS,
+--            so no other uncataloged string can exist. If this query ever
+--            shows a PURGE row outside trigger.*, STOP and investigate before
+--            promoting: that would be a permission the override would drop.
+SELECT rp.role_id, rp.action,
+       CASE WHEN rp.action IN ('project.cr.open','project.cr.merge') THEN 'REMAP'
+            ELSE 'PURGE' END AS override_effect
   FROM kortix.role_permissions rp
   LEFT JOIN kortix.permissions p ON p.action = rp.action
- WHERE p.action IS NULL;
+ WHERE p.action IS NULL
+ ORDER BY override_effect, rp.role_id;
 
 -- project-scope assignments pointing at deleted projects (purged by the
 -- cutover backfill; 629 on the local dataset):
