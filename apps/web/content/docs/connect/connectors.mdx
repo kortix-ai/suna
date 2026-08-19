@@ -204,6 +204,27 @@ The same steps are available on the SDK — `discoverConnectionOAuth2Resource`,
 Kortix refetches the connector's tool catalog as soon as authorization
 completes, so the connector leaves the `error` state without a manual sync.
 
+### Self-hosted: give the box a stable public URL
+
+The callback URL is derived from `KORTIX_URL`, the public origin of your API.
+Authorization servers compare `redirect_uri` byte for byte, so the value must be
+stable.
+
+A self-host install started with the zero-config quick tunnel gets a **new**
+`https://<random>.trycloudflare.com` hostname every time `cloudflared`
+restarts. The callback URL changes with it. A server that supports dynamic
+client registration recovers on its own — the next authorization registers a
+new client against the current URL. A server that needs a pre-registered OAuth
+app does not: you must update its allowed redirect URI after every restart.
+
+Set `CLOUDFLARE_TUNNEL_TOKEN` and `CLOUDFLARE_TUNNEL_HOSTNAME` for a named
+tunnel, or point `KORTIX_URL` at your own domain. Then register one callback
+URL once:
+
+```text
+https://<your-kortix-host>/v1/connectors/oauth2/callback
+```
+
 ## Connect a direct API with OAuth2
 
 Direct connectors support:
