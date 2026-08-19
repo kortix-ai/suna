@@ -15,14 +15,12 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
-  stageBuildContext,
-  stageAppBuildContext,
-  stageMetaBuildContext,
   stageAgentBinaryGz,
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   DEFAULT_DISK_GB,
   KORTIX_ENTRYPOINT,
+  stageRuntimeBuildContext,
 } from '../build-context';
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
 import { tarBuildContext } from '../staging-tar';
@@ -576,11 +574,14 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
   private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
-    const ctx = input.runtimeProfile === 'app'
-      ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
-      : input.runtimeProfile === 'meta'
-      ? await stageMetaBuildContext()
-      : await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
+    const ctx = await stageRuntimeBuildContext({
+      snapshotName: input.snapshotName,
+      userDockerfile,
+      runtimeProfile: input.runtimeProfile,
+      appContext: input.appContext,
+      warmRepo: input.warmRepo,
+      isShared: input.isShared,
+    });
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
       await tarBuildContext(ctx.contextDir, tarPath);

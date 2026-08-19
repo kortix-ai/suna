@@ -490,7 +490,17 @@ flow(
           .exists("$.trial.endsAt");
       });
       await ctx.step("the accounts-list row reports the active trial", async () => {
-        const r = await admin.get("/v1/admin/api/accounts", { query: { search: name, limit: "5" } });
+        // Filter by the exact account id, NOT by `search`. `search` is a
+        // substring match over the PLATFORM-WIDE accounts list, and
+        // `ctx.fixtures.name()` is deterministic per run — so a client-retried
+        // `POST /v1/accounts` (core/client.ts retries POSTs, no idempotency
+        // guard) or a workflow re-run that reuses `github.run_id` leaves two
+        // identically-named accounts and `$.total` becomes 2. That is what
+        // failed the release gate. `accountId` is an exact-match predicate
+        // (apps/api/src/admin/index.ts:110), so `$.total` is 1 by construction.
+        const r = await admin.get("/v1/admin/api/accounts", {
+          query: { accountId: team.id, limit: "5" },
+        });
         r.status(200)
           .body()
           .has("$.total", 1)
@@ -695,7 +705,10 @@ flow("ADM-18", { domain: "admin", routes: ["GET /v1/admin/api/accounts"] }, asyn
     const team = await ctx.fixtures.team({ name });
 
     await ctx.step("a never-granted account carries the entitlement columns at their defaults", async () => {
-      const r = await admin.get("/v1/admin/api/accounts", { query: { search: name, limit: "5" } });
+      // Exact-id filter, not `search` — same duplicate-account hazard as ADM-14.
+      const r = await admin.get("/v1/admin/api/accounts", {
+        query: { accountId: team.id, limit: "5" },
+      });
       r.status(200)
         .body()
         .has("$.total", 1)
@@ -861,22 +874,53 @@ flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/api/projects"] }, asyn
     const name = ctx.fixtures.name("adm20-fleet");
     const project = await ctx.fixtures.project({ name });
 
+    // `search` is a substring match over the PLATFORM-WIDE projects list and
+    // `ctx.fixtures.name()` is deterministic per run, so an exact `$.total`
+    // count is not a safe assertion: a client-retried `POST /v1/projects`
+    // (core/client.ts retries POSTs with no idempotency guard) or a workflow
+    // re-run that reuses `github.run_id` leaves two identically-named projects.
+    // Unlike the accounts list this route has NO `projectId` filter
+    // (apps/api/src/admin/index.ts:551-562 — only search/accountId/status), so
+    // assert on THIS flow's own row instead of on how many rows came back.
+    const ownRow = (r: { json: <T>() => T }): Record<string, unknown> => {
+      const projects = (r.json<{ projects?: Record<string, unknown>[] }>().projects ?? []) as Record<
+        string,
+        unknown
+      >[];
+      const row = projects.find((p) => p.projectId === project.id);
+      if (!row) {
+        throw new Error(
+          `the fleet list did not return project ${project.id}; got ${JSON.stringify(
+            projects.map((p) => p.projectId),
+          )}`,
+        );
+      }
+      return row;
+    };
+
     await ctx.step("a never-run project carries the account join and zeroed session counts", async () => {
-      const r = await admin.get("/v1/admin/api/projects", { query: { search: name, limit: "5" } });
-      r.status(200)
-        .body()
-        .has("$.total", 1)
-        .has("$.page", 1)
-        .has("$.limit", 5)
-        .has("$.projects[0].projectId", project.id)
-        .has("$.projects[0].name", name)
-        .has("$.projects[0].status", "active")
-        .has("$.projects[0].accountId", ctx.P.OWNER.accountId!)
-        .has("$.projects[0].ownerEmail", ctx.P.OWNER.email!)
-        .has("$.projects[0].sessionCount", 0)
-        .has("$.projects[0].activeSessionCount", 0)
-        .has("$.projects[0].lastSessionAt", null)
-        .exists("$.projects[0].createdAt");
+      const r = await admin.get("/v1/admin/api/projects", {
+        query: { search: name, limit: "100" },
+      });
+      r.status(200).body().has("$.page", 1).has("$.limit", 100);
+      const row = ownRow(r);
+      const expected = {
+        name,
+        status: "active",
+        accountId: ctx.P.OWNER.accountId!,
+        ownerEmail: ctx.P.OWNER.email!,
+        sessionCount: 0,
+        activeSessionCount: 0,
+        lastSessionAt: null,
+      };
+      for (const [field, want] of Object.entries(expected)) {
+        if (row[field] !== want) {
+          throw new Error(
+            `fleet row ${field}: expected ${JSON.stringify(want)}, got ${JSON.stringify(row[field])}`,
+          );
+        }
+      }
+      if (!row.createdAt) throw new Error("fleet row is missing createdAt");
     });
 
     await ctx.step("search also matches the owning account's member email", async () => {
@@ -890,28 +934,33 @@ flow("ADM-20", { domain: "admin", routes: ["GET /v1/admin/api/projects"] }, asyn
       for (const sortBy of ["activity", "created", "sessions"]) {
         for (const sortDir of ["asc", "desc"]) {
           const r = await admin.get("/v1/admin/api/projects", {
-            query: { search: name, sortBy, sortDir, limit: "5" },
+            query: { search: name, sortBy, sortDir, limit: "100" },
           });
-          r.status(200).body().has("$.total", 1);
+          r.status(200);
+          ownRow(r);
         }
       }
     });
 
     await ctx.step("status filter selects and excludes; an unknown value degrades to no filter", async () => {
       const active = await admin.get("/v1/admin/api/projects", {
-        query: { search: name, status: "active", limit: "5" },
+        query: { search: name, status: "active", limit: "100" },
       });
-      active.status(200).body().has("$.total", 1);
+      active.status(200);
+      ownRow(active);
 
+      // 0 stays an exact count: a duplicate of this project would also be
+      // `active`, so nothing this run creates can land in the archived page.
       const archived = await admin.get("/v1/admin/api/projects", {
-        query: { search: name, status: "archived", limit: "5" },
+        query: { search: name, status: "archived", limit: "100" },
       });
       archived.status(200).body().has("$.total", 0);
 
       const bogus = await admin.get("/v1/admin/api/projects", {
-        query: { search: name, status: "not-a-status", limit: "5" },
+        query: { search: name, status: "not-a-status", limit: "100" },
       });
-      bogus.status(200).body().has("$.total", 1);
+      bogus.status(200);
+      ownRow(bogus);
     });
 
     await ctx.step("a non-uuid accountId narrows to an empty page, never to the fleet", async () => {

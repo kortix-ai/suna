@@ -38,6 +38,7 @@ import {
 } from './sandbox-init-state';
 import {
   ensureSandboxImage,
+  ensureFastSandboxImage,
   ensureMetaSandboxImage,
   deleteSandboxImage,
   resolveTemplate,
@@ -205,6 +206,17 @@ export function sessionBootByTemplateIdEnabled(): boolean {
   return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
 }
 
+/** Default-off kill switch for the shared slim cold-boot image. */
+export function fastColdBootEnabled(): boolean {
+  const raw = (process.env.KORTIX_FAST_COLD_BOOT_ENABLED ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes';
+}
+
+/** Custom and meta templates keep their declared runtime under the global flag. */
+export function useFastColdBootImage(enabled: boolean, slug: string): boolean {
+  return enabled && slug === DEFAULT_SANDBOX_SLUG;
+}
+
 /**
  * FIX-A: decide whether this boot should use the pinned EXACT template id. Pure
  * (no I/O) so the gate is unit-testable. Returns the id ONLY when every guard
@@ -337,6 +349,8 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
+      : useFastColdBootImage(fastColdBootEnabled(), slug)
+        ? ensureFastSandboxImage({ source: 'session-start', provider: targetProvider })
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,
@@ -554,7 +568,13 @@ export async function provisionSessionSandbox(opts: {
     // Provider failover (one-shot, on init): set true once we've handed off to a
     // second provider, so a session never bounces between providers forever.
     let fallbackAttempted = false;
-    let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
+    let imageInfo: {
+      snapshotName: string;
+      slug: string;
+      contentHash: string;
+      isDefault: boolean;
+      runtimeProfile?: 'standard' | 'fast' | 'meta';
+    } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id),
     // read once, best-effort — a DB hiccup yields null → name-boot. Set
     // `idBootDisabled` once a definitive GC'd-pin 404 forces this session down to
@@ -624,6 +644,7 @@ export async function provisionSessionSandbox(opts: {
         slug: image.slug,
         contentHash: image.contentHash,
         isDefault: image.isDefault,
+        runtimeProfile: image.runtimeProfile,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -642,7 +663,10 @@ export async function provisionSessionSandbox(opts: {
         routing: activeRouting,
         providerName,
         providerSupportsIdBoot: typeof provider.createFromExternalId === 'function',
-        imageIsDefault: image.isDefault,
+        // A Platinum pin identifies the standard default template. The fast
+        // profile has its own content-addressed name and must never boot that
+        // standard pin by mistake.
+        imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
         disabledForSession: idBootDisabled,
       });
       if (bootDecision.bootByTemplateId) {
@@ -726,6 +750,7 @@ export async function provisionSessionSandbox(opts: {
         throw createErr;
       }
       bgExternalId = result.externalId;
+      tl.mark(`provider-create:${attempts}x`);
       // `syncNetworkBoundary` is optional on the provider interface. The
       // non-null assertion was safe only while the pre-check above guaranteed
       // the method existed; now that a shim-backed provider gets past that
@@ -741,7 +766,6 @@ export async function provisionSessionSandbox(opts: {
           throw error;
         }
       }
-      tl.mark(`provider-create:${attempts}x`);
       const timeline = tl.summary();
 
       const [currentSession] = await db
@@ -879,6 +903,7 @@ export async function provisionSessionSandbox(opts: {
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,
               isPlatformDefault: imageInfo!.isDefault,
+              runtimeProfile: imageInfo!.runtimeProfile ?? 'standard',
               branch,
               provider: providerName,
             },

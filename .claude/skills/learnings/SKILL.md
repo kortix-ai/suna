@@ -21,6 +21,34 @@ linked, not inlined.
 
 ## Register
 
+### A picker that offers a model the runtime does not know is a silent outage; the runtime must learn the set from the API it talks to (2026-08-19)
+
+**When:** adding or changing a managed model (`LLM_GATEWAY_MANAGED_MODELS`,
+`@kortix/llm-catalog` MANAGED_MODELS), or touching how the sandbox daemon
+builds OpenCode's `kortix` provider (`apps/kortix-sandbox-agent-server/src/opencode.ts`).
+The web picker reads the API (`/model-picker`, `/v1/llm/models`); OpenCode in the
+guest accepts only the ids in the provider map it BOOTED with, built from the
+image-baked `/opt/kortix/llm-catalog.json`. That file is frozen at template-build
+time and nothing rebuilds a template for a catalog change, so every managed
+model added after the bake is offered by the picker and rejected by the guest
+(`ModelNotFound: kortix/<id>`, 2 ms after the user message, before any gateway
+call). Rules: (1) the guest must fetch the managed set from the API on EVERY boot
+(`GET /models?scope=managed`, ~3 KB) and overlay it — never trust a baked list
+for anything deployment-config decides; (2) a boot-path fetch gets its own small
+budget and a bundled fallback, and is started in parallel with the clone, never
+awaited on the critical path beyond a cap; (3) a catalog "refresh" that can
+silently fall back (here 2.5 s/4 s for a 3.3 MB body) is not a refresh — size the
+payload to the budget; (4) a `session.error` with no assistant message must be
+rendered under the turn that failed, or the user sees nothing at all.
+*Incident:* prod 2026-08-19, `grok-4.6` and `deepseek-v4-pro-0813` (added
+2026-08-12/13) returned no reply in every session on templates built before
+then; 0 gateway log rows ever. PR #6576.
+*Enforcer:* `managed-fallback-sync.test.ts` (bundled table vs `MANAGED_MODELS`
+drift), `managed-model-overlay.test.ts` (stale file + live overlay; failed
+fetch → bundled floor; await cap), `managed-scope.test.ts`; web: sync-store
+per-turn `session.error` tests. Not enforced: a live "picker ⊆ guest provider
+map" assertion after deploy — run the dev sweep by hand until it exists.
+
 ### A request/response log must never cap what it captures (2026-08-18)
 
 **When:** persisting or rendering a captured request/response body (gateway
@@ -785,3 +813,44 @@ not the test output. And **reproduce the exact CI step** (`pnpm install
 and names the file.
 *Incident:* PR #6526, one full CI cycle lost; caught by reading the install
 step after the failure pattern (fast + everything) ruled out the tests.
+
+### `CREATE INDEX CONCURRENTLY` under a 5-second `lock_timeout` cannot land on live prod (2026-08-19)
+
+**When:** writing or applying any `.concurrent` migration; responding to a `55P03`
+("canceling statement due to lock timeout") during `Apply DB migrations to prod`.
+
+v0.13.0's deploy-prod (run 32248002434) failed its migration job twice, both times
+on a `.concurrent` migration that did `set lock_timeout = '5s'` then
+`create index concurrently …` — first on `kortix.iam_roles` (6 rows, 80 kB),
+then on `kortix.account_tokens` (30k rows). The table size is irrelevant:
+`CREATE INDEX CONCURRENTLY` has to wait for EVERY transaction in the database
+that started before it (it takes a ShareLock on each one's virtual transaction
+id), and `lock_timeout` governs that wait. On live prod — audit_events writers
+on every request, multi-second session-turn transactions — some transaction
+outlives a 5-second budget almost every time, so the CIC is cancelled and leaves
+an INVALID index behind, which makes a plain re-run fail with "already exists".
+The 2–5 s house value exists to keep DDL from blocking prod; CIC's wait blocks
+nobody, so that rationale does not apply to it.
+
+The rule: **in a `.concurrent` migration, set `lock_timeout` long enough for a
+live system — 2–3 minutes — and note why in the file.** The one lock a CIC
+holds (ShareUpdateExclusive on the table) only excludes other DDL/VACUUM; a long
+wait on virtual transaction ids hurts no user.
+
+Recovery when it has already failed (used twice tonight, ~2 min each):
+1. `select indexrelname from pg_stat_user_indexes s join pg_index i on
+   i.indexrelid=s.indexrelid where not i.indisvalid` — find the INVALID leftover.
+2. `drop index concurrently if exists <it>`.
+3. Hand-run the migration's exact statements in `psql` with
+   `set lock_timeout='180s'; set statement_timeout='30min'`; confirm `indisvalid`.
+4. `insert into kortix_migrations.pgmigrations (name, run_on) values ('<file
+   basename without extension>', now())` — the ledger must match what is live.
+5. `gh run rerun <deploy-prod run> --failed` — the migrate step sees nothing
+   pending and the roll proceeds.
+Migration files are immutable once merged (CI enforces it), so do not edit the
+failing file; fix the template/house rule for the next one.
+*Incident:* v0.13.0 deploy-prod run 32248002434, migrations
+`20260819015724600_rbac_canonical_indexes.concurrent` and
+`20260819015726000_account_tokens_session_id_index.concurrent`; ~30 min of
+release delay. Prod also carries four pre-existing INVALID legacy indexes
+(`public.idx_messages_*`, old Suna table) that predate this and were left alone.

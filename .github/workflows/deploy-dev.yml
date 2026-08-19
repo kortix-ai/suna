@@ -86,6 +86,7 @@ jobs:
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
               - 'scripts/ci/cosign-sign-attest.sh'
+              - 'infra/scripts/ecs-deploy.sh'
               - '.github/workflows/deploy-dev.yml'
               - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
@@ -448,6 +449,7 @@ jobs:
     env:
       AWS_REGION: us-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_FAST_COLD_BOOT_ENABLED":"false"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)

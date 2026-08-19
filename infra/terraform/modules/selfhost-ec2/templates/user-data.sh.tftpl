@@ -185,6 +185,48 @@ systemctl enable --now containerd.service
 systemctl enable --now docker.service
 docker compose version >/dev/null 2>&1 || { echo "FATAL: docker compose plugin unavailable after install" >&2; exit 1; }
 
+# ── 2b. Daily Docker prune. The box pulls the rolling dev-latest/stable image
+#    tags on every self-update; each `docker compose pull` leaves the PREVIOUS
+#    image digest dangling. Unpruned they fill the data volume and crash-loop
+#    Postgres with "No space left on device" (root-caused live 2026-08-19 on a
+#    self-host box: ~24GB dangling images + ~40GB build cache). Prune only removes
+#    what NO container references, so it is safe unattended even mid-rollout. A
+#    systemd timer (not a cron) so `Persistent=true` catches a missed run and
+#    it survives reboots.
+cat > /usr/local/bin/kortix-docker-prune.sh <<'PRUNE'
+#!/usr/bin/env bash
+set -uo pipefail
+docker image prune -af    >/dev/null 2>&1 || true
+docker builder prune -af  >/dev/null 2>&1 || true
+docker container prune -f >/dev/null 2>&1 || true
+logger -t kortix-docker-prune "reclaim pass complete ($(df -h "$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || echo /)" 2>/dev/null | awk 'NR==2{print $4" free on "$6}'))"
+PRUNE
+chmod +x /usr/local/bin/kortix-docker-prune.sh
+cat > /etc/systemd/system/kortix-docker-prune.service <<'UNIT'
+[Unit]
+Description=Kortix self-host: prune unused Docker images + build cache
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/kortix-docker-prune.sh
+UNIT
+cat > /etc/systemd/system/kortix-docker-prune.timer <<'UNIT'
+[Unit]
+Description=Daily Kortix Docker prune
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now kortix-docker-prune.timer
+
 # ── 3. Pin KORTIX_SELF_HOST_CONFIG_DIR — every kortix invocation (this
 #    script's systemd unit, and any later `kortix self-host ...` an operator
 #    runs over SSM) must agree on where the instance lives, or the CLI creates

@@ -29,6 +29,68 @@ export function resolveBrowserWorkers(value: string | undefined, ci: boolean): n
 
 const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(process.env.CI));
 
+export interface GrepFilters {
+  grep?: RegExp;
+  grepInvert?: RegExp;
+}
+
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function splitList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function union(sources: string[]): RegExp | undefined {
+  if (sources.length === 0) return undefined;
+  return new RegExp(sources.join('|'));
+}
+
+/**
+ * Tag and title filters for the browser lane, read from the environment.
+ *
+ * A journey that cannot be made deterministic against a deployed target is
+ * tagged `@quarantine` at its `test.describe`. The blocking release gate
+ * excludes that tag; `tests-browser-nightly.yml` runs exactly that tag and
+ * nothing else. Both directions come from here so neither lane needs a custom
+ * command line.
+ *
+ * - `E2E_EXCLUDE_TAGS` / `E2E_INCLUDE_TAGS` — comma-separated tag or title
+ *   fragments. Each entry is escaped, so `@quarantine` matches literally and
+ *   cannot be read as a regex by accident.
+ * - `E2E_GREP_INVERT` / `E2E_GREP` — raw regex escape hatches, unioned with the
+ *   tag lists in the same direction.
+ *
+ * Playwright appends a test's tags to the title it matches `grep`/`grepInvert`
+ * against, and it applies both BEFORE `--shard`, so an excluded journey is
+ * never loaded, never counted, and never lands in a shard. That is what keeps
+ * `strict-skip-reporter.ts` coherent: the reporter fails the lane on a
+ * `status === 'skipped'` result, and a grep-excluded test produces no result at
+ * all — it is absent, not skipped.
+ */
+export function resolveGrepFilters(env: NodeJS.ProcessEnv = process.env): GrepFilters {
+  const includes = [
+    ...splitList(env.E2E_INCLUDE_TAGS).map(escapeForRegExp),
+    ...splitList(env.E2E_GREP),
+  ];
+  const excludes = [
+    ...splitList(env.E2E_EXCLUDE_TAGS).map(escapeForRegExp),
+    ...splitList(env.E2E_GREP_INVERT),
+  ];
+  const filters: GrepFilters = {};
+  const grep = union(includes);
+  const grepInvert = union(excludes);
+  if (grep) filters.grep = grep;
+  if (grepInvert) filters.grepInvert = grepInvert;
+  return filters;
+}
+
+const grepFilters = resolveGrepFilters(process.env);
+
 // A deployed target (staging/preview) shares one origin with the concurrent
 // REST lane, so transient overload (5xx laundered into MAINTENANCE_MODE by the
 // edge) shows up as slow/empty page loads. Give deployed runs more retries and
@@ -49,6 +111,7 @@ const deployedRetries = Number(process.env.E2E_DEPLOYED_RETRIES ?? 1);
 
 export default defineConfig({
   testDir: './e2e/specs',
+  ...grepFilters,
   // Fails the strict deployed lane in seconds when a required capability is
   // missing, instead of skipping mid-run and reporting it ~50 min later. No-op
   // when E2E_REQUIRE_ALL_BROWSER is unset. See e2e/global-setup.ts.

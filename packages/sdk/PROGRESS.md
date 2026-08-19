@@ -406,6 +406,54 @@ fail.
 
 ---
 
+### 2026-08-19 — session `session-error-turn` — a `session.error` belongs to the turn that failed — DONE
+
+**Files:** `browser/stores/sync-store.ts` (+`.test.ts`). The `apps/web` half (a
+turn that reports an error stops rendering the working indicator) is outside
+this package.
+
+**What.** A turn that fails BEFORE any assistant message exists (prod
+2026-08-19: `ModelNotFound: kortix/grok-4.6`, `session.error` ~2ms after the
+prompt) put its error in the wrong turn, three different ways. The handler
+patched `.error` onto "the last assistant message ANYWHERE" — an EARLIER turn's
+answer — and the `reconcileTail` hydrate that follows every `session.error`
+then overwrote that message with the server's error-free copy, so the first
+failure rendered NOTHING AT ALL. With no assistant message anywhere it appended
+a stub at the END of the list, which the next prompt's turn then adopted: the
+error moved out from under the prompt it belonged to and rode the bottom of the
+thread.
+
+`session.error` now resolves the failing turn (the last user message) and
+either patches an assistant message that already belongs to THAT turn, or
+inserts a stub directly after that user message, carrying `parentID` so
+`groupMessagesIntoTurns` keeps it there no matter what arrives later. The stub
+id is `${userMessageId}_error`: idempotent for a repeated error, and (all ids
+being equal length) it sorts immediately after its user message, so position
+and `parentID` agree.
+
+`stubAssistantIds` becomes `Map<sessionID, Map<stubId, parentUserId | null>>`
+and `hydrate` reconciles PER TURN instead of per session — an earlier turn's
+reply is not an answer to this one. When the server DOES hold a reply for the
+failing turn the stub's error moves onto it unless the server's copy carries
+one of its own; the stub is dropped only after that. An optimistic parent
+superseded by the server's echo re-keys the stub (both in `hydrate`'s
+correlation and in the `message.updated` echo path, via `rekeyStubParent`), and
+a stub restored from the IndexedDB transcript cache is re-adopted so it stays
+reconcilable across a reload.
+
+**Gates.** `bun test src` 2230 pass / 2 skip / 0 fail (baseline before this
+change: 2220 / 2 / 0); `tsc --noEmit` + examples clean; `smoke:install` passed.
+Public surface unchanged — every symbol touched is module-private.
+
+**Browser proof** (local stack, real Platinum sandbox, `POST .../prompts` with
+`model: kortix/does-not-exist-model`): before the change the second failure took
+the first turn's error with it (turn 1 left with no error at all) and, with an
+earlier turn present, the first failure rendered nothing; after, each error
+renders under its own prompt and survives a page reload. Screenshots in
+`output/session-error/`.
+
+---
+
 ### 2026-08-18 — session `server-truth-m1` — step 10: the proxy names the hop that failed — DONE
 
 **Files:** `core/session/health.ts` (+`core/session/session.test.ts`),

@@ -248,7 +248,19 @@ flow(
         },
         { params: { projectId: p.id } },
       );
-      r.status(200).body().has('$.ok', true);
+      // BOTH outcomes are correct here, and the test must not pick only one.
+      // This POST is a Git commit round-trip against the project manifest — the
+      // slowest write in the flow — and the ke2e HTTP client retries any
+      // request, POST included, on a fetch throw, a timeout, or an edge
+      // 502/503/504 (core/client.ts) with no test-side idempotency guard. When
+      // the first delivery lands but its response is lost, the retry finds the
+      // slug already in the manifest and `create_only: true` refuses to replace
+      // it with 409 (apps/api/src/connectors/manifest-crud.ts:250-257). That is
+      // the create-only contract working, not a failure. The 200 path still
+      // proves `$.ok`, and the config read below proves the entry landed
+      // exactly once either way.
+      r.status([200, 409]);
+      if (r.statusCode === 200) r.body().has('$.ok', true);
     });
     await ctx.step('duplicate create-only connector → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(

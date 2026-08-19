@@ -1,4 +1,4 @@
-import type { GatewayConfig, GatewayHooks } from './domain';
+import type { GatewayConfig, GatewayHooks, ListModelsOptions } from './domain';
 import {
   type AnthropicMessagesRequest,
   anthropicMessagesToChat,
@@ -93,7 +93,10 @@ export function createGateway(
     return match ? match[1].trim() : null;
   };
 
-  const listModels = async (authorization: string | undefined): Promise<Response> => {
+  const listModels = async (
+    authorization: string | undefined,
+    opts?: ListModelsOptions,
+  ): Promise<Response> => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     const token = bearer(authorization);
     if (!token)
@@ -119,9 +122,10 @@ export function createGateway(
           suggestion: 'Sign in again or provide a valid API token, then retry.',
         });
       if (!hooks.listModels) return jsonResponse({ models: {} });
-      const models = await hooks.listModels(principal);
+      const models = await hooks.listModels(principal, opts);
       logger.info(
-        `[gateway] models ${Object.keys(models).length} for acct=${principal.accountId.slice(0, 8)}`,
+        `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : ''} ` +
+          `for acct=${principal.accountId.slice(0, 8)}`,
       );
       return jsonResponse({ models });
     } catch (err) {

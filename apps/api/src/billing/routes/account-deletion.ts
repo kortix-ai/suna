@@ -99,8 +99,11 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId } = await resolveDeletionContext(c);
-    const result = await deleteAccountImmediately(accountId);
+    const { accountId, userId } = await resolveDeletionContext(c);
+    // Pass `userId`: `resolveAccountId` above returns only the earliest-joined
+    // account, so without it every sandbox in a team account this user owns
+    // survives the deletion, still running and still billing.
+    const result = await deleteAccountImmediately(accountId, userId);
     return c.json(result);
   },
 );

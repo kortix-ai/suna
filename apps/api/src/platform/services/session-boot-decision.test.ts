@@ -19,7 +19,12 @@ setTestEnv('PLATINUM_API_URL', 'https://platinum.test');
 setTestEnv('PLATINUM_API_KEY', 'pt_live_testkey');
 setTestEnv('DAYTONA_API_KEY', 'dt_test');
 
-const { decideSessionBoot, sessionBootByTemplateIdEnabled } = await import('./session-sandbox');
+const {
+  decideSessionBoot,
+  fastColdBootEnabled,
+  sessionBootByTemplateIdEnabled,
+  useFastColdBootImage,
+} = await import('./session-sandbox');
 
 const pinned = { activeProvider: 'platinum', activeExternalTemplateId: 'tpl_pinned' };
 
@@ -116,5 +121,35 @@ describe('FIX-A kill-switch — KORTIX_SESSION_BOOT_BY_TEMPLATE_ID', () => {
   test.each(['1', 'on', 'true'])('%p keeps id-boot ON', (v) => {
     process.env.KORTIX_SESSION_BOOT_BY_TEMPLATE_ID = v;
     expect(sessionBootByTemplateIdEnabled()).toBe(true);
+  });
+});
+
+describe('fast cold boot kill-switch', () => {
+  const saved = process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
+    else process.env.KORTIX_FAST_COLD_BOOT_ENABLED = saved;
+  });
+
+  test('defaults OFF', () => {
+    delete process.env.KORTIX_FAST_COLD_BOOT_ENABLED;
+    expect(fastColdBootEnabled()).toBe(false);
+  });
+
+  test.each(['1', 'on', 'true', 'yes', 'TRUE'])('%p enables the fast image', (value) => {
+    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = value;
+    expect(fastColdBootEnabled()).toBe(true);
+  });
+
+  test.each(['0', 'off', 'false', 'no', 'unexpected'])('%p keeps the standard image', (value) => {
+    process.env.KORTIX_FAST_COLD_BOOT_ENABLED = value;
+    expect(fastColdBootEnabled()).toBe(false);
+  });
+
+  test('only changes the shared default image', () => {
+    expect(useFastColdBootImage(true, 'default')).toBe(true);
+    expect(useFastColdBootImage(true, 'custom')).toBe(false);
+    expect(useFastColdBootImage(true, 'meta')).toBe(false);
+    expect(useFastColdBootImage(false, 'default')).toBe(false);
   });
 });

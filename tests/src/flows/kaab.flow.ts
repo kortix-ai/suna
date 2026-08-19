@@ -160,9 +160,22 @@ flow('KAAB-7', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
         headers: { 'Idempotency-Key': key },
       },
     );
-    response.status(201);
+    // BOTH outcomes are correct here, and the test must not pick only one.
+    // The ke2e HTTP client retries any request — POST included — on a fetch
+    // throw, a timeout, or an edge 502/503/504 (core/client.ts), and it carries
+    // no test-side idempotency guard. This POST carries an `Idempotency-Key`,
+    // so the retry does NOT create a second session: the engine finds the key
+    // already claimed with the command still in flight and answers 202 naming
+    // the same session instead of 201 with the created row
+    // (apps/api/src/projects/routes/project-sessions.ts:171-188). Both bodies
+    // carry `session_id`, which is what this step needs. KAAB-6 (line 133)
+    // already accepts the same pair for the same reason.
+    response.status([201, 202]);
     const sessionId = response.json<{ session_id?: string }>()?.session_id;
-    if (sessionId) ctx.track('session', sessionId, { projectId: project.id });
+    if (!sessionId) {
+      throw new Error(`session create answered ${response.statusCode} with no session_id`);
+    }
+    ctx.track('session', sessionId, { projectId: project.id });
   });
   await ctx.step('changed runtime context conflicts with the idempotency key', async () => {
     const response = await ctx.client.as(ctx.P.PAT_ACCT).post(

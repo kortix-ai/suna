@@ -4,7 +4,24 @@ on:
   pull_request:
     branches: [prod]
     types: [opened, synchronize, reopened, ready_for_review]
+  # Dry run. `RELEASE_SOURCE_SHA` only exists on a `release/*` branch, so before
+  # this input the gate could not be exercised without opening a release PR into
+  # `prod` — a gate that has never been green could never be rehearsed either.
+  # `expected_sha` supplies the same value the file would, and nothing else
+  # changes: the same shards, the same staging URLs, the same SHA assertion.
+  #
+  #   gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>
+  #
+  # `--ref` selects which branch's workflow and tests run; the target is always
+  # staging, because the staging URLs come from the env block below and not from
+  # the ref. Dispatch against the branch under test to rehearse a change to the
+  # gate itself.
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 40-character Git SHA that staging must already be serving
+        required: true
+        type: string
 
 concurrency:
   group: tests-release-${{ github.ref }}
@@ -77,9 +94,10 @@ jobs:
         run: bun tests/bin/ke2e.ts gc --older-than 2h
 
   # The deployed API suite, sharded by tests/src/core/shard.ts. Shard 1 owns
-  # every serial + global flow (see that file); shards 2-4 split the parallel
-  # flows longest-first. The partition is computed from the live flow registry,
-  # so a newly added flow always lands in exactly one shard.
+  # every serial + global flow and nothing else (see that file); shards 2-6
+  # split the 409 parallel flows longest-first. The partition is computed from
+  # the live flow registry, so a newly added flow always lands in exactly one
+  # shard.
   api:
     name: deployed api shard
     needs: sweep-before
@@ -88,47 +106,85 @@ jobs:
     # release (see the note on sweep-before).
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    # Shard 1 carries the strictly sequential serial+global tail (35 flows), so
-    # it is the critical path until the tail itself is cut. 40 minutes is a real
-    # cap that turns a hang into a readable failure; the old single job was 90.
-    timeout-minutes: 40
+    # A ceiling that turns a hang into a readable failure — never a throttle.
+    #
+    # Run 32240074477 killed all four API shards on the 40-minute cap at once
+    # (10:35:41 -> 11:20:42) while they were still passing what they ran: shard
+    # 3 had 76/87, shard 4 68/77. The cap destroyed the verdict, not the suite.
+    #
+    # Why 60 alone would not have been enough, and why 6 shards is the fix.
+    # Measured from those two logs, over a 38.4-minute window each:
+    #   shard 3: 87 of 137 flows -> 2.266 flows/min
+    #   shard 4: 77 of 137 flows -> 1.998 flows/min
+    # plus ~1.7 min of checkout/install/provision before the first flow. At 137
+    # flows that projects to 62 and 70 minutes — over a 60-minute cap. At the 82
+    # flows a 6-way split gives each shard it projects to 38 and 43 minutes,
+    # inside 60 with room for the extra load 6 shards offer staging. Both rates
+    # were measured while staging was returning laundered 503s, so treat them as
+    # a floor, not a clean baseline.
+    #
+    # Shard 1 is the exception to watch. Its 35-flow serial+global tail runs
+    # one-at-a-time and its declared timeouts sum to 121 minutes (CR-9 alone is
+    # 20). Its log blob for that run has expired, so there is no observed
+    # duration to check against. 60 minutes bounds it; it does not guarantee it.
+    # If shard 1 caps out, cut the tail's own timeouts — not this number.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
       # Pin the run id so the post-run sweep below can reclaim exactly THIS
       # shard's principals (`principals.ts` names them `e2e-<runId>-…`).
       KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}
-      # Fleet arithmetic, not per-job tuning. Run 32231251280 (the first run
-      # where every shard actually executed) fanned out 4x3 API + 4x2 sandbox +
-      # 3x2 browser = 26 concurrent workers against ONE staging (2 x 1 vCPU
-      # tasks, Medium DB after #6544) and ~50% of flows failed with "exceeded
-      # 120000ms" — staging slowed to the point that the 120s flow budget
-      # tripped, and with #6543 a timeout is no longer retried. The single-job
-      # gate passed 424/441 at 3 + 3. Halve the fleet: 4x2 + 4x1 = 12 against
-      # the API (plus 3x1 browsers), and give a timed-out flow exactly ONE more
-      # attempt here (not the old 3x) — the load is low enough that a retry
-      # cannot cascade. Lower these first if MAINTENANCE_MODE 503s reappear.
+      # Fleet arithmetic, not per-job tuning, and UNCHANGED per shard by the
+      # move to 6 — the throughput comes from fewer flows per shard, not from
+      # more workers inside one.
+      #
+      # Run 32231251280 fanned out 4x3 API + 4x2 sandbox + 3x2 browser = 26
+      # concurrent workers against ONE staging (2 x 1 vCPU tasks, Medium DB
+      # after #6544) and ~50% of flows failed with "exceeded 120000ms": staging
+      # slowed until the 120s flow budget tripped, and with #6543 a timeout is
+      # no longer retried. Run 32240074477 halved that to these values — 15
+      # workers — and staging held: 87-88% of what ran, passed. That is the
+      # proven-safe point, and these numbers are it.
+      #
+      # 6 shards raise the peak from 15 to 19 (shard 1 contributes 1, not 3:
+      # its flows are serial by definition). 19 sits nearer the 15 that held
+      # than the 26 that collapsed. Lower these first if MAINTENANCE_MODE 503s
+      # reappear; dropping KE2E_API_WORKERS to 1 returns the fleet to 13.
       KE2E_API_WORKERS: '2'
       KE2E_SANDBOX_WORKERS: '1'
       KE2E_TIMEOUT_ATTEMPTS: '2'
     steps:
       - uses: actions/checkout@v7
+      # One SHA, two sources. A release PR carries RELEASE_SOURCE_SHA in the
+      # tree; a dry run supplies the same value as `expected_sha`. The input
+      # arrives through env, never interpolated into this script, so a dispatch
+      # cannot inject shell — and it is accepted only after the same
+      # 40-hex-character check the file gets.
       - name: Require the deployed staging source SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
-          test -f RELEASE_SOURCE_SHA || {
-            echo "::error::Release PR has no RELEASE_SOURCE_SHA."
-            exit 1
-          }
-          source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+          if [ -n "${EXPECTED_SHA:-}" ]; then
+            source_sha="$(printf '%s' "$EXPECTED_SHA" | tr -d '[:space:]')"
+            origin="workflow_dispatch input expected_sha"
+          else
+            test -f RELEASE_SOURCE_SHA || {
+              echo "::error::No RELEASE_SOURCE_SHA in the tree and no expected_sha input."
+              exit 1
+            }
+            source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+            origin="RELEASE_SOURCE_SHA"
+          fi
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "::error::RELEASE_SOURCE_SHA must contain one 40-character Git SHA."
+            echo "::error::$origin must give one 40-character Git SHA."
             exit 1
           }
           echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
-          echo "Expected deployed staging SHA: $source_sha"
+          echo "Expected deployed staging SHA: $source_sha (from $origin)"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -142,7 +198,7 @@ jobs:
       - name: Install deployed-target dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
       - name: Run this shard of the deployed staging API suite
-        run: pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/4
+        run: pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6
       # A cancelled job is SIGKILLed before the runner's `finally` teardown, so
       # every cancel used to leak its whole world. `always()` covers cancelled,
       # failed and passed; --run-id scopes the sweep to this shard so it cannot
@@ -183,22 +239,41 @@ jobs:
       # 3 shards x 2 = 6 concurrent browsers, against 2 before sharding.
       # One browser per shard (3 total) — see the fleet arithmetic on the api job.
       E2E_BROWSER_WORKERS: '1'
+      # Specs tagged @quarantine (today: 17-oauth-provider-initiation, which
+      # asserts on accounts.google.com / github.com) run in the non-blocking
+      # nightly lane (tests-browser-nightly.yml), never in the release gate.
+      # Playwright applies this at collection, so an excluded spec is absent,
+      # not "skipped" — the strict-skip reporter stays strict. See #6584.
+      E2E_EXCLUDE_TAGS: '@quarantine'
     steps:
       - uses: actions/checkout@v7
+      # One SHA, two sources. A release PR carries RELEASE_SOURCE_SHA in the
+      # tree; a dry run supplies the same value as `expected_sha`. The input
+      # arrives through env, never interpolated into this script, so a dispatch
+      # cannot inject shell — and it is accepted only after the same
+      # 40-hex-character check the file gets.
       - name: Require the deployed staging source SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
-          test -f RELEASE_SOURCE_SHA || {
-            echo "::error::Release PR has no RELEASE_SOURCE_SHA."
-            exit 1
-          }
-          source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+          if [ -n "${EXPECTED_SHA:-}" ]; then
+            source_sha="$(printf '%s' "$EXPECTED_SHA" | tr -d '[:space:]')"
+            origin="workflow_dispatch input expected_sha"
+          else
+            test -f RELEASE_SOURCE_SHA || {
+              echo "::error::No RELEASE_SOURCE_SHA in the tree and no expected_sha input."
+              exit 1
+            }
+            source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+            origin="RELEASE_SOURCE_SHA"
+          fi
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "::error::RELEASE_SOURCE_SHA must contain one 40-character Git SHA."
+            echo "::error::$origin must give one 40-character Git SHA."
             exit 1
           }
           echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
-          echo "Expected deployed staging SHA: $source_sha"
+          echo "Expected deployed staging SHA: $source_sha (from $origin)"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14

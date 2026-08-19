@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { loadConfig } from '../config'
 import { isShallowRepo, scheduleHistoryBackfill } from '../git'
 import {
+  BUNDLED_MANAGED_MODELS,
   MINIMAL_FALLBACK_MODELS,
   buildOpencodeConfigContent,
   catalogIsDegraded,
@@ -188,7 +189,7 @@ describe('building the opencode boot config never touches the network', () => {
     expect(Object.keys(parsed.provider.kortix.models)).toEqual(Object.keys(MINIMAL_FALLBACK_MODELS))
   })
 
-  test('a catalog file on disk is used verbatim, still with no fetch', async () => {
+  test('a catalog file on disk is used verbatim (plus the managed floor), still with no fetch', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'kortix-catalog-'))
     tempDirs.push(dir)
     const file = join(dir, 'catalog.json')
@@ -206,7 +207,14 @@ describe('building the opencode boot config never touches the network', () => {
     } as NodeJS.ProcessEnv)
     const parsed = JSON.parse(raw!) as { provider: { kortix: { models: Record<string, unknown> } } }
 
-    expect(Object.keys(parsed.provider.kortix.models)).toEqual(['test/only-model'])
+    // The file's own models survive untouched...
+    expect(parsed.provider.kortix.models['test/only-model']).toBeDefined()
+    // ...and the BUNDLED managed set fills the ids it lacks, so a baked catalog
+    // that predates a managed-lineup change can never hide a managed model from
+    // OpenCode (prod incident 2026-08-19). Still zero network on the boot path.
+    for (const id of Object.keys(BUNDLED_MANAGED_MODELS)) {
+      expect(parsed.provider.kortix.models[id]).toBeDefined()
+    }
     expect(calls).toEqual([])
   })
 

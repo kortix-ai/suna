@@ -217,6 +217,8 @@ COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-am
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
+COPY apps/sandbox/MACHINE.fast.md ./apps/sandbox/MACHINE.fast.md
+COPY apps/sandbox/lazy-tools ./apps/sandbox/lazy-tools
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
 COPY packages/sdk ./packages/sdk
 

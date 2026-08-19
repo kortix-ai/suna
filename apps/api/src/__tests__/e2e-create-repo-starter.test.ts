@@ -201,6 +201,14 @@ mock.module('../snapshots/builder', () => ({
     built: false,
     isDefault: true,
   }),
+  ensureFastSandboxImage: async () => ({
+    snapshotName: 'kortix-fast-test',
+    slug: 'default',
+    contentHash: 'f'.repeat(64),
+    built: false,
+    isDefault: true,
+    runtimeProfile: 'fast',
+  }),
   ensureMetaSandboxImage: async () => ({
     snapshotName: 'kortix-meta-test',
     slug: 'meta',

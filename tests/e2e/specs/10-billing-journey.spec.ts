@@ -72,7 +72,13 @@ test.describe
     }) => {
       const billingUrl = `/accounts/${accountId}?tab=billing`;
       await installBrowserSessionDirect(page, session, billingUrl, authOptions);
-      await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible();
+      // The pane heading is "Plan", not "Billing". `?tab=billing` is still the
+      // route, and "Billing" is still the nav GROUP label, but the pane itself
+      // renders `PANE_META.billing.title` = 'Plan' as an `<h2>`
+      // (`app/(app)/accounts/[id]/page.tsx:224` and `:577`). "Billing" survives
+      // only as a group label, which is not a heading — so the old locator
+      // could never resolve and failed at 0 ms on every release run.
+      await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
 
       await test.step('The owner starts Team checkout from the Billing page', async () => {
         await page.getByRole('button', { name: 'Subscribe to Team' }).click();
@@ -114,16 +120,22 @@ test.describe
       });
 
       await test.step('The owner starts a one-time credit purchase', async () => {
-        // The topup button's accessible name is "$10 1,000 credits" (two spans:
-        // amount + credits), so an exact "$10" never matches. Anchor on the
-        // leading amount instead of pinning the whole composite label.
-        await page.getByRole('button', { name: /^\$10\b/ }).click();
+        // `credit-topup-section.tsx` replaced the old amount+credits buttons
+        // with a radiogroup of preset amounts. `AmountCell` is a `<button>`
+        // carrying an explicit `role="radio"` (`:260-263`), and an explicit
+        // role wins, so `getByRole('button', …)` can no longer see it. The
+        // cell's whole accessible name is now just the amount (`:175`).
+        const topup = page.getByRole('radiogroup', { name: 'Top-up amount' });
+        await topup.getByRole('radio', { name: '$10', exact: true }).click();
         const purchaseResponsePromise = page.waitForResponse(
           (response) =>
             response.request().method() === 'POST' &&
             new URL(response.url()).pathname === '/v1/billing/purchase-credits',
         );
-        await page.getByRole('button', { name: 'Buy $10 in credits' }).click();
+        // The CTA is `actionLabel` (`credit-topup-section.tsx:82-84`): "Add $10"
+        // once an amount is chosen, "Add credits" before that. "Buy $10 in
+        // credits" is gone.
+        await page.getByRole('button', { name: 'Add $10', exact: true }).click();
         const purchaseResponse = await purchaseResponsePromise;
         expect(purchaseResponse.status()).toBe(200);
         expect(purchaseResponse.request().postDataJSON()).toMatchObject({

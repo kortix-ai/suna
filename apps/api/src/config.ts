@@ -484,6 +484,10 @@ const envSchema = z.object({
   // bakes. Provider transitions still prepare their target image explicitly.
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
+  // Experimental shared slim image. It keeps only the session-critical
+  // runtime in the cold image and installs browser/document tool packs on first
+  // use. Default OFF is the rollback path; no database state changes.
+  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolFalse,
   // Per-provider allowlist for per-project warm images of CUSTOM (non-default-
   // slug) templates — see `perProjectWarmEligible` in builder.ts. Defaults to
   // 'platinum' only: Platinum's per-project templates warm-miss 100% of the
@@ -1063,6 +1067,7 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
+  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,

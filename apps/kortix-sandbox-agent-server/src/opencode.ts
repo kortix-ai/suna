@@ -333,12 +333,22 @@ export async function buildOpencodeConfigContent(
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
         ? (out.provider as Record<string, unknown>)
         : {}
+    // The managed lineup is DEPLOYMENT CONFIG, not image content: a managed
+    // model added to the API after this image was built is absent from the
+    // baked catalog forever (templates are not rebuilt on a catalog change).
+    // On 2026-08-19 that made OpenCode answer `ModelNotFound: kortix/grok-4.6`
+    // for two live managed models. So the sandbox LEARNS the managed set from
+    // the API it talks to on every boot. This await consumes a prefetch started
+    // at boot (startManagedModelsPrefetch, main.ts) — it never starts a fetch
+    // itself, so the "boot path touches no network" rule still holds.
+    const managedOverlay = await awaitManagedModelsOverlay()
     const kortixProvider = buildKortixProvider({
       // In proxy mode opencode talks to the localhost proxy with a placeholder
       // key; the proxy injects the real per-session token upstream. In direct
       // mode (cold/Daytona) it's the real gateway base + key, as before.
       baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
       apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
+      managedOverlay,
       // Catalog is org-stable and ships baked into every image at
       // BAKED_LLM_CATALOG_PATH, so this resolves off DISK — no network on the
       // path that gates opencode's port bind. loadGatewayCatalog is local-only
@@ -395,10 +405,13 @@ type KortixProviderOpts = {
   /** Baked catalog file (org-stable models JSON). Local read only — there is
    *  deliberately NO fetch fallback here; see loadGatewayCatalog. */
   catalogFile?: string
+  /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
+   *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
+  managedOverlay?: Record<string, KortixGatewayModel> | null
 }
 
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
-  const catalog = withModelLimits(loadGatewayCatalog(opts))
+  const catalog = withModelLimits(withManagedOverlay(loadGatewayCatalog(opts), opts.managedOverlay))
   const models = Object.fromEntries(
     Object.entries(catalog).map(([id, model]) => {
       // The gateway catalog's string `provider` is UI metadata describing the
@@ -741,6 +754,162 @@ async function fetchGatewayModels(
   return null
 }
 
+// ── Managed-model overlay ────────────────────────────────────────────────────
+// The managed lineup (bare-id, provider `kortix` models) is deployment config:
+// it changes with LLM_GATEWAY_MANAGED_MODELS / the API's served catalog, NOT
+// with the sandbox image. The baked catalog therefore goes stale the moment a
+// managed model is added, and OpenCode — which reads provider models once, at
+// process start — then answers `ModelNotFound: kortix/<id>` for it (prod
+// incident 2026-08-19: grok-4.6, deepseek-v4-pro-0813).
+//
+// Fix: every boot fetches the compact managed listing (~3KB) from the same
+// gateway the session bills against and overlays it on whatever catalog is on
+// disk. Same principle as the runtime-assets reconcile — the box learns the
+// current truth from the API it talks to.
+const MANAGED_MODELS_TIMEOUT_MS = 2_000
+const MANAGED_MODELS_TOTAL_BUDGET_MS = 5_000
+const MANAGED_MODELS_ATTEMPTS = 3
+// How long buildOpencodeConfigContent may wait on an in-flight prefetch. The
+// prefetch starts at proxy-up and the repo clone runs in front of the config
+// build, so this is normally already resolved and costs 0ms. The cap exists so
+// a degraded gateway can never push the OpenCode spawn out by the full budget:
+// the BUNDLED managed set (below) is the correctness floor, the live fetch is
+// the upgrade.
+const MANAGED_OVERLAY_AWAIT_CAP_MS = 2_500
+// Re-fetch rather than reuse a cache older than this (a warm seed can sit for
+// hours between capture and adoption).
+const MANAGED_CACHE_TTL_MS = 10 * 60_000
+
+let managedPrefetch: Promise<Record<string, KortixGatewayModel> | null> | null = null
+let managedCache: Record<string, KortixGatewayModel> | null = null
+let managedCacheAt = 0
+
+/**
+ * Compose the catalog OpenCode boots with: disk catalog first, managed set on
+ * top.
+ *
+ * - A live managed listing is AUTHORITATIVE for the managed ids it carries
+ *   (it comes from the gateway that will resolve them).
+ * - With no live listing, the bundled managed set only FILLS ids the disk
+ *   catalog lacks — a hand-maintained table never overwrites richer generated
+ *   data for a model that is already there.
+ *
+ * Purely additive in both cases: nothing is removed, so a transient fetch can
+ * never shrink a working picker.
+ */
+export function withManagedOverlay(
+  base: Record<string, KortixGatewayModel>,
+  live: Record<string, KortixGatewayModel> | null | undefined,
+): Record<string, KortixGatewayModel> {
+  if (live && Object.keys(live).length > 0) return { ...base, ...live }
+  const out = { ...base }
+  for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
+    if (!out[id]) out[id] = model
+  }
+  return out
+}
+
+/**
+ * Fetch ONLY the managed lineup: `GET ${base}/models?scope=managed` (~3KB,
+ * versus ~3.3MB for the full project catalog — which is why the full fetch
+ * gets no place on the boot path). Returns null on failure or an empty set
+ * (a free-tier account legitimately has no managed models; callers then keep
+ * whatever the disk catalog holds).
+ */
+export async function fetchManagedModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<Record<string, KortixGatewayModel> | null> {
+  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=managed`
+  const deadline = Date.now() + MANAGED_MODELS_TOTAL_BUDGET_MS
+  for (let attempt = 0; attempt < MANAGED_MODELS_ATTEMPTS; attempt++) {
+    if (Date.now() >= deadline) break
+    try {
+      const res = await fetch(url, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(
+          Math.max(250, Math.min(MANAGED_MODELS_TIMEOUT_MS, deadline - Date.now())),
+        ),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
+      const models = body.models ?? {}
+      if (Object.keys(models).length === 0) {
+        logger.info(`[opencode] managed listing is empty at ${url}; keeping the on-disk catalog`)
+        return null
+      }
+      // Remote JSON becomes OpenCode's provider config — rebuild it to a known
+      // shape before it can get anywhere near the config or the disk.
+      const clean = sanitizeCatalogForDisk(models)
+      if (!clean) return null
+      logger.info(`[opencode] fetched ${Object.keys(clean).length} managed models from ${url}`)
+      return clean
+    } catch (err) {
+      logger.warn(
+        `[opencode] managed models fetch failed (attempt ${attempt + 1}/${MANAGED_MODELS_ATTEMPTS}) ` +
+          `${url}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      if (Date.now() + 200 >= deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+  }
+  logger.warn(`[opencode] managed models unavailable (${url}); using the bundled managed set`)
+  return null
+}
+
+/**
+ * Start the managed-lineup fetch as early as the gateway credentials are known
+ * (see main.ts, right after the proxy binds). It runs CONCURRENTLY with repo
+ * materialization, so by the time the OpenCode config is built the answer is
+ * already in hand and the overlay costs ~0ms of boot.
+ */
+export function startManagedModelsPrefetch(baseUrl?: string, apiKey?: string): void {
+  if (!baseUrl || !apiKey) return
+  if (managedPrefetch) return
+  if (managedCache && Date.now() - managedCacheAt < MANAGED_CACHE_TTL_MS) return
+  managedPrefetch = fetchManagedModels(baseUrl, apiKey)
+    .then((models) => {
+      if (models) rememberManagedModels(models)
+      return models
+    })
+    .catch(() => null)
+    .finally(() => {
+      managedPrefetch = null
+    })
+}
+
+/** Publish a freshly fetched managed set so later config rebuilds (an OpenCode
+ *  restart, a warm-fork adoption) reuse it without another fetch. */
+export function rememberManagedModels(models: Record<string, KortixGatewayModel>): void {
+  managedCache = models
+  managedCacheAt = Date.now()
+}
+
+/** The overlay for the config being built now: the cached live set, else an
+ *  in-flight prefetch (bounded), else null (→ bundled managed set). Never
+ *  starts a fetch — the boot path stays network-free by construction. */
+export async function awaitManagedModelsOverlay(): Promise<Record<string, KortixGatewayModel> | null> {
+  if (managedCache && Date.now() - managedCacheAt < MANAGED_CACHE_TTL_MS) return managedCache
+  const pending = managedPrefetch
+  if (!pending) return managedCache
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const capped = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), MANAGED_OVERLAY_AWAIT_CAP_MS)
+  })
+  try {
+    return (await Promise.race([pending, capped])) ?? managedCache
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Test seam: drop prefetch/cache state between cases. */
+export function resetManagedModelsStateForTests(): void {
+  managedPrefetch = null
+  managedCache = null
+  managedCacheAt = 0
+}
+
 export type GatewayCatalogRefreshResult = {
   changed: boolean
   catalogFile: string
@@ -760,16 +929,37 @@ export async function refreshGatewayCatalogFile(opts: {
   fetchBaseURL: string
   fetchApiKey: string
 }): Promise<GatewayCatalogRefreshResult | null> {
-  const liveModels = await fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
-  if (!liveModels) return null
+  // Both fetches in parallel: the full catalog can fail (it is ~3.3MB and gets
+  // a 4s budget) while the ~3KB managed listing still lands — and it is the
+  // managed set that decides whether the model a user just picked exists.
+  const [liveModels, liveManaged] = await Promise.all([
+    fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey),
+    fetchManagedModels(opts.fetchBaseURL, opts.fetchApiKey),
+  ])
+  if (liveManaged) rememberManagedModels(liveManaged)
 
   const currentModels = readCatalogFile(opts.currentCatalogFile)
-  const changed = !isDeepStrictEqual(currentModels, liveModels)
+  const base = liveModels ?? currentModels
+  // Nothing live and nothing on disk: leave the caller on the boot catalog.
+  if (!base) return null
+  // Remote JSON becomes OpenCode's provider config on the next start — rebuild
+  // it to a known shape before it reaches the disk (see sanitizeCatalogForDisk).
+  const composed = sanitizeCatalogForDisk(withManagedOverlay(base, liveManaged))
+  if (!composed) return null
+  // `changed` is computed on the COMPOSED result, so a managed model that only
+  // the overlay carries still trips the controlled OpenCode restart in the
+  // warm-fork adoption path (OpenCode reads provider models at process start).
+  // Both sides go through the same normalizer: a raw baked file vs a sanitized
+  // rewrite must not read as a change, or every adoption would force a restart.
+  const current = currentModels ? sanitizeCatalogForDisk(currentModels) : null
+  const changed = !isDeepStrictEqual(current, composed)
   mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
-  writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: liveModels }), { mode: 0o600 })
+  writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: composed }), { mode: 0o600 })
   logger.info('[opencode] refreshed authenticated gateway catalog', {
     changed,
-    models: Object.keys(liveModels).length,
+    models: Object.keys(composed).length,
+    managed: liveManaged ? Object.keys(liveManaged).length : 0,
+    fullCatalogLive: !!liveModels,
     target: opts.targetCatalogFile,
   })
   return { changed, catalogFile: opts.targetCatalogFile }
@@ -1047,6 +1237,18 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     limit: { context: 1_000_000, output: 64_000 },
   },
 }
+
+/** The managed subset of the bundled fallback table: bare ids branded `kortix`.
+ *  Used when the live managed fetch is unavailable, so a managed model is
+ *  present in OpenCode's provider map even with a stale baked catalog AND a
+ *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
+ *  __tests__/managed-fallback-sync.test.ts — a managed model missing here and
+ *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
+export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
+  Object.entries(MINIMAL_FALLBACK_MODELS).filter(
+    ([id, model]) => !id.includes('/') && model.provider === 'kortix',
+  ),
+)
 
 // Conservative window for a model we have no declared limit for. Better to
 // compact a little early than to never compact and get stuck at the wall.

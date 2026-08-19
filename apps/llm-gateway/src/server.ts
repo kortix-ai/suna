@@ -240,8 +240,14 @@ export function buildServer(): GatewayServer {
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
 
-  const models = (c: { req: { header: (k: string) => string | undefined } }) =>
-    gateway.listModels(c.req.header('authorization'));
+  // `?scope=managed` → managed lineup only (~3KB). Sandboxes call it on every
+  // boot to learn the live managed set; see wire.ts for the full rationale.
+  const models = (c: {
+    req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined };
+  }) =>
+    gateway.listModels(c.req.header('authorization'), {
+      managedOnly: c.req.query('scope') === 'managed',
+    });
 
   app.get('/models', models);
   app.get('/v1/models', models);
