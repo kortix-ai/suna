@@ -115,3 +115,29 @@ DO change behaviour. Expand, then contract.
   query on prod before promoting: `select count(*) from kortix.role_assignments ra
   where ra.scope_type='project' and not exists (select 1 from kortix.projects p
   where p.project_id = ra.scope_id)`.
+
+
+## Pre-promote probe (staging / prod) — run BEFORE promoting the cutover
+
+Long-lived data holds role grants written before the catalog collapse; the
+runtime override in `migration-runtime-overrides.ts` reconciles them, but SIZE
+them first (and confirm the override fires) with:
+
+```sql
+-- role_permissions rows the catalog no longer names (would fail the VALIDATE
+-- without the runtime override):
+SELECT rp.role_id, rp.action
+  FROM kortix.role_permissions rp
+  LEFT JOIN kortix.permissions p ON p.action = rp.action
+ WHERE p.action IS NULL;
+
+-- project-scope assignments pointing at deleted projects (purged by the
+-- cutover backfill; 629 on the local dataset):
+SELECT count(*) FROM kortix.role_assignments ra
+ WHERE ra.scope_type = 'project'
+   AND NOT EXISTS (SELECT 1 FROM kortix.projects pr WHERE pr.project_id = ra.scope_id);
+```
+
+Mixed-version window (learnings register 2026-08-19): old pods 42P10 on the
+five upsert writers from migration-apply until the new image rolls. Promote in
+a low-traffic window and verify the rollout completes promptly.

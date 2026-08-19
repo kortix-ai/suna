@@ -172,3 +172,22 @@ describe('the gate codemod is complete', () => {
     expect(topLevelAwaits.map((m) => m[0].trim())).toEqual([]);
   });
 });
+
+// The manifest alias table (`MANIFEST_ACTION_ALIASES`) rewrites a hand-written
+// kortix_cli list ON INPUT; every gate then compares canonical-to-canonical.
+// A route asserting the RETIRED spelling breaks that: the grant holds
+// `project.gitops.push`, the assert asks for `project.cr.open`, and an agent
+// with an explicit (non-'all') grant 403s on CR open. Found live by a peer
+// session on a pre-cutover checkout (2026-08-19); the cutover fixed the four
+// call sites — this pin keeps the retired spellings out of production asserts.
+describe('no production gate asserts a retired action spelling', () => {
+  test("assertAgentScope / assertProjectCapability never name project.cr.*", async () => {
+    const { execSync } = await import('node:child_process');
+    const out = execSync(
+      `grep -rn "assertAgentScope(c, 'project.cr\\.\\|assertProjectCapability(.*'project.cr\\." src --include='*.ts' || true`,
+      { cwd: `${import.meta.dir}/../..`, encoding: 'utf8' },
+    );
+    const hits = out.split('\n').filter((l) => l && !l.includes('.test.ts') && !l.includes('__tests__'));
+    expect(hits).toEqual([]);
+  });
+});
