@@ -27,6 +27,7 @@ import {
   FolderPlusIcon as FolderPlus,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
@@ -118,6 +119,16 @@ export function DriveExplorer({
     error,
     refetch: refetchFiles,
   } = source.useFileList(currentPath);
+
+  // A readiness 503 means the sandbox is parked or booting — a pending state,
+  // never a failure. Keep polling until the box is up so the listing appears
+  // on its own.
+  const sandboxWaking = !!error && isSandboxNotReadyError(error);
+  useEffect(() => {
+    if (!sandboxWaking) return;
+    const interval = window.setInterval(() => void refetchFiles(), 3_000);
+    return () => window.clearInterval(interval);
+  }, [sandboxWaking, refetchFiles]);
 
   const { data: gitStatuses } = source.useGitStatus();
   const gitStatusMap = useMemo(() => buildGitStatusMap(gitStatuses), [gitStatuses]);
@@ -777,19 +788,31 @@ export function DriveExplorer({
             </div>
           )}
 
-          {!!error && !isLoading && (
-            <ErrorState
-              title={tHardcodedUi.raw(
-                'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
-              )}
-              description={error instanceof Error ? error.message : 'Unknown error'}
-              action={
-                <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
-                  Retry
-                </Button>
-              }
-            />
-          )}
+          {!!error &&
+            !isLoading &&
+            (sandboxWaking ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <Loading className="text-muted-foreground/40 h-4 w-4" />
+                <p className="text-muted-foreground text-sm font-medium">
+                  Waking up the workspace…
+                </p>
+                <p className="text-muted-foreground/40 max-w-xs text-xs">
+                  The sandbox is starting. Files will appear automatically.
+                </p>
+              </div>
+            ) : (
+              <ErrorState
+                title={tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileExplorerPage.line658JsxTextFailedToLoadFiles',
+                )}
+                description={error instanceof Error ? error.message : 'Unknown error'}
+                action={
+                  <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
+                    Retry
+                  </Button>
+                }
+              />
+            ))}
 
           {isEmpty && (
             <EmptyState

@@ -1,6 +1,7 @@
 'use client';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { parseImageOutput } from '@/features/session/image-output-path';
 import {
   BasicTool,
@@ -37,9 +38,16 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
     if (!isLocalPath || !imagePath || directUrl) return null;
     return imagePath.replace(/^\/workspace\//, '');
   }, [isLocalPath, imagePath, directUrl]);
-  const { data: fileContentData, isLoading: isImageLoading } = useFileContent(fileContentPath, {
+  const {
+    data: fileContentData,
+    isLoading: isQueryLoading,
+    error: fileContentError,
+  } = useFileContent(fileContentPath, {
     enabled: !!fileContentPath,
   });
+  // A readiness 503 (parked/booting sandbox) counts as loading: useFileContent
+  // keeps polling while it lasts, so the image resolves once the box is up.
+  const isImageLoading = isQueryLoading || isSandboxNotReadyError(fileContentError);
 
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   useEffect(() => {

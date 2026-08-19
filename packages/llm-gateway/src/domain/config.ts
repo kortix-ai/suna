@@ -28,4 +28,12 @@ export interface GatewayConfig {
    * adaptive policy (30 seconds to 2 minutes).
    */
   streamProbeTimeoutMs?: number;
+  /**
+   * Enable the AI-SDK-native ingress (`POST /language-model`, Vercel "AI
+   * Gateway" protocol). Default OFF. When false, `createGateway().languageModel`
+   * returns 404 and the route is inert — the OpenAI-compat `/chat/completions`
+   * path is completely unaffected. Set from `GATEWAY_AI_SDK_NATIVE` in the
+   * standalone server (apps/llm-gateway/src/config.ts).
+   */
+  aiSdkNative?: boolean;
 }

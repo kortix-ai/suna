@@ -11,6 +11,11 @@ import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_API_KEY',
   'KORTIX_LLM_BASE_URL',
+  // Selects opencode's provider transport (buildKortixProvider): on -> @ai-sdk/gateway
+  // (native /language-model, lossless passthrough), off -> @ai-sdk/openai-compatible.
+  // opencode reads it when it builds its config at spawn, so a live toggle takes
+  // effect on the next opencode restart.
+  'KORTIX_LLM_AI_SDK_NATIVE',
   // Gateway-only: the provider-key names opencode must never see. Flipped with the
   // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
   // a toggle to GATEWAY restores the strip on the next opencode restart.

@@ -1,10 +1,12 @@
 'use client';
 
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFileAsBlob } from '../api/runtime-files';
+import { SANDBOX_WAKING_REFETCH_INTERVAL_MS } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
@@ -64,6 +66,11 @@ export function useBinaryBlob(filePath: string | null): {
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
+    // A readiness 503 (parked/booting sandbox) is a pending state, not a
+    // failure: keep polling until the box is active so the blob loads on its
+    // own once the sandbox wakes.
+    refetchInterval: (query) =>
+      isSandboxNotReadyError(query.state.error) ? SANDBOX_WAKING_REFETCH_INTERVAL_MS : false,
   });
 
   const cachedBlob = query.data ?? null;

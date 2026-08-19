@@ -21,6 +21,47 @@ linked, not inlined.
 
 ## Register
 
+### Rewiring writers and converting their table to a view must be TWO releases (2026-08-19)
+
+**When:** an expand/contract store swap (table -> compatibility view). The
+migration applies BEFORE the new image rolls, so old pods run against the view
+for the whole build+rollout window — and any of their `INSERT ... ON CONFLICT
+(cols)` writers 42P10 for that entire window (INSTEAD OF triggers cannot help;
+conflict inference precedes them). Locally it is worse: the shared Supabase DB
+is cutover'd the moment the migration runs, and EVERY other worktree still on
+pre-cutover code breaks until it merges main.
+The rule: **release N rewires every ON CONFLICT writer off the table; release
+N+1 converts it to a view.** If they must ship together, size the window
+explicitly (dev: minutes; prod: pod drain + build — unacceptable for hot
+writers) and schedule the promote accordingly. After cutting over a shared
+local DB, tell every other active session to merge main IMMEDIATELY.
+*Incident:* RBAC cutover #6594 — dev's grant/invite/SSO-JIT/SCIM upserts
+42P10'd from migration-apply until the API rollout landed; every local
+worktree session on pre-cutover code broke against the shared DB at once.
+*Enforcer:* none — prose only. The promote runbook must carry this check.
+
+### A VALIDATE ships only with a reconciliation the TARGET data has passed (2026-08-19)
+
+**When:** writing `VALIDATE CONSTRAINT` for an FK/CHECK added `NOT VALID`.
+Zero violating rows on the local DB is not evidence — local data is young.
+Long-lived envs hold rows written before the catalog/constraint existed (dev:
+`iam_role_actions` rows with retired `project.cr.*`/`trigger.*` actions).
+Either probe every target env for violators first, or — better — precede the
+VALIDATE with idempotent reconciliation DML in the same migration so it cannot
+fail on data the constraint predates. Reconcile by REMAPPING a retired value to
+its replacement, never by deleting the row: where the retired action was a
+rename/collapse (`project.cr.open` -> `project.gitops.push`), the row is the
+whole reason the old name still exists, and deleting it silently strips a
+capability from whoever held it — a permission change disguised as a migration
+fix. Delete only a value with no replacement (the dead `trigger.*` family). A merged migration that VALIDATE-fails
+blocks EVERY deploy of that env; the only sanctioned fix is a checksum-guarded
+runtime override (`packages/db/scripts/migration-runtime-overrides.ts`).
+*Incident:* RBAC cutover #6594 — `role_permissions_action_permissions_fk`
+VALIDATE 23503'd on dev; Deploy Dev blocked ~1h; fixed by the third runtime
+override (map `cr.*`→`gitops.*` dedup-aware, purge uncataloged, then VALIDATE).
+*Enforcer:* `migration-runtime-overrides.test.ts` pins the override; nothing
+yet lints "VALIDATE without reconciliation" — prose only.
+
 ### `drizzle-kit generate` reports a TTY prompt as "no schema changes" (2026-08-19)
 
 **When:** running `bun packages/db/scripts/generate.ts <slug>` from any
