@@ -1702,26 +1702,6 @@ test('kortix.billing gains per-seat, sync and the cost rollups', async () => {
   expect(last().url).toContain('/usage/cost-by-project');
 });
 
-test('kortix.referrals covers the whole referral surface', async () => {
-  await kortix.referrals.code();
-  expect(last().url).toContain('/referrals/code');
-
-  await kortix.referrals.refreshCode();
-  expect(last().url).toContain('/referrals/code/refresh');
-
-  await kortix.referrals.stats();
-  expect(last().url).toContain('/referrals/stats');
-
-  await kortix.referrals.list({ limit: 5 });
-  expect(last().url).toContain('/referrals/list?limit=5');
-
-  await kortix.referrals.validate('CODE1');
-  expect(last().body).toMatchObject({ referral_code: 'CODE1' });
-
-  await kortix.referrals.sendEmails(['a@b.c']);
-  expect(last().url).toContain('/referrals/email');
-});
-
 test('kortix.setupLinks redeems a secret, connector or approval link by token', async () => {
   await kortix.setupLinks.secret.get('TOK1');
   expect(last().url).toBe('http://test.local/v1/setup-links/secret/TOK1');

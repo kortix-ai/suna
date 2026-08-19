@@ -12,7 +12,7 @@
  *
  *   signInWithPassword  POST {url}/auth/v1/token?grant_type=password        :885
  *   signInWithOtp       POST {url}/auth/v1/otp  (+ ?redirect_to=)           :1783
- *   verifyOtp           POST {url}/auth/v1/verify                           :1970
+ *   verifyOtp           POST {url}/auth/v1/verify  (2 body shapes)          :1970
  *   refresh             POST {url}/auth/v1/token?grant_type=refresh_token   :3907
  *   signOut             POST {url}/auth/v1/logout?scope=global  + Bearer    GoTrueAdminApi.js:70
  *   getUser             GET  {url}/auth/v1/user                 + Bearer    :2611
@@ -45,6 +45,46 @@ export type KortixVerifyOtpType =
 
 /** Sign-out blast radius, as GoTrue defines it. */
 export type KortixSignOutScope = 'global' | 'local' | 'others';
+
+/**
+ * The two things `/auth/v1/verify` accepts, as a union so a caller must supply
+ * exactly one of them. Mixing the forms is not a style question: GoTrue
+ * v2.194.0 answers `403 otp_expired` to `{email, token: <hash>}`.
+ *
+ * - **Code form** — `{ email, token }`, where `token` is the 6-digit code. It
+ *   only exists if the deployment's email template renders `{{ .Token }}`.
+ *   Kortix's own template (`apps/api/src/auth/send-email-hook/templates.ts`)
+ *   and the stock GoTrue template do NOT: they render a link only.
+ * - **Link form** — `{ token_hash, type }`, read off that emailed link
+ *   (`/auth/v1/verify?token=<56-hex-hash>&type=magiclink`). The link's `token`
+ *   query parameter IS the `token_hash`; `type` must be the link's own `type`,
+ *   which is why it is required here rather than defaulted.
+ */
+export type KortixVerifyOtpInput =
+  | {
+      email: string;
+      token: string;
+      /** Default `'email'`. */
+      type?: KortixVerifyOtpType;
+      token_hash?: never;
+      captchaToken?: string;
+      signal?: AbortSignal;
+    }
+  | {
+      token_hash: string;
+      /** Required: take it from the emailed link's `type` query parameter. */
+      type: KortixVerifyOtpType;
+      email?: never;
+      token?: never;
+      captchaToken?: string;
+      signal?: AbortSignal;
+    };
+
+function isTokenHashForm(
+  input: KortixVerifyOtpInput,
+): input is Extract<KortixVerifyOtpInput, { token_hash: string }> {
+  return typeof (input as { token_hash?: unknown }).token_hash === 'string';
+}
 
 function endpoint(ctx: GoTrueContext, path: string): string {
   return `${ctx.url}/auth/v1${path}`;
@@ -114,22 +154,17 @@ export async function gotrueSignInWithOtp(
 
 export async function gotrueVerifyOtp(
   ctx: GoTrueContext,
-  input: {
-    email: string;
-    token: string;
-    type?: KortixVerifyOtpType;
-    captchaToken?: string;
-    signal?: AbortSignal;
-  },
+  input: KortixVerifyOtpInput,
 ): Promise<KortixAuthSession> {
+  // Send ONE shape or the other. A `token_hash` request that also carries
+  // `email`/`token` is the request GoTrue rejects.
+  const identity = isTokenHashForm(input)
+    ? { token_hash: input.token_hash, type: input.type }
+    : { email: input.email, token: input.token, type: input.type ?? 'email' };
+
   const body = await request(ctx, endpoint(ctx, '/verify'), {
     method: 'POST',
-    body: {
-      email: input.email,
-      token: input.token,
-      type: input.type ?? 'email',
-      gotrue_meta_security: { captcha_token: input.captchaToken },
-    },
+    body: { ...identity, gotrue_meta_security: { captcha_token: input.captchaToken } },
     ...(input.signal ? { signal: input.signal } : {}),
   });
   return normalizeSession(body as Record<string, unknown>);

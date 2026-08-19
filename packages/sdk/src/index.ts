@@ -79,6 +79,7 @@ export {
   type KortixAuthSession,
   type KortixAuthStorage,
   type KortixAuthUser,
+  type KortixVerifyOtpInput,
   type KortixVerifyOtpType,
 } from './core/auth';
 

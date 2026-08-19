@@ -35,7 +35,7 @@ import {
   gotrueVerifyOtp,
   type GoTrueContext,
   type KortixSignOutScope,
-  type KortixVerifyOtpType,
+  type KortixVerifyOtpInput,
 } from './gotrue';
 import {
   DEFAULT_EXPIRY_SKEW_SECONDS,
@@ -101,7 +101,16 @@ export interface KortixAuth {
     shouldCreateUser?: boolean;
     data?: Record<string, unknown>;
   }): Promise<void>;
-  verifyOtp(input: { email: string; token: string; type?: KortixVerifyOtpType }): Promise<KortixAuthSession>;
+  /**
+   * Exchanges an emailed credential for a session. Two forms, exactly one of
+   * them per call — see `KortixVerifyOtpInput`:
+   *
+   * - `{ email, token }` — a 6-digit code. Only exists when the deployment's
+   *   email template renders one.
+   * - `{ token_hash, type }` — read off the emailed LINK, which is what the
+   *   stock and Kortix templates actually send.
+   */
+  verifyOtp(input: KortixVerifyOtpInput): Promise<KortixAuthSession>;
   signOut(options?: { scope?: 'global' | 'local' | 'others' }): Promise<void>;
   /** Cached with the session; `force` re-reads from GoTrue. */
   getUser(options?: { force?: boolean }): Promise<KortixAuthUser | null>;

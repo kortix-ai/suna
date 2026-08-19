@@ -560,16 +560,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     systemReload,
   };
 
-  /** Referral program — the account's own code, its stats, and invitations. */
-  const referrals = {
-    code: P.getReferralCode,
-    refreshCode: P.refreshReferralCode,
-    validate: P.validateReferralCode,
-    stats: P.getReferralStats,
-    list: P.listReferrals,
-    sendEmails: P.sendReferralEmails,
-  };
-
   /**
    * REDEEMING a setup link — the recipient side, addressed by token alone.
    * `project(id).setupLinks` is the other half: an agent MINTING one.
@@ -1730,8 +1720,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     auth,
     /** Platform-operator surface (`/admin/*`, `/system/*`) — gated server-side. */
     admin,
-    /** Referral program — code, stats, invitations. */
-    referrals,
     /** REDEEM a setup link by token (`project(id).setupLinks` mints them). */
     setupLinks,
     /** Anonymous reads — shared sessions, public templates, the catalog, voice links. */

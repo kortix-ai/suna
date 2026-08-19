@@ -5,7 +5,8 @@
  * factory returning `{ config: {...} }` deletes every other named export for
  * every suite in the same process. `src/config.ts` also exports `SANDBOX_VERSION`,
  * `KNOWN_PROVIDERS`, `parseAllowedProviders`, `KORTIX_MARKUP`,
- * `PLATFORM_FEE_MARKUP`, and `getToolCost` — and `src/snapshots/hash.ts` imports
+ * `PLATFORM_FEE_MARKUP`, `getToolCost`, and `resolveAnonKey` — and
+ * `src/snapshots/hash.ts` imports
  * `SANDBOX_VERSION`, which is the exact break that made
  * `bun test src/projects/reaping/` unrunnable.
  *
@@ -31,5 +32,19 @@ export function mockConfigModule(
     KORTIX_MARKUP: 1.2,
     PLATFORM_FEE_MARKUP: 0.1,
     getToolCost: () => 0,
+    // Same three-name chain, same order, as the real `resolveAnonKey`. A stub
+    // that always returned '' would let a suite pass here and 503 against real
+    // config.
+    resolveAnonKey: (
+      sources: {
+        SUPABASE_ANON_KEY?: string;
+        KORTIX_PUBLIC_SUPABASE_ANON_KEY?: string;
+        NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
+      } = {},
+    ) =>
+      sources.SUPABASE_ANON_KEY ||
+      sources.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
+      sources.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      '',
   };
 }

@@ -11,6 +11,7 @@ import {
   gotrueSignOut,
   gotrueVerifyOtp,
   type GoTrueContext,
+  type KortixVerifyOtpInput,
 } from './gotrue';
 
 const SESSION_BODY = {
@@ -120,6 +121,65 @@ describe('gotrueVerifyOtp', () => {
       gotrue_meta_security: { captcha_token: undefined },
     });
     expect(session.refresh_token).toBe('refresh-1');
+  });
+
+  test('defaults type to email when the code form omits it', async () => {
+    const { ctx, calls } = context(okSession);
+    await gotrueVerifyOtp(ctx, { email: 'a@b.test', token: '123456' });
+    expect(calls[0]?.body).toMatchObject({ type: 'email' });
+  });
+
+  // The magic-link email carries a LINK, not a 6-digit code:
+  // /auth/v1/verify?token=<56-hex-hash>&type=magiclink. That hash is a
+  // `token_hash`, and GoTrue v2.194.0 answers 403 otp_expired when it arrives
+  // as {email, token}. It MUST be sent as {token_hash, type}.
+  test('POSTs /auth/v1/verify with token_hash and type — and NO email or token', async () => {
+    const hash = 'a'.repeat(56);
+    const { ctx, calls } = context(okSession);
+    const session = await gotrueVerifyOtp(ctx, { token_hash: hash, type: 'magiclink' });
+
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.url).toBe('https://supa.kortix.test/auth/v1/verify');
+    expect(calls[0]?.body).toEqual({
+      token_hash: hash,
+      type: 'magiclink',
+      gotrue_meta_security: { captcha_token: undefined },
+    });
+    // A stray `email`/`token` key is exactly what produced the live 403.
+    expect(Object.keys(calls[0]?.body as Record<string, unknown>).sort()).toEqual([
+      'gotrue_meta_security',
+      'token_hash',
+      'type',
+    ]);
+    expect(session.access_token).toBe('access-1');
+  });
+
+  test('carries captchaToken through the token_hash form', async () => {
+    const { ctx, calls } = context(okSession);
+    await gotrueVerifyOtp(ctx, { token_hash: 'h', type: 'recovery', captchaToken: 'cap-1' });
+    expect(calls[0]?.body).toMatchObject({ gotrue_meta_security: { captcha_token: 'cap-1' } });
+  });
+
+  // Type-level, and a real gate: `tsconfig.json` includes `src/**/*`, so
+  // `tsc --noEmit` compiles this file and every @ts-expect-error below fails
+  // the build the moment the union stops rejecting the shape it names.
+  test('the union admits exactly one form', () => {
+    const { ctx } = context(okSession);
+    const accepted: KortixVerifyOtpInput[] = [
+      { email: 'a@b.test', token: '123456' },
+      { email: 'a@b.test', token: '123456', type: 'signup' },
+      { token_hash: 'h', type: 'magiclink' },
+    ];
+    expect(accepted).toHaveLength(3);
+
+    // @ts-expect-error — both forms at once.
+    void (() => gotrueVerifyOtp(ctx, { email: 'a@b.test', token: '1', token_hash: 'h', type: 'magiclink' }));
+    // @ts-expect-error — token_hash without the type the link carries.
+    void (() => gotrueVerifyOtp(ctx, { token_hash: 'h' }));
+    // @ts-expect-error — email without token.
+    void (() => gotrueVerifyOtp(ctx, { email: 'a@b.test' }));
+    // @ts-expect-error — token without email.
+    void (() => gotrueVerifyOtp(ctx, { token: '123456' }));
   });
 });
 

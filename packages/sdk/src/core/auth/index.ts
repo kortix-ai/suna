@@ -22,7 +22,7 @@ export {
 } from './client';
 export { fetchKortixAuthConfig, type KortixAuthConfig, type KortixAuthMethod } from './config';
 export { KortixAuthError } from './errors';
-export type { KortixVerifyOtpType } from './gotrue';
+export type { KortixVerifyOtpInput, KortixVerifyOtpType } from './gotrue';
 export type { KortixAuthSession, KortixAuthUser } from './session';
 export {
   createLocalStorageAuthStorage,

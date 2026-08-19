@@ -423,7 +423,7 @@ Every request sends `apikey: <anon_key>` and `Content-Type: application/json`.
 |---|---|---|
 | `signInWithPassword` | `POST {url}/auth/v1/token?grant_type=password` `{email,password}` | `GoTrueClient.js:885`; `tests/src/fixtures/supabase.ts:30` |
 | `signInWithOtp` | `POST {url}/auth/v1/otp` `{email,data,create_user,gotrue_meta_security}` + `?redirect_to=` | `GoTrueClient.js:1783` |
-| `verifyOtp` | `POST {url}/auth/v1/verify` `{email,token,type,gotrue_meta_security}` | `GoTrueClient.js:1970` |
+| `verifyOtp` | `POST {url}/auth/v1/verify` `{email,token,type,gotrue_meta_security}` — see the amendment in §9 | `GoTrueClient.js:1970` |
 | `refresh` | `POST {url}/auth/v1/token?grant_type=refresh_token` `{refresh_token}` | `GoTrueClient.js:3907` |
 | `signOut` | `POST {url}/auth/v1/logout?scope=global` + `Authorization: Bearer` | `GoTrueAdminApi.js:70` |
 | `getUser` | `GET {url}/auth/v1/user` + `Authorization: Bearer` | `GoTrueClient.js:2611` |
@@ -879,3 +879,60 @@ deployed-SHA evidence, and the exact dev commands in the final response.
 | `Access-Control-Allow-Origin: *` on `/v1/auth/config` only (§2.7) | Jay | **No change to CORS.** Browser hosts on non-allowlisted origins are already blocked for every other SDK call. |
 | Include `sso_enabled` in the payload | Jay | **No.** It needs a per-request upstream hop to GoTrue `/settings` on a public unauthenticated route. The SDK can read `/auth/v1/settings` itself once it holds `url` + `anon_key` (`apps/web/src/lib/supabase/client.ts:34` does exactly that). |
 | `createKortixAuth` in `apps/mobile` | Jay | Out of v1. Sign-in itself works on RN (plain `fetch` + JSON); PKCE needs a `crypto.subtle` polyfill and throws loudly without one. SDK **streaming** still does not work on RN (`AGENTS.md:404`) — unchanged by this. |
+
+---
+
+## 9. Amendment 2026-08-19 — `verifyOtp` could not consume what the OTP email carries
+
+Found in live e2e against GoTrue v2.194.0, after §3.4 was implemented as written.
+
+**The defect.** §3.4 specifies exactly one `/auth/v1/verify` body,
+`{email, token, type, gotrue_meta_security}`, and §3.3 types the input as
+`{ email, token, type? }`. That is the **6-digit-code** form. It only exists if
+the deployment's email template renders `{{ .Token }}`. Neither the stock GoTrue
+template nor Kortix's own
+(`apps/api/src/auth/send-email-hook/templates.ts`) does — both send a **link
+only**:
+
+```
+/auth/v1/verify?token=<56-hex-hash>&type=magiclink
+```
+
+That `token` query parameter is a hash, not a code. Measured against
+GoTrue v2.194.0:
+
+| Request body | Result |
+|---|---|
+| `{ email, token: <56-hex-hash> }` | `403 otp_expired` |
+| `{ token_hash: <56-hex-hash>, type }` | `200` + session |
+
+So the shipped `verifyOtp` could not complete the magic-link sign-in that
+`signInWithOtp` starts — the only OTP flow a default deployment can produce.
+
+**The fix (additive).** `gotrueVerifyOtp` and `KortixAuth.verifyOtp` now take
+`KortixVerifyOtpInput`, a union of exactly two shapes, and send the matching
+body — never a mixture, which is the request GoTrue rejects:
+
+| Form | Input | Body sent |
+|---|---|---|
+| Code | `{ email, token, type? }` (default `'email'`) | `{email,token,type,gotrue_meta_security}` |
+| Link | `{ token_hash, type }` (`type` **required**) | `{token_hash,type,gotrue_meta_security}` |
+
+`type` is required in the link form because the link carries it; defaulting it
+to `'email'` would reproduce the 403 silently. Session persistence, token
+caching, and the `SIGNED_IN` event are the password path's, unchanged and
+identical for both forms. Existing `{ email, token }` callers compile and behave
+exactly as before.
+
+`KortixVerifyOtpInput` is a new exported type name — additive, so
+`public-type-surface.snapshot.json` gains one line and loses none. The union is
+gated at compile time: `packages/sdk/tsconfig.json` includes `src/**/*`, so the
+four `@ts-expect-error` assertions in `src/core/auth/gotrue.test.ts` fail
+`pnpm --filter @kortix/sdk typecheck` the moment the union stops rejecting a
+mixed or incomplete shape.
+
+**Standing limitation.** The 6-digit-code form remains unusable on a default
+Kortix or stock-GoTrue deployment. Making it work requires an email template
+that renders the code, which this amendment deliberately does not change —
+`templates.ts` is out of scope here. Documented for consumers in
+`apps/web/content/docs/sdk/auth.mdx` → "Completing a magic-link sign-in".

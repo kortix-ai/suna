@@ -169,7 +169,14 @@ export function resolveAuthConfig(env: AuthConfigEnv): AuthConfigBody | null {
   };
 }
 
-/** The live deployment's values. Read per request so a hot-reload is visible. */
+/**
+ * The live deployment's values. Read per request so a hot-reload is visible.
+ *
+ * `config.SUPABASE_ANON_KEY` is already the resolved head of the three-name
+ * fallback chain (SUPABASE_ANON_KEY → KORTIX_PUBLIC_SUPABASE_ANON_KEY →
+ * NEXT_PUBLIC_SUPABASE_ANON_KEY, see config.ts `resolveAnonKey`). Do not
+ * re-derive the chain here: one resolution site, one order, one thing to test.
+ */
 export function readAuthConfigEnv(): AuthConfigEnv {
   return {
     supabaseUrl: config.SUPABASE_URL ?? '',
@@ -181,9 +188,13 @@ export function readAuthConfigEnv(): AuthConfigEnv {
   };
 }
 
+// Names all three accepted anon-key variables: an operator who already set the
+// frontend's name and still got a 503 must be able to tell from this message
+// that the API read it too, so the real fault is the URL half.
 const UNAVAILABLE_MESSAGE =
-  'Sign-in discovery is not configured on this deployment. Set SUPABASE_ANON_KEY, ' +
-  'and set SUPABASE_PUBLIC_URL when SUPABASE_URL is an internal hostname.';
+  'Sign-in discovery is not configured on this deployment. Set SUPABASE_ANON_KEY ' +
+  '(or KORTIX_PUBLIC_SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY), and set ' +
+  'SUPABASE_PUBLIC_URL when SUPABASE_URL is an internal hostname.';
 
 /**
  * Factory so tests can drive the real handler against a hermetic env instead of

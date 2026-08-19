@@ -704,6 +704,7 @@
     "KortixTaskEvent",
     "KortixTaskLiveStatus",
     "KortixTaskStatus",
+    "KortixVerifyOtpInput",
     "KortixVerifyOtpType",
     "LayoutConfig",
     "LinkRepositoryInput",

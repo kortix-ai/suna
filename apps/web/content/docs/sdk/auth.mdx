@@ -116,7 +116,8 @@ self-host with known values or for a test.
 |---|---|
 | `signInWithPassword({ email, password })` | Returns a session. |
 | `signInWithOtp({ email, redirectTo })` | Sends a magic-link email. Returns `void` — no session exists yet. |
-| `verifyOtp({ email, token })` | Exchanges an emailed code for a session. |
+| `verifyOtp({ token_hash, type })` | Exchanges the emailed **link** for a session. |
+| `verifyOtp({ email, token })` | Exchanges a 6-digit **code** for a session. |
 | `authorizeUrl(provider, { redirectTo })` | Returns a PKCE authorize URL. Your app performs the redirect. |
 | `exchangeCodeForSession(code)` | Exchanges the callback code for a session. |
 | `signOut({ scope })` | Revokes at GoTrue and clears local state. |
@@ -124,6 +125,48 @@ self-host with known values or for a test.
 `authorizeUrl` requires `crypto.subtle`. Where that API is absent it throws
 `KortixAuthError` with `code: 'pkce_unsupported'` instead of downgrading the
 flow.
+
+### Completing a magic-link sign-in
+
+`signInWithOtp` sends an email. **By default that email carries a link, not a
+6-digit code** — this is true of the stock GoTrue template and of Kortix's own
+template. The link looks like this:
+
+```
+https://<gotrue>/auth/v1/verify?token=8f3c…&type=magiclink&redirect_to=https://app.test/callback
+```
+
+The `token` query parameter is a 56-character hash, not a code. Send it as
+`token_hash`, with the link's own `type`. Sending it as `{ email, token }`
+returns `403 otp_expired`:
+
+```ts
+const link = new URL(clickedUrl);
+const session = await auth.verifyOtp({
+  token_hash: link.searchParams.get('token')!,
+  type: link.searchParams.get('type') as KortixVerifyOtpType, // 'magiclink'
+});
+```
+
+`type` is required in this form precisely because the link carries it; there is
+no safe default.
+
+`verifyOtp` takes `KortixVerifyOtpInput`, a union of exactly two shapes, so a
+call that mixes them does not compile:
+
+```ts
+await auth.verifyOtp({ token_hash: hash, type: 'magiclink' }); // link form
+await auth.verifyOtp({ email, token: '123456' });              // code form, type defaults to 'email'
+await auth.verifyOtp({ email, token, token_hash: hash });      // ✗ type error
+```
+
+The 6-digit-code form works only against a deployment whose email template
+renders the code — GoTrue's `{{ .Token }}`. Neither the stock template nor
+Kortix's `apps/api/src/auth/send-email-hook/templates.ts` does, so on a default
+deployment the link form is the only one that can succeed.
+
+Both forms persist the session, cache the token, and emit `SIGNED_IN`, exactly
+like `signInWithPassword`.
 
 ### Storage
 

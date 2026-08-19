@@ -420,6 +420,30 @@ describe('verifyOtp', () => {
     expect(await storage.getItem(STORAGE_KEY)).not.toBeNull();
     expect(events.map((event) => event.event)).toContain('SIGNED_IN');
   });
+
+  test('the emailed-link form sends token_hash and persists identically', async () => {
+    const fresh = jwt(3600);
+    const hash = 'b'.repeat(56);
+    const http = harness().on('/auth/v1/verify', () =>
+      Response.json({ access_token: fresh, refresh_token: 'refresh-1', expires_in: 3600 }),
+    );
+    const { auth, storage } = makeAuth({ fetchImpl: http.fetchImpl });
+
+    const events: KortixAuthChange[] = [];
+    auth.onChange((change) => void events.push(change));
+
+    const result = await auth.verifyOtp({ token_hash: hash, type: 'magiclink' });
+
+    expect(result.access_token).toBe(fresh);
+    const body = http.callsTo('/auth/v1/verify')[0]?.body as Record<string, unknown>;
+    expect(body).toMatchObject({ token_hash: hash, type: 'magiclink' });
+    expect(body.email).toBeUndefined();
+    expect(body.token).toBeUndefined();
+    // Session handling is the password path's, unchanged.
+    expect(await storage.getItem(STORAGE_KEY)).not.toBeNull();
+    expect(auth.getSession()?.access_token).toBe(fresh);
+    expect(events.map((event) => event.event)).toContain('SIGNED_IN');
+  });
 });
 
 // ── sign-out ────────────────────────────────────────────────────────────────

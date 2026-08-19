@@ -17,7 +17,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 
-import { config } from '../config';
+import { config, resolveAnonKey } from '../config';
 import { app } from '../index';
 import {
   createAuthConfigRouter,
@@ -116,6 +116,74 @@ describe('resolveAuthConfig — 503 conditions', () => {
     expect(isBrowserReachableUrl('not-a-url')).toBe(false);
     expect(isBrowserReachableUrl('ftp://supa.kortix.com')).toBe(false);
     expect(isBrowserReachableUrl('https://supa.kortix.com')).toBe(true);
+  });
+});
+
+describe('anon-key fallback chain (config.ts resolveAnonKey)', () => {
+  // Nothing in this repo sets SUPABASE_ANON_KEY: the same publishable value
+  // ships under the frontend's names in every deployment. Without the chain,
+  // GET /v1/auth/config 503s on a box that IS configured. Pin the order.
+  const A = 'explicit-anon-key';
+  const K = 'kortix-public-anon-key';
+  const N = 'next-public-anon-key';
+
+  test('explicit SUPABASE_ANON_KEY wins over both frontend names', () => {
+    expect(
+      resolveAnonKey({
+        SUPABASE_ANON_KEY: A,
+        KORTIX_PUBLIC_SUPABASE_ANON_KEY: K,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: N,
+      }),
+    ).toBe(A);
+  });
+
+  test('KORTIX_PUBLIC_ wins over the legacy NEXT_PUBLIC_ alias', () => {
+    expect(
+      resolveAnonKey({ KORTIX_PUBLIC_SUPABASE_ANON_KEY: K, NEXT_PUBLIC_SUPABASE_ANON_KEY: N }),
+    ).toBe(K);
+    expect(
+      resolveAnonKey({
+        SUPABASE_ANON_KEY: '',
+        KORTIX_PUBLIC_SUPABASE_ANON_KEY: K,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: N,
+      }),
+    ).toBe(K);
+  });
+
+  test('each source alone is enough', () => {
+    expect(resolveAnonKey({ SUPABASE_ANON_KEY: A })).toBe(A);
+    expect(resolveAnonKey({ KORTIX_PUBLIC_SUPABASE_ANON_KEY: K })).toBe(K);
+    expect(resolveAnonKey({ NEXT_PUBLIC_SUPABASE_ANON_KEY: N })).toBe(N);
+  });
+
+  test('all empty or absent → empty string, which is the 503 input', () => {
+    expect(resolveAnonKey({})).toBe('');
+    expect(
+      resolveAnonKey({
+        SUPABASE_ANON_KEY: '',
+        KORTIX_PUBLIC_SUPABASE_ANON_KEY: '',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: '',
+      }),
+    ).toBe('');
+  });
+
+  test('the resolved value reaches a 200 payload; all-empty is the 503', async () => {
+    const served = await routerFor(env({ anonKey: resolveAnonKey({ NEXT_PUBLIC_SUPABASE_ANON_KEY: N }) })).request(
+      '/config',
+    );
+    expect(served.status).toBe(200);
+    expect((await served.json()).anon_key).toBe(N);
+
+    const unset = await routerFor(env({ anonKey: resolveAnonKey({}) })).request('/config');
+    expect(unset.status).toBe(503);
+    expect((await unset.json()).code).toBe('auth_config_unavailable');
+  });
+
+  test('the 503 message names all three accepted variables', async () => {
+    const body = await (await routerFor(env({ anonKey: '' })).request('/config')).json();
+    expect(body.message).toContain('SUPABASE_ANON_KEY');
+    expect(body.message).toContain('KORTIX_PUBLIC_SUPABASE_ANON_KEY');
+    expect(body.message).toContain('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   });
 });
 
