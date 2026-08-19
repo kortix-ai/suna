@@ -55,10 +55,12 @@ mock.module('../../shared/preview-ownership', () => ({
 }));
 mock.module('../../iam', () => ({
   PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
-  authorize: async (_userId: string, _accountId: string, action: string, target: unknown) => {
+  // `authorize(actor, action, obj)` — the acting credential is part of the
+  // Actor now, so the action moved to position 2.
+  authorize: async (_actor: unknown, action: string, target: unknown) => {
     authorizeCalls.push({ action, target });
     return authorizeAllowed
-      ? { allowed: true, reason: 'project_role' }
+      ? { allowed: true, reason: 'role' }
       : { allowed: false, reason: 'resource_scope_insufficient' };
   },
 }));

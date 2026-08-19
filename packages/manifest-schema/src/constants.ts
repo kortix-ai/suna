@@ -245,6 +245,12 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+  // Minting a project credential. Grantable so a manifest CAN hand it to an
+  // agent explicitly, but note the two credential routes refuse an
+  // agent-session token outright (projects/routes/r3.ts) — an agent that could
+  // mint a fresh, grant-less project token would escape its own ceiling. The
+  // leaf exists so a CUSTOM ROLE can withhold it from humans.
+  'project.credentials.issue',
 ];
 
 /**

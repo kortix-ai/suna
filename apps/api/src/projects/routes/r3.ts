@@ -266,10 +266,12 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'credentials');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above,
-  // which routes through the IAM engine (project.write).
+  // Authorization is enforced by loadProjectForUser(... 'credentials') above:
+  // `project.credentials.issue`, its own leaf. It used to be 'manage', which
+  // mapped to project.write — so anyone who could edit the project could mint a
+  // long-lived project credential (routes.md §5.2).
 
   // Privilege-escalation guard: an agent-session token is itself a project
   // account token carrying a (possibly narrow) AgentGrant. If it could mint a
@@ -335,9 +337,9 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const tokenId = c.req.param('tokenId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'credentials');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Authorization is enforced by loadProjectForUser(... 'manage') above.
+  // Authorization is enforced by loadProjectForUser(... 'credentials') above.
   // Token management is a human/manage operation: an agent-session token must
   // not revoke project tokens (it could knock out its own siblings / the human
   // CLI token as a DoS). Symmetric with the mint guard above.

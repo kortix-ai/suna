@@ -16,6 +16,7 @@ import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
@@ -141,7 +142,7 @@ auditRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
@@ -325,7 +326,7 @@ auditRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
@@ -449,7 +450,7 @@ auditRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
     let limit: number;
@@ -519,7 +520,7 @@ auditRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate on listing: a downgraded admin must be able to see
     // leftover webhooks to delete them. Creation/update stay gated below.
 
@@ -552,7 +553,7 @@ auditRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
@@ -652,7 +653,7 @@ auditRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
@@ -725,7 +726,7 @@ auditRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     let limit: number;
     try {
       limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 100, 500);
@@ -792,7 +793,7 @@ auditRouter.openapi(
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
     const deliveryId = c.req.param('deliveryId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const [hook] = await db
       .select({ webhookId: auditWebhooks.webhookId })
       .from(auditWebhooks)
@@ -833,7 +834,7 @@ auditRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate: deleting a webhook is cleanup, always allowed — and
     // delivery itself is entitlement-gated in shared/audit-webhooks.ts, so a
     // leftover row on a downgraded account streams nothing either way.

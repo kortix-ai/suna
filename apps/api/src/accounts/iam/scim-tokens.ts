@@ -7,6 +7,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import {
   createScimToken,
   listScimTokens,
@@ -31,7 +32,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const tokens = await listScimTokens(accountId);
   return c.json({
@@ -65,7 +66,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const denied = await requireEntitlement(c, accountId, 'scim');
   if (denied) return denied;
 
@@ -145,7 +146,7 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const tokenId = c.req.param('tokenId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   // Revocation must never 402 — a lapsed/downgraded entitlement can't be the
   // thing standing between an admin and killing a leaked credential.
 

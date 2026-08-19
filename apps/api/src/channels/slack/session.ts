@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { filterAccessibleProjectResources } from '../../iam';
+import { filterAccessibleObjects } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
@@ -147,9 +148,8 @@ export async function createOrJoinThreadSession(input: {
     explicit: selection?.agentName ?? null,
     projectDefault: projectDefaultAgent,
   }).agent;
-  const allowedAgents = await filterAccessibleProjectResources(
-    userId,
-    project.accountId,
+  const allowedAgents = await filterAccessibleObjects(
+    actorForUser(userId, project.accountId),
     projectId,
     'agent',
     [launchAgent],

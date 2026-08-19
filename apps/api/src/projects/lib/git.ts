@@ -25,7 +25,8 @@ import {
 // with a partial shape — a barrel import here turns those into module-load
 // SyntaxErrors far from anything they're testing.
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { authorize } from '../../iam/dispatcher';
+import { authorize } from '../../iam/authorize';
+import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
@@ -686,13 +687,13 @@ export async function authorizeGitProxy(
     if (!userId) return false;
     const action =
       scope === 'write' ? PROJECT_ACTIONS.PROJECT_GITOPS_PUSH : PROJECT_ACTIONS.PROJECT_GITOPS_READ;
+    // The git proxy authenticates its own token (a PAT or a session connector
+    // token), so the actor is built FROM that token id rather than from a Hono
+    // context — same classification, same agent-grant fold.
     const verdict = await authorize(
-      userId,
-      project.accountId,
+      await actorForToken(userId, project.accountId, actingTokenId, { ctx: requestCtx }),
       action,
       { type: 'project', id: projectId },
-      actingTokenId,
-      requestCtx,
     );
     return verdict.allowed;
   };

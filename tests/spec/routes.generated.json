@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 587,
+  "count": 592,
   "routes": [
     {
       "method": "GET",
@@ -224,6 +224,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/assignments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/assignments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/assignments/:assignmentId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/enterprise-demo"
     },
     {
@@ -308,6 +320,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/permissions"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/policies"
     },
     {
@@ -329,6 +345,10 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/resource-grants"
     },
     {
       "method": "GET",

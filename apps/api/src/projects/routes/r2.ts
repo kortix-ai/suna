@@ -1,4 +1,5 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
 import { sessionTemplateBuilds } from '../../snapshots/build-state';
@@ -109,7 +110,7 @@ projectsApp.openapi(
   async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const repoFullName = normalizeString(body.repo_full_name ?? body.repoFullName);
   const repoUrlInput = normalizeString(body.repo_url ?? body.repoUrl);
@@ -265,7 +266,7 @@ projectsApp.openapi(
   async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const name = normalizeString(body.name);
   if (!name) return c.json({ error: 'name is required' }, 400);

@@ -12,6 +12,7 @@ import {
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
@@ -161,7 +162,7 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
 
   const onlyMine = isTruthyFlag(c.req.query('mine'));
   const tokens = onlyMine
@@ -230,7 +231,7 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
 
   const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
@@ -246,7 +247,7 @@ accountsRouter.openapi(
       : undefined;
 
   if (projectId) {
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded?.row || loaded.row.accountId !== accountId) {
       return c.json({ error: 'Project not found in account' }, 403);
     }
@@ -306,7 +307,7 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {

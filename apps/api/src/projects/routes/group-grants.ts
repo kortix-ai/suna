@@ -5,7 +5,13 @@
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
-import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/role-perms';
+import {
+  assignRole,
+  auditAssignmentRevoked,
+  listAssignments,
+  SYSTEM_ACTOR,
+} from '../../iam/assignments';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -201,6 +207,13 @@ projectsApp.openapi(
         ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
       },
     });
+  // …and the canonical grant, through the ONE write path. The route already
+  // asserted `project.members.manage` above, so `SYSTEM_ACTOR` here does not
+  // widen anything — it says "the caller was authorized by this route, not by
+  // re-deriving a different action". Best-effort: the mirror trigger on
+  // `project_group_grants` wrote the same canonical row inside the statement
+  // above, so a failure costs the audit event, not the grant.
+  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null);
   await invalidateIamCacheForGroup(groupId);
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
@@ -271,10 +284,70 @@ projectsApp.openapi(
     .returning({ groupId: projectGroupGrants.groupId });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
+  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null);
   await invalidateIamCacheForGroup(groupId);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
 },
 );
+
+/**
+ * The canonical half of a group→project grant.
+ *
+ * Best-effort on purpose: the mirror trigger on `project_group_grants` has
+ * already written (or removed) the same `role_assignments` row inside the
+ * caller's own statement, so the ENGINE is correct either way. What these add is
+ * the single `iam.assignment.{granted,revoked}` audit event and the group
+ * fan-out cache bust — bookkeeping that must never fail a legitimate grant.
+ */
+async function mirrorGroupGrant(
+  accountId: string,
+  projectId: string,
+  groupId: string,
+  role: ProjectRole,
+  expiresAt: Date | null,
+): Promise<void> {
+  try {
+    await assignRole(SYSTEM_ACTOR, accountId, {
+      principal: { type: 'group', id: groupId },
+      roleKey: role,
+      scope: { type: 'project', id: projectId },
+      expiresAt,
+      source: 'manual',
+    });
+  } catch (err) {
+    console.warn('[group-grants] canonical assignment failed', {
+      projectId,
+      groupId,
+      err: (err as Error)?.message,
+    });
+  }
+}
+
+async function revokeGroupGrant(
+  accountId: string,
+  projectId: string,
+  groupId: string,
+): Promise<void> {
+  try {
+    const rows = await listAssignments({
+      accountId,
+      principal: { type: 'group', id: groupId },
+      scopeType: 'project',
+      scopeId: projectId,
+      liveOnly: false,
+    });
+    for (const row of rows) {
+      if (row.objectType !== null || !row.roleIsSystem) continue;
+      await auditAssignmentRevoked(SYSTEM_ACTOR, accountId, row);
+    }
+  } catch (err) {
+    console.warn('[group-grants] canonical revoke audit failed', {
+      projectId,
+      groupId,
+      err: (err as Error)?.message,
+    });
+  }
+}
 
 // DELETE /v1/projects/:projectId/group-grants/:groupId
 // Detach a group. Members of the group lose access via this grant
@@ -311,6 +384,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
 
+  await revokeGroupGrant(loaded.row.accountId, projectId, groupId);
   await db
     .delete(projectGroupGrants)
     .where(

@@ -66,7 +66,10 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       .sort();
 
     expect(seeded).toEqual(fromCode);
-    expect(seeded).toHaveLength(69);
+    // 69 at the canonical-model seed + `project.credentials.issue`, added by
+    // 20260819015727000 when the cli-token / project-PAT routes stopped gating on
+    // the coarse `manage` alias (routes.md §5.2).
+    expect(seeded).toHaveLength(70);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');

@@ -10,9 +10,22 @@ import {
 
 export type { AccountRole, ProjectRole };
 
+// The coarse aliases `loadProjectForUser` accepts. They survive ONLY as that
+// function's parameter mapping onto real catalog leaves (see
+// `iamActionForProjectAccess`) — nothing else in the system speaks them.
+//
 // 'session' sits between 'read' and 'write': any project member (a plain
 // `member` included) may start and run sessions, but not customize the project.
-export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
+// 'members' and 'credentials' split the old blanket 'manage', which mapped to
+// `project.write` and therefore gated neither member administration nor
+// credential issuance (routes.md §5.1/§5.2).
+export type ProjectAccessAction =
+  | 'read'
+  | 'session'
+  | 'write'
+  | 'manage'
+  | 'members'
+  | 'credentials';
 
 export function isAccountManager(role: AccountRole): boolean {
   return role === 'owner' || role === 'admin';
@@ -23,7 +36,7 @@ export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction
   if (action === 'read') return true;
   // Every project role can use sessions — `member` is the base *usable* role.
   if (action === 'session') return true;
-  if (action === 'write') return role === 'manager';
+  // write / manage / members / credentials are all manager-tier.
   return role === 'manager';
 }
 

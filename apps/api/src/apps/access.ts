@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
+import { actorForUser } from '../iam/actor';
 import { db } from '../shared/db';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
@@ -232,9 +233,12 @@ export async function appAccessibleToUser(
   },
   userId: string,
 ): Promise<boolean> {
+  // No request credential reaches this helper (it is also called from the
+  // unauthenticated public-app proxy with a resolved viewer id), so the verdict
+  // is role-only — identical to what it was when the trailing `actingTokenId`
+  // argument was simply omitted, but now that choice is written down.
   const projectAccess = await authorize(
-    userId,
-    app.accountId,
+    actorForUser(userId, app.accountId),
     PROJECT_ACTIONS.PROJECT_READ,
     { type: 'project', id: app.projectId },
   );
@@ -353,8 +357,7 @@ interface TeamScopedApp {
 
 async function projectManager(accountId: string, projectId: string, userId: string): Promise<boolean> {
   const verdict = await authorize(
-    userId,
-    accountId,
+    actorForUser(userId, accountId),
     PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     { type: 'project', id: projectId },
   );

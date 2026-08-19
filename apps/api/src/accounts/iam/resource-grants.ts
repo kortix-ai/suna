@@ -21,6 +21,7 @@ import { and, eq, inArray, ne } from 'drizzle-orm';
 import { accountGroups, iamResourceGrants, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { isUuid, lookupEmailsByUserIds } from '../../projects/lib/access';
 import { iamRouter, AccountIdParam } from './app';
 
@@ -60,7 +61,7 @@ iamRouter.openapi(
     // detail page already uses for "which projects does this person reach"
     // (members.ts's /project-access route). No entitlement check: this
     // family only gates rbac on mutation routes (create/grow), never reads.
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
 
     // Legacy 'secret' rows are a back-compat holdover (see the resourceType
     // doc comment in ../../iam/resource-grants.ts) — new grants can't create

@@ -210,9 +210,12 @@ mock.module('../projects/sandbox-turn-lifecycle', () => ({
 // gate itself — 403-before-re-mint, the requested agent as the resource, the
 // non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
 // in sandbox-proxy/routes/preview-agent-authz.test.ts.
+// preview.ts imports `authorize` from the barrel and `actorForUser` from
+// `iam/actor` (both pure here — `actorForUser` builds an Actor with no DB read),
+// so only the engine needs stubbing.
 mock.module('../iam', () => ({
   PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
-  authorize: async () => ({ allowed: true, reason: 'project_role' }),
+  authorize: async () => ({ allowed: true, reason: 'role' }),
 }));
 
 mock.module('../shared/preview-ownership', () => ({

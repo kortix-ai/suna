@@ -72,10 +72,24 @@ beforeAll(async () => {
   }
   // account_members carries is_super_admin + the MFA join; none of these are
   // super-admins, which is the point — the guards below must actually run.
-  for (const userId of [owner, secondOwner, admin, plainMember, target]) {
+  //
+  // account_role MUST match the assignment above. It used to be hardcoded
+  // 'member' for everyone, which the dual-write mirror trigger
+  // (20260819015728000_rbac_dual_write_mirror) now treats as a demotion: an
+  // account_members INSERT retracts every other system account-scope assignment
+  // for that user, so the owner rows above were deleted the moment this loop
+  // ran. That is the trigger working — the fixture was the thing that was
+  // inconsistent, because no real writer sets the two stores to different roles.
+  for (const [userId, key] of [
+    [owner, 'owner'],
+    [secondOwner, 'owner'],
+    [admin, 'admin'],
+    [plainMember, 'member'],
+    [target, 'member'],
+  ] as const) {
     await raw(
       `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)
-       values ('${userId}','${ACCOUNT}','member', false)`,
+       values ('${userId}','${ACCOUNT}','${key}', false)`,
     );
   }
 

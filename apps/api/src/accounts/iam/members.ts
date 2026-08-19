@@ -1,6 +1,7 @@
 // IAM V2 routes: super-admin promotion + per-member views (group
 // memberships, effective project access, single + batch permission probes).
 
+import type { Context } from 'hono';
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, inArray, or } from 'drizzle-orm';
@@ -22,7 +23,9 @@ import {
   assertAuthorized,
   authorize,
   resourceTypeForAction,
+  type Obj,
 } from '../../iam';
+import { actorForUser, actorOf, type Actor } from '../../iam/actor';
 import { resolveBatchProbes } from './batch-probes';
 import { listGroupsForMember } from '../../repositories/iam';
 import {
@@ -35,6 +38,41 @@ import {
   isResourceType,
 } from './app';
 import { auditIam, readBody } from './helpers';
+
+/**
+ * WHICH principal `/effective` answers about, and with WHICH credential.
+ *
+ * Probing YOURSELF returns the verdict of the real gate — same Actor, same
+ * credential, so an agent session's probe now folds its `kortix_cli` grant and
+ * its token's project scope exactly like the route it is asking about. That
+ * divergence (`authorize(targetUserId, accountId, action, target)` with the
+ * acting token dropped) is why the UI could offer a control the API then 403'd.
+ *
+ * Probing SOMEONE ELSE is a different question — "what does this member's role
+ * allow" — and there is no credential of theirs to fold, so it answers on the
+ * role alone. `member.read` already gates reaching this branch.
+ */
+async function probeActor(
+  c: Context,
+  callerId: string,
+  targetUserId: string,
+  accountId: string,
+): Promise<Actor> {
+  if (callerId === targetUserId) return actorOf(c, accountId);
+  return actorForUser(targetUserId, accountId);
+}
+
+/**
+ * The probe's object. Only `project` is a real scope in the canonical model;
+ * `sandbox` / `trigger` / `channel` / `member` / `group` were decorative — the
+ * engine routed every one of those actions to the account branch, which ignores
+ * the target. Keeping the query-parameter enum intact preserves the request
+ * contract; collapsing them here preserves the answer.
+ */
+function probeObject(scope: unknown, id: unknown): Obj {
+  if (scope === 'project' && typeof id === 'string' && id) return { type: 'project', id };
+  return { type: 'account' };
+}
 
 // ─── Super-admin promotion ─────────────────────────────────────────────────
 
@@ -55,7 +93,7 @@ iamRouter.openapi(
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
-  await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
 
   const body = await readBody(c);
   // Accept camelCase or snake_case, but the field MUST be present and an
@@ -147,7 +185,7 @@ iamRouter.openapi(
   // Users can always see their own group memberships; otherwise gate on
   // member.read (same rule as the effective-permission probe).
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   const rows = await listGroupsForMember(accountId, targetUserId);
@@ -188,7 +226,7 @@ iamRouter.openapi(
   const targetUserId = c.req.param('userId');
 
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   type Role = 'manager' | 'member';
@@ -421,7 +459,7 @@ iamRouter.openapi(
 
   // Anyone with member.read can probe anyone; users can always probe themselves.
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   const action = c.req.query('action');
@@ -432,15 +470,12 @@ iamRouter.openapi(
   const scope = c.req.query('resourceType');
   const id = c.req.query('resourceId');
 
-  let target: Parameters<typeof authorize>[3];
-  if (scope && isResourceType(scope) && scope !== 'account') {
-    if (!id) return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
-    target = { type: scope, id } as Parameters<typeof authorize>[3];
-  } else {
-    target = { type: 'account' };
+  if (scope && isResourceType(scope) && scope !== 'account' && !id) {
+    return c.json({ error: 'resourceId required when resourceType is specified' }, 400);
   }
+  const target = probeObject(scope, id);
 
-  const result = await authorize(targetUserId, accountId, action, target);
+  const result = await authorize(await probeActor(c, callerId, targetUserId, accountId), action, target);
   return c.json({
     allowed: result.allowed,
     reason: result.reason ?? null,
@@ -476,7 +511,7 @@ iamRouter.openapi(
   const targetUserId = c.req.param('userId');
 
   if (callerId !== targetUserId) {
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
   const body = await readBody(c);
@@ -499,7 +534,7 @@ iamRouter.openapi(
   // get partial results that look successful at first glance.
   type ParsedProbe = {
     action: string;
-    target: Parameters<typeof authorize>[3];
+    target: Obj | undefined;
   };
   const parsed: ParsedProbe[] = [];
   for (let i = 0; i < rawProbes.length; i++) {
@@ -517,7 +552,7 @@ iamRouter.openapi(
     const id =
       (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
       (p as { resource_id?: unknown }).resource_id;
-    let target: Parameters<typeof authorize>[3];
+    let target: Obj | undefined;
     if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
       if (typeof id !== 'string' || !id) {
         return c.json(
@@ -525,7 +560,7 @@ iamRouter.openapi(
           400,
         );
       }
-      target = { type: scope, id } as Parameters<typeof authorize>[3];
+      target = probeObject(scope, id);
     } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
       // Caller passed something for resourceType but it's not a valid enum.
       return c.json(
@@ -546,7 +581,7 @@ iamRouter.openapi(
   const results = await resolveBatchProbes(
     parsed,
     authorize,
-    targetUserId,
+    await probeActor(c, callerId, targetUserId, accountId),
     accountId,
     (ctx) =>
       logger.error(

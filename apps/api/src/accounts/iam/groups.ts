@@ -6,6 +6,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { projectGroupGrants, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import {
   invalidateIamCacheForGroup,
   invalidateIamCacheForUser,
@@ -78,7 +79,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const rows = await listGroups(accountId);
     return c.json({
@@ -122,7 +123,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -180,7 +181,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const group = await getGroup(accountId, groupId);
     if (!group) return c.json({ error: 'group not found' }, 404);
@@ -223,10 +224,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_UPDATE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_UPDATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -290,10 +288,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_DELETE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_DELETE);
     // No entitlement gate: deletion is cleanup, always allowed (see file header).
 
     const beforeGroup = await getGroup(accountId, groupId);
@@ -344,7 +339,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const members = await listGroupMembers(accountId, groupId);
     return c.json({
@@ -386,10 +381,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -446,10 +438,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
     const targetUserId = c.req.param('userId');
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE);
     // No entitlement gate: removing a member is cleanup, always allowed.
 
     const group = await getGroup(accountId, groupId);
@@ -503,7 +492,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const group = await getGroup(accountId, groupId);
     if (!group) return c.json({ error: 'group not found' }, 404);

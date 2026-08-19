@@ -161,7 +161,7 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 
 // Was the request denied by the RBAC capability gate? Every IAM denial throws a
 // "You don't have permission …" 403 (see humanizePermissionDenial in
-// iam/dispatcher.ts — members.manage renders the friendly verb, not the raw
+// iam/denial-message.ts — members.manage renders the friendly verb, not the raw
 // leaf). Because the floor is now 'read' (which ALL four principals hold), the
 // only 403 a writer/member can hit on these routes is the members.manage
 // assert, and none of these routes entitlement-403 the free test account — so a

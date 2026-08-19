@@ -97,6 +97,9 @@ const MANAGER_ONLY: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
   PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
   PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+  // Minting a project CLI token / a project-scoped PAT. Manager-only because a
+  // credential outlives the request; a custom role can still be given it.
+  PROJECT_ACTIONS.PROJECT_CREDENTIALS_ISSUE,
 ];
 
 /** Actions a manager gets on top of member. Editing the project and triggers

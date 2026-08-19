@@ -11,6 +11,7 @@ import {
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
@@ -65,7 +66,7 @@ export function registerMemberRoutes(): void {
       // MFA, group memberships, project grants): member-managers (owner / admin /
       // member.invite) see it on every row, everyone else only on their own —
       // enforced by canSeeSensitiveMemberColumns in the map below.
-      const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
+      const canManageMembers = (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE))
         .allowed;
 
       const rows = await db
@@ -253,7 +254,7 @@ export function registerMemberRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       const body = await readBody(c);
       const email = normalizeEmail(body.email);
@@ -453,7 +454,7 @@ export function registerMemberRoutes(): void {
       // Pending invites are member-management data — emails of people who
       // haven't even joined yet. Plain members get an empty list (not a 403)
       // so the members page renders without a special error path.
-      const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
+      const canManageMembers = (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE))
         .allowed;
       if (!canManageMembers) return c.json([]);
 
@@ -504,7 +505,7 @@ export function registerMemberRoutes(): void {
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       // Cancelling a pending invite is part of invite admin — same capability.
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       await db
         .delete(accountInvitations)
@@ -551,7 +552,7 @@ export function registerMemberRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const [updated] = await db
@@ -617,7 +618,7 @@ export function registerMemberRoutes(): void {
 
       const callerMembership = await getMembership(callerUserId, accountId);
       if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_REMOVE);
 
       const targetMembership = await getMembership(targetUserId, accountId);
       if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
@@ -696,7 +697,7 @@ export function registerMemberRoutes(): void {
 
       const callerMembership = await getMembership(callerUserId, accountId);
       if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_UPDATE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
       const body = await readBody(c);
       const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
@@ -708,7 +709,7 @@ export function registerMemberRoutes(): void {
       // Only an owner may assign or change the owner role.
       if (
         (newRole === 'owner' || targetMembership.accountRole === 'owner') &&
-        !(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT))
+        !(await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT))
           .allowed
       ) {
         return c.json({ error: 'Only an owner can assign or change the owner role' }, 403);

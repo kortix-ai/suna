@@ -18,7 +18,8 @@ import { buildSlackLoginUrl } from './login';
 import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
-import { filterAccessibleProjectResources, unscopedResourceIds } from '../../iam';
+import { filterAccessibleObjects, unscopedResourceIds } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
@@ -862,7 +863,12 @@ export async function loadScopedChannelAgents(input: {
         .where(eq(projects.projectId, input.projectId))
         .limit(1);
       allowedNames = proj
-        ? await filterAccessibleProjectResources(identity.userId, proj.accountId, input.projectId, 'agent', names)
+        ? await filterAccessibleObjects(
+            actorForUser(identity.userId, proj.accountId),
+            input.projectId,
+            'agent',
+            names,
+          )
         : await unscopedResourceIds(input.projectId, 'agent', names);
     } else {
       allowedNames = await unscopedResourceIds(input.projectId, 'agent', names);

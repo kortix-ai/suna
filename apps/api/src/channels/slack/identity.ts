@@ -3,6 +3,7 @@ import { accountMembers, chatUserIdentities, projectAccessRequests, projects } f
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { authorize } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
@@ -45,9 +46,12 @@ export async function resolveSlackActor(
   if (!link) return { reason: 'unlinked' };
 
   if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
+  // A channel webhook carries no Kortix credential: it acts AS the Kortix user
+  // the Slack/Teams identity is linked to. Role-only is the honest classification
+  // and is exactly the authority this call had when the trailing `actingTokenId`
+  // was omitted.
   const verdict = await authorize(
-    link.userId,
-    accountId,
+    actorForUser(link.userId, accountId),
     PROJECT_ACTIONS.PROJECT_WRITE,
     { type: 'project', id: projectId },
   );
@@ -253,8 +257,7 @@ export async function createSlackAccessRequest(input: {
   const base = { requesterUserId: identity.userId, accountId: project.accountId };
   if (await isAccountMember(identity.userId, project.accountId)) {
     const verdict = await authorize(
-      identity.userId,
-      project.accountId,
+      actorForUser(identity.userId, project.accountId),
       PROJECT_ACTIONS.PROJECT_WRITE,
       { type: 'project', id: input.projectId },
     );

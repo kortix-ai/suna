@@ -138,6 +138,14 @@ export const PROJECT_ACTIONS = {
   PROJECT_REVIEW_READ: 'project.review.read',
   PROJECT_REVIEW_SUBMIT: 'project.review.submit',
   PROJECT_REVIEW_ACT: 'project.review.act',
+
+  // Issuing a project credential — a project CLI token (`POST|DELETE
+  // /projects/:id/cli-token`) or a project-scoped PAT (`POST /accounts/tokens`
+  // with a project_id). Its own leaf because a credential OUTLIVES the request
+  // that minted it: until now these routes gated on the coarse `manage` alias,
+  // which mapped to project.write, so anyone who could edit the project could
+  // mint a long-lived token for it (routes.md §5.2). Seeded into Manager only.
+  PROJECT_CREDENTIALS_ISSUE: 'project.credentials.issue',
 } as const;
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────

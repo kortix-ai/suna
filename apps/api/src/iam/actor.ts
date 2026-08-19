@@ -270,39 +270,100 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
 
   const tokenId = c.get('iamTokenId') as string | undefined;
   if (authType === 'pat' && tokenId) {
-    const binding = await loadTokenBinding(tokenId);
-    const serviceAccountId = binding?.serviceAccountId ?? null;
-    if (serviceAccountId) {
-      const activated = accountId
-        ? await loadServiceAccountActivation(serviceAccountId, accountId)
-        : false;
-      return {
-        userId,
-        accountId,
-        credential: {
-          kind: 'agent_session',
-          tokenId,
-          projectId: binding?.projectId ?? null,
-          sessionId: (c.get('sessionId') as string | undefined) ?? null,
-          agentGrant: binding?.agentGrant ?? null,
-          serviceAccountId,
-          activated,
-        },
-        ctx,
-      };
-    }
     return {
       userId,
       accountId,
-      // A null binding for a PAT means the token row is gone (revoked). Keeping
-      // projectId null here would WIDEN it; `authorize` denies a PAT whose
-      // binding is missing, which is why the binding itself is re-read there.
-      credential: { kind: 'pat', tokenId, projectId: binding?.projectId ?? null },
+      credential: await tokenCredential(tokenId, accountId, (c.get('sessionId') as string | undefined) ?? null),
       ctx,
     };
   }
 
   return { userId, accountId, credential: { kind: 'jwt' }, ctx };
+}
+
+/**
+ * Classify a token id into its credential variant. Shared by `buildActor` and
+ * `actorForToken` so a token authenticates to the SAME authority whether it
+ * arrived on a Hono request or was resolved out of band (the git proxy, the
+ * connector runtime, the project-resource list filter).
+ */
+async function tokenCredential(
+  tokenId: string,
+  accountId: string,
+  sessionId: string | null,
+): Promise<Credential> {
+  const binding = await loadTokenBinding(tokenId);
+  const serviceAccountId = binding?.serviceAccountId ?? null;
+  if (serviceAccountId) {
+    const activated = accountId ? await loadServiceAccountActivation(serviceAccountId, accountId) : false;
+    return {
+      kind: 'agent_session',
+      tokenId,
+      projectId: binding?.projectId ?? null,
+      sessionId,
+      agentGrant: binding?.agentGrant ?? null,
+      serviceAccountId,
+      activated,
+    };
+  }
+  // A null binding for a PAT means the token row is gone (revoked). Keeping
+  // projectId null here would WIDEN it; `authorize` denies a PAT whose binding
+  // is missing, which is why the binding itself is re-read there.
+  return { kind: 'pat', tokenId, projectId: binding?.projectId ?? null };
+}
+
+/**
+ * An Actor for a caller that carries NO Kortix credential of its own — a channel
+ * webhook acting as the Kortix user a Slack/Teams identity is linked to, a
+ * background job acting as a stored owner, an internal composite read.
+ *
+ * `jwt` is the honest classification: there is no token to scope, no agent grant
+ * to intersect, and the account-MFA gate applies exactly as it would in the
+ * browser. It is NOT a widening — an out-of-band caller previously reached
+ * `authorizeV2` with `actingTokenId` omitted, which is the same authority with
+ * none of the type safety.
+ */
+export function actorForUser(userId: string, accountId: string, ctx: Actor['ctx'] = {}): Actor {
+  return { userId, accountId, credential: { kind: 'jwt' }, ctx };
+}
+
+/**
+ * An Actor for a caller identified by an acting TOKEN id resolved out of band —
+ * the git proxy (which authenticates a `kortix_pat_`/session token itself), the
+ * connector runtime, and the project-resource list filters that thread
+ * `actingTokenId` through their own context object.
+ *
+ * Passing `tokenId: null | undefined` degrades to `actorForUser`, which is what
+ * those call sites already did implicitly by omitting the trailing argument —
+ * the difference is that here it is a visible, typed decision.
+ */
+export async function actorForToken(
+  userId: string,
+  accountId: string,
+  tokenId: string | null | undefined,
+  opts: { sessionId?: string | null; ctx?: Actor['ctx'] } = {},
+): Promise<Actor> {
+  if (!tokenId) return actorForUser(userId, accountId, opts.ctx ?? {});
+  return {
+    userId,
+    accountId,
+    credential: await tokenCredential(tokenId, accountId, opts.sessionId ?? null),
+    ctx: opts.ctx ?? {},
+  };
+}
+
+/**
+ * An Actor for a direct service-account bearer resolved out of band. Fail-closed
+ * by construction: no membership baseline, authority is exactly its own
+ * assignments.
+ */
+export function actorForServiceAccount(serviceAccountId: string, accountId: string): Actor {
+  return {
+    userId: serviceAccountId,
+    accountId,
+    credential: { kind: 'service_account', serviceAccountId },
+    ctx: {},
+  };
 }
 
 /**
@@ -314,6 +375,24 @@ export async function actorFor(c: Context, accountId: string): Promise<Actor | n
   const cached = c.get('actor') as Actor | undefined;
   if (cached && cached.accountId === accountId) return cached;
   return buildActor(c, accountId);
+}
+
+/**
+ * THE gate helper: the actor for this request, asked about this account.
+ *
+ * Every route-level authorization call takes its actor from here, so "I forgot
+ * the credential" is not expressible — there is no overload that omits it and
+ * no nullable to fall through.
+ *
+ * It never returns null. A request that carries no identity at all yields an
+ * actor with an EMPTY user id, which resolves to no principal and is denied
+ * `not_a_member` by every gate. That is deliberately the same outcome as
+ * before: `authorizeV2` was handed an undefined userId, reached the engine, and
+ * denied there. Turning it into a 401 here would change a 403 into a 401 on
+ * every route at once, which is a contract change, not a refactor.
+ */
+export async function actorOf(c: Context, accountId: string): Promise<Actor> {
+  return (await actorFor(c, accountId)) ?? { userId: '', accountId, credential: { kind: 'jwt' }, ctx: {} };
 }
 
 function firstForwardedIp(header: string | undefined): string | undefined {

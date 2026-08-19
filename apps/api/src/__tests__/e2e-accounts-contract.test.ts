@@ -242,10 +242,9 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
   return invite;
 }
 
-// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher.
-mock.module('../iam/dispatcher', () => {
+// The engine module itself is the seam now — `../iam` re-exports it, and the
+// route layer calls it with the structured `Actor` the auth middleware built.
+mock.module('../iam/authorize', () => {
   // Mirror the legacy account-role gate against the test's mocked member rows so
   // owner/admin pass writes, plain members get reads only, non-members are denied.
   const decide = (userId: string, action: string): boolean => {
@@ -255,12 +254,22 @@ mock.module('../iam/dispatcher', () => {
     return action.endsWith('.read');
   };
   return {
-    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
-    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
-      if (!decide(userId, action)) throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
+    authorize: async (actor: { userId: string }, action: string) => ({
+      allowed: decide(actor.userId, action),
+      reason: 'role',
+    }),
+    assertAuthorized: async (actor: { userId: string }, action: string) => {
+      if (!decide(actor.userId, action)) {
+        throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
+      }
     },
-    listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
-    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+    listAccessible: async () => ({ mode: 'all' }),
+    filterAccessibleObjects: async (
+      _actor: unknown,
+      _p: string,
+      _t: string,
+      ids: readonly string[],
+    ) => [...ids],
   };
 });
 

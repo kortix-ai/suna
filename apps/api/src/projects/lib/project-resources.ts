@@ -12,7 +12,8 @@
  * routes, the picker the UI renders, and the list-filter all agree on the key.
  */
 import type { ProjectConfigSummary } from '../git/types';
-import { filterAccessibleProjectResources, hasAnyResourceGrants } from '../../iam';
+import { filterAccessibleObjects, hasAnyResourceGrants } from '../../iam';
+import { actorForToken } from '../../iam/actor';
 import { loadProjectConfig, listRepoFiles } from '../git';
 import { withProjectGitAuth } from './git';
 
@@ -90,9 +91,10 @@ export async function filterConfigResourcesForUser(
 ): Promise<ProjectConfigSummary> {
   const agentIds = (config.agents ?? []).map((a) => a.name);
   const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
+  const actor = await actorForToken(ctx.userId, ctx.accountId, ctx.actingTokenId);
   const [okAgents, okSkills] = await Promise.all([
-    filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'agent', agentIds, ctx.actingTokenId),
-    filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'skill', skillIds, ctx.actingTokenId),
+    filterAccessibleObjects(actor, ctx.projectId, 'agent', agentIds),
+    filterAccessibleObjects(actor, ctx.projectId, 'skill', skillIds),
   ]);
   const okAgentSet = new Set(okAgents);
   const okSkillSet = new Set(okSkills);
@@ -135,9 +137,10 @@ export async function denierFromConfig(
 ): Promise<ResourceDenier | null> {
   const agentIds = (config.agents ?? []).map((a) => a.name);
   const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
+  const actor = await actorForToken(ctx.userId, ctx.accountId, ctx.actingTokenId);
   const [okAgents, okSkills] = await Promise.all([
-    filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'agent', agentIds, ctx.actingTokenId),
-    filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'skill', skillIds, ctx.actingTokenId),
+    filterAccessibleObjects(actor, ctx.projectId, 'agent', agentIds),
+    filterAccessibleObjects(actor, ctx.projectId, 'skill', skillIds),
   ]);
   return buildResourceDenier(config, new Set(okAgents), new Set(okSkills));
 }

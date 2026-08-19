@@ -10,12 +10,13 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { makeOpenApiApp, json, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 
+import { actorOf } from '../../iam/actor';
 export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
 
 async function resolveDeletionContext(c: any) {
   const userId = c.get('userId') as string;
   const accountId = await resolveAccountId(userId);
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_DELETE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_DELETE);
   return { userId, accountId };
 }
 

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
@@ -482,11 +483,19 @@ async function agentSwitchRefusal(
     );
   }
 
-  const verdict = await authorize(userId, record.accountId, PROJECT_ACTIONS.PROJECT_AGENT_READ, {
-    type: 'project',
-    id: record.projectId,
-    resource: { type: 'agent', id: switchedToAgent },
-  });
+  // No Hono context here — this runs inside the proxy forward loop, whose only
+  // identity is the resolved `userId`. The question is an OBJECT-grant one
+  // ("is this agent scoped to you"), which no credential can widen, so the
+  // role-only actor is the same authority this call already had.
+  const verdict = await authorize(
+    actorForUser(userId, record.accountId),
+    PROJECT_ACTIONS.PROJECT_AGENT_READ,
+    {
+      type: 'project',
+      id: record.projectId,
+      resource: { type: 'agent', id: switchedToAgent },
+    },
+  );
   if (verdict.allowed) return null;
   console.warn(
     `[PREVIEW] Refused prompt on ${sandboxId}: caller may not run agent '${switchedToAgent}' (${verdict.reason})`,

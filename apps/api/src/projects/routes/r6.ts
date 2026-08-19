@@ -2,7 +2,7 @@ import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from 
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
-import { deriveRequestContext } from '../../iam/cache';
+import { actorOf } from '../../iam/actor';
 import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -602,18 +602,12 @@ projectsApp.openapi(
 
   const membership = await getAccountMembership(userId, project.accountId);
   if (membership) {
-    const actingTokenId =
-      ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-        | string
-        | undefined) ?? undefined;
-    const verdict = await authorize(
-      userId,
-      project.accountId,
-      PROJECT_ACTIONS.PROJECT_READ,
-      { type: 'project', id: projectId },
-      actingTokenId,
-      deriveRequestContext(c),
-    );
+    // The one route that runs the engine EXPECTING a denial — "I can't get in,
+    // let me ask" (routes.md §5.14). It must stay non-throwing.
+    const verdict = await authorize(await actorOf(c, project.accountId), PROJECT_ACTIONS.PROJECT_READ, {
+      type: 'project',
+      id: projectId,
+    });
     if (verdict.allowed) {
       return c.json({ status: 'already_has_access', project_id: projectId });
     }

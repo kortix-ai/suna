@@ -44,6 +44,8 @@
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { iamResourceGrants } from '@kortix/db';
 import { db } from '../shared/db';
+import type { ObjectType as ObjectGrantType } from './catalog';
+import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { ttlMemo } from '../shared/ttl-memo';
 import {
   invalidateIamCacheForProjectResources,
@@ -359,6 +361,34 @@ export async function upsertResourceGrant(input: {
       },
     })
     .returning({ grantId: iamResourceGrants.grantId });
+  // …and the canonical object assignment, through the ONE write path, so the
+  // grant carries an `iam.assignment.granted` audit event. The route already
+  // asserted `project.members.manage`; `SYSTEM_ACTOR` says the caller was
+  // authorized THERE rather than re-deriving a different action here.
+  //
+  // Best-effort: the mirror trigger on `iam_resource_grants` wrote the same
+  // canonical row inside the upsert above, so a failure costs the audit event,
+  // not the grant.
+  try {
+    await assignRole(SYSTEM_ACTOR, input.accountId, {
+      principal: {
+        type: input.principalType === 'group' ? 'group' : 'user',
+        id: input.principalId,
+      },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: input.projectId },
+      object: { type: input.resourceType as ObjectGrantType, id: input.resourceId },
+      expiresAt: input.expiresAt ?? null,
+      source: 'manual',
+    });
+  } catch (err) {
+    console.warn('[resource-grants] canonical object assignment failed', {
+      projectId: input.projectId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      err: (err as Error)?.message,
+    });
+  }
   invalidateIamCacheForProjectResources(input.projectId);
   return { grantId: row.grantId };
 }

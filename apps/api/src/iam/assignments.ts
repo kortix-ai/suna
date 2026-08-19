@@ -32,6 +32,9 @@ import type { Actor, PrincipalRef } from './actor';
 
 export type AssignmentSource = 'manual' | 'scim' | 'sso' | 'invite' | 'system';
 
+/** The principal vocabulary, as a nameable type for route-layer validation. */
+export type PrincipalKind = PrincipalRef['type'];
+
 export interface AssignmentScope {
   type: ScopeType;
   /** Required for `project`, forbidden for `account`. */
@@ -266,6 +269,23 @@ export async function revokeAssignment(writer: Writer, accountId: string, assign
   await audit(writer, accountId, 'iam.assignment.revoked', assignmentId, describe(existing, existing.roleKey), null);
 
   return existing;
+}
+
+/**
+ * Emit the revoke audit event for a row a caller deleted itself.
+ *
+ * The ONE legitimate use is a bulk offboarding that has ALREADY run its own
+ * last-owner guard and must not run it again per row — SCIM deprovisioning,
+ * which checks `isLastOwner` before it starts and would otherwise 409 on the
+ * second-to-last owner's own removal. Everything else revokes through
+ * `revokeAssignment`, which is where the guard lives.
+ */
+export async function auditAssignmentRevoked(
+  writer: Writer,
+  accountId: string,
+  row: AssignmentRow,
+): Promise<void> {
+  await audit(writer, accountId, 'iam.assignment.revoked', row.assignmentId, describe(row, row.roleKey), null);
 }
 
 /**

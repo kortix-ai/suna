@@ -21,6 +21,7 @@ import {
   resolveShareSubject,
 } from '../connectors/share';
 import { authorize } from '../iam';
+import { actorForUser } from '../iam/actor';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -90,8 +91,7 @@ export async function canAccessSandboxSession(input: {
       loadSessionGrants([input.sessionId]),
       isTriggerCreatedSessionMetadata(row.metadata)
         ? authorize(
-            input.userId,
-            input.accountId,
+            actorForUser(input.userId, input.accountId),
             'project.members.manage',
             { type: 'project', id: input.projectId },
           )

@@ -12,6 +12,7 @@ import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts, accou
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import {
   invalidateIamCacheForPolicyPrincipal,
   invalidateIamCacheForRole,
@@ -101,7 +102,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
     return c.json({ actions: ACTION_CATALOG_WIRE });
   },
 );
@@ -121,7 +122,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
     const custom = await db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId));
     return c.json({
       roles: [...BUILTIN_PRESETS.map(serializeBuiltinRole), ...custom.map(serializeCustomRole)],
@@ -142,7 +143,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_CREATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -201,7 +202,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be edited' }, 400);
@@ -240,7 +241,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_DELETE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
     // No entitlement gate: deleting a role is cleanup — a downgraded account
     // must always be able to remove custom roles it can no longer manage.
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
@@ -276,7 +277,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
 
     const builtin = BUILTIN_BY_ID.get(roleId);
     if (builtin) return c.json({ role_id: roleId, key: builtin.key, actions: [...builtin.actions] });
@@ -302,7 +303,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in role permissions are fixed' }, 400);
@@ -348,7 +349,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
     if (BUILTIN_BY_ID.has(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
     const [row] = await db
       .select({ n: sql<number>`count(*)::int` })
@@ -374,7 +375,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
     const conds = [eq(iamPolicies.accountId, accountId)];
     const pt = c.req.query('principalType');
@@ -407,7 +408,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
     type Identity = { service_account_id: string; name: string; project_id: string | null; agent_name: string | null };
     const byKey = new Map<string, Identity>();
@@ -479,7 +480,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -532,7 +533,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: revoking a policy binding is cleanup, always allowed.
 
     const [row] = await db
@@ -565,7 +566,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: bulk policy revocation is cleanup, always allowed.
     const body = await readBody(c);
     const ids = Array.isArray(body.policy_ids) ? body.policy_ids.filter((x: unknown): x is string => typeof x === 'string') : [];
@@ -594,7 +595,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
     // Editing an assignment is a create-class action — gate on POLICY_CREATE.
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -658,7 +659,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
