@@ -1,5 +1,5 @@
-import { UpstreamHttpError } from '../errors';
 import type { GatewayLogger } from '../domain';
+import { UpstreamHttpError } from '../errors';
 import { type FullStreamPart, fullStreamPartHasContent } from '../transports/ai-sdk';
 import { LIMIT_STATUSES } from './failover';
 
@@ -76,6 +76,16 @@ export interface NativeFailoverDeps<C> {
   requestId: string;
   /** Overridable for tests; defaults to NATIVE_PROBE_COMMIT_DEADLINE_MS. */
   commitDeadlineMs?: number;
+  /**
+   * True IFF advancing from candidate `index` on a terminal 401 is an
+   * alternate-CREDENTIAL retry for the SAME model + provider — i.e. the
+   * immediate next candidate is another configured credential for the same
+   * route, not a different model. Mirrors failover.ts's `hasCredentialFallback`.
+   * When it returns true, a 401 fails over to the next candidate instead of
+   * failing fast; when absent/false, a 401 stays terminal. A 401 NEVER advances
+   * to a different model — that would mask a genuinely dead key.
+   */
+  isCredentialFailover?: (index: number) => boolean;
 }
 
 export interface NativeCommit<C> {
@@ -217,6 +227,23 @@ export async function runNativeFailover<C>(
   } = deps;
   const commitDeadlineMs = deps.commitDeadlineMs ?? NATIVE_PROBE_COMMIT_DEADLINE_MS;
 
+  // Should the loop advance to the next candidate for this classified error?
+  // Retryable transport errors always advance. A terminal 401 advances ONLY when
+  // the next candidate is an alternate credential for the same model + provider
+  // (mirrors failover.ts's `credentialFailure`); every other terminal 4xx fails
+  // fast.
+  const shouldAdvance = (err: Error, index: number): boolean => {
+    if (isRetryableTransportError(err)) return true;
+    if (
+      err instanceof UpstreamHttpError &&
+      err.status === 401 &&
+      (deps.isCredentialFailover?.(index) ?? false)
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   let lastFailure: NativeFailure | null = null;
 
   for (let i = 0; i < candidates.length; i += 1) {
@@ -234,7 +261,7 @@ export async function runNativeFailover<C>(
         // streamText threw synchronously (connect-time misconfig / invalid
         // prompt) — treat identically to a first `error` part.
         const transportError = toTransportError(err, provider);
-        if (isRetryableTransportError(transportError)) {
+        if (shouldAdvance(transportError, i)) {
           lastFailure = {
             kind: 'failed',
             reason: 'error',
@@ -306,7 +333,7 @@ export async function runNativeFailover<C>(
         message: transportError.message,
         provider,
       };
-      if (isRetryableTransportError(transportError)) {
+      if (shouldAdvance(transportError, i)) {
         logger.warn(
           `[llm-gateway] native upstream error from ${provider} (retryable${hasNext ? ', failing over' : ', no fallback'}) ${requestId}: ${transportError.message}`,
         );

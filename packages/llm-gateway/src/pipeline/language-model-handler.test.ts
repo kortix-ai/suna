@@ -6,45 +6,76 @@ import type { AuthedPrincipal, GatewayHooks, UpstreamDescriptor, UsageEvent } fr
 // Shaped exactly as @ai-sdk/anthropic's doStream parses it, so real `streamText`
 // (driven by the native handler) yields a `text-delta` + a `finish` with usage.
 function anthropicSse(text: string, inputTokens: number, outputTokens: number): Response {
-  const body =
-    `event: message_start\n` +
-    `data: ${JSON.stringify({
-      type: 'message_start',
-      message: {
-        id: 'msg_1',
-        type: 'message',
-        role: 'assistant',
-        model: 'claude',
-        content: [],
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { input_tokens: inputTokens, output_tokens: 1 },
-      },
-    })}\n\n` +
-    `event: content_block_start\n` +
-    `data: ${JSON.stringify({
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'text', text: '' },
-    })}\n\n` +
-    `event: content_block_delta\n` +
-    `data: ${JSON.stringify({
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'text_delta', text },
-    })}\n\n` +
-    `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n` +
-    `event: message_delta\n` +
-    `data: ${JSON.stringify({
+  const body = `event: message_start\ndata: ${JSON.stringify({
+    type: 'message_start',
+    message: {
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude',
+      content: [],
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: inputTokens, output_tokens: 1 },
+    },
+  })}\n\nevent: content_block_start\ndata: ${JSON.stringify({
+    type: 'content_block_start',
+    index: 0,
+    content_block: { type: 'text', text: '' },
+  })}\n\nevent: content_block_delta\ndata: ${JSON.stringify({
+    type: 'content_block_delta',
+    index: 0,
+    delta: { type: 'text_delta', text },
+  })}\n\nevent: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\nevent: message_delta\ndata: ${JSON.stringify(
+    {
       type: 'message_delta',
       delta: { stop_reason: 'end_turn', stop_sequence: null },
       usage: { output_tokens: outputTokens },
-    })}\n\n` +
-    `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`;
+    },
+  )}\n\nevent: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`;
   return new Response(body, {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   });
+}
+
+// A PARTIAL Anthropic stream: message_start + a content delta, then the body is
+// held OPEN (never a message_delta/message_stop). streamText yields the
+// `text-delta` (so the failover probe commits + content reaches the client) but
+// never a `finish` — the exact shape of a turn a client disconnects mid-stream.
+function anthropicSsePartial(text: string, inputTokens: number): Response {
+  const enc = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        enc.encode(
+          `event: message_start\ndata: ${JSON.stringify({
+            type: 'message_start',
+            message: {
+              id: 'msg_1',
+              type: 'message',
+              role: 'assistant',
+              model: 'claude',
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: { input_tokens: inputTokens, output_tokens: 1 },
+            },
+          })}\n\nevent: content_block_start\ndata: ${JSON.stringify({
+            type: 'content_block_start',
+            index: 0,
+            content_block: { type: 'text', text: '' },
+          })}\n\nevent: content_block_delta\ndata: ${JSON.stringify({
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'text_delta', text },
+          })}\n\n`,
+        ),
+      );
+      // Intentionally NOT closed — the turn never reaches `finish`.
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
 }
 
 async function readStream(res: Response): Promise<string> {
@@ -312,5 +343,145 @@ describe('handleLanguageModel — per-turn failover + billing (flag ON)', () => 
     expect(billable).toHaveLength(1);
     expect(billable[0].promptTokens).toBe(12);
     expect(billable[0].completionTokens).toBe(7);
+  });
+});
+
+// A held turn attaches an admission `billingHold` (via assertBillingActive
+// returning `holdUsd`). The host reconciles that hold PER usage event: a refund
+// event undoes it, a real event carrying `billingHoldUsd` reconciles it against
+// the actual cost. Reconciling the SAME hold across TWO events undercharges by
+// the hold amount — the exact double-reconcile bug these tests pin.
+describe('handleLanguageModel — admission billing-hold reconciliation (FIX 1)', () => {
+  const HOLD_USD = 0.5;
+  const descHold: UpstreamDescriptor = {
+    provider: 'anthropic',
+    kind: 'anthropic',
+    npm: '@ai-sdk/anthropic',
+    baseUrl: 'https://hold.example',
+    apiKey: 'sk-h',
+    resolvedModel: 'claude-hold',
+    billingMode: 'credits',
+    markup: 1,
+  };
+
+  function heldHooks(billed: UsageEvent[], over: Partial<GatewayHooks> = {}): GatewayHooks {
+    return baseHooks({
+      // Attach a hold of HOLD_USD to the admitted principal.
+      assertBillingActive: async () => ({ holdUsd: HOLD_USD }),
+      resolveUpstream: async () => [descHold],
+      recordUsage: async (e) => {
+        billed.push(e);
+      },
+      ...over,
+    });
+  }
+
+  it('a held turn that COMPLETES reconciles the hold EXACTLY ONCE (no double-refund, no undercharge)', async () => {
+    const billed: UsageEvent[] = [];
+    const gateway = createGateway(
+      heldHooks(billed),
+      { aiSdkNative: true },
+      {
+        fetchImpl: async () => anthropicSse('done', 80, 40),
+      },
+    );
+
+    const res = await gateway.languageModel(req(HEADERS(), BODY));
+    expect(res.status).toBe(200);
+    await readStream(res);
+    // Let any stray fire-and-forget refund microtask settle (there must be none).
+    await new Promise((r) => setTimeout(r, 20));
+
+    // EXACTLY ONE recordUsage event — the real settle. The deleted microtask
+    // refund would have produced a SECOND, zero-usage, hold-refund event here.
+    expect(billed).toHaveLength(1);
+    const event = billed[0];
+    // The single event carries the REAL usage AND reconciles the hold once.
+    expect(event.promptTokens).toBe(80);
+    expect(event.completionTokens).toBe(40);
+    expect(event.billingHoldUsd).toBe(HOLD_USD);
+    // No zero-usage refund event exists (that is the double-reconcile signature).
+    expect(billed.filter((e) => e.promptTokens === 0 && e.completionTokens === 0)).toHaveLength(0);
+  });
+
+  it('a held turn CANCELLED before finish refunds the hold ONCE and never bills', async () => {
+    const billed: UsageEvent[] = [];
+    const gateway = createGateway(
+      heldHooks(billed),
+      { aiSdkNative: true },
+      {
+        // Content streams, but the upstream never sends `finish` — the client
+        // disconnects mid-stream (cancel below).
+        fetchImpl: async () => anthropicSsePartial('partial answer', 80),
+      },
+    );
+
+    const res = await gateway.languageModel(req(HEADERS(), BODY));
+    expect(res.status).toBe(200);
+
+    // Read until the committed content reaches the client, then CANCEL (client
+    // disconnect) before the turn ever finishes.
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('no body');
+    const dec = new TextDecoder();
+    let acc = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) acc += dec.decode(value, { stream: true });
+      if (acc.includes('partial answer')) {
+        // Do NOT await: the refund fires synchronously inside the serializer's
+        // cancel() BEFORE it awaits the upstream teardown (which never resolves
+        // here — the fake upstream never closes).
+        void reader.cancel().catch(() => {});
+        break;
+      }
+    }
+    // Let the fire-and-forget refund recordUsage settle.
+    await new Promise((r) => setTimeout(r, 30));
+
+    // EXACTLY ONE recordUsage event — the hold refund. No billable event.
+    expect(billed).toHaveLength(1);
+    const refund = billed[0];
+    expect(refund.promptTokens).toBe(0);
+    expect(refund.completionTokens).toBe(0);
+    expect(refund.finalCost).toBe(0);
+    expect(refund.billingHoldUsd).toBe(HOLD_USD);
+    expect(billed.filter((e) => e.promptTokens + e.completionTokens > 0)).toHaveLength(0);
+  });
+});
+
+describe('handleLanguageModel — request-size ceiling (FIX 2)', () => {
+  it('returns 413 request_too_large when the body exceeds maxRequestBytes, before auth/billing', async () => {
+    let authenticated = false;
+    const gateway = createGateway(
+      baseHooks({
+        authenticate: async (token) => {
+          authenticated = true;
+          return token === 'good' ? PRINCIPAL : null;
+        },
+      }),
+      { aiSdkNative: true, maxRequestBytes: 16 },
+    );
+    const bigBody = {
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(500) }] }],
+    };
+    const res = await gateway.languageModel(req(HEADERS(), bigBody));
+    expect(res.status).toBe(413);
+    const data = (await res.json()) as { code?: string };
+    expect(data.code).toBe('request_too_large');
+    // The guard runs BEFORE the auth gate — the wallet is never touched.
+    expect(authenticated).toBe(false);
+  });
+
+  it('does NOT reject a normal body when maxRequestBytes is generous', async () => {
+    const gateway = createGateway(baseHooks({ resolveUpstream: async () => [] }), {
+      aiSdkNative: true,
+      maxRequestBytes: 1_000_000,
+    });
+    const res = await gateway.languageModel(req(HEADERS(), BODY));
+    // Passes the size gate; fails later at route resolution (no upstream).
+    expect(res.status).not.toBe(413);
+    expect(res.status).toBe(400);
   });
 });

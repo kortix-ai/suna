@@ -319,6 +319,71 @@ describe('runNativeFailover — candidate loop + probe-commit', () => {
     expect(relayed.find((p) => p.type === 'text-delta')?.text).toBe('late token');
   });
 
+  it('a 401 advances to an alternate CREDENTIAL for the same model when isCredentialFailover allows it (FIX 5)', async () => {
+    let bStarted = false;
+    // Same model + provider, two credentials — the native analog of the byte
+    // path's `hasCredentialFallback`.
+    const A: Cand = { provider: 'anthropic', model: 'claude-x' };
+    const B: Cand = { provider: 'anthropic', model: 'claude-x' };
+    const result = await runNativeFailover<Cand>({
+      ...baseDeps,
+      candidates: [A, B],
+      // Only index 0 → 1 is a credential retry.
+      isCredentialFailover: (i) => i === 0,
+      startStream: (c) => {
+        if (c === A) {
+          return partsStream([
+            {
+              type: 'error',
+              error: { statusCode: 401, responseBody: '{"error":{"message":"bad key"}}' },
+            },
+          ]);
+        }
+        bStarted = true;
+        return partsStream([
+          { type: 'text-delta', id: 't', text: 'served by alt credential' },
+          { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+        ]);
+      },
+    });
+    expect(result.kind).toBe('committed');
+    if (result.kind !== 'committed') throw new Error('unreachable');
+    expect(result.candidate).toBe(B);
+    expect(bStarted).toBe(true);
+    const relayed = await drain(result.stream);
+    expect(relayed.find((p) => p.type === 'text-delta')?.text).toBe('served by alt credential');
+  });
+
+  it('a 401 stays TERMINAL (fails fast) when there is no alternate credential (FIX 5 guardrail)', async () => {
+    let bStarted = false;
+    // A fallback exists, but it is a DIFFERENT model — a 401 must NOT advance to
+    // it (that would mask a genuinely dead key). No isCredentialFailover → false.
+    const A: Cand = { provider: 'anthropic', model: 'claude-x' };
+    const B: Cand = { provider: 'openai', model: 'gpt-y' };
+    const result = await runNativeFailover<Cand>({
+      ...baseDeps,
+      candidates: [A, B],
+      startStream: (c) => {
+        if (c === A) {
+          return partsStream([
+            {
+              type: 'error',
+              error: { statusCode: 401, responseBody: '{"error":{"message":"dead key"}}' },
+            },
+          ]);
+        }
+        bStarted = true;
+        return partsStream([{ type: 'text-delta', id: 't', text: 'B' }]);
+      },
+    });
+    expect(result.kind).toBe('failed');
+    if (result.kind !== 'failed') throw new Error('unreachable');
+    expect(result.reason).toBe('error');
+    expect((result.transportError as UpstreamHttpError).status).toBe(401);
+    // The different-model fallback was NEVER dispatched.
+    expect(bStarted).toBe(false);
+  });
+
   it('preserves the reasoning signature + usage through the committed path (regression)', async () => {
     const A: Cand = { provider: 'anthropic', model: 'claude-fable-5' };
     let billed:

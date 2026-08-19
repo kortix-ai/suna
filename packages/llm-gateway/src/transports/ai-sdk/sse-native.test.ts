@@ -3,6 +3,7 @@ import {
   type NativeBillingUsage,
   aiGatewaySseFromFullStream,
   billingUsageFromWire,
+  fullStreamPartHasContent,
   wireUsageFromLanguageModelUsage,
 } from './sse-native';
 
@@ -80,7 +81,11 @@ describe('aiGatewaySseFromFullStream — AI-gateway wire contract', () => {
         },
       ),
       CTX,
-      { onUsage: (u) => { billed = u; } },
+      {
+        onUsage: (u) => {
+          billed = u;
+        },
+      },
     );
 
     const all = frames(await readAll(stream));
@@ -151,6 +156,81 @@ describe('aiGatewaySseFromFullStream — AI-gateway wire contract', () => {
     expect(all.some((f) => f.type === 'custom')).toBe(false);
     expect(all.some((f) => f.type === 'reasoning-file')).toBe(false);
     expect(all.some((f) => f.type === 'text-delta')).toBe(true);
+  });
+});
+
+describe('fullStreamPartHasContent — redacted/signature reasoning (FIX 3)', () => {
+  it('counts a reasoning-delta with EMPTY text but an Anthropic signature as content', () => {
+    expect(
+      fullStreamPartHasContent({
+        type: 'reasoning-delta',
+        id: 'r1',
+        text: '',
+        providerMetadata: { anthropic: { signature: 'SIG-abc' } },
+      }),
+    ).toBe(true);
+  });
+
+  it('counts a reasoning-start carrying redactedData (empty text) as content', () => {
+    expect(
+      fullStreamPartHasContent({
+        type: 'reasoning-start',
+        id: 'r1',
+        providerMetadata: { anthropic: { redactedData: 'REDACTED-blob' } },
+      }),
+    ).toBe(true);
+  });
+
+  it('does NOT count an empty-text reasoning-delta with no signature/redactedData', () => {
+    expect(fullStreamPartHasContent({ type: 'reasoning-delta', id: 'r1', text: '' })).toBe(false);
+    expect(
+      fullStreamPartHasContent({
+        type: 'reasoning-delta',
+        id: 'r1',
+        text: '',
+        providerMetadata: { anthropic: {} },
+      }),
+    ).toBe(false);
+  });
+
+  it('still requires non-empty text for a plain text-delta', () => {
+    expect(fullStreamPartHasContent({ type: 'text-delta', id: 't', text: '' })).toBe(false);
+    expect(fullStreamPartHasContent({ type: 'text-delta', id: 't', text: 'hi' })).toBe(true);
+  });
+});
+
+describe('aiGatewaySseFromFullStream — single stream-start (FIX 4)', () => {
+  it('emits stream-start EXACTLY ONCE even when a start-step carries warnings', async () => {
+    const warnings = [{ type: 'other', message: 'unsupported setting' }];
+    const stream = aiGatewaySseFromFullStream(
+      parts(
+        { type: 'start' },
+        { type: 'start-step', warnings },
+        { type: 'text-delta', id: 't', text: 'hi' },
+        { type: 'finish', finishReason: 'stop', totalUsage: fullUsage },
+      ),
+      CTX,
+    );
+    const all = frames(await readAll(stream));
+    const starts = all.filter((f) => f.type === 'stream-start');
+    // Exactly one stream-start, and it carries the warnings (folded, not doubled).
+    expect(starts).toHaveLength(1);
+    expect(starts[0].warnings).toEqual(warnings);
+    // It is the FIRST frame — the client waits for it before reading parts.
+    expect(all[0].type).toBe('stream-start');
+  });
+
+  it('emits a single empty stream-start when the provider skips start-step', async () => {
+    const stream = aiGatewaySseFromFullStream(
+      parts(
+        { type: 'text-delta', id: 't', text: 'hi' },
+        { type: 'finish', finishReason: 'stop', totalUsage: fullUsage },
+      ),
+      CTX,
+    );
+    const all = frames(await readAll(stream));
+    expect(all.filter((f) => f.type === 'stream-start')).toHaveLength(1);
+    expect(all[0]).toEqual({ type: 'stream-start', warnings: [] });
   });
 });
 

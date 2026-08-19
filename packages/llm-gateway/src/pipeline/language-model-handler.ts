@@ -112,7 +112,7 @@ function refundBillingHold(
   };
   void runtime.hooks
     .recordUsage(refundEvent)
-    .catch((err) => runtime.logger.warn(`[llm-gateway] native billing-hold refund failed:`, err));
+    .catch((err) => runtime.logger.warn('[llm-gateway] native billing-hold refund failed:', err));
 }
 
 interface Candidate {
@@ -187,6 +187,23 @@ export async function handleLanguageModel(
       resolvedModel: '',
       requestId,
       suggestion: 'Sign in again or provide a valid API token, then retry.',
+    });
+  }
+
+  // Reject an oversized body before the JSON parse and any upstream dispatch —
+  // parity with the chat path (handler.ts ~line 354). Off by default
+  // (`maxRequestBytes` unset/0); when configured it turns an upstream that
+  // silently drops an over-limit request into an immediate, actionable 413.
+  const requestBytes = new TextEncoder().encode(req.rawBody).byteLength;
+  if (runtime.config.maxRequestBytes && requestBytes > runtime.config.maxRequestBytes) {
+    return gatewayErrorResponse(413, {
+      message: `Request body of ${requestBytes} bytes exceeds the ${runtime.config.maxRequestBytes}-byte limit`,
+      code: 'request_too_large',
+      provider: '',
+      requestedModel: '',
+      resolvedModel: '',
+      requestId,
+      suggestion: 'Start a new session or reduce the conversation and attachment size, then retry.',
     });
   }
 
@@ -287,10 +304,27 @@ export async function handleLanguageModel(
       onError: () => {
         /* surfaced as an `error` part through fullStream */
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: streamText's options union is built dynamically from the decoded AI-SDK CallOptions; a precise type is not expressible here.
     } as any);
     guardAgainstUnhandledResultRejections(result);
     return result.fullStream as AsyncIterable<FullStreamPart>;
+  };
+
+  // A 401 fails over ONLY to an alternate credential for the SAME model +
+  // provider (the immediate next candidate), never to a different model — that
+  // would mask a genuinely dead key. Mirrors failover.ts's `hasCredentialFallback`.
+  const isCredentialFailover = (index: number): boolean => {
+    const cur = candidates[index];
+    const next = candidates[index + 1];
+    return (
+      !!cur &&
+      !!next &&
+      next.routeModel === cur.routeModel &&
+      next.descriptor.provider === cur.descriptor.provider &&
+      cur.descriptor.credentialRef !== undefined &&
+      next.descriptor.credentialRef !== undefined &&
+      next.descriptor.credentialRef !== cur.descriptor.credentialRef
+    );
   };
 
   const failover = await runNativeFailover<Candidate>({
@@ -299,6 +333,7 @@ export async function handleLanguageModel(
     startStream,
     toTransportError,
     maxInvalidAttempts: MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE,
+    isCredentialFailover,
     logger,
     requestId,
     ...(typeof runtime.config.streamProbeTimeoutMs === 'number' &&
@@ -378,17 +413,24 @@ export async function handleLanguageModel(
 
   const ctx = { model: usedModel, provider: descriptor.provider };
 
-  let settled: NativeBillingUsage | null = null;
+  // Billing is settled by exactly ONE of these two callbacks, never both:
+  //   - `onUsage` fires when the stream reaches its terminal usage (normal
+  //     completion or an aborted-but-drained stream). It bills via `settle`,
+  //     reconciling any admission hold once inside the usage event.
+  //   - `onCancelWithoutUsage` fires only when the client disconnects BEFORE any
+  //     usage was reported. Nothing was billed, so the admission hold is refunded.
+  // The serializer latches `usageReported`, so a completed turn cannot also
+  // refund and a cancelled turn cannot also bill. There is NO microtask refund:
+  // the old one fired one tick after this handler returned — long before the SSE
+  // body was consumed and `onUsage` fired — so it refunded a hold that `settle`
+  // then also reconciled, undercharging every held streaming turn by the hold.
   const stream = aiGatewaySseFromFullStream(failover.stream, ctx, {
     onUsage: (usage) => {
-      settled = usage;
       void settle(usage);
     },
-  });
-  // If the stream ends without ever reporting usage (should not happen —
-  // aiGatewaySseFromFullStream always reports once), refund any hold.
-  void Promise.resolve().then(() => {
-    if (!settled && principal.billingHold) refundBillingHold(runtime, principal, requestId);
+    onCancelWithoutUsage: () => {
+      if (principal.billingHold) refundBillingHold(runtime, principal, requestId);
+    },
   });
 
   return sseResponse(stream);

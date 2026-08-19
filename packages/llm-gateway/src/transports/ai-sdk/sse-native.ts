@@ -44,10 +44,21 @@ export type FullStreamPart = { type: string; [k: string]: unknown };
 // switching candidates is no longer allowed (same invariant as the byte path).
 export function fullStreamPartHasContent(part: FullStreamPart): boolean {
   switch (part.type) {
-    case 'text-delta':
-    case 'reasoning-delta': {
+    case 'text-delta': {
       const text = part.text;
       return typeof text === 'string' && text.length > 0;
+    }
+    case 'reasoning':
+    case 'reasoning-start':
+    case 'reasoning-delta': {
+      const text = part.text;
+      if (typeof text === 'string' && text.length > 0) return true;
+      // A redacted/signature-only thinking turn (Anthropic) emits an empty-text
+      // reasoning part whose providerMetadata carries the reasoning `signature`
+      // or `redactedData`. That IS real assistant output — count it as content so
+      // the failover probe does not misclassify the turn as empty and
+      // retry/fail it over incorrectly.
+      return reasoningMetadataHasContent(part.providerMetadata);
     }
     case 'tool-call':
     case 'tool-input-start':
@@ -55,6 +66,25 @@ export function fullStreamPartHasContent(part: FullStreamPart): boolean {
     default:
       return false;
   }
+}
+
+// True when a reasoning part's providerMetadata carries a non-empty Anthropic
+// reasoning `signature` (normal thinking) or `redactedData` (redacted thinking).
+// Either proves the model produced reasoning output even when the streamed text
+// is empty.
+function reasoningMetadataHasContent(pm: unknown): boolean {
+  if (!pm || typeof pm !== 'object') return false;
+  for (const providerEntry of Object.values(pm as Record<string, unknown>)) {
+    if (!providerEntry || typeof providerEntry !== 'object') continue;
+    const meta = providerEntry as Record<string, unknown>;
+    if (
+      (typeof meta.signature === 'string' && meta.signature.length > 0) ||
+      (typeof meta.redactedData === 'string' && meta.redactedData.length > 0)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export interface NativeStreamCtx {
@@ -149,7 +179,16 @@ function withProviderMetadata<T extends Record<string, unknown>>(
 export function aiGatewaySseFromFullStream(
   fullStream: AsyncIterable<FullStreamPart>,
   ctx: NativeStreamCtx,
-  opts: { onUsage?: (usage: NativeBillingUsage) => void; includeRawChunks?: boolean } = {},
+  opts: {
+    onUsage?: (usage: NativeBillingUsage) => void;
+    // Invoked from `cancel()` IFF the stream is cancelled (client disconnect)
+    // BEFORE any usage was reported — i.e. `onUsage` never fired and never will.
+    // The pipeline uses this to refund an admission hold. Mutually exclusive with
+    // `onUsage`: whichever runs first flips `usageReported`, so a cancelled turn
+    // refunds and a completed turn bills, never both.
+    onCancelWithoutUsage?: () => void;
+    includeRawChunks?: boolean;
+  } = {},
 ): ReadableStream<Uint8Array> {
   const iterator = fullStream[Symbol.asyncIterator]();
   let cancelled = false;
@@ -171,9 +210,17 @@ export function aiGatewaySseFromFullStream(
       };
 
       // `stream-start` opens every AI-gateway stream — the client waits for it
-      // before reading parts, and `warnings` is a required field (empty when the
-      // model reports none; the first `start-step` part below fills it in).
-      emit(frame({ type: 'stream-start', warnings: [] }));
+      // before reading parts, and `warnings` is a required field. Emit it EXACTLY
+      // ONCE: the model's warnings arrive on the first `start-step` part, so defer
+      // the emission until then (or until the first content part / stream end if
+      // no `start-step` arrives) rather than emitting an empty one up front and a
+      // second warnings-carrying one on `start-step`.
+      let streamStartEmitted = false;
+      const emitStreamStart = (warnings: unknown[]): void => {
+        if (streamStartEmitted) return;
+        streamStartEmitted = true;
+        emit(frame({ type: 'stream-start', warnings }));
+      };
 
       // Fallback usage: `finish-step` carries per-step usage; `finish` carries
       // the authoritative `totalUsage`. Keep the last seen so a stream that ends
@@ -186,14 +233,15 @@ export function aiGatewaySseFromFullStream(
           if (next.done) break;
           const part = next.value;
           const pm = part.providerMetadata as ProviderMetadata | undefined;
+          // Guarantee `stream-start` precedes any content part even when the
+          // provider skips `start-step` — it is a no-op once already emitted.
+          if (part.type !== 'start' && part.type !== 'start-step') emitStreamStart([]);
           switch (part.type) {
             case 'start':
               break;
             case 'start-step': {
               const warnings = Array.isArray(part.warnings) ? part.warnings : [];
-              if (warnings.length > 0) {
-                emit(frame({ type: 'stream-start', warnings }));
-              }
+              emitStreamStart(warnings);
               break;
             }
             case 'text-start':
@@ -383,6 +431,10 @@ export function aiGatewaySseFromFullStream(
         emit(frame({ type: 'error', error: { message, ...(code != null ? { code } : {}) } }));
       }
 
+      // A stream that produced nothing (immediate done, or only a `start`) still
+      // owes the client the opening frame before `[DONE]`.
+      emitStreamStart([]);
+
       // Ensure billing sees SOME usage even if the stream never produced a
       // `finish` (aborted mid-flight) — reportUsage is idempotent.
       if (!usageReported) reportUsage(lastStepUsage);
@@ -393,6 +445,13 @@ export function aiGatewaySseFromFullStream(
     },
     async cancel(reason) {
       cancelled = true;
+      // The consumer disconnected. If no usage was reported yet, `onUsage` will
+      // never fire for this turn — invoke the refund path exactly once and latch
+      // `usageReported` so the drain at line ~388 cannot also settle (bill) it.
+      if (!usageReported) {
+        usageReported = true;
+        opts.onCancelWithoutUsage?.();
+      }
       await iterator.return?.(reason);
     },
   });
