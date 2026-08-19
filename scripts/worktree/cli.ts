@@ -19,7 +19,7 @@
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
-  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
+  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
@@ -393,14 +393,13 @@ async function cmdCreate(a: Args) {
   const existing = sh(['git', '-C', root, 'worktree', 'list', '--porcelain']).stdout;
   if (existing.includes(`worktree ${wtPath}`)) {
     sub('already exists — reusing');
-  } else if (branchExists(root, branch)) {
-    const r = sh(['git', '-C', root, 'worktree', 'add', wtPath, branch]);
-    if (!r.ok) await failCreate(`git worktree add failed: ${r.stderr}`);
-    sub(`checked out existing branch "${branch}"`);
   } else {
-    const r = sh(['git', '-C', root, 'worktree', 'add', '-b', branch, wtPath, from]);
-    if (!r.ok) await failCreate(`git worktree add -b failed: ${r.stderr}`);
-    sub(`created branch "${branch}" from ${from}`);
+    const { args, mode } = worktreeAddArgs(root, wtPath, branch, from);
+    const r = sh(args);
+    if (!r.ok) await failCreate(`${args.slice(0, 5).join(' ')} failed: ${r.stderr}`);
+    if (mode === 'local') sub(`checked out existing branch "${branch}"`);
+    else if (mode === 'remote') sub(`checked out "${branch}" tracking origin/${branch}`);
+    else sub(`created branch "${branch}" from ${from}`);
   }
 
   // Use the shared global pnpm store (default). Each worktree still has its own
