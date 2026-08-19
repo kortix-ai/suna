@@ -718,16 +718,28 @@ const GATEWAY_MODELS_TIMEOUT_MS = 2_500
 // slice of the boot budget and nothing more.
 const GATEWAY_MODELS_TOTAL_BUDGET_MS = 4_000
 
+// The RECONCILE budget for the same fetch. It is a different number because it
+// buys a different thing: nothing waits on this one to spawn OpenCode — it is
+// started at proxy-up and only settled at the post-spawn reconcile point, which
+// already sits behind OpenCode's own 4.7-12s cold start. A ~300KB gzipped body
+// crossing regions needs more than the 2.5s/4s the boot path can afford, and
+// under-budgeting it is what makes the reconcile blind to BYOK models.
+const GATEWAY_MODELS_PREFETCH_TIMEOUT_MS = 12_000
+const GATEWAY_MODELS_PREFETCH_BUDGET_MS = 12_000
+
 async function fetchGatewayModels(
   baseUrl: string,
   apiKey: string,
+  opts: { timeoutMs?: number; budgetMs?: number } = {},
 ): Promise<Record<string, KortixGatewayModel> | null> {
+  const perTryMs = opts.timeoutMs ?? GATEWAY_MODELS_TIMEOUT_MS
+  const budgetMs = opts.budgetMs ?? GATEWAY_MODELS_TOTAL_BUDGET_MS
   const url = `${baseUrl.replace(/\/+$/, '')}/models`
   const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
-  const deadline = Date.now() + GATEWAY_MODELS_TOTAL_BUDGET_MS
+  const deadline = Date.now() + budgetMs
   logger.info(
     `[opencode] fetching gateway models from ${url} ` +
-      `(per-try ${GATEWAY_MODELS_TIMEOUT_MS}ms, total budget ${GATEWAY_MODELS_TOTAL_BUDGET_MS}ms)`,
+      `(per-try ${perTryMs}ms, total budget ${budgetMs}ms)`,
   )
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (Date.now() >= deadline) {
@@ -738,7 +750,7 @@ async function fetchGatewayModels(
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${apiKey}` },
         // Never let one attempt outlive the total budget.
-        signal: AbortSignal.timeout(Math.max(250, Math.min(GATEWAY_MODELS_TIMEOUT_MS, deadline - Date.now()))),
+        signal: AbortSignal.timeout(Math.max(250, Math.min(perTryMs, deadline - Date.now()))),
       })
       if (!res.ok) {
         const detail = (await res.text().catch(() => '')).slice(0, 200)
@@ -752,7 +764,7 @@ async function fetchGatewayModels(
     } catch (err) {
       const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
       logger.warn(
-        `[opencode] gateway models fetch ${timedOut ? `timed out (>${GATEWAY_MODELS_TIMEOUT_MS}ms)` : 'failed'} ` +
+        `[opencode] gateway models fetch ${timedOut ? `timed out (>${perTryMs}ms)` : 'failed'} ` +
           `(attempt ${attempt + 1}/${attempts}) ${url}: ${(err as Error).message}`,
       )
       // A slow gateway won't get faster on retry, and opencode is blocked the whole
@@ -807,18 +819,23 @@ let lastConfiguredProviderModelIds: Set<string> | null = null
  *
  * - A live managed listing is AUTHORITATIVE for the managed ids it carries
  *   (it comes from the gateway that will resolve them).
- * - With no live listing, the bundled managed set only FILLS ids the disk
- *   catalog lacks — a hand-maintained table never overwrites richer generated
- *   data for a model that is already there.
+ * - An EXPLICIT EMPTY listing (`{}`, HTTP 200) is equally authoritative: this
+ *   deployment serves no managed models. Self-host runs with
+ *   `KORTIX_MANAGED_PROVIDER_ENABLED=false`, and a free-tier account is the
+ *   same shape. Injecting the bundled floor there advertises 7 managed ids the
+ *   gateway will refuse — the ModelNotFound outage, inverted.
+ * - Only a FAILED fetch (`null`: non-2xx, network, timeout) falls back to the
+ *   bundled managed set, and then only to FILL ids the disk catalog lacks — a
+ *   hand-maintained table never overwrites richer generated data.
  *
- * Purely additive in both cases: nothing is removed, so a transient fetch can
+ * Purely additive in every case: nothing is removed, so a transient fetch can
  * never shrink a working picker.
  */
 export function withManagedOverlay(
   base: Record<string, KortixGatewayModel>,
   live: Record<string, KortixGatewayModel> | null | undefined,
 ): Record<string, KortixGatewayModel> {
-  if (live && Object.keys(live).length > 0) return { ...base, ...live }
+  if (live) return { ...base, ...live }
   const out = { ...base }
   for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
     if (!out[id]) out[id] = model
@@ -829,9 +846,16 @@ export function withManagedOverlay(
 /**
  * Fetch ONLY the managed lineup: `GET ${base}/models?scope=managed` (~3KB,
  * versus ~3.3MB for the full project catalog — which is why the full fetch
- * gets no place on the boot path). Returns null on failure or an empty set
- * (a free-tier account legitimately has no managed models; callers then keep
- * whatever the disk catalog holds).
+ * gets no place on the boot path).
+ *
+ * THREE distinct answers, and callers depend on all three:
+ *   - a populated map  → this deployment's live managed lineup;
+ *   - `{}` (HTTP 200)  → this deployment serves NO managed models. Self-host
+ *     (`KORTIX_MANAGED_PROVIDER_ENABLED=false`) and free tier both land here.
+ *     It is an ANSWER, not a gap — the bundled managed floor must NOT be
+ *     applied, or the picker offers 7 ids the gateway refuses;
+ *   - `null`           → the question could not be asked (non-2xx, network,
+ *     timeout). Only this falls back to the bundled managed set.
  */
 export async function fetchManagedModels(
   baseUrl: string,
@@ -852,8 +876,11 @@ export async function fetchManagedModels(
       const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
       const models = body.models ?? {}
       if (Object.keys(models).length === 0) {
-        logger.info(`[opencode] managed listing is empty at ${url}; keeping the on-disk catalog`)
-        return null
+        logger.info(
+          `[opencode] managed listing is EXPLICITLY empty at ${url} ` +
+            `(managed provider off, or a free-tier account); no bundled managed floor is applied`,
+        )
+        return {}
       }
       // Remote JSON becomes OpenCode's provider config — rebuild it to a known
       // shape before it can get anywhere near the config or the disk.
@@ -972,12 +999,251 @@ export function writeManagedOverlayCatalogFile(opts: {
   return opts.targetCatalogFile
 }
 
+// ── Selectable-set reconcile (managed ∪ connected-provider BYOK) ─────────────
+//
+// THE INVARIANT: every model the picker can offer for this project is in
+// OpenCode's provider map before the session is ready.
+//
+// The picker set is NOT the whole catalog. apps/api builds it in
+// `projectPickerCatalog` (llm-gateway/models/picker-catalog.ts) as
+//   managed lineup  ∪  models of the project's CONNECTED providers  ∪  configured
+// so those are the only ids a user can pick, and therefore the only ids whose
+// absence produces `ModelNotFound: kortix/<id>`.
+//
+// Diffing the WHOLE live catalog instead would be actively harmful: models.dev
+// adds ~60 models a day, so a baked file more than a day old is always missing
+// something and every single boot would buy a restart. The connected-provider
+// list is what makes the diff bounded and the restart rare.
+//
+// The list arrives in the guest env as `KORTIX_LLM_CONNECTED_PROVIDERS`
+// (comma-separated catalog provider ids: `anthropic,openrouter,codex`), set at
+// session start and re-pushed on every hot env push, so a provider connected
+// mid-session reaches the box.
+export const CONNECTED_PROVIDERS_ENV_NAME = 'KORTIX_LLM_CONNECTED_PROVIDERS'
+
+/** Provider ids this project has connected, per the API. Empty = managed only. */
+export function connectedProviderIds(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  return new Set(
+    (env[CONNECTED_PROVIDERS_ENV_NAME] ?? '')
+      .split(',')
+      .map((id) => id.trim().toLowerCase())
+      .filter(Boolean),
+  )
+}
+
+/**
+ * Is `id` a model the picker can offer for this project?
+ *
+ * A bare id (no `/`) is a MANAGED slug — relevant iff the live managed listing
+ * carries it. A `provider/model` id is BYOK/codex — relevant iff its provider
+ * is connected. Everything else in the ~6k-model catalog is unreachable from
+ * the picker and must never buy a restart.
+ */
+function isPickerRelevantModelId(
+  id: string,
+  managed: Record<string, KortixGatewayModel> | null,
+  connected: Set<string>,
+): boolean {
+  const slash = id.indexOf('/')
+  if (slash === -1) return !!managed && id in managed
+  return connected.has(id.slice(0, slash).toLowerCase())
+}
+
+/** Every picker-relevant id across the live managed listing + live full catalog. */
+export function pickerRelevantModelIds(
+  managed: Record<string, KortixGatewayModel> | null,
+  full: Record<string, KortixGatewayModel> | null,
+  connected: Set<string> = connectedProviderIds(),
+): string[] {
+  const ids = new Set<string>()
+  for (const id of Object.keys(managed ?? {})) ids.add(id)
+  for (const id of Object.keys(full ?? {})) {
+    if (isPickerRelevantModelId(id, managed, connected)) ids.add(id)
+  }
+  return [...ids]
+}
+
+/**
+ * Picker-relevant ids the running OpenCode does NOT have.
+ *
+ * Non-empty means the picker offers a model whose first turn dies with
+ * `ModelNotFound: kortix/<id>` — the 2026-08-19 outage, generalized from the
+ * managed lineup to BYOK. Empty means the boot config was already complete.
+ */
+export function missingPickerModelIds(
+  managed: Record<string, KortixGatewayModel> | null,
+  full: Record<string, KortixGatewayModel> | null,
+  connected: Set<string> = connectedProviderIds(),
+): string[] {
+  const configured = lastConfiguredProviderModelIds
+  if (!configured) return []
+  return pickerRelevantModelIds(managed, full, connected).filter((id) => !configured.has(id))
+}
+
+/**
+ * Persist an overlay so the NEXT OpenCode start registers it from disk, not
+ * just from this process's cache. Returns the file OpenCode should read, or
+ * null when nothing usable could be composed.
+ *
+ * `overlay` is deliberately the MISSING models only, never the whole live
+ * catalog: the composed file becomes OpenCode's config, which is already >1MB
+ * and is handed over as a file precisely because it does not fit in an env var.
+ */
+export function writeOverlayCatalogFile(opts: {
+  currentCatalogFile: string
+  targetCatalogFile: string
+  overlay: Record<string, KortixGatewayModel>
+}): string | null {
+  const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  const composed = sanitizeCatalogForDisk({ ...(base ?? MINIMAL_FALLBACK_MODELS), ...opts.overlay })
+  if (!composed) return null
+  mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
+  writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: composed }), { mode: 0o600 })
+  return opts.targetCatalogFile
+}
+
+// ── Full-catalog prefetch ────────────────────────────────────────────────────
+//
+// Same two-half design as the managed prefetch: started at proxy-up, never
+// awaited by anything that gates OpenCode's port bind, settled only at the
+// reconcile point. Its budget is generous (12s) because nothing waits on it —
+// the gateway now serves `/models` gzipped, so a ~3.3MB catalog is ~300KB on
+// the wire and lands well inside that even cross-region.
+let fullCatalogPrefetch: Promise<Record<string, KortixGatewayModel> | null> | null = null
+let fullCatalogCache: Record<string, KortixGatewayModel> | null = null
+let fullCatalogCacheAt = 0
+/** Fired once, when a prefetch that MISSED its reconcile window finally lands. */
+let fullCatalogLateHandler: (() => void) | null = null
+
+export function startFullCatalogPrefetch(baseUrl?: string, apiKey?: string): void {
+  if (!baseUrl || !apiKey) return
+  if (fullCatalogPrefetch) return
+  if (fullCatalogCache && Date.now() - fullCatalogCacheAt < MANAGED_CACHE_TTL_MS) return
+  fullCatalogPrefetch = fetchGatewayModels(baseUrl, apiKey, {
+    timeoutMs: GATEWAY_MODELS_PREFETCH_TIMEOUT_MS,
+    budgetMs: GATEWAY_MODELS_PREFETCH_BUDGET_MS,
+  })
+    .then((models) => {
+      if (models) {
+        fullCatalogCache = models
+        fullCatalogCacheAt = Date.now()
+      }
+      return models
+    })
+    .catch(() => null)
+    .finally(() => {
+      fullCatalogPrefetch = null
+      const late = fullCatalogLateHandler
+      fullCatalogLateHandler = null
+      if (late) late()
+    })
+}
+
+/**
+ * Fetch BOTH catalogs fresh, bypassing every cache, and publish the results.
+ *
+ * For the self-heal path only. There the cache is worse than useless: OpenCode
+ * just refused a model, which means the provider map — and therefore very
+ * likely the cache that fed it — does not have it. Answering from that cache
+ * would prove nothing and heal nothing. Generous budgets, because nothing is
+ * waiting: the turn is already over.
+ */
+export async function fetchLiveCatalogs(
+  baseUrl: string,
+  apiKey: string,
+): Promise<{
+  managed: Record<string, KortixGatewayModel> | null
+  full: Record<string, KortixGatewayModel> | null
+}> {
+  const [managed, full] = await Promise.all([
+    fetchManagedModels(baseUrl, apiKey),
+    fetchGatewayModels(baseUrl, apiKey, {
+      timeoutMs: GATEWAY_MODELS_PREFETCH_TIMEOUT_MS,
+      budgetMs: GATEWAY_MODELS_PREFETCH_BUDGET_MS,
+    }),
+  ])
+  if (managed) rememberManagedModels(managed)
+  if (full) {
+    fullCatalogCache = full
+    fullCatalogCacheAt = Date.now()
+  }
+  return { managed, full }
+}
+
+/** The live full catalog IF it is already known — synchronous, never a wait. */
+export function cachedFullCatalog(): Record<string, KortixGatewayModel> | null {
+  if (fullCatalogCache && Date.now() - fullCatalogCacheAt < MANAGED_CACHE_TTL_MS) {
+    return fullCatalogCache
+  }
+  return null
+}
+
+/**
+ * Settle the full-catalog prefetch for the reconcile, waiting at most
+ * `maxWaitMs` more.
+ *
+ * The reconcile point sits behind OpenCode's own cold start, so the prefetch is
+ * normally long since resolved. When it is not, the reconcile must NOT stall
+ * readiness on it: it proceeds on the managed-only diff, and `onLate` is called
+ * if and when the catalog lands — which re-runs the reconcile idle-only.
+ */
+export async function settleFullCatalogPrefetch(
+  maxWaitMs: number,
+  onLate?: () => void,
+): Promise<Record<string, KortixGatewayModel> | null> {
+  const pending = fullCatalogPrefetch
+  if (!pending) return cachedFullCatalog()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = Symbol('timeout')
+  const race = await Promise.race([
+    pending.catch(() => null),
+    new Promise<typeof timedOut>((resolve) => {
+      timer = setTimeout(() => resolve(timedOut), maxWaitMs)
+    }),
+  ])
+  if (timer) clearTimeout(timer)
+  if (race === timedOut) {
+    logger.warn(
+      `[opencode] full catalog still in flight after ${maxWaitMs}ms; reconciling on the managed set ` +
+        `and deferring the BYOK half until it lands`,
+    )
+    if (onLate) fullCatalogLateHandler = onLate
+    return cachedFullCatalog()
+  }
+  return cachedFullCatalog()
+}
+
+/**
+ * The `<id>` in OpenCode's `ModelNotFound: kortix/<id>`, or null.
+ *
+ * This is the LAST line of defence: the model was offered, the user picked it,
+ * and the runtime refused it. The wire shape is
+ * `{name:'UnknownError', data:{message:'ModelNotFound: kortix/grok-4.6'}}`
+ * (observed in prod 2026-08-19; pinned by packages/sdk's sync-store tests), and
+ * the rendered copy is "Model not found: kortix/grok-4.6. Did you mean: …".
+ * Both are matched. A BYOK id keeps its provider prefix, so the captured id can
+ * itself contain a slash (`kortix/anthropic/claude-opus-4-9`).
+ */
+const MODEL_NOT_FOUND_RE = /model\s*not\s*found:?\s*["'`]?kortix\/([A-Za-z0-9._\-/]+)/i
+
+export function modelNotFoundId(err: { name?: string; message?: string } | undefined): string | null {
+  if (!err) return null
+  const haystack = `${err.name ?? ''} ${err.message ?? ''}`
+  const match = MODEL_NOT_FOUND_RE.exec(haystack)
+  if (!match) return null
+  return match[1]?.replace(/[.,;:]+$/, '') ?? null
+}
+
 /** Test seam: drop prefetch/cache/config state between cases. */
 export function resetManagedModelsStateForTests(): void {
   managedPrefetch = null
   managedCache = null
   managedCacheAt = 0
   lastConfiguredProviderModelIds = null
+  fullCatalogPrefetch = null
+  fullCatalogCache = null
+  fullCatalogCacheAt = 0
+  fullCatalogLateHandler = null
 }
 
 export type GatewayCatalogRefreshResult = {
@@ -1064,7 +1330,7 @@ type KortixCost = {
 
 type KortixModalities = { input?: string[]; output?: string[] }
 
-type KortixGatewayModel = {
+export type KortixGatewayModel = {
   name: string
   // The REAL upstream provider this model resolves against ('anthropic',
   // 'openai', 'codex', 'kortix', ...). Every model here is registered under

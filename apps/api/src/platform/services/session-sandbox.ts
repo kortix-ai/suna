@@ -56,6 +56,10 @@ import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
+import {
+  CONNECTED_PROVIDERS_ENV_NAME,
+  resolveConnectedProvidersEnv,
+} from '../../llm-gateway/models/connected-providers';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
@@ -437,7 +441,8 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sandboxKey, connectorToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sandboxKey, connectorToken, gatewayEntitled, connectedProviders] =
+    await Promise.all([
     createOrClaimSandboxRow(),
     createApiKey({
       sandboxId,
@@ -464,6 +469,11 @@ export async function provisionSessionSandbox(opts: {
           return false;
         })
       : Promise.resolve(false),
+    // Which BYOK providers this project has connected. The sandbox needs it to
+    // bound its model reconcile to the set the picker can actually offer — see
+    // llm-gateway/models/connected-providers.ts. Best-effort and resolved in
+    // parallel with the tokens, so it adds no provision latency.
+    resolveConnectedProvidersEnv({ projectId, principalUserId: userId }),
   ]);
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
@@ -534,6 +544,13 @@ export async function provisionSessionSandbox(opts: {
         ? {
             KORTIX_LLM_API_KEY: gatewayLlmKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
+            // The providers whose BYOK models this project's picker may offer.
+            // The guest reconcile guarantees exactly `managed ∪ these` are in
+            // OpenCode's provider map before the session is ready; without it
+            // the guest would have to diff the whole ~6k-model catalog and
+            // restart on every boot. Always injected (possibly empty) so the
+            // guest can tell "no BYOK provider" from "the API never said".
+            [CONNECTED_PROVIDERS_ENV_NAME]: connectedProviders,
           }
         : {}),
     },

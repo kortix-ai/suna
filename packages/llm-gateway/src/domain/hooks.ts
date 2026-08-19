@@ -55,4 +55,11 @@ export interface GatewayHooks {
  * account with no managed access still gets an empty managed set. */
 export interface ListModelsOptions {
   managedOnly?: boolean;
+  /** The request's `Accept-Encoding`. A gzip-accepting client gets the catalog
+   *  gzipped (~10:1 on this shape) — see http/catalog-response.ts for why that
+   *  matters to the sandbox boot path. Transport concern only; never reaches a
+   *  hook implementation's catalog logic. */
+  acceptEncoding?: string | null;
+  /** The request's `If-None-Match`, for the 304 short-circuit. */
+  ifNoneMatch?: string | null;
 }

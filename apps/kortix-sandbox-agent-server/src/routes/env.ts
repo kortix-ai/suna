@@ -5,6 +5,7 @@ import type { Config } from '../config'
 import { syncEgressShim } from '../egress-shim'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
+import { scheduleModelReconcile } from '../model-reconcile'
 import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
@@ -37,7 +38,21 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // drift apart on a live update.
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
   'KORTIX_SECRET_CAPABILITIES',
+  // The catalog provider ids this project has CONNECTED (comma-separated, e.g.
+  // `anthropic,openrouter,codex`). It decides which BYOK models the picker can
+  // offer, and therefore which ids the model reconcile must guarantee are in
+  // OpenCode's provider map. Live-updatable on purpose: a provider connected
+  // mid-session has to reach a box that is already running.
+  //
+  // NOT config-affecting. OpenCode never reads it — the CATALOG FILE is what
+  // shapes its provider map — so a change here must not trip the reload gate
+  // below. It triggers the reconcile instead, which decides for itself whether
+  // anything is actually missing and is the only thing allowed to restart.
+  'KORTIX_LLM_CONNECTED_PROVIDERS',
 ])
+
+/** @see OPENCODE_RUNTIME_ENV_NAMES — accepted, stored, never a reload by itself. */
+const CONNECTED_PROVIDERS_ENV_NAME = 'KORTIX_LLM_CONNECTED_PROVIDERS'
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
@@ -180,8 +195,17 @@ export function createEnvRouter(
         // Whether applying the config interrupted work someone was waiting on.
         // null = no reload happened, or the box could not tell.
         let reloadTurnEnded: boolean | null = null
-        const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
+        // A connected-provider delta is reported, but never counted as a
+        // config change: OpenCode does not read that name, and letting it reach
+        // `reloadConfig` would restart the box on the old catalog — before the
+        // reconcile has fetched the models the new provider adds. The reconcile
+        // scheduled after the reload owns that decision.
+        const connectedProvidersChanged = opencodeEnvNames.includes(CONNECTED_PROVIDERS_ENV_NAME)
+        const configAffectingNames = opencodeEnvNames.filter(
+          (name) => name !== CONNECTED_PROVIDERS_ENV_NAME,
+        )
+        const opencodeEnvChanged = configAffectingNames.length > 0
 
         if (result.changed) {
           logger.info('[env] project env changed; refreshing live agent env file', {
@@ -244,7 +268,7 @@ export function createEnvRouter(
           // secret. Revocation is preserved too: `knownNames` is tracked in the
           // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
           const projectSecretsMoved = result.changedNames.length > 0
-          const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
+          const mustRespawn = projectSecretsMoved || requiresRespawn(configAffectingNames)
           const applied = await opencode.reloadConfig({ mustRespawn })
           const how = applied.how
           reloadTurnEnded = applied.turnEnded
@@ -260,6 +284,19 @@ export function createEnvRouter(
             how,
             mustRespawn,
           })
+        }
+
+        // The project just connected (or disconnected) a provider. The picker's
+        // offer set moved, so the models OpenCode must register moved with it.
+        // Fire-and-forget: the reconcile is single-flight, idle-only, and
+        // restarts ONLY when a model the picker can now offer is genuinely
+        // absent from the running provider map. The API caller must not wait on
+        // a catalog fetch, and a no-op reconcile costs one log line.
+        if (connectedProvidersChanged) {
+          logger.info('[env] connected LLM providers changed; scheduling a model reconcile', {
+            providers: process.env[CONNECTED_PROVIDERS_ENV_NAME] ?? '',
+          })
+          void scheduleModelReconcile('env-push')
         }
 
         const applied = projectEnv.snapshot()

@@ -9,6 +9,7 @@ import {
   verifyKortixUserContext,
 } from '../kortix-user-context'
 import { logger } from '../logger'
+import { scheduleModelReconcile } from '../model-reconcile'
 import type { Opencode } from '../opencode'
 
 function bearerToken(header: string | undefined): string | null {
@@ -132,6 +133,14 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
         // latency, and a ~100 MB download must never enter that budget. The
         // reconcile is single-flighted, so a burst of refreshes runs one pass.
         scheduleRuntimeAssetsReconcile(cfg)
+        // Same reasoning, for the model catalog. This route is what the platform
+        // calls on warm reuse, reload, restart and resume — the moments a
+        // long-lived box comes back up without re-running its image build, and
+        // therefore the moments its baked catalog is most likely to be stale
+        // against the managed lineup and models.dev. Detached and single-flight;
+        // it restarts OpenCode only when a model the picker can offer is
+        // genuinely missing from the running provider map.
+        void scheduleModelReconcile('refresh')
         return c.json({
           // The repo work succeeded either way; `reload.outcome` carries whether
           // the new config actually took. Reporting ok:false here would hide a

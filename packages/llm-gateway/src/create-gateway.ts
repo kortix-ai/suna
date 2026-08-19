@@ -11,6 +11,7 @@ import {
   type HandlerRuntime,
   handleChatCompletions,
 } from './pipeline';
+import { catalogJsonResponse } from './http';
 import { gatewayErrorResponse } from './pipeline/error-response';
 import { CircuitBreaker } from './resilience';
 
@@ -121,13 +122,17 @@ export function createGateway(
           requestId,
           suggestion: 'Sign in again or provide a valid API token, then retry.',
         });
-      if (!hooks.listModels) return jsonResponse({ models: {} });
+      if (!hooks.listModels) return catalogJsonResponse({ models: {} }, opts);
       const models = await hooks.listModels(principal, opts);
       logger.info(
         `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : ''} ` +
           `for acct=${principal.accountId.slice(0, 8)}`,
       );
-      return jsonResponse({ models });
+      // Gzipped when the client accepts it. The full catalog is ~3.3MB of JSON
+      // and its most important consumer is a cross-region sandbox fetching it at
+      // boot; ~300KB on the wire is what makes that a background task instead of
+      // a budget negotiation. See http/catalog-response.ts.
+      return catalogJsonResponse({ models }, opts);
     } catch (err) {
       logger.error('[gateway] model catalog request failed', err);
       return gatewayErrorResponse(502, {

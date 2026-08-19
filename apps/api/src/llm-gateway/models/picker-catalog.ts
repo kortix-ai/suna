@@ -125,6 +125,33 @@ export function projectPickerCatalog<T>(
 }
 
 /**
+ * The catalog provider ids this project has CONNECTED, given its LLM-gateway
+ * secret names. Exactly the providers `projectPickerCatalog` above keeps models
+ * for, so the two can never disagree about what the picker offers.
+ *
+ * This is what the SANDBOX is told (`KORTIX_LLM_CONNECTED_PROVIDERS`), and it is
+ * the whole reason the in-guest model reconcile is bounded: without it the guest
+ * would have to diff the entire ~6k-model catalog against its baked file, which
+ * models.dev makes stale every single day — so every boot would buy a restart.
+ * With it, the guest checks the managed lineup plus the models of these
+ * providers, and nothing else.
+ *
+ * `codex` is included on the same terms as the picker: it is a ChatGPT
+ * subscription, not a catalog provider, so it has no `resolveCatalogUpstream`
+ * env var and is keyed off its auth blob instead.
+ */
+export function connectedProviderIds(connectedEnvVars: Set<string>): string[] {
+  const ids: string[] = [];
+  for (const provider of catalogState().catalog.providers) {
+    if (isProviderConnected(provider.id, connectedEnvVars)) ids.push(provider.id);
+  }
+  if (connectedEnvVars.has('CODEX_AUTH_JSON') || connectedEnvVars.has('OPENCODE_AUTH_JSON')) {
+    ids.push('codex');
+  }
+  return ids.sort();
+}
+
+/**
  * The flagship `provider/model` ref for the provider whose primary credential
  * env var is `envVar` (e.g. `ANTHROPIC_API_KEY` → `anthropic/claude-opus-4.8`),
  * or null. Used to auto-seed a sensible project default when a user connects

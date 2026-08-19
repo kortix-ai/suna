@@ -102,6 +102,18 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
     expect(OPENCODE_SRC).toContain('writeSecretCapabilitiesInstruction(baseEnv)')
     consumed.add('KORTIX_SECRET_CAPABILITIES')
 
+    // Same indirection, same rule: `connectedProviderIds` reads the connected
+    // BYOK provider list through the exported `CONNECTED_PROVIDERS_ENV_NAME`
+    // constant, so the literal never appears as `env.KORTIX_...`. Prove the
+    // constant resolves to the real name and that the read exists, then fold it
+    // in — the name MUST be live-updatable (a provider connected mid-session has
+    // to reach a running box).
+    expect(OPENCODE_SRC).toContain(
+      "CONNECTED_PROVIDERS_ENV_NAME = 'KORTIX_LLM_CONNECTED_PROVIDERS'",
+    )
+    expect(OPENCODE_SRC).toContain('env[CONNECTED_PROVIDERS_ENV_NAME]')
+    consumed.add('KORTIX_LLM_CONNECTED_PROVIDERS')
+
     const unaccounted = [...consumed].filter(
       (name) => !allowlist.has(name) && !BOOT_ONLY_KORTIX_ENV_NAMES.has(name),
     )
@@ -132,6 +144,7 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
   test('pins the current fully-enumerated set, so a change here is a deliberate, reviewed diff', () => {
     const consumed = readKortixEnvNames(OPENCODE_SRC)
     consumed.add('KORTIX_SECRET_CAPABILITIES')
+    consumed.add('KORTIX_LLM_CONNECTED_PROVIDERS')
     expect([...consumed].sort()).toEqual([
       'KORTIX_API_URL',
       'KORTIX_CLI_TOKEN',
@@ -141,6 +154,7 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
       'KORTIX_LLM_API_KEY',
       'KORTIX_LLM_BASE_URL',
       'KORTIX_LLM_CATALOG_FILE',
+      'KORTIX_LLM_CONNECTED_PROVIDERS',
       'KORTIX_LLM_PROXY_URL',
       'KORTIX_OPENCODE_DEBUG',
       'KORTIX_OPENCODE_DENY_ENV',

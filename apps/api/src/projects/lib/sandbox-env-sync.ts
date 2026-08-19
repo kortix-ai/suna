@@ -8,6 +8,10 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import {
+  CONNECTED_PROVIDERS_ENV_NAME,
+  resolveConnectedProvidersEnv,
+} from '../../llm-gateway/models/connected-providers';
+import {
   getProvider,
   shouldSyncProviderNetworkBoundary,
   type ProviderName,
@@ -375,6 +379,11 @@ export interface SandboxEnvSnapshot {
   revision: string;
   scope: 'inherit' | 'restricted' | 'none';
   capabilitiesJson: string;
+  /** The session's creator — the principal whose personal LLM-gateway secrets
+   *  decide which BYOK providers count as connected. Null when the session row
+   *  could not be read. Carried here so the connected-provider push costs no
+   *  extra query. */
+  createdBy?: string | null;
 }
 
 export interface ProjectSecretPropagationTarget {
@@ -408,6 +417,7 @@ async function resolveOwnerRawEnv(
   env: Record<string, string>;
   capabilitiesJson: string;
   scope: SandboxEnvSnapshot['scope'];
+  createdBy: string;
 } | null> {
   if (!sessionId) return null;
   const [row] = await db
@@ -468,6 +478,7 @@ async function resolveOwnerRawEnv(
   return {
     env: snapshot.env,
     capabilitiesJson: snapshot.capabilitiesJson,
+    createdBy: row.createdBy,
     scope:
       row.secretsAllowlist == null
         ? 'inherit'
@@ -491,6 +502,7 @@ export async function resolveSandboxEnvSnapshot(
     revision: projectSecretsRevision(env),
     capabilitiesJson: resolved.capabilitiesJson,
     scope: resolved.scope,
+    createdBy: resolved.createdBy,
   };
 }
 
@@ -753,6 +765,24 @@ export async function syncSandboxEnvForPrompt(args: {
     ? llmGatewayBaseUrlForProvider(args.providerName)
     : undefined;
   const llmGatewayDenyEnv = llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '';
+  // Re-state which BYOK providers this project has connected on EVERY push, so
+  // a provider connected after the box booted reaches a box that is already
+  // running. The sandbox bounds its model reconcile to `managed ∪ these`; a
+  // change here is what tells it to re-run that reconcile (see the daemon's
+  // routes/env.ts — the name is deliberately NOT config-affecting, so it never
+  // restarts OpenCode by itself).
+  //
+  // It rides `opencodeEnv`, which `promptModelSignature` already digests, so a
+  // changed list re-pushes with `refreshModels: true` and an unchanged one
+  // still short-circuits the whole round-trip.
+  const opencodeEnv: Record<string, string | null> = { ...(args.opencodeEnv ?? {}) };
+  if (llmGatewayEnabled) {
+    opencodeEnv[CONNECTED_PROVIDERS_ENV_NAME] = await resolveConnectedProvidersEnv({
+      projectId: args.projectId,
+      principalUserId: snapshot.createdBy ?? null,
+    });
+    lap('connected-providers');
+  }
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
@@ -768,7 +798,7 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayEnabled,
     llmGatewayBaseUrl,
     llmGatewayDenyEnv,
-    opencodeEnv: args.opencodeEnv,
+    opencodeEnv,
   });
   const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
   const pushedAt = lastPromptEnvPushAt.get(args.externalId);
@@ -790,7 +820,7 @@ export async function syncSandboxEnvForPrompt(args: {
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels,
-    opencodeEnv: args.opencodeEnv,
+    opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl,
     llmGatewayDenyEnv,
